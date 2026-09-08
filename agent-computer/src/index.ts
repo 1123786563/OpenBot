@@ -1,6 +1,7 @@
 import { serve } from "bun";
 import type { Page } from "playwright";
 import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
+import { browserModeFromEnv } from "./browser-mode";
 import {
   actsOnTheComputer,
   isOpenPath,
@@ -22,6 +23,7 @@ import { parseExecTimeout, parseNavigateUrl } from "./request-validation";
 import { type InputMessage, startScreencast } from "./screencast";
 import { createShell } from "./shell";
 import { createViewerSlot, type ViewerSlot } from "./viewer";
+import { startVirtualDisplay } from "./virtual-display";
 import {
   createWorkspace,
   WorkspaceFileError,
@@ -72,6 +74,17 @@ if (!COMPUTER_TOKEN) {
   );
   process.exit(1);
 }
+
+const BROWSER_MODE = browserModeFromEnv(process.env.COMPUTER_BROWSER_MODE);
+const VIRTUAL_DISPLAY = await startVirtualDisplay(BROWSER_MODE);
+if (VIRTUAL_DISPLAY) process.env.DISPLAY = VIRTUAL_DISPLAY.name;
+console.info(
+  JSON.stringify({
+    type: "computer-browser-mode",
+    mode: BROWSER_MODE,
+    display: VIRTUAL_DISPLAY?.name ?? null,
+  }),
+);
 
 const PORT = numberFromEnv("PORT", 4100);
 const NAVIGATION_TIMEOUT_MS = numberFromEnv("NAVIGATION_TIMEOUT_MS", 30000);
@@ -750,6 +763,7 @@ serve<StreamData>({
         // deployment without it, not a failure, and it is reported rather than omitted so the
         // difference between "no identity here" and "identity broken" is visible.
         identity: await identity(),
+        browserMode: BROWSER_MODE,
       });
     }
 
@@ -1234,12 +1248,36 @@ console.info(`agent-computer listening on http://localhost:${PORT}`);
  *
  * `stop_grace_period` in docker-compose.yml is what gives this time to run.
  */
+let shuttingDown = false;
+
+async function shutDown(reason: string, exitCode: number): Promise<void> {
+  if (shuttingDown) return;
+  // Set before the first await: a display exiting while Chromium flushes is part of this shutdown,
+  // not a second failure racing it.
+  shuttingDown = true;
+  console.info(`${reason}: closing the browser so its profile is flushed`);
+  await profiles.closeAll();
+  await VIRTUAL_DISPLAY?.stop();
+  process.exit(exitCode);
+}
+
+if (VIRTUAL_DISPLAY) {
+  void VIRTUAL_DISPLAY.terminated.then(({ code, expected }) => {
+    if (expected || shuttingDown) return;
+    console.error(
+      JSON.stringify({
+        type: "computer-virtual-display-exited",
+        exitCode: code,
+      }),
+    );
+    // A headed Chromium cannot recover without its display. Let the container restart policy build
+    // the pair together again instead of advertising a healthy service whose next browser fails.
+    void shutDown("virtual display exited", 1);
+  });
+}
+
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
-    void (async () => {
-      console.info(`${signal}: closing the browser so its profile is flushed`);
-      await profiles.closeAll();
-      process.exit(0);
-    })();
+    void shutDown(signal, 0);
   });
 }
