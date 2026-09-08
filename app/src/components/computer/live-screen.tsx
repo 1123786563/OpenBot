@@ -31,6 +31,11 @@ function modifierBits(event: {
   );
 }
 
+/** Let the local browser create a paste event, whose clipboard text is forwarded separately. */
+function isPasteShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+}
+
 type Props = {
   /**
    * Computer identity is part of the stream URL so input and frames stay scoped to the active Bot.
@@ -45,6 +50,8 @@ type Props = {
 export function LiveScreen({ computerId, driving, onProblem }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  /** Keydowns handled locally whose matching keyup must not leak to the remote browser. */
+  const localKeyUps = useRef(new Set<string>());
   /** The size of the frames Chrome is sending, which is what input coordinates are relative to. */
   const frameSize = useRef<{ width: number; height: number } | null>(null);
   const [connected, setConnected] = useState(false);
@@ -196,12 +203,17 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
     if (!driving) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") return; // Escape still closes the view.
+      if (isPasteShortcut(event)) {
+        localKeyUps.current.add(event.code);
+        return;
+      }
       event.preventDefault();
       send({
         type: "key",
         event: "down",
         key: event.key,
         code: event.code,
+        windowsVirtualKeyCode: event.keyCode,
         // Only a printable character carries text. Sending text for Backspace makes Chrome insert a
         // character instead of deleting one.
         ...(event.key.length === 1 ? { text: event.key } : {}),
@@ -210,12 +222,16 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key === "Escape") return;
+      if (localKeyUps.current.delete(event.code) || isPasteShortcut(event)) {
+        return;
+      }
       event.preventDefault();
       send({
         type: "key",
         event: "up",
         key: event.key,
         code: event.code,
+        windowsVirtualKeyCode: event.keyCode,
         modifiers: modifierBits(event),
       });
     };
@@ -234,6 +250,7 @@ export function LiveScreen({ computerId, driving, onProblem }: Props) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("paste", onPaste);
+      localKeyUps.current.clear();
     };
   }, [driving, send]);
 
