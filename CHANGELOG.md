@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A scroll with an unusable `deltaY` is refused, rather than scrolling some other distance
+
+`POST /computers/:botId/scroll` and `POST /computers/:botId/human/scroll` accepted any JSON number
+as `deltaY`, and `1e999` is a JSON number: it parses to `Infinity`, passes the `typeof` check, and is
+turned back into `null` by the hop to the Bot's computer, which reads the field as absent and scrolls
+its own default distance. The caller was answered 200 for a scroll it had not asked for. A `deltaY`
+that is not a finite number now answers 400 and the page is not touched, the way the timeout on
+`exec` and the coordinates behind a person's click already did.
 ### An MCP call carrying `x-api-key` is stopped the same as one carrying `api-key`
 
 The check that keeps credentials out of MCP tool arguments compared each argument name against a
