@@ -8,6 +8,16 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A flag or a family emoji in a channel preview is no longer cut in half
+
+The one line a roster draws is cut to a cap, and the cut walked code points -- right for a plain
+emoji, wrong for every emoji built out of more than one. A flag is two regional indicators, a family
+is three people joined by zero-width joiners, a thumbs-up with a skin tone is the thumb plus a
+modifier, and a keycap is a digit plus a variation selector plus an enclosing mark. Landing the cut
+inside any of those left a boxed letter, a dangling joiner or a bare digit in the sidebar, in the
+generated channel title, and in the excerpt the titler is shown. The cut is now taken between
+grapheme clusters, so what a person sees as one character is kept or dropped whole. Plain text is
+cut in exactly the same place as before.
 ### A scroll with an unusable `deltaY` is refused, rather than scrolling some other distance
 
 `POST /computers/:botId/scroll` and `POST /computers/:botId/human/scroll` accepted any JSON number
