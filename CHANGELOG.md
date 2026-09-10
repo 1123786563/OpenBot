@@ -8,6 +8,16 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Double-clicking works while a person is driving a Bot's browser
+
+A double click was sent to the Bot's browser as two separate first clicks, because every press said
+it was the first one. Chrome fires `dblclick` on the page only when the second press says it is the
+second, so the page never saw one at all and `event.detail` was always 1. Opening a row in a table,
+expanding a node in a tree and double-clicking a word to select it were all things a person holding
+the wheel simply could not do, with nothing on screen to say why — the clicks landed, they just each
+counted as the first. The count the person's own browser worked out is now the one that is sent, so a
+double click is a double click and a single one is unchanged.
+
 ### Pressing Enter works while a person is driving a Bot's browser
 
 Taking the wheel of a Bot's browser is mostly for the sign-in it cannot do itself, and Enter is how a
