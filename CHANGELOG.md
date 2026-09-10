@@ -8,6 +8,17 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Test connection stops reading once it has seen the agent answer
+
+The button that checks an agent before it is registered sends it a real run and reads what comes
+back, needing only the opening of the stream to tell an AG-UI agent from a web server that happens to
+be reachable. It was reading the whole reply first and applying that limit afterwards, so the check
+took as long as the agent's run did. An agent that streams for more than fifteen seconds — a Bot
+working through a document, a model answering slowly — was given up on mid-answer and reported as
+`The agent started answering and the connection broke`, about a connection that had not broken and an
+agent that had answered correctly in its first two events. It now reads the opening it needs, closes
+the connection, and answers in the time the agent took to start rather than the time it took to
+finish.
 ### A key pasted with a line break in it is now refused, instead of reported as an unreachable agent
 
 The box that holds an agent's key takes whatever is pasted into it, and what comes off a clipboard is
