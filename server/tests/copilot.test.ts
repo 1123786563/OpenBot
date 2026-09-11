@@ -1,18 +1,26 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { RunAgentInput } from "@ag-ui/client";
 import { HttpAgent } from "@ag-ui/client";
+import { LLMock } from "@copilotkit/aimock";
 import { BuiltInAgent } from "@copilotkit/runtime/v2";
 import { EMPTY } from "rxjs";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
+import { loadConfig } from "../src/config";
 import {
   buildAgents,
   builtInAgentConfiguration,
   createRequestAgents,
+  type LoadInstructions,
   registeredAgentFromRow,
   resolveRuntimeAgents,
+  runtimeModelForEnvironment,
   standingRoleMessage,
 } from "../src/copilot";
 import { grantedToolGuidance } from "../src/plugins/tools";
+import { loadTenantPackage } from "../src/tenant-package";
+import { testEnvironment } from "./support/environment";
 
 // Every agent row now joins its profile, so the row a coworker is built from always names it.
 const assistantRow = {
@@ -29,6 +37,112 @@ const riskRow = {
   title: "Risk & Compliance",
   roleDescription: "Investigate policies and controls.",
 };
+
+type RemoteAgentProbe = {
+  remote?: unknown;
+  run?: unknown;
+  clone?: unknown;
+};
+
+function expectWrappedHttpTransport(agent: unknown): HttpAgent {
+  expect(agent).not.toBeInstanceOf(HttpAgent);
+  expect(agent).toMatchObject({
+    run: expect.any(Function),
+    clone: expect.any(Function),
+  });
+
+  const transport = (agent as RemoteAgentProbe).remote;
+  expect(transport).toBeInstanceOf(HttpAgent);
+  return transport as HttpAgent;
+}
+
+describe("deployment model selection", () => {
+  const packagePath = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../examples/fintech",
+  );
+
+  async function runGeneralAssistantWithEnvironment(
+    environment: Record<string, string | undefined>,
+  ) {
+    const config = loadConfig({ ...testEnvironment(), ...environment });
+    expect(config.runtime.mode).toBe("intelligence");
+    const tenantPackage = await loadTenantPackage(packagePath);
+    const model = runtimeModelForEnvironment(tenantPackage.model, environment);
+    const recorder = new LLMock();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    try {
+      process.env.OPENAI_BASE_URL = await recorder.start();
+      recorder.onMessage(/.*/, {
+        type: "text",
+        content: "DEFAULTMODEL001 fixture completed.",
+      });
+      const agents = await resolveRuntimeAgents(
+        () => [
+          {
+            id: "general-assistant",
+            name: "General Assistant",
+            type: "built_in" as const,
+            systemPrompt: "Be helpful.",
+          },
+        ],
+        model,
+        async () => "synthetic-model-key",
+      );
+      const agent = agents["general-assistant"]?.clone();
+      if (!agent) throw new Error("Expected General Assistant.");
+      agent.addMessage({
+        id: "defaultmodel001-request",
+        role: "user",
+        content: "Complete the fixture request.",
+      });
+      await agent.runAgent();
+      expect(agent.messages.at(-1)).toMatchObject({
+        role: "assistant",
+        content: "DEFAULTMODEL001 fixture completed.",
+      });
+      expect(recorder.getRequests()).toHaveLength(1);
+      return recorder.getRequests()[0]?.body as { model?: unknown };
+    } finally {
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await recorder.stop();
+    }
+  }
+
+  test("desktop-selected BOT_MODEL drives the built-in default agent model", async () => {
+    const request = await runGeneralAssistantWithEnvironment({
+      OPENAI_BASE_URL: "http://127.0.0.1:11434/v1",
+      BOT_MODEL: " selected-local-model ",
+    });
+
+    expect(request.model).toBe("selected-local-model");
+  });
+
+  test("explicit OpenAI provider still uses the OpenAI-compatible selected model", async () => {
+    const request = await runGeneralAssistantWithEnvironment({
+      BOT_PROVIDER: " openai ",
+      OPENAI_BASE_URL: "http://127.0.0.1:11434/v1",
+      BOT_MODEL: " selected-local-model ",
+    });
+
+    expect(request.model).toBe("selected-local-model");
+  });
+
+  test.each([
+    {},
+    { OPENAI_BASE_URL: "http://127.0.0.1:11434/v1", BOT_MODEL: "   " },
+    { BOT_MODEL: "selected-local-model" },
+    { BOT_PROVIDER: "anthropic", BOT_MODEL: "claude-sonnet-4-5" },
+  ])(
+    "package default remains the model without a compatible endpoint selection: %j",
+    async (environment) => {
+      const request = await runGeneralAssistantWithEnvironment(environment);
+
+      expect(request.model).toBe("gpt-5.6-terra");
+    },
+  );
+});
 
 describe("registered Copilot agents", () => {
   test("normalizes built-in and remote rows", () => {
@@ -166,7 +280,7 @@ describe("registered Copilot agents", () => {
     );
 
     expect(agents["general-assistant"]).toBeInstanceOf(BuiltInAgent);
-    expect(agents.risk).toBeInstanceOf(HttpAgent);
+    expectWrappedHttpTransport(agents.risk);
   });
 
   /*
@@ -208,7 +322,7 @@ describe("registered Copilot agents", () => {
     );
 
     expect(watched).toEqual([{ id: "risk", name: "Risk" }]);
-    expect(agents.risk).toBeInstanceOf(HttpAgent);
+    expectWrappedHttpTransport(agents.risk);
   });
 
   /*
@@ -245,9 +359,7 @@ describe("registered Copilot agents", () => {
         dialler,
       )
     ).risk;
-    if (!(plain instanceof HttpAgent))
-      throw new Error("Expected the remote agent");
-    expect(plain.fetch).toBe(dialler);
+    expect(expectWrappedHttpTransport(plain).fetch).toBe(dialler);
 
     // With a timeout configured the watch wraps it, so the guard is handed the dialling fetch rather
     // than replacing it. A deployment gets both, not whichever was wired last.
@@ -272,8 +384,7 @@ describe("registered Copilot agents", () => {
         dialler,
       )
     ).risk;
-    if (!(watched instanceof HttpAgent))
-      throw new Error("Expected the remote agent");
+    expectWrappedHttpTransport(watched);
     expect(handed).toBe(dialler);
   });
 
@@ -308,9 +419,7 @@ describe("registered Copilot agents", () => {
     );
 
     const risk = agents.risk;
-    if (!(risk instanceof HttpAgent))
-      throw new Error("Expected the remote agent");
-    expect(risk.fetch).toBe(dialler);
+    expect(expectWrappedHttpTransport(risk).fetch).toBe(dialler);
   });
 
   /*
@@ -343,12 +452,9 @@ describe("registered Copilot agents", () => {
       })
     ).risk;
     const unguarded = (await buildAgents(registered, model, null)).risk;
-    if (!(guarded instanceof HttpAgent) || !(unguarded instanceof HttpAgent)) {
-      throw new Error("Expected the remote agent");
-    }
 
-    expect(guarded.fetch).toBe(sentinel);
-    expect(unguarded.fetch).not.toBe(sentinel);
+    expect(expectWrappedHttpTransport(guarded).fetch).toBe(sentinel);
+    expect(expectWrappedHttpTransport(unguarded).fetch).not.toBe(sentinel);
   });
 
   test("resolves fresh built-in agents and credentials for every request", async () => {
@@ -407,7 +513,7 @@ describe("registered Copilot agents", () => {
       },
     );
 
-    expect(agents.risk).toBeInstanceOf(HttpAgent);
+    expectWrappedHttpTransport(agents.risk);
     expect(resolverInvoked).toBe(false);
   });
 });
@@ -485,32 +591,62 @@ describe("standing agent roles", () => {
     expect(JSON.stringify(sent?.state ?? {})).not.toContain("standing-role");
   });
 
-  test("resolves a deleted coworker as a tombstone that never reaches its endpoint", async () => {
-    await using endpoint = fakeAgUiEndpoint();
-    const agents = await buildAgents(
-      [
-        {
-          id: "agent_expense",
-          name: "Expense Manager",
-          type: "unavailable",
-          reason: "Expense Manager has been deleted.",
-        },
-      ],
-      { provider: "openai", defaultModel: "gpt-5.6-terra" },
-      null,
-    );
-
+  test("preserves the deleted coworker refusal through runtime clones without network calls", async () => {
+    const reason =
+      "Expense Manager has been deleted and can no longer run. Its conversations remain readable.";
+    let modelKeyRequests = 0;
+    const network = spyOn(globalThis, "fetch").mockImplementation(() => {
+      throw new Error("An unavailable agent must not make network calls");
+    });
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
     try {
-      await expect(agents.agent_expense?.runAgent()).rejects.toThrow(
-        "Expense Manager has been deleted.",
+      const agents = await resolveRuntimeAgents(
+        async () => [
+          {
+            id: "agent_expense",
+            name: "Expense Manager",
+            type: "unavailable",
+            reason,
+          },
+        ],
+        { provider: "openai", defaultModel: "gpt-5.6-terra" },
+        async () => {
+          modelKeyRequests += 1;
+          return null;
+        },
       );
+
+      const original = agents.agent_expense;
+      // The runtime calls agents[agentId].clone() before each run.
+      const cloned = original.clone();
+      const clonedAgain = cloned.clone();
+      expect(cloned).not.toBe(original);
+      expect(clonedAgain).not.toBe(cloned);
+      for (const agent of [original, cloned, clonedAgain]) {
+        expect(agent.agentId).toBe("agent_expense");
+        expect(agent.description).toBe("Expense Manager");
+        const events: string[] = [];
+        await expect(
+          agent.runAgent(
+            { threadId: "deleted-bot-history", runId: "refused-run" },
+            {
+              onEvent: () => {
+                events.push("event");
+              },
+              onRunError: () => {
+                events.push("error");
+              },
+            },
+          ),
+        ).rejects.toMatchObject({ message: reason });
+        expect(events).toEqual([]);
+      }
+      expect(modelKeyRequests).toBe(0);
+      expect(network).not.toHaveBeenCalled();
     } finally {
       consoleError.mockRestore();
+      network.mockRestore();
     }
-    // A tombstone exists so Intelligence can restore the thread, not so it can run.
-    expect(agents.agent_expense).toBeDefined();
-    expect(endpoint.requests).toEqual([]);
   });
 
   test("resolves agents per request from the requesting actor", async () => {
@@ -533,7 +669,7 @@ describe("standing agent roles", () => {
 
     expect(seen.request).toBe(request);
     expect(seen.actors).toEqual([{ id: "user-7", role: "user" }]);
-    expect(resolved.agent_expense).toBeInstanceOf(HttpAgent);
+    expectWrappedHttpTransport(resolved.agent_expense);
   });
 
   test("rebuilds each agent from the loader so an edited role applies to the next run", async () => {
@@ -581,6 +717,76 @@ describe("standing agent roles", () => {
 function userMessage(content: string) {
   return { id: `user-${content}`, role: "user" as const, content };
 }
+
+describe("connected-vendor lookup diagnostics", () => {
+  async function runWithVendors(loadVendors: () => Promise<readonly string[]>) {
+    await using endpoint = fakeAgUiEndpoint();
+    const agents = await buildAgents(
+      [
+        { ...assistantRow, type: "built_in", systemPrompt: "Be helpful." },
+        {
+          ...riskRow,
+          endpoint: endpoint.url,
+          standingMessage: standingRoleMessage(riskRow),
+        },
+      ],
+      { provider: "openai", defaultModel: "gpt-5.6-terra" },
+      "synthetic-model-key",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      loadVendors,
+    );
+    expect(agents["general-assistant"]).toBeInstanceOf(BuiltInAgent);
+    const remote = agents.risk;
+    if (!remote) throw new Error("Fixture remote agent was not built.");
+    await remote.clone().runAgent();
+    expect(endpoint.requests).toHaveLength(1);
+    expect(endpoint.requests[0]).toMatchObject({ tools: [] });
+    return JSON.stringify(endpoint.requests[0]);
+  }
+
+  test("reports a failed lookup once for the roster and still completes the run", async () => {
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await runWithVendors(async () => {
+        throw new Error(
+          "postgres://fixture:secret@localhost/fixture private prompt",
+        );
+      });
+      expect(diagnostic).toHaveBeenCalledTimes(1);
+      expect(diagnostic).toHaveBeenCalledWith({
+        error: "connected_vendor_lookup_failed",
+        context: { operation: "loadVendors", agentCount: 2 },
+        timestamp: expect.any(String),
+      });
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(
+        "private prompt",
+      );
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  test.each([[], ["google-drive"]])(
+    "a successful vendor lookup stays quiet: %j",
+    async (...vendors: string[]) => {
+      const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const sent = await runWithVendors(async () => vendors);
+        expect(sent.includes("This deployment also connects to:")).toBe(
+          vendors.length > 0,
+        );
+        if (vendors.length > 0) expect(sent).toContain("google-drive");
+        expect(diagnostic).not.toHaveBeenCalled();
+      } finally {
+        diagnostic.mockRestore();
+      }
+    },
+  );
+});
 
 /**
  * An AG-UI server that records what it was sent and answers with a complete run, so the standing
@@ -956,26 +1162,156 @@ describe("a person's standing instructions", () => {
     expect(content).not.toContain("standing instructions that apply");
   });
 
-  test("costs a paragraph rather than a run when it cannot be read", async () => {
-    const agents = await buildAgents(
-      [assistant],
-      model,
-      "openai-secret",
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      async () => {
-        throw new Error("The database is unreachable.");
-      },
-    );
+  async function runWithInstructions(loadInstructions: LoadInstructions) {
+    const recorder = new LLMock();
+    await using endpoint = fakeAgUiEndpoint();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    try {
+      process.env.OPENAI_BASE_URL = await recorder.start();
+      recorder.onMessage(/.*/, { type: "text", content: "Fixture completed." });
+      const agents = await buildAgents(
+        [
+          assistant,
+          { ...assistant, id: "second-assistant", name: "Second Assistant" },
+          {
+            ...riskRow,
+            endpoint: endpoint.url,
+            standingMessage: standingRoleMessage(riskRow),
+          },
+        ],
+        model,
+        "synthetic-model-key",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        loadInstructions,
+      );
+      const builtIn = agents[assistant.id]?.clone();
+      const remote = agents.risk?.clone();
+      if (!builtIn || !remote) throw new Error("Expected the fixture roster.");
+      builtIn.addMessage({
+        id: "fixture-request",
+        role: "user",
+        content: "Complete the fixture request.",
+      });
+      await builtIn.runAgent();
+      await remote.runAgent();
+      expect(builtIn.messages.at(-1)).toMatchObject({
+        role: "assistant",
+        content: "Fixture completed.",
+      });
+      expect(recorder.getRequests()).toHaveLength(1);
+      expect(endpoint.requests).toHaveLength(1);
+      return {
+        modelRequest: JSON.stringify(recorder.getRequests()[0]?.body),
+        remoteRequest: JSON.stringify(endpoint.requests[0]),
+      };
+    } finally {
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await recorder.stop();
+    }
+  }
 
-    // The Bot is still built and still answers. A preferences row is not worth a conversation.
-    expect(agents["general-assistant"]).toBeInstanceOf(BuiltInAgent);
+  test("reports a failed instruction read once and still completes a built-in run", async () => {
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    let reads = 0;
+    try {
+      const sent = await runWithInstructions(async () => {
+        reads += 1;
+        throw new Error(
+          "postgres://fixture:synthetic-secret@localhost/fixture private instruction",
+        );
+      });
+      expect(reads).toBe(1);
+      expect(sent.modelRequest).not.toContain("standing instructions");
+      expect(diagnostic).toHaveBeenCalledTimes(1);
+      expect(diagnostic).toHaveBeenCalledWith({
+        error: "standing_instruction_read_failed",
+        context: { operation: "loadInstructions", agentCount: 3 },
+        timestamp: expect.any(String),
+      });
+      const logs = JSON.stringify(diagnostic.mock.calls);
+      for (const sensitive of [
+        "postgres://",
+        "synthetic-secret",
+        "private instruction",
+        "synthetic-model-key",
+      ]) {
+        expect(logs).not.toContain(sensitive);
+        expect(sent.remoteRequest).not.toContain(sensitive);
+      }
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  test.each([null, "Write in British English."])(
+    "a successful instruction read stays quiet and private: %j",
+    async (instructions) => {
+      const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+      let reads = 0;
+      try {
+        const sent = await runWithInstructions(async () => {
+          reads += 1;
+          return instructions;
+        });
+        expect(reads).toBe(1);
+        expect(sent.modelRequest.includes("standing instructions")).toBe(
+          instructions !== null,
+        );
+        if (instructions) expect(sent.modelRequest).toContain(instructions);
+        expect(sent.remoteRequest).not.toContain("standing instructions");
+        expect(sent.remoteRequest).not.toContain("Write in British English.");
+        expect(diagnostic).not.toHaveBeenCalled();
+      } finally {
+        diagnostic.mockRestore();
+      }
+    },
+  );
+
+  test("a remote-only roster never reads or diagnoses personal instructions", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    let reads = 0;
+    try {
+      const agents = await buildAgents(
+        [
+          {
+            ...riskRow,
+            endpoint: endpoint.url,
+            standingMessage: standingRoleMessage(riskRow),
+          },
+        ],
+        model,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          reads += 1;
+          throw new Error("Private instructions must never be read here.");
+        },
+      );
+      const remote = agents.risk;
+      if (!remote) throw new Error("Expected the fixture remote agent.");
+      await remote.runAgent();
+      expect(endpoint.requests).toHaveLength(1);
+      expect(reads).toBe(0);
+      expect(diagnostic).not.toHaveBeenCalled();
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 
   test("is resolved for whoever the request turned out to be", async () => {

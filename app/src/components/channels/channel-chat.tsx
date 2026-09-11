@@ -46,6 +46,86 @@ const JOIN_DEADLINE_MS = 1500;
  */
 const SEND_WITHOUT_RUNTIME_AFTER_MS = 1500;
 
+type ChannelActivitySignature = {
+  agentId: string;
+  at: string;
+  text: string;
+};
+
+function sameActivity(
+  left: ChannelActivitySignature | null,
+  right: ChannelActivitySignature | null,
+): boolean {
+  return (
+    left !== null &&
+    right !== null &&
+    left.agentId === right.agentId &&
+    left.at === right.at &&
+    left.text === right.text
+  );
+}
+
+export function channelHistoryNotice({
+  restoring,
+  messageCount,
+  lastMessageAt,
+  historyAvailability,
+  historyReadFailed = false,
+  unreadable,
+}: {
+  restoring: boolean;
+  messageCount: number;
+  lastMessageAt: string | null;
+  historyAvailability: "ready" | "unavailable";
+  historyReadFailed?: boolean;
+  unreadable: number;
+}): string | null {
+  if (restoring) return null;
+
+  if (
+    historyAvailability === "unavailable" &&
+    (historyReadFailed || (messageCount === 0 && lastMessageAt !== null))
+  ) {
+    return "Earlier messages are temporarily unavailable. You can keep using this conversation.";
+  }
+
+  if (unreadable > 0) {
+    return unreadable === 1
+      ? "One earlier message could not be read and is not shown. The rest of this conversation is complete."
+      : `${unreadable} earlier messages could not be read and are not shown. The rest of this conversation is complete.`;
+  }
+
+  return null;
+}
+
+/**
+ * Insert missing durable messages before their next shared ID, keeping local content and order.
+ * A shorter read can still contain missing turns after unreadable rows are filtered out. Without a
+ * following shared anchor, append the missing tail: the store cannot place it among local-only rows.
+ * Return the original array when nothing was added so refreshes can wait for the store to catch up.
+ */
+function mergeStoredMessages(local: Message[], stored: Message[]): Message[] {
+  const localIds = new Set(local.map((message) => message.id));
+  const seenStored = new Set<string>();
+  const before = new Map<string, Message[]>();
+  let pending: Message[] = [];
+  for (const message of stored) {
+    if (seenStored.has(message.id)) continue;
+    seenStored.add(message.id);
+    if (localIds.has(message.id)) {
+      if (pending.length > 0) before.set(message.id, pending);
+      pending = [];
+    } else {
+      pending.push(message);
+    }
+  }
+  if (before.size === 0 && pending.length === 0) return local;
+  return [
+    ...local.flatMap((message) => [...(before.get(message.id) ?? []), message]),
+    ...pending,
+  ];
+}
+
 /**
  * One channel's conversation with one coworker.
  *
@@ -131,6 +211,12 @@ export function ChannelChat({
    * recoverable from it.
    */
   const [unreadable, setUnreadable] = useState(0);
+  const [historyAvailability, setHistoryAvailability] = useState<
+    "ready" | "unavailable"
+  >("ready");
+  const [historyReadFailed, setHistoryReadFailed] = useState(false);
+  // Mount reads and Bot refreshes share one ordering: only the newest read owns the notice.
+  const historyReadVersion = useRef(0);
   useEffect(() => {
     if (isReady) openReadyGate.current();
   }, [isReady]);
@@ -139,6 +225,7 @@ export function ChannelChat({
   useEffect(() => {
     if (!isReady) return;
     let current = true;
+    const version = ++historyReadVersion.current;
 
     void (async () => {
       try {
@@ -161,27 +248,12 @@ export function ChannelChat({
           channel.threadId,
           runtimeAgentId,
         );
-        /*
-         * The durable store wins when it is ahead of what the join delivered.
-         *
-         * The join replaces the agent's messages with the realtime gateway's snapshot of the thread,
-         * and that snapshot can lag the store: a turn that finished, was persisted and answered in
-         * full came back from the join without its last exchange, on every reload, with no
-         * unreadable count to explain the gap. Restoring only into an empty agent kept that stale
-         * snapshot for good.
-         *
-         * So the store is applied when it holds more than the agent does AND everything the agent
-         * holds is in the store. The second half is the guard this replaced: a message typed while
-         * history was loading is not in the store yet, so it is never overwritten, and a run still
-         * streaming has messages the store has not seen, so its snapshot is never rolled back.
-         */
-        const local = agent.messages;
-        const storedIds = new Set(stored.messages.map((m) => m.id));
-        const storeIsAhead =
-          stored.messages.length > local.length &&
-          local.every((m) => storedIds.has(m.id));
-        if (current && stored.messages.length > 0 && storeIsAhead) {
-          agent.setMessages(stored.messages);
+        const isCurrent = current && version === historyReadVersion.current;
+        if (isCurrent) {
+          // The gateway snapshot can lag the store. Keep its valid local rows even when the
+          // corresponding stored row is unreadable, while restoring other readable additions.
+          const messages = mergeStoredMessages(agent.messages, stored.messages);
+          if (messages !== agent.messages) agent.setMessages(messages);
         }
         /*
          * Said on screen rather than only counted. A turn the history store holds and this app cannot
@@ -189,7 +261,12 @@ export function ChannelChat({
          * it that nothing accounts for. Set even when nothing was restored: a thread whose every turn
          * is unreadable is exactly the case where silence would read as "this conversation is empty".
          */
-        if (current) setUnreadable(stored.unreadable);
+        if (isCurrent) {
+          setUnreadable(stored.unreadable);
+          setHistoryAvailability(stored.availability);
+          // A gateway snapshot may be partial; neither it nor a later send proves this read succeeded.
+          setHistoryReadFailed(stored.availability === "unavailable");
+        }
       } finally {
         // Cleared on failure too: placeholders over an empty transcript promise messages that are
         // never coming.
@@ -215,18 +292,14 @@ export function ChannelChat({
    * than a second subscription means "the sidebar updated" and "the transcript refreshes" are the
    * one signal, and cannot drift apart.
    *
-   * APPENDED BY ID, NOT COMPARED BY LENGTH. The stored history is not the local transcript: it
-   * keeps only what `readableTurns` can parse, and the local side keeps tool lines the platform
-   * does not hand back — so after a headless turn the stored read can be shorter than the screen
-   * and still hold the news. What is new is exactly the messages whose ids this transcript has
-   * never seen; appending them leaves everything local intact, and this tab's own turns echo back
-   * with ids already on screen and append nothing.
+   * The same merge as mount places a recovered durable prefix before its shared local anchors,
+   * preserving current content and local-only messages in both the transcript and the next run.
    *
    * Retried briefly, because the roster is patched when the turn is on record with the runner and
    * the platform's read of the thread can be a beat behind it.
    */
   useEffect(() => {
-    const authoredAt = () => {
+    const authoredActivity = (): ChannelActivitySignature | null => {
       const cache = queryClient.getQueryData<{
         pages: { channels: ChannelSummary[] }[];
       }>(channelKeys.list());
@@ -234,51 +307,108 @@ export function ChannelChat({
         .flatMap((page) => page.channels)
         .find((row) => row.id === channel.id);
       // Only a Bot's turn is news here; a person's own line arrives through the run that sent it.
-      if (!summary || summary.lastMessageAgentId === null) return null;
-      return summary.lastMessageAt;
+      if (
+        !summary ||
+        summary.lastMessageAgentId === null ||
+        summary.lastMessageAt === null ||
+        summary.lastMessage === null
+      ) {
+        return null;
+      }
+      return {
+        agentId: summary.lastMessageAgentId,
+        at: summary.lastMessageAt,
+        text: summary.lastMessage,
+      };
     };
 
-    let lastSeen = authoredAt();
+    const initialActivity = authoredActivity();
+    let lastSeen = initialActivity;
+    let cancelled = false;
 
     const pull = () => {
+      const version = ++historyReadVersion.current;
+      const isCurrent = () =>
+        !cancelled && version === historyReadVersion.current;
       void (async () => {
+        let sawReady = false;
         for (const delayMs of [0, 750, 1500]) {
           if (delayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
+          if (!isCurrent()) return;
           const stored = await readThreadMessages(
             channel.threadId,
             runtimeAgentId,
           );
+          if (!isCurrent()) return;
+          if (stored.availability === "unavailable") {
+            // Only an exhausted refresh with no successful read is a failure to announce. Keep the
+            // last known ready notice when the store already answered this refresh cycle.
+            if (delayMs === 1500 && !sawReady) {
+              setHistoryAvailability("unavailable");
+              setHistoryReadFailed(true);
+            }
+            continue;
+          }
+          sawReady = true;
+          // A ready read owns the notice even when every readable id is already on screen.
+          setUnreadable(stored.unreadable);
+          setHistoryAvailability("ready");
+          setHistoryReadFailed(false);
           const current = agentRef.current;
-          const seen = new Set(current.messages.map((message) => message.id));
-          const fresh = stored.messages.filter(
-            (message) => !seen.has(message.id),
+          const messages = mergeStoredMessages(
+            current.messages,
+            stored.messages,
           );
-          if (fresh.length === 0) continue;
-          current.setMessages([...current.messages, ...fresh]);
+          if (messages === current.messages) continue;
+          current.setMessages(messages);
           return;
         }
       })();
     };
 
-    return queryClient.getQueryCache().subscribe(() => {
-      const at = authoredAt();
-      if (at && at !== lastSeen) {
-        lastSeen = at;
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      const activity = authoredActivity();
+      if (activity && !sameActivity(activity, lastSeen)) {
+        lastSeen = activity;
+        if (sameActivity(selfReportedBotActivity.current, activity)) return;
         pull();
       }
     });
-  }, [channel.id, channel.threadId, runtimeAgentId]);
+    void (async () => {
+      await joinGatePromise;
+      if (
+        !cancelled &&
+        initialActivity &&
+        !sameActivity(selfReportedBotActivity.current, initialActivity)
+      ) {
+        pull();
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [channel.id, channel.threadId, joinGatePromise, runtimeAgentId]);
 
   // Tool calls from this conversation act on this coworker's own computer.
   useActiveBot(runtimeAgentId);
 
   const skillCommands = useSkillCommands(runtimeAgentId);
+  const historyNotice = channelHistoryNotice({
+    restoring,
+    messageCount: agent.messages.length,
+    lastMessageAt: channel.lastMessageAt,
+    historyAvailability,
+    historyReadFailed,
+    unreadable,
+  });
 
   // Run failures arrive as events and are reported only for turns started in this mount.
   const [runError, setRunError] = useState<string | null>(null);
   const awaitingReply = useRef(false);
+  const assistantMessagesBeforeRun = useRef<Set<string>>(new Set());
 
   /*
    * TWO DIFFERENT FACTS ABOUT ONE TURN, AND NEITHER OF THEM IS `agent.isRunning`.
@@ -313,13 +443,18 @@ export function ChannelChat({
    * Tell the roster what was just said. Failures here must not block the conversation.
    */
   const recordActivity = useMutation(recordChannelActivityMutationOptions());
+  const selfReportedBotActivity = useRef<ChannelActivitySignature | null>(null);
 
   const report = (text: string, agentId: string | null) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    const at = new Date().toISOString();
+    if (agentId !== null) {
+      selfReportedBotActivity.current = { agentId, at, text: trimmed };
+    }
     recordActivity.mutate({
       agentId,
-      at: new Date().toISOString(),
+      at,
       channelId: channel.id,
       text: trimmed,
     });
@@ -355,6 +490,11 @@ export function ChannelChat({
     const target = agentRef.current;
 
     setRunError(null);
+    assistantMessagesBeforeRun.current = new Set(
+      target.messages
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.id),
+    );
     awaitingReply.current = true;
 
     /*
@@ -446,7 +586,11 @@ export function ChannelChat({
 
         const reply = [...agent.messages]
           .reverse()
-          .find((message) => message.role === "assistant");
+          .find(
+            (message) =>
+              message.role === "assistant" &&
+              !assistantMessagesBeforeRun.current.has(message.id),
+          );
         const content = typeof reply?.content === "string" ? reply.content : "";
         if (content) reportRef.current(content, runtimeAgentId);
       },
@@ -502,12 +646,9 @@ export function ChannelChat({
            * it — and they are independent, so neither is an `else` for the other.
            */
           <>
-            {unreadable > 0 ? (
+            {historyNotice ? (
               <p className="pb-2 text-sm text-muted-foreground" role="status">
-                {unreadable === 1
-                  ? "One earlier message could not be read and is not shown."
-                  : `${unreadable} earlier messages could not be read and are not shown.`}{" "}
-                The rest of this conversation is complete.
+                {historyNotice}
               </p>
             ) : null}
             {channel.active ? null : (

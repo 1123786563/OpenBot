@@ -8,15 +8,15 @@ import {
 } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import type { Observable } from "rxjs";
-import { defer, from, switchMap } from "rxjs";
+import { defer, finalize, from, fromEvent, switchMap, takeUntil } from "rxjs";
 import { z } from "zod";
 import {
   COMPUTER_GUIDANCE,
   PROVENANCE_GUIDANCE,
 } from "../../shared/bot-prompt";
 import { sanitizeSeededHistory } from "./agents/history-sanitize";
-import type { AuditInitiator } from "./audit";
 import type { AgentActor } from "./agents/profile-types";
+import type { AuditInitiator } from "./audit";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
 import type { SelectableSkill, Selection } from "./plugins/selection";
@@ -54,15 +54,31 @@ type RegisteredBuiltInAgent = {
   systemPrompt: string;
 };
 
-type RegisteredRemoteAgent = {
+type RegisteredRemoteAgentFacts = {
   id: string;
   name: string;
-  type: "remote_ag_ui";
   endpoint: string;
+  /** Which agent on the endpoint, for a server that serves a roster. See `remoteTransport`. */
+  remoteAgentId?: string;
   standingMessage: StandingRoleMessage;
   /** The key this agent sits behind, resolved from the vault at load time. Never logged. */
   headers?: Record<string, string>;
 };
+
+/**
+ * A Bot at somebody else's endpoint, in the two ways this deployment knows how to dial one.
+ *
+ * The kinds differ in transport and in nothing else: the difference ends at `remoteTransport`, which
+ * returns an `AbstractAgent` either way, and every control after that is written against that
+ * interface. What is deliberate here is the SHAPE. This is a union of two single-literal variants
+ * rather than one type whose `type` is `"remote_ag_ui" | "remote_mastra"`, because TypeScript will
+ * not eliminate a union member whose discriminant is itself a union: excluding both literals narrows
+ * the property and keeps the member, so the built-in path below would silently stop being narrowed
+ * to a built-in Bot. Verified against tsc 5.x; collapsing these two back into one costs that.
+ */
+type RegisteredRemoteAgent =
+  | (RegisteredRemoteAgentFacts & { type: "remote_ag_ui" })
+  | (RegisteredRemoteAgentFacts & { type: "remote_mastra" });
 
 /**
  * A coworker the caller may see but may not run: its profile was deleted while a channel it worked
@@ -83,7 +99,10 @@ export type RegisteredAgent =
 
 type AgentRunInput = Parameters<AbstractAgent["run"]>[0];
 type AgentMessage = AgentRunInput["messages"][number];
+type AgentContext = NonNullable<AgentRunInput["context"]>[number];
 export type StandingRoleMessage = Extract<AgentMessage, { role: "system" }>;
+type AgentHeaders = Record<string, string>;
+type HeaderBearingAgent = AbstractAgent & { headers?: AgentHeaders };
 
 /** The durable part of a coworker: who it is and what its standing job is. */
 export type AgentStandingProfile = {
@@ -128,10 +147,28 @@ export type RuntimeModel = {
   defaultModel: string;
 };
 
+export function runtimeModelForEnvironment(
+  packageModel: RuntimeModel,
+  environment: Record<string, string | undefined> = process.env,
+): RuntimeModel {
+  const selectedModel = environment.BOT_MODEL?.trim();
+  const selectedProvider = environment.BOT_PROVIDER?.trim().toLowerCase();
+  const compatibleEndpoint =
+    (!selectedProvider || selectedProvider === "openai") &&
+    !!environment.OPENAI_BASE_URL?.trim();
+  return {
+    provider: packageModel.provider,
+    defaultModel:
+      compatibleEndpoint && selectedModel
+        ? selectedModel
+        : packageModel.defaultModel,
+  };
+}
+
 type RuntimeAgentRow = {
   id: string;
   name: string;
-  type: "built_in" | "remote_ag_ui";
+  type: "built_in" | "remote_ag_ui" | "remote_mastra";
   configuration: unknown;
   title: string;
   roleDescription: string;
@@ -159,12 +196,23 @@ export function registeredAgentFromRow(
   }
 
   const endpoint = configuration?.endpoint;
+  /*
+   * Which agent on that endpoint, when the endpoint serves more than one.
+   *
+   * Mastra servers are rosters rather than single agents, so a Bot row has to say which one it is.
+   * Absent falls back to this Bot's own id and then, on a single-agent server, to the only one
+   * there: see `remoteTransport`.
+   */
+  const remoteAgentId = configuration?.remoteAgentId;
   return typeof endpoint === "string" && isHttpUrl(endpoint)
     ? {
         id: row.id,
         name: row.name,
-        type: "remote_ag_ui",
+        type: row.type === "remote_mastra" ? "remote_mastra" : "remote_ag_ui",
         endpoint,
+        ...(typeof remoteAgentId === "string" && remoteAgentId.length > 0
+          ? { remoteAgentId }
+          : {}),
         standingMessage: standingRoleMessage(row),
       }
     : null;
@@ -364,19 +412,41 @@ export async function buildAgents(
   loadInstructions?: LoadInstructions,
   initiator?: AuditInitiator,
 ): Promise<Record<string, AbstractAgent>> {
-  const vendors = await loadVendors().catch(() => [] as readonly string[]);
+  let vendors: readonly string[] = [];
+  try {
+    vendors = await loadVendors();
+  } catch {
+    // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
+    // Report once per build here, including failures from the production plugin-store loader.
+    // Never log the thrown value: database errors can contain connection details or row contents.
+    console.error({
+      error: "connected_vendor_lookup_failed",
+      context: { operation: "loadVendors", agentCount: agents.length },
+      timestamp: new Date().toISOString(),
+    });
+  }
   /*
    * Read once per build and only when somebody will be told it, like the vendors above and the model
    * key below: it is a fact about the person, not about a coworker, and asking per Bot would be the
    * same row fetched once for each of them. Skipped entirely when nothing built-in is being built,
    * because the remote path does not carry this at all.
    *
-   * Failure is silence. A coworker that could not be told loses a paragraph; one that refused to
-   * start would lose the conversation, and a preferences row is not worth a run.
+   * A failed read costs a paragraph, not a conversation. Report it once per build so operators can
+   * distinguish a failed read from a person who has written no instructions.
    */
-  const instructions = agents.some((agent) => agent.type === "built_in")
-    ? await loadInstructions?.().catch(() => null)
-    : null;
+  let instructions: string | null = null;
+  if (agents.some((agent) => agent.type === "built_in")) {
+    try {
+      instructions = (await loadInstructions?.()) ?? null;
+    } catch {
+      // Never log the thrown value: database errors can expose instructions or credentials.
+      console.error({
+        error: "standing_instruction_read_failed",
+        context: { operation: "loadInstructions", agentCount: agents.length },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
   return Object.fromEntries(
     await Promise.all(
       agents.map(async (agent) => [
@@ -440,9 +510,19 @@ async function buildAgent(
    * of this existed: no deferral, no per-run model call, nothing to go wrong. That is most
    * deployments on their first day, and they should not pay for a feature they are not using.
    */
-  const skills = selection
-    ? await selection.loadSkills(agent.id).catch(() => [])
-    : [];
+  let skills: SelectableSkill[] = [];
+  if (selection) {
+    try {
+      skills = await selection.loadSkills(agent.id);
+    } catch {
+      // Never log the thrown value: database errors can contain connection details or row contents.
+      console.error({
+        error: "tool_selection_skill_read_failed",
+        context: { operation: "loadSkills", agentId: agent.id },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
   const narrowing =
     selection &&
     skills.some((skill) => skill.tools.length > 0) &&
@@ -450,23 +530,45 @@ async function buildAgent(
       ? selection
       : undefined;
 
+  const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
+    console.error({
+      error: "tool_selection_record_failed",
+      context: {
+        operation: "record",
+        agentId: agent.id,
+        reason: chosen.reason,
+        granted: chosen.granted,
+        offered: chosen.offered.length,
+        skills: chosen.skills,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  };
+
   /** Pass one and pass two, for one run. Shared by both agent kinds; each applies it differently. */
-  const offeredFor = async (input: RunAgentInput): Promise<GrantedTool[]> => {
+  const offeredFor = async (
+    input: RunAgentInput,
+    signal?: AbortSignal,
+  ): Promise<GrantedTool[]> => {
     if (!narrowing) return granted;
     const chosen = await selectTools({
       tools: granted,
       skills,
       text: latestUserText(input.messages),
       choose: narrowing.choose,
+      signal,
       ...(narrowing.floor === undefined ? {} : { floor: narrowing.floor }),
     });
+    signal?.throwIfAborted();
     // Awaited, so the row is on record before the model is handed the tools it names. A discovery
     // written afterwards would sit in the trail after the calls it explains.
-    await narrowing.record?.(agent.id, chosen).catch(() => {});
+    await narrowing.record?.(agent.id, chosen).catch(() => {
+      diagnoseRecordFailure(chosen);
+    });
     return chosen.offered;
   };
 
-  if (agent.type === "remote_ag_ui") {
+  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
     /*
      * The remote path narrows inside its own middleware rather than by being wrapped.
      *
@@ -493,13 +595,11 @@ async function buildAgent(
      */
     return remoteAgentWithStandingRole(
       agent,
-      stallGuard,
+      await remoteTransport(agent, stallGuard, agentFetch, initiator),
       granted,
       signRun,
       connectedVendors,
       narrowing ? offeredFor : undefined,
-      agentFetch,
-      initiator,
     );
   }
 
@@ -527,8 +627,9 @@ async function buildAgent(
   return new RunBuiltAgent(
     { agentId: agent.id, description: agent.name },
     whole,
-    async (input) => {
-      const offered = narrowing ? await offeredFor(input) : granted;
+    async (input, signal) => {
+      const offered = narrowing ? await offeredFor(input, signal) : granted;
+      signal.throwIfAborted();
       /*
        * The tool for handing work to another Bot is made per run, not per request.
        *
@@ -538,6 +639,7 @@ async function buildAgent(
        * than a run and knows neither.
        */
       const passing = (await handoff?.(agent.id, input)) ?? [];
+      signal.throwIfAborted();
       const tools = passing.length > 0 ? [...offered, ...passing] : offered;
       // Nothing added and nothing narrowed means nothing to rebuild, and reusing the agent already
       // built for this request keeps that path allocation-for-allocation what it was.
@@ -574,10 +676,10 @@ export type HandoffForRun = (
  * are allowed to throw.
  */
 export type ToolSelection = {
-  /** What this Bot's granted skills declare. Failure is treated as "no skills". */
+  /** What this Bot's granted skills declare. Failure is diagnosed and treated as "no skills". */
   loadSkills: (botId: string) => Promise<SelectableSkill[]>;
-  /** Pass one. Returns the model's raw answer; throwing means the narrowing is skipped. */
-  choose: (prompt: string) => Promise<string | null>;
+  /** Pass one. Ordinary failures skip narrowing; cancellation stops the run. */
+  choose: (prompt: string, signal?: AbortSignal) => Promise<string | null>;
   /** Writes the discovery row. Never allowed to fail a run. */
   record?: (botId: string, selection: Selection<GrantedTool>) => Promise<void>;
   /** Overrides the default catalogue size below which nothing is narrowed. */
@@ -592,13 +694,142 @@ export type ToolSelection = {
  * message already in the conversation is dropped: the endpoint must receive exactly one, first,
  * however many times the thread has been replayed.
  *
- * The stall watch goes on the fetch rather than into that middleware, because the middleware works
- * in AG-UI events and a stall is the absence of one. The thing that has to be watched is the
+ * The stall watch is not here but in {@link remoteTransport}, on the fetch: this middleware works in
+ * AG-UI events and a stall is the absence of one, so the thing that has to be watched is the
  * response body, and the fetch is where this deployment still holds it.
  */
-function remoteAgentWithStandingRole(
+/** The client `@ag-ui/mastra` asks for, taken from its own signature. See `remoteTransport`. */
+type MastraClientForBridge = Parameters<
+  typeof import("@ag-ui/mastra").getRemoteAgents
+>[0]["mastraClient"];
+
+/**
+ * How this deployment dials a remote Bot's endpoint.
+ *
+ * Both kinds come back as an `AbstractAgent`, which is the whole point of putting them here. Every
+ * control the wrapper below adds — the standing role, the holdings message, the offered tools, the
+ * signed run assertion — is written against that interface, so a Mastra Bot is governed by exactly
+ * the same code as an AG-UI one and cannot skip a control by being a different kind. A second
+ * wrapper per transport is how that stops being true, silently, three months later.
+ *
+ * Mastra is reached through `@ag-ui/mastra`, the bridge Mastra and AG-UI maintain between them,
+ * rather than through anything written here. A Mastra server speaks its own client protocol, and the
+ * mapping from that protocol to AG-UI events belongs to the people who change both ends of it.
+ * Imported dynamically so a deployment that registers no Mastra Bot never loads it.
+ */
+async function remoteTransport(
   agent: RegisteredRemoteAgent,
   stallGuard: StallGuard | undefined,
+  agentFetch?: AgentFetch,
+  /** Who or what started this run, so a stall is reported against them rather than nobody. */
+  initiator?: AuditInitiator,
+): Promise<AbstractAgent> {
+  // The watch wraps whichever fetch is underneath, so a deployment gets both the stall timeout and
+  // the redirect check rather than having to choose.
+  const dial = stallGuard
+    ? stallGuard.watch(
+        { id: agent.id, name: agent.name, ...(initiator ? { initiator } : {}) },
+        agentFetch,
+      )
+    : agentFetch;
+
+  if (agent.type === "remote_ag_ui") {
+    return new HttpAgent({
+      url: agent.endpoint,
+      agentId: agent.id,
+      // The customer's own key, if their agent sits behind one. `HttpAgentConfig` is
+      // `{ url, headers?, fetch? }`, verified against @ag-ui/client 0.0.57.
+      ...(agent.headers ? { headers: agent.headers } : {}),
+      ...(dial ? { fetch: dial } : {}),
+    });
+  }
+
+  const [{ MastraClient }, { getRemoteAgents }] = await Promise.all([
+    import("@mastra/client-js"),
+    import("@ag-ui/mastra"),
+  ]);
+
+  const client = new MastraClient({
+    baseUrl: agent.endpoint,
+    ...(agent.headers ? { headers: agent.headers } : {}),
+    // `MastraClient` types this as the global `fetch`, which carries `preconnect`; the watched fetch
+    // is a call signature only, and is never used as anything but a fetch.
+    ...(dial ? { fetch: dial as unknown as typeof fetch } : {}),
+  });
+
+  const roster = await getRemoteAgents({
+    /*
+     * The same class, twice, under two names.
+     *
+     * This server runs zod 4 and `@ag-ui/mastra` depends on zod 3, so the package manager resolves
+     * two peer variants of `@mastra/client-js` — identical code at identical version 1.43.0, but
+     * two nominal types to TypeScript, which tells them apart by a private field. The cast crosses
+     * that and nothing else. It is deliberately written against the bridge's own parameter type, so
+     * the day the two versions really do diverge this stops compiling instead of lying.
+     *
+     * The alternative, forcing zod 4 onto `@ag-ui/mastra` with an override, makes the type error go
+     * away by risking a real one at runtime in somebody else's package. Not worth it for a private
+     * field.
+     */
+    mastraClient: client as unknown as MastraClientForBridge,
+    /*
+     * Mastra scopes its memory by `resourceId`, and this deployment hands it the Bot rather than the
+     * person deliberately. History here is ours: it is restored from Intelligence and sanitised
+     * before every run, so nothing depends on the endpoint remembering anything. Sending the
+     * person's identity would put it on a server this deployment does not run, to drive a feature it
+     * does not use, which is the same reason standing instructions stop at the built-in path.
+     */
+    resourceId: agent.id,
+  });
+
+  const picked = pickFromRoster(Object.keys(roster), agent);
+  return roster[picked] as AbstractAgent;
+}
+
+/**
+ * Which agent on a Mastra server a Bot means.
+ *
+ * Pure and separate from the dialling so it can be tested without a server, because the failure it
+ * prevents is not one a live test would show: picking the wrong agent produces a Bot that answers
+ * confidently as somebody else, which reads as a bad model rather than as the misconfiguration it
+ * is. Throws rather than guessing, and names what the endpoint does serve, because that is the one
+ * fact whoever is reading the error does not have.
+ */
+export function pickFromRoster(
+  served: readonly string[],
+  agent: { id: string; remoteAgentId?: string },
+): string {
+  const wanted = agent.remoteAgentId ?? agent.id;
+  if (served.includes(wanted)) {
+    return wanted;
+  }
+  /*
+   * One agent and no name asked for is the ordinary single-agent server, and taking it is what was
+   * meant. A name that was asked for and is not there is never silently replaced by the only agent
+   * present: that turns a typo into a Bot that works and is wrong.
+   */
+  const only = served.length === 1 ? served[0] : undefined;
+  if (!agent.remoteAgentId && only) {
+    return only;
+  }
+  throw new Error(
+    `Mastra endpoint for Bot "${agent.id}" serves no agent named "${wanted}". It serves: ${
+      served.join(", ") || "none"
+    }.`,
+  );
+}
+
+function remoteAgentWithStandingRole(
+  agent: RegisteredRemoteAgent,
+  /**
+   * The dialled endpoint, already built. See {@link remoteTransport}.
+   *
+   * Passed in rather than constructed here because building a Mastra transport is asynchronous and
+   * this function is not, but the better reason is that it makes the governance below indifferent
+   * to the transport: there is one wrapper, and no kind of remote Bot has its own copy of it to
+   * drift from.
+   */
+  remote: AbstractAgent,
   /**
    * What this Bot was granted, described rather than executable.
    *
@@ -623,33 +854,7 @@ function remoteAgentWithStandingRole(
    * Absent means no narrowing, which is the behaviour every deployment had before this existed.
    */
   narrow?: (input: RunAgentInput) => Promise<GrantedTool[]>,
-  /** The fetch this agent is dialled with. See {@link buildAgents}. */
-  agentFetch?: AgentFetch,
-  initiator?: AuditInitiator,
 ) {
-  const remote = new HttpAgent({
-    url: agent.endpoint,
-    agentId: agent.id,
-    // The customer's own key, if their agent sits behind one. `HttpAgentConfig` is
-    // `{ url, headers?, fetch? }`, verified against @ag-ui/client 0.0.57.
-    ...(agent.headers ? { headers: agent.headers } : {}),
-    // The watch wraps whichever fetch is underneath, so a deployment gets both the stall timeout and
-    // the redirect check rather than having to choose.
-    ...(stallGuard
-      ? {
-          fetch: stallGuard.watch(
-            {
-              id: agent.id,
-              name: agent.name,
-              ...(initiator ? { initiator } : {}),
-            },
-            agentFetch,
-          ),
-        }
-      : agentFetch
-        ? { fetch: agentFetch }
-        : {}),
-  });
   /*
    * What this Bot holds, as a second standing message.
    *
@@ -682,6 +887,41 @@ function remoteAgentWithStandingRole(
     next: AbstractAgent,
   ) => {
     const holdingsMessage = holdingsMessageFor(tools);
+    const runAssertion = signRun
+      ? signRun(agent.id, input.runId, input.threadId)
+      : undefined;
+    const deploymentTools = tools.map((tool) => tool.name);
+    const forwardedProps = {
+      ...(isPlainObject(input.forwardedProps) ? input.forwardedProps : {}),
+      openbotBotId: agent.id,
+      /*
+       * Which of those tools this deployment runs, as opposed to the surface.
+       *
+       * `tools` mixes two kinds that a name cannot tell apart: the Bot's grants, which execute
+       * here through the policy and the audit trail, and the components the browser draws. A Bot
+       * that ran the second kind through this deployment asked it to execute a chart, was told it
+       * could not, and then apologised to the person for not showing the chart that was on screen
+       * in front of them. Only this side knows which is which, so only this side can say.
+       */
+      openbotDeploymentTools: deploymentTools,
+      /*
+       * This deployment's own statement of what this run is.
+       *
+       * Signed, short-lived, and naming the Bot and the person. The agent hands it back when it
+       * calls a tool, and that is where the Bot and the actor come from: its own token says which
+       * agent is calling, and this says who it is calling for. Neither is taken from the request
+       * body any more, which is what used to make the audit trail forgeable by anything holding
+       * one shared secret.
+       */
+      ...(runAssertion
+        ? { openbotRun: runAssertion }
+        : /*
+           * Absent means this deployment cannot sign, so the agent is given nothing to hand back
+           * and its tool calls will be refused. That is the right direction to fail: a Bot that
+           * cannot prove whose run it is should not be spending anybody's grants.
+           */
+          {}),
+    };
     /*
      * The same guard a built-in Bot gets in `BuiltInAgentWithSaneHistory`, applied here because a
      * remote Bot never passes through it: this middleware is the last thing between the browser's
@@ -725,38 +965,21 @@ function remoteAgentWithStandingRole(
           >,
         })),
       ],
+      context:
+        agent.type === "remote_mastra"
+          ? [
+              ...callerMastraContext(input.context ?? []),
+              ...mastraOpenBotContext({
+                standingMessage: agent.standingMessage,
+                holdingsMessage,
+                botId: agent.id,
+                deploymentTools,
+                runAssertion,
+              }),
+            ]
+          : input.context,
       // Who the Bot is calling back as, so the audit row names it rather than "an agent".
-      forwardedProps: {
-        ...(input.forwardedProps ?? {}),
-        openbotBotId: agent.id,
-        /*
-         * Which of those tools this deployment runs, as opposed to the surface.
-         *
-         * `tools` mixes two kinds that a name cannot tell apart: the Bot's grants, which execute
-         * here through the policy and the audit trail, and the components the browser draws. A Bot
-         * that ran the second kind through this deployment asked it to execute a chart, was told it
-         * could not, and then apologised to the person for not showing the chart that was on screen
-         * in front of them. Only this side knows which is which, so only this side can say.
-         */
-        openbotDeploymentTools: tools.map((tool) => tool.name),
-        /*
-         * This deployment's own statement of what this run is.
-         *
-         * Signed, short-lived, and naming the Bot and the person. The agent hands it back when it
-         * calls a tool, and that is where the Bot and the actor come from: its own token says which
-         * agent is calling, and this says who it is calling for. Neither is taken from the request
-         * body any more, which is what used to make the audit trail forgeable by anything holding
-         * one shared secret.
-         */
-        ...(signRun
-          ? { openbotRun: signRun(agent.id, input.runId, input.threadId) }
-          : /*
-             * Absent means this deployment cannot sign, so the agent is given nothing to hand back
-             * and its tool calls will be refused. That is the right direction to fail: a Bot that
-             * cannot prove whose run it is should not be spending anybody's grants.
-             */
-            {}),
-      },
+      forwardedProps,
     } as never);
   };
 
@@ -765,15 +988,126 @@ function remoteAgentWithStandingRole(
    * straight away. `defer` puts the work on the subscription, which is where the run actually
    * begins, so nothing happens until somebody is listening and a retried run chooses again.
    */
-  remote.use((input, next) =>
-    defer(() =>
-      from(narrow ? narrow(input) : Promise.resolve(tools)).pipe(
-        switchMap((offered) => runWith(offered, input, next)),
+  return new CloningRemoteAgent(remote, (target) => {
+    target.use((input, next) =>
+      defer(() =>
+        from(narrow ? narrow(input) : Promise.resolve(tools)).pipe(
+          switchMap((offered) => runWith(offered, input, next)),
+        ),
       ),
-    ),
-  );
+    );
+  });
+}
 
-  return remote;
+const RESERVED_MASTRA_CONTEXT_DESCRIPTIONS = new Set([
+  "OpenBot standing role",
+  "OpenBot granted tools guidance",
+  "OpenBot Bot id",
+  "OpenBot deployment tools",
+  "OpenBot signed run assertion",
+]);
+
+function callerMastraContext(context: AgentContext[]): AgentContext[] {
+  return context.filter(
+    (entry) => !RESERVED_MASTRA_CONTEXT_DESCRIPTIONS.has(entry.description),
+  );
+}
+
+function mastraOpenBotContext({
+  standingMessage,
+  holdingsMessage,
+  botId,
+  deploymentTools,
+  runAssertion,
+}: {
+  standingMessage: StandingRoleMessage;
+  holdingsMessage: StandingRoleMessage | null;
+  botId: string;
+  deploymentTools: string[];
+  runAssertion: string | undefined;
+}): AgentContext[] {
+  return [
+    {
+      description: "OpenBot standing role",
+      value: standingMessage.content,
+    },
+    ...(holdingsMessage
+      ? [
+          {
+            description: "OpenBot granted tools guidance",
+            value: holdingsMessage.content,
+          },
+        ]
+      : []),
+    {
+      description: "OpenBot Bot id",
+      value: botId,
+    },
+    {
+      description: "OpenBot deployment tools",
+      value: JSON.stringify(deploymentTools),
+    },
+    ...(runAssertion
+      ? [
+          {
+            description: "OpenBot signed run assertion",
+            value: runAssertion,
+          },
+        ]
+      : []),
+  ];
+}
+
+class CloningRemoteAgent extends AbstractAgent {
+  headers?: AgentHeaders;
+  private readonly remote: HeaderBearingAgent;
+
+  constructor(
+    remote: AbstractAgent,
+    private readonly attachOpenBotMiddleware: (target: AbstractAgent) => void,
+  ) {
+    super({
+      agentId: remote.agentId,
+      description: remote.description,
+      threadId: remote.threadId,
+      initialMessages: remote.messages,
+      initialState: remote.state,
+      debug: remote.debug,
+    });
+    this.remote = remote as HeaderBearingAgent;
+    if (this.remote.headers) {
+      this.headers = { ...this.remote.headers };
+    }
+    this.attachOpenBotMiddleware(this);
+  }
+
+  run(input: RunAgentInput): Observable<BaseEvent> {
+    if (this.headers) {
+      this.remote.headers = { ...this.headers };
+    }
+    return this.remote.run(input);
+  }
+
+  async getCapabilities() {
+    return this.remote.getCapabilities?.() ?? {};
+  }
+
+  abortRun(): void {
+    this.remote.abortRun();
+    super.abortRun();
+  }
+
+  clone() {
+    const clonedRemote = this.remote.clone() as AbstractAgent;
+    const clone = new CloningRemoteAgent(
+      clonedRemote,
+      this.attachOpenBotMiddleware,
+    );
+    if (this.headers) {
+      clone.headers = { ...this.headers };
+    }
+    return clone;
+  }
 }
 
 /**
@@ -855,21 +1189,24 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
  */
 class RunBuiltAgent extends AbstractAgent {
   /**
-   * The agent this run turned into, once there is one.
-   *
-   * Held only so `abortRun` can reach it. Without this, pressing stop aborts a wrapper that is not
-   * doing anything and leaves the model call underneath it running to completion, spending the
-   * deployment's money on an answer nobody will see.
+   * Stop must reach the pending build as well as the eventual model. Keep both in one per-run
+   * record so a late build or teardown cannot replace the next run's cancellation target.
    */
-  private inner?: AbstractAgent;
+  private active?: { controller: AbortController; inner?: AbstractAgent };
   /** The same Bot with nothing narrowed, kept to answer questions that are not about one run. */
   private whole: AbstractAgent;
-  private build: (input: RunAgentInput) => Promise<AbstractAgent>;
+  private build: (
+    input: RunAgentInput,
+    signal: AbortSignal,
+  ) => Promise<AbstractAgent>;
 
   constructor(
     identity: { agentId: string; description: string },
     whole: AbstractAgent,
-    build: (input: RunAgentInput) => Promise<AbstractAgent>,
+    build: (
+      input: RunAgentInput,
+      signal: AbortSignal,
+    ) => Promise<AbstractAgent>,
   ) {
     super(identity);
     this.whole = whole;
@@ -877,14 +1214,26 @@ class RunBuiltAgent extends AbstractAgent {
   }
 
   run(input: RunAgentInput): Observable<BaseEvent> {
-    return defer(() =>
-      from(this.build(input)).pipe(
+    return defer(() => {
+      const active: NonNullable<RunBuiltAgent["active"]> = {
+        controller: new AbortController(),
+      };
+      this.active = active;
+      const { signal } = active.controller;
+      return defer(() => this.build(input, signal)).pipe(
         switchMap((agent) => {
-          this.inner = agent;
+          signal.throwIfAborted();
+          active.inner = agent;
           return agent.run(input);
         }),
-      ),
-    );
+        // Settle Stop even if a collaborator ignores the signal or rejects after cancellation.
+        takeUntil(fromEvent(signal, "abort")),
+        finalize(() => {
+          if (this.active === active) this.active = undefined;
+          active.controller.abort();
+        }),
+      );
+    });
   }
 
   /**
@@ -911,24 +1260,32 @@ class RunBuiltAgent extends AbstractAgent {
     const cloned = super.clone() as RunBuiltAgent;
     cloned.whole = this.whole;
     cloned.build = this.build;
-    // Deliberately not the inner agent. A clone is a new run, and inheriting the last run's agent
-    // would point `abortRun` at something already finished.
-    cloned.inner = undefined;
+    // A clone owns its cancellation state, including while its build is pending.
+    cloned.active = undefined;
     return cloned;
   }
 
   abortRun(): void {
-    this.inner?.abortRun();
+    const active = this.active;
+    active?.controller.abort();
+    active?.inner?.abortRun();
     super.abortRun();
   }
 }
 
 class UnavailableAgent extends AbstractAgent {
-  private readonly reason: string;
+  private reason: string;
 
   constructor(agent: RegisteredUnavailableAgent) {
     super({ agentId: agent.id, description: agent.name });
     this.reason = agent.reason;
+  }
+
+  clone(): UnavailableAgent {
+    const cloned = super.clone() as UnavailableAgent;
+    // The runtime clones before running; the base clone only carries base-class fields.
+    cloned.reason = this.reason;
+    return cloned;
   }
 
   // Refused here rather than at the endpoint: a deleted coworker has no endpoint worth contacting,

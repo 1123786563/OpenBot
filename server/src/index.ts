@@ -6,12 +6,14 @@ import {
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
 import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
+import { workOwner } from "../../shared/work-owner";
 import { mintRunAssertion, readRunAssertion } from "./agents/callback-token";
 import { createAgentFetch } from "./agents/endpoint";
 import { askTheirOwnPerson, escalationTool } from "./agents/escalation";
 import { createHandoffDesk, HANDOFF_KIND } from "./agents/handoff";
 import { createHandoffDelivery } from "./agents/handoff-delivery";
 import { createHandoffRunner } from "./agents/handoff-runner";
+import { signHandoffDeliveryRun } from "./agents/handoff-signing";
 import { handoffTool } from "./agents/handoff-tool";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
@@ -65,6 +67,7 @@ import {
   type IdentifyUser,
   mountCopilotRuntime,
   resolveRuntimeAgents,
+  runtimeModelForEnvironment,
   type ToolSelection,
 } from "./copilot";
 import {
@@ -97,7 +100,6 @@ import {
   startWorkOfferedListener,
   type WorkOfferedListener,
 } from "./work/queue";
-import { workOwner } from "../../shared/work-owner";
 
 /**
  * Who is asking, for a CopilotKit request.
@@ -466,9 +468,11 @@ const stallGuard = createStallGuard({
   auditStore: bootAuditStore,
 });
 
+const runtimeModel = runtimeModelForEnvironment(tenantPackage.model);
+
 const intentRouter = createIntentRouter({
   complete: createModelCompleter({
-    model: tenantPackage.model,
+    model: runtimeModel,
     resolveApiKey: () =>
       resolveModelApiKey({
         encryptionKey: config.keyEncryptionKey,
@@ -487,7 +491,7 @@ const intentRouter = createIntentRouter({
  * on every call, so a credential rotated a moment ago is used by the next run.
  */
 const chooseSkills = createModelCompleter({
-  model: tenantPackage.model,
+  model: runtimeModel,
   resolveApiKey: () =>
     resolveModelApiKey({
       encryptionKey: config.keyEncryptionKey,
@@ -564,16 +568,11 @@ const signRunForActor =
  * Google's sign-in page and asked a person to sign in to an account the deployment had already
  * connected. Naming them lets it say which one it has not been granted instead.
  *
- * Read per request rather than held, because a connector added a minute ago has to count, and
- * failing is the same as having none: a Bot that cannot be told loses a sentence, not a run.
+ * Read per request rather than held, because a connector added a minute ago has to count.
+ * Let failures reach buildAgents, which reports the missing guidance once and keeps the run usable.
  */
-const loadVendors = async () => {
-  try {
-    return (await pluginStore.listServers()).map((server) => server.id);
-  } catch {
-    return [];
-  }
-};
+const loadVendors = async () =>
+  (await pluginStore.listServers()).map((server) => server.id);
 
 /*
  * How a run's tools are narrowed to the ones it is about.
@@ -683,7 +682,7 @@ const buildAgentFor = async ({
   const actor = await actorFor(ownerUserId);
   const agents = await resolveRuntimeAgents(
     () => loadAgentsForActor(actor),
-    tenantPackage.model,
+    runtimeModel,
     resolveRuntimeModelApiKey,
     stallGuard,
     loadToolsForActor(actor.id, initiator),
@@ -766,7 +765,7 @@ const routineRunner = createRoutineRunner({
  */
 const copilotRuntime = mountCopilotRuntime(
   config,
-  tenantPackage.model,
+  runtimeModel,
   loadAgentsForActor,
   resolveRuntimeModelApiKey,
   identifyUser,
@@ -900,17 +899,7 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
      * The signed statement of the run the addressed Bot is about to start, carrying how deep the
      * chain has gone. Minted here, where the key lives, and one deeper than the run that asked.
      */
-    sign: (work) =>
-      mintRunAssertion(
-        {
-          botId: work.toBotId,
-          actorId: work.actorId,
-          runId: randomUUID(),
-          threadId: work.threadId,
-          depth: work.depth,
-        },
-        config.keyEncryptionKey,
-      ),
+    sign: (work) => signHandoffDeliveryRun(work, config.keyEncryptionKey),
     delivery: createHandoffDelivery({
       /*
        * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
@@ -1081,7 +1070,7 @@ const channelSummaries = {
   queue: createWorkQueue(database),
   transcript: routineIntelligence,
   title: createChannelTitler({
-    model: tenantPackage.model.defaultModel,
+    model: runtimeModel.defaultModel,
     resolveApiKey: resolveRuntimeModelApiKey,
   }),
   owner: workOwner("summariser"),
@@ -1328,4 +1317,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.info(`OpenBot server listening on http://localhost:${port}`);
+console.info(`OpenBot server listening on http://127.0.0.1:${port}`);
