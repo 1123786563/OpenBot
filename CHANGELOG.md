@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A fractional or infinite snapshot id is refused as malformed, not stale
+
+A `snapshotId` of `1.5` or `Infinity` passed the acting routes and never matched the stored
+integer, so the answer was a 409 stale snapshot and the caller retried a request that was
+malformed. Non-integer ids are refused with a 400 naming the ref and its snapshot before any
+decision or audit row.
 ### A `DATABASE_URL` with a port of zero is refused at start-up
 
 `postgres://…:0/…` parsed and booted, and every query then failed against a port nothing listens

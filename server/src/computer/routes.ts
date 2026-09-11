@@ -431,7 +431,10 @@ export function createComputerRoutes(
             "Say which field the value goes in, using a ref from your snapshot.",
         };
       }
-      if (typeof body?.snapshotId !== "number") {
+      if (
+        typeof body?.snapshotId !== "number" ||
+        !Number.isInteger(body.snapshotId)
+      ) {
         return { error: "The snapshotId the ref came from is required." };
       }
       return gateway.requestSecret(botId, actor, {
@@ -816,7 +819,18 @@ function asRef(
   body: Record<string, unknown> | null,
 ): { ref: string; snapshotId: number } | undefined {
   if (typeof body?.ref !== "string" || !body.ref) return undefined;
-  if (typeof body?.snapshotId !== "number") return undefined;
+  /*
+   * A snapshot id is an integer the snapshot store handed out. `typeof` alone accepts `1.5` and
+   * `Infinity` (valid JSON: `1e999` parses to it), which then never equals the stored integer, so
+   * the gateway reports a stale snapshot and the caller retries a request that was malformed.
+   * Malformed input is a 400 here, not a 409 staleness.
+   */
+  if (
+    typeof body?.snapshotId !== "number" ||
+    !Number.isInteger(body.snapshotId)
+  ) {
+    return undefined;
+  }
   return { ref: body.ref, snapshotId: body.snapshotId };
 }
 
