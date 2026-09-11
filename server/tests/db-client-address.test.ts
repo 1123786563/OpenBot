@@ -62,6 +62,17 @@ describe("the database address", () => {
     ).toThrow(/names no database/);
   });
 
+  test("refuses a port of zero instead of connecting nowhere", () => {
+    /*
+     * `new URL` accepts `:0` and reports the port as `"0"`, so without this check boot succeeds
+     * and every query fails against a port nothing listens on. A refusal here names the variable
+     * and the range, the way every other malformed address does.
+     */
+    expect(() =>
+      createDatabase("postgres://openbot:openbot@127.0.0.1:0/openbot"),
+    ).toThrow(/DATABASE_URL names a port that is not between 1 and 65535/);
+  });
+
   test("refuses a password holding a percent that starts no escape, naming the part", () => {
     /*
      * `new URL` accepts this and `decodeURIComponent` does not, so the refusal used to be a bare

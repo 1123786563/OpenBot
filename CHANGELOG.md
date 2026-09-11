@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A `DATABASE_URL` with a port of zero is refused at start-up
+
+`postgres://…:0/…` parsed and booted, and every query then failed against a port nothing listens
+on. Ports outside 1-65535 are refused with a sentence naming `DATABASE_URL` before a socket is
+ever opened.
+
 ### `bun run dev` no longer starts a routines worker that cannot start
 
 `bun run dev` fanned out across every workspace, and one of them is the routines worker. That worker
