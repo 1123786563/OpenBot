@@ -8,6 +8,11 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A non-string plugin grant or tool call is refused before it reaches the store
+
+`POST /api/plugins/grants` and `POST /api/plugins/call` checked presence, not shape, so a JSON
+number, object, or whitespace string passed and failed inside the store as a 500. Refs and Bot
+ids must be non-empty strings now, and anything else is a 400 naming what is required.
 ### A fractional or infinite snapshot id is refused as malformed, not stale
 
 A `snapshotId` of `1.5` or `Infinity` passed the acting routes and never matched the stored

@@ -770,7 +770,18 @@ export function createPluginRoutes(
       agentId?: string;
     } | null;
     const kind = asGrantKind(body?.kind);
-    if (!kind || !body?.ref || !body.agentId) {
+    /*
+     * The body is JSON, so the annotation is a wish: `{"ref":123,"agentId":[]}` passes a
+     * truthiness check and then reaches the store, where Drizzle compares a text column against
+     * a number and the request answers 500. A ref and a Bot id are non-empty strings here.
+     */
+    if (
+      !kind ||
+      typeof body?.ref !== "string" ||
+      !body.ref.trim() ||
+      typeof body.agentId !== "string" ||
+      !body.agentId.trim()
+    ) {
       return context.json(
         { error: "A kind, a ref and a Bot are required." },
         400,
@@ -841,7 +852,14 @@ export function createPluginRoutes(
       args?: Record<string, unknown>;
       agentId?: string;
     } | null;
-    if (!body?.ref || !body.agentId) {
+    // Same shape lie as `/grants` above: JSON numbers, objects and arrays are truthy, so they
+    // must be refused here rather than inside `canUseBot` or the tool call.
+    if (
+      typeof body?.ref !== "string" ||
+      !body.ref.trim() ||
+      typeof body.agentId !== "string" ||
+      !body.agentId.trim()
+    ) {
       return context.json({ error: "A tool and a Bot are required." }, 400);
     }
 
