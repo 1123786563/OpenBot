@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### The Bot computer refuses a malformed scroll or live input before the browser sees it
+
+A non-finite wheel delta travelled into Playwright and came back as a 502 that read as a broken
+computer, and any JSON object on the live-screen socket fell through to `Input.insertText` or
+forwarded wrong-typed coordinates to CDP. Scroll deltas must be finite numbers now, and live
+input must match its mouse, wheel, key, or text shape; anything else is a 400 naming the field.
 ### A non-string plugin grant or tool call is refused before it reaches the store
 
 `POST /api/plugins/grants` and `POST /api/plugins/call` checked presence, not shape, so a JSON
