@@ -1005,10 +1005,11 @@ export function createApp(
         return context.json({ error: "This endpoint is the worker's." }, 401);
       }
       const body = await context.req.json().catch(() => null);
-      if (
-        typeof (body as { routineRunId?: unknown } | null)?.routineRunId !==
-        "string"
-      ) {
+      const routineRunId = (body as { routineRunId?: unknown } | null)
+        ?.routineRunId;
+      // An empty id is a string and used to answer 202 Accepted while the worker swallows the
+      // failure. Only a non-empty id is accepted for dispatch.
+      if (typeof routineRunId !== "string" || !routineRunId.trim()) {
         return context.json({ error: "A routineRunId is required." }, 400);
       }
       /*
@@ -1018,9 +1019,7 @@ export function createApp(
        * the fatigue rule owns it. `run()` never throws by contract; this swallow only guards against
        * that contract being wrong without turning a bug there into an unhandled rejection here.
        */
-      void routineRunner
-        .run((body as { routineRunId: string }).routineRunId)
-        .catch(() => {});
+      void routineRunner.run(routineRunId).catch(() => {});
       return context.json({ accepted: true }, 202);
     });
   }
