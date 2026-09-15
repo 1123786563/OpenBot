@@ -28,7 +28,7 @@ import { ConversationQueue, type QueuedMessage } from "./conversation-queue";
 import { runConversationTurn } from "./conversation-run";
 import { FileThreadCard, TaskThreadCard } from "./thread-artifacts";
 import { type Selection, useMuseThread } from "./threads";
-import { Button, Card, CheckRow, colors, ErrorNotice, Orb, s } from "./ui";
+import { Button, Card, CheckRow, colors, ErrorNotice, s } from "./ui";
 import { useWorkspace } from "./workspace";
 
 const displayParameters = z.record(z.string(), z.unknown());
@@ -326,11 +326,12 @@ export function ChatScreen({
         onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
           const nearEnd = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
           followLatest.current = nearEnd;
-          setAwayFromLatest(!nearEnd);
+          setAwayFromLatest(visible.length > 0 && !nearEnd);
         }}
         scrollEventThrottle={100}
         onContentSizeChange={() => {
-          if (active && followLatest.current) list.current?.scrollToEnd({ animated: false });
+          if (active && visible.length > 0 && followLatest.current)
+            list.current?.scrollToEnd({ animated: false });
         }}
         keyboardShouldPersistTaps="handled"
       >
@@ -345,14 +346,14 @@ export function ChatScreen({
         {!visible.length ? (
           <View
             style={{
-              flex: 1,
+              flexGrow: 1,
+              flexShrink: 0,
               justifyContent: "center",
               alignItems: "center",
               paddingVertical: 34,
               gap: 15,
             }}
           >
-            <Orb size={88} />
             <Text
               style={{
                 fontSize: 28,
