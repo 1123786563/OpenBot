@@ -628,6 +628,15 @@ export function createApp(
     if (!parsed.ok) {
       return context.json({ error: parsed.error }, 400);
     }
+    // An unbounded `search` becomes a `%...% ILIKE` full scan. Cap it so a multi-megabyte
+    // query cannot be used as a cheap denial of service against the people table.
+    const search = url.searchParams.get("search");
+    if (search !== null && search.length > 200) {
+      return context.json(
+        { error: "A search of at most 200 characters is required." },
+        400,
+      );
+    }
 
     return context.json(
       await peopleStore.list({
@@ -1505,20 +1514,23 @@ function credentialInput(
       body.kind !== "connector" &&
       body.kind !== "mcp") ||
     typeof body.provider !== "string" ||
+    !body.provider.trim() ||
     typeof body.keyId !== "string" ||
+    !body.keyId.trim() ||
     typeof body.plaintext !== "string" ||
     !body.plaintext ||
     !body.metadata ||
     typeof body.metadata !== "object" ||
-    Array.isArray(body.metadata)
+    Array.isArray(body.metadata) ||
+    Object.getPrototypeOf(body.metadata) !== Object.prototype
   ) {
     return null;
   }
 
   return {
     kind: body.kind,
-    provider: body.provider,
-    keyId: body.keyId,
+    provider: body.provider.trim(),
+    keyId: body.keyId.trim(),
     metadata: body.metadata as Record<string, unknown>,
     plaintext: body.plaintext,
     actorUserId,
