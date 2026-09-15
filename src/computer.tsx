@@ -25,7 +25,7 @@ export function ComputerEntry() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Open agent computer"
+      accessibilityLabel="Agent computer — take control"
       onPress={() => open({ type: "computer" })}
       style={[
         s.row,
@@ -42,11 +42,7 @@ export function ComputerEntry() {
       <Monitor size={13} color={colors.muted} />
       <Text style={{ fontSize: 12, color: colors.muted }}>
         Computer
-        {active
-          ? ` · ${active} ${active === 1 ? "session" : "sessions"}`
-          : available
-            ? " · ready"
-            : " · offline"}
+        {active ? " · take control" : available ? " · ready" : " · offline"}
       </Text>
       <View
         style={{
@@ -113,7 +109,7 @@ export function BrowserThreadCard({ browser }: { browser: BrowserSession }) {
           ? "Reopen browser"
           : browser.status === "error"
             ? "Reconnect browser"
-            : "Open browser"}
+            : "Take control"}
       </Button>
     </Card>
   );
@@ -159,7 +155,7 @@ export function ComputerSheet() {
   return (
     <Sheet
       title="Agent computer"
-      subtitle="A browser, terminal, and room to create."
+      subtitle="Your agent works here. Step in whenever you need."
       onClose={close}
     >
       <View style={{ gap: 20 }}>
