@@ -298,6 +298,9 @@ export function ChatScreen({
   function send() {
     const text = draft.trim();
     if (!text || !isReady || !loaded) return;
+    // A new submission can continue after Stop; held follow-ups still need explicit resume.
+    if (!busy && !agent.isRunning && !saveError && !queue.getSnapshot().pending.length)
+      queue.resume();
     setShowResults(false);
     const files = w.files.filter((f) => attachments.includes(f.id));
     enqueue(
@@ -317,6 +320,7 @@ export function ChatScreen({
     -1,
   );
   const visible = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const replying = busy || agent.isRunning;
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
@@ -593,14 +597,6 @@ export function ChatScreen({
             )}
           </View>
         )}
-        {(busy || agent.isRunning) && (
-          <View style={[s.between, { paddingHorizontal: 12, paddingBottom: 8 }]}>
-            <Text style={s.small}>You can keep sending messages</Text>
-            <Button small icon={Square} onPress={() => void stop()}>
-              Stop reply
-            </Button>
-          </View>
-        )}
         {picking && (
           <Card style={{ marginBottom: 12, padding: 15 }}>
             <Text style={s.heading}>Add a document</Text>
@@ -750,20 +746,28 @@ export function ChatScreen({
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Send message"
-              disabled={!draft.trim() || !loaded || !isReady}
-              onPress={send}
+              accessibilityLabel={replying ? "Stop reply" : "Send message"}
+              disabled={!replying && (!draft.trim() || !loaded || !isReady)}
+              onPress={replying ? () => void stop() : send}
               style={({ pressed }) => ({
                 width: 44,
                 height: 44,
                 borderRadius: 24,
-                backgroundColor: draft.trim() ? colors.blue : "#F3F5F6",
+                backgroundColor: replying || draft.trim() ? colors.blue : "#F3F5F6",
                 alignItems: "center",
                 justifyContent: "center",
                 transform: [{ scale: pressed ? 0.94 : 1 }],
               })}
             >
-              <ArrowUp size={25} strokeWidth={1.8} color={draft.trim() ? colors.text : "#9CB5C5"} />
+              {replying ? (
+                <Square size={18} fill={colors.text} strokeWidth={0} />
+              ) : (
+                <ArrowUp
+                  size={25}
+                  strokeWidth={1.8}
+                  color={draft.trim() ? colors.text : "#9CB5C5"}
+                />
+              )}
             </Pressable>
           </View>
         </View>
