@@ -2168,15 +2168,30 @@ export function createPluginRoutes(
     /*
      * Absent leaves the declarations alone, so a caller that predates this field does not silently
      * clear one. An array, including an empty one, says what the skill needs now.
+     *
+     * Every entry must be a non-empty string: silently dropping mistyped entries would turn a
+     * client bug into a skill that declares nothing and answers success. `global` must be a
+     * boolean when present, so the string `"yes"` cannot create a deployment-wide skill.
      */
-    if (body.tools !== undefined && !Array.isArray(body.tools)) {
+    if (body.global !== undefined && typeof body.global !== "boolean") {
       return context.json(
-        { error: "Tools are a list of serverId/toolName references." },
+        { error: "Global must be true or false when it is present." },
         400,
       );
     }
+    if (body.tools !== undefined) {
+      if (
+        !Array.isArray(body.tools) ||
+        body.tools.some((ref) => typeof ref !== "string" || !ref.trim())
+      ) {
+        return context.json(
+          { error: "Tools are a list of serverId/toolName references." },
+          400,
+        );
+      }
+    }
     const tools = Array.isArray(body.tools)
-      ? body.tools.filter((ref): ref is string => typeof ref === "string")
+      ? (body.tools as string[]).map((ref) => ref.trim())
       : undefined;
 
     try {

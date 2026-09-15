@@ -396,6 +396,11 @@ export function createComponentRoutes(
 
     const name = context.req.param("name");
     const functionName = context.req.param("function");
+    // An empty function name would revoke zero rows yet answer `revoked:true` with an audit row
+    // naming nothing. Refused at the edge like the grant path.
+    if (!functionName.trim()) {
+      return context.json({ error: "A function is required." }, 400);
+    }
     await store.revokeFunction(name, functionName);
     await audit(context, "component.function_revoked", name, {
       function: functionName,
@@ -411,7 +416,9 @@ export function createComponentRoutes(
     const body = (await context.req.json().catch(() => null)) as {
       agentId?: unknown;
     } | null;
-    const agentId = typeof body?.agentId === "string" ? body.agentId : "";
+    // A whitespace-only id is truthy and would be written as a grant row naming nothing.
+    const agentId =
+      typeof body?.agentId === "string" ? body.agentId.trim() : "";
     if (!agentId) {
       return context.json({ error: "The Bot is required." }, 400);
     }
@@ -434,6 +441,10 @@ export function createComponentRoutes(
 
     const name = context.req.param("name");
     const agentId = context.req.param("agentId");
+    // Revoking `"   "` would delete zero rows yet answer `revoked:true` with an audit row.
+    if (!agentId.trim()) {
+      return context.json({ error: "The Bot is required." }, 400);
+    }
     try {
       await store.revoke(name, agentId, context.var.actor.email);
     } catch (error) {
