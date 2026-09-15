@@ -8,6 +8,15 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Naming a conversation asks the endpoint OPENAI_BASE_URL names, not OpenAI
+
+The job that names a conversation sent its request to api.openai.com whatever `OPENAI_BASE_URL` said,
+while the Bots, the router and tool selection all used the configured endpoint. A deployment behind a
+gateway, a proxy or a local model therefore sent its model key, and the opening of every
+conversation, to OpenAI; OpenAI refused the key, so no conversation was ever named. The request now
+goes to the same endpoint as every other model call. A deployment that never set `OPENAI_BASE_URL`
+behaves as before.
+
 ### A Bot's question to a person survives a route that fails
 
 Who "a person" is, is a seam a deployment fills in with its own on-call rota or duty desk. If that
