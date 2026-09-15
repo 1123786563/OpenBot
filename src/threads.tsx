@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Settings2,
 } from "lucide-react-native";
-import { createContext, type ReactNode, useContext, useRef, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Button, colors, ErrorNotice, Field, LinkRow, Sheet, s } from "./ui";
 import { useWorkspace } from "./workspace";
@@ -21,23 +21,54 @@ function newThreadId() {
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-type Selection = { id: string; existing: boolean };
+export type Selection = { id: string; existing: boolean };
 const ThreadContext = createContext<{
   enabled: boolean;
   selection: Selection;
+  visited: Selection[];
+  mainId: string;
+  loading: boolean;
+  error: string;
+  retry: () => void;
   select: (selection: Selection) => void;
   start: () => void;
   claimPrompt: (id: number) => boolean;
 } | null>(null);
 export function ThreadsProvider({ children }: { children: ReactNode }) {
-  const { workspace, navigate } = useWorkspace();
+  const { workspace, navigate, api } = useWorkspace();
   const handledPrompt = useRef(0);
-  const [selection, setSelection] = useState<Selection>(() => ({
-    id: newThreadId(),
-    existing: false,
-  }));
+  const enabled = workspace.runtime.richThreads === true;
+  const [selection, setSelection] = useState<Selection>({ id: "local", existing: false });
+  const [visited, setVisited] = useState<Selection[]>([]);
+  const [mainId, setMainId] = useState("local");
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    setLoading(true);
+    setError("");
+    void api
+      .request<{ threadId: string; existing: boolean }>("/api/main-thread")
+      .then((main) => {
+        if (!active) return;
+        const next = { id: main.threadId, existing: main.existing };
+        setMainId(next.id);
+        setSelection(next);
+        setVisited([next]);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, enabled, attempt]);
   function select(next: Selection) {
     setSelection(next);
+    setVisited((items) => (items.some((item) => item.id === next.id) ? items : [...items, next]));
     navigate("chat");
   }
   return (
@@ -48,7 +79,12 @@ export function ThreadsProvider({ children }: { children: ReactNode }) {
           handledPrompt.current = id;
           return true;
         },
-        enabled: workspace.runtime.richThreads === true,
+        enabled,
+        mainId,
+        visited,
+        loading,
+        error,
+        retry: () => setAttempt((n) => n + 1),
         selection,
         select,
         start: () => select({ id: newThreadId(), existing: false }),
@@ -64,7 +100,17 @@ export function useMuseThread() {
   return context;
 }
 export function ThreadsSheet({ onClose }: { onClose: () => void }) {
-  const { enabled, selection, select, start } = useMuseThread();
+  const {
+    enabled,
+    selection,
+    visited,
+    mainId,
+    loading,
+    error: mainError,
+    retry,
+    select,
+    start,
+  } = useMuseThread();
   const { workspace, open, navigate, refresh } = useWorkspace();
   const threads = useThreads({ agentId: "default", enabled, includeArchived: true, limit: 20 });
   const [editing, setEditing] = useState<string>();
@@ -91,8 +137,26 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
       onClose={onClose}
     >
       <View style={{ gap: 14 }}>
-        {enabled ? (
+        {enabled && loading ? (
           <>
+            <ErrorNotice error={mainError} />
+            {mainError ? (
+              <Button onPress={retry}>Retry main chat</Button>
+            ) : (
+              <ActivityIndicator color={colors.blueDark} />
+            )}
+          </>
+        ) : enabled ? (
+          <>
+            <LinkRow
+              icon={MessageCircle}
+              title="Main chat"
+              detail="Your ongoing conversation"
+              onPress={() => {
+                select({ id: mainId, existing: true });
+                onClose();
+              }}
+            />
             <Button
               primary
               icon={Plus}
@@ -101,10 +165,10 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
                 onClose();
               }}
             >
-              New conversation
+              New side chat
             </Button>
             <View style={[s.between, { marginTop: 12 }]}>
-              <Text style={s.heading}>Conversations</Text>
+              <Text style={s.heading}>Side chats</Text>
               <Button small onPress={() => setArchived(!archived)}>
                 {archived ? "Show active" : "Archived"}
               </Button>
@@ -116,8 +180,26 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
                 Retry conversations
               </Button>
             )}
+            {!archived &&
+              visited
+                .filter(
+                  (item) =>
+                    item.id !== mainId && !threads.threads.some((saved) => saved.id === item.id),
+                )
+                .map((item, index) => (
+                  <LinkRow
+                    key={item.id}
+                    icon={MessageCircle}
+                    title={`Side chat ${index + 1}`}
+                    detail="Open in this app"
+                    onPress={() => {
+                      select(item);
+                      onClose();
+                    }}
+                  />
+                ))}
             {threads.threads
-              .filter((thread) => thread.archived === archived)
+              .filter((thread) => thread.id !== mainId && thread.archived === archived)
               .map((thread) => (
                 <View
                   key={thread.id}
@@ -180,11 +262,13 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
               ))}
             {!threads.isLoading &&
               !threads.error &&
-              !threads.threads.some((thread) => thread.archived === archived) && (
+              !threads.threads.some(
+                (thread) => thread.id !== mainId && thread.archived === archived,
+              ) && (
                 <Text style={s.muted}>
                   {archived
                     ? "No archived conversations."
-                    : "Your conversations will appear after your first message."}
+                    : "Keep a separate topic here. Your main chat is always available."}
                 </Text>
               )}
             <ErrorNotice error={threads.fetchMoreError?.message} />
@@ -194,14 +278,14 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
               </Button>
             )}
             <Text style={s.small}>
-              Rich Threads by CopilotKit · conversation, tool activity and state saved together.
+              Side chats keep their own conversation context. Your agent’s saved memory is shared.
             </Text>
           </>
         ) : (
           <>
             <LinkRow
               icon={MessageCircle}
-              title="Your conversation"
+              title="Main chat"
               detail="Saved in this workspace"
               onPress={() => {
                 navigate("chat");

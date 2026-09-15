@@ -35,6 +35,7 @@ import { AgentWorkspaceProvider, useAgentWorkspace } from "./src/agent-workspace
 import { API_URL, createSession, MuseApi } from "./src/api";
 import { ChatScreen, WorkspaceTools } from "./src/chat";
 import { ComputerEntry } from "./src/computer";
+import { ComputerDraftProvider } from "./src/computer-drafts";
 import { Details } from "./src/details";
 import { BrowserScreen, CalendarScreen, FilesScreen, MailScreen } from "./src/screens";
 import { ThreadsProvider, ThreadsSheet, useMuseThread } from "./src/threads";
@@ -211,15 +212,17 @@ function WorkspaceApp({ token }: { token: string }) {
       value={{ workspace, api, section, navigate, refresh, open, close, notify: setToast, ask }}
     >
       <AgentWorkspaceProvider>
-        <ThreadsProvider>
-          <WorkspaceShell
-            detail={detail}
-            toast={toast}
-            clearToast={() => setToast("")}
-            error={error}
-            prompt={prompt}
-          />
-        </ThreadsProvider>
+        <ComputerDraftProvider key={token}>
+          <ThreadsProvider>
+            <WorkspaceShell
+              detail={detail}
+              toast={toast}
+              clearToast={() => setToast("")}
+              error={error}
+              prompt={prompt}
+            />
+          </ThreadsProvider>
+        </ComputerDraftProvider>
       </AgentWorkspaceProvider>
     </WorkspaceContext.Provider>
   );
@@ -239,27 +242,35 @@ function WorkspaceShell({
 }) {
   const { workspace, section, navigate, open } = useWorkspace();
   const { data } = useAgentWorkspace();
-  const { selection, enabled: richThreads } = useMuseThread();
+  const {
+    selection,
+    visited,
+    mainId,
+    loading: threadsLoading,
+    error: threadsError,
+    retry: retryThreads,
+    enabled: richThreads,
+  } = useMuseThread();
   const [threadsOpen, setThreadsOpen] = useState(false);
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
   const pending =
     (data?.notifications.filter((n) => !n.read).length || 0) +
     workspace.actions.filter((a) => a.status === "awaiting_review").length;
-  const activeTask = data?.tasks.find(
-    (task) =>
-      task.status === "running" ||
-      task.status === "waiting_approval" ||
-      task.status === "waiting_input",
-  );
+  const activeTask =
+    data?.tasks.find(
+      (task) => task.status === "waiting_approval" || task.status === "waiting_input",
+    ) || data?.tasks.find((task) => task.status === "running");
   const agentName = data?.identity.name === "Muse" ? "OpenMuse" : data?.identity.name || "OpenMuse";
   const status = activeTask
     ? activeTask.status === "waiting_approval"
-      ? "Ready for your review"
+      ? `Ready to review · ${activeTask.title}`
       : activeTask.status === "waiting_input"
-        ? "A little help from you…"
-        : "Working on it…"
-    : "Your personal agent";
+        ? `Needs your input · ${activeTask.title}`
+        : activeTask.plan.find((step) => step.status === "running")?.title || activeTask.title
+    : data?.tasks.some((task) => task.status === "queued")
+      ? "Picking up your next task…"
+      : "Here when you need me";
   const title = titles[section] || titles.apps;
   const Screen =
     section === "mail"
@@ -298,18 +309,34 @@ function WorkspaceShell({
               />
             </View>
             <View style={{ alignItems: "center", gap: 1 }}>
-              <Orb size={desktop ? 58 : 49} />
-              <Text
-                style={{ fontSize: 16, fontWeight: "600", color: colors.text, letterSpacing: -0.4 }}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${agentName} activity and approvals`}
+                onPress={() => navigate("activity")}
+                style={({ pressed }) => ({
+                  alignItems: "center",
+                  maxWidth: "70%",
+                  opacity: pressed ? 0.65 : 1,
+                })}
               >
-                {agentName}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={{ fontSize: 11, color: colors.muted, marginBottom: 6 }}
-              >
-                {status}
-              </Text>
+                <Orb size={desktop ? 58 : 49} variant={data?.identity.avatar} />
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: "600",
+                    color: colors.text,
+                    letterSpacing: -0.4,
+                  }}
+                >
+                  {agentName}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 11, color: colors.muted, marginBottom: 6 }}
+                >
+                  {status}
+                </Text>
+              </Pressable>
               {section === "chat" && <ComputerEntry />}
             </View>
             <View style={{ position: "absolute", right: 0, top: 16 }}>
@@ -364,7 +391,35 @@ function WorkspaceShell({
               }}
             >
               <AgentStatus />
-              <ChatScreen key={richThreads ? selection.id : "local"} prompt={prompt} />
+              {richThreads ? (
+                <>
+                  <ErrorNotice error={threadsError} />
+                  {threadsError ? (
+                    <Button onPress={retryThreads}>Retry main chat</Button>
+                  ) : threadsLoading ? (
+                    <ActivityIndicator color={colors.blueDark} />
+                  ) : null}
+                  {!threadsLoading && selection.id !== mainId && (
+                    <Text style={[s.small, { textAlign: "center", marginBottom: 8 }]}>
+                      Side chat
+                    </Text>
+                  )}
+                  {visited.map((thread) => (
+                    <View
+                      key={thread.id}
+                      style={{ display: selection.id === thread.id ? "flex" : "none", flex: 1 }}
+                    >
+                      <ChatScreen
+                        thread={thread}
+                        active={section === "chat" && selection.id === thread.id}
+                        prompt={selection.id === thread.id ? prompt : undefined}
+                      />
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <ChatScreen prompt={prompt} active={section === "chat"} />
+              )}
             </View>
           </View>
           <View

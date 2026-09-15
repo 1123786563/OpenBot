@@ -11,6 +11,7 @@ import {
   Globe2,
   Mail as MailIcon,
   Reply,
+  RotateCw,
   Save,
   Send,
   ShieldCheck,
@@ -33,6 +34,7 @@ import {
 } from "../../../packages/domain/src";
 import { DelegateSheet, NotificationsSheet, TaskDetail } from "./agent-ui";
 import BrowserConsole from "./BrowserConsole";
+import { browserAddress, browserSite } from "./browser-address";
 import { ComputerSheet } from "./computer";
 import DateTimeEditor from "./DateTimeEditor";
 import { localDateTime, zonedInstant } from "./date-time";
@@ -48,6 +50,7 @@ import {
   ErrorNotice,
   Field,
   LinkRow,
+  resultSummary,
   SectionHeading,
   Sheet,
   s,
@@ -674,7 +677,7 @@ function ReviewDetail({ initial }: { initial: ActionProposal }) {
       {action.result && (
         <Card style={{ marginTop: 16, backgroundColor: colors.green, padding: 18 }}>
           <Text selectable style={s.text}>
-            {action.result}
+            {resultSummary(action.result)}
           </Text>
         </Card>
       )}
@@ -842,7 +845,33 @@ function BrowserDetail({ initial }: { initial: BrowserSession }) {
   const [url, setUrl] = useState(initial.url);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const browser = w.browsers.find((b) => b.id === initial.id) || local;
+  const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
+  const latest = w.browsers.find((b) => b.id === initial.id);
+  const browser = {
+    ...(latest && latest.updatedAt > local.updatedAt ? latest : local),
+    consoleUrl: local.consoleUrl,
+    previewUrl: local.previewUrl,
+  };
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    void api
+      .request<BrowserSession>(`/api/browsers/${initial.id}`)
+      .then((session) => {
+        if (active) {
+          setLocal(session);
+          setLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, initial.id, retry]);
   async function importDownloads() {
     setBusy(true);
     setError("");
@@ -869,14 +898,16 @@ function BrowserDetail({ initial }: { initial: BrowserSession }) {
     }
   }
   async function mutate(end = false) {
+    if (busy || loading) return;
     setBusy(true);
     setError("");
     try {
       const result = await api.request<BrowserSession>(
         `/api/browsers/${browser.id}/${end ? "close" : browser.status === "closed" ? "reopen" : "navigate"}`,
-        end ? {} : { url },
+        end ? {} : { url: browserAddress(url) },
       );
       setLocal(result);
+      setUrl(result.url);
       await refresh();
       if (end) close();
     } catch (e) {
@@ -887,23 +918,41 @@ function BrowserDetail({ initial }: { initial: BrowserSession }) {
   }
   return (
     <Sheet
-      title={browser.title || "Browser session"}
+      title={browserSite(browser.url)}
       subtitle={`${browser.status} · updated ${timeLabel(browser.updatedAt)}`}
       onClose={close}
       wide
     >
       <View style={[s.row, { gap: 10, marginBottom: 16 }]}>
         <View style={{ flex: 1 }}>
-          <Field label="Website address" value={url} onChangeText={setUrl} autoCapitalize="none" />
+          <Field
+            label="Website address"
+            value={url}
+            onChangeText={setUrl}
+            autoCapitalize="none"
+            keyboardType="url"
+            onSubmitEditing={() => void mutate()}
+          />
         </View>
-        <Button primary busy={busy} disabled={!url.trim()} onPress={() => void mutate()}>
-          {browser.status === "closed" ? "Reopen" : "Go"}
+        <Button primary busy={busy} disabled={loading || !url.trim()} onPress={() => void mutate()}>
+          {browser.status === "closed" ? "Reopen" : browser.status === "error" ? "Reconnect" : "Go"}
         </Button>
       </View>
       <ErrorNotice error={error} />
-      {browser.consoleUrl ? (
+      {loading ? (
+        <View style={[s.row, { gap: 10, paddingVertical: 24 }]}>
+          {error ? (
+            <Button onPress={() => setRetry(retry + 1)}>Retry connection</Button>
+          ) : (
+            <>
+              <ActivityIndicator color={colors.blueDark} />
+              <Text style={s.muted}>Connecting to your browser…</Text>
+            </>
+          )}
+        </View>
+      ) : browser.status === "active" && browser.consoleUrl ? (
         <BrowserConsole url={api.url(browser.consoleUrl)} />
-      ) : browser.previewUrl ? (
+      ) : browser.status === "active" && browser.previewUrl ? (
         <Image
           source={{ uri: api.url(browser.previewUrl) }}
           style={{ width: "100%", height: 450, backgroundColor: colors.canvas }}
@@ -915,24 +964,33 @@ function BrowserDetail({ initial }: { initial: BrowserSession }) {
           title={
             browser.status === "closed" ? "This session is closed" : "Preview is not available"
           }
-          detail="The browser worker will provide a live console when the session is running."
+          detail={
+            browser.status === "closed"
+              ? "Your profile and downloads are saved. Reopen to continue where you left off."
+              : "Reconnect to continue with your saved browser profile."
+          }
         />
       )}
       <View style={[s.row, { gap: 10, marginTop: 18, flexWrap: "wrap" }]}>
-        {browser.consoleUrl && (
+        {!loading && browser.status === "active" && browser.consoleUrl && (
           <Button
             icon={ExternalLink}
             onPress={() => void Linking.openURL(api.url(browser.consoleUrl || ""))}
           >
-            Open console
+            Open browser in a window
           </Button>
         )}
-        {browser.status !== "closed" && (
+        {!loading && (
+          <Button icon={RotateCw} disabled={busy} onPress={() => setRetry(retry + 1)}>
+            Refresh connection
+          </Button>
+        )}
+        {!loading && browser.status !== "closed" && (
           <Button icon={Download} busy={busy} onPress={() => void importDownloads()}>
             Import PDF downloads
           </Button>
         )}
-        {browser.status !== "closed" && (
+        {!loading && browser.status !== "closed" && (
           <Button icon={X} danger busy={busy} onPress={() => void mutate(true)}>
             Close session
           </Button>

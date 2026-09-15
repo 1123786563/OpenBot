@@ -1,7 +1,18 @@
-import { FileText, FolderOpen, Globe2, Monitor, Plus, RefreshCw } from "lucide-react-native";
+import {
+  FileText,
+  FolderOpen,
+  Globe2,
+  Monitor,
+  Plus,
+  RefreshCw,
+  Terminal,
+} from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { AppState, Image, Pressable, Text, View } from "react-native";
 import type { BrowserSession } from "../../../packages/domain/src";
+import { browserAddress } from "./browser-address";
+import { useComputerDraft } from "./computer-drafts";
+import { LinuxWorkspace } from "./computer-workspace";
 import { Button, Card, colors, ErrorNotice, Field, LinkRow, Sheet, s } from "./ui";
 import { useWorkspace } from "./workspace";
 
@@ -29,7 +40,7 @@ export function ComputerEntry() {
       ]}
     >
       <Monitor size={13} color={colors.muted} />
-      <Text style={{ fontSize: 11, color: colors.muted }}>
+      <Text style={{ fontSize: 12, color: colors.muted }}>
         Computer
         {active
           ? ` · ${active} ${active === 1 ? "session" : "sessions"}`
@@ -97,7 +108,13 @@ export function BrowserThreadCard({ browser }: { browser: BrowserSession }) {
           </Text>
         </View>
       )}
-      <Button onPress={() => open({ type: "browser", browser })}>Open browser</Button>
+      <Button onPress={() => open({ type: "browser", browser })}>
+        {browser.status === "closed"
+          ? "Reopen browser"
+          : browser.status === "error"
+            ? "Reconnect browser"
+            : "Open browser"}
+      </Button>
     </Card>
   );
 }
@@ -106,7 +123,7 @@ export function ComputerSheet() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"Browser" | "Files">("Browser");
+  const [tab, setTab] = useComputerDraft("tab");
   const available = workspace.connections.some(
     (c) => c.id === "browser" && c.status === "connected",
   );
@@ -128,7 +145,9 @@ export function ComputerSheet() {
     setBusy(true);
     setError("");
     try {
-      const browser = await api.request<BrowserSession>("/api/browsers", { url: url.trim() });
+      const browser = await api.request<BrowserSession>("/api/browsers", {
+        url: browserAddress(url),
+      });
       await refresh();
       open({ type: "browser", browser });
     } catch (e) {
@@ -140,34 +159,39 @@ export function ComputerSheet() {
   return (
     <Sheet
       title="Agent computer"
-      subtitle="A browser and files that stay with your agent."
+      subtitle="A browser, terminal, and room to create."
       onClose={close}
     >
       <View style={{ gap: 20 }}>
-        <View
-          style={[s.row, { gap: 12, padding: 18, borderRadius: 20, backgroundColor: colors.sky }]}
-        >
-          <Monitor size={28} color={colors.blueDark} />
-          <View style={{ flex: 1 }}>
-            <Text style={s.heading}>{available ? "Computer connected" : "Computer offline"}</Text>
-            <Text style={s.muted}>
-              {available
-                ? "Persistent Chromium sessions · shared with your agent"
-                : "Start the browser worker to connect this computer."}
-            </Text>
+        {tab === "Browser" && (
+          <View
+            style={[s.row, { gap: 12, padding: 18, borderRadius: 20, backgroundColor: colors.sky }]}
+          >
+            <Monitor size={28} color={colors.blueDark} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.heading}>{available ? "Browser connected" : "Browser offline"}</Text>
+              <Text style={s.muted}>
+                {available
+                  ? "Your agent’s browser and documents, in one place."
+                  : "Start the browser worker to connect this computer."}
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
         <View style={[s.row, { gap: 8 }]}>
-          {(["Browser", "Files"] as const).map((item) => (
+          {(["Browser", "Terminal", "Files"] as const).map((item) => (
             <Button
               key={item}
               primary={tab === item}
-              icon={item === "Browser" ? Globe2 : FolderOpen}
+              icon={item === "Browser" ? Globe2 : item === "Terminal" ? Terminal : FolderOpen}
               onPress={() => setTab(item)}
             >
               {item}
             </Button>
           ))}
+        </View>
+        <View style={{ display: tab === "Browser" ? "none" : "flex" }}>
+          <LinuxWorkspace tab={tab === "Files" ? "Files" : "Terminal"} />
         </View>
         <ErrorNotice error={error} />
         {tab === "Browser" ? (
@@ -204,13 +228,14 @@ export function ComputerSheet() {
               </Text>
             )}
             <Text style={s.small}>
-              The agent can read public pages and collect documents. Open a session to interact with
-              the page yourself. This worker is a browser environment, not a full desktop virtual
-              machine.
+              Browsing sessions keep their own logins and downloads. Open one to take over, then
+              return to your conversation.
             </Text>
           </>
-        ) : (
+        ) : tab === "Files" ? (
           <>
+            <Text style={s.heading}>Documents</Text>
+            <Text style={s.small}>PDFs saved from mail, browser downloads, and your uploads.</Text>
             {workspace.files.map((file) => (
               <LinkRow
                 key={file.id}
@@ -230,7 +255,7 @@ export function ComputerSheet() {
               Import a document
             </Button>
           </>
-        )}
+        ) : null}
         <Button
           small
           icon={RefreshCw}

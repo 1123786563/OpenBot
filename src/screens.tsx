@@ -52,6 +52,7 @@ import {
   LinkRow,
   Orb,
   relativeDate,
+  resultSummary,
   SectionHeading,
   Sheet,
   s,
@@ -1140,7 +1141,7 @@ export function ActivityScreen() {
                 </View>
                 <View style={{ flex: 1, gap: 4 }}>
                   <Text style={s.text}>{a.title}</Text>
-                  <Text style={s.muted}>{a.detail}</Text>
+                  <Text style={s.muted}>{resultSummary(a.detail)}</Text>
                   <Text style={s.small}>
                     {dateLabel(a.date)} · {timeLabel(a.date)}
                   </Text>

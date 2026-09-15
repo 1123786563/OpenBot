@@ -7,8 +7,8 @@ import {
   useRenderTool,
   useRenderToolCall,
 } from "@copilotkit/react-native/headless";
-import { ArrowUp, FileText, RotateCcw, Square, X } from "lucide-react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, FileText, RotateCcw, Square, X } from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -21,9 +21,12 @@ import {
 import { z } from "zod";
 import { ArtifactCard } from "./agent-ui";
 import { useAgentWorkspace } from "./agent-workspace";
+import { BackgroundUpdates } from "./background-updates";
 import { BrowserThreadCard } from "./computer";
+import { ConversationQueue, type QueuedMessage } from "./conversation-queue";
+import { runConversationTurn } from "./conversation-run";
 import { FileThreadCard, TaskThreadCard } from "./thread-artifacts";
-import { useMuseThread } from "./threads";
+import { type Selection, useMuseThread } from "./threads";
 import { Button, Card, CheckRow, colors, ErrorNotice, Orb, s } from "./ui";
 import { useWorkspace } from "./workspace";
 
@@ -134,10 +137,19 @@ function ServerToolCard({
     </Card>
   );
 }
-export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }) {
+export function ChatScreen({
+  prompt,
+  thread,
+  active = true,
+}: {
+  prompt?: { id: number; text: string };
+  thread?: Selection;
+  active?: boolean;
+}) {
   const { api, workspace: w, refresh, open, navigate } = useWorkspace();
   const { data: agentWorkspace, refresh: refreshAgent } = useAgentWorkspace();
-  const { enabled: richThreads, selection, claimPrompt } = useMuseThread();
+  const { enabled: richThreads, mainId, claimPrompt } = useMuseThread();
+  const selection = thread || { id: "local", existing: false };
   const agentId = richThreads ? `openmuse-${selection.id}` : "default";
   const { agent, isReady } = useAgent(
     richThreads ? { agentId, runtimeAgentId: "default", threadId: selection.id } : { agentId },
@@ -146,6 +158,7 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
   const renderToolCall = useRenderToolCall();
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
+  const [inputHeight, setInputHeight] = useState(44);
   const [showResults, setShowResults] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -153,6 +166,12 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
   const [picking, setPicking] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const list = useRef<ScrollView>(null);
+  const [queue] = useState(() => new ConversationQueue());
+  const outbox = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
+  const followLatest = useRef(true);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
+  const runLock = useRef(false);
+  const [saveError, setSaveError] = useState("");
   const [historyError, setHistoryError] = useState("");
   const [historyAttempt, setHistoryAttempt] = useState(0);
   useEffect(() => {
@@ -160,82 +179,108 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
     let active = true;
     setHistoryError("");
     setLoaded(false);
+    const replay = agent.subscribe({
+      onMessagesChanged: ({ messages }) => {
+        if (active && richThreads && messages.length) setLoaded(true);
+      },
+    });
     async function hydrate() {
       try {
         if (richThreads) {
-          if (selection.existing) await copilotkit.connectAgent({ agent });
+          if (selection.existing)
+            await runConversationTurn(
+              agentId,
+              () => copilotkit.connectAgent({ agent }),
+              (onError) => copilotkit.subscribe({ onError }),
+            );
         } else {
           const { messages } = await api.request<{ messages: Message[] }>("/api/conversation");
           if (active) agent.setMessages(messages);
         }
         if (active) setLoaded(true);
       } catch (e) {
-        if (active)
+        if (active) {
+          setLoaded(false);
           setHistoryError(
             `Could not load conversation. Your saved messages have not been changed. ${e instanceof Error ? e.message : String(e)}`,
           );
+        }
       }
     }
     void hydrate();
     return () => {
       active = false;
+      replay.unsubscribe();
       if (richThreads) void agent.detachActiveRun().catch(() => {});
     };
-  }, [agent, api, copilotkit, isReady, historyAttempt, richThreads, selection.existing]);
+  }, [agent, agentId, api, copilotkit, isReady, historyAttempt, richThreads, selection.existing]);
+  const saveHistory = useCallback(async () => {
+    if (!richThreads) await api.request("/api/conversation", { messages: agent.messages }, "PUT");
+    setSaveError("");
+  }, [agent, api, richThreads]);
   const run = useCallback(
-    async (text?: string) => {
-      if (busy || agent.isRunning || !isReady || !loaded) return;
+    async (message?: QueuedMessage) => {
+      if (runLock.current || agent.isRunning || !isReady || !loaded)
+        throw new Error("The conversation is not ready yet.");
+      runLock.current = true;
       setBusy(true);
       setError("");
-      if (text) {
-        agent.addMessage({
-          id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          role: "user",
-          content: text,
-        });
-        setDraft("");
-        setAttachments([]);
-        setPicking(false);
-      }
+      if (message) agent.addMessage({ id: message.id, role: "user", content: message.text });
       try {
-        await copilotkit.runAgent({ agent });
+        await runConversationTurn(
+          agentId,
+          () => copilotkit.runAgent({ agent }),
+          (onError) => copilotkit.subscribe({ onError }),
+        );
         await Promise.all([refresh(), refreshAgent()]);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
       } finally {
-        setBusy(false);
         try {
-          if (!richThreads)
-            await api.request("/api/conversation", { messages: agent.messages }, "PUT");
+          await saveHistory();
         } catch (e) {
-          setError(
+          queue.pause();
+          setSaveError(
             `Conversation could not be saved: ${e instanceof Error ? e.message : String(e)}`,
           );
+        } finally {
+          runLock.current = false;
+          setBusy(false);
         }
       }
     },
-    [agent, api, busy, copilotkit, isReady, loaded, refresh, refreshAgent, richThreads],
+    [agent, agentId, copilotkit, isReady, loaded, refresh, refreshAgent, saveHistory, queue],
+  );
+  const flush = useCallback(() => {
+    if (!loaded || !isReady || runLock.current || agent.isRunning) return;
+    void queue.flush(run).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [agent, isReady, loaded, queue, run]);
+  const enqueue = useCallback(
+    (text: string) => {
+      queue.enqueue({ id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text });
+      followLatest.current = true;
+      setAwayFromLatest(false);
+      flush();
+    },
+    [queue, flush],
   );
   useEffect(() => {
-    if (prompt && isReady && loaded && !busy && !agent.isRunning && claimPrompt(prompt.id)) {
-      if (prompt.text.trim()) void run(prompt.text);
-    }
-  }, [prompt, isReady, loaded, busy, agent.isRunning, run, claimPrompt]);
+    if (!busy && !agent.isRunning && outbox.pending.length) flush();
+  }, [busy, agent.isRunning, outbox.pending.length, flush]);
+  useEffect(() => {
+    if (active && prompt && isReady && loaded && claimPrompt(prompt.id) && prompt.text.trim())
+      enqueue(prompt.text);
+  }, [active, prompt, isReady, loaded, enqueue, claimPrompt]);
   useEffect(() => {
     const subscription = copilotkit.subscribe({
       onError: (event) => {
-        if (
-          event.context?.agentId &&
-          event.context.agentId !== agentId &&
-          event.context.agentId !== "default"
-        )
-          return;
-        setError(event.error instanceof Error ? event.error.message : String(event.error));
+        if (event.context?.agentId && event.context.agentId !== agentId) return;
+        const failure = event.error instanceof Error ? event.error : new Error(String(event.error));
+        setError(failure.message);
       },
     });
     return () => subscription.unsubscribe();
-  }, [copilotkit, agentId]);
+  }, [copilotkit, agentId, queue]);
   async function stop() {
+    queue.pause();
     try {
       await copilotkit.stopAgent({ agent });
     } catch (e) {
@@ -244,15 +289,19 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
   }
   function send() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !isReady || !loaded) return;
     setShowResults(false);
     const files = w.files.filter((f) => attachments.includes(f.id));
-    void run(
+    enqueue(
       text +
         (files.length
           ? `\n\nAttached documents: ${files.map((f) => `${f.name} (artifact ID: ${f.id})`).join(", ")}`
           : ""),
     );
+    setDraft("");
+    setInputHeight(44);
+    setAttachments([]);
+    setPicking(false);
   }
   const messages = agent.messages || [];
   const visible = messages.filter((m) => m.role === "user" || m.role === "assistant");
@@ -262,7 +311,15 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
         ref={list}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ gap: 13, paddingTop: 15, paddingBottom: 20, flexGrow: 1 }}
-        onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
+        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+          const nearEnd = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
+          followLatest.current = nearEnd;
+          setAwayFromLatest(!nearEnd);
+        }}
+        scrollEventThrottle={100}
+        onContentSizeChange={() => {
+          if (active && followLatest.current) list.current?.scrollToEnd({ animated: false });
+        }}
         keyboardShouldPersistTaps="handled"
       >
         {!!historyError && (
@@ -397,6 +454,7 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
             )}
           </>
         )}
+        {(!richThreads || selection.id === mainId) && <BackgroundUpdates />}
         {(busy || agent.isRunning) && (
           <View
             accessibilityLabel="Agent is working"
@@ -431,14 +489,89 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
           <Button
             style={{ alignSelf: "flex-start" }}
             icon={RotateCcw}
-            disabled={busy || !loaded || !isReady}
-            onPress={() => void run()}
+            disabled={busy || agent.isRunning || !loaded || !isReady}
+            onPress={() => {
+              void run()
+                .then(() => {
+                  if (!queue.getSnapshot().paused) flush();
+                })
+                .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+            }}
           >
             Retry response
           </Button>
         )}
       </ScrollView>
+      {awayFromLatest && (
+        <Button
+          small
+          icon={ArrowDown}
+          style={{ alignSelf: "center", marginBottom: 10 }}
+          onPress={() => {
+            followLatest.current = true;
+            setAwayFromLatest(false);
+            list.current?.scrollToEnd({ animated: true });
+          }}
+        >
+          Latest messages
+        </Button>
+      )}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ErrorNotice error={saveError} />
+        {!!saveError && (
+          <Button
+            small
+            disabled={busy}
+            onPress={() => {
+              void saveHistory().catch((e) => setSaveError(String(e)));
+            }}
+          >
+            Retry saving conversation
+          </Button>
+        )}
+        {!!outbox.pending.length && (
+          <View style={{ padding: 12, gap: 6 }}>
+            <Text style={s.small}>
+              {outbox.paused ? "Messages on hold" : "Up next"} · Keep the app open until sent
+            </Text>
+            {outbox.pending.map((message) => (
+              <View key={message.id} style={[s.row, { gap: 8 }]}>
+                <Text numberOfLines={2} style={[s.muted, { flex: 1 }]}>
+                  {message.text}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove queued message: ${message.text}`}
+                  hitSlop={10}
+                  onPress={() => queue.remove(message.id)}
+                  style={{ padding: 8 }}
+                >
+                  <X size={16} color={colors.muted} />
+                </Pressable>
+              </View>
+            ))}
+            {outbox.paused && (
+              <Button
+                small
+                disabled={busy || !!saveError}
+                onPress={() => {
+                  queue.resume();
+                  flush();
+                }}
+              >
+                Send queued messages
+              </Button>
+            )}
+          </View>
+        )}
+        {(busy || agent.isRunning) && (
+          <View style={[s.between, { paddingHorizontal: 12, paddingBottom: 8 }]}>
+            <Text style={s.small}>You can keep sending messages</Text>
+            <Button small icon={Square} onPress={() => void stop()}>
+              Stop reply
+            </Button>
+          </View>
+        )}
         {picking && (
           <Card style={{ marginBottom: 12, padding: 15 }}>
             <Text style={s.heading}>Add a document</Text>
@@ -542,6 +675,9 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
               accessibilityLabel="Message OpenMuse"
               value={draft}
               onChangeText={setDraft}
+              onContentSizeChange={(event) =>
+                setInputHeight(Math.max(44, Math.min(140, event.nativeEvent.contentSize.height)))
+              }
               placeholder={
                 !isReady
                   ? "Connecting…"
@@ -549,7 +685,7 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
                     ? historyError
                       ? "Conversation unavailable"
                       : "Loading conversation…"
-                    : "Ask OpenMuse…"
+                    : "Message…"
               }
               placeholderTextColor="#949B9F"
               selectionColor={colors.blueDark}
@@ -558,6 +694,7 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
               style={{
                 flex: 1,
                 color: colors.text,
+                height: inputHeight,
                 minHeight: 44,
                 maxHeight: 140,
                 fontSize: 17,
@@ -567,7 +704,7 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
                 paddingBottom: 10,
               }}
               multiline
-              editable={!busy && !agent.isRunning}
+              editable
               onKeyPress={
                 Platform.OS === "web"
                   ? (event) => {
@@ -584,28 +721,20 @@ export function ChatScreen({ prompt }: { prompt?: { id: number; text: string } }
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={busy || agent.isRunning ? "Stop response" : "Send message"}
-              disabled={!busy && !agent.isRunning && (!draft.trim() || !loaded || !isReady)}
-              onPress={() => (busy || agent.isRunning ? void stop() : send())}
+              accessibilityLabel="Send message"
+              disabled={!draft.trim() || !loaded || !isReady}
+              onPress={send}
               style={({ pressed }) => ({
                 width: 44,
                 height: 44,
                 borderRadius: 24,
-                backgroundColor: draft.trim() || busy || agent.isRunning ? colors.blue : "#EDF6FC",
+                backgroundColor: draft.trim() ? colors.blue : "#F3F5F6",
                 alignItems: "center",
                 justifyContent: "center",
                 transform: [{ scale: pressed ? 0.94 : 1 }],
               })}
             >
-              {busy || agent.isRunning ? (
-                <Square size={14} fill={colors.text} color={colors.text} />
-              ) : (
-                <ArrowUp
-                  size={25}
-                  strokeWidth={1.8}
-                  color={draft.trim() ? colors.text : "#9CB5C5"}
-                />
-              )}
+              <ArrowUp size={25} strokeWidth={1.8} color={draft.trim() ? colors.text : "#9CB5C5"} />
             </Pressable>
           </View>
         </View>

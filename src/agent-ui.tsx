@@ -45,6 +45,8 @@ import {
   ErrorNotice,
   Field,
   LinkRow,
+  Orb,
+  resultSummary,
   SectionHeading,
   Sheet,
   s,
@@ -150,7 +152,7 @@ export function TaskCard({
         )}
         {(task.question || task.result || task.error || next?.title) && (
           <Text numberOfLines={compact ? 2 : 4} style={s.muted}>
-            {task.question || task.error || task.result || next?.title}
+            {task.question || task.error || resultSummary(task.result || next?.title || "")}
           </Text>
         )}
         {waiting && (
@@ -524,7 +526,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
           {task.result && (
             <Card style={{ backgroundColor: colors.green }}>
               <Text selectable style={s.text}>
-                {task.result}
+                {resultSummary(task.result)}
               </Text>
             </Card>
           )}
@@ -1666,6 +1668,8 @@ export function AppsScreen() {
   const [settings, setSettings] = useState(false);
   const [name, setName] = useState(data?.identity.name || "OpenMuse");
   const [tone, setTone] = useState(data?.identity.tone || "warm");
+  const [avatar, setAvatar] = useState(data?.identity.avatar || "sky");
+  const [showChatUpdates, setShowChatUpdates] = useState(data?.identity.showChatUpdates !== false);
   const [memory, setMemory] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1673,8 +1677,15 @@ export function AppsScreen() {
     if (data?.identity) {
       setName(data.identity.name);
       setTone(data.identity.tone);
+      setAvatar(data.identity.avatar || "sky");
+      setShowChatUpdates(data.identity.showChatUpdates !== false);
     }
-  }, [data?.identity.name, data?.identity.tone]);
+  }, [
+    data?.identity.name,
+    data?.identity.tone,
+    data?.identity.avatar,
+    data?.identity.showChatUpdates,
+  ]);
   async function save(path: string, body: unknown) {
     setBusy(true);
     setError("");
@@ -1748,6 +1759,24 @@ export function AppsScreen() {
         <>
           <Card style={{ gap: 10 }}>
             <SectionHeading title="Your agent" />
+            <View style={[s.row, { gap: 16, justifyContent: "center", marginBottom: 12 }]}>
+              {(["sky", "sand", "lilac"] as const).map((item) => (
+                <Pressable
+                  key={item}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${statusLabel(item)} avatar`}
+                  accessibilityState={{ checked: avatar === item }}
+                  onPress={() => setAvatar(item)}
+                  style={{
+                    padding: 7,
+                    borderRadius: 24,
+                    backgroundColor: avatar === item ? colors.sky : colors.canvas,
+                  }}
+                >
+                  <Orb size={62} variant={item} />
+                </Pressable>
+              ))}
+            </View>
             <Field label="Name" value={name} onChangeText={setName} />
             <View style={[s.row, { gap: 8 }]}>
               {(["warm", "concise", "thoughtful"] as const).map((item) => (
@@ -1756,12 +1785,23 @@ export function AppsScreen() {
                 </Button>
               ))}
             </View>
+            <CheckRow
+              label="Show background updates in chat"
+              checked={showChatUpdates}
+              onPress={() => setShowChatUpdates(!showChatUpdates)}
+            />
+            <Text style={s.small}>
+              Activity and notifications always keep the full record, including requests for
+              approval.
+            </Text>
             <Button
               busy={busy}
               disabled={!name.trim()}
-              onPress={() => void save("/identity", { name: name.trim(), tone })}
+              onPress={() =>
+                void save("/identity", { name: name.trim(), tone, avatar, showChatUpdates })
+              }
             >
-              Save personality
+              Save preferences
             </Button>
           </Card>
           <Card style={{ gap: 12 }}>
