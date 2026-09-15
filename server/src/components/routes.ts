@@ -284,6 +284,20 @@ export function createComponentRoutes(
         400,
       );
     }
+    // A string `args` would reach `fn.run` and fail as a 502 data error instead of a malformed
+    // call. Arrays and prototype-polluted objects are refused for the same reason.
+    if (
+      body?.args !== undefined &&
+      (typeof body.args !== "object" ||
+        body.args === null ||
+        Array.isArray(body.args) ||
+        Object.getPrototypeOf(body.args) !== Object.prototype)
+    ) {
+      return context.json(
+        { error: "Function arguments must be an object." },
+        400,
+      );
+    }
     // Before the grant, and before anything runs. This is the route that executes, so borrowing a
     // Bot here borrows whatever its components were granted.
     if (!(await canUseBot(context.var.actor, agentId))) {

@@ -2441,6 +2441,18 @@ export function createPluginRoutes(
     ) {
       return context.json({ error: "A tool and a Bot are required." }, 400);
     }
+    // `args` reaches `Object.entries` inside the store, where a string fans out into indexed
+    // entries, a number becomes no entries, and an array passes as an object — all escaping as
+    // a vendor 502 instead of a 400 for a malformed call.
+    if (
+      body.args !== undefined &&
+      (typeof body.args !== "object" ||
+        body.args === null ||
+        Array.isArray(body.args) ||
+        Object.getPrototypeOf(body.args) !== Object.prototype)
+    ) {
+      return context.json({ error: "Tool arguments must be an object." }, 400);
+    }
 
     // Asked before the grant is looked up, and before anything reaches a vendor. The grant says this
     // Bot may use the tool; it says nothing about whether this person may act as this Bot, and the
