@@ -284,19 +284,47 @@ export function createPluginRoutes(
     if (forbidden) return forbidden;
 
     const body = (await context.req.json().catch(() => null)) as {
-      key?: string;
-      instanceHost?: string;
-      credentialId?: string;
+      key?: unknown;
+      instanceHost?: unknown;
+      credentialId?: unknown;
     } | null;
-    if (!body?.key) {
+    const key = typeof body?.key === "string" ? body.key.trim() : "";
+    if (!key) {
       return context.json({ error: "A catalogue key is required." }, 400);
+    }
+    // Optional fields travel to `input.credentialId?.trim()` in the store, where a number or
+    // object throws a TypeError that escapes as a 500. A string that is only whitespace would
+    // silently become `undefined` there, so it is refused here instead of being coerced.
+    if (
+      body?.instanceHost !== undefined &&
+      (typeof body.instanceHost !== "string" || !body.instanceHost.trim())
+    ) {
+      return context.json(
+        { error: "An instance host must be a non-empty string." },
+        400,
+      );
+    }
+    if (
+      body?.credentialId !== undefined &&
+      (typeof body.credentialId !== "string" || !body.credentialId.trim())
+    ) {
+      return context.json(
+        { error: "A credential id must be a non-empty string." },
+        400,
+      );
     }
 
     try {
       const server = await store.addServer({
-        key: body.key,
-        instanceHost: body.instanceHost,
-        credentialId: body.credentialId,
+        key,
+        instanceHost:
+          typeof body?.instanceHost === "string"
+            ? body.instanceHost.trim()
+            : undefined,
+        credentialId:
+          typeof body?.credentialId === "string"
+            ? body.credentialId.trim()
+            : undefined,
         by: actorEmail(context),
       });
       return context.json({ server });
@@ -342,14 +370,32 @@ export function createPluginRoutes(
     if (forbidden) return forbidden;
 
     const body = (await context.req.json().catch(() => null)) as {
-      id?: string;
-      title?: string;
-      url?: string;
-      credentialId?: string;
+      id?: unknown;
+      title?: unknown;
+      url?: unknown;
+      credentialId?: unknown;
     } | null;
-    if (!body?.id?.trim() || !body?.title?.trim() || !body?.url?.trim()) {
+    if (
+      typeof body?.id !== "string" ||
+      !body.id.trim() ||
+      typeof body?.title !== "string" ||
+      !body.title.trim() ||
+      typeof body?.url !== "string" ||
+      !body.url.trim()
+    ) {
       return context.json(
         { error: "A name, a title and a URL are required." },
+        400,
+      );
+    }
+    // `addCustomServer` dereferences `input.credentialId?.trim()`, so a number or object here
+    // throws a TypeError that escapes as a 500 instead of a 400.
+    if (
+      body.credentialId !== undefined &&
+      (typeof body.credentialId !== "string" || !body.credentialId.trim())
+    ) {
+      return context.json(
+        { error: "A credential id must be a non-empty string." },
         400,
       );
     }
@@ -359,7 +405,10 @@ export function createPluginRoutes(
         id: body.id.trim(),
         title: body.title.trim(),
         url: body.url.trim(),
-        credentialId: body.credentialId,
+        credentialId:
+          typeof body.credentialId === "string"
+            ? body.credentialId.trim()
+            : undefined,
         by: actorEmail(context),
       });
       return context.json({ server });
