@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Enter that confirms a typed character no longer saves a name, a rule or a wizard step
+
+Japanese, Chinese and Korean are typed through an input method, where Enter confirms the character
+being built. In three fields that Enter also acted: editing a coworker's name or title saved it with
+the character still unconfirmed, the new-coworker wizard moved on to its next step, and a boundary
+rule was saved into the policy in force. Those fields now wait for the character, the way the chat
+composer already does, and an ordinary Enter works as before.
+
 ### A built-in coworker can be edited where the deployment's own Bot is on localhost
 
 A coworker created as Built in is stored pointing at the managed Bot's address. Editing its name,
