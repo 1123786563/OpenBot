@@ -8,6 +8,16 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### An offboarding one app refuses still records the apps that answered
+
+Removing somebody withdraws each brokered account they connected. When the broker refused one of
+those apps, the whole act stopped before anything was recorded: apps already withdrawn at Composio
+kept their `composio_connections` row and left nothing on the trail saying the account had ended,
+and the retry that #574 made the recovery then asked again, was told there was nothing to withdraw,
+and wrote `vendorRevocationRequested: false` about a withdrawal this deployment had asked for and
+got. Each app is now asked, recorded with the answer it actually gave and its row removed, and only
+the apps that were refused are left standing for the retry. The act still fails and still answers
+500, so a refusal is as loud as it was.
 ### Paging the audit trail no longer skips rows written in the same millisecond
 
 `GET /api/admin/audit-events` hands out a `nextCursor` built from the last row's timestamp, which the
