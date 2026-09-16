@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### The Google Drive connector reaches files in shared drives
+
+Drive leaves shared drive items out of any `files.get` or `files.list` request that does not say it
+supports shared drives, and none of the connector's requests said so. A document the person could
+open in a shared drive was "File not found" to `get_file_metadata` and `read_file_content`, and never
+appeared in `search_files` or `list_recent_files`. Those requests now say they support shared drives,
+and the listings ask for shared drive items. Listings keep Drive's default `user` scope rather than
+searching every shared drive.
 ### Google Drive search and recent files leave out what is in the trash
 
 Drive's `files.list` returns trashed files unless the query excludes them, and neither `search_files`
