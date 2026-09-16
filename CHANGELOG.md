@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### The New chat shortcut works on a Russian or Greek keyboard layout
+
+Settings lists New chat as Shift+N, and the app matched the character the keystroke wrote. A layout
+that writes another script has no key that writes an N: Shift and the N key write "Т" on Russian and
+"Ν" on Greek, so the shortcut never fired there. When the character is not ASCII, the app now reads
+the physical key instead. A layout that writes Latin letters, such as Dvorak, still goes by the letter.
+
 ### Enter that confirms a typed character no longer saves a name, a rule or a wizard step
 
 Japanese, Chinese and Korean are typed through an input method, where Enter confirms the character
