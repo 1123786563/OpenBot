@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Google Drive search and recent files leave out what is in the trash
+
+Drive's `files.list` returns trashed files unless the query excludes them, and neither `search_files`
+nor `list_recent_files` did. A document somebody had thrown away came back to the Bot as a match or
+as a recently changed file, with nothing in its line to say it was in the trash, so the Bot could
+answer from it as though it were current. Both now ask Drive to leave the trash out. Reading a file by its
+id is unchanged.
 ### New conversations are still named once some older ones could not be
 
 Every pass of the job that names conversations offered at most twenty of those still without a name.
