@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A long page's text is cut between characters, not through one
+
+A navigation hands the Bot the first 6000 UTF-16 code units of the page's readable text. When that
+limit fell between the two halves of an emoji, the Bot was handed text ending on half a character,
+which reads as U+FFFD: a broken character that is not on the page. It now stops one code unit short
+in that case, which is what a control's name and value in a page snapshot already did.
+
 ### Tool selection reads a skill choice the model wrapped in a code fence
 
 Before a run, the deployment's model picks which of a Bot's skills the message needs, so a Bot holding
