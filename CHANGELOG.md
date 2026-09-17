@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Reading a large file from Google Drive no longer downloads all of it
+
+`read_file_content` shows a Bot at most the first 20,000 characters of a file, but it downloaded the
+whole file and held it in memory before cutting it. A 200 MB text file raised the server's memory by
+more than 600 MB for one call, on the process that serves everybody else. The connector now stops
+reading once it has more than it can show and cancels the rest of the download. What the Bot is shown
+is unchanged, except that the note on a cut file no longer gives the file's full length, which is no
+longer known.
 ### A Bot reads the text an MCP server returns as an embedded resource
 
 A tool result can carry an embedded resource, and a text resource holds content, such as a file the
