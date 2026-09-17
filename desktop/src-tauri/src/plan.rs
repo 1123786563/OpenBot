@@ -268,6 +268,7 @@ impl SigningIn {
             command.arg(argument);
         }
         command.arg("run");
+        command.arg("--pull=never");
         command.arg("--rm");
         command.arg("-i");
         command.arg("-t");
@@ -486,18 +487,20 @@ const CHATGPT_RELAY: u16 = 1456;
 fn publish_chatgpt_callback(
     command: &mut std::process::Command,
     engine: crate::engine::Engine,
-    windows: bool,
+    os: &str,
 ) {
-    // Windows Podman's IPv6 forward accepts TCP but closes the callback without an HTTP
-    // response. That prevents localhost clients from trying the working IPv4 address:
-    // Happy Eyeballs stops at the first successful TCP handshake (RFC 8305, sections 5/9.2).
-    // Publish only IPv4 there so localhost falls back after IPv6 connection refusal.
-    // Keep the registered localhost redirect URI and the other runtimes' bindings unchanged.
-    let hosts: &[&str] = if windows && engine == crate::engine::Engine::Podman {
-        &["127.0.0.1"]
-    } else {
-        &["127.0.0.1", "[::1]"]
-    };
+    // macOS Podman clears HostIP inside its VM, so dual loopback publishes become duplicate
+    // mappings and rootlessport rejects them with "conflict with ID 1". See Podman's
+    // libpod/networking_common.go::convertPortMappings. Windows Podman's IPv6 forward instead
+    // accepts TCP but drops HTTP, preventing localhost from trying IPv4 (RFC 8305, sections 5/9.2).
+    // Publish IPv4 only on these hosts: IPv6 refuses, allowing the registered localhost callback
+    // to reach IPv4. Docker and native Linux Podman retain both loopback bindings.
+    let hosts: &[&str] =
+        if matches!(os, "windows" | "macos") && engine == crate::engine::Engine::Podman {
+            &["127.0.0.1"]
+        } else {
+            &["127.0.0.1", "[::1]"]
+        };
     for host in hosts {
         command.arg("-p");
         command.arg(format!("{host}:{CHATGPT_LOOPBACK}:{CHATGPT_RELAY}"));
@@ -615,15 +618,16 @@ impl SigningInToChatGpt {
         let mut command = crate::quiet::command(binary);
         command.args(arguments);
         command.arg("run");
+        command.arg("--pull=never");
         command.arg("--rm");
         /*
          * Published on loopback only, and on the number the vendor's login advertises.
          *
          * The container's relay listens on `CHATGPT_RELAY` and forwards to the login's own
          * loopback bind; the browser is sent to `CHATGPT_LOOPBACK` on this machine.
-         * publish_chatgpt_callback handles the Windows Podman IPv6 forwarding limitation.
+         * publish_chatgpt_callback handles the macOS and Windows Podman forwarding limitations.
          */
-        publish_chatgpt_callback(&mut command, engine.engine, cfg!(windows));
+        publish_chatgpt_callback(&mut command, engine.engine, std::env::consts::OS);
         command.arg(image);
         command.arg("python");
         command.arg("-u");
@@ -773,6 +777,43 @@ mod tests {
     use crate::engine::Engine;
 
     #[test]
+    fn subscription_containers_never_download_software() {
+        if crate::test_support::isolated_process(
+            "plan::tests::subscription_containers_never_download_software",
+        ) {
+            return;
+        }
+        let root = crate::test_support::temp_root("subscription-without-downloads");
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("docker.rs");
+        std::fs::write(&source, r#"
+use std::io::Write;
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    assert_eq!(args.first().map(String::as_str), Some("run"));
+    assert!(args.iter().any(|arg| arg == "--pull=never"), "subscription login must refuse missing images");
+    print!("\x1b]8;;https://claude.ai/oauth/authorize?synthetic=prepared\x1b\\Sign in\x1b]8;;\x1b\\\r\n");
+    println!("https://auth.openai.com/oauth/authorize?synthetic=prepared");
+    std::io::stdout().flush().unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(30));
+}
+"#).unwrap();
+        crate::test_support::compile_fixture(
+            &source,
+            &root.join(format!("docker{}", std::env::consts::EXE_SUFFIX)),
+        );
+        std::env::set_var("PATH", &root);
+        let address = crate::engine::Address::new(Engine::Docker, None);
+        let (mut claude, url) = SigningIn::begin(&address, "synthetic-claude").unwrap();
+        assert!(url.contains("synthetic=prepared"));
+        claude.stop();
+        let (mut chatgpt, url) = SigningInToChatGpt::begin(&address, "synthetic-chatgpt").unwrap();
+        assert!(url.contains("synthetic=prepared"));
+        chatgpt.stop();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     #[cfg(windows)]
     fn windows_claude_sign_in_keeps_its_terminal_until_the_flow_finishes() {
         if crate::test_support::isolated_process(
@@ -845,15 +886,17 @@ mod tests {
     }
 
     #[test]
-    fn chatgpt_callback_uses_ipv4_only_for_windows_podman() {
-        for (engine, windows, hosts) in [
-            (Engine::Podman, true, vec!["127.0.0.1"]),
-            (Engine::Podman, false, vec!["127.0.0.1", "[::1]"]),
-            (Engine::Docker, true, vec!["127.0.0.1", "[::1]"]),
-            (Engine::Docker, false, vec!["127.0.0.1", "[::1]"]),
+    fn chatgpt_callback_uses_one_loopback_mapping_for_macos_and_windows_podman() {
+        for (engine, os, hosts) in [
+            (Engine::Podman, "windows", vec!["127.0.0.1"]),
+            (Engine::Podman, "macos", vec!["127.0.0.1"]),
+            (Engine::Podman, "linux", vec!["127.0.0.1", "[::1]"]),
+            (Engine::Docker, "windows", vec!["127.0.0.1", "[::1]"]),
+            (Engine::Docker, "macos", vec!["127.0.0.1", "[::1]"]),
+            (Engine::Docker, "linux", vec!["127.0.0.1", "[::1]"]),
         ] {
             let mut command = crate::quiet::command(engine.binary());
-            publish_chatgpt_callback(&mut command, engine, windows);
+            publish_chatgpt_callback(&mut command, engine, os);
             let args: Vec<_> = command
                 .get_args()
                 .map(|arg| arg.to_str().unwrap())
@@ -862,7 +905,7 @@ mod tests {
                 .into_iter()
                 .flat_map(|host| ["-p".into(), format!("{host}:1455:1456")])
                 .collect();
-            assert_eq!(args, expected, "{engine:?}, Windows={windows}");
+            assert_eq!(args, expected, "{engine:?}, OS={os}");
         }
     }
 
