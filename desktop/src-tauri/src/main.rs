@@ -29,6 +29,9 @@ struct Shell {
     host_access: Mutex<Option<host_access::HostAccess>>,
     /// Named, because a restart policy that cannot say which process died cannot start it again.
     children: Mutex<Vec<(&'static str, std::process::Child)>>,
+    /// Native Linux engine API owned by this desktop session, kept through Stop/Start.
+    #[cfg(target_os = "linux")]
+    podman_api: Mutex<engine::local_api::Service>,
     /// Which run is the current one.
     ///
     /// Stopping and starting again inside two seconds would otherwise leave the previous watcher
@@ -229,26 +232,32 @@ struct ReadyRespondingEngine {
 /// Return a responding engine only after Compose is present too.
 fn ready_responding_engine_after_compose_repair(
     found: engine::EngineStatus,
+    install_missing_native: bool,
     mut install_engine: impl FnMut() -> Result<String, Problem>,
     mut detect: impl FnMut() -> engine::EngineStatus,
     mut composes: impl FnMut(&engine::Address) -> bool,
 ) -> Result<Option<ReadyRespondingEngine>, Problem> {
-    let Some(address) = found.address.clone().filter(|_| found.responding) else {
+    if let Some(address) = found.address.clone().filter(|_| found.responding) {
+        if composes(&address) {
+            return Ok(Some(ReadyRespondingEngine {
+                address,
+                detail: found.detail,
+                installed: None,
+            }));
+        }
+    } else if !install_missing_native {
         return Ok(None);
-    };
-    if composes(&address) {
-        return Ok(Some(ReadyRespondingEngine {
-            address,
-            detail: found.detail,
-            installed: None,
-        }));
     }
 
     let installed = install_engine()?;
     let ready = detect();
     let Some(address) = ready.address.clone().filter(|_| ready.responding) else {
         return Err(Problem::with(
-            "OpenBot installed Compose, but the container engine is not answering. Try again.",
+            if install_missing_native {
+                "OpenBot installed the container software, but the engine is not answering. Try again."
+            } else {
+                "OpenBot installed Compose, but the container engine is not answering. Try again."
+            },
             ready.detail,
         ));
     };
@@ -489,6 +498,7 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
     let existing = tauri::async_runtime::spawn_blocking(move || {
         ready_responding_engine_after_compose_repair(
             found,
+            cfg!(target_os = "linux"),
             || install::install_engine(&root),
             engine::detect,
             engine::Address::composes,
@@ -505,6 +515,23 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
         Ok(Some(ready)) => {
             if let Some(installed) = ready.installed {
                 report(app, "install-engine", true, installed);
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let handle = app.clone();
+                let address = ready.address.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let shell = handle.state::<Shell>();
+                    let _startup = shell.startup.lock().unwrap();
+                    ensure_linux_podman_api(&shell, &address)
+                })
+                .await
+                .map_err(|error| {
+                    Problem::with(
+                        "OpenBot could not start its container service.",
+                        error.to_string(),
+                    )
+                })??;
             }
             report(app, "engine", true, ready.detail);
             return Ok(ready.address);
@@ -594,6 +621,21 @@ async fn engine_ready(app: &tauri::AppHandle) -> Result<engine::Address, Problem
                 ready.detail,
             )
         })
+}
+
+/// Called while holding startup so Quit cannot retire the service during its acquisition.
+#[cfg(target_os = "linux")]
+fn ensure_linux_podman_api(shell: &Shell, address: &engine::Address) -> Result<(), Problem> {
+    if !matches!(*shell.quit.phase.lock().unwrap(), QuitPhase::Idle) {
+        return Err(Problem::plain(
+            "OpenBot is quitting. Start it again to continue.",
+        ));
+    }
+    shell
+        .podman_api
+        .lock()
+        .unwrap()
+        .ensure(&address.pin()?, &stack::default_root())
 }
 
 /// Install the latest published deployment on first use, then keep its recorded version.
@@ -989,6 +1031,10 @@ async fn start_stack_inner<R: tauri::Runtime>(
             return Err(status.detail.into());
         };
         let found = found.pin()?;
+        #[cfg(target_os = "linux")]
+        ensure_linux_podman_api(&shell, &found)?;
+        #[cfg(target_os = "linux")]
+        let status = found.status();
         acquire::prepare_for_compose(&found)?;
         let bun = preparation::require(&root, Some(&requested_harness), &found)?;
 
@@ -1857,6 +1903,13 @@ where
     if let Err(problem) = down_containers_with(shell, &root, down) {
         failures.push(format!("Compose down failed: {problem}"));
     }
+    #[cfg(target_os = "linux")]
+    if let Err(problem) = shell.podman_api.lock().unwrap().stop() {
+        failures.push(format!(
+            "Container API cleanup failed: {}",
+            problem_detail(problem)
+        ));
+    }
     if failures.is_empty() {
         clear_recovery_required(shell, &root);
     }
@@ -2452,8 +2505,16 @@ async fn begin_claude_sign_in(app: tauri::AppHandle, root: String) -> Result<Str
      * carry Anthropic's bundled CLI, which is what does the OAuth. Letting the screen name an image
      * would make the sign-in depend on a choice that has nothing to do with it.
      */
+    #[cfg(target_os = "linux")]
+    let service_app = app.clone();
     let (signing, url) = tauri::async_runtime::spawn_blocking(move || {
         let (address, image) = prepared_sign_in(&root, openbot_desktop_lib::plan::SIGN_IN_IMAGE)?;
+        #[cfg(target_os = "linux")]
+        {
+            let shell = service_app.state::<Shell>();
+            let _startup = shell.startup.lock().unwrap();
+            ensure_linux_podman_api(&shell, &address)?;
+        }
         openbot_desktop_lib::plan::SigningIn::begin(&address, &image).map_err(Problem::from)
     })
     .await
@@ -2506,9 +2567,17 @@ async fn begin_chatgpt_sign_in(
 ) -> Result<String, openbot_desktop_lib::problem::Problem> {
     let root = stack::root_from(&root);
     remember_selected_root(&app.state::<Shell>(), &root);
+    #[cfg(target_os = "linux")]
+    let service_app = app.clone();
     let (signing, url) = tauri::async_runtime::spawn_blocking(move || {
         let (address, image) =
             prepared_sign_in(&root, openbot_desktop_lib::plan::CHATGPT_SIGN_IN_IMAGE)?;
+        #[cfg(target_os = "linux")]
+        {
+            let shell = service_app.state::<Shell>();
+            let _startup = shell.startup.lock().unwrap();
+            ensure_linux_podman_api(&shell, &address)?;
+        }
         openbot_desktop_lib::plan::SigningInToChatGpt::begin(&address, &image)
     })
     .await
@@ -4378,6 +4447,71 @@ mod tests {
     }
 
     #[test]
+    fn linux_first_install_redetects_native_podman_without_a_virtual_machine() {
+        let missing = engine::EngineStatus {
+            engine: None,
+            address: None,
+            responding: false,
+            engine_socket: None,
+            detail: "No container engine yet.".into(),
+        };
+        let trace = std::cell::RefCell::new(Vec::new());
+        let ready = ready_responding_engine_after_compose_repair(
+            missing,
+            true,
+            || {
+                trace.borrow_mut().push("install");
+                Ok("Podman and Compose installed".into())
+            },
+            || {
+                trace.borrow_mut().push("detect");
+                engine::EngineStatus {
+                    engine: Some(engine::Engine::Podman),
+                    address: Some(engine::Address::new(engine::Engine::Podman, None)),
+                    responding: true,
+                    engine_socket: None,
+                    detail: "native Podman answers".into(),
+                }
+            },
+            |_| {
+                trace.borrow_mut().push("compose");
+                true
+            },
+        )
+        .unwrap()
+        .expect("Linux must return its newly installed native engine, not request a VM");
+        assert_eq!(ready.address.engine, engine::Engine::Podman);
+        assert!(ready.address.connection.is_none());
+        assert_eq!(*trace.borrow(), ["install", "detect", "compose"]);
+    }
+
+    #[test]
+    fn linux_failed_native_engine_is_an_error_instead_of_a_request_for_qemu() {
+        let stopped = engine::EngineStatus {
+            engine: Some(engine::Engine::Podman),
+            address: None,
+            responding: false,
+            engine_socket: None,
+            detail: "podman native operation failed".into(),
+        };
+        let result = ready_responding_engine_after_compose_repair(
+            stopped.clone(),
+            true,
+            || Ok("installed".into()),
+            || stopped.clone(),
+            |_| panic!("a failed engine cannot run Compose"),
+        );
+        assert!(
+            result.is_err(),
+            "Ok(None) would enter the virtual-machine path"
+        );
+        assert_eq!(
+            result.err().unwrap().detail.as_deref(),
+            Some("podman native operation failed")
+        );
+    }
+
+    #[test]
     fn responding_engine_without_compose_installs_then_redetects_before_returning() {
         let before = engine::EngineStatus {
             engine: Some(engine::Engine::Podman),
@@ -4401,6 +4535,7 @@ mod tests {
 
         let ready = ready_responding_engine_after_compose_repair(
             before,
+            false,
             || {
                 trace.borrow_mut().push("install-engine".to_string());
                 Ok("Compose installed.".into())
@@ -4447,6 +4582,7 @@ mod tests {
                 engine_socket: None,
                 detail: "podman is answering.".into(),
             },
+            false,
             || {
                 path.write_binary(install::compose_provider_name(), "compose-provider");
                 installed = true;
@@ -4767,13 +4903,20 @@ mod tests {
             path: SerializedPath,
             app: tauri::App<tauri::test::MockRuntime>,
             window: tauri::WebviewWindow<tauri::test::MockRuntime>,
+            previous_runtime: Option<std::ffi::OsString>,
         }
 
         impl Fixture {
             fn new() -> Self {
-                let base = temp_root("container-root-workflow");
+                // Unix socket paths must remain below sockaddr_un's length limit on macOS too.
+                let base = PathBuf::from("/tmp")
+                    .join(temp_root("container-root-workflow").file_name().unwrap());
                 std::fs::create_dir_all(&base).unwrap();
                 let base = base.canonicalize().unwrap();
+                let runtime = base.join("runtime");
+                std::fs::create_dir_all(&runtime).unwrap();
+                let previous_runtime = std::env::var_os("XDG_RUNTIME_DIR");
+                std::env::set_var("XDG_RUNTIME_DIR", &runtime);
                 let a = base.join("a");
                 let b = base.join("b");
                 write_installed_deployment(&a);
@@ -4807,9 +4950,45 @@ fn main() {
     writeln!(trace,"{}\t{}",identity,original.join(" ")).unwrap();
     let mut log=fs::OpenOptions::new().create(true).append(true).open(&record).unwrap();
     writeln!(log,"{}\t{}",cwd.display(),args.join(" ")).unwrap();
+    // Mac Podman adds its port overlay only to service-creating commands. Keep the original
+    // arguments in the ownership trace, then dispatch the same fixture behavior for up/run.
+    if engine=="podman" && args.iter().any(|arg| arg=="up" || arg=="run") {
+        while args.get(1).is_some_and(|arg| arg=="-f") {
+            assert!(std::path::Path::new(&args[2]).is_file());
+            args.drain(1..3);
+        }
+    }
     let words:Vec<&str>=args.iter().map(String::as_str).collect();
     if words==["context","show"] { println!("{target}"); return; }
     if words.starts_with(&["context","inspect"]) { println!("unix:///owned-default.sock"); return; }
+    if words.starts_with(&["system", "service"]) {
+        use std::{io::Read, os::unix::net::UnixListener, time::{Duration, Instant}};
+        assert_eq!(engine, "podman");
+        assert_eq!(target, "local");
+        let socket=PathBuf::from(words.last().unwrap().strip_prefix("unix://").unwrap());
+        assert_eq!(socket, PathBuf::from(env::var_os("XDG_RUNTIME_DIR").unwrap()).join("podman/podman.sock"));
+        let listener=UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let deadline=Instant::now()+Duration::from_secs(60);
+        while Instant::now()<deadline {
+            match listener.accept() {
+                Ok((mut stream,_)) => {
+                    stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                    stream.set_write_timeout(Some(Duration::from_secs(1))).unwrap();
+                    let mut request=Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") {
+                        let mut byte=[0;1]; stream.read_exact(&mut byte).unwrap(); request.push(byte[0]);
+                        assert!(request.len()<4096);
+                    }
+                    assert!(request.starts_with(b"GET /_ping HTTP/1.1\r\n"));
+                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK").unwrap();
+                }
+                Err(error) if error.kind()==std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(10)),
+                Err(error) => panic!("fixture API accept failed: {error}"),
+            }
+        }
+        return;
+    }
     if words.first()==Some(&"system") { println!("{target}"); return; }
     if words.first()==Some(&"machine") { println!("[]"); return; }
     if !base.join(format!("{engine}-ready")).exists() { eprintln!("synthetic original runtime unavailable"); std::process::exit(74); }
@@ -4818,6 +4997,7 @@ fn main() {
         ["version","--format",_] => println!("1.44"),
         ["info","--format","{{.Host.ServiceIsRemote}}"] => println!("false"),
         ["compose","version"] => println!("Synthetic Compose"),
+        ["compose","config","--environment"] => (),
         ["compose","ps","--format",_] => (),
         ["compose","up",..] => {
             fs::write(cwd.join("fixture-containers-running"),&identity).unwrap();
@@ -4870,6 +5050,7 @@ fn main() {
                     path,
                     app,
                     window,
+                    previous_runtime,
                 }
             }
 
@@ -4980,6 +5161,18 @@ fn main() {
 
         impl Drop for Fixture {
             fn drop(&mut self) {
+                #[cfg(target_os = "linux")]
+                self.app
+                    .state::<Shell>()
+                    .podman_api
+                    .lock()
+                    .unwrap()
+                    .stop()
+                    .expect("stop owned fixture API before deleting its runtime directory");
+                match &self.previous_runtime {
+                    Some(runtime) => std::env::set_var("XDG_RUNTIME_DIR", runtime),
+                    None => std::env::remove_var("XDG_RUNTIME_DIR"),
+                }
                 println!(
                     "CONTAINER_CLEANUP={}",
                     serde_json::json!({"base":self.base,"bin":self.path.bin(),"commands":self.commands(),"affinity":std::fs::read_to_string(self.base.join("affinity.log")).unwrap_or_default(),"engineBinarySha256":format!("{:x}",Sha256::digest(std::fs::read(self.path.bin().join("docker")).unwrap())),"persistentFixtureProcesses":0})
@@ -5188,6 +5381,44 @@ fn main() {
                 .lock()
                 .unwrap()
                 .is_none());
+        }
+
+        #[test]
+        fn local_podman_fixture_serves_api_on_its_private_runtime_socket() {
+            if crate::test_support::isolated_process("tests::container_root::local_podman_fixture_serves_api_on_its_private_runtime_socket") { return; }
+            use std::io::{Read, Write};
+            let fixture = Fixture::new();
+            let socket = fixture.base.join("runtime/podman/podman.sock");
+            std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+            let mut service = engine::Address::new(engine::Engine::Podman, None)
+                .command()
+                .args(["--remote=false", "system", "service", "--time=0"])
+                .arg(format!("unix://{}", socket.display()))
+                .spawn()
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let response = loop {
+                match std::os::unix::net::UnixStream::connect(&socket) {
+                    Ok(mut stream) => {
+                        stream
+                            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                            .unwrap();
+                        stream.write_all(b"GET /_ping HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+                        let mut response = String::new();
+                        let read = stream.read_to_string(&mut response);
+                        break read.map(|_| response);
+                    }
+                    Err(error) if std::time::Instant::now() >= deadline => break Err(error),
+                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                }
+            };
+            service.kill().unwrap();
+            service.wait().unwrap();
+            assert!(response.unwrap().starts_with("HTTP/1.1 200 OK\r\n"));
+            assert_eq!(
+                std::env::var_os("XDG_RUNTIME_DIR").unwrap(),
+                fixture.base.join("runtime")
+            );
         }
 
         #[test]
