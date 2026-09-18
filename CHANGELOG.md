@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Pasting into a Bot's browser works on a layout that does not write Latin letters
+
+While somebody drives a Bot's browser, Ctrl+V or Cmd+V is left to the local page so its paste event
+can send the clipboard text across. The shortcut was recognised by the character the key writes,
+and on a Russian or Greek layout the V key writes "м" or "ω", so the keystroke went to the Bot's
+browser instead and nothing was pasted. The V is now read the way the app's own shortcuts read it
+since Shift+N was fixed for the same layouts: from the physical key when the layout writes a
+character outside ASCII there.
 ### Reading a large file from Google Drive no longer downloads all of it
 
 `read_file_content` shows a Bot at most the first 20,000 characters of a file, but it downloaded the
