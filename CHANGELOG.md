@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Ctrl+B shows and hides the sidebar on a layout that does not write Latin letters
+
+The sidebar toggle's tooltip names Ctrl+B, or ⌘B on a Mac, and the shortcut was recognised by the
+character the key writes. On a Russian or Greek layout the B key writes "и" or "β", so the shortcut
+did nothing there. It is now read the way the app's own shortcuts read it since Shift+N was fixed
+for the same layouts: from the physical key when the layout writes a character outside ASCII there.
 ### Scrolling a Bot's browser no longer scrolls or zooms the page around it
 
 While somebody drives a Bot's browser, a turn of the mouse wheel over its screen is sent to it, and
