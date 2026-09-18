@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Scrolling a Bot's browser no longer scrolls or zooms the page around it
+
+While somebody drives a Bot's browser, a turn of the mouse wheel over its screen is sent to it, and
+the screen was meant to keep the wheel from also acting on the app. React attaches its wheel handler
+as a passive listener, which a browser does not allow to do that, so the wheel scrolled the frame
+holding the Bot's screen along with the Bot's page, and Ctrl with the wheel zoomed the app. The
+wheel is now handled by a listener that can hold it, so it reaches only the Bot's browser.
 ### Typing into a Bot's browser no longer triggers the app's own shortcuts
 
 While somebody drives a Bot's browser, every keystroke is sent to it. The app's shortcuts listen for
