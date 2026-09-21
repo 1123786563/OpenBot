@@ -156,6 +156,28 @@ a deployment.
 `docs/architecture.md`, `docs/deployment.md` and `docs/configuration.md` all described the old rule
 and now describe this one.
 
+### The EKS cluster recipe puts the node's IAM role out of a Bot's reach
+
+A Bot has a shell, and a shell reaches whatever its pod reaches, including the instance metadata
+service at 169.254.169.254 that hands out the node's IAM role. The NetworkPolicy excepts that
+address, but it is off by default and does nothing on EKS until the VPC CNI is told to enforce it,
+so the cluster config in the chart README now sets `disableIMDSv1` and `disablePodIMDS` on the node
+group, which closes it at the node whatever the CNI is doing.
+
+`disablePodIMDS` is the line that does the work: it sets the hop limit to 1, and that governs the
+IMDSv2 token PUT, so a pod one hop further out than the node cannot get a token. `disableIMDSv1` is
+written beside it to say so out loud rather than to change anything, because eksctl defaults it to
+true and sets `httpTokens: required` for either flag. Pods on the cluster network are covered; one
+running with `hostNetwork: true` is on the node and is not.
+
+**It costs something, and the recipe says so.** The EBS CSI driver reads instance metadata from
+IMDS, and its own documentation asks for a hop limit of 2 or greater in a containerized environment.
+A hop limit of 1 also rules out `MutableCSINodeAllocatableCount`, which requires IMDS to be the
+driver's metadata source. Take these two lines out if you need that.
+
+Nothing in OpenBot wants pod-level IMDS: the chart reaches AWS through IRSA. Documentation only; no
+chart template changed, and an existing cluster is unaffected until its node group is recreated.
+
 ### A coworker can be a file of its own
 
 The example package declared every coworker in one `agents.yaml`, so adding one meant editing a file
