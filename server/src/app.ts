@@ -52,6 +52,11 @@ import { configuredAuthProviders, type DeploymentConfig } from "./config";
 import type { CredentialAdminService, CredentialInput } from "./credentials";
 import type { Database } from "./db/client";
 import { withoutStatement } from "./db/query-failure";
+import { createTranscriptionProvider } from "./dictation/provider";
+import { createDictationRoutes } from "./dictation/routes";
+import { createVoiceProvider } from "./voice/provider";
+import { createVoiceRoutes } from "./voice/routes";
+import type { VoiceSessionServices } from "./voice/session-routes";
 import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
@@ -81,6 +86,8 @@ import {
   InstructionsTooLongError,
   type UserInstructionsStore,
 } from "./user-instructions";
+import type { UserPreferencesStore } from "./user-preferences";
+import { userPreferencesRoutes } from "./user-preferences-routes";
 
 /**
  * How much of a multipart body is boundary, headers and other fields rather than file.
@@ -321,6 +328,8 @@ export function createApp(
   composio?: { broker: ComposioBroker },
   /** Native model OAuth stays server-side; callers hold only a separate local bearer. */
   modelProviderProxy?: ModelProviderProxy,
+  userPreferences?: UserPreferencesStore,
+  voiceSessions?: VoiceSessionServices,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   mountDesktopConnectionFailure(app, desktopHostToken);
@@ -344,6 +353,8 @@ export function createApp(
        * both halves, so off means off.
        */
       generativeUi: config.generativeUi,
+      transcription: Boolean(config.transcription),
+      voice: Boolean(config.voice),
       /*
        * Which identity providers this deployment can sign somebody in with.
        *
@@ -470,6 +481,26 @@ export function createApp(
       ? createRequireUser(auth, roleRepository)
       : authenticationUnavailable;
 
+  app.route(
+    "/api/audio",
+    createDictationRoutes(
+      requireUser,
+      config.transcription
+        ? createTranscriptionProvider(config.transcription)
+        : undefined,
+    ),
+  );
+  app.route(
+    "/api/voice",
+    createVoiceRoutes(
+      requireUser,
+      config.voice ? createVoiceProvider(config.voice) : undefined,
+      channelStore,
+      agentProfileStore,
+      voiceSessions,
+    ),
+  );
+
   app.get("/api/me", requireUser, async (context) =>
     context.json({
       user: {
@@ -526,6 +557,11 @@ export function createApp(
    * somebody's mouth in every channel they work in. An administrator has no business here either,
    * for the same reason.
    */
+  app.route(
+    "/api/settings/preferences",
+    userPreferencesRoutes(requireUser, userPreferences),
+  );
+
   app.get("/api/settings/instructions", requireUser, async (context) => {
     if (!userInstructions) {
       return context.json(

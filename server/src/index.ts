@@ -6,6 +6,7 @@ import {
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
 import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
+import { DICTATION_HTTP_IDLE_SECONDS } from "../../shared/dictation";
 import { workOwner } from "../../shared/work-owner";
 import { mintRunAssertion, readRunAssertion } from "./agents/callback-token";
 import { createAgentFetch } from "./agents/endpoint";
@@ -54,6 +55,8 @@ import {
 } from "./channels/summary";
 import { createThreadIdentity } from "./channels/thread-identity";
 import { createChannelTitler } from "./channels/titler";
+import { createVoiceSessionStore } from "./voice/sessions";
+import { createVoiceSummarizer } from "./voice/summary";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createComputerGateway } from "./computer/gateway";
@@ -94,6 +97,7 @@ import { createProviderOAuthProxy } from "./provider-oauth";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
+import { backfillComposioLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { grantedSkills, grantedTools, REFUSAL_MARKER } from "./plugins/tools";
@@ -108,6 +112,7 @@ import {
   synchronizeTenantPackage,
 } from "./tenant-package";
 import { createUserInstructionsStore } from "./user-instructions";
+import { createUserPreferencesStore } from "./user-preferences";
 import { repeatAfterEach } from "./work/loop";
 import {
   createWorkQueue,
@@ -384,6 +389,15 @@ const pluginStore = createPluginStore({
    */
   broker: composio?.broker,
 });
+
+// Logo metadata is optional; a vendor outage must not prevent the API from starting.
+if (composio) {
+  void backfillComposioLogos(database, composio.broker).catch(() => {
+    console.warn(
+      "Composio app logos could not be updated. Existing icons remain available; missing logos will be retried on the next restart.",
+    );
+  });
+}
 
 /**
  * Routines, and the one moment its tools are told what to act on.
@@ -1313,6 +1327,15 @@ const app = createApp(
   process.env.OPENBOT_MODEL_OAUTH_FILE?.trim()
     ? createProviderOAuthProxy(process.env.OPENBOT_MODEL_OAUTH_FILE.trim())
     : undefined,
+  createUserPreferencesStore(database),
+  {
+    store: createVoiceSessionStore(database, channelStore),
+    summarize: createVoiceSummarizer({
+      model: runtimeModel,
+      resolveApiKey: resolveRuntimeModelApiKey,
+    }),
+    channels: channelStore,
+  },
 );
 
 /**
@@ -1365,6 +1388,11 @@ serve<SocketData>({
   port,
   async fetch(request, server) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/audio/transcriptions") {
+      server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
+    }
+    if (url.pathname === "/api/voice/calls") server.timeout(request, 30);
+    if (url.pathname === "/api/voice/sessions") server.timeout(request, 30);
     const streamBotId = streamPathBotId(url.pathname);
     if (
       streamBotId !== null &&

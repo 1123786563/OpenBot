@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { UserPreferences } from "../../../../shared/user-preferences";
 // NOT drizzle's `jsonb`: that one serialises, and so does the driver, so every object landed as a
 // JSON string and nothing in this database could be queried by a JSON field. See ./json.ts.
 import { jsonb } from "./json";
@@ -66,6 +67,10 @@ export const users = pgTable("users", {
   name: text("name"),
   image: text("image"),
   emailVerified: boolean("email_verified").notNull().default(false),
+  preferences: jsonb("preferences")
+    .$type<Partial<UserPreferences>>()
+    .notNull()
+    .default({}),
   /**
    * The person's groups, for a group-based rule to be evaluated against.
    *
@@ -313,6 +318,8 @@ export const channels = pgTable(
      * cache of what a client observed rather than an authoritative mirror of the thread.
      */
     lastMessage: text("last_message"),
+    /** Internal source identity for enriching a delayed preview without replacing other activity. */
+    lastMessageSourceId: text("last_message_source_id"),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     /** Which agent spoke, so a channel with several can show the right one. Null for a person. */
     lastMessageAgentId: text("last_message_agent_id").references(

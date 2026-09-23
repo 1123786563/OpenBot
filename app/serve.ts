@@ -16,6 +16,7 @@
 import { join, normalize, sep } from "node:path";
 import { file, type ServerWebSocket } from "bun";
 import { listenPort } from "../shared/listen-port";
+import { DICTATION_HTTP_IDLE_SECONDS } from "../shared/dictation";
 
 const DIST = join(import.meta.dir, "dist");
 const appPort = listenPort(process.env.APP_PORT, 3010);
@@ -217,6 +218,11 @@ if (import.meta.main) {
     },
     async fetch(request, server) {
       const url = new URL(request.url);
+      if (url.pathname === "/api/audio/transcriptions") {
+        server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
+      }
+      if (url.pathname === "/api/voice/calls") server.timeout(request, 30);
+      if (url.pathname === "/api/voice/sessions") server.timeout(request, 30);
 
       if (isApiCall(url.pathname)) {
         const target = SERVER + url.pathname + url.search;
@@ -245,6 +251,10 @@ if (import.meta.main) {
           headers: request.headers,
           body: request.body,
           redirect: "manual",
+          ...(url.pathname === "/api/audio/transcriptions" ||
+          url.pathname === "/api/voice/calls"
+            ? { signal: request.signal }
+            : {}),
           // @ts-expect-error duplex is required by fetch for a streamed body and is not yet typed.
           duplex: "half",
         });
