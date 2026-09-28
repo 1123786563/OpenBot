@@ -144,6 +144,14 @@ expandable group instead of filling the conversation with screenshots.
 
 ## 0.0.15
 
+### The live screen keeps reconnecting after it has recovered
+
+A dropped live screen retries five times, waiting half a second, then one, two, four and eight, and
+then asks for Retry. The count of retries never went back to zero after a retry worked, so a screen
+left open through five short drops over an afternoon gave up on the sixth, although each had
+recovered within a second. The count now starts over once a reconnected screen shows a frame again,
+so only five failures in a row end in Retry.
+
 ### A model provider's own sign-in can stand in for an API key
 
 `OPENBOT_MODEL_OAUTH_FILE` names a credential file holding a Google or xAI OAuth grant. Set it and
