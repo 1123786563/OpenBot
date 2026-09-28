@@ -220,6 +220,14 @@ resolved `docker`, and the directory holding what it points at when it is a syml
 to the PATH the engine is invoked with. Appended, so an existing helper still wins, and the inherited
 PATH is now kept rather than replaced, which it was not before.
 
+### A voice call that cannot start says why
+
+When the voice service turned a call down, the provider wrote a message for the caller, such as
+"The voice service is busy. Please retry shortly." when it answered 429, and the call route replaced
+every one with "The voice service could not start a call. Please retry." The route now passes those
+fixed messages on, as the dictation route already does. Any other failure still reads the generic
+line, so nothing from an upstream response reaches the browser.
+
 ### OpenBot starts only on the Bun it pins
 
 An installed or cached Bun that is not the pinned version is no longer accepted, on install and on
