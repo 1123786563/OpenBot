@@ -204,6 +204,14 @@ removes that deployment's database volume and nothing else.
 Startup failures keep enough of the log to name the cause, with every secret value redacted, and
 carry a support link a whitelabel build can point elsewhere.
 
+### A failed save of a Bot's browser control leaves no copy behind
+
+The computer keeps who holds a Bot's browser, and its handoff requests, in one file per Bot under
+the profiles volume, written to a temporary file first and renamed over it. When the write or the
+rename failed, the temporary file stayed, a readable copy of that state beside the real one, and
+every later failure added another. It is now removed whether or not the save succeeds, as the
+learning setup and the model sign-in file already do.
+
 ### A Bot's image pull finds the Docker credential helper beside Docker
 
 A Docker install whose credential helper sits next to the `docker` binary rather than on the desktop
