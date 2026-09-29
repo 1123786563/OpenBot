@@ -42,6 +42,14 @@ the dialog as before. It appears only when something is hidden. Hiding still cha
 anyone else, and nothing on the server changed: the screen reads the `GET /api/agents?hidden=true`
 list the server already served.
 
+### A connector's own pages say when the plugin list could not be read
+
+When `GET /api/plugins` failed, a connector's admin page said "Not a plugin", a tool's page said
+"This deployment has not enabled that connector.", and a person's connected-account page said "This
+is not a service you connect for yourself.", each about a connector that may be added and granted
+right now. They now say the list could not be loaded, as the per-Bot grant page beside them already
+did. A list that arrived without the connector still reads as before.
+
 ### Boundaries says when the policy could not be read
 
 When `GET /api/computers/policy` failed, the Boundaries screen showed its title over nothing, for as
