@@ -63,6 +63,14 @@ whoever wrote a skill under that name next, and on a Bot the deployment shares t
 instructions answering everybody. It is now refused with "There is no skill called …", as a grant
 naming no app already was. Revoking one by hand still works.
 
+### A remote Bot keeps answering when it asks for a learned skill that is not there
+
+With Automatic Learning delivering skills, a Bot reached at an AG-UI endpoint (every shipped Bot
+except a built-in one) ended the whole turn with "Skill is unavailable." in place of an answer when
+its model asked for a skill by a name the snapshot does not hold, for a file the skill does not
+list, or sent arguments that were not JSON. A built-in Bot's model is handed that sentence as the
+call's result and carries on. A remote Bot's model now gets the same result and carries on too.
+
 ### Browser challenges can be handed to a person without losing the Bot's page
 
 Bots pause for actionable browser challenges and resume from a fresh page snapshot after an explicit
