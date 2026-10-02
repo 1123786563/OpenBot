@@ -20,6 +20,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 - An existing Windows clone checks text files out with LF only after
   `git rm -r --cached . && git reset --hard` on a clean tree.
 
+### The app offers help self-hosting OpenBot, until you close it
+
+A slim bar at the top of the signed-in app links to CopilotKit's engineers for help self-hosting
+OpenBot. Closing it is saved to your preferences, so it stays closed on every device. A fork running
+OpenBot for its own organization hides it for everybody with `OPENBOT_SELF_HOST_BANNER=false`.
+
 ### A request to the approvals API that is not JSON answers 400
 
 A body that could not be parsed as JSON, sent to any approvals route that reads one, such as
