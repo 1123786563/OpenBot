@@ -8,6 +8,17 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A tenant package that repeats itself is refused by name, instead of failing at boot
+
+Validation now refuses each of these, with a sentence naming the file and the repeated id:
+- A skill named twice by one agent, or an agent listed twice in one channel's `permitted_agents`.
+  Before, the server stopped at boot with a raw SQL error.
+- An agent id repeated within `agents.yaml`, a channel id within `channels.yaml`, or a skill slug
+  within `skills.yaml`. Before, the last entry silently won, though two files declaring the same
+  agent were already refused.
+- A remote agent left blank in `agents.yaml` but declared with an endpoint under `agents/` was
+  dropped from every channel that named it. It is now treated as declared.
+
 ### `start.sh` and `stop.sh` see their own processes on Windows
 
 In Git Bash on Windows, which has no `lsof`, `pgrep` or `pkill`, every process and port lookup in
