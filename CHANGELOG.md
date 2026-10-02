@@ -8,6 +8,15 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A routine switched back on gets a fresh count of failures
+
+A routine that fails ten times in a row is switched off, and someone has to switch it back on.
+- **Before:** the failure count ignored that, so the first failure after re-enabling counted as the
+  eleventh. The routine was switched straight off again with "failed ten times in a row", and the
+  first-failure message never appeared.
+- **Now:** failures are counted from when the routine was last switched on, recorded in a new
+  `routines.enabled_at` column. The migration sets it to the time of the upgrade, so any failure
+  streak already under way starts again from zero at that point.
 ### Bots work as coworkers
 
 A Bot can now carry on without anyone watching it. It runs standing **Responsibilities** fed by
