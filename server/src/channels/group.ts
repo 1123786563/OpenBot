@@ -460,20 +460,38 @@ export function groupTurnMessage(
  * The peers a reply addresses, in the order the reply names them.
  *
  * `@Name` with the whole name, case-insensitive, and not followed by more of a word, so a Bot called
- * "Ops" is not addressed by "@Opsgenie". Never the speaker itself.
+ * "Ops" is not addressed by "@Opsgenie". Not preceded by one either, so "jo@sam.com" does not
+ * address "Sam". Where two names start at the same `@`, the longer one is meant: "@Ops Lead"
+ * addresses "Ops Lead" and not "Ops". Never the speaker itself.
  */
 export function mentionedPeers(
   reply: string,
   roster: readonly GroupBot[],
   speakerId: string,
 ): GroupBot[] {
-  return roster
-    .flatMap((bot) => {
-      if (bot.id === speakerId || !bot.name.trim()) return [];
-      const name = bot.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const at = reply.search(new RegExp(`@${name}(?![\\p{L}\\p{N}_])`, "iu"));
-      return at < 0 ? [] : [{ bot, at }];
-    })
+  // The speaker is matched too, so that its own longer name still hides a shorter peer's.
+  const hits = roster.flatMap((bot) => {
+    if (!bot.name.trim()) return [];
+    const name = bot.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `(?<![\\p{L}\\p{N}_])@${name}(?![\\p{L}\\p{N}_])`,
+      "giu",
+    );
+    return Array.from(reply.matchAll(pattern), (match) => ({
+      bot,
+      at: match.index,
+      length: match[0].length,
+    }));
+  });
+  const first = new Map<string, { bot: GroupBot; at: number }>();
+  for (const hit of hits) {
+    if (hit.bot.id === speakerId || first.has(hit.bot.id)) continue;
+    const shadowed = hits.some(
+      (other) => other.at === hit.at && other.length > hit.length,
+    );
+    if (!shadowed) first.set(hit.bot.id, hit);
+  }
+  return [...first.values()]
     .sort((left, right) => left.at - right.at)
     .map(({ bot }) => bot);
 }

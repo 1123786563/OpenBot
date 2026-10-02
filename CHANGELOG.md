@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### `@Ops Lead` in a group addresses Ops Lead, not Ops as well
+
+In a group conversation, a reply naming `@Ops Lead` also addressed a Bot called Ops, because the
+shorter name matched at the same `@`, so both answered. An email address addressed a Bot by its
+domain: `jo@sam.com` reached a Bot called Sam. Where two names start at the same `@`, only the
+longer one is now addressed, and an `@` straight after a letter or digit is not a mention.
+
 ### A webhook with many long top-level fields no longer stops the server
 
 A trigger's event is cut to 32 KiB before it is recorded, keeping each top-level text field up to
