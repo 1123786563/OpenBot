@@ -27,6 +27,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   a whole: the Bots under it fall back to an allowlist with nothing on it, so they reach nothing
   until the rule is corrected under Admin → Enterprise.
 
+### A group reply the owner allows still reaches the Bot it names
+
+A reply held until its owner allowed it to be shown in a group was written into the transcript and then stopped. The same reply allowed immediately was handed to the Bot it named. Allowing it now hands it on the same way.
+
+**Before upgrading.** Four things change for an existing deployment:
+
 ### The app offers help self-hosting OpenBot, until you close it
 
 A slim bar at the top of the signed-in app links to CopilotKit's engineers for help self-hosting
