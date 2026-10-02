@@ -609,7 +609,7 @@ function upstreamAddress(upstream: Egress): { host: string; port: number } {
       ? upstream.server
       : `http://${upstream.server}`,
   );
-  return { host: url.hostname, port: Number(url.port || 80) };
+  return { host: unbracketed(url.hostname), port: Number(url.port || 80) };
 }
 
 function refuse(socket: Socket, reason: string) {
@@ -640,8 +640,10 @@ function tunnel(
   const via = upstreamAddress(upstream);
   const socket = connect(via.port, via.host, () => {
     const auth = basic(upstream.username, upstream.password);
+    // An IPv6 host is bracketed in an authority: `CONNECT ::1:443` cannot be read.
+    const host = isIP(target.host) === 6 ? `[${target.host}]` : target.host;
     socket.write(
-      `CONNECT ${target.host}:${target.port} HTTP/1.1\r\nHost: ${target.host}:${target.port}\r\n${auth ? `Proxy-Authorization: ${auth}\r\n` : ""}\r\n`,
+      `CONNECT ${host}:${target.port} HTTP/1.1\r\nHost: ${host}:${target.port}\r\n${auth ? `Proxy-Authorization: ${auth}\r\n` : ""}\r\n`,
     );
   });
   let head = Buffer.alloc(0);
@@ -810,6 +812,11 @@ export async function stopEgressFilter(): Promise<void> {
   }
 }
 
+/** `URL.hostname` keeps an IPv6 address's brackets, and a socket given them looks the name up. */
+function unbracketed(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, "");
+}
+
 function splitHostPort(value: string): [string, string] {
   if (value.startsWith("[")) {
     const end = value.indexOf("]");
@@ -839,7 +846,7 @@ function forwardPlain(
     {
       // Reached through the checked addresses only (see `pinnedTo`): a second lookup could answer
       // something else. The Host header still names the site.
-      host: via ? via.host : target.hostname,
+      host: via ? via.host : unbracketed(target.hostname),
       port: via ? via.port : Number(target.port || 80),
       ...(via ? {} : (pinnedTo(addresses) as object)),
       method: request.method,

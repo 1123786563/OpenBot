@@ -50,6 +50,13 @@ the sentence a malformed range already got. A rule like this saved earlier match
 - An existing Windows clone checks text files out with LF only after
   `git rm -r --cached . && git reset --hard` on a clean tree.
 
+### The egress filter reaches an IPv6 upstream proxy and asks it for IPv6 hosts correctly
+
+An upstream proxy configured at an IPv6 address, such as `http://[fd00::1]:3128`, could not be
+reached: the filter handed the address to the socket with its brackets, and the socket looked it up
+as a name. A `CONNECT` to an IPv6 host was also sent to the upstream without the brackets an
+authority needs, as `CONNECT ::1:443`. Both now work.
+
 ### The Helm chart configures Slack, Teams, text messages, push, SCIM, inbound email and OpenTelemetry
 
 These settings had no chart values and could only be passed through `config.extraEnv`. They now have
