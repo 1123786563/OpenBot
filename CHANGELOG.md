@@ -184,6 +184,16 @@ A routine that fails ten times in a row is switched off, and someone has to swit
   first-failure message never appeared.
 - **Now:** failures are counted from when the routine was last switched on, recorded in a new
   `routines.enabled_at` column. The migration sets it to the time of the upgrade, so any failure
+  streak already under way starts again from zero at that point.
+
+### Generated workspace files can be downloaded intact
+
+`GET /api/computers/:botId/files/download?path=...` streams a generated file as an opaque
+attachment instead of returning the 64 KB UTF-8 text extract. Downloads use the separate
+`computer_download_file` / `download_file` permission, remain confined to the Bot workspace, are
+capped at 100 MiB with `413`, and are recorded on the computer audit trail. Existing read, list and
+write APIs are unchanged.
+
   streak already under way starts again from zero at that point. Adds migration
   `0051_routine_enabled_at`.
 
