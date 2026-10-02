@@ -48,6 +48,12 @@ refused in every mode, including `allow_all`, and the browser's WebRTC traffic n
 filter instead of around it. A computer run without an API server can set
 `EGRESS_POLICY_REQUIRED=0` to keep the old behaviour.
 
+### Provider and Bot lookups ignore inherited object properties
+
+Unknown names such as `constructor` and `__proto__` no longer return an inherited
+JavaScript object as a provider or Bot entry. Unknown providers return no spec, and
+missing Bots raise the existing startup error. Configured providers and Bots are unchanged.
+
 ### A malformed `%` in a stream URL no longer returns a 500
 
 A request to `/api/computers/<id>/stream` whose id held a broken percent-escape, such as `%zz`, made the server throw and answer 500. It is now treated as not matching the stream route and goes through normal routing. Valid ids behave as before.
