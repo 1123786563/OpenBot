@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A malformed IP range in an egress rule is refused instead of widening the rule
+
+An egress `cidr` rule written `10.0.0.5/` was stored as `10.0.0.5/0`, which is every IPv4
+address, so a typo for one host opened an allow-list to all of them. `/0x8` and `10.0.0.0/8/9` were
+accepted the same way. A zone id such as `fe80::1%eth0` was accepted too, and then threw from the
+filter on the first connection that policy judged. Each is now refused when the rule is saved, with
+the sentence a malformed range already got. A rule like this saved earlier matches nothing.
+
 **Before upgrading.** Four things change for an existing deployment:
 - Automatic Learning is on unless an administrator saved it off. It does nothing until a Learning
   container is assigned; see below.

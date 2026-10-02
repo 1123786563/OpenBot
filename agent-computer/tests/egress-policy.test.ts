@@ -102,6 +102,17 @@ describe("the network policy rules", () => {
         .ok,
     ).toBe(false);
     expect(parseEgressPolicy({ mode: "sometimes", rules: [] }).ok).toBe(false);
+    // Each of these once read as some other range: "" and "0x0" as /0, which is every address.
+    for (const value of [
+      "10.0.0.5/",
+      "10.0.0.0/0x8",
+      "10.0.0.0/8/9",
+      "10.0.0.0/ 8",
+      "fe80::1%eth0",
+      "fe80::%eth0/64",
+    ]) {
+      expect(parseEgressRules([{ type: "cidr", value }]).ok).toBe(false);
+    }
     expect(
       parseEgressRules([
         { type: "domain", value: "Example.COM" },

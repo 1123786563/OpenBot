@@ -238,7 +238,11 @@ function normalizeHost(host: string): string {
 function parseCidr(
   value: string,
 ): { address: string; prefix: number; family: "ipv4" | "ipv6" } | null {
-  const [address = "", prefixText] = value.trim().split("/");
+  const [address = "", prefixText, ...rest] = value.trim().split("/");
+  // `Number` reads "" as 0 and takes "0x8", so `10.0.0.5/` would allow every address. A zone id
+  // passes `isIP` but `BlockList` throws on it when the rule is first used.
+  if (rest.length > 0 || address.includes("%")) return null;
+  if (prefixText !== undefined && !/^\d{1,3}$/.test(prefixText)) return null;
   const version = isIP(address);
   if (version === 0) return null;
   const max = version === 4 ? 32 : 128;
