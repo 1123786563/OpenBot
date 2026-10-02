@@ -56,6 +56,12 @@ the sentence a malformed range already got. A rule like this saved earlier match
 - An existing Windows clone checks text files out with LF only after
   `git rm -r --cached . && git reset --hard` on a clean tree.
 
+### Deleting a channel twice is recorded once
+
+A second `DELETE` of the same channel, from a retry or a second tab, still answers 204 as before.
+It no longer tells every member again, and no longer writes another `channel.deleted` row to the
+audit trail for a deletion that did not happen.
+
 ### A Bot's saved reply in a group is no longer replaced by a later error
 
 In a group conversation, a Bot's reply was saved, then handed on: to Activity, to any consent
