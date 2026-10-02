@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### The channel list no longer skips channels made in the same millisecond
+
+The channel list's page cursor kept the last channel's time to the millisecond, while PostgreSQL
+keeps it to the microsecond. Channels later in that same millisecond, as a package sync or an
+import makes them, sorted after the cursor and were on no page. The cursor now carries the time to
+the microsecond, as the audit trail's cursor already did.
+
 ### A package skill's slug has the same shape as one made in the app
 
 The skills screen, the skills API and the store all accept a slug of 2 to 40 lowercase letters,
