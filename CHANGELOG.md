@@ -8,6 +8,19 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### `start.sh` and `stop.sh` see their own processes on Windows
+
+In Git Bash on Windows, which has no `lsof`, `pgrep` or `pkill`, every process and port lookup in
+the two scripts came back empty.
+- `bash scripts/stop.sh` reported the app, the routine worker and the API server as not running,
+  and left all three up.
+- `start.sh` could not see a port held by another process.
+- `start.sh` started another routine worker on every rerun, then reported that the one it had just
+  started "did not stay up".
+
+Where those tools are missing on Windows, the scripts now ask PowerShell, which ships with Windows.
+Everywhere the tools exist they are used exactly as before.
+
 ### A clone on Windows builds an image that starts
 
 On Windows, where Git converts line endings by default, a clone checked every text file out with

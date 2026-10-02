@@ -83,6 +83,10 @@ async function runStartWithStaleServerProbe(
     join(scripts, "require-bash.sh"),
     await readFile("scripts/require-bash.sh"),
   );
+  await writeFile(
+    join(scripts, "processes.sh"),
+    await readFile("scripts/processes.sh"),
+  );
 
   await writeExecutable(
     join(fakeBin, "lsof"),
