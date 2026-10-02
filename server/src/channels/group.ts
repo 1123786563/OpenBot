@@ -798,6 +798,12 @@ export function createGroupConversations(deps: {
     // Partial text, written at most this often, so the transcript shows the reply as it arrives.
     let latest: string | null = null;
     let writing: Promise<void> | null = null;
+    // How far past the save this turn got, so a fault after it finishes what never started without
+    // repeating what did: consents are collected once, and a relay that began may have sent hops.
+    let saved = false;
+    let savedReply = "";
+    let consentsPosted = false;
+    let relayStarted = false;
     let lastWrite = 0;
     const every = deps.progressEveryMs ?? 400;
     const flush = () => {
@@ -868,10 +874,53 @@ export function createGroupConversations(deps: {
         return;
       }
       await deps.store.finish(id, result.replyText, "completed");
+      saved = true;
+      savedReply = result.replyText;
       await deps.activity?.(turn, agentId, result.replyText, `group:${id}`);
+      consentsPosted = true;
       await postConsents(turn, agentId, threadId, id, consents);
+      relayStarted = true;
       await relay(turn, bot, id, result.replyText, bots, runId);
     } catch (error) {
+      // The reply is already saved: a fault handing it on is not this Bot's answer failing, and
+      // writing it over the row would replace a good reply with an error that no retry repairs.
+      if (saved) {
+        console.error(
+          JSON.stringify({
+            type: "group-turn-after-reply-error",
+            error: error instanceof Error ? error.message : String(error),
+            context: { channelId: turn.channelId, agentId, rowId: id },
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        const unfinished = async (step: string, run: () => Promise<void>) => {
+          try {
+            await run();
+          } catch (stepError) {
+            console.error(
+              JSON.stringify({
+                type: "group-turn-after-reply-error",
+                step,
+                error:
+                  stepError instanceof Error
+                    ? stepError.message
+                    : String(stepError),
+                context: { channelId: turn.channelId, agentId, rowId: id },
+                timestamp: new Date().toISOString(),
+              }),
+            );
+          }
+        };
+        if (!consentsPosted)
+          await unfinished("consents", () =>
+            postConsents(turn, agentId, threadId, id, consents),
+          );
+        if (!relayStarted)
+          await unfinished("relay", () =>
+            relay(turn, bot, id, savedReply, bots, runId),
+          );
+        return;
+      }
       await writing;
       await postConsents(turn, agentId, threadId, id, consents);
       if (error instanceof HeadlessToolSuspension)

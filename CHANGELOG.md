@@ -56,6 +56,14 @@ the sentence a malformed range already got. A rule like this saved earlier match
 - An existing Windows clone checks text files out with LF only after
   `git rm -r --cached . && git reset --hard` on a clean tree.
 
+### A Bot's saved reply in a group is no longer replaced by a later error
+
+In a group conversation, a Bot's reply was saved, then handed on: to Activity, to any consent
+cards, and to the Bots it named. A fault in that hand-on, such as the audit trail being
+unreachable, wrote the error's text over the saved reply and marked it failed, and a retry did not
+bring the reply back. The reply now stays as saved, and the fault is logged as
+`group-turn-after-reply-error`.
+
 ### The egress filter reaches an IPv6 upstream proxy and asks it for IPv6 hosts correctly
 
 An upstream proxy configured at an IPv6 address, such as `http://[fd00::1]:3128`, could not be
