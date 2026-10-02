@@ -653,9 +653,11 @@ function parseTenantSkills(value: unknown): TenantSkill[] {
       throw new Error(`skill "${slug}" is declared twice in skills.yaml`);
     }
     slugs.add(slug);
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    // The same pattern as the skills route, the store and the app's form. Looser, it seeded slugs
+    // such as `a`, `a-` or sixty characters that none of those would accept or let anybody edit.
+    if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(slug)) {
       throw new Error(
-        `skill.slug "${slug}" must be lowercase letters, digits and hyphens, and start with a letter or digit`,
+        `skill.slug "${slug}" must be lowercase letters, digits and hyphens, 2 to 40 characters, starting and ending with a letter or digit`,
       );
     }
     const tools =
