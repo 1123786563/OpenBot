@@ -8,6 +8,17 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### The Helm chart configures Slack, Teams, text messages, push, SCIM, inbound email and OpenTelemetry
+
+These settings had no chart values and could only be passed through `config.extraEnv`. They now have
+their own: `config.opentag`, `config.sms`, `config.push`, `config.deliveryPublicUrl`, `config.scim`,
+`config.inboundEmail` and `config.otel`, with the OpenTag secret, the Twilio auth token, the Expo
+access token, the SCIM bearer tokens and the OpenTelemetry headers under `secrets` (or an existing
+Secret or store, by key). The install refuses what the server would refuse at boot, such as an
+OpenTag secret under 32 characters or a partial set of Twilio settings. With none of them set, the
+chart renders exactly as before, so a deployment already passing these through `config.extraEnv`
+keeps working unchanged until it moves them across.
+
 ### A coworker at its own endpoint can hand work to another Bot
 
 A grant letting a remote Bot (a coworker at its own endpoint) hand work to another Bot was accepted and stored, but the grant read kept only built-in Bots, so the remote Bot was never
