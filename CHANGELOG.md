@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A request to the approvals API that is not JSON answers 400
+
+A body that could not be parsed as JSON, sent to any approvals route that reads one, such as
+`PATCH /api/approvals/preferences` or `POST /api/approvals/rules`, answered 500 with the parser's own
+message. It now answers 400 "Supply a valid request.", as the delivery routes do.
+
 ### Syncing a memory source a policy refuses says why
 
 When a connected app's policy refused the read behind a memory source's sync, `POST
