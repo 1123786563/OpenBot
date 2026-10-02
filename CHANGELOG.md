@@ -8,6 +8,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### Syncing a memory source a policy refuses says why
+
+When a connected app's policy refused the read behind a memory source's sync, `POST
+/api/memory/sources/:id/sync` answered 503 "Memory is unavailable. Try again.", although the
+refusal's own sentence was already saved on the source. It now answers 400 with that sentence, as
+the plugin routes do for the same refusal.
+
 ### `@Ops Lead` in a group addresses Ops Lead, not Ops as well
 
 In a group conversation, a reply naming `@Ops Lead` also addressed a Bot called Ops, because the
