@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A webhook with many long top-level fields no longer stops the server
+
+A trigger's event is cut to 32 KiB before it is recorded, keeping each top-level text field up to
+1000 characters and an excerpt of the rest. A flat payload whose fields alone came to more than
+that, such as forty 1000-character fields, left the excerpt nothing to give up, and the loop
+trimming it never ended. That loop runs on the server's only thread, so every request stopped being
+answered. The kept fields now get at most half the space, and the rest is still in the excerpt.
+
 ### A malformed IP range in an egress rule is refused instead of widening the rule
 
 An egress `cidr` rule written `10.0.0.5/` was stored as `10.0.0.5/0`, which is every IPv4
