@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+### A clone on Windows builds an image that starts
+
+On Windows, where Git converts line endings by default, a clone checked every text file out with
+CRLF. `docker build` copied the s6 service files into the image that way, so a service's `type`
+read `longrun\r` and its scripts stopped on `set: -: invalid option`, and `bun run format:check`
+failed on every file. `.gitattributes` now checks text files out with LF on every system. An
+existing clone with nothing uncommitted picks this up after `git rm -r --cached . && git reset --hard`.
+
 ### A routine switched back on gets a fresh count of failures
 
 A routine that fails ten times in a row is switched off, and someone has to switch it back on.
