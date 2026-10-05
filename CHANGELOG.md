@@ -8,6 +8,10 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- A file download refused because the computer's response carried no usable byte length now releases
+  the connection before reporting the refusal. The unread body could be as large as the whole
+  download budget, so a computer reached through a proxy that re-chunks left a transfer running and a
+  connection checked out of the pool on every attempt.
 ### A Bot's turn in a group is no longer offered coordination tools it cannot call
 
 A Bot answering another Bot in a group conversation was offered `ask_person`, and `message_bot`
