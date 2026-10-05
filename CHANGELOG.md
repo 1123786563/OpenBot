@@ -8,6 +8,9 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- A Bot's shell now honours a Stop that landed before the command was spawned, not only one that
+  arrives afterwards. A person who pressed Stop in the window between the request reaching the
+  computer and the command starting got no answer until that command finished on its own.
 - A file download refused because the computer's response carried no usable byte length now releases
   the connection before reporting the refusal. The unread body could be as large as the whole
   download budget, so a computer reached through a proxy that re-chunks left a transfer running and a
