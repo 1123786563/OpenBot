@@ -8,6 +8,11 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- A cancellation the native host never collected is now dropped instead of being reported as
+  pending forever. Every timed-out, stopped or revoked host operation queues a cancel for the desktop
+  worker, and only that worker ever removed it: a worker that stopped polling left the entry in
+  memory for the life of the process, so the Host access panel showed an operation that could never
+  finish. A desktop that reconnects within the operation timeout is still told to stop.
 - A Bot's shell now honours a Stop that landed before the command was spawned, not only one that
   arrives afterwards. A person who pressed Stop in the window between the request reaching the
   computer and the command starting got no answer until that command finished on its own.
