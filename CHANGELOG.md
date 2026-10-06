@@ -8,6 +8,11 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- A Bot's browser is now refused names under `.localhost`, such as `http://admin.localhost:5432`, the
+  same as bare `localhost`. The whole `.localhost` zone is loopback and Chromium resolves it without
+  DNS, but only the exact name `localhost` was on the refused list, so a deployment that had not opted
+  into private hosts could still be pointed at its own services this way.
+
 - `OPENBOT_SINGLE_USER` is now refused with a public name that starts with `127.`, such as
   `https://127.example.com` or `https://127.0.0.1.nip.io`. The check for a loopback address matched
   any host beginning `127.`, so a public address like that read as this machine and the no-sign-in
@@ -24,6 +29,7 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   the connection before reporting the refusal. The unread body could be as large as the whole
   download budget, so a computer reached through a proxy that re-chunks left a transfer running and a
   connection checked out of the pool on every attempt.
+
 
 - A conversation title cut at 60 characters no longer ends in half an emoji. `slice` counts UTF-16
   code units and an emoji is two of them, so a title cut between the halves rendered a replacement
