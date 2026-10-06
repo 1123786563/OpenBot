@@ -8,6 +8,10 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- A conversation title cut at 60 characters no longer ends in half an emoji. `slice` counts UTF-16
+  code units and an emoji is two of them, so a title cut between the halves rendered a replacement
+  character in the sidebar and the picker, where the character itself should have been.
+
 - A tool result that arrives before the call it answers is now paired with that call by the LangGraph
   Bot, as the sibling Bots already did. Read back from the durable thread store the result arrives
   first, which is a payload no provider accepts: a tool message with no preceding call, then a call
