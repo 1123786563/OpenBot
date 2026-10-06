@@ -8,6 +8,12 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- A tool result that arrives before the call it answers is now paired with that call by the LangGraph
+  Bot, as the sibling Bots already did. Read back from the durable thread store the result arrives
+  first, which is a payload no provider accepts: a tool message with no preceding call, then a call
+  with nothing following it. The model answers that with silence rather than an error, so the Bot
+  stopped responding for the rest of the conversation.
+
 - Pressing Stop now stops the computer even when the desktop worker never collects the instruction.
   A stop was queued with no timeout and the worker was the only thing that could ever remove it, so a
   worker that stopped polling left the entry in memory for the life of the process and the Host
