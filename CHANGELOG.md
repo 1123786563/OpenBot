@@ -8,6 +8,14 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+- Pressing Stop now stops the computer even when the desktop worker never collects the instruction.
+  A stop was queued with no timeout and the worker was the only thing that could ever remove it, so a
+  worker that stopped polling left the entry in memory for the life of the process and the Host
+  access panel showed an operation that could never finish, growing by one per press. Pressing Stop a
+  second time also withdrew the first Stop before the desktop could collect it, and rejected a request
+  that nobody was waiting for, which the server treats as fatal. A desktop that reconnects within the
+  operation timeout is still told to stop.
+
 ### A computer refuses the cloud metadata address written through the NAT64 prefix
 
 A Bot's computer is now refused the cloud metadata address when it is written through the NAT64
