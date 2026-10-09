@@ -153,29 +153,22 @@ func Authenticate(cfg AuthConfig) func(http.Handler) http.Handler {
 				return
 			}
 
-			// 错误摘要: the envelope vouches for one input; the digest of the
-			// input that actually arrived must agree with it.
-			if run0.Digest != run.InputDigest {
-				http.Error(w, "input does not match the verified input digest", http.StatusForbidden)
-				return
-			}
-			// The AG-UI runId IS the envelope's turn_id (master §4.3); the
-			// thread must agree too. Re-checked inside the runner's resolver
-			// as well — this check exists so a mismatch never enters it.
-			if run0.RunID != run.TurnID || run0.ThreadID != run.ThreadID {
-				http.Error(w, "identity is bound to a different run", http.StatusForbidden)
-				return
-			}
-
 			// Both steps passed: this is the only place a request becomes a
-			// verified run. The legacy assertion (if the caller presented
-			// one) rides along in the private context for the R3 callback
-			// client; the runner's model-visible input never sees it.
+			// verified run. The inbound input projection (digest and binding
+			// coordinates) rides along in a private context value for the
+			// execution-only input guard (RequireVerifiedInput) to compare —
+			// the digest/binding comparison belongs to ROUTES THAT CARRY RUN
+			// INPUT (the AG-UI runId IS the envelope's turn_id, master §4.3),
+			// not to control routes like cancel, whose body is not run input.
+			// The legacy assertion (if the caller presented one) also rides
+			// along for the R3 callback client; the runner's model-visible
+			// input never sees it.
 			ctx := r.Context()
 			if assertion := r.Header.Get(RunAssertionHeader); assertion != "" {
 				ctx = identity.WithRunAssertion(ctx, assertion)
 			}
 			ctx = identity.WithVerified(ctx, run)
+			ctx = withInboundInput(ctx, run0)
 			r = r.WithContext(ctx)
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))

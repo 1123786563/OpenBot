@@ -141,7 +141,7 @@ describe("the Go runtime candidate over real HTTP", () => {
 
   beforeAll(async () => {
     model = startFakeModel();
-    validation = startValidationPlane();
+    validation = startValidationPlane(SERVICE_CREDENTIAL);
     candidate = await startCandidate({
       binary: await buildCandidate(),
       serviceCredential: SERVICE_CREDENTIAL,
@@ -156,15 +156,15 @@ describe("the Go runtime candidate over real HTTP", () => {
     validation?.server.stop(true);
   });
 
-  const headers = (minted: { assertion: string; token: string }) =>
+  const headers = (minted: { capability: string; invocation: string }) =>
     candidateHeaders({
       serviceCredential: SERVICE_CREDENTIAL,
-      agentToken: minted.token,
-      assertion: minted.assertion,
+      capability: minted.capability,
+      invocation: minted.invocation,
     });
 
   test("an unverified request never reaches the framework", async () => {
-    const creds = validation.mint("run_refused", "thread_refused");
+    const creds = validation.mint("run_refused", "thread_refused", PROBE_STREAM_TEXT);
     const input = runInput({
       runId: "run_refused",
       threadId: "thread_refused",
@@ -179,8 +179,8 @@ describe("the Go runtime candidate over real HTTP", () => {
       method: "POST",
       headers: candidateHeaders({
         serviceCredential: SERVICE_CREDENTIAL,
-        agentToken: creds.token,
-        assertion: "forged-assertion-signed-by-nobody",
+        capability: "forged-capability-signed-by-nobody",
+        invocation: creds.invocation,
       }),
       body: JSON.stringify(input),
     });
@@ -191,7 +191,7 @@ describe("the Go runtime candidate over real HTTP", () => {
   }, 30_000);
 
   test("the candidate's real event stream satisfies the contract", async () => {
-    const creds = validation.mint("run_stream", "thread_stream");
+    const creds = validation.mint("run_stream", "thread_stream", PROBE_STREAM_TEXT);
     const events = await collectEvents(
       httpAgentFor(candidate.baseUrl, headers(creds)),
       runInput({ runId: "run_stream", threadId: "thread_stream", text: PROBE_STREAM_TEXT }),
@@ -254,12 +254,12 @@ describe("the Go runtime candidate over real HTTP", () => {
         modelBaseUrl: fakeUrl,
         validationEndpoint: validation.validationEndpoint,
       });
-      const creds = validation.mint("run_compare", "thread_compare");
+      const creds = validation.mint("run_compare", "thread_compare", "answer the protocol comparison");
       goEvents = await collectEvents(
         httpAgentFor(compareCandidate.baseUrl, candidateHeaders({
           serviceCredential: SERVICE_CREDENTIAL,
-          agentToken: creds.token,
-          assertion: creds.assertion,
+          capability: creds.capability,
+          invocation: creds.invocation,
         })),
         runInput({
           runId: "run_compare",

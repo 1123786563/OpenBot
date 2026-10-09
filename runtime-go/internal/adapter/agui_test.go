@@ -334,10 +334,13 @@ func newCandidate(t *testing.T, a agent.Agent, provider *httptest.Server, provid
 	if err != nil {
 		t.Fatalf("adapter.New: %v", err)
 	}
+	// The execution-shaped assembly: authentication, then the input guard
+	// (digest + turn binding), then the runner — exactly what the real main
+	// mounts on its execution route.
 	authed := server.Authenticate(server.AuthConfig{
 		ServiceCredential:  testServiceCredential,
 		ValidationEndpoint: validation.URL,
-	})(handler)
+	})(server.RequireVerifiedInput()(handler))
 	ts := httptest.NewServer(authed)
 	t.Cleanup(ts.Close)
 	return &candidate{url: ts.URL, provider: providerLog}

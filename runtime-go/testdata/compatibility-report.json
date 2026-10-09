@@ -1,36 +1,63 @@
 {
-  "commit": "fbdecc29cd786952c4b496abc68384b31a320b17",
+  "commit": "a4d4670ae2ce093cf913e7c7aa2528a165939f9d",
   "go_version": "go version go1.26.3 darwin/arm64",
   "workspace_digest": {
     "dirty": true,
     "summary": [
-      "M app/src/lib/i18n/index.ts",
-      " M runtime-go/dependency-review.json",
+      "M .env.example",
+      " M app/src/routes/sign.tsx",
+      " M docker-compose.yml",
+      " M runtime-go/cmd/runtime/main.go",
+      " M runtime-go/internal/adapter/agui_test.go",
+      " M runtime-go/internal/runtimeconfig/config_test.go",
+      " M runtime-go/internal/server/auth.go",
+      " M runtime-go/internal/server/auth_test.go",
+      " M runtime-go/internal/server/runs.go",
       " M runtime-go/testdata/compatibility-report.json",
+      " M server/drizzle/meta/_journal.json",
       " M server/scripts/enterprise-runtime-probe.ts",
-      " M server/src/billing/outbound.ts",
-      " M server/src/billing/webhook-signature.ts",
-      " M server/tests/billing-webhook-signature.test.ts",
-      "?? server/tests/enterprise/runtime-artifacts.test.ts"
+      " M server/src/enterprise/runtime/validation-routes.ts",
+      " M server/src/plugins/composio-adapter.ts",
+      " M server/tests/enterprise/runtime-contract.test.ts",
+      "?? casdoor/",
+      "?? runtime-go/internal/runtimeconfig/config.go",
+      "?? runtime-go/internal/server/inputguard.go",
+      "?? runtime-go/internal/server/inputguard_test.go",
+      "?? server/drizzle/0055_steady_machine_man.sql",
+      "?? server/drizzle/0056_enterprise_tenancy_rls.sql",
+      "?? server/drizzle/meta/0055_snapshot.json",
+      "?? server/drizzle/meta/0056_snapshot.json",
+      "?? server/ops/",
+      "?? server/scripts/enterprise-test-db.ts",
+      "?? server/tests/enterprise/runtime-invocation.test.ts",
+      "?? server/tests/enterprise/tenancy/rls.test.ts"
     ]
   },
   "document_baseline": {
     "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
     "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "5e6115f12f8df8368683d81fed6f680d39b19d8e7d08b01d926ea5df047315b7",
-    "server/scripts/enterprise-runtime-probe.ts": "2859b70b56027dbc07566fe1ed005a9192fb25df8cc8599df0c256707ce5ca65",
-    "runtime-go/cmd/runtime/main.go": "7721b7a19cb18307345f06587c6d4967e5a4f786bc3328f706582606cf3d37ed",
-    "runtime-go/internal/adapter/agui_test.go": "edeaafd2bf69befa3abec8768d7fea6b2da9dc4cb19c99e498c22447a9fa17b2",
-    "runtime-go/internal/adapter/agui.go": "390c0864f9625c3ccad669a3ccc9cd2859fbf89761bf7e120fcefd45f7284de7",
+    "server/scripts/enterprise-runtime-probe.ts": "5f1ef90931fae7fffed659da0efb349e373a856a4a26be533acb2434f0688986",
+    "runtime-go/cmd/runtime/main.go": "2cee75fdeb424b680431be462c3dec250a1c1e92d54c5dbc5d69dae268a7c352",
+    "runtime-go/internal/adapter/agui_test.go": "f32e48245e48cba5cf4311ac441b2e7ebc8a9e7911cef80359f9dabdd388f67d",
+    "runtime-go/internal/adapter/agui.go": "c59c944795f6a8f78f6689588577c7068b2ea81fd9d507ff03a95cfbe67fe33f",
     "runtime-go/internal/callback/client_test.go": "e7cf0b412ed372bb6a7f87ea704fa1d81f5dd0698af756cea0803e53c11c03b7",
     "runtime-go/internal/callback/client.go": "db6ebdf120ac0457e232cddcfe0374d540bdc23ab71e63806e368e5651768f52",
-    "runtime-go/internal/identity/context_test.go": "ebff8a67ad9cb65deb70a67d13dfa1c6dc55c9aa9407aee098b466a99f45b858",
-    "runtime-go/internal/identity/context.go": "4cbe61bec2230041a0ebe0e252089763ad0af5f36f780c7a38d03daf8f1eb23e",
-    "runtime-go/internal/server/auth_test.go": "f5053e33c8aa6560fdc4782b2e8ff529fcea8634e43e366ffefca3aacb764a1e",
-    "runtime-go/internal/server/auth.go": "0fc55c94a22cda934e7a42818f8240e973c30299d3ecc8da3ef177b001b3e3d8",
-    "runtime-go/internal/server/cancel_test.go": "e6cd68ec177d11170792865018e579fbebdefb989886950e962937596301683e",
-    "runtime-go/internal/server/cancel.go": "a0b949b90769cc695ac959a71487c3a4b2b2670eb75370822d92b5da4b6e2fac",
+    "runtime-go/internal/identity/context_test.go": "d03a97c46ce497183de8a3d1611be3aa6717ca9d1d2fa1fee6622b0d27728c1b",
+    "runtime-go/internal/identity/context.go": "fe45eee5b87d38a5d8bd82c094459aa9f85393a1d4d8cdd6ac86826846889e2f",
+    "runtime-go/internal/runtimeconfig/config_test.go": "cbbd59e0dae9690e15c9c0ec7583720046c1950e8c61e42d484119139018894e",
+    "runtime-go/internal/runtimeconfig/config.go": "ea68f6fea75e574517bf96a1e3a8730ac2d1cf1f37a609f012d7e6934886bca5",
+    "runtime-go/internal/server/auth_test.go": "ef273bc35f45af435fa947a6ee55c35e24f3757a007c30b88f53cf61ab02a590",
+    "runtime-go/internal/server/auth.go": "b37441ac7ed079cf768371a95da018126ef08bfbc97f03a4b9479318954765c9",
+    "runtime-go/internal/server/cancel_test.go": "fb5088ef930cd2754383a54507b3f1b31903b86813be83f028787ff06e8b8b16",
+    "runtime-go/internal/server/cancel.go": "41bdd5054c73b847e68e152ae29857483f8efacea226b949581e39ed033b9609",
     "runtime-go/internal/server/health_test.go": "ad1f04c3cc1d68f251f383bdd392d90dee198429e72001f70c47a021d9e4c040",
-    "runtime-go/internal/server/health.go": "abf1deee86dcec5c3624cfaf4d2f6f04b36a2e98961f86e37c56cc0e08980f1e"
+    "runtime-go/internal/server/health.go": "abf1deee86dcec5c3624cfaf4d2f6f04b36a2e98961f86e37c56cc0e08980f1e",
+    "runtime-go/internal/server/inputguard_test.go": "444347329c6ee998adcae7bea6797a97f6b43d4ad4eb069f484cd394b11632ed",
+    "runtime-go/internal/server/inputguard.go": "e6635b1eb642e58258e1ac9a6e80868656700905a0547649eeb53b0ad90596ed",
+    "runtime-go/internal/server/runs_test.go": "b22cf35b59b9b235db09afe6364c7d0879ac9e25b616eb9d9b1de59dac14df59",
+    "runtime-go/internal/server/runs.go": "a2dba8a6991310a1a7b1979fafdca8c3d9ca9d222522aca2b552641b288ed8df",
+    "runtime-go/internal/trustedinput/input_test.go": "9f736157c6ad9593e4562260903131bc80f92cda42ecd9e001e8aebe8a172faf",
+    "runtime-go/internal/trustedinput/input.go": "88c5d6525c03003d44e494f4d6b20f433268f096bbce300edbe2942972a4df89"
   },
   "dependency_graph_digest": {
     "goModSha256": "aa869ff54106a5a4b53ff3aa55940639326b7708ce73e16e69747443093ec43a",
@@ -712,7 +739,7 @@
         "-o",
         "rss=",
         "-p",
-        "26647"
+        "92690"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -739,7 +766,7 @@
   "checks": {
     "identity": {
       "status": "passed",
-      "evidence": "no-credential request -> 401, forged assertion -> 401 (both want 401); provider requests during the refusals: 0 (want 0)"
+      "evidence": "no-credential request -> 401, forged capability -> 401 (both want 401); provider requests during the refusals: 0 (want 0)"
     },
     "trusted_input": {
       "status": "passed",
@@ -763,7 +790,7 @@
     },
     "cancel": {
       "status": "passed",
-      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 3ms after the cancel"
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 2ms after the cancel"
     },
     "backpressure": {
       "status": "not_run",
@@ -798,10 +825,10 @@
     }
   },
   "measurements": {
-    "rssBytes": 24707072,
-    "firstEventMs": 6,
-    "cancelLagMs": 3,
-    "streamDurationMs": 8
+    "rssBytes": 25100288,
+    "firstEventMs": 8,
+    "cancelLagMs": 2,
+    "streamDurationMs": 10
   },
   "reviewers": {
     "G1a": {

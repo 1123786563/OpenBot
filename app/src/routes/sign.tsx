@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { ProviderLogo } from "@/components/auth/provider-logo";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,36 @@ function SignScreen() {
   const { data: options } = useQuery(authProvidersQueryOptions());
   const providers = options?.providers ?? [];
   const [email, setEmail] = useState("");
+
+  /*
+   * A deployment with exactly one way in goes straight there.
+   *
+   * The buttons exist to choose between ways in; with one provider and no registered company
+   * IdP there is no choice to make, and a screen that only asks somebody to press the one
+   * button it has is a step that does nothing. Skipped when SSO is registered (the email box
+   * is also a way in, so the choice is real) and when SSO is required (the buttons are the
+   * administrators' break-glass, which must stay deliberate).
+   *
+   * Once only: a sign-in that fails lands back here with a reason, and sending somebody
+   * straight back into the same failure would be a loop, not a retry.
+   */
+  const autoEntered = useRef(false);
+  useEffect(() => {
+    if (autoEntered.current || !options) return;
+    if (providers.length !== 1 || options.sso || options.ssoRequired) return;
+    const provider = providers[0];
+    if (!provider) return;
+    autoEntered.current = true;
+    setOpening(provider);
+    void signInWith(provider).catch((caughtError) => {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : t("signIn.couldNotStart", { provider: providerName(provider) }),
+      );
+      setOpening(null);
+    });
+  }, [options, providers, t]);
 
   /**
    * Sign in through whichever identity provider covers this address.

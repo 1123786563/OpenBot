@@ -82,6 +82,15 @@ func (g *RunGate) BeginDrain() {
 	g.mu.Unlock()
 }
 
+// Draining reports whether the gate has stopped admitting new runs — the
+// state the host's readiness formula must consult so /health/ready flips
+// false at the same moment new runs start being refused.
+func (g *RunGate) Draining() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.draining
+}
+
 // InFlight reports how many runs are executing right now.
 func (g *RunGate) InFlight() int {
 	g.mu.Lock()
