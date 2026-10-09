@@ -1,6 +1,8 @@
+import { isBrokeredProvenance, type BrokeredProvenance } from "../../../shared/src/brokered-provenance";
 import { schemeKind } from "./broker";
 import type { CatalogueEntry } from "./catalogue";
-import { toolkitOf } from "./composio";
+import { toolkitOf as composioToolkitOf } from "./composio";
+import { toolkitOf as openConnectorToolkitOf } from "./openconnector";
 import type { TransportKind } from "./transport";
 
 /**
@@ -66,6 +68,12 @@ export type ServerAccess = {
    * looking at a row it should not be brokering.
    */
   toolkit: string | null;
+  /**
+   * Which broker a brokered row was enabled through; null on every other answer. The store reads it
+   * to pick the connection table's provider and the right broker client, so a third broker needs no
+   * new predicate anywhere.
+   */
+  broker: BrokeredProvenance | null;
 };
 
 const CREDENTIAL_BY_AUTH: Record<
@@ -128,8 +136,8 @@ export abstract class ServerUnresolvableError extends Error {}
 /**
  * A row that claims to be two servers at once, which makes it neither.
  *
- * CRITERION. A row whose provenance says `composio` and whose id is a curated catalogue slug is
- * refused, not resolved — in either direction.
+ * CRITERION. A row whose provenance names a broker and whose id is a curated catalogue slug is
+ * refused, not resolved — in either direction, for either broker.
  *
  * REASON. {@link accessFor} holds two facts and no third: the row, and the entry that row's id
  * looked up. A curated row whose provenance column was edited to `composio` and a genuinely
@@ -163,8 +171,8 @@ export class ServerRowAmbiguousError extends ServerUnresolvableError {
 /**
  * A reviewed entry that names a transport no entry can be reached over.
  *
- * CRITERION. An entry declaring `transport: "composio"` is refused at resolution, and no answer is
- * produced for it.
+ * CRITERION. An entry declaring a broker's transport (`composio`, `open-connector`) is refused at
+ * resolution, and no answer is produced for it.
  *
  * REASON. {@link CuratedTransportKind} already keeps the value out of the catalogue at compile
  * time, which is where it belongs — nothing writes an entry at runtime. This is what stands behind
@@ -182,20 +190,36 @@ export class CatalogueTransportUnroutableError extends ServerUnresolvableError {
 }
 
 /**
- * Whether a kind is the broker's, asked through a function so the question survives being answered.
+ * Every broker this deployment can dial, keyed by the provenance value that names it on a row.
+ *
+ * A REGISTRY RATHER THAN A COMPARISON because there are now two brokers and the questions that used
+ * to be spelled `=== "composio"` — is this kind a broker's, which app does this row's url name —
+ * have one answer per broker. Adding a third broker is a row here plus a TransportKind, and the
+ * compiler finishes the job: `BROKERS[row.provenance]` is the only spelling of "which broker".
+ */
+const BROKERS: Record<
+  BrokeredProvenance,
+  { transport: TransportKind; toolkitOf: (url: string) => string | null }
+> = {
+  composio: { transport: "composio", toolkitOf: composioToolkitOf },
+  "open-connector": { transport: "open-connector", toolkitOf: openConnectorToolkitOf },
+};
+
+/**
+ * Whether a kind is a broker's, asked through a function so the question survives being answered.
  *
  * CRITERION. This comparison must stay live even though {@link CuratedTransportKind} makes it
  * unreachable from the catalogue as the catalogue stands today.
  *
- * REASON. Written inline against `entry.transport`, the compiler narrows the operand to the three
- * curated kinds and rejects the comparison as pointless — correctly, and only while nothing
- * bypasses the type. A cast, a test fixture, or a loader that ever reads entries from outside the
- * build would each produce the state this refuses, and each arrives at runtime where a type says
- * nothing. Widening to {@link TransportKind} at a parameter costs one call and keeps both the
- * compile-time door and the runtime one shut, rather than trading the second for the first.
+ * REASON. Written inline against `entry.transport`, the compiler narrows the operand to the curated
+ * kinds and rejects the comparison as pointless — correctly, and only while nothing bypasses the
+ * type. A cast, a test fixture, or a loader that ever reads entries from outside the build would
+ * each produce the state this refuses, and each arrives at runtime where a type says nothing.
+ * Widening to {@link TransportKind} at a parameter costs one call and keeps both the compile-time
+ * door and the runtime one shut, rather than trading the second for the first.
  */
 function isBrokerTransport(kind: TransportKind): boolean {
-  return kind === "composio";
+  return Object.values(BROKERS).some((broker) => broker.transport === kind);
 }
 
 /**
@@ -207,12 +231,12 @@ function isBrokerTransport(kind: TransportKind): boolean {
  * from an old backup, written by a bug — cannot turn a reviewed vendor into a brokered one and start
  * sending its calls somewhere else. The row only ever answers where the catalogue is silent.
  *
- * IT CUTS BOTH WAYS, WHICH IS WHY `composio` IS REFUSED RATHER THAN OVERRULED. Only one direction
- * was considered when that order was written: a brokered row whose id collides with a curated slug
- * was quietly answered as the curated vendor. Nothing in these two arguments tells that row apart
- * from a tampered curated one, so the only answer that is not wrong in one of the two worlds is no
- * answer. See {@link ServerRowAmbiguousError}. Every other provenance value still loses to the
- * entry, because none of them proposes a different vendor to reach.
+ * IT CUTS BOTH WAYS, WHICH IS WHY A BROKERED PROVENANCE IS REFUSED RATHER THAN OVERRULED. Only one
+ * direction was considered when that order was written: a brokered row whose id collides with a
+ * curated slug was quietly answered as the curated vendor. Nothing in these two arguments tells
+ * that row apart from a tampered curated one, so the only answer that is not wrong in one of the
+ * two worlds is no answer. See {@link ServerRowAmbiguousError}. Every other provenance value still
+ * loses to the entry, because none of them proposes a different vendor to reach.
  *
  * MCP stays the fallback, which is still right for a server an administrator added by URL: that is
  * somebody else's MCP endpoint by definition, reached on the one token the deployment holds for it.
@@ -234,16 +258,16 @@ export function accessFor(
   },
   entry: CatalogueEntry | null,
 ): ServerAccess {
-  if (entry && row.provenance === "composio") {
+  if (entry && isBrokeredProvenance(row.provenance)) {
     throw new ServerRowAmbiguousError(
-      `${entry.key} is a server this deployment ships an entry for, and a row with that id says its provenance is composio. Nothing can tell an edited column from a brokered app that took the name, so this row is not resolved at all: rename it, or correct its provenance.`,
+      `${entry.key} is a server this deployment ships an entry for, and a row with that id says its provenance is ${row.provenance}. Nothing can tell an edited column from a brokered app that took the name, so this row is not resolved at all: rename it, or correct its provenance.`,
     );
   }
 
   if (entry) {
     if (isBrokerTransport(entry.transport ?? "mcp")) {
       throw new CatalogueTransportUnroutableError(
-        `${entry.key} is a catalogue entry declaring the composio transport, which is reached from a row's provenance and the app slug in its url — neither of which an entry has. There is no app to broker to and no connection to check, so this entry is not resolved at all: give it the transport it is actually reached over.`,
+        `${entry.key} is a catalogue entry declaring a broker transport, which is reached from a row's provenance and the app slug in its url — neither of which an entry has. There is no app to broker to and no connection to check, so this entry is not resolved at all: give it the transport it is actually reached over.`,
       );
     }
 
@@ -252,16 +276,20 @@ export function accessFor(
       credential: CREDENTIAL_BY_AUTH[entry.auth.kind],
       reachedAs: REACHED_AS_BY_AUTH[entry.auth.kind],
       toolkit: null,
+      broker: null,
     };
   }
 
-  if (row.provenance === "composio") {
+  const broker = isBrokeredProvenance(row.provenance)
+    ? BROKERS[row.provenance]
+    : null;
+  if (broker) {
     /*
      * AND A BROKERED APP THAT NEEDS NO CREDENTIAL IS REACHED AS THE DEPLOYMENT, NOT AS THE ASKER.
      *
      * This answered `person` for every brokered row, because the only fields it had were the
      * provenance and the url and neither can tell. A `NO_AUTH` app has no account and no
-     * `composio_connections` row: `connectionTokenFor` deliberately lets such a call through with no
+     * `brokered_connections` row: `connectionTokenFor` deliberately lets such a call through with no
      * row at all, and `/servers/:id/connect` refuses to ever create one. So for Hacker News —
      * Composio's own `NO_AUTH` — the audit row wrote `reachedAs: <actorId>` for every person who
      * asked, each one claiming the call ran in that person's own account at the vendor: an account
@@ -283,13 +311,14 @@ export function accessFor(
      * `actor`.
      */
     return {
-      transport: "composio",
+      transport: broker.transport,
       credential: "brokered",
       reachedAs:
         schemeKind(row.authScheme) === "none" || row.accountMode === "shared"
           ? "deployment"
           : "person",
-      toolkit: toolkitOf(row.url),
+      toolkit: broker.toolkitOf(row.url),
+      broker: row.provenance as BrokeredProvenance,
     };
   }
 
@@ -298,5 +327,6 @@ export function accessFor(
     credential: "deployment-token",
     reachedAs: "deployment",
     toolkit: null,
+    broker: null,
   };
 }
