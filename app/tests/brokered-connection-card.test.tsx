@@ -21,6 +21,18 @@ test("a Composio-provenance row is brokered, whatever the catalogue says", () =>
   ).toBe("brokered");
 });
 
+/*
+ * The second broker's rows are brokered by the same reading, which is what the shared list is
+ * for: a `provenance === "composio"` comparison here answered `deployment-bearer` for them, and
+ * the page drew the shared-token form over an app whose whole point is that each person connects
+ * their own account — the exact defect the function's docblock describes.
+ */
+test("an OpenConnector-provenance row is brokered the same way", () => {
+  expect(
+    connectionKindFor({ provenance: "open-connector" } as never, undefined),
+  ).toBe("brokered");
+});
+
 test("a server added by URL still falls back to the shared-token shape", () => {
   expect(connectionKindFor({ provenance: "custom" } as never, undefined)).toBe(
     "deployment-bearer",

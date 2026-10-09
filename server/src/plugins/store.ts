@@ -4718,10 +4718,21 @@ export function createPluginStore(options: PluginStoreOptions) {
       return rows.map((row) => row.url);
     },
 
-    /** Every account any holder has on a brokered app, as the broker would be asked to end it. */
+    /**
+     * Every account any holder has on a brokered app, as the broker would be asked to end it.
+     *
+     * THE PROVENANCE RIDES ALONG because a mode switch ends those accounts at the row's own broker —
+     * `disconnectBrokered` keys its revoke and its row deletion on the provider, and the app slug
+     * names no broker on its own. A caller that had to re-derive it would re-read this row to get
+     * what this method already read once.
+     */
     async accountsOn(
       serverId: string,
-    ): Promise<{ toolkit: string; accounts: AccountRef[] } | null> {
+    ): Promise<{
+      toolkit: string;
+      provider: BrokeredProvenance;
+      accounts: AccountRef[];
+    } | null> {
       const [row] = await database
         .select({ url: mcpServers.url, provenance: mcpServers.provenance })
         .from(mcpServers)
@@ -4752,6 +4763,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         );
       return {
         toolkit,
+        provider: row.provenance,
         accounts: held.map(
           (row): AccountRef =>
             row.holder === "person"

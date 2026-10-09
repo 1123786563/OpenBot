@@ -3,6 +3,7 @@ import { createApp } from "../src/app";
 import { DEV_ACTOR } from "../src/auth/dev-actor";
 import { loadConfig } from "../src/config";
 import { ServerRowAmbiguousError } from "../src/plugins/access";
+import type { BrokeredProvenance } from "../../shared/src/brokered-provenance";
 import {
   type BrokerApp,
   type BrokerConnection,
@@ -76,6 +77,20 @@ const UP_TO_BROKER = [
   undefined,
   undefined,
   undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+] as const;
+
+/**
+ * `createApp`'s positions 31-37, between `composio` and `openConnector`. See
+ * {@link UP_TO_BROKER} for why the length is written down rather than left to `as never`.
+ */
+const AFTER_COMPOSIO = [
   undefined,
   undefined,
   undefined,
@@ -1591,23 +1606,38 @@ function brokeredApp(
     toolkit: string;
     returnUrl: string;
   }> = [];
-  const queried: Array<{ toolkit: string; account: AccountRef }> = [];
-  const confirmed: Array<{ toolkit: string; account: AccountRef; by: string }> =
-    [];
+  const queried: Array<{
+    toolkit: string;
+    account: AccountRef;
+    provider: BrokeredProvenance;
+  }> = [];
+  const confirmed: Array<{
+    toolkit: string;
+    account: AccountRef;
+    by: string;
+    provider: BrokeredProvenance;
+  }> = [];
   /** Every re-check that reached the store, so who it was made about is an assertion. */
   const rechecked: Array<{
     toolkit: string;
     account: AccountRef;
     by: string;
+    provider: BrokeredProvenance;
   }> = [];
   const disconnected: Array<{
     toolkit: string;
     account: AccountRef;
     by: string;
     reason: string;
+    provider: BrokeredProvenance;
   }> = [];
   /** Every time the route went and asked Composio what an app wants typed in. */
   const asked: Array<{ toolkit: string; authScheme: string }> = [];
+  /**
+   * Every time the route went and asked OpenConnector the same question, kept beside `asked`
+   * because which broker a form is drawn from is the second broker's whole routing question.
+   */
+  const askedOpenConnector: Array<{ toolkit: string; authScheme: string }> = [];
   /**
    * Every submission that reached the store, which is what the filter is asserted through.
    *
@@ -1620,6 +1650,7 @@ function brokeredApp(
     account: AccountRef;
     by: string;
     values: Record<string, string>;
+    provider: BrokeredProvenance;
   }> = [];
 
   const rows: Array<{
@@ -1756,6 +1787,21 @@ function brokeredApp(
       authScheme: "API_KEY",
       accountMode: "shared",
     },
+    /*
+     * AN OPENCONNECTOR ROW AT A SLUG COMPOSIO ALSO LISTS, which is the one shape that makes the
+     * provider half of every lifecycle question load-bearing rather than decorative: the two
+     * brokers each hold a firecrawl, the app slug names neither of them, and a route that keyed
+     * its store calls on the default broker would connect, confirm, re-check and end this row's
+     * person at the other one — writing a `composio` connection row nothing on this deployment
+     * would ever read back.
+     */
+    {
+      id: "openconnector-firecrawl",
+      title: "Firecrawl",
+      url: "openconnector://firecrawl",
+      provenance: "open-connector",
+      authScheme: "API_KEY",
+    },
   ];
 
   const store = pluginStore({
@@ -1809,6 +1855,7 @@ function brokeredApp(
     brokeredConnection: async (input: {
       toolkit: string;
       account: AccountRef;
+      provider?: BrokeredProvenance;
     }) => {
       queried.push(input);
       return connection;
@@ -1817,6 +1864,7 @@ function brokeredApp(
       toolkit: string;
       account: AccountRef;
       by: string;
+      provider?: BrokeredProvenance;
     }) => {
       confirmed.push(input);
       // Thrown from where the store asks the broker, because that is where it throws in the
@@ -1828,6 +1876,7 @@ function brokeredApp(
       toolkit: string;
       account: AccountRef;
       by: string;
+      provider?: BrokeredProvenance;
     }) => {
       rechecked.push(input);
       // Thrown from where the store raises it in the product: a probe that ran and was refused is a
@@ -1850,6 +1899,7 @@ function brokeredApp(
       account: AccountRef;
       by: string;
       values: Record<string, string>;
+      provider?: BrokeredProvenance;
     }) => {
       submitted.push(input);
       if (deployment.storeThrows) throw deployment.storeThrows;
@@ -1869,6 +1919,7 @@ function brokeredApp(
       account: AccountRef;
       by: string;
       reason: string;
+      provider?: BrokeredProvenance;
     }) => {
       disconnected.push(input);
       // The revoke comes before the delete, so a throw here is the product's own ordering: the
@@ -1917,6 +1968,26 @@ function brokeredApp(
           },
         } as never)
       : undefined,
+    // Positions 31-37 are the parameters after `composio`; `openConnector` is 38, the last one.
+    ...AFTER_COMPOSIO,
+    /*
+     * OPENCONNECTOR THE SECOND BROKER, PRESENT BECAUSE THE OPENCONNECTOR ROW ABOVE HAS TO BE
+     * SERVED BY ITS OWN CLIENT for the lifecycle routes to reach at all: absent is the deployment
+     * with either token unset, whose refusals the store's own tests cover. Only the half the
+     * routes under test here ask of it — the fields a form is drawn from — because a key-type app
+     * has no consent screen to authorize.
+     */
+    {
+      broker: {
+        connectionFields: async (request: {
+          toolkit: string;
+          authScheme: string;
+        }) => {
+          askedOpenConnector.push(request);
+          return PUBLISHED;
+        },
+      },
+    } as never,
   );
 
   return {
@@ -1926,6 +1997,7 @@ function brokeredApp(
     rechecked,
     disconnected,
     asked,
+    askedOpenConnector,
     submitted,
     /**
      * The same route aimed at the app whose secret a person types.
@@ -1937,6 +2009,23 @@ function brokeredApp(
     connectFields: (body?: unknown) =>
       app.request(
         "http://openbot.test/api/plugins/servers/composio-firecrawl/connect",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+      ),
+    /**
+     * The same press aimed at the OpenConnector row, which is the same request as
+     * {@link connectFields} with the row's own broker behind it.
+     *
+     * Its own helper for that one's reason: the two differ only in the row they name, and that
+     * difference is the whole question — a route that served both rows from one broker would pass
+     * every assertion the Composio one makes.
+     */
+    connectFieldsOpenConnector: (body?: unknown) =>
+      app.request(
+        "http://openbot.test/api/plugins/servers/openconnector-firecrawl/connect",
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -2071,8 +2160,16 @@ describe("connecting a brokered app", () => {
     expect(authorized).toEqual([
       { account: ADMIN_ACCOUNT, toolkit: "linear", returnUrl: RETURN_URL },
     ]);
-    // And the read that decided there was no connection yet asked about the same account.
-    expect(queried).toEqual([{ toolkit: "linear", account: ADMIN_ACCOUNT }]);
+    // And the read that decided there was no connection yet asked about the same account, at the
+    // row's own broker — `provider` names it, because the pair the store keys a connection by is
+    // (provider, app) and a route that dropped it would have read the wrong broker's row.
+    expect(queried).toEqual([
+      {
+        toolkit: "linear",
+        account: ADMIN_ACCOUNT,
+        provider: "composio",
+      },
+    ]);
   });
 
   test("a brokered row never reaches the checks that belong to the OAuth flow", async () => {
@@ -2376,6 +2473,7 @@ describe("connecting an app whose secret a person types", () => {
         account: ADMIN_ACCOUNT,
         by: ADMIN.id,
         values: { api_key: "fc-live-a-secret" },
+        provider: "composio",
       },
     ]);
     // And no consent link was minted for an app that has no consent screen.
@@ -2485,6 +2583,7 @@ describe("connecting an app whose secret a person types", () => {
         account: ADMIN_ACCOUNT,
         by: ADMIN.id,
         values: { api_key: "fc-live-a-secret", base_url: "" },
+        provider: "composio",
       },
     ]);
   });
@@ -2764,6 +2863,7 @@ describe("connecting an app whose secret a person types", () => {
         account: DEV_ACTOR_ACCOUNT,
         by: DEV_ACTOR.id,
         values: { api_key: "fc-live-a-secret" },
+        provider: "composio",
       },
     ]);
     // And still no consent link, which is the whole reason the setting has no bearing here.
@@ -2985,7 +3085,12 @@ describe("confirming and ending a brokered connection", () => {
     // The store's answer, passed through rather than restated: `connected` is what the vendor said.
     expect(await response.json()).toEqual({ connected: true });
     expect(confirmed).toEqual([
-      { toolkit: "linear", account: ADMIN_ACCOUNT, by: ADMIN.id },
+      {
+        toolkit: "linear",
+        account: ADMIN_ACCOUNT,
+        by: ADMIN.id,
+        provider: "composio",
+      },
     ]);
   });
 
@@ -3013,6 +3118,7 @@ describe("confirming and ending a brokered connection", () => {
         account: ADMIN_ACCOUNT,
         by: ADMIN.id,
         reason: "self",
+        provider: "composio",
       },
     ]);
   });
@@ -3155,7 +3261,12 @@ describe("re-checking a brokered connection", () => {
       probe: "LINEAR_GET_ME",
     });
     expect(rechecked).toEqual([
-      { toolkit: "linear", account: ADMIN_ACCOUNT, by: ADMIN.id },
+      {
+        toolkit: "linear",
+        account: ADMIN_ACCOUNT,
+        by: ADMIN.id,
+        provider: "composio",
+      },
     ]);
   });
 
@@ -3226,6 +3337,106 @@ describe("re-checking a brokered connection", () => {
     expect(response.status).toBe(502);
     expect(JSON.parse(body).error).toBe("Invalid API key provided.");
     expect(body).not.toContain("req_a_trace_id_nobody_should_read");
+  });
+});
+
+/**
+ * The key the OpenConnector press below types, named as a fixture rather than as a literal at the
+ * assertion — for the same reason {@link PUBLISHED} is a constant: the thing asserted about it is
+ * WHICH NAMES travel, and a value restated twice is a value a reader can misread as load-bearing.
+ */
+const OPENCONNECTOR_TYPED_KEY = "fc-typed-for-this-press";
+
+/**
+ * AN OPENCONNECTOR APP'S LIFECYCLE ROUTES REACH ITS OWN BROKER.
+ *
+ * CRITERION. Every lifecycle call the routes make about an `openconnector://` row names
+ * `open-connector` as its provider — the existing-connection read, the field connect, confirm,
+ * re-check and disconnect — and the form the connect draws is asked of OpenConnector's client
+ * rather than Composio's.
+ *
+ * REASON. The store keys every one of those calls on `(provider, app[, user])` and dials the
+ * broker the provider names, so a route that dropped the provider connected, confirmed,
+ * re-checked and ended this row's person at the default broker — on a deployment with both
+ * brokers configured, at a slug both of them list, which is the shape the fixture rows build on
+ * purpose. The slug names no broker on its own, which is the whole of why the provider is a
+ * parameter carried from the row rather than a derivation from the slug.
+ *
+ * THIS DESCRIBE CLOSES A ROUTE-LEVEL GAP: the store's own integration tests call the store
+ * directly and pass `provider` explicitly, so a route that never carried it stayed green behind
+ * them — and nothing on this surface named OpenConnector at all before this. The existing
+ * assertions above gained their `provider` fields for the same reason: what the store is keyed
+ * on is now part of what a route has to be shown to carry.
+ */
+describe("an OpenConnector app's lifecycle routes reach its own broker", () => {
+  test("every lifecycle call names the row's broker, never the default", async () => {
+    const lifecycle = brokeredApp();
+
+    /*
+     * THE FORM IS DRAWN FROM OPENCONNECTOR'S CLIENT, which is the first broker choice the route
+     * makes: a stub recording which client answered is the only thing that can tell the two apart
+     * when both publish the same fields for the same slug.
+     */
+    const firstPress = await lifecycle.connectFieldsOpenConnector();
+    expect(firstPress.status).toBe(200);
+    expect(await firstPress.json()).toEqual({ fields: PUBLISHED });
+    expect(lifecycle.askedOpenConnector).toEqual([
+      { toolkit: "firecrawl", authScheme: "API_KEY" },
+    ]);
+    expect(lifecycle.asked).toEqual([]);
+    // And the read that decided there was no connection yet asked OpenConnector's table.
+    expect(lifecycle.queried).toEqual([
+      {
+        toolkit: "firecrawl",
+        account: ADMIN_ACCOUNT,
+        provider: "open-connector",
+      },
+    ]);
+
+    // The submission connects at OpenConnector, on a slug Composio also lists.
+    const secondPress = await lifecycle.connectFieldsOpenConnector({
+      values: { api_key: OPENCONNECTOR_TYPED_KEY },
+    });
+    expect(secondPress.status).toBe(200);
+    expect(lifecycle.submitted).toEqual([
+      {
+        toolkit: "firecrawl",
+        account: ADMIN_ACCOUNT,
+        by: ADMIN.id,
+        values: { api_key: OPENCONNECTOR_TYPED_KEY },
+        provider: "open-connector",
+      },
+    ]);
+
+    // Confirm, re-check and disconnect end the same row's connection at the same broker.
+    await lifecycle.confirm({ serverId: "openconnector-firecrawl" });
+    await lifecycle.recheck({ serverId: "openconnector-firecrawl" });
+    await lifecycle.disconnect({ serverId: "openconnector-firecrawl" });
+    expect(lifecycle.confirmed).toEqual([
+      {
+        toolkit: "firecrawl",
+        account: ADMIN_ACCOUNT,
+        by: ADMIN.id,
+        provider: "open-connector",
+      },
+    ]);
+    expect(lifecycle.rechecked).toEqual([
+      {
+        toolkit: "firecrawl",
+        account: ADMIN_ACCOUNT,
+        by: ADMIN.id,
+        provider: "open-connector",
+      },
+    ]);
+    expect(lifecycle.disconnected).toEqual([
+      {
+        toolkit: "firecrawl",
+        account: ADMIN_ACCOUNT,
+        by: ADMIN.id,
+        reason: "self",
+        provider: "open-connector",
+      },
+    ]);
   });
 });
 

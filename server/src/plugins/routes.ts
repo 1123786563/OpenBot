@@ -8,6 +8,10 @@ import { reasonWithoutStatement } from "../db/query-failure";
 import type { AccountModeSwitch } from "./account-mode";
 import { brokerToolkitOf } from "./access";
 import {
+  isBrokeredProvenance,
+  type BrokeredProvenance,
+} from "../../../shared/src/brokered-provenance";
+import {
   type BrokerApp,
   type BrokerField,
   BrokerRefusalError,
@@ -1402,7 +1406,20 @@ export function createPluginRoutes(
      */
     const row = await store.serverAddress(serverId);
     const toolkit = row ? brokerToolkitOf(row.provenance, row.url) : null;
-    if (row && toolkit) {
+    /*
+     * THE ROW'S OWN BROKER, NAMED ONCE FOR EVERY STORE CALL THIS BRANCH MAKES. The lifecycle methods
+     * the connect path reaches — the existing-connection read, and the field connect below — key
+     * both on the provider, so a branch that dropped it here would be dialling Composio for a row
+     * OpenConnector enabled and writing the connection under Composio's name. The provenance guard
+     * is unreachable for a row whose toolkit parsed — `brokerToolkitOf` answers null for every
+     * non-brokered provenance — but it is what hands the branch the narrowed type, so the
+     * impossibility is spelled rather than cast.
+     */
+    const provider =
+      row && toolkit && isBrokeredProvenance(row.provenance)
+        ? row.provenance
+        : null;
+    if (row && toolkit && provider) {
       /*
        * AN APP THAT NEEDS NO CREDENTIAL IS ANSWERED HERE, BEFORE `brokeredAccountFor` IS EVER
        * ASKED WHOSE ACCOUNT THIS IS.
@@ -1488,7 +1505,11 @@ export function createPluginRoutes(
        * could break it. For a Shared app the account is the deployment's rather than whoever is
        * signed in, decided above and never by anything the request carries.
        */
-      const existing = await store.brokeredConnection({ toolkit, account });
+      const existing = await store.brokeredConnection({
+        toolkit,
+        account,
+        provider,
+      });
       if (existing) {
         /*
          * Named with the step to take rather than only refused: a second link would attach a
@@ -1858,6 +1879,7 @@ export function createPluginRoutes(
               account,
               by: context.var.actor.id,
               values,
+              provider,
             }),
           );
         } catch (error) {
@@ -2153,12 +2175,20 @@ export function createPluginRoutes(
         toolkit: string;
         account: AccountRef;
         title: string;
+        /**
+         * The row's own broker, handed back so the three routes that share this resolver can pass it
+         * to the store — the lifecycle methods they call key on the provider, and a resolver that
+         * read the row's provenance only to drop it would leave every caller dialling the
+         * pre-second-broker default.
+         */
+        provider: BrokeredProvenance;
         refusal?: undefined;
       }
     | {
         toolkit?: undefined;
         account?: undefined;
         title?: undefined;
+        provider?: undefined;
         refusal: { error: string; status: 400 | 403 | 503 };
       }
   > => {
@@ -2169,7 +2199,9 @@ export function createPluginRoutes(
     const toolkit = row ? brokerToolkitOf(row.provenance, row.url) : null;
     // `row` is named in the guard rather than trusted behind `toolkit`: a parsed toolkit implies a
     // row, but that implication lives in `brokerToolkitOf`'s body and not in any type tsc reads.
-    if (!row || !toolkit) {
+    // The provenance guard is that same implication spelled for the provider this resolver returns
+    // — unreachable for a row whose toolkit parsed, and narrowing rather than casting.
+    if (!row || !toolkit || !isBrokeredProvenance(row.provenance)) {
       return {
         refusal: {
           error: "That app is not reached through a broker.",
@@ -2209,7 +2241,12 @@ export function createPluginRoutes(
         },
       };
     }
-    return { toolkit, account: resolved.ref, title: resolved.title };
+    return {
+      toolkit,
+      account: resolved.ref,
+      title: resolved.title,
+      provider: row.provenance,
+    };
   };
 
   /**
@@ -2269,6 +2306,7 @@ export function createPluginRoutes(
             toolkit: resolved.toolkit,
             account: resolved.account,
             by: context.var.actor.id,
+            provider: resolved.provider,
           }),
         );
       } catch (error) {
@@ -2349,6 +2387,7 @@ export function createPluginRoutes(
             toolkit: resolved.toolkit,
             account: resolved.account,
             by: context.var.actor.id,
+            provider: resolved.provider,
           }),
         );
       } catch (error) {
@@ -2424,6 +2463,7 @@ export function createPluginRoutes(
           account: resolved.account,
           by: context.var.actor.id,
           reason: resolved.account.holder === "deployment" ? "admin" : "self",
+          provider: resolved.provider,
         }),
       );
     } catch (error) {

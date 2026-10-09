@@ -44,6 +44,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import {
   addCuratedServerMutationOptions,
@@ -164,7 +165,8 @@ function BotApprovalText({
  * How this vendor is reached, from whichever record we have.
  *
  * The row's own provenance is asked first because it is a fact this deployment recorded when the
- * app was enabled, not an inference: a brokered app is reached through Composio whatever the
+ * app was enabled, not an inference: a brokered app is reached through its broker — Composio or
+ * OpenConnector, asked through the shared list rather than one broker's name — whatever the
  * catalogue does or does not say about it.
  *
  * That order matters because the catalogue has nothing to say about a brokered app — it is not a
@@ -180,7 +182,7 @@ export function connectionKindFor(
   server: PluginServer | undefined,
   auth: CatalogueItem["auth"] | undefined,
 ): CatalogueItem["auth"] | "brokered" {
-  if (server?.provenance === "composio") return "brokered";
+  if (server && isBrokeredProvenance(server.provenance)) return "brokered";
   return auth ?? "deployment-bearer";
 }
 
@@ -600,8 +602,12 @@ function RouteComponent() {
            * ONLY A BROKERED APP THAT HAS AN ACCOUNT TO MAKE. `NO_AUTH` is the Composio scheme with
            * nothing to connect at all — see `brokeredAccountsListedOn` — so there is no personal/
            * shared choice to offer for it, and a row here could only open a dialog that refuses.
+           * The brokered question is asked through the shared list, so an OpenConnector app — whose
+           * key schemes need an account as much as a Composio one's — reaches the switch the server
+           * already answers for it.
            */}
-          {server?.provenance === "composio" &&
+          {server &&
+          isBrokeredProvenance(server.provenance) &&
           server.authScheme !== "NO_AUTH" ? (
             <>
               <Separator />
