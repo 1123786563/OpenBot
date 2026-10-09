@@ -210,6 +210,9 @@ export function createAccountModeSwitch(deps: {
           account,
           by: input.by,
           reason: "mode_switched",
+          // The row's own broker, read once by `accountsOn`: a revoke keyed on the default would
+          // spend this switch's revokes against a broker that never heard of the app.
+          provider: on.provider,
         });
       } catch (error) {
         failures.push({
