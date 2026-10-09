@@ -3,7 +3,6 @@ import {
   type AuthConfigOutcome,
   type BrokerApp,
   type BrokerConnection,
-  type BrokerField,
   type ConnectedAppBroker,
 } from "./broker";
 import type { AccountRef } from "./shared-accounts";
@@ -656,6 +655,6 @@ function authTypeFor(scheme: string): string {
  * would be a second answer to "which connection is this person's", which is exactly the drift the
  * one-minting rule exists to prevent.
  */
-function aliasOf(account: AccountRef, service: string): string {
+function aliasOf(account: AccountRef, _service: string): string {
   return account.vendorUserId;
 }
