@@ -4820,8 +4820,19 @@ export function createComposioClient(apiKey: string): {
     },
     authConfigs: {
       list: (query) => composio.authConfigs.list(query),
+      /*
+       * THE SCHEME TYPE IS THIS DEPLOYMENT'S AND THE ENUM IS THE VENDOR'S, AND THE TWO PARTED
+       * COMPANY WHEN `CUSTOM_CREDENTIAL` JOINED {@link FieldScheme}. That member is OpenConnector's:
+       * Composio never publishes it, the pick above can only choose from what Composio's own
+       * catalogue offered, and the OpenConnector broker creates no config at all — so a value the
+       * vendor's enum refuses cannot reach this call. The widening is spent here, at the one line
+       * where this deployment's projection meets the vendor's schema, exactly as `state` is below.
+       */
       create: (toolkit, options) =>
-        composio.authConfigs.create(toolkit, options),
+        composio.authConfigs.create(
+          toolkit,
+          options as Parameters<typeof composio.authConfigs.create>[1],
+        ),
       delete: (id, params) => client.authConfigs.delete(id, params),
     },
     connectedAccounts: {

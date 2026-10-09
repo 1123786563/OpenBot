@@ -14,7 +14,7 @@ const stub: OpenConnectorActions = {
   listActions: async () => [
     { id: "github.get_current_user", description: "Get the authenticated user", inputSchema: { type: "object" } },
   ],
-  execute: async (call) => ({ data: { login: "octocat" } }),
+  execute: async (_call) => ({ data: { login: "octocat" } }),
 };
 
 afterEach(() => useOpenConnectorClient(null));

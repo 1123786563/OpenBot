@@ -194,7 +194,7 @@ func TestLoadAcceptsACompleteConfiguration(t *testing.T) {
 		"-drain-timeout", "12s",
 	}, envWith(map[string]string{
 		"OPENBOT_RUNTIME_SERVICE_CREDENTIAL": "test-service-credential",
-		"OPENBOT_RUNTIME_MODEL_API_KEY":      "fixture-key",
+		"OPENBOT_RUNTIME_MODEL_CREDENTIAL":   "fixture-key",
 	}))
 	if err != nil {
 		t.Fatalf("complete configuration refused: %v", err)
@@ -205,7 +205,7 @@ func TestLoadAcceptsACompleteConfiguration(t *testing.T) {
 	if cfg.ValidationEndpoint != "http://127.0.0.1:3000/internal/enterprise/v1/runtime/validate" {
 		t.Fatalf("validation endpoint = %q", cfg.ValidationEndpoint)
 	}
-	if cfg.ServiceCredential != "test-service-credential" || cfg.ModelAPIKey != "fixture-key" {
+	if cfg.ServiceCredential != "test-service-credential" || cfg.ModelProviderCredential != "fixture-key" {
 		t.Fatal("secrets did not arrive from the environment")
 	}
 	if len(cfg.Experts) != 2 {

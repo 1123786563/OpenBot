@@ -35,6 +35,11 @@ services:
       - "[::1]:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Casdoor's role and schema in the database this container owns. Read-only, and run by
+      # the image's own entrypoint on the first boot of a fresh data volume only; the volume
+      # this stack already runs on had it applied by hand, since init scripts do not run
+      # against existing data.
+      - ./casdoor/init-db.sql:/docker-entrypoint-initdb.d/10-casdoor.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openbot -d openbot"]
       interval: 5s
@@ -386,8 +391,35 @@ services:
       timeout: 5s
       retries: 5
 
+  # The identity provider OpenBot signs in through, when CASDOOR_OAUTH_* is configured.
+  #
+  # On the `data` network beside the database it shares, which is the same trust as `migrate`
+  # and not the Bot side of the split above: Casdoor holds sign-in credentials rather than
+  # running anything a Bot asks for, so it is a service the deployment trusts with its own
+  # data, and it reaches `postgres` by name rather than through the published port.
+  #
+  # Stateless: its tables live in the `casdoor` schema of the shared database, so recreating
+  # this container loses nothing. Users, applications and their client secrets survive
+  # `docker compose down` for exactly as long as the postgres volume does.
+  casdoor:
+    image: casbin/casdoor:latest
+    restart: unless-stopped
+    ports:
+      # Loopback, like every other port in this file. This is the address in
+      # CASDOOR_OAUTH_ISSUER and the one browsers are sent to for the sign-in page; the
+      # server on the host reaches it the same way.
+      - "127.0.0.1:${CASDOOR_PORT:-8000}:8000"
+      - "[::1]:${CASDOOR_PORT:-8000}:8000"
+    volumes:
+      - ./casdoor/app.conf:/conf/app.conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data
+
 networks:
-  # The database and the one service that reaches it by name. Nothing a Bot can reach is on it.
+  # The database and the services that reach it by name. Nothing a Bot can reach is on it.
   #
   # A deployment that runs the API server inside Compose rather than on the host puts that service
   # on both this and `default`, which is the one place the two are meant to meet.

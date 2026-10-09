@@ -386,6 +386,20 @@
       "when": 1791549314208,
       "tag": "0054_brokered_connections_open_connector",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791550385998,
+      "tag": "0055_steady_machine_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791550419803,
+      "tag": "0056_enterprise_tenancy_rls",
+      "breakpoints": true
     }
   ]
 }

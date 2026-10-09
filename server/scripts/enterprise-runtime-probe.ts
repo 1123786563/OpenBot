@@ -10,10 +10,16 @@
  * adapter.New — exactly the composition the Go tests in
  * runtime-go/internal/adapter/agui_test.go verify. The launcher main below is
  * written by this script into a throwaway module that `replace`s
- * openbot/runtime-go with the repository's runtime-go directory, so the probe
- * composes the candidate WITHOUT shipping a second main in the repository:
- * R1's cmd/runtime stays the minimal health service until a ring owns its
- * production wiring.
+ * openbot/runtime-go with the repository's runtime-go directory.
+ *
+ * R2-B has since assembled the REAL main (runtime-go/cmd/runtime): strict
+ * configuration, the fixed expert catalog, the run gate and the enterprise
+ * execution/cancel routes. Pointing THIS probe at that real binary (with its
+ * flag/env surface: -addr, -validation-endpoint, -model-base-url,
+ * -model-alias, -expert version=path, -governed-tools, -callback-endpoint
+ * plus the OPENBOT_RUNTIME_* environment secrets) is the R4-A "真二进制" step;
+ * until then the launcher below remains the probe's controlled composition,
+ * and no result here claims the real binary ran.
  *
  * Run from the repository root: `bun server/scripts/enterprise-runtime-probe.ts`
  * Exit code: 0 only when every check the probe EXECUTED passed and the report
@@ -29,7 +35,7 @@
  */
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { HttpAgent } from "@ag-ui/client";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   copyFileSync,
   mkdirSync,
@@ -42,16 +48,16 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
   hashCallbackToken,
-  looksLikeCallbackToken,
   mintCallbackToken,
   mintRunAssertion,
-  readRunAssertion,
 } from "../src/agents/callback-token";
 import { createApp, type DeploymentToolCaller } from "../src/app";
 import { loadConfig } from "../src/config";
 import {
-  createRuntimeValidationRoutes,
-  type RuntimeVerificationIdentity,
+  createRuntimeInvocationValidationRoutes,
+  type InvocationValidationDeps,
+  type InvocationVerifyOutcome,
+  type RuntimeInvocation,
 } from "../src/enterprise/runtime/validation-routes";
 import { testEnvironment } from "../tests/support/environment";
 
@@ -217,7 +223,7 @@ func main() {
 	auth := server.Authenticate(authCfg)
 	mux := http.NewServeMux()
 	mux.Handle("/health/", server.Health(func() bool { return authCfg.Ready() }))
-	mux.Handle("/agui/", http.StripPrefix("/agui", auth(handler)))
+	mux.Handle("/agui/", http.StripPrefix("/agui", auth(server.RequireVerifiedInput()(handler))))
 	mux.Handle("/cancel", auth(server.Cancel(canceler)))
 
 	ln, err := net.Listen("tcp", *addr)
@@ -524,7 +530,7 @@ const chunk = (delta: Record<string, unknown>, finish: string | null) =>
   })}\n\n`;
 
 function sseResponse(chunks: string[]): Response {
-  return new Response(chunks.join("") + "data: [DONE]\n\n", {
+  return new Response(`${chunks.join("")}data: [DONE]\n\n`, {
     headers: { "content-type": "text/event-stream" },
   });
 }
@@ -538,49 +544,124 @@ function jsonResponse(body: unknown): Response {
 // ---------------------------------------------------------------------------
 
 const TENANT = "tenant_fixed_test_member";
+const PRINCIPAL = "principal_probe";
 const ACTOR = "actor_probe";
 const BOT = "probe_bot";
 /** The deployment key both planes share; a test value, never a real credential. */
 const PLANE_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 /**
- * The identity oracle the Go middleware calls, wired exactly as the R2 tests
- * wired the host: real mint/read primitives, a token store of hashes, the
- * token naming which Bot may present an assertion.
+ * The frozen canonical input digest (01 plan R2-B: 摘要基于双方冻结的规范
+ * 序列化): SHA-256 hex over the compact JSON array of {"content":…,"role":…}
+ * pairs in message order — the exact serialization runtime-go's
+ * internal/trustedinput computes, so TS signs and Go re-checks the same
+ * bytes.
  */
-export function startValidationPlane() {
+export function canonicalInputDigest(
+  messages: Array<{ role: string; content: string }>,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify(messages.map(({ content, role }) => ({ content, role }))))
+    .digest("hex");
+}
+
+/** How long a minted test capability stays valid. */
+const CAPABILITY_TTL_MS = 10 * 60_000;
+
+/**
+ * The enterprise identity oracle the Go middleware calls, on the v0.2 wire:
+ * createRuntimeInvocationValidationRoutes with a verify that models what the
+ * production host enforces — the runtime service credential, the short-term
+ * capability (audience: this runtime, bound to one invocation's digest and
+ * coordinates, expiring), and the CURRENT lease per run, the way the
+ * authoritative ledger would answer.
+ */
+export function startValidationPlane(
+  serviceCredential = "probe-service-credential-not-a-real-one",
+) {
   const token = mintCallbackToken();
-  const open = new Set([hashCallbackToken(token)]);
-  const verify = async (
-    presented: string,
-    assertion: string,
-  ): Promise<RuntimeVerificationIdentity | null> => {
-    const run = readRunAssertion(assertion, PLANE_KEY);
-    if (!run) return null;
-    if (!looksLikeCallbackToken(presented)) return null;
-    if (!open.has(hashCallbackToken(presented))) return null;
-    if (run.botId !== BOT) return null;
-    return {
-      tenantId: TENANT,
-      actorId: run.actorId,
-      botId: run.botId,
-      runId: run.runId,
-      threadId: run.threadId ?? "",
-    };
+  type Capability = {
+    expiresAt: number;
+    bound: Pick<RuntimeInvocation, "run_id" | "attempt_id" | "turn_id" | "input_digest">;
   };
+  const capabilities = new Map<string, Capability>();
+  /** The current lease per business run, as the ledger would hold it. */
+  const currentLeases = new Map<string, string>();
+
+  const verify: InvocationValidationDeps["verify"] = async (input): Promise<InvocationVerifyOutcome> => {
+    if (input.serviceCredential !== serviceCredential) return { status: "invalid_credential" };
+    const capability = capabilities.get(input.capability);
+    if (!capability || capability.expiresAt < Date.now()) {
+      return { status: "invalid_credential" };
+    }
+    const { bound } = capability;
+    if (
+      bound.run_id !== input.invocation.run_id ||
+      bound.attempt_id !== input.invocation.attempt_id ||
+      bound.turn_id !== input.invocation.turn_id ||
+      bound.input_digest !== input.invocation.input_digest
+    ) {
+      return { status: "binding_mismatch" };
+    }
+    // The current-lease check: an expired or superseded lease is a binding
+    // refusal even when the capability itself is perfectly valid.
+    if (currentLeases.get(input.invocation.run_id) !== input.invocation.lease_id) {
+      return { status: "binding_mismatch" };
+    }
+    return { status: "ok" };
+  };
+
   const server = Bun.serve({
     port: 0,
-    fetch: createRuntimeValidationRoutes({ verify }).fetch,
+    fetch: createRuntimeInvocationValidationRoutes({ verify }).fetch,
   });
+
+  /** Mints the enterprise credential pair plus the legacy callback pair. */
+  const mint = (runId: string, threadId: string, text: string) => {
+    const invocation: RuntimeInvocation = {
+      schema_version: "1",
+      tenant_id: TENANT,
+      principal_id: PRINCIPAL,
+      actor_id: ACTOR,
+      initiator_kind: "user",
+      run_id: runId,
+      attempt_id: `${runId}_attempt_1`,
+      turn_id: runId,
+      thread_id: threadId,
+      expert_version: "probe-expert@1.0.0",
+      input_digest: canonicalInputDigest([{ role: "user", content: text }]),
+      model_route_ref: "probe-route@1",
+      budget_reservation_id: `${runId}_budget`,
+      lease_id: `${runId}_lease_1`,
+      fencing_token: `${runId}_fencing_1`,
+      expires_at: new Date(Date.now() + CAPABILITY_TTL_MS).toISOString(),
+    };
+    const capability = `cap_${randomUUID()}`;
+    capabilities.set(capability, {
+      expiresAt: Date.now() + CAPABILITY_TTL_MS,
+      bound: {
+        run_id: invocation.run_id,
+        attempt_id: invocation.attempt_id,
+        turn_id: invocation.turn_id,
+        input_digest: invocation.input_digest,
+      },
+    });
+    currentLeases.set(runId, invocation.lease_id);
+    return {
+      capability,
+      invocation: JSON.stringify(invocation),
+      // Legacy pair for the R3 callback plane (/api/agent-tools/call).
+      assertion: mintRunAssertion({ botId: BOT, actorId: ACTOR, runId, threadId }, PLANE_KEY),
+      token,
+    };
+  };
+
   return {
     server,
     url: `http://${server.hostname}:${server.port}`,
-    validationEndpoint: `http://${server.hostname}:${server.port}/validate`,
+    validationEndpoint: `http://${server.hostname}:${server.port}/internal/enterprise/v1/runtime/validate`,
     token,
-    mint: (runId: string, threadId: string) => ({
-      assertion: mintRunAssertion({ botId: BOT, actorId: ACTOR, runId, threadId }, PLANE_KEY),
-      token,
-    }),
+    mint,
   };
 }
 
@@ -620,15 +701,24 @@ export function startCallbackPlane() {
 
 export function candidateHeaders(credentials: {
   serviceCredential: string;
-  agentToken: string;
-  assertion: string;
+  /** The enterprise pair: short-term capability + strict invocation envelope. */
+  capability: string;
+  invocation: string;
+  /** The legacy pair, only for runs that exercise the governed tool plane. */
+  agentToken?: string;
+  assertion?: string;
 }): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-openbot-runtime-service-credential": credentials.serviceCredential,
-    "x-openbot-agent-token": credentials.agentToken,
-    "x-openbot-run-assertion": credentials.assertion,
+    "x-openbot-runtime-capability": credentials.capability,
+    "x-openbot-runtime-invocation": credentials.invocation,
   };
+  if (credentials.agentToken !== undefined && credentials.assertion !== undefined) {
+    headers["x-openbot-agent-token"] = credentials.agentToken;
+    headers["x-openbot-run-assertion"] = credentials.assertion;
+  }
+  return headers;
 }
 
 export function runInput(run: {
@@ -1059,15 +1149,15 @@ async function runProbe(): Promise<number> {
     });
     started.push(candidate);
     const base = candidate.baseUrl;
-    const headers = (minted: { assertion: string; token: string }) =>
+    const headers = (minted: { capability: string; invocation: string }) =>
       candidateHeaders({
         serviceCredential: SERVICE_CREDENTIAL,
-        agentToken: minted.token,
-        assertion: minted.assertion,
+        capability: minted.capability,
+        invocation: minted.invocation,
       });
 
     // -- identity: refusals in front of the framework, and nothing reaching the provider.
-    const streamCreds = validation.mint("run_stream", "thread_stream");
+    const streamCreds = validation.mint("run_stream", "thread_stream", PROBE_STREAM_TEXT);
     const runStreamInput = runInput({
       runId: "run_stream",
       threadId: "thread_stream",
@@ -1082,8 +1172,8 @@ async function runProbe(): Promise<number> {
       method: "POST",
       headers: candidateHeaders({
         serviceCredential: SERVICE_CREDENTIAL,
-        agentToken: streamCreds.token,
-        assertion: "forged-assertion-signed-by-nobody",
+        capability: "forged-capability-signed-by-nobody",
+        invocation: streamCreds.invocation,
       }),
       body: JSON.stringify(runStreamInput),
     });
@@ -1093,7 +1183,7 @@ async function runProbe(): Promise<number> {
       model.requests.length === 0;
     checks.identity = {
       status: identityOk ? "passed" : "failed",
-      evidence: `no-credential request -> ${noCredential.status}, forged assertion -> ${forgedAssertion.status} (both want 401); provider requests during the refusals: ${model.requests.length} (want 0)`,
+      evidence: `no-credential request -> ${noCredential.status}, forged capability -> ${forgedAssertion.status} (both want 401); provider requests during the refusals: ${model.requests.length} (want 0)`,
     };
     if (!identityOk)
       throw new Error(
@@ -1102,7 +1192,7 @@ async function runProbe(): Promise<number> {
 
     // -- trusted input: valid credentials vouch for ONE run; a body claiming
     //    somebody else's run must be refused before the framework spends anything.
-    const bindingCreds = validation.mint("run_binding", "thread_binding");
+    const bindingCreds = validation.mint("run_binding", "thread_binding", PROBE_STREAM_TEXT);
     const mismatchedBinding = await fetch(`${base}/agui/`, {
       method: "POST",
       headers: headers(bindingCreds),
@@ -1156,10 +1246,20 @@ async function runProbe(): Promise<number> {
     measurements.rssBytes = await rssBytesOf(candidate.pid);
 
     // -- tool: a governed tool call crosses the existing plane and the model sees the answer.
-    const callbackCreds = validation.mint("run_callback", "thread_callback");
+    const callbackCreds = validation.mint("run_callback", "thread_callback", PROBE_TOOL_TEXT);
     const callbackEvents = await withTimeout(
       collectEvents(
-        httpAgentFor(base, headers(callbackCreds)),
+        httpAgentFor(
+          base,
+          candidateHeaders({
+            serviceCredential: SERVICE_CREDENTIAL,
+            capability: callbackCreds.capability,
+            invocation: callbackCreds.invocation,
+            // The legacy pair rides along for the R3 callback plane.
+            agentToken: callbackCreds.token,
+            assertion: callbackCreds.assertion,
+          }),
+        ),
         runInput({
           runId: "run_callback",
           threadId: "thread_callback",
@@ -1198,7 +1298,7 @@ async function runProbe(): Promise<number> {
 
     // -- error: a failing provider ends the run in RUN_ERROR without leaking
     //    the provider's internal error body to the consumer.
-    const errorCreds = validation.mint("run_error", "thread_error");
+    const errorCreds = validation.mint("run_error", "thread_error", PROBE_FAIL_TEXT);
     const errorEvents = await withTimeout(
       collectEvents(
         httpAgentFor(base, headers(errorCreds)),
@@ -1229,7 +1329,7 @@ async function runProbe(): Promise<number> {
       );
 
     // -- cancel: the owner's cancel is acknowledged and the slow run actually stops.
-    const cancelCreds = validation.mint("run_cancel", "thread_cancel");
+    const cancelCreds = validation.mint("run_cancel", "thread_cancel", PROBE_SLOW_TEXT);
     const cancelRunInput = runInput({
       runId: "run_cancel",
       threadId: "thread_cancel",
@@ -1268,7 +1368,7 @@ async function runProbe(): Promise<number> {
     // -- backpressure: registered not_run (see BACKPRESSURE_NOT_RUN_EVIDENCE).
 
     // -- restart: a restarted candidate admits it no longer holds the old run.
-    const restartCreds = validation.mint("run_restart", "thread_restart");
+    const restartCreds = validation.mint("run_restart", "thread_restart", PROBE_SLOW_TEXT);
     const restartAgent = httpAgentFor(base, headers(restartCreds));
     const restartRun = collectEvents(
       restartAgent,
