@@ -13,6 +13,7 @@ import {
   users,
 } from "../../../src/db/schema";
 import { createResourceReader } from "../../../src/enterprise/authz/repository";
+import { createAuthz } from "../../../src/enterprise/authz/service";
 import type {
   AuthorizationInput,
   Authz,
@@ -424,6 +425,102 @@ describe("the authorized read answers only inside one transaction", () => {
   });
 });
 
+/*
+ * Plan 02 §6 T2-C step 5: the SAME races and failures, answered by the real local rules
+ * (`createAuthz()`) instead of a test double. The double above proves the reader's contract; this
+ * block proves the shipped tenancy-v1 rules decide on the live database fact — a revoked grant, an
+ * unknown policy revision — and that the answer can never be an off-transaction stale allow.
+ */
+describe("the real createAuthz answers through the live database", () => {
+  test("a granted resource reads green under the real rules", async () => {
+    const reader = createResourceReader(dataDatabase, createAuthz());
+    const view = await reader.readAuthorizedResource(scopeA, RESOURCE_GRANTED);
+    expect(view).toEqual({
+      id: RESOURCE_GRANTED,
+      workspaceId: WORKSPACE_A,
+      kind: "document",
+      revision: 1,
+    });
+  });
+
+  test("a revocation committed first makes the real rules answer the same 404", async () => {
+    let releaseRevoker: () => void = () => {};
+    const revokerGate = new Promise<void>((resolve) => {
+      releaseRevoker = resolve;
+    });
+    let signalLocksTaken: () => void = () => {};
+    const locksTaken = new Promise<void>((resolve) => {
+      signalLocksTaken = resolve;
+    });
+    const revoker = revokeRead(
+      operatorDatabase,
+      {
+        tenantId: TENANT_A,
+        resourceId: RESOURCE_BARRIER,
+        principalId: PRINCIPAL_A,
+        operator: OPERATOR,
+        operationId: "t2brd-op-t2c-revoker-first",
+      },
+      {
+        afterLocks: () => {
+          signalLocksTaken();
+          return revokerGate;
+        },
+      },
+    );
+
+    try {
+      /* The revoker provably holds the locks and is paused before committing. */
+      await locksTaken;
+      const reader = createResourceReader(dataDatabase, createAuthz());
+      const reading = reader.readAuthorizedResource(scopeA, RESOURCE_BARRIER);
+      /* The read cannot finish on a stale pre-revocation allow while the revoker holds the lock. */
+      await expectPendingFor(reading);
+
+      releaseRevoker();
+      const outcome = await revoker;
+      expect(outcome.revoked).toBe(true);
+
+      /* READ COMMITTED: the reader's in-lock fact says no grant; the real rules deny, and the
+       * denial is the same 404 as an absent resource. */
+      const error = await enterpriseErrorOf(() => reading);
+      expect(error.code).toBe("RESOURCE_NOT_FOUND");
+      expect(error.status).toBe(404);
+    } finally {
+      releaseRevoker();
+    }
+
+    /* Restore the barrier grant for the races below. */
+    await grantRead(operatorDatabase, {
+      tenantId: TENANT_A,
+      resourceId: RESOURCE_BARRIER,
+      principalId: PRINCIPAL_A,
+      operator: OPERATOR,
+      operationId: "t2brd-op-t2c-restore",
+    });
+  });
+
+  test("an unknown policy revision fails closed with 503 under the real rules", async () => {
+    const reader = createResourceReader(dataDatabase, createAuthz());
+    try {
+      await ownerDatabase.$client.unsafe(
+        "update enterprise_tenants set policy_revision = $1 where id = $2",
+        ["tenancy-v9-unknown", TENANT_A],
+      );
+      const error = await enterpriseErrorOf(() =>
+        reader.readAuthorizedResource(scopeA, RESOURCE_GRANTED),
+      );
+      expect(error.code).toBe("POLICY_REVISION_UNSUPPORTED");
+      expect(error.status).toBe(503);
+    } finally {
+      await ownerDatabase.$client.unsafe(
+        "update enterprise_tenants set policy_revision = $1 where id = $2",
+        ["tenancy-v1", TENANT_A],
+      );
+    }
+  });
+});
+
 describe("authorization-then-revocation races across two real connections", () => {
   test("a reader holding the shared resource lock delays the revoker, then both finish in order", async () => {
     /* Reader: take the resource shared lock inside a scoped transaction, signal that the lock is
@@ -615,6 +712,20 @@ describe("authorization-then-revocation races across two real connections", () =
       dataDatabase,
       createRecordingAuthz().authz,
     );
+    const error = await enterpriseErrorOf(() =>
+      reader.readAuthorizedResource(scopeA, RESOURCE_GRANTED),
+    );
+    expect(error.code).toBe("SCOPE_REVOKED");
+    expect(error.status).toBe(403);
+  });
+
+  /*
+   * Plan 02 §6 T2-C step 5, membership leg: the epoch the suspension bumped invalidates the scope
+   * for the REAL rules chain too — the re-check inside the read transaction fires before any rule
+   * could answer, so no off-transaction stale allow survives a membership change.
+   */
+  test("the real createAuthz cannot answer with a suspended membership either", async () => {
+    const reader = createResourceReader(dataDatabase, createAuthz());
     const error = await enterpriseErrorOf(() =>
       reader.readAuthorizedResource(scopeA, RESOURCE_GRANTED),
     );

@@ -641,3 +641,159 @@ func TestEndpointMustBeOperatorConfiguredShape(t *testing.T) {
 		t.Fatalf("an unapproved endpoint still reached the network %d times", stub.total())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// R3-B① transport, R3-B② failure semantics (01 plan): the total timeout, the
+// answer-to-operation binding, and the no-retry proofs the acceptance matrix
+// names.
+// ---------------------------------------------------------------------------
+
+// A 200 receipt naming ANOTHER operation is not a receipt for this spend:
+// whatever happened on the plane, this answer cannot speak for it, so the
+// outcome stays unknown — one attempt, no resubmission.
+func TestExecuteBindsTheReceiptToItsOperation(t *testing.T) {
+	foreign := `{"operation_id":"op_somebody_elses","execution_attempt_id":"exec_1","status":"succeeded","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":false,"result_text":"plane-answer-ok"}`
+	stub := newPlaneStub(http.StatusOK, foreign)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+
+	_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+	if !errors.Is(err, ErrOutcomeUnknown) {
+		t.Fatalf("err = %v, want OUTCOME_UNKNOWN for a receipt naming another operation", err)
+	}
+	if stub.total() != 1 {
+		t.Fatalf("the plane was asked %d times; a foreign receipt must not be resubmitted", stub.total())
+	}
+}
+
+// Every plane call is bounded by a TOTAL timeout, even when the caller hands
+// us no client at all (or one without its own timeout): a plane that never
+// answers must not hold the run forever. The bound is test configuration
+// here; capacity validation owns the production number.
+func TestTotalTimeoutBoundsThePlaneCall(t *testing.T) {
+	blocker := make(chan struct{})
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		n.Add(1)
+		<-blocker
+	}))
+	defer srv.Close()
+	defer close(blocker)
+
+	for name, client := range map[string]Client{
+		"no configured client":     {Endpoint: planePrefix(srv), Timeout: 40 * time.Millisecond},
+		"stock client, no timeout": {HTTP: &http.Client{}, Endpoint: planePrefix(srv), Timeout: 40 * time.Millisecond},
+	} {
+		start := time.Now()
+		_, err := callExecute(client, toolCtx(), sampleExecution())
+		if !errors.Is(err, ErrOutcomeUnknown) {
+			t.Fatalf("%s: err = %v, want OUTCOME_UNKNOWN", name, err)
+		}
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Fatalf("%s: the unbounded call held for %v", name, elapsed)
+		}
+	}
+	if n.Load() != 2 {
+		t.Fatalf("the plane saw %d requests, want one per client", n.Load())
+	}
+}
+
+// The request is bound to the caller's context: cancelling it reaches the
+// in-flight plane call, which comes back promptly as an unknown outcome.
+func TestContextCancellationReachesThePlaneCall(t *testing.T) {
+	blocker := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-blocker }))
+	defer srv.Close()
+	defer close(blocker)
+
+	ctx, cancel := context.WithCancel(toolCtx())
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, ctx, sampleExecution())
+	if !errors.Is(err, ErrOutcomeUnknown) {
+		t.Fatalf("err = %v, want OUTCOME_UNKNOWN once the caller cancelled", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("the cancelled call held for %v", elapsed)
+	}
+}
+
+// A 200 whose body is not a readable receipt is exactly ONE attempt: no
+// second request may go out to "check" what the first one meant (R3-C row:
+// 响应破损 → 不自动重试).
+func TestBrokenAnswerIsOneAttempt(t *testing.T) {
+	for name, body := range map[string]string{
+		"not json":        "{{not json at all",
+		"empty body":      "",
+		"json but shards": `[{"operation_id":"op_1"}]`,
+	} {
+		stub := newPlaneStub(http.StatusOK, body)
+		srv := httptest.NewServer(stub)
+		_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+		srv.Close()
+		if !errors.Is(err, ErrOutcomeUnknown) {
+			t.Fatalf("%s: err = %v, want OUTCOME_UNKNOWN", name, err)
+		}
+		if stub.total() != 1 {
+			t.Fatalf("%s: the plane saw %d requests after a broken answer; a retry happened", name, stub.total())
+		}
+	}
+}
+
+// The receipt-ACK-loss scenario (R3-C row: 回执 ACK 丢失): the plane HAS spent
+// the operation, and the answer never arrives. Exactly one request may exist
+// — a second one would spend the operation twice — and the outcome is the
+// machine-checkable unknown, never a guessed answer.
+func TestLostReceiptAckIsNotResubmitted(t *testing.T) {
+	var spent atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		spent.Add(1) // the operation was spent on the plane...
+		panic(http.ErrAbortHandler) // ...and the receipt never made it back
+	}))
+	defer srv.Close()
+
+	_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+	if !errors.Is(err, ErrOutcomeUnknown) {
+		t.Fatalf("err = %v, want OUTCOME_UNKNOWN for a lost receipt", err)
+	}
+	if spent.Load() != 1 {
+		t.Fatalf("the operation was spent %d times; the lost ACK was resubmitted", spent.Load())
+	}
+}
+
+// No failure mode may carry the credential pair out in its error text: the
+// pair lives in headers and the private context, and errors are the one
+// place prose can escape.
+func TestErrorsNeverCarryTheCredentials(t *testing.T) {
+	var errs []error
+	// A decisive refusal whose body is bait.
+	stub := newPlaneStub(http.StatusUnauthorized, fmt.Sprintf(`{"error_code":%q}`, testCapability))
+	refused := httptest.NewServer(stub)
+	_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(refused)}, toolCtx(), sampleExecution())
+	refused.Close()
+	errs = append(errs, err)
+	// A network failure (the URL is echoed by transport errors; the headers never are).
+	gone := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	goneURL := gone.URL
+	gone.Close()
+	_, err = callExecute(Client{HTTP: &http.Client{}, Endpoint: goneURL + pathInfix}, toolCtx(), sampleExecution())
+	errs = append(errs, err)
+	// A broken answer.
+	broken := newPlaneStub(http.StatusOK, "garbage")
+	brokenSrv := httptest.NewServer(broken)
+	_, err = callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(brokenSrv)}, toolCtx(), sampleExecution())
+	brokenSrv.Close()
+	errs = append(errs, err)
+
+	for i, err := range errs {
+		if err == nil {
+			t.Fatalf("failure %d produced no error", i)
+		}
+		if strings.Contains(err.Error(), testServiceCredential) || strings.Contains(err.Error(), testCapability) {
+			t.Fatalf("failure %d leaked a credential: %v", i, err)
+		}
+	}
+}

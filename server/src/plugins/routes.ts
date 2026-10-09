@@ -6,9 +6,11 @@ import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
 import { reasonWithoutStatement } from "../db/query-failure";
 import type { AccountModeSwitch } from "./account-mode";
+import { brokerToolkitOf } from "./access";
 import {
   type BrokerApp,
   type BrokerField,
+  BrokerRefusalError,
   BrokerUnconfiguredError,
   brokerReturnUrl,
   brokerSentence,
@@ -21,6 +23,7 @@ import {
 } from "./broker";
 import { CATALOGUE, catalogueEntry } from "./catalogue";
 import { toolkitOf, vendorSentence } from "./composio";
+import { toolkitOf as openConnectorToolkitOf } from "./openconnector";
 import {
   authorizationUrlFor,
   type ConnectOrigin,
@@ -117,6 +120,40 @@ function brokerRefusal(
  */
 const DIRECTORY_UNAVAILABLE =
   "Composio would not answer with its app directory, and said nothing about why. Check that COMPOSIO_API_KEY is this project's key, and check Composio's status if it persists.";
+
+/**
+ * What a reader is told when OpenConnector would not answer with its directory, in
+ * {@link DIRECTORY_UNAVAILABLE}'s shape and for its reason: the same call made from the same
+ * screen, one broker over.
+ *
+ * The remedy names this deployment's own two tokens and its own container, because that is all an
+ * OpenConnector failure is: the broker runs here, on a port this deployment chose, authenticated
+ * with tokens this deployment set — there is no third party's status to check and no project key
+ * that could belong to somewhere else.
+ */
+const OPENCONNECTOR_DIRECTORY_UNAVAILABLE =
+  "OpenConnector would not answer with its app directory, and said nothing about why. Check that OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN are this deployment's tokens, and check the open-connector container if it persists.";
+
+/**
+ * The state a deployment with no OpenConnector tokens is in, raised in
+ * {@link BrokerUnconfiguredError}'s shape rather than through its constructor.
+ *
+ * THE CONSTRUCTOR WAS LOOKED AT AND LEFT FOR COMPOSIO. Its one Composio sentence names
+ * `COMPOSIO_API_KEY` and spells what stays unavailable while it is unset; its every-other-provider
+ * branch answers the first half of that and not the second, so an operator meeting it through the
+ * API learns that nothing was asked but not which of the two variables to set — and OpenConnector
+ * is the one broker whose remedy is two settings, not one. Written here rather than widened in
+ * `./broker` because the sentence this deployment's OpenConnector surface owes is this
+ * deployment's to spell, and the class keeps its single long-tail member intact.
+ *
+ * A {@link BrokerRefusalError} for the reason that class exists: the message names the step that
+ * fixes it and carries nothing from any request, and a route that maps it — or reads it off a row,
+ * as the connect dispatch does — sends it as the 503 it already knows how to send.
+ */
+const openConnectorUnconfigured = () =>
+  new BrokerRefusalError(
+    "OpenConnector is not configured for this deployment, so nothing was asked. Set OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN to make its apps available; until they are set there is nothing to connect through it, nothing to grant and no OpenConnector tool for a Bot to call, and the admin Plugins page shows one row under More apps that goes nowhere.",
+  );
 
 /**
  * The Plugins surface: what this deployment has added, and which Bots may use it.
@@ -295,6 +332,13 @@ export function createPluginRoutes(
        * screen needs is whether to draw the app directory, which is a yes or a no.
        */
       composioConfigured: Boolean(composio),
+      /*
+       * The same boolean for the second broker, read by the same page for the same decision: whether
+       * to draw OpenConnector's app directory. The tokens that build it are deployment credentials —
+       * ADMIN and RUNTIME alike — so what crosses to a signed-in person is the yes or the no, never
+       * either value.
+       */
+      openConnectorConfigured: Boolean(openConnector),
       servers: await store.listServers(),
       // Scoped: the deployment's skills plus this person's own. An administrator sees them all.
       skills: await store.listSkills(skillActor(context)),
@@ -1043,6 +1087,199 @@ export function createPluginRoutes(
       const refusal = brokerRefusal(
         error,
         `${app.name} could not be enabled, and Composio said nothing about why. Try again, and check this deployment's Composio key if it persists.`,
+      );
+      return context.json({ error: refusal.error }, refusal.status);
+    }
+  });
+
+  /**
+   * The second broker's catalogue, as the first one's is served beside it.
+   *
+   * THE COMPOSIO ROUTE ABOVE, WITH THE VENDOR SWAPPED AND NOTHING ELSE RELAXED. OpenConnector is a
+   * container this deployment runs, not a third party's API, but every property that made the shape
+   * worth having still holds one broker over: the search is still ours because the directory is
+   * still read whole and filtered in this process over the same three fields; a missing broker is
+   * still a 503 naming the settings rather than an empty list, because "this deployment started no
+   * OpenConnector container" and "the container has nothing to offer" are still different facts a
+   * picker cannot tell apart on its own; and `enabled` still comes off the url — read with
+   * OpenConnector's own `toolkitOf`, so a Composio row's `composio://` url counts for nothing here
+   * exactly as an `openconnector://` url counts for nothing there.
+   */
+  routes.get("/openconnector/apps", requireUser, async (context) => {
+    // Inside the handler for the reason the route above states: `requireAdmin` answers a response,
+    // and nobody reads one put in the middleware position.
+    const forbidden = requireAdmin(context);
+    if (forbidden) return forbidden;
+
+    if (!openConnector) {
+      return context.json({ error: openConnectorUnconfigured().message }, 503);
+    }
+
+    let directory: BrokerApp[];
+    try {
+      directory = await openConnector.broker.listApps();
+    } catch (error) {
+      // The container's own sentence where there is one, for the reason the route above reaches for
+      // the vendor's. See {@link brokerRefusal} for what is kept out of the answer.
+      const refusal = brokerRefusal(error, OPENCONNECTOR_DIRECTORY_UNAVAILABLE);
+      return context.json({ error: refusal.error }, refusal.status);
+    }
+    // An app that cannot be connected is not an app to offer, for the route above's reason worn one
+    // broker over: an `oauth2` provider arrives from this adapter as `unsupported`, because the
+    // OAuth client it would want is one this deployment has nowhere to hold — the same non-goal that
+    // hides Composio's consent-only apps hides OpenConnector's consent apps, at the same place.
+    const connectable = directory.filter(
+      (candidate) => candidate.connection.kind !== "unsupported",
+    );
+    const term = (context.req.query("q") ?? "").trim().toLowerCase();
+    const matched = term
+      ? connectable.filter((app) =>
+          [app.slug, app.name, app.description].some((field) =>
+            field.toLowerCase().includes(term),
+          ),
+        )
+      : connectable;
+
+    let urls: string[];
+    try {
+      urls = await store.serverUrls();
+    } catch (error) {
+      if (isDeploymentFault(error)) {
+        return context.json({ error: deploymentFaultSentence(error) }, 409);
+      }
+      throw error;
+    }
+
+    const enabled = new Set(
+      urls
+        .map((url) => openConnectorToolkitOf(url))
+        .filter((toolkit): toolkit is string => toolkit !== null),
+    );
+    return context.json({
+      apps: matched.map((app) => ({ ...app, enabled: enabled.has(app.slug) })),
+    });
+  });
+
+  /**
+   * Enable one app of that catalogue, the second way for a server to arrive beside the first.
+   *
+   * THE SLUG VALIDATION IS THE WHOLE ROUTE, AS IT IS ABOVE. `addBrokeredApp` composes
+   * `openconnector://<slug>`, and that url is what every future call for the app is resolved
+   * against — so a slug the directory never answered with is a row pointing at a service the
+   * container does not proxy: added, grantable, enabled on a Bot, and dead at the first call, with
+   * nothing on the page saying so. The live directory is what it is checked against rather than a
+   * pattern (`/^[A-Za-z0-9_-]+$/` is enforced a layer down all the same), because the question is
+   * not whether the text is well formed but whether this deployment's OpenConnector lists such a
+   * service right now. The strictness is the first route's, unchanged: the slug must come from the
+   * directory's own answer.
+   *
+   * THE ROW IS NAMED AN OPEN-CONNECTOR ROW HERE AND NOWHERE ELSE IN THE CALL. `provider` is what
+   * keeps the enable from being filed as a Composio row — the one literal this route owes the
+   * store, which every later gate reads back off the row's own provenance.
+   *
+   * The title comes off the directory entry too, as above: the caller chose an app, not a name.
+   */
+  routes.post("/openconnector/apps", requireUser, async (context) => {
+    const forbidden = requireAdmin(context);
+    if (forbidden) return forbidden;
+
+    if (!openConnector) {
+      return context.json({ error: openConnectorUnconfigured().message }, 503);
+    }
+
+    const body = (await context.req.json().catch(() => null)) as {
+      slug?: unknown;
+    } | null;
+    // Asked with `typeof` for the reason the route above spells out at length: the body is JSON, so
+    // the annotation is a wish, and a non-string narrows to "no slug" rather than a `TypeError`
+    // outside every `try` here.
+    const slug = typeof body?.slug === "string" ? body.slug.trim() : undefined;
+    let directory: BrokerApp[] = [];
+    if (slug) {
+      try {
+        directory = await openConnector.broker.listApps();
+      } catch (error) {
+        // The same failure the directory route answers, in the same words, because it is the same
+        // call.
+        const refusal = brokerRefusal(error, OPENCONNECTOR_DIRECTORY_UNAVAILABLE);
+        return context.json({ error: refusal.error }, refusal.status);
+      }
+    }
+    const app = directory.find((candidate) => candidate.slug === slug);
+    if (!app) {
+      return context.json(
+        {
+          error: slug
+            ? `${slug} is not an app OpenConnector lists for this deployment.`
+            : "An app is required.",
+        },
+        400,
+      );
+    }
+
+    // An app this deployment cannot connect is not an app to add, for the route above's reason:
+    // this validates against the unfiltered `directory`, so a request naming an `unsupported` app
+    // by hand is refused with the derivation's own `reason` rather than written as a row.
+    if (app.connection.kind === "unsupported") {
+      return context.json({ error: app.connection.reason }, 503);
+    }
+
+    try {
+      const server = await store.addBrokeredApp({
+        slug: app.slug,
+        title: app.name,
+        logo: app.logo,
+        by: actorEmail(context),
+        // Off the directory entry the administrator chose, never derived a second time here — the
+        // one thing `BrokerConnection` exists to prevent, as above.
+        connection: app.connection,
+        // The second broker's row: an `openconnector://` url, an `open-connector-` id, a provider
+        // every gate after this reads off the row rather than off a literal of its own.
+        provider: "open-connector",
+      });
+      return context.json({ server }, 201);
+    } catch (error) {
+      // The same mapping the Composio twin makes, for the same reasons and in the same order — a
+      // refusal an administrator can correct comes back as itself, a deployment fault as its
+      // sentence, and the read-back that cannot find a committed row as the 409 that says the row
+      // stands.
+      if (
+        error instanceof CustomServerRefusedError ||
+        error instanceof PluginRefusedError
+      ) {
+        return context.json({ error: error.message }, 400);
+      }
+      if (isDeploymentFault(error)) {
+        return context.json({ error: deploymentFaultSentence(error) }, 409);
+      }
+      if (error instanceof CatalogueEntryUnknownError) {
+        return context.json(
+          {
+            error: `${app.name} was added, and then could not be read back out of this deployment's own servers — so the row and its trail entry stand, and what is on this page may be missing it. Reload the Plugins page: if ${app.name} is there it is enabled and there is nothing to redo, and if it is not, adding it again is safe.`,
+          },
+          409,
+        );
+      }
+      /*
+       * The same log the Composio twin writes, with the broker's name on it: the slug and what the
+       * person was told, and the error read through {@link reasonWithoutStatement} — never spread,
+       * never logged as an object. No token, no vendor response, no request body, and no statement;
+       * the sentence tests do not exclude a query failure, they are the branch one arrives in.
+       */
+      if (brokerSentence(error) === null && vendorSentence(error) === null) {
+        console.error(
+          JSON.stringify({
+            type: "openconnector-app-not-enabled",
+            slug: app.slug,
+            note: "Enabling a brokered app failed for a reason neither this deployment nor OpenConnector put a sentence to. The administrator was answered 502 with the generic sentence.",
+            error: reasonWithoutStatement(error),
+          }),
+        );
+      }
+
+      const refusal = brokerRefusal(
+        error,
+        `${app.name} could not be enabled, and OpenConnector said nothing about why. Try again, and check this deployment's OpenConnector tokens and its container if it persists.`,
       );
       return context.json({ error: refusal.error }, refusal.status);
     }

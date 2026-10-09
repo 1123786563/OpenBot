@@ -84,13 +84,22 @@ func verifiedRun() identity.VerifiedRun {
 	}
 }
 
+// executingRegistry is the assembly every positive cancel test needs: the run
+// IS executing on this process, recorded under its full verified tuple with
+// the fencing token it is executing under.
+func executingRegistry() *ExecutionRegistry {
+	executions := NewExecutionRegistry()
+	executions.Record(verifiedRun())
+	return executions
+}
+
 // A cancel request without a verified identity is refused before the canceler
 // is reached: this is the "no bare runId" rule. A runId on its own — however
 // well-formed — names nobody and controls nothing.
 func TestCancelRequiresVerifiedIdentity(t *testing.T) {
 	canceler := &scriptCanceler{}
 	w := httptest.NewRecorder()
-	Cancel(canceler).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/runs/cancel",
+	Cancel(canceler, executingRegistry()).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/runs/cancel",
 		strings.NewReader(`{"runId":"r1","threadId":"th1"}`)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 for an unverified cancel request", w.Code)
@@ -102,12 +111,12 @@ func TestCancelRequiresVerifiedIdentity(t *testing.T) {
 
 // The response says one thing only — cancel_requested — because that is all
 // this process knows at that moment: the actual terminal state arrives later,
-// from the run's exit events. Nothing about "cancelled" or "finished" is
-// claimed here.
+// from the run's exit events. Nothing about "cancelled", "finished" or
+// rolling back submitted tools is claimed here.
 func TestCancelAnswersOnlyCancelRequested(t *testing.T) {
 	canceler := &scriptCanceler{}
 	w := httptest.NewRecorder()
-	Cancel(canceler).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/runs/cancel",
+	Cancel(canceler, executingRegistry()).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/runs/cancel",
 		strings.NewReader(`{"runId":"r1","threadId":"th1"}`)).WithContext(verifiedCtx()))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d (body: %s)", w.Code, w.Body.String())
@@ -129,7 +138,7 @@ func TestCancelTargetsOnlyTheVerifiedRun(t *testing.T) {
 		strings.NewReader(`{"runId":"run-belongs-to-somebody-else","threadId":"th1"}`)).
 		WithContext(verifiedCtx())
 	w := httptest.NewRecorder()
-	Cancel(canceler).ServeHTTP(w, r)
+	Cancel(canceler, executingRegistry()).ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d (body: %s)", w.Code, w.Body.String())
 	}
@@ -151,7 +160,7 @@ func TestCancelNotFoundIsNotPretended(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/runs/cancel", strings.NewReader(`{}`)).
 		WithContext(verifiedCtx())
 	w := httptest.NewRecorder()
-	Cancel(canceler).ServeHTTP(w, r)
+	Cancel(canceler, executingRegistry()).ServeHTTP(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for a run this process does not hold", w.Code)
 	}
@@ -168,7 +177,7 @@ func TestCancelInternalErrorIsStable(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/runs/cancel", strings.NewReader(`{}`)).
 		WithContext(verifiedCtx())
 	w := httptest.NewRecorder()
-	Cancel(canceler).ServeHTTP(w, r)
+	Cancel(canceler, executingRegistry()).ServeHTTP(w, r)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", w.Code)
 	}
@@ -180,13 +189,103 @@ func TestCancelInternalErrorIsStable(t *testing.T) {
 func TestCancelRequiresPost(t *testing.T) {
 	canceler := &scriptCanceler{}
 	w := httptest.NewRecorder()
-	Cancel(canceler).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/runs/cancel", nil).
+	Cancel(canceler, executingRegistry()).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/runs/cancel", nil).
 		WithContext(verifiedCtx()))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", w.Code)
 	}
 	if canceler.count() != 0 {
 		t.Fatal("GET reached the canceler")
+	}
+}
+
+// A host that wired the canceler but not the execution registry is refused
+// outright: answering 404 ("not held") for runs the process may in fact be
+// executing would be a guess, and answering 200 would bypass the registry
+// checks entirely.
+func TestCancelWithoutExecutionTrackingIsRefused(t *testing.T) {
+	canceler := &scriptCanceler{}
+	w := httptest.NewRecorder()
+	Cancel(canceler, nil).ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/runs/cancel",
+		strings.NewReader(`{}`)).WithContext(verifiedCtx()))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 when cancel is not wired to the execution registry", w.Code)
+	}
+	if canceler.count() != 0 {
+		t.Fatal("an unwired cancel path still reached the canceler")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// R3-B③: the cancel boundary resolves the execution context by the FULL
+// verified tuple {tenant, principal, run, attempt} and verifies the CURRENT
+// fencing before anything is asked to stop.
+// ---------------------------------------------------------------------------
+
+// A verified identity naming a DIFFERENT attempt of the same run gets
+// nothing: the attempt it may control is not executing on this process, and
+// the run's executing attempt is not its business.
+func TestCancelLooksUpTheExecutionContextByTheVerifiedTuple(t *testing.T) {
+	canceler := &scriptCanceler{}
+	executions := NewExecutionRegistry()
+	executions.Record(verifiedRun()) // executing: {t1, p1, biz_run_1, attempt_1}
+
+	otherAttempt := verifiedRun()
+	otherAttempt.AttemptID = "attempt_2"
+	r := httptest.NewRequest(http.MethodPost, "/runs/cancel", strings.NewReader(`{}`)).
+		WithContext(identity.WithVerified(context.Background(), otherAttempt))
+	w := httptest.NewRecorder()
+	Cancel(canceler, executions).ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for another attempt's cancel", w.Code)
+	}
+	if canceler.count() != 0 {
+		t.Fatalf("another attempt's cancel reached the canceler %d times", canceler.count())
+	}
+
+	// The same check by tenant and by principal: a full-tuple miss is a miss.
+	for name, mutate := range map[string]func(*identity.VerifiedRun){
+		"another tenant":    func(v *identity.VerifiedRun) { v.TenantID = "t2" },
+		"another principal": func(v *identity.VerifiedRun) { v.PrincipalID = "p2" },
+	} {
+		v := verifiedRun()
+		mutate(&v)
+		r := httptest.NewRequest(http.MethodPost, "/runs/cancel", strings.NewReader(`{}`)).
+			WithContext(identity.WithVerified(context.Background(), v))
+		w := httptest.NewRecorder()
+		Cancel(canceler, executions).ServeHTTP(w, r)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s: status = %d, want 404", name, w.Code)
+		}
+		if canceler.count() != 0 {
+			t.Fatalf("%s: the canceler was reached", name)
+		}
+	}
+}
+
+// A cancel presenting a fencing token that is not the one the run is
+// EXECUTING under is refused without touching the run: that is the stale or
+// foreign lease, and stopping another lease's execution is reconciliation's
+// job (E2), not this boundary's.
+func TestCancelRefusesStaleFencing(t *testing.T) {
+	canceler := &scriptCanceler{}
+	executions := executingRegistry() // executing under fencing_1
+
+	renewed := verifiedRun()
+	renewed.FencingToken = "fencing_renewed_after_lease_change"
+	r := httptest.NewRequest(http.MethodPost, "/runs/cancel", strings.NewReader(`{}`)).
+		WithContext(identity.WithVerified(context.Background(), renewed))
+	w := httptest.NewRecorder()
+	Cancel(canceler, executions).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d (body: %s), want 403 for a stale fencing cancel", w.Code, w.Body.String())
+	}
+	if canceler.count() != 0 {
+		t.Fatal("a stale fencing cancel reached the canceler")
+	}
+	// The executing run is untouched: still held, still under its own fencing.
+	if fencing, held := executions.Held(verifiedRun()); !held || fencing != "fencing_1" {
+		t.Fatalf("the stale cancel disturbed the execution: held=%v fencing=%q", held, fencing)
 	}
 }
 
