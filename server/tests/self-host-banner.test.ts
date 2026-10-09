@@ -210,11 +210,13 @@ describe("the capabilities endpoint", () => {
   const config = loadConfig(testEnvironment());
 
   // createApp takes its services positionally; the banner is the last of them that this test
-  // knows about, with the optional billing group appended after it.
+  // knows about, with the optional billing group and then the OpenConnector broker appended after
+  // it. Counted from the end, because the tail only ever gains optionals appended last — the file's
+  // own rule — so a new one moves the banner's offset by exactly one and this comment by one line.
   function appWith(banner: ReturnType<typeof createSelfHostBanner>) {
     const args: unknown[] = new Array(createApp.length).fill(undefined);
     args[0] = config;
-    args[createApp.length - 2] = banner;
+    args[createApp.length - 3] = banner;
     return (createApp as (...input: unknown[]) => ReturnType<typeof createApp>)(
       ...args,
     );
