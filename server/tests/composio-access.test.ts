@@ -34,6 +34,7 @@ describe("accessFor", () => {
       credential: "brokered",
       reachedAs: "person",
       toolkit: "gmail",
+      broker: "composio",
     });
   });
 
@@ -76,6 +77,7 @@ describe("accessFor", () => {
         credential: "brokered",
         reachedAs,
         toolkit: "hackernews",
+        broker: "composio",
       });
     },
   );
@@ -95,6 +97,7 @@ describe("accessFor", () => {
       credential: "deployment-token",
       reachedAs: "deployment",
       toolkit: null,
+      broker: null,
     });
   });
 
@@ -113,6 +116,7 @@ describe("accessFor", () => {
       credential: "person-oauth",
       reachedAs: "person",
       toolkit: null,
+      broker: null,
     });
   });
 
@@ -130,6 +134,7 @@ describe("accessFor", () => {
       credential: "person-oauth",
       reachedAs: "person",
       toolkit: null,
+      broker: null,
     });
   });
 
@@ -153,6 +158,7 @@ describe("accessFor", () => {
       credential: "none",
       reachedAs: "person",
       toolkit: null,
+      broker: null,
     });
   });
 
@@ -188,6 +194,7 @@ describe("accessFor", () => {
       credential: "none",
       reachedAs: "deployment",
       toolkit: null,
+      broker: null,
     });
   });
 
@@ -215,6 +222,7 @@ describe("accessFor", () => {
     expect(shadowed.transport).toBe("mcp");
     expect(shadowed.credential).toBe("person-oauth");
     expect(shadowed.toolkit).toBeNull();
+    expect(shadowed.broker).toBeNull();
   });
 
   test("a brokered row that carries a curated slug is refused, not dialled at the curated vendor", () => {
@@ -273,6 +281,7 @@ describe("accessFor", () => {
       credential: "brokered",
       reachedAs: "person",
       toolkit: "notion",
+      broker: "composio",
     });
   });
 
