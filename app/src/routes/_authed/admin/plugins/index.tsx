@@ -289,6 +289,51 @@ function RouteComponent() {
                   </ItemContent>
                 </Item>
               )}
+              {/* The two brokers are two rows of one list, so they take the separator every other
+                  list on this page puts between its rows. */}
+              <Separator />
+              {/*
+               * The second broker's row, beneath the first and shaped exactly like it. Unset tokens
+               * are a supported state with their own inert row naming the two variables that turn
+                 it on, for the same reason the Composio row above names its one — a self-hosted
+                 catalogue is no more discoverable by omission than a cloud one.
+                 */}
+              {plugins.data?.openConnectorConfigured ? (
+                <Item
+                  data-testid="plugin-open-connector"
+                  render={<Link to="/admin/plugins/open-connector" />}
+                  size="sm"
+                >
+                  <RowMark>
+                    <IconPlug className="size-4" />
+                  </RowMark>
+                  <ItemContent>
+                    <ItemTitle>
+                      {t("plugins.moreApps.openConnectorBrowse")}
+                    </ItemTitle>
+                    <ItemDescription>
+                      {t("plugins.moreApps.openConnectorBrowseDescription")}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </ItemActions>
+                </Item>
+              ) : (
+                /* The same inert twin: no chevron and no link, because the container this row
+                   points at has not been given its tokens to talk to. */
+                <Item data-testid="plugin-open-connector" size="sm">
+                  <RowMark>
+                    <IconPlug className="size-4" />
+                  </RowMark>
+                  <ItemContent>
+                    <ItemTitle>{t("plugins.moreApps.openConnector")}</ItemTitle>
+                    <ItemDescription>
+                      {t("plugins.moreApps.openConnectorDescription")}
+                    </ItemDescription>
+                  </ItemContent>
+                </Item>
+              )}
             </PageRows>
           </PageSection>
         </>
