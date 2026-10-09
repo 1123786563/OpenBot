@@ -225,6 +225,25 @@ export type DeploymentConfig = {
    */
   composioApiKey: string | undefined;
   /**
+   * Where this deployment's OpenConnector container listens. Set by the deployer, never by a request.
+   *
+   * An ORIGIN rather than a base with a path, because every request the adapter issues is an
+   * absolute path resolved against it — and the adapter validates the shape (absolute, http or
+   * https, no user info) before it builds a client, refusing the boot that mis-set it rather than
+   * the first person's connect attempt. The default names the documented compose service, which
+   * binds the container to the host's loopback only.
+   */
+  openConnectorUrl: string;
+  /**
+   * The two faces of the same self-hosted broker: `OPENCONNECTOR_ADMIN_TOKEN` speaks for the
+   * management face (`/api/*` — connections), `OPENCONNECTOR_RUNTIME_TOKEN` for the execution face
+   * (`/v1/*` — the directory and action calls). Both unset is the ordinary state rather than a
+   * degraded one, exactly as `composioApiKey` above: one inert row under More apps, nothing
+   * connectable, nothing granted.
+   */
+  openConnectorAdminToken: string | undefined;
+  openConnectorRuntimeToken: string | undefined;
+  /**
    * Where this deployment is reached from outside, with no trailing slash.
    *
    * Needed because an OAuth redirect URI has to match what an administrator registered with the
@@ -1505,6 +1524,10 @@ export function loadConfig(
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
     composioApiKey: optional(environment, "COMPOSIO_API_KEY"),
+    openConnectorUrl:
+      optional(environment, "OPENCONNECTOR_URL") ?? "http://localhost:3100",
+    openConnectorAdminToken: optional(environment, "OPENCONNECTOR_ADMIN_TOKEN"),
+    openConnectorRuntimeToken: optional(environment, "OPENCONNECTOR_RUNTIME_TOKEN"),
     publicUrl: (
       optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
     )?.replace(/\/+$/, ""),

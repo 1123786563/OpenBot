@@ -13,6 +13,7 @@ import {
   brokerReturnUrl,
   brokerSentence,
   type ComposioBroker,
+  type ConnectedAppBroker,
   type Decides,
   isFieldScheme,
   type SchemeKind,
@@ -205,11 +206,28 @@ export function createPluginRoutes(
   /**
    * Who may use an app's one shared account, and the switch that makes an app Shared or Personal.
    *
-   * Optional and last, for the reason `composio` is. Absent, the mode switch answers 503 and a
+   * Optional, and last for the reason `composio` is. Absent, the mode switch answers 503 and a
    * grant records no approval — which is only safe because without it nothing can turn an app
    * Shared in the first place.
    */
   shared?: { modes: AccountModeSwitch; use: SharedUseStore },
+  /**
+   * OpenConnector the broker, `composio`'s twin, absent on a deployment that has not configured
+   * one — for that parameter's reason verbatim.
+   *
+   * APPENDED LAST RATHER THAN BESIDE `composio`, which is the trap this file's own optionals are
+   * commented for: everything from `connect` on is positional, so inserting a parameter in the
+   * middle silently shifts every existing call site's `shared` argument into this slot — the two
+   * shapes differ, but only at the calls that pass one, and a call site passing neither (every
+   * test in this directory) would not shift at all and would not tell anybody. Last is the one
+   * position a new optional cannot break an old caller from.
+   *
+   * The same {@link ConnectedAppBroker} interface as `composio`, which has been an alias of it all
+   * along: the directory and connect handlers this parameter will serve (Task 9's routes) ask the
+   * projection their questions of, never a vendor. Nothing reads it yet; the flag and the routes
+   * that answer it arrive together.
+   */
+  openConnector?: { broker: ConnectedAppBroker },
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 

@@ -54,6 +54,7 @@ import {
   BrokerRefusalError,
   BrokerUnconfiguredError,
   type ComposioBroker,
+  type ConnectedAppBroker,
   type Decides,
   isFieldScheme,
   type RecordedScheme,
@@ -1188,6 +1189,21 @@ export type PluginStoreOptions = {
    * above — invent a broker to get a store.
    */
   broker?: ComposioBroker;
+  /**
+   * OpenConnector the broker, `broker` above's twin, absent on a deployment that has not configured
+   * one — for that field's reason verbatim: an unset pair of OpenConnector tokens is the documented
+   * default, and where they are unset there is nothing to connect, nothing to grant and no
+   * OpenConnector tool for a Bot to call.
+   *
+   * THE SAME INTERFACE AS `broker` DELIBERATELY ({@link ConnectedAppBroker}, which `ComposioBroker`
+   * has been an alias of since the generalization), because the store's brokered paths are written
+   * against the projection rather than either vendor: which client a row's calls go through is a
+   * fact about the row's provenance, dispatched where the row is read, not a second store. Nothing
+   * reads this field until the enable and connect paths are generalized to it; passing it now
+   * typechecks because it is optional, and a caller that never enables an OpenConnector app is not
+   * required to invent a broker to get a store.
+   */
+  openConnector?: { broker: ConnectedAppBroker };
   /** Where the vendor sends people back; needed to (re)register a dynamic client. */
   redirectUri?: string;
   /**

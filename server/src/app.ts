@@ -100,7 +100,7 @@ import type { SignInService } from "./passwords/service";
 import type { OnboardingStore } from "./people/onboarding";
 import { MAX_PAGE, type PeopleStore } from "./people/store";
 import type { AccountModeSwitch } from "./plugins/account-mode";
-import type { ComposioBroker } from "./plugins/broker";
+import type { ComposioBroker, ConnectedAppBroker } from "./plugins/broker";
 import { createPluginRoutes } from "./plugins/routes";
 import { createSharedUseRoutes } from "./plugins/shared-use-routes";
 import type { SharedUseStore } from "./plugins/shared-use-store";
@@ -459,6 +459,17 @@ export function createApp(
     /** What the provider's customer record calls this deployment. */
     customerName: string;
   },
+  /**
+   * OpenConnector the broker, `composio`'s twin: the client behind a second app directory, already
+   * built by the assembly, passed in so this module imports no vendor of either.
+   *
+   * APPENDED LAST, like `composio` before it, for the reason that parameter's own docblock gives:
+   * these are positional, so inserting one anywhere else silently shifts every existing call
+   * site's arguments by one. Absent — a deployment with either OpenConnector token unset — leaves
+   * the plugin surface reporting no such broker, exactly as absent `composio` leaves it reporting
+   * no Composio: one inert row under More apps, nothing connectable.
+   */
+  openConnector?: { broker: ConnectedAppBroker },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   mountDesktopConnectionFailure(app, desktopHostToken);
@@ -1663,6 +1674,7 @@ export function createApp(
         },
         composio,
         coworker?.shared,
+        openConnector,
       ),
     );
   }

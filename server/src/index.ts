@@ -203,6 +203,8 @@ import { createAccountModeSwitch } from "./plugins/account-mode";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
+import { useOpenConnectorClient } from "./plugins/openconnector";
+import { createOpenConnectorClient } from "./plugins/openconnector-adapter";
 import { backfillComposioLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import {
@@ -681,6 +683,32 @@ const composio = config.composioApiKey
 if (composio) useComposioClient(composio.actions);
 
 /**
+ * OpenConnector, built ONCE beside Composio, under the same one-client-two-seams arrangement: the
+ * transport calls through `useOpenConnectorClient`'s module seam below, and the broker behind the
+ * second app directory is the same client handed to the store and the routes.
+ *
+ * A DEPLOYMENT WITH EITHER TOKEN UNSET INSTALLS NEITHER, which is this broker's spelling of the
+ * state the Composio block above documents: the client needs both faces (the runtime token to
+ * list and call actions, the admin one to hold connections), so one token without the other is
+ * half a broker — its directory could be browsed and nothing could be connected. `null` leaves the
+ * transport seam uninstalled, where every OpenConnector listing and call refuses saying the
+ * connector is not configured here, and the store and routes get no broker to offer.
+ *
+ * THE URL IS THE DEPLOYER'S AND NOBODY ELSE'S. `createOpenConnectorClient` validates it before
+ * building anything — absolute, http or https, no user info — and refuses the boot that mis-set it;
+ * see that adapter's docblock for the trust boundary this is one end of.
+ */
+const openConnector =
+  config.openConnectorAdminToken && config.openConnectorRuntimeToken
+    ? createOpenConnectorClient({
+        url: config.openConnectorUrl,
+        adminToken: config.openConnectorAdminToken,
+        runtimeToken: config.openConnectorRuntimeToken,
+      })
+    : null;
+if (openConnector) useOpenConnectorClient(openConnector.actions);
+
+/**
  * The private sign-in form and the Passwords vault. A Bot asks to be signed in; the person answers
  * in a form outside the conversation; the computer types the login. See passwords/service.ts.
  */
@@ -773,6 +801,13 @@ const pluginStore = createPluginStore({
    * attempted.
    */
   broker: composio?.broker,
+  /*
+   * The OpenConnector twin of the line above, with the same one-client rule: the store's enable and
+   * connect paths (generalized in a later task) will dial through this broker or not at all, never
+   * through a second client built anywhere else. Absent where the tokens are unset, which leaves
+   * enabling an OpenConnector app refused rather than attempted.
+   */
+  openConnector: openConnector ?? undefined,
 });
 
 /*
@@ -3123,6 +3158,11 @@ const app = createApp(
     entitlements: () => selfHostBannerIntelligence.getRuntimeEntitlements(),
   }),
   billing,
+  // The OpenConnector directory's client, appended last for the reason `createApp`'s own parameter
+  // list states: same one-client rule as the Composio line further up, absent where the tokens are
+  // unset so the second app directory reports no broker rather than listing apps nobody could
+  // connect.
+  openConnector ? { broker: openConnector.broker } : undefined,
 );
 
 /**
