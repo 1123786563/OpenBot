@@ -19,6 +19,9 @@ async function startBot(environment: Record<string, string>) {
         PATH: process.env.PATH ?? "",
         MANAGED_AGENT_TOKEN: "",
         OPENAI_API_KEY: "",
+        // A BASE_URL naming a keyless endpoint legitimately waives the key check, so a leaked one
+        // here would carry the Bot all the way to `serve` instead of the refusal under test.
+        OPENAI_BASE_URL: "",
         ...environment,
       },
       stdout: "pipe",
