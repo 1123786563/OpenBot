@@ -39,13 +39,14 @@ import {
   CatalogueTransportUnroutableError,
   ServerRowAmbiguousError,
 } from "../src/plugins/access";
-import type { BrokerConnection, ComposioBroker } from "../src/plugins/broker";
+import type { BrokerConnection, ComposioBroker, ConnectedAppBroker } from "../src/plugins/broker";
 import type { CatalogueEntry } from "../src/plugins/catalogue";
 import { catalogueEntry } from "../src/plugins/catalogue";
 import {
   type ComposioResult,
   useComposioClient,
 } from "../src/plugins/composio";
+import { personalAlias, useOpenConnectorClient } from "../src/plugins/openconnector";
 import { redirectUriFor } from "../src/plugins/oauth";
 import type { AccountRef } from "../src/plugins/shared-accounts";
 import {
@@ -4047,7 +4048,13 @@ async function freshDatabase(): Promise<Database> {
  * `options` is spread over the defaults rather than read field by field, so a test that needs one
  * more seam — a broker, today — adds it at the call and nothing here has to learn its name.
  */
-async function freshStore(options: { broker?: ComposioBroker } = {}) {
+async function freshStore(
+  options: {
+    broker?: ComposioBroker;
+    /** The OpenConnector twin of `broker`, injected the way `index.ts` injects it at boot. */
+    openConnector?: { broker: ConnectedAppBroker };
+  } = {},
+) {
   const database = await freshDatabase();
   const persisting = createAuditStore(database);
   const events: Parameters<typeof persisting.insert>[0][] = [];
@@ -4180,8 +4187,11 @@ const vendorRefused = (sentence: string): ComposioResult => ({
 });
 
 // The vendor is a process-wide registry, so a stub outliving its test would be answering somebody
-// else's calls.
-afterEach(() => useComposioClient(null));
+// else's calls. Both brokers' transports are cleared, because both are registries.
+afterEach(() => {
+  useComposioClient(null);
+  useOpenConnectorClient(null);
+});
 
 /*
  * The last test's fixtures, which nothing else would remove.
@@ -4514,7 +4524,9 @@ test("a Composio call whose url names no app is refused rather than falling back
       botId: "bot_helper",
       actorId: "user_asker",
     }),
-  ).rejects.toThrow(/no Composio app in its url/i);
+    // Broker-neutral since the second broker: the url names no app of whichever broker the row's
+    // provenance names, and the remedy — correct the url or the provenance — is the same one.
+  ).rejects.toThrow(/no app in its url/i);
 
   expect(reached).toEqual([]);
 });
@@ -5146,6 +5158,9 @@ test("a server's address is the url the row holds, not one composed from its id"
     // Not `composio://gmail`. That is what composing the url from the id would have answered, and
     // it is the app this row does not run against.
     url: "composio://slack",
+    // The row's own word for which broker owns it, carried beside the url because the two are one
+    // fact — the url's scheme is the broker's — and the connect routes fork on it.
+    provenance: "composio",
     // Null, because a scheme is written down when an authorization config is CREATED and this
     // fixture creates none. The column holds nothing for a row nothing was created against rather
     // than a default standing in for one, so null here is the read passing the column through.
@@ -5751,7 +5766,9 @@ test("a catalogue entry declaring the broker's transport is refused, not dialled
   ).toThrow(CatalogueTransportUnroutableError);
 
   // The same entry with the transport it is actually reached over resolves as any other curated
-  // per-person vendor does, so what is refused is the value and not the fixture.
+  // per-person vendor does, so what is refused is the value and not the fixture. `broker: null`,
+  // because a curated row is reached through no broker at all — the field every brokered answer
+  // names and every other answer declines.
   expect(
     accessFor(
       { provenance: "first-party", url: "https://mcp.example.com/mcp" },
@@ -5762,6 +5779,7 @@ test("a catalogue entry declaring the broker's transport is refused, not dialled
     credential: "person-oauth",
     reachedAs: "person",
     toolkit: null,
+    broker: null,
   });
 });
 
@@ -7738,6 +7756,325 @@ test("a destructive action says so in the list the screens read", async () => {
   expect(gmail?.tools.map((tool) => typeof tool.destructive)).toEqual(
     gmail?.tools.map(() => "boolean"),
   );
+});
+
+/**
+ * The OpenConnector twin of the Composio end-to-end above: same gates, its own provider, the minted
+ * alias as the account handle.
+ *
+ * WHAT IS UNDER TEST IS THE GENERALIZATION, not OpenConnector's wire behaviour — the adapter and
+ * transport suites own that. Every gate this file pins for a Composio app has to hold for an
+ * `open-connector` row on the strength of the row's own columns: the enable path composes
+ * `openconnector://<slug>` and `open-connector-<slug>` and asks the OpenConnector broker, the
+ * connection gate reads `brokered_connections.provider = 'open-connector'`, and the call goes out
+ * with `accountHandle` set to the alias minted from the person and the service rather than to the
+ * person's id — OpenConnector keeps people apart by named connections, and the alias is the whole
+ * of this deployment's say in which one a call runs in.
+ *
+ * THE STUBS ARE OBJECT LITERALS, as everywhere in this file. The broker is the deps seam
+ * `index.ts` wires; the transport is the process-wide client seam, installed for the listing and
+ * the call alike so the real transport code runs against a fake vendor.
+ *
+ * THIS TEST'S OWN IDS, checked and cleaned locally because the file's guard does not cover them:
+ * `open-connector-github` (a row this test's enable mints), the pair `("github", "user_asker")`
+ * under provider `open-connector` (outside the guard's composio cross), and `bot_helper` (already
+ * swept by `freshDatabase`). A leftover from a killed run is refused over rather than deleted.
+ */
+describe("an OpenConnector app runs the brokered gates under its own provider", () => {
+  /** The alias `accountRefFor` is expected to mint for this person and service. */
+  const alias = personalAlias("user_asker", "github");
+  /**
+   * What the person types, spelled so that it is obviously a fixture rather than a credential any
+   * vendor would take: the assertions below prove it reaches no row and no trail, which is the
+   * property, and a real-looking secret would test nothing more.
+   */
+  const typedKey = "the-key-the-person-typed";
+
+  test("enable, connect, call, and the namespace the enable path owns", async () => {
+    /** What the OpenConnector broker was asked, in the shape the adapter would dial it. */
+    const brokerAsked: {
+      call: string;
+      account?: { vendorUserId: string };
+      toolkit?: string;
+    }[] = [];
+    const openConnector: { broker: ConnectedAppBroker } = {
+      broker: {
+        listApps: async () => [],
+        ensureAuthConfig: async () => "not-needed",
+        deleteAuthConfig: async () => {},
+        authorize: async () => {
+          throw new Error("consent apps are not offered through OpenConnector");
+        },
+        isConnected: async () => true,
+        revoke: async () => true,
+        revokeAccount: async () => {},
+        connectionFields: async () => [],
+        connectWithFields: async (request) => {
+          brokerAsked.push({
+            call: "connectWithFields",
+            account: request.account,
+            toolkit: request.toolkit,
+          });
+          // The adapter answers the connection name it filed the account under, which is the
+          // alias it was handed; spelling it back keeps the probe-pinning contract honest.
+          return { accountId: request.account.vendorUserId };
+        },
+        accountName: async () => null,
+      },
+    };
+    /** What the OpenConnector transport dialled, with the account handle it was handed. */
+    const dialled: { service: string; actionId: string; alias: string | null }[] =
+      [];
+    useOpenConnectorClient({
+      listActions: async () => [
+        {
+          id: "github.get_current_user",
+          description: "Get the authenticated user.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      execute: async (call) => {
+        dialled.push({
+          service: call.service,
+          actionId: call.actionId,
+          alias: call.alias,
+        });
+        return { data: { login: "octocat" } };
+      },
+    });
+
+    const { store, database, auditStore } = await freshStore({
+      openConnector,
+    });
+
+    const [present] = await database
+      .select({ id: mcpServers.id })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, "open-connector-github"));
+    const strangers = await database
+      .select({ userId: brokeredConnections.userId })
+      .from(brokeredConnections)
+      .where(
+        and(
+          eq(brokeredConnections.provider, "open-connector"),
+          eq(brokeredConnections.app, "github"),
+          eq(brokeredConnections.userId, "user_asker"),
+        ),
+      );
+    if (present || strangers.length > 0) {
+      throw new Error(
+        "an 'open-connector-github' row or an open-connector 'github' connection for " +
+          "user_asker was already here, so it is not this test's to write over",
+      );
+    }
+
+    try {
+      /*
+       * THE ENABLE, asked with the provider the directory route will pass. No Composio broker is
+       * configured on this store at all, so a path that still asks `deps.broker` first refuses
+       * here with COMPOSIO_API_KEY and the twin is over before it starts.
+       */
+      const record = await store.addBrokeredApp({
+        provider: "open-connector",
+        slug: "github",
+        title: "GitHub",
+        by: "admin@example.com",
+        connection: { kind: "fields", authScheme: "API_KEY" },
+      });
+
+      expect(record.id).toBe("open-connector-github");
+      expect(record.url).toBe("openconnector://github");
+      expect(record.provenance).toBe("open-connector");
+      expect(record.authScheme).toBe("API_KEY");
+      /*
+       * UNLABELLED IS A WRITE, AND THE ASSERTION IS THE FENCE AROUND IT. OpenConnector publishes no
+       * behaviour labels, so the listing recorded nothing and `classifyTool` answers write — the
+       * fail-closed default. `destructive` stays false because false is the absence of a claim, not
+       * a claim of safety: painting every unlabelled write dangerous would teach an approver to
+       * click through the colour. A future label pass that starts trusting OpenConnector labels has
+       * to come here and say so.
+       */
+      expect(
+        record.tools.map((tool) => ({
+          name: tool.name,
+          effect: tool.effect,
+          destructive: tool.destructive,
+        })),
+      ).toEqual([
+        {
+          name: "github.get_current_user",
+          effect: "write",
+          destructive: false,
+        },
+      ]);
+
+      const [row] = await database
+        .select()
+        .from(mcpServers)
+        .where(eq(mcpServers.id, "open-connector-github"));
+      expect(row?.url).toBe("openconnector://github");
+      expect(row?.provenance).toBe("open-connector");
+      expect(row?.authScheme).toBe("API_KEY");
+      // No credential of its own, for the reason the Composio twin gives: the row is reached as
+      // the person asking, on their connection at the broker.
+      expect(record.hasCredential).toBe(false);
+
+      // A Bot to hold the grant, exactly as the Composio fixtures set one up.
+      await database.insert(agents).values({
+        id: "bot_helper",
+        name: "Helper",
+        type: "built_in",
+        configuration: {},
+      });
+      await store.grant(
+        "mcp",
+        "open-connector-github/github.get_current_user",
+        "bot_helper",
+        "admin@example.com",
+      );
+
+      /*
+       * A GRANTED CALL WITH NO CONNECTION IS REFUSED, and refused here rather than at the vendor:
+       * the person is told their own next step, and the stub records that nobody was asked.
+       */
+      await expect(
+        store.callTool({
+          ref: "open-connector-github/github.get_current_user",
+          args: {},
+          botId: "bot_helper",
+          actorId: "user_asker",
+        }),
+      ).rejects.toThrow(/You have not connected your GitHub account/i);
+      expect(dialled).toEqual([]);
+
+      /*
+       * THE CONNECT, with the account the routes resolve — off the row, never the request — which
+       * for an OpenConnector app carries the alias minted from the person and the service.
+       */
+      const resolved = await store.accountRefFor(
+        "open-connector-github",
+        "user_asker",
+      );
+      expect(resolved.ref).toEqual({
+        holder: "person",
+        userId: "user_asker",
+        vendorUserId: alias,
+      });
+
+      const connected = await store.connectBrokeredWithFields({
+        provider: "open-connector",
+        toolkit: "github",
+        account: resolved.ref,
+        by: "user_asker",
+        values: { apiKey: typedKey },
+      });
+      // Accepted without being checked: OpenConnector publishes no safety labels, so there is
+      // nothing this deployment may spend a just-typed key on. The row says so honestly.
+      expect(connected).toEqual({ connected: true, verified: false, probe: null });
+      expect(brokerAsked).toEqual([
+        {
+          call: "connectWithFields",
+          account: {
+            holder: "person",
+            userId: "user_asker",
+            vendorUserId: alias,
+          },
+          toolkit: "github",
+        },
+      ]);
+
+      const [connection] = await database
+        .select()
+        .from(brokeredConnections)
+        .where(
+          and(
+            eq(brokeredConnections.provider, "open-connector"),
+            eq(brokeredConnections.app, "github"),
+            eq(brokeredConnections.userId, "user_asker"),
+          ),
+        );
+      expect(connection?.vendorUserId).toBe(alias);
+      expect(connection?.holder).toBe("person");
+      // Field NAMES on the trail and never the value, the rule every connect path keeps.
+      const connectedTrail = auditStore
+        .recorded()
+        .filter((event) => event.eventType === "mcp.account_connected");
+      expect(connectedTrail).toHaveLength(1);
+      expect(connectedTrail[0]?.payload).toMatchObject({
+        fields: ["apiKey"],
+        holder: "person",
+      });
+      expect(JSON.stringify(connectedTrail)).not.toContain(typedKey);
+
+      // The listing answers `checkable: false` for the same reason the connect did not check.
+      const listed = await store.brokeredConnectionsFor("user_asker");
+      const mine = listed.find(
+        (entry) => entry.serverId === "open-connector-github",
+      );
+      expect(mine?.checkable).toBe(false);
+      expect(mine?.verified).toBe(false);
+      expect(mine?.probe).toBeNull();
+
+      /*
+       * THE CALL, NOW THAT THE GATE HAS A ROW: dials the transport with the alias as the account
+       * handle, and the trail records the call as the write it was classified as.
+       */
+      const answer = await store.callTool({
+        ref: "open-connector-github/github.get_current_user",
+        args: {},
+        botId: "bot_helper",
+        actorId: "user_asker",
+      });
+      expect(answer.isError).toBe(false);
+      expect(dialled).toEqual([
+        { service: "github", actionId: "github.get_current_user", alias },
+      ]);
+
+      const succeeded = auditStore
+        .recorded()
+        .filter(
+          (event) =>
+            event.eventType === "mcp.call_succeeded" &&
+            event.targetId === "open-connector-github/github.get_current_user",
+        );
+      expect(succeeded).toHaveLength(1);
+      expect(succeeded[0]?.payload).toMatchObject({
+        effect: "write",
+        reachedAs: "user_asker",
+      });
+
+      /*
+       * THE NAMESPACE THE ENABLE PATH OWNS, refused for a server added by URL exactly as the
+       * `composio-` prefix is: `open-connector-<slug>` is spoken for by the path that writes
+       * `openconnector://` urls into it, whether or not a row is sitting there today.
+       */
+      await expect(
+        store.addCustomServer({
+          id: "open-connector-witness",
+          title: "Witness",
+          url: "https://example.com/mcp",
+          by: "admin@example.com",
+        }),
+      ).rejects.toThrow(/Names beginning open-connector-/);
+    } finally {
+      await database
+        .delete(pluginGrants)
+        .where(eq(pluginGrants.agentId, "bot_helper"));
+      await database
+        .delete(mcpTools)
+        .where(eq(mcpTools.serverId, "open-connector-github"));
+      await database
+        .delete(mcpServers)
+        .where(eq(mcpServers.id, "open-connector-github"));
+      await database.delete(brokeredConnections).where(
+        and(
+          eq(brokeredConnections.provider, "open-connector"),
+          eq(brokeredConnections.app, "github"),
+          eq(brokeredConnections.userId, "user_asker"),
+        ),
+      );
+    }
+  });
 });
 
 /**

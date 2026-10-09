@@ -17,27 +17,62 @@ const privateKeyPem = privateKey
 
 const HMAC_KEY = "hmac-secret-from-endpoint-creation";
 
+/*
+ * The wire, exactly as the provider builds it (Webhooks::BaseService): `webhook_type` and
+ * `object_type` at the top level, the serialised subject object nested under a member named by
+ * `object_type`, and no `event_id` anywhere in the body — the event's identity is the
+ * `X-Lago-Unique-Key` header, so the fixtures below carry it as a header and the assertions read
+ * it back out of the delivery.
+ */
 const WIRE_BODY = JSON.stringify({
-  event_id: "evt-1",
-  webhook_type: "customer.created",
-  object_id: "lago-customer-1",
-  external_customer_id: "deployment-1",
+  webhook_type: "subscription.terminated",
+  object_type: "subscription",
+  organization_id: "lago-org-1",
+  subscription: {
+    lago_id: "lago-sub-1",
+    external_id: "deployment-1-sub",
+    external_customer_id: "deployment-1",
+    plan_code: "pro",
+    status: "terminated",
+  },
 });
 const WIRE_PAYLOAD = JSON.parse(WIRE_BODY);
+const EVENT_ID = "uk-evt-1";
+const EXPECTED_DELIVERY = {
+  eventId: EVENT_ID,
+  webhookType: "subscription.terminated",
+  objectId: "lago-sub-1",
+  externalCustomerId: "deployment-1",
+};
 
-function jwtHeaders(jwt: string, algorithm?: string): Headers {
+function jwtHeaders(
+  jwt: string,
+  algorithm?: string,
+  uniqueKey: string | null = EVENT_ID,
+): Headers {
   const headers = new Headers({ "x-lago-signature": jwt });
   if (algorithm !== undefined) {
     headers.set("x-lago-signature-algorithm", algorithm);
   }
+  if (uniqueKey !== null) {
+    headers.set("x-lago-unique-key", uniqueKey);
+  }
   return headers;
 }
 
-function hmacHeaders(signature: string, algorithm = "hmac"): Headers {
-  return new Headers({
+function hmacHeaders(
+  signature: string,
+  algorithm = "hmac",
+  uniqueKey: string | null = EVENT_ID,
+): Headers {
+  const headers = new Headers({
     "x-lago-signature": signature,
     "x-lago-signature-algorithm": algorithm,
   });
+  if (uniqueKey !== null) {
+    headers.set("x-lago-unique-key", uniqueKey);
+  }
+  return headers;
 }
 
 function hmacOf(body: string, key = HMAC_KEY): string {
@@ -64,26 +99,15 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
     key: { mode: "jwt", publicKeyPem },
   });
 
-  test("accepts a correctly signed delivery and reads it", async () => {
+  test("accepts a correctly signed delivery and reads it, identity from the header", async () => {
     const jwt = signDeliveryLikeProvider(WIRE_PAYLOAD, privateKeyPem);
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
-    expect(result).toEqual({
-      ok: true,
-      delivery: {
-        eventId: "evt-1",
-        webhookType: "customer.created",
-        objectId: "lago-customer-1",
-        externalCustomerId: "deployment-1",
-      },
-    });
+    expect(result).toEqual({ ok: true, delivery: EXPECTED_DELIVERY });
   });
 
   test("accepts the same delivery without the algorithm header (jwt is the default)", async () => {
     const jwt = signDeliveryLikeProvider(WIRE_PAYLOAD, privateKeyPem);
-    const result = await verifier.verify(
-      new Headers({ "x-lago-signature": jwt }),
-      WIRE_BODY,
-    );
+    const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
     expect(result).toMatchObject({ ok: true });
   });
 
@@ -92,7 +116,13 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
     const [h, , s] = jwt.split(".");
     const forgedPayload = Buffer.from(
       JSON.stringify({
-        data: JSON.stringify({ ...WIRE_PAYLOAD, event_id: "evt-evil" }),
+        data: JSON.stringify({
+          ...WIRE_PAYLOAD,
+          subscription: {
+            ...WIRE_PAYLOAD.subscription,
+            status: "active",
+          },
+        }),
       }),
     ).toString("base64url");
     const result = await verifier.verify(
@@ -113,20 +143,29 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
   });
 
   test("refuses a signed `data` claim that is not the body that arrived", async () => {
-    const jwt = signDeliveryLikeProvider(
-      { event_id: "evt-1", webhook_type: "customer.created" },
-      privateKeyPem,
-    );
+    const otherBody = {
+      webhook_type: "subscription.terminated",
+      object_type: "subscription",
+      organization_id: "lago-org-1",
+      subscription: { ...WIRE_PAYLOAD.subscription, status: "active" },
+    };
+    const jwt = signDeliveryLikeProvider(otherBody, privateKeyPem);
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
     expect(result).toEqual({ ok: false });
   });
 
   test("treats member order in `data` as irrelevant (JSON semantics, not bytes)", async () => {
     const reordered = JSON.stringify({
-      external_customer_id: "deployment-1",
-      object_id: "lago-customer-1",
-      webhook_type: "customer.created",
-      event_id: "evt-1",
+      subscription: {
+        status: "terminated",
+        plan_code: "pro",
+        external_customer_id: "deployment-1",
+        external_id: "deployment-1-sub",
+        lago_id: "lago-sub-1",
+      },
+      organization_id: "lago-org-1",
+      object_type: "subscription",
+      webhook_type: "subscription.terminated",
     });
     const jwt = signDeliveryLikeProvider(JSON.parse(reordered), privateKeyPem);
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
@@ -172,13 +211,13 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
     expect(
       await verifier.verify(jwtHeaders("a.b.c", "jwt"), WIRE_BODY),
     ).toEqual({ ok: false });
-    expect(await verifier.verify(new Headers({}), WIRE_BODY)).toEqual({
-      ok: false,
-    });
+    expect(
+      await verifier.verify(jwtHeaders("", undefined), WIRE_BODY),
+    ).toEqual({ ok: false });
   });
 
   test("refuses a body that is not the provider's payload shape", async () => {
-    const body = JSON.stringify({ event_id: "evt-1" });
+    const body = JSON.stringify({ subscription: { lago_id: "lago-sub-1" } });
     const jwt = signDeliveryLikeProvider(JSON.parse(body), privateKeyPem);
     const result = await verifier.verify(jwtHeaders(jwt), body);
     expect(result).toEqual({ ok: false });
@@ -195,6 +234,55 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
     const result = await verifierWrapped.verify(jwtHeaders(jwt), WIRE_BODY);
     expect(result).toMatchObject({ ok: true });
   });
+
+  test("a signed delivery without the unique-key header has no identity and no acceptance", async () => {
+    const jwt = signDeliveryLikeProvider(WIRE_PAYLOAD, privateKeyPem);
+    const result = await verifier.verify(
+      jwtHeaders(jwt, undefined, null),
+      WIRE_BODY,
+    );
+    expect(result).toEqual({ ok: false });
+  });
+
+  test("reads a customer delivery's own external id out of the nested customer", async () => {
+    const body = JSON.stringify({
+      webhook_type: "customer.updated",
+      object_type: "customer",
+      organization_id: "lago-org-1",
+      customer: { lago_id: "lago-customer-1", external_id: "deployment-1" },
+    });
+    const jwt = signDeliveryLikeProvider(JSON.parse(body), privateKeyPem);
+    const result = await verifier.verify(
+      jwtHeaders(jwt, undefined, "uk-cust-1"),
+      body,
+    );
+    expect(result).toEqual({
+      ok: true,
+      delivery: {
+        eventId: "uk-cust-1",
+        webhookType: "customer.updated",
+        objectId: "lago-customer-1",
+        externalCustomerId: "deployment-1",
+      },
+    });
+  });
+
+  test("a delivery whose named object member is absent verifies, naming no customer", async () => {
+    // The signature is over the body that arrived, so the delivery is authentic; its subject
+    // object is missing, which is a payload this deployment treats as projecting nothing. The
+    // verifier's job stops at naming what can be named.
+    const body = JSON.stringify({
+      webhook_type: "subscription.updated",
+      object_type: "subscription",
+      organization_id: "lago-org-1",
+    });
+    const jwt = signDeliveryLikeProvider(JSON.parse(body), privateKeyPem);
+    const result = await verifier.verify(jwtHeaders(jwt), body);
+    expect(result).toEqual({
+      ok: true,
+      delivery: { eventId: EVENT_ID, webhookType: "subscription.updated" },
+    });
+  });
 });
 
 describe("createWebhookVerifier jwt mode, the provider's real double-encoded shape", () => {
@@ -210,25 +298,18 @@ describe("createWebhookVerifier jwt mode, the provider's real double-encoded sha
       { alg: "RS256" },
     );
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
-    expect(result).toEqual({
-      ok: true,
-      delivery: {
-        eventId: "evt-1",
-        webhookType: "customer.created",
-        objectId: "lago-customer-1",
-        externalCustomerId: "deployment-1",
-      },
-    });
+    expect(result).toEqual({ ok: true, delivery: EXPECTED_DELIVERY });
   });
 
   test("(b) a `data` string whose JSON is not the raw body is refused", async () => {
+    const otherPayload = {
+      webhook_type: "subscription.terminated",
+      object_type: "subscription",
+      organization_id: "lago-org-1",
+      subscription: { ...WIRE_PAYLOAD.subscription, plan_code: "enterprise" },
+    };
     const jwt = manuallySigned(
-      {
-        data: JSON.stringify({
-          event_id: "evt-1",
-          webhook_type: "customer.created",
-        }),
-      },
+      { data: JSON.stringify(otherPayload) },
       { alg: "RS256" },
     );
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
@@ -258,10 +339,7 @@ describe("createWebhookVerifier hmac mode", () => {
       hmacHeaders(hmacOf(WIRE_BODY)),
       WIRE_BODY,
     );
-    expect(result).toMatchObject({
-      ok: true,
-      delivery: { eventId: "evt-1", webhookType: "customer.created" },
-    });
+    expect(result).toEqual({ ok: true, delivery: EXPECTED_DELIVERY });
   });
 
   test("refuses a bad signature", async () => {
@@ -291,6 +369,14 @@ describe("createWebhookVerifier hmac mode", () => {
   test("refuses a hex sha256 (the other provider's format) in base64 mode", async () => {
     const hex = createHmac("sha256", HMAC_KEY).update(WIRE_BODY).digest("hex");
     const result = await verifier.verify(hmacHeaders(hex), WIRE_BODY);
+    expect(result).toEqual({ ok: false });
+  });
+
+  test("refuses a signed delivery without the unique-key header here too", async () => {
+    const result = await verifier.verify(
+      hmacHeaders(hmacOf(WIRE_BODY), "hmac", null),
+      WIRE_BODY,
+    );
     expect(result).toEqual({ ok: false });
   });
 });

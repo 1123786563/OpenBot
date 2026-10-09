@@ -144,17 +144,17 @@ func TestLoadRefusesEachMissingPiece(t *testing.T) {
 		},
 		{
 			name: "governed tools without callback endpoint",
-			args: append(minimalArgs(t), "-governed-tools", "probe_tool"),
+			args: append(minimalArgs(t), "-governed-tools", "probe_tool=probe_tool@1.0.0"),
 			env:  base(),
 			want: "callback",
 		},
 		{
-			name: "governed tools without agent token",
+			name: "governed tool entry without a pinned version",
 			args: append(minimalArgs(t),
 				"-governed-tools", "probe_tool",
-				"-callback-endpoint", "http://127.0.0.1:3/api/agent-tools/call"),
+				"-callback-endpoint", "http://127.0.0.1:3/internal/enterprise/v1/tool-invocations"),
 			env:  base(),
-			want: "agent token",
+			want: "installation_version",
 		},
 		{
 			name: "zero concurrent run limit",
@@ -190,6 +190,8 @@ func TestLoadAcceptsACompleteConfiguration(t *testing.T) {
 		"-model-alias", "fixture-model",
 		"-expert", "expert@1.0.0=" + instruction,
 		"-expert", "expert@2.0.0=" + secondInstruction,
+		"-governed-tools", "probe_tool=probe_tool@1.0.0",
+		"-callback-endpoint", "http://127.0.0.1:3000/internal/enterprise/v1/tool-invocations",
 		"-max-concurrent-runs", "7",
 		"-drain-timeout", "12s",
 	}, envWith(map[string]string{
@@ -219,6 +221,14 @@ func TestLoadAcceptsACompleteConfiguration(t *testing.T) {
 	}
 	if cfg.DrainTimeout != 12*time.Second {
 		t.Fatalf("drain timeout = %s", cfg.DrainTimeout)
+	}
+	if len(cfg.GovernedTools) != 1 ||
+		cfg.GovernedTools[0].Name != "probe_tool" ||
+		cfg.GovernedTools[0].InstallationVersion != "probe_tool@1.0.0" {
+		t.Fatalf("governed tools = %+v, want the pinned installation", cfg.GovernedTools)
+	}
+	if cfg.CallbackEndpoint != "http://127.0.0.1:3000/internal/enterprise/v1/tool-invocations" {
+		t.Fatalf("callback endpoint = %q", cfg.CallbackEndpoint)
 	}
 }
 

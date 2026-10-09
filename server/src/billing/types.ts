@@ -92,6 +92,13 @@ export type BillingStore = {
     externalId: string;
     name: string | null;
   }): Promise<void>;
+  /**
+   * Insert the customer row only if it is absent, never overwriting one that exists: the
+   * placeholder a webhook path lands when the provider answers 404 for a customer whose
+   * projection (with its name) is already here. `upsertCustomer` is the refreshing write;
+   * this one is the floor that keeps a subscription row's foreign key satisfied.
+   */
+  ensureCustomerRow(input: { externalId: string }): Promise<void>;
   upsertSubscription(input: BillingSubscriptionRow): Promise<void>;
   readSubscriptions(
     externalCustomerId: string,
@@ -111,7 +118,13 @@ export type BillingStore = {
   }>;
 };
 
-/** A verified delivery, in neutral words; the wire spelling stays inside the verifier. */
+/**
+ * A verified delivery, in neutral words; the wire spelling stays inside the verifier.
+ *
+ * `eventId` is the delivery's idempotency header (`X-Lago-Unique-Key`), not a body member: the
+ * provider's payload names no event of its own, so the header is the one identity an inbox row
+ * can be keyed on — which is also why a delivery without it never verifies.
+ */
 export type VerifiedWebhook = {
   eventId: string;
   webhookType: string;

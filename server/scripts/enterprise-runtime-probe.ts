@@ -47,19 +47,15 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  hashCallbackToken,
-  mintCallbackToken,
-  mintRunAssertion,
-} from "../src/agents/callback-token";
-import { createApp, type DeploymentToolCaller } from "../src/app";
-import { loadConfig } from "../src/config";
+  createFakeToolInvocationPlane,
+  type ToolCapabilityBinding,
+} from "../src/enterprise/runtime/tool-invocations";
 import {
   createRuntimeInvocationValidationRoutes,
   type InvocationValidationDeps,
   type InvocationVerifyOutcome,
   type RuntimeInvocation,
 } from "../src/enterprise/runtime/validation-routes";
-import { testEnvironment } from "../tests/support/environment";
 
 /** The repository root, resolved from this file so the cwd cannot steer it. */
 export const repoRoot = (): string => resolve(import.meta.dir, "../..");
@@ -150,8 +146,12 @@ import (
 	"openbot/runtime-go/internal/server"
 )
 
-// governedToolName matches what the probe's fake provider scripts.
-const governedToolName = "probe_governed"
+// governedToolName and its PINNED installation match what the probe's fake
+// tool plane authorizes.
+const (
+	governedToolName = "probe_governed"
+	governedVersion  = "probe_governed@1.0.0"
+)
 
 func main() {
 	var (
@@ -159,8 +159,7 @@ func main() {
 		modelBaseURL = flag.String("model-base-url", "", "OpenAI-compatible provider base URL (the probe's fake)")
 		modelAlias   = flag.String("model-alias", "probe-model", "model alias sent to the provider")
 		validationEP = flag.String("validation-endpoint", "", "TS validation endpoint URL")
-		callbackEP   = flag.String("callback-endpoint", "", "TS /api/agent-tools/call endpoint URL")
-		agentToken   = flag.String("agent-token", "", "agent token presented to the TS plane")
+		callbackEP   = flag.String("callback-endpoint", "", "internal tool-invocations plane address")
 		serviceCred  = flag.String("service-credential", "", "platform-to-runtime shared credential")
 	)
 	flag.Parse()
@@ -183,17 +182,18 @@ func main() {
 		ValidationEndpoint: *validationEP,
 	}
 
-	// The one governed tool this candidate exposes: it executes on the TS
-	// plane, never inline. No other egress exists in this composition.
+	// The one governed tool this candidate exposes: it PROPOSES and SPENDS
+	// on the TS tool plane, never inline. No other egress exists in this
+	// composition; the credentials each call presents are the verified
+	// run's own, from the private context.
 	var tools []tool.Tool
 	if *callbackEP != "" {
 		plane := &callback.Client{
-			HTTP:       &http.Client{Timeout: 10 * time.Second},
-			Endpoint:   *callbackEP,
-			AgentToken: *agentToken,
+			HTTP:     &http.Client{Timeout: 10 * time.Second},
+			Endpoint: *callbackEP,
 		}
-		tools = append(tools, adapter.GovernedTool(plane, governedToolName,
-			"Platform-governed probe tool; executes on the TS plane.", nil))
+		tools = append(tools, adapter.GovernedTool(plane, governedToolName, governedVersion,
+			"Platform-governed probe tool; proposes and executes on the TS plane.", nil))
 	}
 
 	provider := openaimodel.New(*modelAlias,
@@ -319,7 +319,6 @@ export async function startCandidate(opts: {
   modelBaseUrl: string;
   validationEndpoint: string;
   callbackEndpoint?: string;
-  agentToken?: string;
 }): Promise<Candidate> {
   const argv = [
     opts.binary,
@@ -332,7 +331,6 @@ export async function startCandidate(opts: {
   ];
   if (opts.callbackEndpoint !== undefined) {
     argv.push("-callback-endpoint", opts.callbackEndpoint);
-    argv.push("-agent-token", opts.agentToken ?? "");
   }
   const proc = Bun.spawn(argv, {
     stdin: "ignore",
@@ -546,9 +544,6 @@ function jsonResponse(body: unknown): Response {
 const TENANT = "tenant_fixed_test_member";
 const PRINCIPAL = "principal_probe";
 const ACTOR = "actor_probe";
-const BOT = "probe_bot";
-/** The deployment key both planes share; a test value, never a real credential. */
-const PLANE_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 /**
  * The frozen canonical input digest (01 plan R2-B: 摘要基于双方冻结的规范
@@ -579,12 +574,17 @@ const CAPABILITY_TTL_MS = 10 * 60_000;
 export function startValidationPlane(
   serviceCredential = "probe-service-credential-not-a-real-one",
 ) {
-  const token = mintCallbackToken();
   type Capability = {
     expiresAt: number;
     bound: Pick<RuntimeInvocation, "run_id" | "attempt_id" | "turn_id" | "input_digest">;
   };
   const capabilities = new Map<string, Capability>();
+  /**
+   * The SAME capability registry the fake tool plane authenticates against:
+   * one minted capability vouches for one run on both planes, exactly as
+   * the production planes would resolve it.
+   */
+  const toolCapabilities = new Map<string, ToolCapabilityBinding>();
   /** The current lease per business run, as the ledger would hold it. */
   const currentLeases = new Map<string, string>();
 
@@ -646,52 +646,48 @@ export function startValidationPlane(
         input_digest: invocation.input_digest,
       },
     });
+    toolCapabilities.set(capability, {
+      tenant_id: TENANT,
+      principal_id: PRINCIPAL,
+      run_id: invocation.run_id,
+      attempt_id: invocation.attempt_id,
+      fencing_token: invocation.fencing_token,
+      expires_at: Date.now() + CAPABILITY_TTL_MS,
+    });
     currentLeases.set(runId, invocation.lease_id);
     return {
       capability,
       invocation: JSON.stringify(invocation),
-      // Legacy pair for the R3 callback plane (/api/agent-tools/call).
-      assertion: mintRunAssertion({ botId: BOT, actorId: ACTOR, runId, threadId }, PLANE_KEY),
-      token,
     };
-  };
+  }
 
   return {
     server,
     url: `http://${server.hostname}:${server.port}`,
     validationEndpoint: `http://${server.hostname}:${server.port}/internal/enterprise/v1/runtime/validate`,
-    token,
+    toolCapabilities,
     mint,
   };
 }
 
 /**
- * The existing `/api/agent-tools/call` route, on the real `createApp`, with
- * the same wiring its R3 tests use: hashed token store and a deployment tool
- * caller that records what crossed the plane.
+ * The enterprise tool plane for the probe: the G1a fake tool-invocation
+ * endpoints, sharing the validation plane's capability registry (one minted
+ * capability vouches for one run on both planes). The recheck boundary is
+ * a recording pass-through: the probe observes it ran, it authorizes
+ * nothing real.
  */
-export function startCallbackPlane() {
-  const captured: Parameters<DeploymentToolCaller>[0][] = [];
-  const token = mintCallbackToken();
-  const tokenHashes = new Map<string, { id: string }>([
-    [hashCallbackToken(token), { id: BOT }],
-  ]);
-  const parameters: Parameters<typeof createApp> = [
-    loadConfig(testEnvironment({ KEY_ENCRYPTION_KEY: PLANE_KEY })),
-  ];
-  parameters[9] = {
-    agentForCallbackToken: async (hash: string) => tokenHashes.get(hash) ?? null,
-  } as Parameters<typeof createApp>[9];
-  parameters[28] = (async (input: Parameters<DeploymentToolCaller>[0]) => {
-    captured.push(input);
-    return { text: "plane-answer-ok", isError: false };
-  }) as DeploymentToolCaller;
-  const server = Bun.serve({ port: 0, fetch: createApp(...parameters).fetch });
+export function startToolPlane(validation: ReturnType<typeof startValidationPlane>) {
+  const plane = createFakeToolInvocationPlane({
+    serviceCredential: "probe-service-credential-not-a-real-one",
+    capabilities: validation.toolCapabilities,
+    recheck: () => ({ ok: true }),
+  });
+  const server = Bun.serve({ port: 0, fetch: plane.routes.fetch });
   return {
     server,
-    callbackEndpoint: `http://${server.hostname}:${server.port}/api/agent-tools/call`,
-    token,
-    captured,
+    toolPlaneEndpoint: `http://${server.hostname}:${server.port}/internal/enterprise/v1/tool-invocations`,
+    state: plane.state,
   };
 }
 
@@ -704,21 +700,13 @@ export function candidateHeaders(credentials: {
   /** The enterprise pair: short-term capability + strict invocation envelope. */
   capability: string;
   invocation: string;
-  /** The legacy pair, only for runs that exercise the governed tool plane. */
-  agentToken?: string;
-  assertion?: string;
 }): Record<string, string> {
-  const headers: Record<string, string> = {
+  return {
     "content-type": "application/json",
     "x-openbot-runtime-service-credential": credentials.serviceCredential,
     "x-openbot-runtime-capability": credentials.capability,
     "x-openbot-runtime-invocation": credentials.invocation,
   };
-  if (credentials.agentToken !== undefined && credentials.assertion !== undefined) {
-    headers["x-openbot-agent-token"] = credentials.agentToken;
-    headers["x-openbot-run-assertion"] = credentials.assertion;
-  }
-  return headers;
 }
 
 export function runInput(run: {
@@ -1134,7 +1122,7 @@ async function runProbe(): Promise<number> {
   };
   const model = startFakeModel();
   const validation = startValidationPlane();
-  const callbackPlane = startCallbackPlane();
+  const toolPlane = startToolPlane(validation);
   const started: Candidate[] = [];
   try {
     const environment = await gatherEnvironment();
@@ -1144,8 +1132,7 @@ async function runProbe(): Promise<number> {
       serviceCredential: SERVICE_CREDENTIAL,
       modelBaseUrl: model.url,
       validationEndpoint: validation.validationEndpoint,
-      callbackEndpoint: callbackPlane.callbackEndpoint,
-      agentToken: callbackPlane.token,
+      callbackEndpoint: toolPlane.toolPlaneEndpoint,
     });
     started.push(candidate);
     const base = candidate.baseUrl;
@@ -1245,7 +1232,7 @@ async function runProbe(): Promise<number> {
       );
     measurements.rssBytes = await rssBytesOf(candidate.pid);
 
-    // -- tool: a governed tool call crosses the existing plane and the model sees the answer.
+    // -- tool: a governed tool call proposes, spends and the model reads the receipt's answer.
     const callbackCreds = validation.mint("run_callback", "thread_callback", PROBE_TOOL_TEXT);
     const callbackEvents = await withTimeout(
       collectEvents(
@@ -1255,9 +1242,6 @@ async function runProbe(): Promise<number> {
             serviceCredential: SERVICE_CREDENTIAL,
             capability: callbackCreds.capability,
             invocation: callbackCreds.invocation,
-            // The legacy pair rides along for the R3 callback plane.
-            agentToken: callbackCreds.token,
-            assertion: callbackCreds.assertion,
           }),
         ),
         runInput({
@@ -1269,28 +1253,34 @@ async function runProbe(): Promise<number> {
       20_000,
       "the tool check run",
     );
-    const crossed = callbackPlane.captured;
+    const operations = toolPlane.state.operations;
+    const receipts = toolPlane.state.receipts;
     const toolOk =
-      crossed.length === 1 &&
-      crossed[0].name === CANDIDATE_TOOL_NAME &&
-      crossed[0].botId === BOT &&
-      crossed[0].actorId === ACTOR &&
+      operations.length === 1 &&
+      operations[0].tool_name === CANDIDATE_TOOL_NAME &&
+      operations[0].tenant_id === TENANT &&
+      operations[0].run_id === "run_callback" &&
+      receipts.length === 1 &&
+      receipts[0].status === "succeeded" &&
+      toolPlane.state.effects === 1 &&
       callbackEvents.some((e) => e.type === "TOOL_CALL_START") &&
       satisfiesEventContract(callbackEvents) &&
       textOf(callbackEvents) === "callback-observed";
     checks.tool = {
       status: toolOk ? "passed" : "failed",
-      evidence: `governed calls that crossed /api/agent-tools/call: ${JSON.stringify(
-        crossed.map((c) => ({ name: c.name, botId: c.botId, actorId: c.actorId })),
-      )}; run carried TOOL_CALL_START and finished with text ${JSON.stringify(
+      evidence: `prepare/execute crossings on the fake tool plane: 1 operation (${operations
+        .map((o) => `${o.tool_name} on ${o.run_id}`)
+        .join(",")}), 1 receipt (${receipts.map((r) => r.status).join(",")}), effects=${toolPlane.state.effects}; run carried TOOL_CALL_START and finished with text ${JSON.stringify(
         textOf(callbackEvents),
       )}`,
     };
     if (!toolOk)
       throw new Error(
-        `the governed tool call did not cross the plane cleanly: captured=${JSON.stringify(
-          crossed.map((c) => ({ name: c.name, botId: c.botId, actorId: c.actorId })),
-        )}, events=${callbackEvents.map((e) => e.type).join(",")}`,
+        `the governed tool call did not cross the tool plane cleanly: operations=${JSON.stringify(
+          operations.map((o) => ({ tool: o.tool_name, run: o.run_id, status: o.status })),
+        )}, receipts=${JSON.stringify(receipts.map((r) => r.status))}, events=${callbackEvents
+          .map((e) => e.type)
+          .join(",")}`,
       );
 
     // -- wait: registered not_run (see WAIT_NOT_RUN_EVIDENCE); nothing is
@@ -1394,8 +1384,7 @@ async function runProbe(): Promise<number> {
       serviceCredential: SERVICE_CREDENTIAL,
       modelBaseUrl: model.url,
       validationEndpoint: validation.validationEndpoint,
-      callbackEndpoint: callbackPlane.callbackEndpoint,
-      agentToken: callbackPlane.token,
+      callbackEndpoint: toolPlane.toolPlaneEndpoint,
     });
     started.push(restarted);
     const oldRunCancel = await fetch(`${restarted.baseUrl}/cancel`, {
@@ -1460,7 +1449,7 @@ async function runProbe(): Promise<number> {
     for (const candidate of started) await candidate.kill();
     model.server.stop(true);
     validation.server.stop(true);
-    callbackPlane.server.stop(true);
+    toolPlane.server.stop(true);
   }
 }
 

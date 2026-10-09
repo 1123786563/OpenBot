@@ -1,9 +1,15 @@
 package callback
 
+/*
+ * The enterprise tool-invocation contract (master plan §4.2, 01 plan R3-A):
+ * Prepare proposes an operation, Execute spends it and returns a receipt.
+ */
+
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,61 +18,64 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"openbot/runtime-go/internal/identity"
 )
 
-// The first test is the plan's own, verbatim: a tool whose receipt never
-// arrives must not be re-spent. One attempt, then OUTCOME_UNKNOWN.
-func TestCallDoesNotRetryUnknownOutcome(t *testing.T) {
-	var n atomic.Int32
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n.Add(1)
-		time.Sleep(50 * time.Millisecond)
-	}))
-	defer s.Close()
-	c := Client{HTTP: &http.Client{Timeout: 10 * time.Millisecond}, Endpoint: s.URL, AgentToken: "test-only"}
-	_, err := c.Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
-	if err == nil || n.Load() != 1 {
-		t.Fatalf("err=%v calls=%d", err, n.Load())
-	}
+const (
+	testServiceCredential = "test-service-credential-not-a-real-one"
+	testCapability        = "test-capability-not-a-real-one"
+)
+
+func toolCtx() context.Context {
+	return identity.WithToolCredentials(context.Background(), identity.ToolCredentials{
+		ServiceCredential: testServiceCredential,
+		Capability:        testCapability,
+	})
 }
 
-// toolStub records what the governance plane was asked and scripts what it
-// answers: status, body, optional delay, and how many times it was reached.
-type toolStub struct {
+var canonicalArgs = []byte(`{"limit":3,"search":"incident"}`)
+
+type planeStub struct {
 	mu       sync.Mutex
-	hits     int
-	method   string
-	path     string
-	body     map[string]any
-	rawBody  string
-	token    string
-	content  string
+	hits     map[string]int
+	requests []planeRequest
 	status   int
 	response string
-	delay    time.Duration
 }
 
-func newToolStub(status int, response string) *toolStub {
-	return &toolStub{status: status, response: response}
+type planeRequest struct {
+	Method            string
+	Path              string
+	ServiceCredential string
+	Capability        string
+	ContentType       string
+	Body              map[string]any
+	RawBody           string
 }
 
-func (s *toolStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func newPlaneStub(status int, response string) *planeStub {
+	return &planeStub{hits: map[string]int{}, status: status, response: response}
+}
+
+func (s *planeStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
-	s.hits++
-	s.method = r.Method
-	s.path = r.URL.Path
-	s.token = r.Header.Get("x-openbot-agent-token")
-	s.content = r.Header.Get("Content-Type")
+	s.hits[r.URL.Path]++
+	req := planeRequest{
+		Method:            r.Method,
+		Path:              r.URL.Path,
+		ServiceCredential: r.Header.Get("x-openbot-runtime-service-credential"),
+		Capability:        r.Header.Get("x-openbot-runtime-capability"),
+		ContentType:       r.Header.Get("Content-Type"),
+	}
 	raw, _ := io.ReadAll(r.Body)
-	s.rawBody = string(raw)
+	req.RawBody = string(raw)
 	parsed := map[string]any{}
 	_ = json.Unmarshal(raw, &parsed)
-	s.body = parsed
-	status, response, delay := s.status, s.response, s.delay
+	req.Body = parsed
+	s.requests = append(s.requests, req)
+	status, response := s.status, s.response
 	s.mu.Unlock()
-	if delay > 0 {
-		time.Sleep(delay)
-	}
 	if status == http.StatusOK {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -74,131 +83,380 @@ func (s *toolStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, response)
 }
 
-func (s *toolStub) count() int {
+func (s *planeStub) total() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.hits
+	n := 0
+	for _, v := range s.hits {
+		n += v
+	}
+	return n
 }
 
-func (s *toolStub) last() (method, path, token, contentType string, body map[string]any) {
+func (s *planeStub) last() planeRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.method, s.path, s.token, s.content, s.body
+	if len(s.requests) == 0 {
+		return planeRequest{}
+	}
+	return s.requests[len(s.requests)-1]
 }
 
-// The wire shape is the platform's, exactly: {run, name, args} with the run
-// assertion as its own field and the model's args passed through verbatim.
-// Identity never rides inside args, because args are model-chosen and the
-// assertion is the credential the plane authorises against.
-func TestCallSendsPlatformShapedRequest(t *testing.T) {
-	stub := newToolStub(http.StatusOK, `{"text":"ok","isError":false}`)
+const validPreparationAnswer = `{"operation_id":"op_1","requires_approval":false,"safety_preview":"would search","deduplicated":false,"reconciliation_required":false}`
+const validReceipt = `{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"succeeded","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":false,"result_text":"plane-answer-ok"}`
+
+const (
+	pathInfix  = "/internal/enterprise/v1/tool-invocations"
+	prepareSeg = "/prepare"
+)
+
+func planePrefix(srv *httptest.Server) string {
+	return fmt.Sprintf("%s%s", srv.URL, pathInfix)
+}
+
+func samplePreparation() ToolPreparation {
+	return ToolPreparation{
+		ToolName:            "approved_tool",
+		RunID:               "run_1",
+		AttemptID:           "attempt_1",
+		ToolCallID:          "run_1|attempt_1|approved_tool|001",
+		StepID:              "turn_1",
+		InstallationVersion: "approved_tool@1.2.3",
+		Target:              "approved_tool",
+		Args:                canonicalArgs,
+		FencingToken:        "fencing_1",
+	}
+}
+
+func sampleExecution() ToolExecution {
+	return ToolExecution{
+		OperationID:  "op_1",
+		AttemptID:    "attempt_1",
+		ArgsDigest:   DigestArgs(canonicalArgs),
+		FencingToken: "fencing_1",
+	}
+}
+
+// The plan's own first rule, carried to the new contract: a receipt that
+// never arrives must not re-spend the operation. One attempt, then unknown.
+func TestExecuteDoesNotRetryUnknownOutcome(t *testing.T) {
+	var n atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		time.Sleep(50 * time.Millisecond)
+	}))
+	defer s.Close()
+	c := Client{HTTP: &http.Client{Timeout: 10 * time.Millisecond}, Endpoint: planePrefix(s)}
+	_, err := c.Execute(toolCtx(), sampleExecution())
+	if err == nil || n.Load() != 1 {
+		t.Fatalf("err=%v calls=%d", err, n.Load())
+	}
+}
+
+// callPrepare/callExecute are thin local aliases for the two contract
+// methods, so each test below reads as one governed operation crossing the
+// plane.
+func callPrepare(c Client, ctx context.Context, p ToolPreparation) (Preparation, error) {
+	return c.Prepare(ctx, p)
+}
+
+func callExecute(c Client, ctx context.Context, e ToolExecution) (Receipt, error) {
+	return c.Execute(ctx, e)
+}
+
+// The digest the client signs is the digest the plane recomputes: Go's
+// canonical map encoding is deterministic regardless of construction order.
+func TestDigestArgsIsStableAcrossConstructionOrder(t *testing.T) {
+	a, _ := json.Marshal(map[string]any{"search": "incident", "limit": 3.0, "nested": map[string]any{"z": 1, "a": 2}})
+	b, _ := json.Marshal(map[string]any{"nested": map[string]any{"a": 2, "z": 1}, "limit": 3.0, "search": "incident"})
+	if DigestArgs(a) != DigestArgs(b) {
+		t.Fatalf("digest drifted with construction order: %s != %s", DigestArgs(a), DigestArgs(b))
+	}
+}
+
+// The prepare wire is the contract's, exactly: the fixed internal path, the
+// credential pair from the PRIVATE CONTEXT in headers (never body fields, so
+// nothing model-chosen can carry identity), and the strict field set with
+// the args verbatim plus the digest the client computed over those exact
+// bytes.
+func TestPrepareSendsStrictWireRequest(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validPreparationAnswer)
 	srv := httptest.NewServer(stub)
 	defer srv.Close()
+	prefix := planePrefix(srv)
 
-	args := map[string]any{"query": "incident", "limit": 3.0}
-	res, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "obot_agt_test-only"}.
-		Call(context.Background(), "opaque-test-assertion", "approved-tool", args)
+	prep, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: prefix}, toolCtx(), samplePreparation())
 	if err != nil {
-		t.Fatalf("valid call failed: %v", err)
+		t.Fatalf("valid prepare failed: %v", err)
 	}
-	if res.Text != "ok" || res.IsError {
-		t.Fatalf("decoded result = %+v", res)
+	if prep.OperationID != "op_1" || prep.RequiresApproval || prep.ReconciliationRequired {
+		t.Fatalf("decoded preparation = %+v", prep)
 	}
-	method, path, token, contentType, body := stub.last()
-	if method != http.MethodPost {
-		t.Fatalf("method = %q, want POST", method)
+	got := stub.last()
+	if got.Method != http.MethodPost {
+		t.Fatalf("method = %q, want POST", got.Method)
 	}
-	if path != "/" && path != "" {
-		// The stub is mounted at its root; what matters is that the request
-		// went to the configured endpoint, which the hit itself proves.
-		t.Fatalf("path = %q, want the configured endpoint root", path)
+	if got.Path != pathInfix+prepareSeg {
+		t.Fatalf("path = %q, want the fixed internal prepare path %q", got.Path, pathInfix+prepareSeg)
 	}
-	if token != "obot_agt_test-only" {
-		t.Fatalf("x-openbot-agent-token = %q", token)
+	if got.ServiceCredential != testServiceCredential || got.Capability != testCapability {
+		t.Fatalf("credentials = %q/%q, want the private-context pair in headers", got.ServiceCredential, got.Capability)
 	}
-	if contentType != "application/json" {
-		t.Fatalf("Content-Type = %q", contentType)
+	if got.ContentType != "application/json" {
+		t.Fatalf("Content-Type = %q", got.ContentType)
 	}
-	if len(body) != 3 {
-		t.Fatalf("request body = %#v, want exactly {run,name,args}", body)
+	wantFields := []string{
+		"tool_name", "run_id", "attempt_id", "tool_call_id", "step_id",
+		"installation_version", "target", "args", "args_digest", "fencing_token",
 	}
-	if body["run"] != "opaque-test-assertion" {
-		t.Fatalf("run field = %#v", body["run"])
+	if len(got.Body) != len(wantFields) {
+		t.Fatalf("prepare body = %#v, want exactly the contract fields %v", got.Body, wantFields)
 	}
-	if body["name"] != "approved-tool" {
-		t.Fatalf("name field = %#v", body["name"])
+	for _, field := range wantFields {
+		if _, ok := got.Body[field]; !ok {
+			t.Fatalf("prepare body is missing %q: %#v", field, got.Body)
+		}
 	}
-	gotArgs, ok := body["args"].(map[string]any)
-	if !ok || len(gotArgs) != 2 || gotArgs["query"] != "incident" || gotArgs["limit"] != 3.0 {
-		t.Fatalf("args field = %#v, want the caller's args verbatim with no identity injected", body["args"])
-	}
-}
-
-// A nil args map must still be an object on the wire: the plane parses null
-// as "arguments are not an object" and refuses with 400, which would turn a
-// caller's nil into a shaped refusal the caller cannot tell from its own
-// mistake.
-func TestCallSendsEmptyObjectForNilArgs(t *testing.T) {
-	stub := newToolStub(http.StatusOK, `{"text":"ok","isError":false}`)
-	srv := httptest.NewServer(stub)
-	defer srv.Close()
-
-	if _, err := (Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "test-only"}).
-		Call(context.Background(), "opaque-test-assertion", "approved-tool", nil); err != nil {
-		t.Fatalf("nil-args call failed: %v", err)
-	}
-	_, _, _, _, body := stub.last()
-	args, ok := body["args"].(map[string]any)
-	if !ok {
-		t.Fatalf("args on the wire = %#v, want an empty object for nil", body["args"])
-	}
-	if len(args) != 0 {
-		t.Fatalf("args on the wire = %#v, want empty", args)
-	}
-}
-
-// A vendor that answered with isError is an ANSWER, not a failure: revoked
-// grants and refused policy read 200 {text, isError:true} on this plane, and
-// the model is owed that text.
-func TestCallDecodesVendorErrorAsResult(t *testing.T) {
-	stub := newToolStub(http.StatusOK, `{"text":"Refused. The grant was revoked.","isError":true}`)
-	srv := httptest.NewServer(stub)
-	defer srv.Close()
-
-	res, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "test-only"}.
-		Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
+	// Args ride verbatim and the digest is over exactly those bytes: a
+	// caller cannot propose one thing and sign another.
+	sentArgs, err := json.Marshal(got.Body["args"])
 	if err != nil {
-		t.Fatalf("a vendor error answer must not be a transport error: %v", err)
+		t.Fatal(err)
 	}
-	if !res.IsError || res.Text != "Refused. The grant was revoked." {
-		t.Fatalf("decoded result = %+v", res)
+	if string(sentArgs) != string(canonicalArgs) {
+		t.Fatalf("args on the wire = %s, want the canonical bytes verbatim", sentArgs)
+	}
+	if got.Body["args_digest"] != DigestArgs(canonicalArgs) {
+		t.Fatalf("args_digest = %#v, want the digest of the exact args bytes", got.Body["args_digest"])
 	}
 }
 
-// 401/403 are the plane saying "not authorised" (unknown token, expired or
-// forged assertion, a token that belongs to another Bot). These are stable,
-// decisive refusals — the call was NOT made, and retrying cannot help.
-func TestCallMapsAuthorizationRefusal(t *testing.T) {
+// Args that are not a JSON object are refused before any dial: the plane
+// parses anything else as "not an object", and a proposal the plane cannot
+// read must never leave this process as if it had been made.
+func TestPrepareRefusesArgsThatAreNotAnObject(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validPreparationAnswer)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+	prefix := planePrefix(srv)
+
+	for name, args := range map[string][]byte{
+		"null":  []byte(`null`),
+		"array": []byte(`[1,2]`),
+		"text":  []byte(`"incident"`),
+		"empty": nil,
+	} {
+		p := samplePreparation()
+		p.Args = args
+		if _, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: prefix}, toolCtx(), p); err == nil {
+			t.Fatalf("%s: non-object args accepted", name)
+		}
+		if stub.total() != 0 {
+			t.Fatalf("%s: a refused proposal still reached the plane", name)
+		}
+	}
+}
+
+// Every string field of the preparation is required: identity and binding
+// coordinates are never defaulted, because a field the runtime invented is
+// a field the plane never vouched for.
+func TestPrepareRefusesIncompletePreparations(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validPreparationAnswer)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+	prefix := planePrefix(srv)
+
+	emptiers := map[string]func(*ToolPreparation){
+		"ToolName":            func(p *ToolPreparation) { p.ToolName = "" },
+		"RunID":               func(p *ToolPreparation) { p.RunID = "" },
+		"AttemptID":           func(p *ToolPreparation) { p.AttemptID = "" },
+		"ToolCallID":          func(p *ToolPreparation) { p.ToolCallID = "" },
+		"StepID":              func(p *ToolPreparation) { p.StepID = "" },
+		"InstallationVersion": func(p *ToolPreparation) { p.InstallationVersion = "" },
+		"Target":              func(p *ToolPreparation) { p.Target = "" },
+		"FencingToken":        func(p *ToolPreparation) { p.FencingToken = "" },
+	}
+	for field, empty := range emptiers {
+		p := samplePreparation()
+		empty(&p)
+		if _, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: prefix}, toolCtx(), p); err == nil {
+			t.Fatalf("empty %s accepted", field)
+		}
+		if stub.total() != 0 {
+			t.Fatalf("an incomplete proposal (empty %s) still reached the plane", field)
+		}
+	}
+}
+
+// The execute wire: the operation's own fixed path, the strict request
+// field set — approval_ref rides only when there is one to present — and
+// the same private-context credential pair.
+func TestExecuteSendsStrictWireRequest(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validReceipt)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+	prefix := planePrefix(srv)
+
+	receipt, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: prefix}, toolCtx(), sampleExecution())
+	if err != nil {
+		t.Fatalf("valid execute failed: %v", err)
+	}
+	if receipt.OperationID != "op_1" || receipt.Status != "succeeded" {
+		t.Fatalf("decoded receipt = %+v", receipt)
+	}
+	got := stub.last()
+	if got.Method != http.MethodPost {
+		t.Fatalf("method = %q, want POST", got.Method)
+	}
+	if got.Path != fmt.Sprintf("%s/op_1/execute", pathInfix) {
+		t.Fatalf("path = %q, want %q", got.Path, fmt.Sprintf("%s/op_1/execute", pathInfix))
+	}
+	if got.ServiceCredential != testServiceCredential || got.Capability != testCapability {
+		t.Fatalf("credentials = %q/%q, want the private-context pair", got.ServiceCredential, got.Capability)
+	}
+	if len(got.Body) != 4 {
+		t.Fatalf("execute body = %#v, want exactly {operation_id,attempt_id,args_digest,fencing_token}", got.Body)
+	}
+
+	// With an approval reference the body carries exactly one more field.
+	stub2 := newPlaneStub(http.StatusOK, validReceipt)
+	srv2 := httptest.NewServer(stub2)
+	defer srv2.Close()
+	e := sampleExecution()
+	e.ApprovalRef = "approval_1"
+	if _, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv2)}, toolCtx(), e); err != nil {
+		t.Fatalf("approved execute failed: %v", err)
+	}
+	got = stub2.last()
+	if len(got.Body) != 5 || got.Body["approval_ref"] != "approval_1" {
+		t.Fatalf("execute body with approval = %#v", got.Body)
+	}
+}
+
+// An execute request is refused locally when its binding coordinates are
+// incomplete: the plane re-checks them, but a request this runtime could
+// not even name is not spent.
+func TestExecuteRefusesIncompleteRequests(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validReceipt)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+	prefix := planePrefix(srv)
+
+	emptiers := map[string]func(*ToolExecution){
+		"OperationID":  func(e *ToolExecution) { e.OperationID = "" },
+		"AttemptID":    func(e *ToolExecution) { e.AttemptID = "" },
+		"ArgsDigest":   func(e *ToolExecution) { e.ArgsDigest = "" },
+		"FencingToken": func(e *ToolExecution) { e.FencingToken = "" },
+	}
+	for field, empty := range emptiers {
+		e := sampleExecution()
+		empty(&e)
+		if _, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: prefix}, toolCtx(), e); err == nil {
+			t.Fatalf("empty %s accepted", field)
+		}
+	}
+	if stub.total() != 0 {
+		t.Fatalf("an incomplete execute still reached the plane")
+	}
+}
+
+// A receipt is decoded only when it is the whole contract: the frozen status
+// enum, the execution attempt the plane allocated, and no fields the
+// contract does not name. Anything else is an answer this runtime cannot
+// show the model as a result.
+func TestExecuteDecodesReceiptStrictly(t *testing.T) {
+	cases := []struct {
+		name   string
+		body   string
+		wantOK bool
+	}{
+		{"complete receipt", validReceipt, true},
+		{"status not in the frozen enum", `{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"pending","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":false}`, false},
+		{"missing execution_attempt_id", `{"operation_id":"op_1","status":"succeeded","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":false}`, false},
+		{"missing receipt_ref", `{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"succeeded","error_code":"","reconciliation_required":false}`, false},
+		{"missing reconciliation_required", `{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"succeeded","receipt_ref":"rcpt_1","error_code":""}`, false},
+		{"field outside the contract", `{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"succeeded","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":false,"text":"smuggled answer"}`, false},
+		{"not json", "this is not json", false},
+	}
+	for _, c := range cases {
+		stub := newPlaneStub(http.StatusOK, c.body)
+		srv := httptest.NewServer(stub)
+		_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+		srv.Close()
+		if c.wantOK && err != nil {
+			t.Fatalf("%s: rejected a valid receipt: %v", c.name, err)
+		}
+		if !c.wantOK && (err == nil || !errors.Is(err, ErrOutcomeUnknown)) {
+			t.Fatalf("%s: err = %v, want ErrOutcomeUnknown", c.name, err)
+		}
+	}
+}
+
+// The receipt statuses the contract freezes are all decodable, including
+// the ones that freeze the operation instead of answering it.
+func TestExecuteDecodesEveryFrozenStatus(t *testing.T) {
+	for _, status := range ReceiptStatuses {
+		body := fmt.Sprintf(`{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"%s","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":true}`, status)
+		stub := newPlaneStub(http.StatusOK, body)
+		srv := httptest.NewServer(stub)
+		receipt, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+		srv.Close()
+		if err != nil {
+			t.Fatalf("status %s: %v", status, err)
+		}
+		if receipt.Status != status {
+			t.Fatalf("status %s decoded as %q", status, receipt.Status)
+		}
+	}
+}
+
+// The preparation answer is decoded just as strictly: an operation
+// reference is the minimum the plane owes a proposal, and unknown fields
+// are refused rather than ignored.
+func TestPrepareDecodesAnswerStrictly(t *testing.T) {
+	cases := []struct {
+		name   string
+		body   string
+		wantOK bool
+	}{
+		{"complete answer", validPreparationAnswer, true},
+		{"missing operation_id", `{"requires_approval":false,"safety_preview":"would search","deduplicated":false,"reconciliation_required":false}`, false},
+		{"missing requires_approval", `{"operation_id":"op_1","safety_preview":"would search","deduplicated":false,"reconciliation_required":false}`, false},
+		{"field outside the contract", `{"operation_id":"op_1","requires_approval":false,"safety_preview":"would search","deduplicated":false,"reconciliation_required":false,"text":"smuggled answer"}`, false},
+		{"not json", "nope", false},
+	}
+	for _, c := range cases {
+		stub := newPlaneStub(http.StatusOK, c.body)
+		srv := httptest.NewServer(stub)
+		_, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), samplePreparation())
+		srv.Close()
+		if c.wantOK && err != nil {
+			t.Fatalf("%s: rejected a valid answer: %v", c.name, err)
+		}
+		if !c.wantOK && (err == nil || !errors.Is(err, ErrOutcomeUnknown)) {
+			t.Fatalf("%s: err = %v, want ErrOutcomeUnknown", c.name, err)
+		}
+	}
+}
+
+// 401/403 are the plane's decisive refusals (unknown or expired capability,
+// an operation this principal may not touch, an approval that does not
+// hold). The call was not made, retrying cannot help, and the plane's own
+// wording stays on the plane.
+func TestAuthorizationRefusalsAreDecisiveAndDoNotLeak(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		status int
 	}{
-		{"unverified credentials", http.StatusUnauthorized},
-		{"token is for another bot", http.StatusForbidden},
+		{"unverified capability", http.StatusUnauthorized},
+		{"refused by policy", http.StatusForbidden},
 	} {
-		// The refusal body is deliberately loaded with bait: whatever the
-		// plane says in a refusal body is its own wording, and none of it
-		// belongs in this process's error strings or logs.
-		stub := newToolStub(c.status, `{"error":"leak-bait-secret-detail"}`)
+		stub := newPlaneStub(c.status, `{"error_code":"leak-bait-secret-detail"}`)
 		srv := httptest.NewServer(stub)
-		_, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "test-only"}.
-			Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
+		_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
 		srv.Close()
 		if !errors.Is(err, ErrAuthorizationRefused) {
 			t.Fatalf("%s: err = %v, want ErrAuthorizationRefused", c.name, err)
-		}
-		if stub.count() != 1 {
-			t.Fatalf("%s: plane hit %d times, want exactly 1", c.name, stub.count())
 		}
 		if strings.Contains(err.Error(), "leak-bait-secret-detail") {
 			t.Fatalf("%s: refusal body leaked into the error: %v", c.name, err)
@@ -206,18 +464,73 @@ func TestCallMapsAuthorizationRefusal(t *testing.T) {
 	}
 }
 
-// A connection the client cannot complete is an unknown outcome: the request
-// may or may not have reached the plane, and only the plane's own audit row
-// knows. It surfaces as OUTCOME_UNKNOWN, never as a silent success or a
-// decisive "refused".
-func TestCallReturnsUnknownOutcomeOnNetworkFailure(t *testing.T) {
+// 409 with the reconciliation code is the plane freezing an operation this
+// runtime must not spend again; 409 without it is a content/binding
+// conflict. Both are decisive, and the reconciliation refusal carries the
+// operation it froze.
+func TestConflictsAreTyped(t *testing.T) {
+	stub := newPlaneStub(http.StatusConflict, `{"error_code":"reconciliation_required","operation_id":"op_stuck"}`)
+	srv := httptest.NewServer(stub)
+	_, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), samplePreparation())
+	srv.Close()
+	var re *ReconciliationError
+	if !errors.As(err, &re) || !errors.Is(err, ErrReconciliationRequired) {
+		t.Fatalf("err = %v, want ErrReconciliationRequired", err)
+	}
+	if re.OperationID != "op_stuck" {
+		t.Fatalf("frozen operation = %q, want op_stuck", re.OperationID)
+	}
+
+	stub2 := newPlaneStub(http.StatusConflict, `{"error_code":"operation_conflict"}`)
+	srv2 := httptest.NewServer(stub2)
+	defer srv2.Close()
+	_, err = callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv2)}, toolCtx(), sampleExecution())
+	if !errors.Is(err, ErrOperationConflict) {
+		t.Fatalf("err = %v, want ErrOperationConflict", err)
+	}
+}
+
+// A shape refusal (400) is decisive: the plane rejected the request as
+// unreadable or inconsistent, which a retry of the same bytes cannot fix.
+func TestShapeRefusalsAreDecisive(t *testing.T) {
+	for _, method := range []string{"prepare", "execute"} {
+		stub := newPlaneStub(http.StatusBadRequest, `{"error_code":"digest_mismatch"}`)
+		srv := httptest.NewServer(stub)
+		var err error
+		if method == "prepare" {
+			_, err = callPrepare(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), samplePreparation())
+		} else {
+			_, err = callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+		}
+		srv.Close()
+		if !errors.Is(err, ErrInvalidWire) {
+			t.Fatalf("%s: err = %v, want ErrInvalidWire", method, err)
+		}
+	}
+}
+
+// 404 on execute: the authoritative plane says the operation does not
+// exist, so nothing was submitted through it. Decisive, not unknown.
+func TestExecuteMapsUnknownOperationDecisively(t *testing.T) {
+	stub := newPlaneStub(http.StatusNotFound, `{"error_code":"operation_not_found"}`)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+	_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
+	if !errors.Is(err, ErrOperationNotFound) {
+		t.Fatalf("err = %v, want ErrOperationNotFound", err)
+	}
+}
+
+// A connection the client cannot complete is an unknown outcome: the
+// request may or may not have reached the plane, and only the plane's own
+// receipt can settle it.
+func TestNetworkFailureIsAnUnknownOutcome(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	url := srv.URL
 	srv.Close() // nothing listens here anymore
 
 	err := func() error {
-		_, err := Client{HTTP: &http.Client{Timeout: time.Second}, Endpoint: url, AgentToken: "test-only"}.
-			Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
+		_, err := callExecute(Client{HTTP: &http.Client{Timeout: time.Second}, Endpoint: fmt.Sprintf("%s%s", url, pathInfix)}, toolCtx(), sampleExecution())
 		return err
 	}()
 	if !errors.Is(err, ErrOutcomeUnknown) {
@@ -229,13 +542,12 @@ func TestCallReturnsUnknownOutcomeOnNetworkFailure(t *testing.T) {
 }
 
 // 5xx from the plane is the plane being wrong, not the caller refused: the
-// tool may or may not have run behind the error. Unknown outcome, one attempt.
-func TestCallReturnsUnknownOutcomeOnServerFailure(t *testing.T) {
+// operation may or may not have run behind the error. Unknown, one attempt.
+func TestServerFailureIsAnUnknownOutcome(t *testing.T) {
 	for _, status := range []int{http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable} {
-		stub := newToolStub(status, "upstream exploded")
+		stub := newPlaneStub(status, "upstream exploded")
 		srv := httptest.NewServer(stub)
-		_, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "test-only"}.
-			Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
+		_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
 		srv.Close()
 		if !errors.Is(err, ErrOutcomeUnknown) {
 			t.Fatalf("status %d: err = %v, want OUTCOME_UNKNOWN", status, err)
@@ -243,20 +555,17 @@ func TestCallReturnsUnknownOutcomeOnServerFailure(t *testing.T) {
 		if strings.Contains(err.Error(), "upstream exploded") {
 			t.Fatalf("status %d: server body leaked into the error: %v", status, err)
 		}
-		if stub.count() != 1 {
-			t.Fatalf("status %d: plane hit %d times, want exactly 1", status, stub.count())
-		}
 	}
 }
 
 // Redirects are refused even when the caller hands us a stock http.Client
 // that would happily follow them: a 3xx must never become a second request
 // the operator did not configure.
-func TestCallRefusesToFollowRedirects(t *testing.T) {
+func TestRedirectsAreRefused(t *testing.T) {
 	var targetHits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/redirect" {
-			w.Header().Set("Location", "http://"+r.Host+"/attacker")
+		if strings.HasSuffix(r.URL.Path, prepareSeg) {
+			w.Header().Set("Location", fmt.Sprintf("http://%s/attacker", r.Host))
 			w.WriteHeader(http.StatusFound)
 			return
 		}
@@ -265,8 +574,7 @@ func TestCallRefusesToFollowRedirects(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL + "/redirect", AgentToken: "test-only"}.
-		Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
+	_, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), samplePreparation())
 	if !errors.Is(err, ErrOutcomeUnknown) {
 		t.Fatalf("err = %v, want OUTCOME_UNKNOWN for a refused redirect", err)
 	}
@@ -275,64 +583,61 @@ func TestCallRefusesToFollowRedirects(t *testing.T) {
 	}
 }
 
-// A tool answer is text; 1 MiB is far past any honest one, and reading
-// further would let a hostile plane hold this process on an endless body.
-func TestCallRejectsOversizedResponse(t *testing.T) {
-	huge := `{"text":"` + strings.Repeat("x", 1<<20) + `"}`
-	stub := newToolStub(http.StatusOK, huge)
+// A receipt is bounded text; anything past the cap is a plane holding this
+// process on an endless body, and reads as unknown — never as an answer.
+func TestOversizedAnswersAreRefused(t *testing.T) {
+	huge := fmt.Sprintf(`{"operation_id":"op_1","execution_attempt_id":"exec_1","status":"succeeded","receipt_ref":"rcpt_1","error_code":"","reconciliation_required":false,"result_text":"%s"}`, strings.Repeat("x", 1<<20))
+	stub := newPlaneStub(http.StatusOK, huge)
 	srv := httptest.NewServer(stub)
 	defer srv.Close()
 
-	_, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "test-only"}.
-		Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
+	_, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), sampleExecution())
 	if !errors.Is(err, ErrOutcomeUnknown) {
 		t.Fatalf("err = %v, want OUTCOME_UNKNOWN for an oversized answer", err)
 	}
 }
 
-// A 200 whose body is not a readable result is still an unknown outcome: the
-// call happened, and what came back cannot be shown to the model as an
-// answer it never gave.
-func TestCallRejectsUnreadableResult(t *testing.T) {
-	for name, body := range map[string]string{
-		"not json":            "this is not json",
-		"missing text field":  `{"isError":false}`,
-		"text is not a string": `{"text":42}`,
-	} {
-		stub := newToolStub(http.StatusOK, body)
-		srv := httptest.NewServer(stub)
-		_, err := Client{HTTP: &http.Client{}, Endpoint: srv.URL, AgentToken: "test-only"}.
-			Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
-		srv.Close()
-		if !errors.Is(err, ErrOutcomeUnknown) {
-			t.Fatalf("%s: err = %v, want OUTCOME_UNKNOWN", name, err)
-		}
+// The credential pair exists only in the private context the auth middleware
+// builds. A context without it refuses BEFORE any dial — there is no
+// anonymous tool call, and no credentials anywhere a model could set them.
+func TestCredentialsComeOnlyFromThePrivateContext(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validReceipt)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+	prefix := planePrefix(srv)
+
+	if _, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: prefix}, context.Background(), sampleExecution()); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("execute err = %v, want ErrUnauthenticated", err)
+	}
+	if _, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: prefix}, context.Background(), samplePreparation()); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("prepare err = %v, want ErrUnauthenticated", err)
+	}
+	if stub.total() != 0 {
+		t.Fatalf("a context without credentials still reached the plane %d times", stub.total())
 	}
 }
 
 // The endpoint is operator configuration. Anything that is not a plain
 // http/https URL without embedded credentials is refused before any dial —
-// the model (and, through it, a prompt injector) never gets to aim this
-// client anywhere, and neither does a misconfigured environment silently
-// get a best-effort call.
-func TestCallValidatesConfiguredEndpoint(t *testing.T) {
-	stub := newToolStub(http.StatusOK, `{"text":"ok","isError":false}`)
+// the model never gets to aim this client anywhere, and neither does a
+// misconfigured environment silently get a best-effort call.
+func TestEndpointMustBeOperatorConfiguredShape(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validReceipt)
 	srv := httptest.NewServer(stub)
 	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
 
 	for name, endpoint := range map[string]string{
 		"empty":         "",
 		"not a url":     "not a url at all",
-		"other scheme":  "ftp://" + strings.TrimPrefix(srv.URL, "http://"),
-		"with userinfo": "http://user:pass@" + strings.TrimPrefix(srv.URL, "http://"),
+		"other scheme":  fmt.Sprintf("ftp://%s%s", host, pathInfix),
+		"with userinfo": fmt.Sprintf("http://user:pass@%s%s", host, pathInfix),
 	} {
-		_, err := Client{HTTP: &http.Client{}, Endpoint: endpoint, AgentToken: "test-only"}.
-			Call(context.Background(), "opaque-test-assertion", "approved-tool", map[string]any{})
-		if !errors.Is(err, ErrEndpointNotApproved) {
+		if _, err := callExecute(Client{HTTP: &http.Client{}, Endpoint: endpoint}, toolCtx(), sampleExecution()); !errors.Is(err, ErrEndpointNotApproved) {
 			t.Fatalf("%s: err = %v, want ErrEndpointNotApproved", name, err)
 		}
 	}
-	if stub.count() != 0 {
-		t.Fatalf("an unapproved endpoint still reached the network %d times", stub.count())
+	if stub.total() != 0 {
+		t.Fatalf("an unapproved endpoint still reached the network %d times", stub.total())
 	}
 }

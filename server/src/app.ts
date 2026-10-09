@@ -1,6 +1,7 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { MAX_IMAGE_BYTES } from "../../shared/attachments";
 import { enterpriseControls } from "./admin/controls";
@@ -472,6 +473,23 @@ export function createApp(
   openConnector?: { broker: ConnectedAppBroker },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+  // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
+  // headers on API responses, so a bundle served from one of them can call this API. Registered
+  // before any route so it covers them all; native clients never send Origin and skip this.
+  const browserOrigins = [
+    ...(config.auth?.trustedOrigins ?? []),
+    ...(config.appUrl ? [config.appUrl] : ""),
+  ].filter((origin) => /^https?:\/\//.test(origin));
+  if (browserOrigins.length > 0) {
+    app.use(
+      "/api/*",
+      cors({
+        origin: (origin) =>
+          browserOrigins.includes(origin) ? origin : undefined,
+        credentials: true,
+      }),
+    );
+  }
   mountDesktopConnectionFailure(app, desktopHostToken);
   mountProviderOAuthProxy(app, modelProviderProxy);
 

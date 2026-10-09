@@ -1,8 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createBillingStore } from "../src/billing/store";
 import { createDatabase } from "../src/db/client";
+import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /**
@@ -62,6 +63,44 @@ test("subscription upserts converge and the status check holds", async () => {
         (external_customer_id, external_subscription_id, plan_code, status)
       VALUES (${externalId}, ${`${prefix}-bad`}, 'pro', 'pending')
     `);
+  } catch {
+    refused = true;
+  }
+  expect(refused).toBe(true);
+});
+
+test("ensureCustomerRow inserts only: a placeholder never overwrites a landed name", async () => {
+  const externalId = `${prefix}-floor`;
+  await store.upsertCustomer({ externalId, name: "The Real Name" });
+  await store.ensureCustomerRow({ externalId });
+  await store.ensureCustomerRow({ externalId });
+  const named = await database
+    .select({ name: billingCustomers.name })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, externalId));
+  expect(named.length).toBe(1);
+  expect(named[0]).toMatchObject({ name: "The Real Name" });
+
+  // Absent, it lands the nameless row a subscription projection's foreign key needs.
+  const placeholderId = `${prefix}-floor-absent`;
+  await store.ensureCustomerRow({ externalId: placeholderId });
+  const placeholder = await database
+    .select({ name: billingCustomers.name })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, placeholderId));
+  expect(placeholder.length).toBe(1);
+  expect(placeholder[0]).toMatchObject({ name: null });
+
+  // And the foreign key the floor exists for is real: a subscription for a customer with no row
+  // is refused by the database, not absorbed.
+  let refused = false;
+  try {
+    await store.upsertSubscription({
+      externalCustomerId: `${prefix}-no-such-customer`,
+      externalSubscriptionId: `${prefix}-floor-sub`,
+      planCode: "pro",
+      status: "active",
+    });
   } catch {
     refused = true;
   }

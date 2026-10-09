@@ -13,8 +13,12 @@
 // env lookups themselves:
 //
 //	OPENBOT_RUNTIME_SERVICE_CREDENTIAL  platform→runtime service credential (required)
-//	OPENBOT_RUNTIME_AGENT_TOKEN         legacy callback credential (required with governed tools)
 //	OPENBOT_RUNTIME_MODEL_CREDENTIAL    model provider credential (optional; isolated fakes need none)
+//
+// The governed tool plane needs no process-level credential: each tool call
+// presents the request's own service credential and short-term capability
+// from the private context (master plan §4.1/§4.2), so the legacy
+// OPENBOT_RUNTIME_AGENT_TOKEN is no longer part of this configuration.
 package runtimeconfig
 
 import (
@@ -32,6 +36,15 @@ import (
 type Expert struct {
 	Version     string
 	Instruction string
+}
+
+// GovernedTool is one fixed governed-tool installation: the tool name the
+// model calls and the PINNED installation version the platform authorizes
+// against (a run references concrete versions; "latest" is never resolved
+// mid-execution).
+type GovernedTool struct {
+	Name                string
+	InstallationVersion string
 }
 
 // Config is everything the real main assembles the runtime from.
@@ -52,13 +65,13 @@ type Config struct {
 	ModelProviderCredential string
 	// Experts is the fixed expert directory; at least one entry.
 	Experts []Expert
-	// GovernedTools names the platform-governed tools this runtime exposes;
-	// optional, but requires CallbackEndpoint and AgentToken.
-	GovernedTools []string
-	// CallbackEndpoint is the legacy tool plane address for governed tools.
+	// GovernedTools is the fixed governed-tool directory; optional, but
+	// requires CallbackEndpoint.
+	GovernedTools []GovernedTool
+	// CallbackEndpoint is the FIXED internal tool-invocations plane address
+	// (the .../internal/enterprise/v1/tool-invocations prefix the client
+	// builds its prepare/execute paths from); required with governed tools.
 	CallbackEndpoint string
-	// AgentToken is the legacy callback credential from the environment.
-	AgentToken string
 	// MaxConcurrentRuns bounds in-flight run executions (RunGate).
 	MaxConcurrentRuns int
 	// DrainTimeout bounds the SIGTERM drain window; CancelGrace bounds the
@@ -105,8 +118,8 @@ func Load(args []string, env func(string) string) (Config, error) {
 	fs.StringVar(&modelBaseURL, "model-base-url", "", "OpenAI-compatible provider base URL; required")
 	fs.StringVar(&modelAlias, "model-alias", "", "model alias the fixed client sends; required")
 	fs.Var(&experts, "expert", "expert catalog entry version=path/to/instruction.txt; repeatable; at least one required")
-	fs.StringVar(&governedTools, "governed-tools", "", "comma-separated platform-governed tool names; optional")
-	fs.StringVar(&callbackEP, "callback-endpoint", "", "legacy tool plane endpoint for governed tools")
+	fs.StringVar(&governedTools, "governed-tools", "", "comma-separated platform-governed tool entries name=installation_version; optional")
+	fs.StringVar(&callbackEP, "callback-endpoint", "", "internal tool-invocations plane address (.../internal/enterprise/v1/tool-invocations); required with -governed-tools")
 	fs.IntVar(&maxRuns, "max-concurrent-runs", 20, "maximum concurrent run executions (suggested limit, not a measured capacity)")
 	fs.DurationVar(&drainTimeout, "drain-timeout", 15*time.Second, "SIGTERM drain window before in-flight runs are cancelled")
 	fs.DurationVar(&cancelGrace, "cancel-grace", 5*time.Second, "extra wait after cancelling in-flight runs")
@@ -136,23 +149,29 @@ func Load(args []string, env func(string) string) (Config, error) {
 		problems = append(problems, "OPENBOT_RUNTIME_SERVICE_CREDENTIAL (platform service credential) is required from the environment")
 	}
 
-	var tools []string
+	var tools []GovernedTool
 	if strings.TrimSpace(governedTools) != "" {
-		for _, name := range strings.Split(governedTools, ",") {
-			if name = strings.TrimSpace(name); name != "" {
-				tools = append(tools, name)
+		for _, entry := range strings.Split(governedTools, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
 			}
+			name, version, ok := strings.Cut(entry, "=")
+			name, version = strings.TrimSpace(name), strings.TrimSpace(version)
+			if !ok || name == "" || version == "" {
+				problems = append(problems, fmt.Sprintf("-governed-tools %q: want name=installation_version (versions are pinned, never latest)", entry))
+				continue
+			}
+			tools = append(tools, GovernedTool{Name: name, InstallationVersion: version})
 		}
 	}
-	// OPENBOT_RUNTIME_AGENT_TOKEN: the legacy callback credential, required
-	// only when governed tools are configured.
-	agentToken := strings.TrimSpace(env("OPENBOT_RUNTIME_AGENT_TOKEN"))
+	// The tool plane authenticates each call with the service credential
+	// and the run's short-term capability — both per-request, from the
+	// private context — so there is no process-level tool credential to
+	// require here anymore.
 	if len(tools) > 0 {
 		if err := checkHTTPEndpoint(callbackEP); err != nil {
 			problems = append(problems, "-callback-endpoint (required with -governed-tools): "+err.Error())
-		}
-		if agentToken == "" {
-			problems = append(problems, "OPENBOT_RUNTIME_AGENT_TOKEN (legacy callback agent token) is required from the environment when governed tools are configured")
 		}
 	}
 
@@ -185,7 +204,6 @@ func Load(args []string, env func(string) string) (Config, error) {
 		Experts:                 catalog,
 		GovernedTools:           tools,
 		CallbackEndpoint:        callbackEP,
-		AgentToken:              agentToken,
 		MaxConcurrentRuns:       maxRuns,
 		DrainTimeout:            drainTimeout,
 		CancelGrace:             cancelGrace,

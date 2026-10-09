@@ -46,9 +46,14 @@ import {
 import type { CheckPrivateShare } from "../proactive/private-share";
 import {
   accessFor,
+  brokerToolkitOf,
   type ServerAccess,
   ServerUnresolvableError,
 } from "./access";
+import {
+  isBrokeredProvenance,
+  type BrokeredProvenance,
+} from "../../../shared/src/brokered-provenance";
 import {
   type BrokerConnection,
   BrokerRefusalError,
@@ -72,12 +77,12 @@ import {
 import {
   asksForArguments,
   askAction as composioAskAction,
-  toolkitOf,
   VERSION_ARG,
 } from "./composio";
 import { inspectToolArguments } from "./content-governance";
 import { type ListedTool, McpServerError } from "./mcp";
 import { registerDynamicClient } from "./oauth";
+import { deploymentAlias, personalAlias } from "./openconnector";
 import { shareTargetOf } from "./share-target";
 import {
   type AccountAnswer,
@@ -234,6 +239,14 @@ export type ServerAddress = {
   id: string;
   title: string;
   url: string;
+  /**
+   * Which broker a brokered row was enabled through, and `custom`/`first-party` for the rest.
+   *
+   * Travels with the url because the two are one fact: the url's scheme is the broker's, and a
+   * caller deciding "which broker's client does this row's connect go through" needs the row's own
+   * word for it rather than a guess off the slug — the same slug may be enabled under either.
+   */
+  provenance: string;
   /**
    * How this row's authorization config was created, for the brokered rows that have one.
    *
@@ -1162,6 +1175,13 @@ export type PluginStoreOptions = {
       token?: string;
       actorId?: string;
       botId?: string;
+      /**
+       * The broker-side handle of the account this call runs in — the shared connection shape's
+       * `accountHandle`, mirrored here so the injected seam sees exactly what the real transports
+       * do. See `./transport` for whose account it names and why a credential-based transport
+       * ignores it.
+       */
+      accountHandle?: string;
     },
     toolName: string,
     args: Record<string, unknown>,
@@ -1236,6 +1256,38 @@ function schemeFor(connection: BrokerConnection): RecordedScheme | null {
   }
 }
 
+/**
+ * How each broker's rows are spelled, keyed by the provenance that names the broker on a row.
+ *
+ * ONE MAP RATHER THAN A `composio` LITERAL AT EACH COMPOSITION SITE, because those sites are the
+ * places a row is minted — the id a grant and a policy rule are written against, the url every
+ * brokered reader resolves the app by, the provenance column that says which broker owns the row —
+ * and they were four independent spellings of one fact. A third broker is a row here, and the
+ * compiler asks for it everywhere the fact is composed; a literal per site is the drift the
+ * `toolkit` derivation in `access.ts` already suffered.
+ *
+ * `screenName` is the lower-case route fragment (`/admin/plugins/open-connector`), `vendor` the
+ * display name a person reads — the same word the row's `vendor` column and the unconfigured
+ * refusal name.
+ */
+const BROKER_ROW: Record<
+  BrokeredProvenance,
+  { idPrefix: string; urlScheme: string; screenName: string; vendor: string }
+> = {
+  composio: {
+    idPrefix: "composio-",
+    urlScheme: "composio://",
+    screenName: "composio",
+    vendor: "Composio",
+  },
+  "open-connector": {
+    idPrefix: "open-connector-",
+    urlScheme: "openconnector://",
+    screenName: "open-connector",
+    vendor: "OpenConnector",
+  },
+};
+
 export function createPluginStore(options: PluginStoreOptions) {
   const { database, auditStore, credentials, encryptionKey } = options;
   /*
@@ -1250,6 +1302,20 @@ export function createPluginStore(options: PluginStoreOptions) {
   // No default, unlike the seams above: there is no real implementation in this tree to fall back
   // to, and a deployment with no Composio key is supposed to have no broker. See `./broker`.
   const broker = options.broker;
+  /*
+   * THE DISPATCH RULE, and the only one in this module: which broker client a brokered row's acts
+   * go through is a fact about the row — read off its provenance, `accessFor`'s `broker` field, or
+   * the `provider` an enabling call named — and never about which broker happened to be wired
+   * first. Every path below that asks a broker asks it through here, so a row enabled through
+   * OpenConnector is connected, confirmed, re-checked, disconnected, offboarded and removed through
+   * OpenConnector's client, and a Composio row through Composio's, with no per-path predicate to
+   * forget. `null` where this deployment configured no client for that broker, which each caller
+   * refuses on in its own words — the unconfigured state is a supported one, not a misconfiguration.
+   */
+  const openConnectorBroker = options.openConnector?.broker ?? null;
+  function brokerFor(provider: BrokeredProvenance): ConnectedAppBroker | null {
+    return provider === "open-connector" ? openConnectorBroker : broker ?? null;
+  }
 
   /*
    * One exchange at a time per (server, person). A rotating vendor invalidates the refresh
@@ -1451,9 +1517,8 @@ export function createPluginStore(options: PluginStoreOptions) {
      * A BROKERED ROW WITH NO ANSWERING ROW IS NOT AN APP ANY MORE. The dialled row sits at the url,
      * so only a removal racing this read gets here, and it is refused as the missing row is above.
      */
-    const toolkit =
-      dialled.provenance === "composio" ? toolkitOf(dialled.url) : null;
-    const app = toolkit ? await brokeredAppRow(toolkit) : null;
+    const toolkit = brokerToolkitOf(dialled.provenance, dialled.url);
+    const app = toolkit ? await brokeredAppRow(dialled.url) : null;
     if (toolkit && !app)
       return {
         refusal: `${serverId} is not an app this deployment has added.`,
@@ -1487,7 +1552,27 @@ export function createPluginStore(options: PluginStoreOptions) {
           refusal: `${row.title} runs in the account of the person asking, and this run is not attributed to anybody.`,
         };
       return {
-        ref: { holder: "person", userId: actorId, vendorUserId: actorId },
+        /*
+         * THE VENDOR USER ID IS THE PERSON'S ID AT COMPOSIO AND THE MINTED ALIAS AT OPENCONNECTOR.
+         *
+         * Composio keeps people apart by a user id this deployment sends with every call, and the
+         * person's own id is that answer — it already exists and nobody here has to invent it.
+         * OpenConnector keeps them apart by named connections, so the per-person mapping has to be
+         * MINTED, deterministically, from the two ids this read already trusts: the person and the
+         * app the url names. It is minted here rather than at the connect because this function is
+         * the one resolver every brokered path asks whose account an act is for — connect, call,
+         * disconnect — and an id minted in only one of them is an id the others do not recognize.
+         * Never taken from a request: the alias names whose account a call runs in, and a caller
+         * choosing it would be choosing the account.
+         */
+        ref: {
+          holder: "person",
+          userId: actorId,
+          vendorUserId:
+            dialled.provenance === "open-connector" && toolkit !== null
+              ? personalAlias(actorId, toolkit)
+              : actorId,
+        },
         title: row.title,
         mode: "personal",
         appId,
@@ -1506,17 +1591,31 @@ export function createPluginStore(options: PluginStoreOptions) {
     };
   }
 
-  /** The WHERE clause for one account's row, by holder. */
-  const accountRow = (toolkit: string, account: AccountRef) =>
+  /**
+   * The WHERE clause for one account's row, by holder.
+   *
+   * THE PROVIDER COMES WITH THE CALL AND IS THE ONLY ADMISSIBLE SOURCE, because the app slug does
+   * not name a broker: `github` may be enabled through Composio and OpenConnector at once, and the
+   * pair `(provider, app)` is what one connection row IS. A literal here — either literal — would
+   * gate an OpenConnector person against Composio's connections, or the other way about, and the
+   * gate would answer for the wrong broker's app while every sentence around it named the right
+   * one. Callers read it off the row's own provenance, which is the same spelling the connection
+   * was written under.
+   */
+  const accountRow = (
+    toolkit: string,
+    account: AccountRef,
+    provider: BrokeredProvenance,
+  ) =>
     account.holder === "person"
       ? and(
-          eq(brokeredConnections.provider, "composio"),
+          eq(brokeredConnections.provider, provider),
           eq(brokeredConnections.app, toolkit),
           eq(brokeredConnections.holder, "person"),
           eq(brokeredConnections.userId, account.userId),
         )
       : and(
-          eq(brokeredConnections.provider, "composio"),
+          eq(brokeredConnections.provider, provider),
           eq(brokeredConnections.app, toolkit),
           eq(brokeredConnections.holder, "deployment"),
         );
@@ -1605,10 +1704,11 @@ export function createPluginStore(options: PluginStoreOptions) {
        * Narrowing, and a refusal that is genuinely reachable.
        *
        * `access.toolkit` is the app slug read off this row's url in `access.ts`, and it is NULL
-       * whenever that url does not name a Composio app — `accessFor` still answers `brokered` for
-       * any row whose provenance column says composio, so `{ credential: "brokered", toolkit: null }`
-       * is a state a hand-edited or restored row really produces. The test beside `accessFor`
-       * asserts it, and `plugin-store.integration.test.ts` gates this branch end to end.
+       * whenever that url does not name the app of the broker its provenance names — `accessFor`
+       * still answers `brokered` for any row whose provenance column says a broker's name, so
+       * `{ credential: "brokered", toolkit: null }` is a state a hand-edited or restored row
+       * really produces. The test beside `accessFor` asserts it, and
+       * `plugin-store.integration.test.ts` gates this branch end to end.
        *
        * A throw rather than a fallback, for the reason the `user-oauth` narrowing below throws: both
        * alternatives fail open. Falling back to `row.id` checks the connection against a spelling
@@ -1616,12 +1716,19 @@ export function createPluginStore(options: PluginStoreOptions) {
        * whole purpose is to keep one person's account out of another's. The compiler forces SOME
        * narrowing here — drizzle's `eq` will not take `string | null` — but only the test named
        * above stops that narrowing from being the fallback.
+       *
+       * `access.broker` narrows beside it for the same need: the connection table's provider is
+       * half of every row's key, and the row's own provenance — resolved once, in `access.ts` — is
+       * the only spelling of which broker this gate is a gate FOR. Unreachable by construction for
+       * the same reason the toolkit fallback is: `accessFor` answers `brokered` from the brokered
+       * branch alone, which always names the broker.
        */
-      if (!access.toolkit) {
+      if (!access.toolkit || !access.broker) {
         throw new PluginInvariantError(
-          `${row.id} resolves to a brokered credential with no Composio app in its url.`,
+          `${row.id} resolves to a brokered credential with no app in its url.`,
         );
       }
+      const provider = access.broker;
 
       /*
        * AN APP THAT NEEDS NO AUTHENTICATION HAS NO ROW TO FIND, AND CANNOT EVER HAVE ONE.
@@ -1659,7 +1766,8 @@ export function createPluginStore(options: PluginStoreOptions) {
        * per connector on any deployment, and the call it guards is a network round trip to the
        * vendor.
        */
-      if ((await brokeredAppKind(access.toolkit)) === "none") return {};
+      if ((await brokeredAppKind(provider, access.toolkit)) === "none")
+        return {};
 
       /**
        * WHAT THAT GATE ANSWERS FOR EACH KIND OF APP, WRITTEN DOWN BECAUSE THE LINE ABOVE DOES NOT.
@@ -1710,7 +1818,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       const [connected] = await database
         .select({ vendorUserId: brokeredConnections.vendorUserId })
         .from(brokeredConnections)
-        .where(accountRow(access.toolkit, resolved.ref))
+        .where(accountRow(access.toolkit, resolved.ref, provider))
         .limit(1);
       if (!connected) {
         throw new PluginRefusedError(
@@ -2626,8 +2734,8 @@ export function createPluginStore(options: PluginStoreOptions) {
      * with it, so the audience gate decides on and keys its approval by the row that answers rather
      * than the one that was dialled. Null for every row that is not a brokered app.
      */
-    const toolkit = row.provenance === "composio" ? toolkitOf(row.url) : null;
-    const app = toolkit ? await brokeredAppRow(toolkit) : null;
+    const toolkit = brokerToolkitOf(row.provenance, row.url);
+    const app = toolkit ? await brokeredAppRow(row.url) : null;
     const access = accessFor(
       app
         ? { ...row, authScheme: app.authScheme, accountMode: app.accountMode }
@@ -2660,13 +2768,16 @@ export function createPluginStore(options: PluginStoreOptions) {
   /**
    * The one `mcp_servers` row that answers for the app a url names: its id, and its scheme.
    *
-   * KEYED ON THE URL, which is where a brokered row records which app it is; `mcp_servers.id` is a
-   * display name and nothing holds the two equal. A row called `gmail` at `composio://slack` would
-   * have somebody's Slack key attached to a scheme read off Gmail's row — and, through the id this
-   * also answers, a probe chosen off Gmail's action list and spent on their Slack key. That stake is
-   * shared by every caller: {@link connectBrokeredWithFields}, {@link recheckBrokeredConnection},
-   * {@link confirmBrokeredConnection} and {@link disconnectBrokered} read the scheme,
-   * {@link probeBrokeredConnection} reads the id.
+   * KEYED ON THE URL — THE WHOLE URL, WHOSE SCHEME IS THE BROKER — which is where a brokered row
+   * records which app it is; `mcp_servers.id` is a display name and nothing holds the two equal.
+   * A row called `gmail` at `composio://slack` would have somebody's Slack key attached to a scheme
+   * read off Gmail's row — and, through the id this also answers, a probe chosen off Gmail's action
+   * list and spent on their Slack key. That stake is shared by every caller: {@link
+   * connectBrokeredWithFields}, {@link recheckBrokeredConnection}, {@link confirmBrokeredConnection}
+   * and {@link disconnectBrokered} read the scheme, {@link probeBrokeredConnection} reads the id.
+   * And the broker is not derivable from the app slug — `github` may be enabled through either
+   * broker — so a caller that holds only the slug uses {@link brokeredAppRowFor}, which takes the
+   * broker beside it, rather than this function guessing one.
    *
    * AND ORDERED, BECAUSE THE URL IS NOT A KEY. `mcp_servers.url` has no unique index behind it, so
    * two rows may name one app and `limit(1)` over them is the planner's choice rather than an
@@ -2688,11 +2799,16 @@ export function createPluginStore(options: PluginStoreOptions) {
    * connected under any more, and every caller treats the null as "not an app we hold a key for" —
    * or, for the probe, as "there is no app left to check".
    */
-  async function brokeredAppRow(
+  async function brokeredAppRow(url: string): Promise<BrokeredAppRow | null> {
+    return (await brokeredAppRowsAt([url])).get(url) ?? null;
+  }
+
+  /** {@link brokeredAppRow} for a caller holding the broker and the app slug, not the row's url. */
+  async function brokeredAppRowFor(
+    provider: BrokeredProvenance,
     toolkit: string,
   ): Promise<BrokeredAppRow | null> {
-    const url = `composio://${toolkit}`;
-    return (await brokeredAppRowsAt([url])).get(url) ?? null;
+    return brokeredAppRow(`${BROKER_ROW[provider].urlScheme}${toolkit}`);
   }
 
   /**
@@ -2736,9 +2852,16 @@ export function createPluginStore(options: PluginStoreOptions) {
     return answering;
   }
 
-  /** {@link brokeredAppRow}'s scheme, for the callers that ask only what the app is connected with. */
-  async function brokeredAppScheme(toolkit: string): Promise<string | null> {
-    return (await brokeredAppRow(toolkit))?.authScheme ?? null;
+  /**
+   * {@link brokeredAppRow}'s scheme, for the callers that ask only what the app is connected with.
+   * Takes the broker beside the slug for the reason `brokeredAppRowFor` gives: the slug alone names
+   * no broker, and the scheme belongs to the app of the broker the row's provenance names.
+   */
+  async function brokeredAppScheme(
+    provider: BrokeredProvenance,
+    toolkit: string,
+  ): Promise<string | null> {
+    return (await brokeredAppRowFor(provider, toolkit))?.authScheme ?? null;
   }
 
   /**
@@ -2755,8 +2878,11 @@ export function createPluginStore(options: PluginStoreOptions) {
    * {@link SchemeKind}: `unreadable` is what a caller needs in order to fail closed, and a boolean
    * cannot carry it.
    */
-  async function brokeredAppKind(toolkit: string): Promise<SchemeKind> {
-    return schemeKind(await brokeredAppScheme(toolkit));
+  async function brokeredAppKind(
+    provider: BrokeredProvenance,
+    toolkit: string,
+  ): Promise<SchemeKind> {
+    return schemeKind(await brokeredAppScheme(provider, toolkit));
   }
 
   return {
@@ -2933,6 +3059,17 @@ export function createPluginStore(options: PluginStoreOptions) {
       }
 
       /*
+       * The OpenConnector twin, for the same reason word for word: `/admin/plugins/open-connector`
+       * is a static route of its own, and a server at this id would be listed and then open the
+       * directory page instead of its own.
+       */
+      if (input.id === "open-connector") {
+        throw new CustomServerRefusedError(
+          "open-connector is the name of this deployment's own OpenConnector screen, so a server added there could never be opened. Choose another.",
+        );
+      }
+
+      /*
        * NOR THE NAMESPACE THE BROKERED ROWS ARE MINTED IN, which is the reservation above one step
        * further out.
        *
@@ -2959,6 +3096,18 @@ export function createPluginStore(options: PluginStoreOptions) {
       if (input.id.startsWith("composio-")) {
         throw new CustomServerRefusedError(
           `Names beginning composio- belong to the Composio apps this deployment enables, so ${input.id} is not a name a server added by URL can take. Choose another.`,
+        );
+      }
+
+      /*
+       * AND THE OPENCONNECTER NAMESPACE, for the reason the one above gives at full length: its
+       * enable path composes `open-connector-<slug>` and writes `openconnector://` urls into that
+       * space, and a typed endpoint over an app somebody is connected to is the collision neither
+       * path can undo. Same sentence, names swapped.
+       */
+      if (input.id.startsWith("open-connector-")) {
+        throw new CustomServerRefusedError(
+          `Names beginning open-connector- belong to the OpenConnector apps this deployment enables, so ${input.id} is not a name a server added by URL can take. Choose another.`,
         );
       }
       if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(input.id)) {
@@ -3165,6 +3314,16 @@ export function createPluginStore(options: PluginStoreOptions) {
       logo?: string | null;
       by: string;
       /**
+       * Which broker this app is enabled through — the provenance the row will carry.
+       *
+       * OPTIONAL BECAUSE THE FIRST CALLER PREDATES THE SECOND BROKER, not because the answer is
+       * optional: absent means Composio, which is the only answer the one route that omits it can
+       * be making (it reads the app out of Composio's own directory), and the OpenConnector
+       * directory route names it explicitly. A literal below would silently file an OpenConnector
+       * enable as a Composio row, and every gate after that would answer for the wrong broker.
+       */
+      provider?: BrokeredProvenance;
+      /**
        * How this app connects, resolved from the catalogue row the administrator chose.
        *
        * Taken rather than derived here, because the caller has already read it off that row and a
@@ -3173,14 +3332,23 @@ export function createPluginStore(options: PluginStoreOptions) {
        */
       connection: BrokerConnection;
     }): Promise<ServerRecord> {
-      // Before anything at all. A deployment with no key has no catalogue for this app to have been
-      // chosen from, so there is nothing here to half-do and nothing to say but the setting.
-      if (!broker) throw new BrokerUnconfiguredError();
+      const provider = input.provider ?? "composio";
+      /*
+       * Every fact this method composes about the row, from the one map. See {@link BROKER_ROW} for
+       * why the id, the url scheme, the screen name and the vendor are spelled once rather than at
+       * the four sites that write them.
+       */
+      const named = BROKER_ROW[provider];
+      // The client that answers for this broker, and the unconfigured refusal in its own name —
+      // a deployment with no OpenConnector tokens is a supported state, and the sentence has to
+      // name the setting that is unset rather than the other broker's.
+      const client = brokerFor(provider);
+      if (!client) throw new BrokerUnconfiguredError(named.vendor);
 
-      const url = `composio://${input.slug}`;
-      if (toolkitOf(url) !== input.slug) {
+      const url = `${named.urlScheme}${input.slug}`;
+      if (brokerToolkitOf(provider, url) !== input.slug) {
         throw new CustomServerRefusedError(
-          `${input.slug} is not a name a Composio app can have. An app is named in letters, numbers, underscores and hyphens, because that name is read back out of this row's url to decide which app a call is against.`,
+          `${input.slug} is not a name a ${named.vendor} app can have. An app is named in letters, numbers, underscores and hyphens, because that name is read back out of this row's url to decide which app a call is against.`,
         );
       }
 
@@ -3191,9 +3359,9 @@ export function createPluginStore(options: PluginStoreOptions) {
        * It is the scheme the app's ANSWERING row records, which is what every brokered reader
        * resolves and is not always the row the upsert names. See {@link brokeredAppRow}.
        */
-      const recorded = await brokeredAppScheme(input.slug);
+      const recorded = await brokeredAppScheme(provider, input.slug);
 
-      const configured = await broker.ensureAuthConfig({
+      const configured = await client.ensureAuthConfig({
         toolkit: input.slug,
         name: input.title,
         connection: input.connection,
@@ -3241,16 +3409,16 @@ export function createPluginStore(options: PluginStoreOptions) {
       await database
         .insert(mcpServers)
         .values({
-          id: `composio-${input.slug}`,
+          id: `${named.idPrefix}${input.slug}`,
           title: input.title,
           logo: input.logo ?? null,
           // The broker, whoever publishes the app behind it. `vendor` is what the first-party rule
-          // is checked against, and Composio is who this deployment is actually talking to.
-          vendor: "Composio",
+          // is checked against, and `named.vendor` is who this deployment is actually talking to.
+          vendor: named.vendor,
           url,
-          provenance: "composio",
+          provenance: provider,
           // Nothing for the vault to hold. A brokered call runs as the person asking, on their own
-          // connection at the vendor, which is a `composio_connections` row rather than a secret.
+          // connection at the vendor, which is a `brokered_connections` row rather than a secret.
           credentialId: null,
           /*
            * What the config standing at Composio was created AS, which is the scheme every later
@@ -3294,9 +3462,10 @@ export function createPluginStore(options: PluginStoreOptions) {
              * WRITTEN BESIDE THE URL, BECAUSE THE TWO ARE ONE FACT AND A ROW HOLDING HALF OF IT IS
              * NOT A SERVER AT ALL.
              *
-             * CRITERION. Every row this method leaves behind says `composio`, whatever it said
-             * before. The url above and this column are what `accessFor` reads to answer that a call
-             * is brokered and which app it is against, and no path may write one without the other.
+             * CRITERION. Every row this method leaves behind says `provider` — the broker this
+             * enable named — whatever it said before. The url above and this column are what
+             * `accessFor` reads to answer that a call is brokered and which app it is against, and
+             * no path may write one without the other.
              *
              * REASON. This branch rewrote the url and left `provenance` standing, so enabling an app
              * at an id a custom server already held produced a row reading `custom` at a
@@ -3310,11 +3479,11 @@ export function createPluginStore(options: PluginStoreOptions) {
              * revoked nothing and reported the connector gone.
              *
              * A CONVERSION HERE, A REFUSAL IN THE OTHER DIRECTION, and the asymmetry is the point.
-             * What this method writes IS the app — the auth config stands at Composio before the row
-             * is touched, and the url names the app the connections will be keyed on — so a row it
-             * lands on comes out saying exactly what it now is, with nothing lost. Going the other
-             * way, the url being overwritten is the only record of which app a set of consents
-             * belongs to, and no column written alongside brings it back; see
+             * What this method writes IS the app — the auth config stands at the broker before the
+             * row is touched, and the url names the app the connections will be keyed on — so a
+             * row it lands on comes out saying exactly what it now is, with nothing lost. Going
+             * the other way, the url being overwritten is the only record of which app a set of
+             * consents belongs to, and no column written alongside brings it back; see
              * {@link requireNotBrokered}.
              *
              * `vendor` for the same reason one notch quieter: it is what the first-party rule is
@@ -3322,8 +3491,8 @@ export function createPluginStore(options: PluginStoreOptions) {
              * host somebody typed is answering that rule about a server this deployment no longer
              * dials.
              */
-            provenance: "composio",
-            vendor: "Composio",
+            provenance: provider,
+            vendor: named.vendor,
             addedBy: input.by,
             updatedAt: new Date(),
             /*
@@ -3374,7 +3543,7 @@ export function createPluginStore(options: PluginStoreOptions) {
        * in a binding so that nothing below can take it by mistake.
        */
       const answering =
-        (await brokeredAppRow(input.slug))?.id ?? `composio-${input.slug}`;
+        (await brokeredAppRow(url))?.id ?? `${named.idPrefix}${input.slug}`;
 
       /**
        * WHICH ROW EACH ACT OF AN ENABLE NAMES, WRITTEN DOWN BECAUSE NOTHING ELSE CAN SAY IT.
@@ -3458,7 +3627,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         .from(brokeredConnections)
         .where(
           and(
-            eq(brokeredConnections.provider, "composio"),
+            eq(brokeredConnections.provider, provider),
             eq(brokeredConnections.app, input.slug),
           ),
         )
@@ -3512,7 +3681,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           // Named for the same reason the custom path names its own: "who enabled an app whose
           // actions nobody reviewed" is a question somebody will ask, and the answer should not
           // require knowing how ids were spelled in a past build.
-          provenance: "composio",
+          provenance: provider,
         },
       });
 
@@ -3711,9 +3880,16 @@ export function createPluginStore(options: PluginStoreOptions) {
        * deployment holds at Composio, not an account — while a live account whose config has
        * already been deleted is access that nothing left here can end.
        */
-      const toolkit = existing ? accessFor(existing, null).toolkit : null;
+      /*
+       * Resolved once for both questions the removal of a brokered app asks: which app the row's
+       * url names, and through which broker — the second deciding whose connection rows to clear
+       * and which client to revoke through, exactly as the call gate does. See {@link brokerFor}.
+       */
+      const access = existing ? accessFor(existing, null) : null;
+      const toolkit = access?.toolkit ?? null;
+      const provider = access?.broker ?? null;
 
-      if (toolkit) {
+      if (toolkit && provider) {
         /*
          * Read before anything is deleted, because the revokes below need the people and the rows
          * are where the people are. Sorted, so two removals of the same app revoke in the same
@@ -3728,7 +3904,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           .from(brokeredConnections)
           .where(
             and(
-              eq(brokeredConnections.provider, "composio"),
+              eq(brokeredConnections.provider, provider),
               eq(brokeredConnections.app, toolkit),
             ),
           )
@@ -3760,15 +3936,20 @@ export function createPluginStore(options: PluginStoreOptions) {
 
         /*
          * What the broker was actually asked for each of them, kept so the trail below records the
-         * answer rather than the call. False where there is no broker at all: a deployment whose
-         * key has since been unset can still remove the app, and it could not have been calling it
-         * either way — but nothing was asked of Composio and the row must not claim otherwise.
+         * answer rather than the call. False where this deployment configured no client for the
+         * broker the row names: a deployment whose Composio key has since been unset can still
+         * remove the app, and it could not have been calling it either way — but nothing was asked
+         * of the vendor and the row must not claim otherwise.
          */
+        const client = brokerFor(provider);
         const vendorRevocationRequested: boolean[] = [];
         for (const connection of connected) {
           vendorRevocationRequested.push(
-            broker
-              ? await broker.revoke({ account: accountOf(connection), toolkit })
+            client
+              ? await client.revoke({
+                  account: accountOf(connection),
+                  toolkit,
+                })
               : false,
           );
         }
@@ -3777,7 +3958,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           .delete(brokeredConnections)
           .where(
             and(
-              eq(brokeredConnections.provider, "composio"),
+              eq(brokeredConnections.provider, provider),
               eq(brokeredConnections.app, toolkit),
             ),
           );
@@ -3835,9 +4016,9 @@ export function createPluginStore(options: PluginStoreOptions) {
           });
         }
 
-        // Last of all, for the reason above, and skipped entirely on a deployment with no
-        // broker to have made one.
-        if (broker) await broker.deleteAuthConfig(toolkit);
+        // Last of all, for the reason above, and skipped entirely on a deployment with no client
+        // for the broker this row was enabled through to have made one.
+        if (client) await client.deleteAuthConfig(toolkit);
       }
 
       const released = await database.transaction(async (transaction) => {
@@ -4355,31 +4536,32 @@ export function createPluginStore(options: PluginStoreOptions) {
        * ONE EXTRA READ FOR THE WHOLE LIST, and none where the deployment has enabled no apps.
        */
       const brokeredApps = await brokeredAppRowsAt(
-        rows.filter((row) => toolkitOf(row.url) !== null).map((row) => row.url),
+        rows
+          .filter((row) => brokerToolkitOf(row.provenance, row.url) !== null)
+          .map((row) => row.url),
       );
 
       /*
        * WHICH APPS THE DEPLOYMENT HOLDS AN ACCOUNT AT, IN ONE READ FOR THE WHOLE LIST. Keyed by
-       * app rather than by server, because the account belongs to the app's url and not to a row:
-       * two rows at one url are one Composio app with one deployment account behind it.
+       * broker AND app rather than by server, because the account belongs to the app's url and not
+       * to a row: two rows at one url are one app with one deployment account behind it, and the
+       * same slug under two brokers is two apps with two accounts.
        */
       const deploymentHeld = new Set(
         (
           await database
-            .select({ app: brokeredConnections.app })
+            .select({
+              provider: brokeredConnections.provider,
+              app: brokeredConnections.app,
+            })
             .from(brokeredConnections)
-            .where(
-              and(
-                eq(brokeredConnections.provider, "composio"),
-                eq(brokeredConnections.holder, "deployment"),
-              ),
-            )
-        ).map((held) => held.app),
+            .where(eq(brokeredConnections.holder, "deployment"))
+        ).map((held) => `${held.provider}::${held.app}`),
       );
 
       return rows.map((row) => {
         const entry = catalogueEntry(row.id);
-        const toolkit = toolkitOf(row.url);
+        const toolkit = brokerToolkitOf(row.provenance, row.url);
         return {
           id: row.id,
           title: row.title,
@@ -4412,7 +4594,9 @@ export function createPluginStore(options: PluginStoreOptions) {
           sharedVendorConnected:
             toolkit !== null &&
             brokeredApps.get(row.url)?.accountMode === "shared" &&
-            deploymentHeld.has(toolkit),
+            // Provider-paired, because the slug alone names no broker and a deployment may hold
+            // the same app's shared account under either.
+            deploymentHeld.has(`${row.provenance}::${toolkit}`),
           tools: tools
             .filter((tool) => tool.serverId === row.id)
             .map((tool) => {
@@ -4496,15 +4680,16 @@ export function createPluginStore(options: PluginStoreOptions) {
           id: mcpServers.id,
           title: mcpServers.title,
           url: mcpServers.url,
+          provenance: mcpServers.provenance,
           authScheme: mcpServers.authScheme,
         })
         .from(mcpServers)
         .where(eq(mcpServers.id, serverId))
         .limit(1);
       if (!row) return undefined;
-      const toolkit = toolkitOf(row.url);
+      const toolkit = brokerToolkitOf(row.provenance, row.url);
       if (!toolkit) return { ...row, accountMode: null };
-      const app = await brokeredAppRow(toolkit);
+      const app = await brokeredAppRow(row.url);
       return {
         ...row,
         authScheme: app?.authScheme ?? null,
@@ -4538,12 +4723,18 @@ export function createPluginStore(options: PluginStoreOptions) {
       serverId: string,
     ): Promise<{ toolkit: string; accounts: AccountRef[] } | null> {
       const [row] = await database
-        .select({ url: mcpServers.url })
+        .select({ url: mcpServers.url, provenance: mcpServers.provenance })
         .from(mcpServers)
         .where(eq(mcpServers.id, serverId))
         .limit(1);
-      const toolkit = row ? toolkitOf(row.url) : null;
-      if (!toolkit) return null;
+      const toolkit = row
+        ? brokerToolkitOf(row.provenance, row.url)
+        : null;
+      // The provenance guard is unreachable for a row whose toolkit parsed — `brokerToolkitOf`
+      // answers null for every non-brokered provenance — but it is what hands the predicate below
+      // the narrowed type, so the impossibility is spelled rather than cast.
+      if (!row || !toolkit || !isBrokeredProvenance(row.provenance))
+        return null;
       const held = await database
         .select({
           holder: brokeredConnections.holder,
@@ -4553,7 +4744,9 @@ export function createPluginStore(options: PluginStoreOptions) {
         .from(brokeredConnections)
         .where(
           and(
-            eq(brokeredConnections.provider, "composio"),
+            // The row's own provenance, which is the only spelling of whose accounts these are:
+            // the app slug names no broker on its own.
+            eq(brokeredConnections.provider, row.provenance),
             eq(brokeredConnections.app, toolkit),
           ),
         );
@@ -4580,6 +4773,15 @@ export function createPluginStore(options: PluginStoreOptions) {
      * every call would go on running as it did. The id given is resolved to its url, the url to its
      * app, and the app to its answering row; a row that names no app is written as itself, which is
      * the only row there is to write.
+     *
+     * THE IDENTITY IS RE-MINTED HERE FOR AN OPENCONNECTOR APP, and the caller's value is the one
+     * kept for a Composio app. The caller mints a Composio identity because that is the only broker
+     * it knew when it was written; which identity a Shared account needs is a fact about the row —
+     * Composio's is random and minted once per switch, OpenConnector's is the deterministic alias
+     * `openbot-d-<deployment>-<service>` — and this is the one place that has the row in hand. The
+     * caller's value for an OpenConnector app is computed and discarded; its refusal on a missing
+     * `DEPLOYMENT_ID` still stands, because this mints from the same setting and refuses on the same
+     * absence rather than guessing an alias for a deployment that cannot name itself.
      */
     async setAccountModeColumns(
       serverId: string,
@@ -4587,15 +4789,30 @@ export function createPluginStore(options: PluginStoreOptions) {
       sharedVendorUserId: string | null,
     ) {
       const [dialled] = await database
-        .select({ url: mcpServers.url })
+        .select({ url: mcpServers.url, provenance: mcpServers.provenance })
         .from(mcpServers)
         .where(eq(mcpServers.id, serverId))
         .limit(1);
-      const toolkit = dialled ? toolkitOf(dialled.url) : null;
-      const app = toolkit ? await brokeredAppRow(toolkit) : null;
+      const toolkit = dialled
+        ? brokerToolkitOf(dialled.provenance, dialled.url)
+        : null;
+      const app = toolkit ? await brokeredAppRow(dialled.url) : null;
+      const openConnectorApp =
+        dialled?.provenance === "open-connector" && toolkit !== null;
+      if (openConnectorApp && mode === "shared" && !options.deploymentId) {
+        throw new PluginInvariantError(
+          "A deployment with no id cannot hold a shared OpenConnector account; set DEPLOYMENT_ID.",
+        );
+      }
       await database
         .update(mcpServers)
-        .set({ accountMode: mode, sharedVendorUserId })
+        .set({
+          accountMode: mode,
+          sharedVendorUserId:
+            openConnectorApp && mode === "shared" && toolkit !== null
+              ? deploymentAlias(options.deploymentId ?? "", toolkit)
+              : sharedVendorUserId,
+        })
         .where(eq(mcpServers.id, app?.id ?? serverId));
     },
 
@@ -5305,6 +5522,7 @@ export function createPluginStore(options: PluginStoreOptions) {
        */
       const connections = await database
         .select({
+          provider: brokeredConnections.provider,
           toolkit: brokeredConnections.app,
           connectedAt: brokeredConnections.connectedAt,
           verified: brokeredConnections.verified,
@@ -5365,13 +5583,17 @@ export function createPluginStore(options: PluginStoreOptions) {
        * join answered and what the missing `serverId` below drops. A person can hold an account at
        * an app this deployment has since removed, and the settings page has no row to draw for it.
        */
-      const named = await brokeredAppRowsAt(
-        connections.map((row) => `composio://${row.toolkit}`),
-      );
+      /*
+       * THE URL THIS CONNECTION'S APP LIVES AT, composed from the provider the row carries — the
+       * app slug names no broker on its own, and a person may hold `github` under either.
+       */
+      const urlOf = (row: (typeof connections)[number]) =>
+        `${BROKER_ROW[row.provider].urlScheme}${row.toolkit}`;
+      const named = await brokeredAppRowsAt(connections.map(urlOf));
 
       const rows = connections
         .flatMap((row) => {
-          const serverId = named.get(`composio://${row.toolkit}`)?.id;
+          const serverId = named.get(urlOf(row))?.id;
           return serverId === undefined ? [] : [{ ...row, serverId }];
         })
         // By server id, as the join's own `order by` was, so this read and `connectionsFor` hand the
@@ -5400,8 +5622,18 @@ export function createPluginStore(options: PluginStoreOptions) {
            * has one, inches from the field that records what was actually spent — and the first
            * reader to draw a sentence off the wrong one re-opens the defect that made `probe` a
            * record. A boolean cannot be mistaken for a record of anything.
+           *
+           * AND NO FOR AN OPENCONNECTER ROW, WITHOUT ASKING THE CHOOSER. OpenConnector publishes no
+           * safety labels, so "does this app have anything safe to check a key with" has no honest
+           * yes — the chooser would answer no today off the same absence, but answered as a filter
+           * it is one label pass away from answering yes, and the Re-check button it gates would
+           * then spend a key on an action nothing vouched safe. The row honestly reads *accepted
+           * without being checked*, which is what `verified: false` beside `probe: null` says.
            */
-          checkable: (await this.probeActionFor(row.serverId)) !== null,
+          checkable:
+            row.provider === "open-connector"
+              ? false
+              : (await this.probeActionFor(row.serverId)) !== null,
         })),
       );
     },
@@ -5427,12 +5659,18 @@ export function createPluginStore(options: PluginStoreOptions) {
       displayName: string | null;
     } | null> {
       const [server] = await database
-        .select({ url: mcpServers.url })
+        .select({ url: mcpServers.url, provenance: mcpServers.provenance })
         .from(mcpServers)
         .where(eq(mcpServers.id, serverId))
         .limit(1);
-      const toolkit = server ? toolkitOf(server.url) : null;
-      if (!toolkit) return null;
+      const toolkit = server
+        ? brokerToolkitOf(server.provenance, server.url)
+        : null;
+      // The provider of the row whose url names the app — narrowed rather than defaulted because
+      // a parsed toolkit already proves the provenance is a broker's. See `accountsOn`.
+      if (!server || !toolkit || !isBrokeredProvenance(server.provenance))
+        return null;
+      const provider = server.provenance;
 
       const [row] = await database
         .select({
@@ -5448,7 +5686,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         .leftJoin(users, eq(users.id, brokeredConnections.connectedBy))
         .where(
           and(
-            eq(brokeredConnections.provider, "composio"),
+            eq(brokeredConnections.provider, provider),
             eq(brokeredConnections.app, toolkit),
             eq(brokeredConnections.holder, "deployment"),
           ),
@@ -5456,8 +5694,9 @@ export function createPluginStore(options: PluginStoreOptions) {
         .limit(1);
       if (!row) return null;
 
-      const displayName = broker
-        ? await broker
+      const client = brokerFor(provider);
+      const displayName = client
+        ? await client
             .accountName({
               account: { holder: "deployment", vendorUserId: row.vendorUserId },
               toolkit,
@@ -5509,13 +5748,19 @@ export function createPluginStore(options: PluginStoreOptions) {
        * says so — and listing it would offer a Connect for an account no call would use.
        */
       const marked = await database
-        .select({ id: mcpServers.id, url: mcpServers.url })
+        .select({
+          id: mcpServers.id,
+          url: mcpServers.url,
+          provenance: mcpServers.provenance,
+        })
         .from(mcpServers)
         .where(eq(mcpServers.accountMode, "shared"))
         .orderBy(asc(mcpServers.id));
       const answering = await brokeredAppRowsAt(
         marked
-          .filter((row) => toolkitOf(row.url) !== null)
+          .filter(
+            (row) => brokerToolkitOf(row.provenance, row.url) !== null,
+          )
           .map((row) => row.url),
       );
       const shared = marked.filter(
@@ -5524,10 +5769,20 @@ export function createPluginStore(options: PluginStoreOptions) {
 
       return await Promise.all(
         shared.map(async (server) => {
-          const toolkit = toolkitOf(server.url);
+          // Narrowed once, because the provider decides both the kind read and the checkable
+          // answer; a shared row that is not a broker's has no toolkit and drops out here.
+          const provider = isBrokeredProvenance(server.provenance)
+            ? server.provenance
+            : null;
+          const toolkit = provider
+            ? brokerToolkitOf(server.provenance, server.url)
+            : null;
+          const openConnectorApp = provider === "open-connector";
           const [connection, kind] = await Promise.all([
             this.deploymentConnectionFor(server.id),
-            toolkit ? brokeredAppKind(toolkit) : null,
+            toolkit && provider && !openConnectorApp
+              ? brokeredAppKind(provider, toolkit)
+              : null,
           ]);
           return {
             serverId: server.id,
@@ -5539,9 +5794,16 @@ export function createPluginStore(options: PluginStoreOptions) {
             verified: connection?.verified ?? false,
             verifiedAt: connection?.verifiedAt ?? null,
             probe: connection?.probe ?? null,
+            /*
+             * NO FOR AN OPENCONNECTER APP, for the reason `brokeredConnectionsFor` spells at full
+             * length: the vendor publishes no safety labels, so there is nothing this deployment
+             * may spend a shared key on, and the button the field gates stays withheld exactly as
+             * Composio withholds it for an app with nothing safe to spend a key on.
+             */
             checkable:
               connection !== null &&
               kind === "key" &&
+              !openConnectorApp &&
               (await this.probeActionFor(server.id)) !== null,
             displayName: connection?.displayName ?? null,
           };
@@ -5571,11 +5833,24 @@ export function createPluginStore(options: PluginStoreOptions) {
     async brokeredConnection(input: {
       toolkit: string;
       account: AccountRef;
+      /**
+       * Which broker's connection is being asked about. Optional with the default every caller
+       * that predates the second broker meant — Composio — and named by every OpenConnector caller:
+       * the pair the partial indexes enforce one row per is (provider, app[, user]), so the
+       * provider is half of the question and never derivable from the slug.
+       */
+      provider?: BrokeredProvenance;
     }): Promise<{ connectedAt: string } | null> {
       const [row] = await database
         .select({ connectedAt: brokeredConnections.connectedAt })
         .from(brokeredConnections)
-        .where(accountRow(input.toolkit, input.account))
+        .where(
+          accountRow(
+            input.toolkit,
+            input.account,
+            input.provider ?? "composio",
+          ),
+        )
         .limit(1);
 
       if (!row) return null;
@@ -5760,7 +6035,14 @@ export function createPluginStore(options: PluginStoreOptions) {
       probeAction: string | null;
       /** See the paragraph on `only` above. Absent is the ordinary upsert. */
       only?: "a row that is still there";
+      /**
+       * Which broker the connection is recorded under — the `provider` column and half the row's
+       * key, per the paragraph above. Optional with Composio as the default every pre-OpenConnector
+       * caller meant; see {@link brokeredConnection} for why it is never derivable from the slug.
+       */
+      provider?: BrokeredProvenance;
     }): Promise<{ verifiedAt: Date | null; wrote: boolean }> {
+      const provider = input.provider ?? "composio";
       const verifiedAt = input.verified ? new Date() : null;
       // The one set, spelled once, so the conditional write below and the upsert cannot drift into
       // two row shapes. `probeAction` is overwritten rather than left standing, for `verifiedAt`'s
@@ -5782,7 +6064,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         const written = await database
           .update(brokeredConnections)
           .set(set)
-          .where(accountRow(input.toolkit, input.account))
+          .where(accountRow(input.toolkit, input.account, provider))
           .returning({ vendorUserId: brokeredConnections.vendorUserId });
         return { verifiedAt, wrote: written.length > 0 };
       }
@@ -5790,7 +6072,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       await database
         .insert(brokeredConnections)
         .values({
-          provider: "composio",
+          provider,
           app: input.toolkit,
           holder: input.account.holder,
           userId:
@@ -5872,6 +6154,11 @@ export function createPluginStore(options: PluginStoreOptions) {
       toolkit: string;
       account: AccountRef;
       /**
+       * Which broker's key is being probed. Optional with Composio as the pre-second-broker default;
+       * see {@link brokeredConnection} for why the slug alone cannot answer it.
+       */
+      provider?: BrokeredProvenance;
+      /**
        * THE ACCOUNT TO SPEND IT IN, where the caller has one in mind.
        *
        * {@link connectBrokeredWithFields} has just made an account and is asking about THAT key; a
@@ -5935,7 +6222,21 @@ export function createPluginStore(options: PluginStoreOptions) {
        * reporting there was nothing to try. One function decides which row answers for an app, so
        * nothing here can name one row while something else names another.
        */
-      const app = await brokeredAppRow(input.toolkit);
+      const provider = input.provider ?? "composio";
+      /*
+       * NEVER FOR AN OPENCONNECTER APP, AND ANSWERED HERE RATHER THAN LEFT TO THE CHOOSER. The
+       * chooser keeps a probe safe by refusing every action the vendor did not label a read, and
+       * OpenConnector labels nothing — so it answers `nothing` today, off the same absence. But a
+       * filter that a future label pass could satisfy is a gate that reopens silently, and the
+       * action it would then spend a just-typed key on is one nothing vouched safe. The connect
+       * path records the honest state — accepted without being checked — and the re-check path
+       * refuses the press in its own words; neither dials.
+       */
+      if (provider === "open-connector") {
+        return { outcome: "nothing", probe: null };
+      }
+
+      const app = await brokeredAppRowFor(provider, input.toolkit);
 
       const candidate = app ? await this.probeActionFor(app.id) : null;
       if (candidate === null) {
@@ -5958,7 +6259,10 @@ export function createPluginStore(options: PluginStoreOptions) {
        */
       const { result, answered } = await composioAskAction(
         {
-          url: `composio://${input.toolkit}`,
+          // Composed off the broker map rather than spelled: the open-connector return above has
+          // left Composio as the only provider that reaches this dial, and a third broker that
+          // ever grows a probe dials through its own seam rather than this one.
+          url: `${BROKER_ROW[provider].urlScheme}${input.toolkit}`,
           actorId: input.account.vendorUserId,
           // Spread rather than passed as `undefined`, so "any account of theirs" reaches the wire
           // as a body with no such key. See {@link ComposioActions.execute}.
@@ -6080,23 +6384,28 @@ export function createPluginStore(options: PluginStoreOptions) {
       toolkit: string;
       account: AccountRef;
       by: string;
+      /** Which broker to confirm at. Optional with Composio as the pre-second-broker default. */
+      provider?: BrokeredProvenance;
     }): Promise<{ connected: boolean }> {
+      const provider = input.provider ?? "composio";
       // Before anything, and for the reason `addBrokeredApp` says it first too: a deployment with
-      // no key has no broker to have connected anybody at, so there is nothing here to ask.
-      if (!broker) throw new BrokerUnconfiguredError();
+      // no client for the broker this row names has nobody to have connected anybody at, so there
+      // is nothing here to ask.
+      const client = brokerFor(provider);
+      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
 
-      const connected = await broker.isConnected({
+      const connected = await client.isConnected({
         account: input.account,
         toolkit: input.toolkit,
       });
       if (!connected) {
         // Deleted rather than left alone, because the row is only the vendor's last answer: an
-        // account ended in Composio's own dashboard reaches this deployment as the no above and
-        // as nothing else, and a row that outlived it would go on saying yes about an account the
-        // vendor has just denied.
+        // account ended in the broker's own dashboard reaches this deployment as the no above
+        // and as nothing else, and a row that outlived it would go on saying yes about an
+        // account the vendor has just denied.
         await database
           .delete(brokeredConnections)
-          .where(accountRow(input.toolkit, input.account));
+          .where(accountRow(input.toolkit, input.account, provider));
         return { connected: false };
       }
 
@@ -6113,7 +6422,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       const [held] = await database
         .select({ verified: brokeredConnections.verified })
         .from(brokeredConnections)
-        .where(accountRow(input.toolkit, input.account))
+        .where(accountRow(input.toolkit, input.account, provider))
         .limit(1);
       const existing = held !== undefined;
 
@@ -6151,7 +6460,7 @@ export function createPluginStore(options: PluginStoreOptions) {
        * directions: nothing already recorded is overwritten, and the row that is the gate is still
        * written where the vendor holds an account nothing here has a row for.
        */
-      const kind = await brokeredAppKind(input.toolkit);
+      const kind = await brokeredAppKind(provider, input.toolkit);
 
       /**
        * WHAT THIS CONFIRM ANSWERS FOR EACH KIND OF APP, WRITTEN DOWN BECAUSE THE CHAIN CANNOT BE.
@@ -6252,6 +6561,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           // answered with whatever the app happened to publish — and a consent row was listed as
           // having been checked with an action nothing had called.
           probeAction: null,
+          provider,
         });
       } else if (kind !== "consent" && !existing) {
         /*
@@ -6274,6 +6584,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           connectedBy: input.by,
           verified: false,
           probeAction: null,
+          provider,
         });
       }
       /*
@@ -6394,10 +6705,33 @@ export function createPluginStore(options: PluginStoreOptions) {
       account: AccountRef;
       by: string;
       values: Record<string, string>;
+      /** Which broker to connect at. Optional with Composio as the pre-second-broker default. */
+      provider?: BrokeredProvenance;
     }): Promise<{ connected: true; verified: boolean; probe: string | null }> {
-      // First, and for `confirmBrokeredConnection`'s reason: a deployment with no key has nobody to
-      // connect anybody at, and the refusal must happen before the values are touched at all.
-      if (!broker) throw new BrokerUnconfiguredError();
+      const provider = input.provider ?? "composio";
+      // First, and for `confirmBrokeredConnection`'s reason: a deployment with no client for the
+      // broker this app is enabled through has nobody to connect anybody at, and the refusal must
+      // happen before the values are touched at all.
+      const client = brokerFor(provider);
+      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
+
+      /*
+       * THE ACCOUNT AS THIS BROKER KNOWS IT, which for a person at OpenConnector is the alias minted
+       * from the person and the service and for everybody else is the account exactly as the caller
+       * resolved it. `accountRefFor` mints the alias for every path already; minting it again here
+       * is the same value from the same two ids, and is what keeps a direct caller — a test, or a
+       * route threading its own account — from filing the connection under the person's bare id,
+       * which no call would ever dial. A deployment account is NOT re-minted: its identity was
+       * minted when the app became Shared and stored, and reading it back is what makes a later
+       * change to `DEPLOYMENT_ID` unable to move the account a connect lands in.
+       */
+      const account: AccountRef =
+        provider === "open-connector" && input.account.holder === "person"
+          ? {
+              ...input.account,
+              vendorUserId: personalAlias(input.account.userId, input.toolkit),
+            }
+          : input.account;
 
       // Keyed on the url and on the one row that answers for it — see `brokeredAppScheme`. It is
       // the same reasoning the connection gate in `connectionTokenFor` is keyed on, and for the
@@ -6430,15 +6764,15 @@ export function createPluginStore(options: PluginStoreOptions) {
           unreachable: "the account stands, recorded unchecked, with the attempt on the trail";
         }
       >;
-      const authScheme = await brokeredAppScheme(input.toolkit);
+      const authScheme = await brokeredAppScheme(provider, input.toolkit);
       if (!isFieldScheme(authScheme)) {
         throw new BrokerRefusalError(
           `${input.toolkit} is not an app this deployment connects with values somebody types, so nothing was sent. Open the app on the Plugins page and connect it the way it asks for; if it is not listed there at all, an administrator has to enable it first.`,
         );
       }
 
-      const { accountId } = await broker.connectWithFields({
-        account: input.account,
+      const { accountId } = await client.connectWithFields({
+        account,
         toolkit: input.toolkit,
         authScheme,
         values: input.values,
@@ -6461,7 +6795,7 @@ export function createPluginStore(options: PluginStoreOptions) {
        */
       const probed = await this.probeBrokeredConnection({
         toolkit: input.toolkit,
-        account: input.account,
+        account,
         /*
          * THE ACCOUNT THIS CALL JUST MADE, which is the only account this check is about. A person
          * and an app do not name one: Composio takes an account per key, somebody may hold several
@@ -6473,6 +6807,7 @@ export function createPluginStore(options: PluginStoreOptions) {
          * this is what makes the check about the same account as the withdrawal.
          */
         accountId,
+        provider,
       });
 
       // Read before the write, for `confirmBrokeredConnection`'s reason: the record below is an
@@ -6484,7 +6819,8 @@ export function createPluginStore(options: PluginStoreOptions) {
       // checked.
       const existing = await this.brokeredConnection({
         toolkit: input.toolkit,
-        account: input.account,
+        account,
+        provider,
       });
 
       /*
@@ -6531,7 +6867,7 @@ export function createPluginStore(options: PluginStoreOptions) {
            */
           scope: "",
           reconnected: existing !== null,
-          holder: input.account.holder,
+          holder: account.holder,
           /*
            * THE NAMES AND NEVER THE VALUES. What a reader of the trail needs is which app somebody
            * connected and what it asked them for; the values are the credential itself, and an
@@ -6571,7 +6907,7 @@ export function createPluginStore(options: PluginStoreOptions) {
          */
         await this.recordBrokeredConnection({
           toolkit: input.toolkit,
-          account: input.account,
+          account,
           connectedBy: input.by,
           verified: false,
           // THE ACTION THAT WAS TRIED, which is the half of this state the flag cannot hold. It is
@@ -6579,6 +6915,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           // and it is the same name the audit row below carries under `action`, for a reader of the
           // trail rather than of a screen.
           probeAction: probed.probe,
+          provider,
         });
 
         /*
@@ -6599,7 +6936,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           targetId: input.toolkit,
           payload: {
             actor: input.by,
-            holder: input.account.holder,
+            holder: account.holder,
             action: probed.probe,
             verified: false,
           },
@@ -6651,7 +6988,7 @@ export function createPluginStore(options: PluginStoreOptions) {
 
       await this.recordBrokeredConnection({
         toolkit: input.toolkit,
-        account: input.account,
+        account,
         connectedBy: input.by,
         verified,
         // What was spent, which is the name on a probe that ran and the null that IS the first of
@@ -6659,6 +6996,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         // derived from this same value a few lines above, so the row cannot claim a check with an
         // action beside a flag that says nothing checked it, or the other way about.
         probeAction: probe,
+        provider,
       });
 
       /*
@@ -6713,7 +7051,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         targetId: input.toolkit,
         payload: {
           actor: input.by,
-          holder: input.account.holder,
+          holder: account.holder,
           action: probe,
           verified,
           ...(probed.outcome === "unreachable"
@@ -6794,12 +7132,31 @@ export function createPluginStore(options: PluginStoreOptions) {
       toolkit: string;
       account: AccountRef;
       by: string;
+      /** Which broker to re-check at. Optional with Composio as the pre-second-broker default. */
+      provider?: BrokeredProvenance;
     }): Promise<{
       verified: boolean;
       verifiedAt: string | null;
       probe: string | null;
     }> {
-      if (!broker) throw new BrokerUnconfiguredError();
+      const provider = input.provider ?? "composio";
+      const client = brokerFor(provider);
+      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
+
+      /*
+       * AN OPENCONNECTER APP HAS NOTHING THIS PRESS COULD EVER DO, and the refusal names that
+       * rather than a screen the app has none of. OpenConnector publishes no behaviour labels, so
+       * no action of its apps can be shown safe to spend a key on — the same fact that makes the
+       * connect record the key as accepted-without-being-checked and the listing withhold the
+       * button. A route takes POSTs and not only button presses, so the refusal lives here: the
+       * press is answered with the row's own remedy, which is disconnect and connect again.
+       */
+      if (provider === "open-connector") {
+        throw new PluginRefusedError(
+          `${input.toolkit} is an app reached through OpenConnector, which publishes nothing that says an action is safe to check a key with, so there is nothing here to re-check — the row already says the key was accepted without being checked. If it has stopped working, disconnecting it on the Plugins page and connecting it again with a fresh key is what fixes it.`,
+          null,
+        );
+      }
 
       // Keyed on the url and on the one row that answers for it — see `brokeredAppKind`. It is the
       // read `connectBrokeredWithFields`, `confirmBrokeredConnection` and `disconnectBrokered` all
@@ -6834,7 +7191,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           unreachable: "writes nothing and files nothing; refuses with Composio's own sentence";
         }
       >;
-      if ((await brokeredAppKind(input.toolkit)) !== "key") {
+      if ((await brokeredAppKind(provider, input.toolkit)) !== "key") {
         throw new PluginRefusedError(
           `${input.toolkit} is not an app this deployment holds a key for, so there is nothing here to re-check. It was connected at ${input.toolkit}'s own sign-in screen, and if it has stopped working, disconnecting it on the Plugins page and connecting it again is what fixes it.`,
           null,
@@ -6847,7 +7204,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           verifiedAt: brokeredConnections.verifiedAt,
         })
         .from(brokeredConnections)
-        .where(accountRow(input.toolkit, input.account))
+        .where(accountRow(input.toolkit, input.account, provider))
         .limit(1);
 
       if (!held) {
@@ -6860,6 +7217,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       const probed = await this.probeBrokeredConnection({
         toolkit: input.toolkit,
         account: input.account,
+        provider,
       });
 
       /*
@@ -6936,6 +7294,7 @@ export function createPluginStore(options: PluginStoreOptions) {
          * the person had just ended, and drew the app as connected again.
          */
         only: "a row that is still there",
+        provider,
       });
 
       /*
@@ -7105,8 +7464,12 @@ export function createPluginStore(options: PluginStoreOptions) {
        * happened to spell.
        */
       reason: "self" | "person_removed" | "admin" | "mode_switched";
+      /** Which broker to disconnect at. Optional with Composio as the pre-second-broker default. */
+      provider?: BrokeredProvenance;
     }): Promise<{ vendorRevocationRequested: boolean }> {
-      if (!broker) throw new BrokerUnconfiguredError();
+      const provider = input.provider ?? "composio";
+      const client = brokerFor(provider);
+      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
 
       /*
        * Keyed on the url and on the one row that answers for it — see {@link brokeredAppKind}.
@@ -7140,12 +7503,13 @@ export function createPluginStore(options: PluginStoreOptions) {
           unreadable: "reports it as asked for too, which is the claim that cannot be too weak";
         }
       >;
-      const fieldScheme = (await brokeredAppKind(input.toolkit)) === "key";
+      const fieldScheme =
+        (await brokeredAppKind(provider, input.toolkit)) === "key";
 
       // Whether there was an account to end at all, which is what decides if anybody was
       // disconnected. Named apart from the field below because for a key the two differ: something
       // ended, and nothing was asked of the provider.
-      const ended = await broker.revoke({
+      const ended = await client.revoke({
         account: input.account,
         toolkit: input.toolkit,
       });
@@ -7156,7 +7520,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       // disconnected, and a delete that answered nothing would leave the two cases indistinguishable.
       const [deleted] = await database
         .delete(brokeredConnections)
-        .where(accountRow(input.toolkit, input.account))
+        .where(accountRow(input.toolkit, input.account, provider))
         .returning({ app: brokeredConnections.app });
 
       if (deleted || ended) {
@@ -7312,7 +7676,11 @@ export function createPluginStore(options: PluginStoreOptions) {
        * order.
        */
       const brokered = await database
-        .select({ toolkit: brokeredConnections.app })
+        .select({
+          provider: brokeredConnections.provider,
+          toolkit: brokeredConnections.app,
+          vendorUserId: brokeredConnections.vendorUserId,
+        })
         .from(brokeredConnections)
         .where(
           and(
@@ -7324,9 +7692,10 @@ export function createPluginStore(options: PluginStoreOptions) {
 
       /*
        * What the broker was actually asked for each app, kept so the trail below records the answer
-       * rather than the call. False where there is no broker at all: a deployment whose key has
-       * since been unset can still offboard somebody, and it could not have been calling Composio
-       * either way — but nothing was asked there and the row must not claim otherwise.
+       * rather than the call. False where this deployment configured no client for the broker the
+       * row names: a deployment whose Composio key has since been unset can still offboard
+       * somebody, and it could not have been calling Composio either way — but nothing was asked
+       * there and the row must not claim otherwise.
        *
        * ONE APP'S REFUSAL IS ONE APP'S REFUSAL, and until now it was everybody's. A throw out of
        * `revoke` left this loop before the delete and before the trail, so three accounts already
@@ -7340,22 +7709,37 @@ export function createPluginStore(options: PluginStoreOptions) {
        * So the answer is kept per app and the refusal is held rather than thrown. Every app is still
        * asked — a later one is not punished for an earlier one — and the first refusal is rethrown
        * below, so the act still fails loudly and the administrator still gets a 500.
+       *
+       * THE VENDOR ID IS THE ROW'S OWN, which for an OpenConnector row is the alias the connection
+       * was minted under — not the person's id, which names no connection there. Composio's rows
+       * carry the person's id as their vendor id, so reading the column rather than spelling either
+       * answer is what keeps one loop true of both brokers.
        */
-      const withdrawn: { toolkit: string; requested: boolean }[] = [];
+      const withdrawn: {
+        provider: BrokeredProvenance;
+        toolkit: string;
+        requested: boolean;
+      }[] = [];
       const refusals: unknown[] = [];
       for (const connection of brokered) {
         try {
+          const client = brokerFor(connection.provider);
           withdrawn.push({
+            provider: connection.provider,
             toolkit: connection.toolkit,
-            requested: broker
-              ? await broker.revoke({
+            requested: client
+              ? await client.revoke({
                   /*
                    * THE PERSON'S OWN ACCOUNT, NAMED AS ONE. Offboarding somebody ends what they
                    * held and never the deployment's shared account, whoever connected it — so the
                    * holder is fixed here rather than read off anything, and the vendor id is the
-                   * person's own, which is what a personal account is filed under at Composio.
+                   * one their own row was filed under.
                    */
-                  account: { holder: "person", userId, vendorUserId: userId },
+                  account: {
+                    holder: "person",
+                    userId,
+                    vendorUserId: connection.vendorUserId,
+                  },
                   toolkit: connection.toolkit,
                 })
               : false,
@@ -7375,21 +7759,27 @@ export function createPluginStore(options: PluginStoreOptions) {
       }
 
       /*
-       * Only the apps that answered, which is the other half of the same correction.
+       * Only the apps that answered, which is the other half of the same correction — and now the
+       * PAIR (provider, app) is what a withdrawal names, because the same slug may be enabled
+       * under either broker and only one of them was asked.
        *
        * Deleting by user id would take the rows of apps that were refused or never reached, and
        * those are exactly the rows the recovery needs. Deleting none — what a throw used to do —
-       * leaves a row and an open `(toolkit, user_id)` gate for an account that is already gone at
-       * Composio, so the table claims a connection this person does not have.
+       * leaves a row and an open `(provider, toolkit, user_id)` gate for an account that is
+       * already gone at the broker, so the table claims a connection this person does not have.
        */
       if (withdrawn.length > 0) {
         await database.delete(brokeredConnections).where(
           and(
             eq(brokeredConnections.holder, "person"),
             eq(brokeredConnections.userId, userId),
-            inArray(
-              brokeredConnections.app,
-              withdrawn.map((entry) => entry.toolkit),
+            or(
+              ...withdrawn.map((entry) =>
+                and(
+                  eq(brokeredConnections.provider, entry.provider),
+                  eq(brokeredConnections.app, entry.toolkit),
+                ),
+              ),
             ),
           ),
         );
@@ -7877,6 +8267,17 @@ export function createPluginStore(options: PluginStoreOptions) {
             token,
             actorId: vendorUserId ?? input.credentialActorId ?? input.actorId,
             botId: input.botId,
+            /*
+             * THE BROKER-SIDE HANDLE OF THE ACCOUNT THIS CALL RUNS IN — for an OpenConnector row
+             * the alias the connection was minted under, and undefined for every call that runs on
+             * no account of anybody's (a no-auth service) or whose authorization is a credential
+             * rather than an actor. It is the value the brokered branch above resolved off the
+             * connection row, so for a Composio row it is the vendor user id, which that transport
+             * ignores: the field is read only by the broker that names accounts per call.
+             */
+            ...(vendorUserId === undefined
+              ? {}
+              : { accountHandle: vendorUserId }),
           },
           toolName,
           vendorArgs,

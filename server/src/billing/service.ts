@@ -141,6 +141,22 @@ export function createBillingService(deps: {
   }
 
   /**
+   * The customer floor under a subscription refresh.
+   *
+   * The subscription projection's customer column is a foreign key (../db/schema/billing.ts): a
+   * subscription row cannot land before the customer row exists. A subscription delivery can be
+   * the first thing a deployment ever receives — configured but never synced, its `customer.*`
+   * deliveries lost — so the floor is laid here, before any subscription row is written: an
+   * authoritative read when the provider still has the customer, and when it answers 404 an
+   * insert-if-absent placeholder, which is enough for the rows that follow and never overwrites a
+   * projection that already carries the customer's name.
+   */
+  async function ensureCustomerProjection(externalId: string): Promise<void> {
+    if (await readCustomerIntoStore(externalId)) return;
+    await store.ensureCustomerRow({ externalId });
+  }
+
+  /**
    * What a delivery implies locally, refreshed from the authoritative object rather than from the
    * event payload: a delivery that arrives out of order must not walk a projection backwards.
    */
@@ -156,6 +172,7 @@ export function createBillingService(deps: {
     if (delivery.webhookType.startsWith("subscription.")) {
       if (!delivery.externalCustomerId)
         throw new BillingError("invalid_response");
+      await ensureCustomerProjection(delivery.externalCustomerId);
       await writeSubscriptionProjections(
         await readSubscriptions(delivery.externalCustomerId),
       );

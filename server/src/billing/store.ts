@@ -31,6 +31,15 @@ export function createBillingStore(database: Database): BillingStore {
           set: { name: input.name, lastSyncedAt: now },
         });
     },
+    async ensureCustomerRow(input) {
+      // Insert-only: a row that already exists — with the name an earlier refresh wrote — is left
+      // exactly as it is. This is the webhook path's floor under the subscription foreign key, not
+      // a refresh; the placeholder it may insert is nameless and waits for a real read.
+      await database
+        .insert(billingCustomers)
+        .values({ externalId: input.externalId, name: null })
+        .onConflictDoNothing({ target: billingCustomers.externalId });
+    },
     async upsertSubscription(input) {
       const now = new Date();
       await database

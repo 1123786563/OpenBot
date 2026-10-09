@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { type Decides, type SchemeKind, schemeKind } from "./broker";
+import {
+  isBrokeredProvenance,
+} from "../../../shared/src/brokered-provenance";
 
 /**
  * Whose account a brokered call reaches, decided in one place.
@@ -39,7 +42,16 @@ export function accountFor(
   },
   credentialActorId: string,
 ): AccountAnswer {
-  if (row.provenance !== "composio") return { kind: "none" };
+  /*
+   * ANY BROKER'S PROVENANCE, asked through the one list both processes share, because the question
+   * is "does this row have an account at a broker" and Composio is no longer the only broker. A
+   * literal here answered `none` — no account, nothing to connect, nothing to gate — for every
+   * OpenConnector row, which is the fail-OPEN direction for a connector whose whole purpose is
+   * per-person accounts: the row would have been callable by anybody with no connection at all.
+   * Unknown provenances still answer `none`: a row this deployment cannot name a broker for is not
+   * brokered, and this list is the closed set of names it knows.
+   */
+  if (!isBrokeredProvenance(row.provenance)) return { kind: "none" };
 
   const kind = schemeKind(row.authScheme);
   type _AccountForDecides = Decides<

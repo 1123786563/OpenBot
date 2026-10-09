@@ -160,14 +160,21 @@ func Authenticate(cfg AuthConfig) func(http.Handler) http.Handler {
 			// the digest/binding comparison belongs to ROUTES THAT CARRY RUN
 			// INPUT (the AG-UI runId IS the envelope's turn_id, master §4.3),
 			// not to control routes like cancel, whose body is not run input.
-			// The legacy assertion (if the caller presented one) also rides
-			// along for the R3 callback client; the runner's model-visible
-			// input never sees it.
+			// The tool-plane credential pair (this request's service
+			// credential + capability, both already validated) also rides
+			// along for the governed tool client — the ONLY source it will
+			// ever read them from; the runner's model-visible input never
+			// sees any of it. The legacy assertion (if presented) is kept in
+			// the private context as an inert legacy regression seam.
 			ctx := r.Context()
 			if assertion := r.Header.Get(RunAssertionHeader); assertion != "" {
 				ctx = identity.WithRunAssertion(ctx, assertion)
 			}
 			ctx = identity.WithVerified(ctx, run)
+			ctx = identity.WithToolCredentials(ctx, identity.ToolCredentials{
+				ServiceCredential: cfg.ServiceCredential,
+				Capability:        capability,
+			})
 			ctx = withInboundInput(ctx, run0)
 			r = r.WithContext(ctx)
 			r.Body = io.NopCloser(bytes.NewReader(body))

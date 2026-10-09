@@ -99,3 +99,38 @@ func RunAssertion(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(assertionKey{}).(string)
 	return v, ok && v != ""
 }
+
+// ToolCredentials is the pair the runtime presents to the TS tool plane for
+// governed tool operations (master plan §4.1: the tool-invocation endpoints
+// answer an AUTHENTICATED Runtime): the platform-to-runtime service
+// credential and the short-term invocation capability this run was
+// validated with. The plane re-validates the capability against the
+// operation's run/attempt/fencing, so a capability minted for one run
+// cannot spend another run's operations.
+type ToolCredentials struct {
+	ServiceCredential string
+	Capability        string
+}
+
+type toolCredentialKey struct{}
+
+// WithToolCredentials stores the tool-plane credential pair for a verified
+// run.
+//
+// Only the auth middleware calls this, after the local service-credential
+// check AND the TS validation round trip have both passed — the pair a tool
+// call presents is the pair the plane already vouched for, never anything a
+// model chose. The callback client refuses to operate without it; there is
+// no field anywhere in model-reachable data that can supply these values.
+func WithToolCredentials(ctx context.Context, c ToolCredentials) context.Context {
+	return context.WithValue(ctx, toolCredentialKey{}, c)
+}
+
+// ToolCredentialsFromContext returns the tool-plane credential pair the auth
+// middleware stored, or ok=false when the caller was never verified. A
+// half-empty pair is refused rather than repaired: a credential the
+// middleware did not store is a credential no tool call may present.
+func ToolCredentialsFromContext(ctx context.Context) (ToolCredentials, bool) {
+	c, ok := ctx.Value(toolCredentialKey{}).(ToolCredentials)
+	return c, ok && c.ServiceCredential != "" && c.Capability != ""
+}
