@@ -57,10 +57,7 @@ function reReadStub() {
         })),
       });
     }
-    if (
-      method === "GET" &&
-      url.pathname.startsWith("/api/v1/customers/")
-    ) {
+    if (method === "GET" && url.pathname.startsWith("/api/v1/customers/")) {
       state.customerReads += 1;
       const externalId = decodeURIComponent(
         url.pathname.slice("/api/v1/customers/".length),
@@ -280,6 +277,30 @@ describe("createBillingService.handleWebhook", () => {
     expect(store.inbox.size).toBe(1);
   });
 
+  test("a body over 1 MiB is refused with 413 before it is verified or buffered", async () => {
+    const { stub, store, service } = webhookFixture();
+    const bigBody = "a".repeat(1024 * 1024 + 1);
+    // Correctly signed, so the refusal can only come from the size cap, not from verification.
+    const request = new Request(
+      "https://openbot.example.test/api/billing/webhooks",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-lago-signature": createHmac("sha256", WEBHOOK_SIGNING_KEY)
+            .update(bigBody)
+            .digest("base64"),
+          "x-lago-signature-algorithm": "hmac",
+        },
+        body: bigBody,
+      },
+    );
+    const response = await service.handleWebhook(request);
+    expect(response.status).toBe(413);
+    expect(stub.state.reads).toBe(0); // no re-read was reached
+    expect(store.inbox.size).toBe(0); // nothing was recorded
+  });
+
   test("a subscription delivery naming no customer is refused, not guessed at", async () => {
     const { store, service } = webhookFixture();
     const response = await service.handleWebhook(
@@ -297,7 +318,9 @@ describe("createBillingService.handleWebhook", () => {
       client: createLagoClient({
         baseUrl: "https://lago.stub.test",
         apiKey: `stub-${"bearer"}`,
-        fetch: (async () => new Response("{}", { status: 200 })) as typeof fetch,
+        fetch: (async () =>
+          new Response("{}", { status: 200 })) as typeof fetch,
+        assertTarget: async () => {},
       }),
       store: memoryBillingStore(),
     });

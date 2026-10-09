@@ -35,10 +35,13 @@ export type LagoClientConfig = {
   fetch?: typeof fetch;
   requestTimeoutMs?: number;
   /**
-   * The SSRF gate, run against every request URL immediately before it is opened. Supplied by the
-   * assembly from ./outbound; injectable so a test never resolves a name.
+   * The SSRF gate, run against every request URL immediately before it is opened. Required, not
+   * optional: an assembly that forgets it is a type error, not a client that silently bypasses the
+   * outbound policy. Built from ./outbound `createOutboundGuard` (which resolves the hostname and
+   * refuses loopback, private, link-local, reserved and metadata destinations); injectable so a
+   * test never resolves a name.
    */
-  assertTarget?: (url: URL) => Promise<void>;
+  assertTarget: (url: URL) => Promise<void>;
 };
 
 export type LagoCustomerBody = { externalId: string; name: string | null };
@@ -114,7 +117,10 @@ function subscriptionOf(item: unknown): LagoSubscriptionBody {
   const externalCustomerId = stringOf(item, "external_customer_id");
   const planCode = stringOf(item, "plan_code");
   const status = fieldOf(item, "status");
-  if (typeof status !== "string" || !SUBSCRIPTION_STATUSES.includes(status as never)) {
+  if (
+    typeof status !== "string" ||
+    !SUBSCRIPTION_STATUSES.includes(status as never)
+  ) {
     throw new BillingError("invalid_response");
   }
   return {
@@ -172,7 +178,7 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
     init: { method: "GET" | "POST"; body?: unknown } = { method: "GET" },
   ): Promise<{ status: number; body: unknown }> {
     const url = new URL(`${base}${path}`);
-    await config.assertTarget?.(url);
+    await config.assertTarget(url);
 
     let response: Response;
     try {
@@ -187,9 +193,7 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
             ? { "content-type": "application/json" }
             : {}),
         },
-        ...(init.body !== undefined
-          ? { body: JSON.stringify(init.body) }
-          : {}),
+        ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       });
     } catch {
       // Transport errors, timeouts and refused redirects all look the same to the caller: try
@@ -255,13 +259,15 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
     async listSubscriptions(externalCustomerId) {
       const params = new URLSearchParams();
       params.set("external_customer_id", externalCustomerId);
-      for (const status of SUBSCRIPTION_STATUSES) params.append("status[]", status);
+      for (const status of SUBSCRIPTION_STATUSES)
+        params.append("status[]", status);
       const result = await request(
         `/api/v1/subscriptions?${params.toString()}`,
       );
       if (result.status !== 200) throw new BillingError("invalid_response");
       const subscriptions = fieldOf(result.body, "subscriptions");
-      if (!Array.isArray(subscriptions)) throw new BillingError("invalid_response");
+      if (!Array.isArray(subscriptions))
+        throw new BillingError("invalid_response");
       return { status: 200, body: subscriptions.map(subscriptionOf) };
     },
     async postSubscription(input) {

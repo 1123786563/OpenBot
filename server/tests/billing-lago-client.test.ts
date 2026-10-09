@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createLagoClient } from "../src/billing/lago";
+import { createOutboundGuard } from "../src/billing/outbound";
 import { BillingError } from "../src/billing/types";
 
 const BASE_URL = "https://lago.example.test";
@@ -21,7 +22,10 @@ function clientWith(
   respond: (url: URL, init?: RequestInit) => Promise<Response> | Response,
 ) {
   const seen: { url: string; init?: RequestInit }[] = [];
-  const fetchStub = (async (url: string | URL | Request, init?: RequestInit) => {
+  const fetchStub = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const address = url instanceof URL ? url : new URL(String(url));
     seen.push({ url: address.toString(), init });
     return respond(address, init);
@@ -30,6 +34,9 @@ function clientWith(
     baseUrl: BASE_URL,
     apiKey: API_KEY,
     fetch: fetchStub,
+    // The gate is required by the type; these tests stub the transport itself, so a no-op stands in
+    // for the resolver the real guard would run.
+    assertTarget: async () => {},
   });
   return { client, seen };
 }
@@ -85,8 +92,12 @@ describe("createLagoClient", () => {
   });
 
   test("a fetch that returns a redirect anyway is treated as unreachable", async () => {
-    const { client } = clientWith(() =>
-      new Response(null, { status: 302, headers: { location: "https://elsewhere.test" } }),
+    const { client } = clientWith(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://elsewhere.test" },
+        }),
     );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("unreachable");
@@ -95,7 +106,9 @@ describe("createLagoClient", () => {
 
   test("a transport failure is unreachable, retryable, and says nothing it was told", async () => {
     const { client } = clientWith(() =>
-      Promise.reject(new TypeError(`fetch failed for ${BASE_URL} with ${API_KEY}`)),
+      Promise.reject(
+        new TypeError(`fetch failed for ${BASE_URL} with ${API_KEY}`),
+      ),
     );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("unreachable");
@@ -104,7 +117,9 @@ describe("createLagoClient", () => {
 
   test("an aborted request (the timeout path) is unreachable", async () => {
     const { client } = clientWith(() =>
-      Promise.reject(new DOMException("The operation was aborted", "AbortError")),
+      Promise.reject(
+        new DOMException("The operation was aborted", "AbortError"),
+      ),
     );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("unreachable");
@@ -120,7 +135,9 @@ describe("createLagoClient", () => {
   });
 
   test("a 400 is a terminal invalid_response", async () => {
-    const { client } = clientWith(() => jsonResponse({ error: "bad_request" }, 400));
+    const { client } = clientWith(() =>
+      jsonResponse({ error: "bad_request" }, 400),
+    );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("invalid_response");
     expect(error.retryable).toBe(false);
@@ -135,7 +152,9 @@ describe("createLagoClient", () => {
   test.each([404, 400])(
     "listSubscriptions treats HTTP %d as invalid_response",
     async (status) => {
-      const { client } = clientWith(() => jsonResponse({ error: "no" }, status));
+      const { client } = clientWith(() =>
+        jsonResponse({ error: "no" }, status),
+      );
       const error = await expectCleanError(
         client.listSubscriptions("deployment-1"),
       );
@@ -145,7 +164,10 @@ describe("createLagoClient", () => {
 
   test("postCustomer passes a 422 through unclassified", async () => {
     const { client } = clientWith(() =>
-      jsonResponse({ status: 422, error: "Validation failed: external_id" }, 422),
+      jsonResponse(
+        { status: 422, error: "Validation failed: external_id" },
+        422,
+      ),
     );
     const result = await client.postCustomer({
       externalId: "deployment-1",
@@ -245,9 +267,9 @@ describe("createLagoClient", () => {
     });
     const query = new URL(seen[0]?.url ?? "").searchParams.getAll("status[]");
     expect(query).toEqual(["active", "incomplete", "canceled", "terminated"]);
-    expect(new URL(seen[0]?.url ?? "").searchParams.get("external_customer_id")).toBe(
-      "deployment-1",
-    );
+    expect(
+      new URL(seen[0]?.url ?? "").searchParams.get("external_customer_id"),
+    ).toBe("deployment-1");
   });
 
   test("an unknown subscription status on the wire is invalid_response", async () => {
@@ -263,19 +285,25 @@ describe("createLagoClient", () => {
         ],
       }),
     );
-    const error = await expectCleanError(client.listSubscriptions("deployment-1"));
+    const error = await expectCleanError(
+      client.listSubscriptions("deployment-1"),
+    );
     expect(error.code).toBe("invalid_response");
   });
 
   test("a 2xx that is not JSON is invalid_response", async () => {
-    const { client } = clientWith(() => textResponse("<html>login page</html>"));
+    const { client } = clientWith(() =>
+      textResponse("<html>login page</html>"),
+    );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("invalid_response");
     expect(error.retryable).toBe(false);
   });
 
   test("a 2xx with a wrong shape is invalid_response", async () => {
-    const { client } = clientWith(() => jsonResponse({ customer: "deployment-1" }));
+    const { client } = clientWith(() =>
+      jsonResponse({ customer: "deployment-1" }),
+    );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("invalid_response");
   });
@@ -289,11 +317,12 @@ describe("createLagoClient", () => {
   });
 
   test("a declared content-length over 1 MiB is refused before reading", async () => {
-    const { client } = clientWith(() =>
-      new Response(null, {
-        status: 200,
-        headers: { "content-length": String(1024 * 1024 + 1024) },
-      }),
+    const { client } = clientWith(
+      () =>
+        new Response(null, {
+          status: 200,
+          headers: { "content-length": String(1024 * 1024 + 1024) },
+        }),
     );
     const error = await expectCleanError(client.getCustomer("deployment-1"));
     expect(error.code).toBe("invalid_response");
@@ -308,7 +337,9 @@ describe("createLagoClient", () => {
       baseUrl: BASE_URL,
       apiKey: API_KEY,
       fetch: (async () =>
-        jsonResponse({ customer: { external_id: "deployment-1" } })) as typeof fetch,
+        jsonResponse({
+          customer: { external_id: "deployment-1" },
+        })) as typeof fetch,
       assertTarget: async (url) => {
         asked.push(url.toString());
       },
@@ -329,5 +360,26 @@ describe("createLagoClient", () => {
       },
     });
     await expect(gated.getCustomer("deployment-1")).rejects.toBe(refusal);
+  });
+
+  test("a guard's refusal is unconfigured and opens no request", async () => {
+    let opened = 0;
+    const gated = createLagoClient({
+      baseUrl: BASE_URL,
+      apiKey: API_KEY,
+      fetch: (async () => {
+        opened += 1;
+        return jsonResponse({});
+      }) as typeof fetch,
+      // The real gate, with a resolver that answers like a host inside the deployment: the default
+      // posture refuses it, and the refusal must become the non-retryable sentinel before fetch.
+      assertTarget: createOutboundGuard({
+        resolveDns: async () => [{ address: "127.0.0.1" }],
+      }),
+    });
+    const error = await expectCleanError(gated.getCustomer("deployment-1"));
+    expect(error.code).toBe("unconfigured");
+    expect(error.retryable).toBe(false);
+    expect(opened).toBe(0); // the gate ran before the transport, so nothing was sent
   });
 });

@@ -160,6 +160,30 @@ export function mapEntraProfile(profile: Record<string, unknown>) {
   return { email };
 }
 
+/**
+ * Casdoor as a generic OAuth provider, shaped the way Better Auth's own `okta()` helper is.
+ *
+ * Casdoor is not one place: every deployment runs its own origin, so like Okta it is discovered
+ * against `/.well-known/openid-configuration` rather than named as a social provider. Better Auth
+ * 1.7 ships no `casdoor()` preset, so this is the same five fields one would be. The trailing slash
+ * is dropped the same way `okta()` drops it, because the discovery URL is built by joining.
+ */
+function casdoor(options: {
+  clientId: string;
+  clientSecret: string;
+  issuer: string;
+}) {
+  const issuer = options.issuer.replace(/\/$/, "");
+  return {
+    providerId: "casdoor",
+    accountIssuer: issuer,
+    discoveryUrl: `${issuer}/.well-known/openid-configuration`,
+    clientId: options.clientId,
+    clientSecret: options.clientSecret,
+    scopes: ["openid", "profile", "email"],
+  };
+}
+
 export function createAuth(
   config: DeploymentConfig,
   database: Database,
@@ -190,16 +214,28 @@ export function createAuth(
   }
 
   /*
-   * Okta goes through the generic OAuth plugin, the other two do not.
+   * Okta and Casdoor go through the generic OAuth plugin, the other two do not.
    *
-   * Google and Entra are named providers that Better Auth knows the endpoints of. Okta is not one
-   * place: every customer has their own issuer, so it is OIDC discovery against a URL rather than a
-   * provider with a fixed address. The plugin is only registered when Okta is configured, so a
-   * deployment that does not use it carries no extra routes.
+   * Google and Entra are named providers that Better Auth knows the endpoints of. Okta and Casdoor
+   * are not one place each: every customer runs their own issuer, so both are OIDC discovery against
+   * a URL rather than a provider with a fixed address. The plugin is registered only when at least
+   * one of them is configured, so a deployment that uses neither carries no extra routes.
    *
-   * They converge again at the browser: `signIn.social({ provider })` starts all three, so the
+   * They converge again at the browser: `signIn.social({ provider })` starts all four, so the
    * sign-in screen has one code path and does not need to know which kind each provider is.
    */
+  const oidcProviders = [
+    ...(authConfig.okta
+      ? [
+          okta({
+            clientId: authConfig.okta.clientId,
+            clientSecret: authConfig.okta.clientSecret,
+            issuer: authConfig.okta.issuer,
+          }),
+        ]
+      : []),
+    ...(authConfig.casdoor ? [casdoor(authConfig.casdoor)] : []),
+  ];
   const scimDeps = {
     database,
     initialAdminEmails: authConfig.initialAdminEmails,
@@ -222,18 +258,8 @@ export function createAuth(
      */
     ...(scimPluginOptions ? [scim(scimPluginOptions)] : []),
     electron({ clientID: "openbot-desktop", codeExpiresIn: 120 }),
-    ...(authConfig.okta
-      ? [
-          genericOAuth({
-            config: [
-              okta({
-                clientId: authConfig.okta.clientId,
-                clientSecret: authConfig.okta.clientSecret,
-                issuer: authConfig.okta.issuer,
-              }),
-            ],
-          }),
-        ]
+    ...(oidcProviders.length > 0
+      ? [genericOAuth({ config: oidcProviders })]
       : []),
     /*
      * Identity providers a company registers while this is running, by SAML or OIDC.

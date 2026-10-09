@@ -401,7 +401,8 @@ export const composioConnections = pgTable(
  * THE SUCCESSOR TO `composio_connections`, WHICH IS LEFT IN PLACE AND NEVER WRITTEN, so that a
  * deployment rolled back to v0.1.0 still finds the table it expects. Every column that table had
  * means here what it meant there; see its docblock for `verified` and `probe_action`, which carry
- * over unchanged.
+ * over unchanged. OpenConnector rows carry `provider = 'open-connector'` and hold the OpenConnector
+ * connection alias in `vendor_user_id`.
  *
  * `holder` IS EXPLICIT RATHER THAN A RESERVED VALUE IN `user_id`, so no query that means "this
  * person's accounts" can match the deployment's by forgetting a filter: a deployment row has no
@@ -410,7 +411,7 @@ export const composioConnections = pgTable(
 export const brokeredConnections = pgTable(
   "brokered_connections",
   {
-    provider: text("provider").$type<"composio">().notNull(),
+    provider: text("provider").$type<"composio" | "open-connector">().notNull(),
     app: text("app").notNull(),
     holder: text("holder").$type<"person" | "deployment">().notNull(),
     userId: text("user_id"),
@@ -431,7 +432,7 @@ export const brokeredConnections = pgTable(
     ),
     check(
       "brokered_connections_provider_check",
-      sql`${table.provider} IN ('composio')`,
+      sql`${table.provider} IN ('composio', 'open-connector')`,
     ),
     uniqueIndex("brokered_connections_person_idx")
       .on(table.provider, table.app, table.userId)

@@ -100,7 +100,10 @@ describe("createBillingEntitlementReader", () => {
     expect(logged).toHaveLength(1);
 
     // Within the failure TTL the fallback is served without another read.
-    await expect(cached.active()).resolves.toEqual({ active: false, codes: [] });
+    await expect(cached.active()).resolves.toEqual({
+      active: false,
+      codes: [],
+    });
     expect(reader.callCount).toBe(1);
   });
 

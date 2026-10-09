@@ -1,6 +1,54 @@
 {
-  "commit": "dc70ca1841f6a36bb7a1f5c0b4b724ff4816b629",
-  "goVersion": "go version go1.26.3 darwin/arm64",
+  "commit": "fbdecc29cd786952c4b496abc68384b31a320b17",
+  "go_version": "go version go1.26.3 darwin/arm64",
+  "workspace_digest": {
+    "dirty": true,
+    "summary": [
+      "M app/src/lib/i18n/index.ts",
+      " M runtime-go/dependency-review.json",
+      " M runtime-go/testdata/compatibility-report.json",
+      " M server/scripts/enterprise-runtime-probe.ts",
+      " M server/src/billing/outbound.ts",
+      " M server/src/billing/webhook-signature.ts",
+      " M server/tests/billing-webhook-signature.test.ts",
+      "?? server/tests/enterprise/runtime-artifacts.test.ts"
+    ]
+  },
+  "document_baseline": {
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "5e6115f12f8df8368683d81fed6f680d39b19d8e7d08b01d926ea5df047315b7",
+    "server/scripts/enterprise-runtime-probe.ts": "2859b70b56027dbc07566fe1ed005a9192fb25df8cc8599df0c256707ce5ca65",
+    "runtime-go/cmd/runtime/main.go": "7721b7a19cb18307345f06587c6d4967e5a4f786bc3328f706582606cf3d37ed",
+    "runtime-go/internal/adapter/agui_test.go": "edeaafd2bf69befa3abec8768d7fea6b2da9dc4cb19c99e498c22447a9fa17b2",
+    "runtime-go/internal/adapter/agui.go": "390c0864f9625c3ccad669a3ccc9cd2859fbf89761bf7e120fcefd45f7284de7",
+    "runtime-go/internal/callback/client_test.go": "e7cf0b412ed372bb6a7f87ea704fa1d81f5dd0698af756cea0803e53c11c03b7",
+    "runtime-go/internal/callback/client.go": "db6ebdf120ac0457e232cddcfe0374d540bdc23ab71e63806e368e5651768f52",
+    "runtime-go/internal/identity/context_test.go": "ebff8a67ad9cb65deb70a67d13dfa1c6dc55c9aa9407aee098b466a99f45b858",
+    "runtime-go/internal/identity/context.go": "4cbe61bec2230041a0ebe0e252089763ad0af5f36f780c7a38d03daf8f1eb23e",
+    "runtime-go/internal/server/auth_test.go": "f5053e33c8aa6560fdc4782b2e8ff529fcea8634e43e366ffefca3aacb764a1e",
+    "runtime-go/internal/server/auth.go": "0fc55c94a22cda934e7a42818f8240e973c30299d3ecc8da3ef177b001b3e3d8",
+    "runtime-go/internal/server/cancel_test.go": "e6cd68ec177d11170792865018e579fbebdefb989886950e962937596301683e",
+    "runtime-go/internal/server/cancel.go": "a0b949b90769cc695ac959a71487c3a4b2b2670eb75370822d92b5da4b6e2fac",
+    "runtime-go/internal/server/health_test.go": "ad1f04c3cc1d68f251f383bdd392d90dee198429e72001f70c47a021d9e4c040",
+    "runtime-go/internal/server/health.go": "abf1deee86dcec5c3624cfaf4d2f6f04b36a2e98961f86e37c56cc0e08980f1e"
+  },
+  "dependency_graph_digest": {
+    "goModSha256": "aa869ff54106a5a4b53ff3aa55940639326b7708ce73e16e69747443093ec43a",
+    "goSumSha256": "1cb4a7ff4ddf45ebf0b34dc393744254c47106b2f465884859f2369956aa0950",
+    "goSumLines": 169,
+    "moduleCount": 119
+  },
+  "sdk_versions": {
+    "@ag-ui/client": "1.0.1",
+    "github.com/ag-ui-protocol/ag-ui/sdks/community/go": "v0.0.0-20260514093510-e9e910b230b9",
+    "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
+    "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
+  },
+  "environment": {
+    "platform": "darwin/arm64",
+    "bun": "1.4.2",
+    "network": "every spawned Go command runs with GOPROXY=off (module cache only); the probe talks to localhost fakes and nothing else"
+  },
   "modules": [
     {
       "path": "openbot/runtime-go",
@@ -598,16 +646,190 @@
       "indirect": true
     }
   ],
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: which commit the candidate is probed at"
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: workspace difference summary (master §6 工作区差异摘要)"
+    },
+    {
+      "argv": [
+        "go",
+        "version"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: toolchain version"
+    },
+    {
+      "argv": [
+        "go",
+        "list",
+        "-m",
+        "-e",
+        "-f",
+        "{{.Path}} {{if .Version}}{{.Version}}{{else}}(main){{end}} {{.Indirect}}",
+        "all"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: the frozen module graph (go list -m all)"
+    },
+    {
+      "argv": [
+        "go",
+        "mod",
+        "tidy"
+      ],
+      "exitCode": 0,
+      "purpose": "candidate build: resolve the launcher module offline"
+    },
+    {
+      "argv": [
+        "go",
+        "build",
+        "-o",
+        "candidate",
+        "."
+      ],
+      "exitCode": 0,
+      "purpose": "candidate build: compile the real Go candidate binary"
+    },
+    {
+      "argv": [
+        "ps",
+        "-o",
+        "rss=",
+        "-p",
+        "26647"
+      ],
+      "exitCode": 0,
+      "purpose": "measurement: resident set size of the candidate process"
+    }
+  ],
+  "exit_codes": {
+    "probe": 0
+  },
+  "evidence_refs": [
+    "runtime-go/testdata/compatibility-report.json (this artifact, written only by the probe)",
+    "server/scripts/enterprise-runtime-probe.ts (the probe that wrote it)",
+    "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same candidate)",
+    "server/tests/enterprise/runtime-artifacts.test.ts (asserts this artifact's R4 shape)",
+    "runtime-go/internal/adapter/agui_test.go (Go-side semantics, incl. RUN_ERROR and leak refusal)",
+    "runtime-go/internal/server/auth_test.go (identity and run-binding refusals)",
+    "runtime-go/dependency-review.json (the dependency risk record the G1b gate must close)"
+  ],
+  "limitations": [
+    "check 'wait' is not_run: no input-required/wait protocol seam exists in this candidate yet (01 plan R4-A 等待输入/审批 row: the mapping must follow the locked protocol's verified fields, which this runtime does not expose yet)",
+    "check 'backpressure' is not_run: no slow-consumer/bounded-queue harness is exercised against the candidate yet (01 plan R4-A 慢消费者 row)",
+    "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
+    "G1b/G2 evidence sets (T1–T3/E1–E4/P2–P4/D2/D4, D5/business acceptance, and the dependency risk closure in runtime-go/dependency-review.json) are not produced by this probe"
+  ],
   "checks": {
-    "identity": true,
-    "stream": true,
-    "callback": true,
-    "cancel": true,
-    "restart": true
+    "identity": {
+      "status": "passed",
+      "evidence": "no-credential request -> 401, forged assertion -> 401 (both want 401); provider requests during the refusals: 0 (want 0)"
+    },
+    "trusted_input": {
+      "status": "passed",
+      "evidence": "a valid assertion minted for run_binding/thread_binding presented against a body claiming run_somebody_elses -> 403 (want 403, identity bound to a different run); provider requests so far: 0 (want 0)"
+    },
+    "text": {
+      "status": "passed",
+      "evidence": "events=RUN_STARTED,TEXT_MESSAGE_START,TEXT_MESSAGE_CONTENT,TEXT_MESSAGE_CONTENT,TEXT_MESSAGE_END,RUN_FINISHED; joined text=\"probe-stream-ok\"; first event echoed threadId=thread_stream runId=run_stream"
+    },
+    "tool": {
+      "status": "passed",
+      "evidence": "governed calls that crossed /api/agent-tools/call: [{\"name\":\"probe_governed\",\"botId\":\"probe_bot\",\"actorId\":\"actor_probe\"}]; run carried TOOL_CALL_START and finished with text \"callback-observed\""
+    },
+    "wait": {
+      "status": "not_run",
+      "evidence": "no input-required/wait protocol seam exists in this candidate yet (01 plan R4-A 等待输入/审批 row: the mapping must follow the locked protocol's verified fields, which this runtime does not expose yet)"
+    },
+    "error": {
+      "status": "passed",
+      "evidence": "provider 500 -> events=RUN_STARTED,RUN_ERROR (terminal RUN_ERROR required); provider's error body 'leak-bait-secret-detail' present in events: false (want false)"
+    },
+    "cancel": {
+      "status": "passed",
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 3ms after the cancel"
+    },
+    "backpressure": {
+      "status": "not_run",
+      "evidence": "no slow-consumer/bounded-queue harness is exercised against the candidate yet (01 plan R4-A 慢消费者 row)"
+    },
+    "restart": {
+      "status": "passed",
+      "evidence": "after killing and restarting the candidate, the old run's cancel -> 404 (want 404: the restarted process holds no state it could lie about)"
+    }
+  },
+  "gates": {
+    "G1a": {
+      "status": "blocked",
+      "evidence": [
+        "blocked by check categories with no executable harness yet: wait, backpressure",
+        "G1a can only be reviewed as passed once every R4 check category actually ran (master §6: 所有项只有实际执行后才填pass/fail)",
+        "runtime-go/testdata/compatibility-report.json#checks"
+      ]
+    },
+    "G1b": {
+      "status": "not_run",
+      "evidence": [
+        "G1b evidence (T1–T3, E1–E4, P2–P4, D2/D4, and current dependency risk closure) is not produced by this probe",
+        "runtime-go/dependency-review.json (open reachable-vulnerability record the gate must answer)"
+      ]
+    },
+    "G2": {
+      "status": "not_run",
+      "evidence": [
+        "G2 depends on G1b plus D5/business acceptance with capacity and recovery evidence; nothing in this probe executed it"
+      ]
+    }
   },
   "measurements": {
-    "rssBytes": 25133056,
-    "firstEventMs": 18
+    "rssBytes": 24707072,
+    "firstEventMs": 6,
+    "cancelLagMs": 3,
+    "streamDurationMs": 8
   },
-  "adoption": "candidate"
+  "reviewers": {
+    "G1a": {
+      "required": [
+        "技术",
+        "运行",
+        "QA"
+      ],
+      "signed": []
+    },
+    "G1b": {
+      "required": [
+        "安全",
+        "运行",
+        "SRE",
+        "技术"
+      ],
+      "signed": []
+    },
+    "G2": {
+      "required": [
+        "产品",
+        "业务",
+        "技术",
+        "安全",
+        "SRE"
+      ],
+      "signed": []
+    }
+  }
 }

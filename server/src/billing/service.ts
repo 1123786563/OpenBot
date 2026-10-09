@@ -1,8 +1,12 @@
 import { createBillingEntitlementReader } from "./entitlement";
-import { LAGO_PROVIDER_ID, type LagoClient, type LagoSubscriptionBody } from "./lago";
 import {
-  BillingError,
+  LAGO_PROVIDER_ID,
+  type LagoClient,
+  type LagoSubscriptionBody,
+} from "./lago";
+import {
   type BillingEntitlements,
+  BillingError,
   type BillingService,
   type BillingSnapshot,
   type BillingStore,
@@ -10,6 +14,57 @@ import {
   type VerifiedWebhook,
   type WebhookVerifier,
 } from "./types";
+
+/** The request body a webhook may carry. A bigger one is answered 413, never read whole. */
+const MAX_WEBHOOK_BYTES = 1024 * 1024;
+
+/**
+ * The external customer ID one deployment is known by at the provider: deterministic, derived from
+ * the tenant identity, defined in this one place so the assembly, the sync and any future caller
+ * cannot drift apart. (The Go implementation this descends from built `weknora-tenant-<tenantID>`
+ * the same way, for the same reason.)
+ */
+export function deploymentExternalCustomerId(tenantId: string): string {
+  return `openbot-deployment-${tenantId}`;
+}
+
+/**
+ * Read the raw webhook body exactly once, with a hard cap.
+ *
+ * Same discipline as the client's response read (./lago.ts `readCapped`): the delivery must be
+ * verified against the exact bytes that arrived, so the body cannot be re-read or transformed — but
+ * it is also unauthenticated input at this point, so it is never buffered beyond 1 MiB.
+ * `content-length` is checked first and the stream is cut mid-read when it lies. Over the cap the
+ * caller answers 413: the provider retries a bounded delivery, and nobody allocates for an
+ * attacker.
+ */
+async function readBodyCapped(request: Request): Promise<string | null> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_WEBHOOK_BYTES) {
+    return null;
+  }
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_WEBHOOK_BYTES) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
 
 /**
  * The sync, the webhook and the entitlement read, arranged.
@@ -91,14 +146,16 @@ export function createBillingService(deps: {
    */
   async function refreshFor(delivery: VerifiedWebhook): Promise<void> {
     if (delivery.webhookType.startsWith("customer.")) {
-      if (!delivery.externalCustomerId) throw new BillingError("invalid_response");
+      if (!delivery.externalCustomerId)
+        throw new BillingError("invalid_response");
       // A 404 leaves the projection alone: the object is gone remotely, and the subscription
       // projections say what that means for entitlements. The delivery itself is done.
       await readCustomerIntoStore(delivery.externalCustomerId);
       return;
     }
     if (delivery.webhookType.startsWith("subscription.")) {
-      if (!delivery.externalCustomerId) throw new BillingError("invalid_response");
+      if (!delivery.externalCustomerId)
+        throw new BillingError("invalid_response");
       await writeSubscriptionProjections(
         await readSubscriptions(delivery.externalCustomerId),
       );
@@ -122,7 +179,9 @@ export function createBillingService(deps: {
       };
     },
     ...(deps.ttlMs !== undefined ? { ttlMs: deps.ttlMs } : {}),
-    ...(deps.failureTtlMs !== undefined ? { failureTtlMs: deps.failureTtlMs } : {}),
+    ...(deps.failureTtlMs !== undefined
+      ? { failureTtlMs: deps.failureTtlMs }
+      : {}),
     ...(deps.now ? { now: deps.now } : {}),
     ...(deps.log ? { log: deps.log } : {}),
   });
@@ -213,7 +272,14 @@ export function createBillingService(deps: {
       if (!deps.verifier) {
         return json(503, { error: "Billing webhooks are not configured." });
       }
-      const rawBody = await request.text();
+      const rawBody = await readBodyCapped(request);
+      if (rawBody === null) {
+        // Read exactly once, capped: an oversized delivery is refused before it is verified or
+        // buffered, and the body is never re-read for a second attempt.
+        return json(413, {
+          error: "Billing webhook body exceeds the size limit.",
+        });
+      }
       const verified = await deps.verifier.verify(request.headers, rawBody);
       if (!verified.ok) {
         return json(401, { error: "Invalid billing webhook signature." });

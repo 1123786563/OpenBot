@@ -96,6 +96,14 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
+import { createLagoClient } from "./billing/lago";
+import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
+import {
+  createBillingService,
+  deploymentExternalCustomerId,
+} from "./billing/service";
+import { createBillingStore } from "./billing/store";
+import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
   loadAttachmentForTurn,
   markAttachmentsSent,
@@ -2868,6 +2876,68 @@ const selfHostBannerIntelligence = createIntelligenceClient(
   config.runtime.intelligence,
 );
 
+/*
+ * The billing seam, assembled only when a provider was configured.
+ *
+ * One fail-fast first: the provider URL is vetted at the DNS level here, before the app exists,
+ * because a base URL the outbound policy refuses is a deployment wired wrong (the policy is the one
+ * in billing/outbound.ts: scheme allow-list, then the destination tables, then every DNS answer
+ * re-judged as an address). The check cannot live in the synchronous `loadConfig` — resolving a name
+ * is async — so boot is the boundary it gets instead, and a refused URL stops the process with the
+ * variable named rather than surfacing as a 503 on the first sync.
+ *
+ * The guard built from the same verdict then rides on every request the client makes, immediately
+ * before it is opened, which is the type-level half of the same guarantee (the client's
+ * `assertTarget` is required, so no assembly can construct one that skips it).
+ */
+const billingSettings = config.billing;
+const billing =
+  billingSettings === undefined
+    ? undefined
+    : await (async () => {
+        const settings = billingSettings;
+        const verdict = await checkOutboundUrl(settings.apiUrl, {
+          allowPrivate: settings.allowPrivateHosts,
+        });
+        if (!verdict.allowed) {
+          throw new Error(
+            `LAGO_API_URL was refused by the outbound policy: ${verdict.reason}`,
+          );
+        }
+        const externalCustomerKey = deploymentExternalCustomerId(
+          config.deploymentId ?? tenantPackage.tenantId,
+        );
+        return {
+          service: createBillingService({
+            config: {
+              externalCustomerKey,
+              webhookMode: settings.webhookMode,
+            },
+            client: createLagoClient({
+              baseUrl: settings.apiUrl,
+              apiKey: settings.apiKey,
+              assertTarget: createOutboundGuard({
+                allowPrivate: settings.allowPrivateHosts,
+              }),
+              ...(settings.requestTimeoutMs !== undefined
+                ? { requestTimeoutMs: settings.requestTimeoutMs }
+                : {}),
+            }),
+            store: createBillingStore(database),
+            ...(settings.webhookKey
+              ? {
+                  verifier: createWebhookVerifier({
+                    key: settings.webhookKey,
+                  }),
+                }
+              : {}),
+            planEntitlements: settings.planEntitlements,
+          }),
+          externalCustomerKey,
+          customerName: `OpenBot deployment ${externalCustomerKey}`,
+        };
+      })();
+
 const app = createApp(
   config,
   auth,
@@ -3052,6 +3122,7 @@ const app = createApp(
     enabled: config.selfHostBanner,
     entitlements: () => selfHostBannerIntelligence.getRuntimeEntitlements(),
   }),
+  billing,
 );
 
 /**
@@ -3281,7 +3352,7 @@ if (config.singleUser) {
   console.warn(
     "No identity provider is configured, so every request is treated as " +
       `${DEV_ACTOR.email} (administrator). Configure GOOGLE_OAUTH_*, ` +
-      "MICROSOFT_OAUTH_* or OKTA_OAUTH_* before anybody else can reach this.",
+      "MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_* before anybody else can reach this.",
   );
 }
 

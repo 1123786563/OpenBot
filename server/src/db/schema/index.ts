@@ -9,6 +9,8 @@ export * from "./core";
 export * from "./coworker";
 export * from "./delivery";
 export * from "./demonstrations";
+export * from "./enterprise-authz";
+export * from "./enterprise-tenancy";
 export * from "./group";
 export * from "./learning";
 export * from "./lifecycle";

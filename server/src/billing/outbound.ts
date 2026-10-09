@@ -27,10 +27,13 @@
  */
 import { lookup } from "node:dns/promises";
 import { isNeverAllowedHostname } from "../computer/target";
+import { BillingError } from "./types";
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 
-export type OutboundVerdict = { allowed: true } | { allowed: false; reason: string };
+export type OutboundVerdict =
+  | { allowed: true }
+  | { allowed: false; reason: string };
 
 export type OutboundOptions = {
   /**
@@ -111,11 +114,16 @@ function expandIpv6(hostname: string): number[] | null {
   if (halves.length > 2) return null;
 
   const parse = (part: string) =>
-    part === "" ? [] : part.split(":").map((group) => Number.parseInt(group, 16));
+    part === ""
+      ? []
+      : part.split(":").map((group) => Number.parseInt(group, 16));
   const head = parse(halves[0] ?? "");
   const tail = halves.length === 2 ? parse(halves[1] ?? "") : [];
   const extra = tailOctets
-    ? [(tailOctets[0] << 8) | tailOctets[1], (tailOctets[2] << 8) | tailOctets[3]]
+    ? [
+        (tailOctets[0] << 8) | tailOctets[1],
+        (tailOctets[2] << 8) | tailOctets[3],
+      ]
     : [];
   const all = [...head, ...tail, ...extra];
   if (all.some((group) => Number.isNaN(group))) return null;
@@ -162,9 +170,10 @@ function isLocalhostName(hostname: string): boolean {
 }
 
 /** One hostname reduced and judged; `dns` means the tables cannot answer it yet. */
-function judgeHostname(
-  hostname: string,
-): { kind: AddressKind | undefined; dns: boolean } {
+function judgeHostname(hostname: string): {
+  kind: AddressKind | undefined;
+  dns: boolean;
+} {
   // The root dot. `example.com.` and `example.com` are the same name to DNS and to fetch.
   const name = hostname.replace(/\.+$/, "");
   if (!name.startsWith("[") || !name.endsWith("]")) {
@@ -263,4 +272,23 @@ function kindVerdict(
 
 async function defaultResolveDns(hostname: string) {
   return lookup(hostname, { all: true });
+}
+
+/**
+ * The same verdict as `checkOutboundUrl`, shaped as the assertion the HTTP client wants: a guard
+ * resolves, and a refused destination throws `BillingError("unconfigured")` rather than returning a
+ * reason. That mapping is deliberate — a base URL the outbound policy refuses is a deployment that
+ * was wired wrong, not a network blip, so it carries the non-retryable sentinel the seams already
+ * use for "this cannot work as configured" (the Go implementation this descends from mapped the
+ * same refusal to ErrPlatformUnconfigured). The refusal's reason string stays here: it names the
+ * destination, which is exactly what the sentinel errors are kept free of.
+ */
+export function createOutboundGuard(
+  options: OutboundOptions = {},
+): (url: URL) => Promise<void> {
+  return async (url: URL) => {
+    const verdict = await checkOutboundUrl(url.toString(), options);
+    if (verdict.allowed) return;
+    throw new BillingError("unconfigured");
+  };
 }

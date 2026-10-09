@@ -27,12 +27,19 @@ import type { AccountRef } from "./shared-accounts";
  * asking the next person to keep both in step. {@link isFieldScheme} would answer false for a scheme
  * the type calls valid, and an app whose secret a person types would be read as one nobody types —
  * sent down the consent path, to a vendor screen that has nothing to ask them for.
+ *
+ * `CUSTOM_CREDENTIAL` IS OPENCONNECTOR'S AND COMPOSIO NEVER WRITES IT. It exists so a provider whose
+ * fields are not one secret box still connects through the fields path instead of being refused as
+ * unreadable — OpenConnector publishes such a provider under that one auth type, and the answer this
+ * list owes it is "a person types it", not "nobody here can read this".
  */
 const FIELD_SCHEME_NAMES = [
   "API_KEY",
   "BASIC",
   "BEARER_TOKEN",
   "BASIC_WITH_JWT",
+  /** OpenConnector's per-provider field set — a secret (or set of fields) the person already holds. */
+  "CUSTOM_CREDENTIAL",
 ] as const;
 
 export type FieldScheme = (typeof FIELD_SCHEME_NAMES)[number];

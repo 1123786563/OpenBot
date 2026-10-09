@@ -34,7 +34,11 @@ export const authKeys = {
 };
 
 /** An identity provider this deployment can sign somebody in with. */
-export type AuthProviderId = "google" | "microsoft" | "okta";
+export type AuthProviderId =
+  | "google"
+  | "microsoft"
+  | "okta"
+  | "casdoor";
 
 /** What the sign-in screen may offer, answered by the process that knows. */
 export type SignInOptions = {

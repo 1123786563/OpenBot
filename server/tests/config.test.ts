@@ -469,7 +469,45 @@ describe("deployment configuration", () => {
     ).toThrow("OKTA_OAUTH_CLIENT_ID");
   });
 
-  test("carries all three at once, in a fixed order", () => {
+  test("enables Casdoor against its issuer", () => {
+    const config = loadConfig({
+      ...withoutSignIn,
+      ...SESSION,
+      CASDOOR_OAUTH_CLIENT_ID: "casdoor-client-id",
+      CASDOOR_OAUTH_CLIENT_SECRET: "casdoor-client-secret",
+      CASDOOR_OAUTH_ISSUER: "http://localhost:8000",
+    });
+
+    expect(config.auth?.casdoor).toEqual({
+      clientId: "casdoor-client-id",
+      clientSecret: "casdoor-client-secret",
+      issuer: "http://localhost:8000",
+    });
+    expect(configuredAuthProviders(config.auth)).toEqual(["casdoor"]);
+  });
+
+  test("refuses Casdoor without an issuer, which names no particular Casdoor", () => {
+    expect(() =>
+      loadConfig({
+        ...withoutSignIn,
+        ...SESSION,
+        CASDOOR_OAUTH_CLIENT_ID: "casdoor-client-id",
+        CASDOOR_OAUTH_CLIENT_SECRET: "casdoor-client-secret",
+      }),
+    ).toThrow("CASDOOR_OAUTH_ISSUER");
+  });
+
+  test("refuses a Casdoor issuer with no credentials behind it", () => {
+    expect(() =>
+      loadConfig({
+        ...withoutSignIn,
+        ...SESSION,
+        CASDOOR_OAUTH_ISSUER: "http://localhost:8000",
+      }),
+    ).toThrow("CASDOOR_OAUTH_CLIENT_ID");
+  });
+
+  test("carries all four at once, in a fixed order", () => {
     const config = loadConfig({
       ...withoutSignIn,
       ...SESSION,
@@ -480,6 +518,9 @@ describe("deployment configuration", () => {
       OKTA_OAUTH_CLIENT_ID: "okta-client-id",
       OKTA_OAUTH_CLIENT_SECRET: "okta-client-secret",
       OKTA_OAUTH_ISSUER: "https://example.okta.com/oauth2/default",
+      CASDOOR_OAUTH_CLIENT_ID: "casdoor-client-id",
+      CASDOOR_OAUTH_CLIENT_SECRET: "casdoor-client-secret",
+      CASDOOR_OAUTH_ISSUER: "http://localhost:8000",
     });
 
     // The order the buttons appear in, fixed here so it cannot change with how a .env was written.
@@ -487,6 +528,7 @@ describe("deployment configuration", () => {
       "google",
       "microsoft",
       "okta",
+      "casdoor",
     ]);
   });
 

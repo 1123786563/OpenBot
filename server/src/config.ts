@@ -85,7 +85,7 @@ export type ComputerConfig =
  * has Google or Entra or Okta and is not going to acquire another, so the shape here is a set of
  * optional providers rather than one required one, and the deployment turns on whichever it has.
  */
-export type AuthProviderId = "google" | "microsoft" | "okta";
+export type AuthProviderId = "google" | "microsoft" | "okta" | "casdoor";
 
 /** An OAuth client, as every provider here needs one. */
 export type OAuthClient = { clientId: string; clientSecret: string };
@@ -111,6 +111,12 @@ export type AuthConfig = {
   microsoft?: OAuthClient & { tenantId: string };
   /** Okta is an OIDC provider rather than a named one, so it is identified by its issuer. */
   okta?: OAuthClient & { issuer: string };
+  /**
+   * Casdoor, likewise an OIDC provider identified by its issuer. The issuer is the Casdoor origin
+   * itself, such as `http://localhost:8000`, whose `/.well-known/openid-configuration` names the
+   * authorization, token and userinfo endpoints.
+   */
+  casdoor?: OAuthClient & { issuer: string };
 };
 
 /**
@@ -128,6 +134,7 @@ export function configuredAuthProviders(
   if (auth.google) providers.push("google");
   if (auth.microsoft) providers.push("microsoft");
   if (auth.okta) providers.push("okta");
+  if (auth.casdoor) providers.push("casdoor");
   return providers;
 }
 
@@ -322,6 +329,15 @@ export type DeploymentConfig = {
    * mounted and failing: a capability that is not configured should be missing, not broken.
    */
   computer?: ComputerConfig;
+  /**
+   * The paid-plan provider. Same absent-means-unmounted contract as the computer above it: a
+   * deployment that has not configured billing has no billing routes, no webhook door and no
+   * entitlements to read, rather than surfaces that are mounted and permanently refusing.
+   *
+   * Carries no secret beyond the provider credentials themselves, which live only here, in the
+   * environment and in the request headers the client sends — never in a log line or a response.
+   */
+  billing?: LagoBillingConfig;
   /** How far one Bot handing work to another may go. */
   handoff: HandoffCaps;
   /**
@@ -648,7 +664,7 @@ function managedAgentConfig(
 
 function oauthClient(
   environment: Environment,
-  provider: "GOOGLE" | "MICROSOFT" | "OKTA",
+  provider: "GOOGLE" | "MICROSOFT" | "OKTA" | "CASDOOR",
 ): OAuthClient | undefined {
   const clientId = optional(environment, `${provider}_OAUTH_CLIENT_ID`);
   const clientSecret = optional(environment, `${provider}_OAUTH_CLIENT_SECRET`);
@@ -698,7 +714,7 @@ function namesNoDirectory(tenantId: string | undefined): boolean {
 /**
  * Sign-in, if this deployment has an identity provider to sign people in with.
  *
- * Any one of the three turns authentication on. More than one is allowed and is the normal shape
+ * Any one of the four turns authentication on. More than one is allowed and is the normal shape
  * for a company mid-migration, where some people are on Entra and some are still on Okta.
  *
  * Every combination that cannot work refuses at start-up rather than at somebody's first attempt to
@@ -712,14 +728,15 @@ function authConfig(
 ): AuthConfig | undefined {
   const microsoft = microsoftAuth(environment);
   const okta = oktaAuth(environment);
+  const casdoor = casdoorAuth(environment);
 
   const secret = optional(environment, "BETTER_AUTH_SECRET");
   const baseUrl = url(environment, "BETTER_AUTH_URL");
 
-  if (!google && !microsoft && !okta) {
+  if (!google && !microsoft && !okta && !casdoor) {
     if (secret || baseUrl) {
       throw new Error(
-        "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_* or OKTA_OAUTH_*, or unset both",
+        "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_*, or unset both",
       );
     }
     return undefined;
@@ -830,6 +847,7 @@ function authConfig(
     ...(google ? { google } : {}),
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
+    ...(casdoor ? { casdoor } : {}),
   };
 }
 
@@ -873,6 +891,34 @@ function oktaAuth(
   if (!issuer) {
     throw new Error(
       "Okta sign-in requires OKTA_OAUTH_ISSUER, such as https://example.okta.com/oauth2/default",
+    );
+  }
+  return { ...client, issuer };
+}
+
+/**
+ * Casdoor, an OIDC provider the same way Okta is: not one Better Auth knows the endpoints of, so
+ * identified by its issuer and discovered against `/.well-known/openid-configuration`.
+ *
+ * The issuer is the Casdoor origin itself, path-free, such as `http://localhost:8000` locally or
+ * `https://sso.example.com` for a deployment of your own.
+ */
+function casdoorAuth(
+  environment: Environment,
+): (OAuthClient & { issuer: string }) | undefined {
+  const client = oauthClient(environment, "CASDOOR");
+  const issuer = url(environment, "CASDOOR_OAUTH_ISSUER");
+  if (!client) {
+    if (issuer) {
+      throw new Error(
+        "CASDOOR_OAUTH_ISSUER is set but CASDOOR_OAUTH_CLIENT_ID and CASDOOR_OAUTH_CLIENT_SECRET are not",
+      );
+    }
+    return undefined;
+  }
+  if (!issuer) {
+    throw new Error(
+      "Casdoor sign-in requires CASDOOR_OAUTH_ISSUER, such as http://localhost:8000",
     );
   }
   return { ...client, issuer };
@@ -1115,6 +1161,184 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
 }
 
 /**
+ * The paid-plan provider, as this deployment is allowed to see it.
+ *
+ * The URL is an origin, deliberately: the client owns the `/api/v1` prefix, so a value that arrived
+ * with one is a value that was copied from a place that spells it differently (the provider's SDK
+ * documentation, or a curl example), and would produce requests to `/api/v1/api/v1/...` at runtime.
+ * That is refused here, at boot, with the sentence that names the fix — the same reasoning as every
+ * other partial configuration in this file: the mistake belongs where somebody is looking.
+ */
+export type LagoBillingConfig = {
+  /** The provider origin, for example `https://api.getlago.com`. No path, no query, no fragment. */
+  apiUrl: string;
+  /** The bearer credential. Never logged, never answered over HTTP, never stored. */
+  apiKey: string;
+  /** Which webhook signature mode the routes verify with; `off` mounts no webhook door. */
+  webhookMode: "jwt" | "hmac" | "off";
+  /** The key behind `webhookMode`, absent exactly when the mode is `off`. */
+  webhookKey:
+    | { mode: "jwt"; publicKeyPem: string }
+    | { mode: "hmac"; key: string }
+    | undefined;
+  /**
+   * The private-host opt-in for the provider URL. Loopback, RFC1918 and fc00::/7 only — link-local
+   * and the cloud metadata addresses are never in it (../billing/outbound.ts owns that floor). For
+   * a deployment developing against a Lago stack on its own machine.
+   */
+  allowPrivateHosts: boolean;
+  /** Plan code → the entitlement codes that plan grants. */
+  planEntitlements: ReadonlyMap<string, readonly string[]>;
+  /** One request's ceiling, when the default 10s is not what this deployment wants. */
+  requestTimeoutMs?: number;
+};
+
+/**
+ * Read the billing configuration, or refuse to start.
+ *
+ * All-or-nothing on the addressing pair, XOR on the webhook keys, strict JSON on the plan map — the
+ * partial shapes are exactly the ones that run "fine" until the first person whose entitlement was
+ * silently wrong. A deployment that has configured none of it gets `undefined` and no billing
+ * surface at all, which is the correct state of a free deployment.
+ */
+function billingConfig(
+  environment: Environment,
+): LagoBillingConfig | undefined {
+  const apiUrl = optional(environment, "LAGO_API_URL");
+  const apiKey = optional(environment, "LAGO_API_KEY");
+  if (!apiUrl && !apiKey) {
+    return undefined;
+  }
+  if (!apiUrl || !apiKey) {
+    throw new Error(
+      "Billing is half configured: LAGO_API_URL and LAGO_API_KEY must be set together, or neither",
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(apiUrl);
+  } catch {
+    throw new Error("LAGO_API_URL must be a valid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("LAGO_API_URL must be an http or https URL");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(
+      "LAGO_API_URL must not carry credentials in the URL: set LAGO_API_KEY instead",
+    );
+  }
+  const trailingPath = parsed.pathname.replace(/\/+$/, "");
+  if (trailingPath !== "" || parsed.search || parsed.hash) {
+    throw new Error(
+      parsed.pathname.replace(/\/+$/, "") === "/api/v1"
+        ? "LAGO_API_URL is the provider origin (for example https://api.getlago.com); the client adds the /api/v1 prefix itself"
+        : "LAGO_API_URL must be the provider origin only, without a path, query or fragment",
+    );
+  }
+
+  const publicKeyPem = optional(environment, "LAGO_WEBHOOK_PUBLIC_KEY");
+  const hmacKey = optional(environment, "LAGO_WEBHOOK_SECRET");
+  if (publicKeyPem && hmacKey) {
+    throw new Error(
+      "LAGO_WEBHOOK_PUBLIC_KEY and LAGO_WEBHOOK_SECRET are both set: the provider signs with one algorithm, so name it by setting exactly one of them",
+    );
+  }
+  const webhookKey =
+    publicKeyPem !== undefined
+      ? { mode: "jwt" as const, publicKeyPem }
+      : hmacKey !== undefined
+        ? { mode: "hmac" as const, key: hmacKey }
+        : undefined;
+
+  const planEntitlements = billingPlanEntitlements(environment);
+  const allowPrivateHosts = billingPrivateHostsAllowed(environment);
+
+  const timeoutRaw = optional(environment, "LAGO_REQUEST_TIMEOUT_MS");
+  let requestTimeoutMs: number | undefined;
+  if (timeoutRaw !== undefined) {
+    const value = Number(timeoutRaw);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(
+        "LAGO_REQUEST_TIMEOUT_MS must be a whole number of milliseconds greater than zero",
+      );
+    }
+    requestTimeoutMs = value;
+  }
+
+  return {
+    apiUrl,
+    apiKey,
+    webhookMode: webhookKey?.mode ?? "off",
+    webhookKey,
+    allowPrivateHosts,
+    planEntitlements,
+    ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
+  };
+}
+
+/**
+ * The plan map, as JSON in one variable: `{"pro": ["intelligence", "teams"]}`.
+ *
+ * Malformed JSON, or JSON of the wrong shape, refuses to start rather than falling back to an empty
+ * map — an operator who wrote entitlements and mistyped them would otherwise run a deployment that
+ * quietly grants nothing, and the first person to notice would be somebody who was owed something.
+ * Same boundary as `actionPolicy` above it.
+ */
+function billingPlanEntitlements(
+  environment: Environment,
+): ReadonlyMap<string, readonly string[]> {
+  const raw = optional(environment, "LAGO_PLAN_ENTITLEMENTS") ?? "{}";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("LAGO_PLAN_ENTITLEMENTS must be valid JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      "LAGO_PLAN_ENTITLEMENTS must be a JSON object of plan code to a list of entitlement codes",
+    );
+  }
+  const plans = new Map<string, readonly string[]>();
+  for (const [planCode, codes] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (
+      !Array.isArray(codes) ||
+      codes.some((code) => typeof code !== "string" || code.length === 0)
+    ) {
+      throw new Error(
+        `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" must be a list of non-empty entitlement codes`,
+      );
+    }
+    plans.set(planCode, codes as readonly string[]);
+  }
+  return plans;
+}
+
+/**
+ * Whether the provider URL may sit inside this deployment's own network.
+ *
+ * Off unless asked for, and the asking is loud. Unlike the computer's switch this one is not
+ * production-refused: a company that runs its own Lago inside its own network is a legitimate
+ * deployment, and the outbound floor beneath it (link-local and the metadata addresses, always
+ * refused) is the part that must never move. The warning is kept because the common way to end up
+ * with it is copying `.env.example`, and a copy deserves to know what it copied.
+ */
+function billingPrivateHostsAllowed(environment: Environment): boolean {
+  const raw = optional(environment, "LAGO_ALLOW_PRIVATE_HOSTS");
+  const allowed = raw === "true" || raw === "1";
+  if (allowed) {
+    console.warn(
+      "LAGO_ALLOW_PRIVATE_HOSTS=true lets the billing provider sit on this deployment's own network. Fine against a local Lago stack; check that this is deliberate before deploying.",
+    );
+  }
+  return allowed;
+}
+
+/**
  * The action policy, as JSON in one variable.
  *
  * Refuses to start on malformed JSON or a policy of the wrong shape, rather than falling back to the
@@ -1314,6 +1538,7 @@ export function loadConfig(
       ? { appDistDir: optional(environment, "APP_DIST_DIR") as string }
       : {}),
     computer: computerConfig(environment),
+    billing: billingConfig(environment),
     handoff: handoffCaps(environment),
     ...(optional(environment, "AGENT_TOOL_TOKEN")
       ? { agentToolToken: optional(environment, "AGENT_TOOL_TOKEN") as string }

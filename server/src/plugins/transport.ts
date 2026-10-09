@@ -3,6 +3,7 @@ import * as composio from "./composio";
 import * as driveRest from "./google-drive-rest";
 import type { ListedTool, McpCallResult } from "./mcp";
 import * as mcp from "./mcp";
+import * as openConnector from "./openconnector";
 
 /**
  * How this deployment reaches one vendor: which protocol, from the kind `./access` resolved.
@@ -22,9 +23,10 @@ import * as mcp from "./mcp";
  * MCP-shaped implementation still satisfies the seam unchanged. `listTools` answers `ListedTool[]`,
  * which is `McpTool` plus fields describing what a listing said about an action; the connection
  * carries an `actorId` and a `botId` for the transports whose authorization is the actor rather
- * than a credential; and one reserved key on `args` hands a transport the recorded version of the
- * action being called. Every addition is OPTIONAL, and that is what keeps an MCP-shaped
- * implementation an implementation of this interface rather than an exception to it.
+ * than a credential, and an `accountHandle` for the broker that keeps people apart by named
+ * connections rather than by a user id; and one reserved key on `args` hands a transport the
+ * recorded version of the action being called. Every addition is OPTIONAL, and that is what keeps
+ * an MCP-shaped implementation an implementation of this interface rather than an exception to it.
  *
  * This paragraph used to say those fields were ones "a broker publishes and an MCP server does
  * not", and that `mcp.ts` therefore read none of them. Both were false: the MCP specification
@@ -102,6 +104,17 @@ export type VendorTransport = {
       actorId?: string;
       /** The Bot the run belongs to. A routine runs as its Bot, which is never a name a model supplies. */
       botId?: string;
+      /**
+       * The broker-side handle of the account this call runs in — OpenConnector's connection alias.
+       * Absent for a call that runs on no account of anybody's (a no-auth service), and ignored by
+       * every transport whose authorization is a credential rather than an actor. It extends the
+       * actor paragraph above rather than replacing it: `actorId` names who is asking on this
+       * deployment's own terms, and this names the account the BROKER was told to run in, which is
+       * a fact only a broker-kept connection can contribute and which the call path reads off
+       * `brokered_connections.vendorUserId` rather than out of `args` — a model that could name an
+       * alias could spend somebody else's connection, exactly as one that could name an actor could.
+       */
+      accountHandle?: string;
     },
     toolName: string,
     args: Record<string, unknown>,
@@ -119,12 +132,14 @@ export type TransportKind =
   | "mcp"
   | "google-drive-rest"
   | "builtin-routines"
-  | "composio";
+  | "composio"
+  | "open-connector";
 
 /**
  * The kinds a CATALOGUE ENTRY may name, which is every one except the broker's.
  *
- * CRITERION. `composio` is not writable in a reviewed entry, and the compiler is what says so.
+ * CRITERION. A broker's kind — `composio` or `open-connector` — is not writable in a reviewed
+ * entry, and the compiler is what says so.
  *
  * REASON. A brokered row is reached by an app slug read off its url and a per-person connection
  * looked up by that slug; a catalogue entry has neither, and `accessFor` answers `toolkit: null`
@@ -138,13 +153,17 @@ export type TransportKind =
  * `Exclude` rather than a hand-written second union, so a kind added above is offered to the
  * catalogue automatically and only the broker stays out.
  */
-export type CuratedTransportKind = Exclude<TransportKind, "composio">;
+export type CuratedTransportKind = Exclude<
+  TransportKind,
+  "composio" | "open-connector"
+>;
 
 const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   mcp,
   "google-drive-rest": driveRest,
   "builtin-routines": builtinRoutines,
   composio,
+  "open-connector": openConnector,
 };
 
 /**

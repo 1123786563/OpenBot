@@ -9,6 +9,7 @@ const PROVIDER_NAMES: Record<AuthProviderId, string> = {
   google: "Google",
   microsoft: "Microsoft",
   okta: "Okta",
+  casdoor: "Casdoor",
 };
 
 export function providerName(provider: AuthProviderId): string {
