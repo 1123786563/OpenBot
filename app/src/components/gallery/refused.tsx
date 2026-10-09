@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 /**
  * Visible component refusal, using the same blocked-action semantics as computer policy refusals.
  */
@@ -9,13 +11,16 @@ export function RefusedCard({
   title: string;
   reason: string;
 }) {
+  const { t } = useTranslation("channels");
   return (
     <div
       className="my-2 w-full max-w-2xl rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3"
       data-testid="component-refused"
       role="status"
     >
-      <p className="text-sm font-medium text-destructive">Not shown: {title}</p>
+      <p className="text-sm font-medium text-destructive">
+        {t("gallery.refused.notShown", { title })}
+      </p>
       <p className="mt-1 text-sm text-foreground/80">{reason}</p>
     </div>
   );

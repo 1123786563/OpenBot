@@ -1,6 +1,7 @@
 import { IconKey, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -17,6 +18,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { deleteSavedLoginMutationOptions } from "@/lib/passwords/mutations";
 import { savedLoginsQueryOptions } from "@/lib/passwords/queries";
 import { queryClient } from "@/query-client";
@@ -32,28 +34,24 @@ export const Route = createFileRoute("/_authed/settings/passwords")({
  * it. A saved login is used only when you confirm it in a sign-in form.
  */
 function PasswordsPage() {
+  const { t } = useTranslation("settings");
+  const dateTime = useDateTime();
   const logins = useQuery(savedLoginsQueryOptions());
   const remove = useMutation(deleteSavedLoginMutationOptions(queryClient));
   return (
     <PageShell
-      title="Passwords"
-      description="Logins you saved when signing a Bot in to a website. A Bot never sees them, and each use needs your confirmation."
+      title={t("passwords.title")}
+      description={t("passwords.description")}
     >
-      <PageSection title="Saved logins">
+      <PageSection title={t("passwords.savedLogins")}>
         {logins.isPending ? null : logins.error ? (
           <p className="text-destructive text-sm" role="alert">
-            Could not load your passwords.
+            {t("passwords.loadError")}
           </p>
         ) : !logins.data.passwordManager ? (
-          <PageEmpty>
-            Saved passwords are turned off for this workspace. Existing logins
-            are kept but not offered.
-          </PageEmpty>
+          <PageEmpty>{t("passwords.disabled")}</PageEmpty>
         ) : logins.data.logins.length === 0 ? (
-          <PageEmpty>
-            No saved logins. Choose Save to Passwords when you sign a Bot in to
-            a website.
-          </PageEmpty>
+          <PageEmpty>{t("passwords.empty")}</PageEmpty>
         ) : (
           <PageRows>
             {logins.data.logins.map((login, index) => (
@@ -68,13 +66,17 @@ function PasswordsPage() {
                     <ItemDescription>
                       {login.username}
                       {login.lastUsedAt
-                        ? ` · last used ${new Date(login.lastUsedAt).toLocaleDateString()}`
-                        : " · never used"}
+                        ? ` · ${t("passwords.lastUsed", {
+                            date: dateTime.formatDate(login.lastUsedAt),
+                          })}`
+                        : ` · ${t("passwords.neverUsed")}`}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
                     <Button
-                      aria-label={`Delete the login for ${login.origin}`}
+                      aria-label={t("passwords.deleteAria", {
+                        origin: login.origin,
+                      })}
                       size="sm"
                       variant="ghost"
                       disabled={remove.isPending}

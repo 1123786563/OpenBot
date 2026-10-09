@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { ComponentPreview } from "@/components/component-preview";
 import { PageShell } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
@@ -24,24 +25,25 @@ export const Route = createFileRoute("/_authed/settings/components-gallery/")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("settings");
   const components = useQuery(componentListQueryOptions());
   const published = components.data?.filter((component) => component.published);
 
   return (
     <PageShell
-      description="The pieces a Bot can draw in a conversation instead of describing something in prose. Which of them any one Bot may use is an administrator's decision."
-      title="Components gallery"
+      description={t("gallery.description")}
+      title={t("gallery.title")}
     >
       {components.isPending ? null : components.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Could not load components.
+          {t("gallery.loadError")}
         </p>
       ) : published?.length === 0 ? (
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>
-            <EmptyTitle>Nothing published yet</EmptyTitle>
+            <EmptyTitle>{t("gallery.emptyTitle")}</EmptyTitle>
             <EmptyDescription className="text-pretty">
-              When an administrator publishes a component, it will show up here.
+              {t("gallery.emptyDescription")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

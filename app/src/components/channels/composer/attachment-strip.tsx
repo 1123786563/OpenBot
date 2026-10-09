@@ -1,5 +1,6 @@
 import { IconFile, IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
+import { useTranslation } from "react-i18next";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
@@ -61,6 +62,7 @@ export function AttachmentStrip({
   images: readonly StagedImage[];
   onRemove: (id: string) => void;
 }) {
+  const { t } = useTranslation("channels");
   const occupied = images.length > 0 || files.length > 0;
 
   return (
@@ -84,7 +86,7 @@ export function AttachmentStrip({
     <Collapse open={occupied}>
       <ul
         aria-hidden={!occupied}
-        aria-label="Attachments"
+        aria-label={t("attachments.aria")}
         className="flex flex-wrap items-start gap-2 pb-3"
       >
         {images.map((image) => (
@@ -100,19 +102,21 @@ export function AttachmentStrip({
                * region, and a paste of eight images would interrupt eight times to say so.
                */
               <Skeleton
-                aria-label={`${image.alt ?? "Attachment"}, uploading`}
+                aria-label={t("attachments.uploadingAria", {
+                  name: image.alt ?? t("attachments.attachmentName"),
+                })}
                 className="size-20 rounded-xl"
                 role="img"
               />
             ) : (
               <img
-                alt={image.alt ?? "Attachment"}
+                alt={image.alt ?? t("attachments.attachmentName")}
                 className="size-20 rounded-xl border border-border object-cover"
                 src={image.url}
               />
             )}
             <RemoveButton
-              name={image.alt ?? "attachment"}
+              name={image.alt ?? t("attachments.attachmentFallback")}
               onRemove={() => onRemove(image.id)}
             />
           </Staged>
@@ -138,7 +142,9 @@ export function AttachmentStrip({
                 {file.name}
               </p>
               {file.loading ? (
-                <p className="text-muted-foreground text-xs">Uploading…</p>
+                <p className="text-muted-foreground text-xs">
+                  {t("attachments.uploading")}
+                </p>
               ) : file.size === undefined ? null : (
                 /*
                  * ON THE SIZE LINE, NOT UNDER IT, AND THAT IS A LAYOUT CONSTRAINT RATHER THAN A
@@ -157,12 +163,12 @@ export function AttachmentStrip({
                   className="truncate text-muted-foreground text-xs"
                   title={
                     file.mayTruncate === true
-                      ? "The model reads the first 120,000 characters of this file."
+                      ? t("attachments.truncationTitle")
                       : undefined
                   }
                 >
                   {formatBytes(file.size)}
-                  {file.mayTruncate === true ? " · may be cut" : null}
+                  {file.mayTruncate === true ? t("attachments.mayBeCut") : null}
                 </p>
               )}
             </div>
@@ -223,9 +229,10 @@ function RemoveButton({
   name: string;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation("channels");
   return (
     <button
-      aria-label={`Remove ${name}`}
+      aria-label={t("attachments.removeAria", { name })}
       className="absolute top-1 right-1 grid size-5 place-items-center rounded-full border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
       onClick={onRemove}
       type="button"

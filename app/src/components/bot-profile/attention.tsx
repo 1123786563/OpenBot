@@ -2,12 +2,14 @@ import { IconPlayerPause } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { setBotPausedMutationOptions } from "@/lib/bot-lifecycle/mutations";
 import {
   type BotAttention,
   botAttentionQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
+import i18n from "@/lib/i18n";
 import { queryClient } from "@/query-client";
 
 /** Questions, approvals and stalled hand-offs: the things only the person can move forward. */
@@ -19,14 +21,17 @@ export function needsInput(bot: BotAttention): number {
 export function attentionSummary(bot: BotAttention): string {
   const parts: string[] = [];
   if (bot.questions)
-    parts.push(`${bot.questions} question${bot.questions === 1 ? "" : "s"}`);
-  if (bot.approvals)
-    parts.push(`${bot.approvals} approval${bot.approvals === 1 ? "" : "s"}`);
-  if (bot.handoffs)
     parts.push(
-      `${bot.handoffs} stalled hand-off${bot.handoffs === 1 ? "" : "s"}`,
+      i18n.t("computer:attention.questions", { count: bot.questions }),
     );
-  if (bot.unread) parts.push(`${bot.unread} unread`);
+  if (bot.approvals)
+    parts.push(
+      i18n.t("computer:attention.approvals", { count: bot.approvals }),
+    );
+  if (bot.handoffs)
+    parts.push(i18n.t("computer:attention.handoffs", { count: bot.handoffs }));
+  if (bot.unread)
+    parts.push(i18n.t("computer:attention.unread", { count: bot.unread }));
   return parts.join(", ");
 }
 
@@ -56,10 +61,13 @@ function useAttentionNotifications(bots: BotAttention[] | undefined) {
       if (bot.notify === "none" || now <= (previous.get(bot.agentId) ?? 0))
         continue;
       try {
-        new Notification(`${bot.name} needs you`, {
-          body: attentionSummary(bot),
-          tag: `openbot-attention-${bot.agentId}`,
-        });
+        new Notification(
+          i18n.t("computer:attention.needsYouName", { name: bot.name }),
+          {
+            body: attentionSummary(bot),
+            tag: `openbot-attention-${bot.agentId}`,
+          },
+        );
       } catch {
         // A browser that refuses the constructor still has the badge.
       }
@@ -74,6 +82,7 @@ function useAttentionNotifications(bots: BotAttention[] | undefined) {
  * Renders nothing when no Bot needs anything, so a quiet day costs the roster no space.
  */
 export function BotAttentionList() {
+  const { t } = useTranslation("computer");
   const attention = useQuery(botAttentionQueryOptions());
   const resume = useMutation(setBotPausedMutationOptions(queryClient));
   useAttentionNotifications(attention.data);
@@ -88,7 +97,9 @@ export function BotAttentionList() {
         return (
           <SidebarMenuItem key={bot.agentId} className="flex flex-row gap-1">
             <SidebarMenuButton
-              aria-label={`${bot.name}: ${bot.paused ? "paused" : attentionSummary(bot)}`}
+              aria-label={`${bot.name}: ${
+                bot.paused ? t("attention.paused") : attentionSummary(bot)
+              }`}
               className="hover:bg-foreground/5 h-9 flex-1"
               render={(props) => (
                 <Link
@@ -123,7 +134,7 @@ export function BotAttentionList() {
                 }
               >
                 <IconPlayerPause className="size-3.5" />
-                Paused, tap to resume
+                {t("paused.tapToResume")}
               </SidebarMenuButton>
             ) : null}
           </SidebarMenuItem>

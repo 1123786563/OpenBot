@@ -6,6 +6,8 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Streamdown } from "streamdown";
 import { PageShell } from "@/components/layout/page-shell";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
@@ -15,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { markdownComponents } from "@/lib/markdown";
 import { sharedUseKeys } from "@/lib/plugins/shared-use";
 import {
@@ -50,16 +53,17 @@ async function refresh() {
 }
 
 function ResponsibilitiesPage() {
+  const { t } = useTranslation("agents");
   const goals = useQuery(responsibilitiesQueryOptions());
   return (
     <PageShell
-      title="Responsibilities"
-      description="Give a Bot a lasting goal, follow its progress, and decide when it should work."
+      title={t("responsibilities.title")}
+      description={t("responsibilities.description")}
     >
       <div className="grid gap-6">
         <NewResponsibility />
         {goals.isPending ? (
-          <p>Loading responsibilities…</p>
+          <p>{t("responsibilities.loading")}</p>
         ) : goals.error ? (
           <p role="alert" className="text-destructive">
             {goals.error.message}
@@ -67,9 +71,7 @@ function ResponsibilitiesPage() {
         ) : goals.data?.length ? (
           goals.data.map((goal) => <GoalCard key={goal.id} goal={goal} />)
         ) : (
-          <p className="text-muted-foreground">
-            You have no responsibilities yet.
-          </p>
+          <p className="text-muted-foreground">{t("responsibilities.empty")}</p>
         )}
         <GithubSources />
       </div>
@@ -78,6 +80,7 @@ function ResponsibilitiesPage() {
 }
 
 function NewResponsibility() {
+  const { t } = useTranslation("agents");
   const formId = useId();
   const bots = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -120,10 +123,10 @@ function NewResponsibility() {
         });
       }}
     >
-      <h2 className="font-semibold">New responsibility</h2>
+      <h2 className="font-semibold">{t("responsibilities.new.title")}</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={fieldClass}>
-          Conversation
+          {t("responsibilities.new.conversation")}
           <select
             className={selectClass}
             required
@@ -133,7 +136,9 @@ function NewResponsibility() {
               setAgentId("");
             }}
           >
-            <option value="">Choose a conversation</option>
+            <option value="">
+              {t("responsibilities.new.chooseConversation")}
+            </option>
             {channels.data
               ?.filter((channel) => channel.active)
               .map((channel) => (
@@ -144,14 +149,14 @@ function NewResponsibility() {
           </select>
         </label>
         <label className={fieldClass}>
-          Bot
+          {t("responsibilities.new.bot")}
           <select
             className={selectClass}
             required
             value={agentId}
             onChange={(event) => setAgentId(event.target.value)}
           >
-            <option value="">Choose a Bot</option>
+            <option value="">{t("responsibilities.new.chooseBot")}</option>
             {availableBots.map((bot) => (
               <option key={bot.id} value={bot.id}>
                 {bot.name}
@@ -166,7 +171,7 @@ function NewResponsibility() {
           variant="outline"
           onClick={() => channels.fetchNextPage()}
         >
-          Load more conversations
+          {t("responsibilities.new.loadMore")}
         </Button>
       )}
       {(channels.error || bots.error) && (
@@ -175,18 +180,18 @@ function NewResponsibility() {
         </p>
       )}
       <label className={fieldClass} htmlFor={`${formId}-title`}>
-        Title
+        {t("responsibilities.new.titleLabel")}
         <Input
           id={`${formId}-title`}
           required
           maxLength={160}
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          placeholder="Keep the customer report up to date"
+          placeholder={t("responsibilities.new.titlePlaceholder")}
         />
       </label>
       <label className={fieldClass} htmlFor={`${formId}-instruction`}>
-        Instruction
+        {t("responsibilities.new.instruction")}
         <Textarea
           id={`${formId}-instruction`}
           required
@@ -196,19 +201,19 @@ function NewResponsibility() {
         />
       </label>
       <label className={fieldClass} htmlFor={`${formId}-criteria`}>
-        Success criteria
+        {t("responsibilities.new.successCriteria")}
         <Textarea
           id={`${formId}-criteria`}
           required
           maxLength={3000}
           value={successCriteria}
           onChange={(event) => setSuccessCriteria(event.target.value)}
-          placeholder="The report contains the current quarter's graph and a source link."
+          placeholder={t("responsibilities.new.criteriaPlaceholder")}
         />
       </label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={fieldClass}>
-          Event source
+          {t("responsibilities.new.eventSource")}
           <select
             className={selectClass}
             value={source}
@@ -225,23 +230,33 @@ function NewResponsibility() {
                 setSource(value);
             }}
           >
-            <option value="none">Run when asked</option>
+            <option value="none">
+              {t("responsibilities.new.source.none")}
+            </option>
             <option value="github">GitHub</option>
             <option value="slack">Slack</option>
-            <option value="connector">Connected app</option>
-            <option value="schedule">Schedule</option>
+            <option value="connector">
+              {t("responsibilities.new.source.connector")}
+            </option>
+            <option value="schedule">
+              {t("responsibilities.new.source.schedule")}
+            </option>
           </select>
         </label>
         {source !== "none" && (
           <label className={fieldClass} htmlFor={`${formId}-event`}>
-            Event type
+            {t("responsibilities.new.eventType")}
             <Input
               id={`${formId}-event`}
               required
               maxLength={128}
               value={eventType}
               onChange={(event) => setEventType(event.target.value)}
-              placeholder={source === "github" ? "issues.opened" : "Event type"}
+              placeholder={
+                source === "github"
+                  ? "issues.opened"
+                  : t("responsibilities.new.eventTypePlaceholder")
+              }
             />
           </label>
         )}
@@ -252,13 +267,17 @@ function NewResponsibility() {
         </p>
       )}
       <Button disabled={create.isPending} type="submit">
-        {create.isPending ? "Creating…" : "Create responsibility"}
+        {create.isPending
+          ? t("responsibilities.new.creating")
+          : t("responsibilities.new.create")}
       </Button>
     </form>
   );
 }
 
 function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
+  const { t } = useTranslation("agents");
+  const { formatDateTime } = useDateTime();
   const [editing, setEditing] = useState(false);
   const [showRuns, setShowRuns] = useState(false);
   const [title, setTitle] = useState(goal.title);
@@ -298,7 +317,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
           }}
         >
           <label className={fieldClass} htmlFor={`${goal.id}-title`}>
-            Title
+            {t("responsibilities.card.title")}
             <Input
               id={`${goal.id}-title`}
               value={title}
@@ -308,7 +327,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
             />
           </label>
           <label className={fieldClass} htmlFor={`${goal.id}-instruction`}>
-            Instruction
+            {t("responsibilities.card.instruction")}
             <Textarea
               id={`${goal.id}-instruction`}
               value={instruction}
@@ -318,7 +337,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
             />
           </label>
           <label className={fieldClass} htmlFor={`${goal.id}-criteria`}>
-            Success criteria
+            {t("responsibilities.card.successCriteria")}
             <Textarea
               id={`${goal.id}-criteria`}
               value={successCriteria}
@@ -329,14 +348,14 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
           </label>
           <div className="flex gap-2">
             <Button type="submit" disabled={edit.isPending}>
-              Save
+              {t("responsibilities.card.save")}
             </Button>
             <Button
               variant="outline"
               type="button"
               onClick={() => setEditing(false)}
             >
-              Cancel
+              {t("responsibilities.card.cancel")}
             </Button>
           </div>
         </form>
@@ -344,13 +363,17 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
         <>
           <p className="whitespace-pre-wrap text-sm">{goal.instruction}</p>
           <p className="text-sm text-muted-foreground">
-            Success: {goal.successCriteria}
+            {t("responsibilities.card.success", {
+              criteria: goal.successCriteria,
+            })}
           </p>
         </>
       )}
       {goal.progress && (
         <div className="text-sm">
-          <span className="font-medium">Progress:</span>
+          <span className="font-medium">
+            {t("responsibilities.card.progress")}
+          </span>
           <RunMarkdown>{goal.progress}</RunMarkdown>
         </div>
       )}
@@ -361,13 +384,14 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
       )}
       {goal.subscriptions.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Events:{" "}
-          {goal.subscriptions
-            .map(
-              (subscription) =>
-                `${subscription.source} · ${subscription.eventType}`,
-            )
-            .join(", ")}
+          {t("responsibilities.card.events", {
+            events: goal.subscriptions
+              .map(
+                (subscription) =>
+                  `${subscription.source} · ${subscription.eventType}`,
+              )
+              .join(", "),
+          })}
         </p>
       )}
       <div className="flex flex-wrap gap-2">
@@ -376,7 +400,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
           size="sm"
           onClick={() => setEditing(!editing)}
         >
-          Edit
+          {t("responsibilities.card.edit")}
         </Button>
         {goal.status === "active" && (
           <>
@@ -387,9 +411,9 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
                 setShowRuns(true);
                 action.mutate("run");
               }}
-              title="Runs it for real, now: the Bot does the work and can post and act."
+              title={t("responsibilities.card.runNowTitle")}
             >
-              Run now (real run)
+              {t("responsibilities.card.runNow")}
             </Button>
             <Button
               variant="outline"
@@ -397,7 +421,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
               disabled={action.isPending}
               onClick={() => action.mutate("pause")}
             >
-              Pause
+              {t("responsibilities.card.pause")}
             </Button>
           </>
         )}
@@ -407,7 +431,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
             disabled={action.isPending}
             onClick={() => action.mutate("resume")}
           >
-            Resume
+            {t("responsibilities.card.resume")}
           </Button>
         )}
         {goal.status !== "completed" && (
@@ -417,7 +441,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
             disabled={action.isPending}
             onClick={() => action.mutate("complete")}
           >
-            Complete
+            {t("responsibilities.card.complete")}
           </Button>
         )}
         <Button
@@ -425,14 +449,16 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
           size="sm"
           onClick={() => setShowRuns(!showRuns)}
         >
-          {showRuns ? "Hide runs" : "View runs"}
+          {showRuns
+            ? t("responsibilities.card.hideRuns")
+            : t("responsibilities.card.viewRuns")}
         </Button>
         <Link
           to="/channel/$channelId"
           params={{ channelId: goal.channelId }}
           className="self-center text-sm underline"
         >
-          Open conversation
+          {t("responsibilities.card.openConversation")}
         </Link>
       </div>
       {(action.error || edit.error) && (
@@ -444,7 +470,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
       {showRuns && (
         <div className="grid gap-2 border-t pt-3">
           {runs.isPending ? (
-            <p>Loading runs…</p>
+            <p>{t("responsibilities.runs.loading")}</p>
           ) : runs.error ? (
             <p role="alert">{runs.error.message}</p>
           ) : runs.data?.length ? (
@@ -452,21 +478,22 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
               <div key={run.id} className="text-sm">
                 <p>
                   <span className={runStatusClass(run.status)}>
-                    {RUN_LABEL[run.status]}
+                    {t(RUN_LABEL[run.status])}
                   </span>{" "}
-                  · {new Date(run.createdAt).toLocaleString()} ·{" "}
+                  · {formatDateTime(run.createdAt)} ·{" "}
                   <Link
                     to="/channel/$channelId"
                     params={{ channelId: goal.channelId }}
                     className="underline"
                   >
-                    Open thread
+                    {t("responsibilities.runs.openThread")}
                   </Link>
                 </p>
                 {run.waiting && (
                   <p>
-                    Waiting for {run.waiting.kind}. Respond through your
-                    approval inbox or conversation.
+                    {t("responsibilities.runs.waitingFor", {
+                      kind: run.waiting.kind,
+                    })}
                   </p>
                 )}
                 {run.error && (
@@ -476,7 +503,7 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
               </div>
             ))
           ) : (
-            <p>No runs yet.</p>
+            <p>{t("responsibilities.runs.none")}</p>
           )}
         </div>
       )}
@@ -504,6 +531,7 @@ function RunMarkdown({ children }: { children: string }) {
 }
 
 function GithubSources() {
+  const { t } = useTranslation("agents");
   const formId = useId();
   const bindings = useQuery(githubBindingsQueryOptions());
   const [repository, setRepository] = useState("");
@@ -522,11 +550,9 @@ function GithubSources() {
   });
   return (
     <section className="grid gap-3 rounded-lg border p-4">
-      <h2 className="font-semibold">GitHub event sources</h2>
+      <h2 className="font-semibold">{t("responsibilities.github.title")}</h2>
       <p className="text-sm text-muted-foreground">
-        Register a repository, then add its webhook in GitHub using the endpoint
-        below and the same secret. Subscribe a responsibility to an event such
-        as issues.opened.
+        {t("responsibilities.github.description")}
       </p>
       <form
         className="grid gap-3 sm:grid-cols-3"
@@ -536,7 +562,7 @@ function GithubSources() {
         }}
       >
         <label className={fieldClass} htmlFor={`${formId}-repository`}>
-          Repository
+          {t("responsibilities.github.repository")}
           <Input
             id={`${formId}-repository`}
             value={repository}
@@ -546,7 +572,7 @@ function GithubSources() {
           />
         </label>
         <label className={fieldClass} htmlFor={`${formId}-secret`}>
-          Webhook secret
+          {t("responsibilities.github.webhookSecret")}
           <Input
             id={`${formId}-secret`}
             type="password"
@@ -557,7 +583,7 @@ function GithubSources() {
           />
         </label>
         <Button type="submit" className="self-end" disabled={create.isPending}>
-          Connect events
+          {t("responsibilities.github.connectEvents")}
         </Button>
       </form>
       {(bindings.error || create.error || remove.error) && (
@@ -584,7 +610,7 @@ function GithubSources() {
             disabled={remove.isPending}
             onClick={() => remove.mutate(binding.id)}
           >
-            Disconnect
+            {t("responsibilities.github.disconnect")}
           </Button>
         </div>
       ))}
@@ -592,14 +618,14 @@ function GithubSources() {
   );
 }
 
-const RUN_LABEL: Record<string, string> = {
-  queued: "Queued",
-  running: "Running",
-  waiting: "Waiting for you",
-  succeeded: "Succeeded",
-  failed: "Failed",
-  skipped: "Skipped",
-};
+const RUN_LABEL = {
+  queued: "responsibilities.runStatus.queued",
+  running: "responsibilities.runStatus.running",
+  waiting: "responsibilities.runStatus.waiting",
+  succeeded: "responsibilities.runStatus.succeeded",
+  failed: "responsibilities.runStatus.failed",
+  skipped: "responsibilities.runStatus.skipped",
+} as const satisfies Record<string, string>;
 function runStatusClass(status: string) {
   return status === "failed"
     ? "text-destructive"
@@ -608,30 +634,24 @@ function runStatusClass(status: string) {
       : "text-muted-foreground";
 }
 
-const KIND_LABEL: Record<TriggerKind, string> = {
-  webhook: "Webhook",
-  github: "GitHub",
-  linear: "Linear",
-  sentry: "Sentry",
-  pagerduty: "PagerDuty",
-  email: "Email",
-  slack: "Slack",
-};
-const KIND_HELP: Record<TriggerKind, string> = {
-  webhook:
-    "POST JSON to the URL with the authorization header (or Standard Webhooks signature headers). 200 means accepted and queued, not finished.",
-  github:
-    "In the repository's Settings → Webhooks, set the payload URL to this URL, content type application/json, and the secret to the key.",
-  linear:
-    "In Linear, Settings → API → Webhooks: set the URL, then paste the signing secret Linear shows here.",
-  sentry:
-    "In a Sentry internal integration, set the webhook URL, then paste the integration's client secret here.",
-  pagerduty:
-    "In PagerDuty, Integrations → Generic Webhooks (v3): set the URL, then paste the secret shown on creation here.",
-  email: "Send or forward mail to this address to start a run.",
-  slack:
-    "Fires from Slack events delivered through this Bot's Slack pairing. Messages from before the trigger existed are ignored.",
-};
+const KIND_LABEL = {
+  webhook: "responsibilities.kind.webhook",
+  github: "responsibilities.kind.github",
+  linear: "responsibilities.kind.linear",
+  sentry: "responsibilities.kind.sentry",
+  pagerduty: "responsibilities.kind.pagerduty",
+  email: "responsibilities.kind.email",
+  slack: "responsibilities.kind.slack",
+} as const satisfies Record<TriggerKind, string>;
+const KIND_HELP = {
+  webhook: "responsibilities.kindHelp.webhook",
+  github: "responsibilities.kindHelp.github",
+  linear: "responsibilities.kindHelp.linear",
+  sentry: "responsibilities.kindHelp.sentry",
+  pagerduty: "responsibilities.kindHelp.pagerduty",
+  email: "responsibilities.kindHelp.email",
+  slack: "responsibilities.kindHelp.slack",
+} as const satisfies Record<TriggerKind, string>;
 const VENDOR_SECRET: ReadonlySet<TriggerKind> = new Set([
   "linear",
   "sentry",
@@ -644,6 +664,7 @@ const list = (value: string) =>
     .filter(Boolean);
 
 function CopyButton({ value, label }: { value: string; label: string }) {
+  const { t } = useTranslation("agents");
   const [copied, setCopied] = useState(false);
   return (
     <Button
@@ -656,43 +677,69 @@ function CopyButton({ value, label }: { value: string; label: string }) {
         setTimeout(() => setCopied(false), 1500);
       }}
     >
-      {copied ? "Copied" : label}
+      {copied ? t("responsibilities.copy.copied") : label}
     </Button>
   );
 }
 
-function describeFilter(config: TriggerConfig) {
+function describeFilter(t: TFunction<"agents">, config: TriggerConfig) {
   if (config.kind === "slack") {
     const where = config.channels.length
-      ? `in ${config.channels.join(", ")}`
-      : "in every channel the Bot is in";
+      ? t("responsibilities.filter.inChannels", {
+          channels: config.channels.join(", "),
+        })
+      : t("responsibilities.filter.inEveryChannel");
     const what =
       config.mode === "mention"
-        ? "when the Bot is mentioned"
+        ? t("responsibilities.filter.whenMentioned")
         : config.mode === "message"
-          ? "on any message"
+          ? t("responsibilities.filter.onAnyMessage")
           : config.mode === "phrase"
-            ? `on messages containing ${config.phrases.map((phrase) => `"${phrase}"`).join(" or ")}`
-            : `on reactions${config.reactions.length ? ` :${config.reactions.join(": :")}:` : ""}`;
-    return `${what} ${where} (workspace ${config.teamId})`;
+            ? t("responsibilities.filter.onPhrases", {
+                phrases: config.phrases
+                  .map((phrase) => `"${phrase}"`)
+                  .join(t("responsibilities.filter.or")),
+              })
+            : t("responsibilities.filter.onReactions", {
+                list: config.reactions.length
+                  ? ` :${config.reactions.join(": :")}:`
+                  : "",
+              });
+    return t("responsibilities.filter.summary", {
+      what,
+      where,
+      teamId: config.teamId,
+    });
   }
   const parts = [
     config.filter.eventTypes.length
-      ? `events ${config.filter.eventTypes.join(", ")}`
-      : "every event",
+      ? t("responsibilities.filter.events", {
+          events: config.filter.eventTypes.join(", "),
+        })
+      : t("responsibilities.filter.everyEvent"),
   ];
   if (config.filter.field)
     parts.push(
-      `where ${config.filter.field.path} = ${config.filter.field.equals}`,
+      t("responsibilities.filter.where", {
+        path: config.filter.field.path,
+        equals: config.filter.field.equals,
+      }),
     );
   if (config.kind === "github" && config.repository)
-    parts.push(`from ${config.repository}`);
+    parts.push(
+      t("responsibilities.filter.fromRepo", { repository: config.repository }),
+    );
   if (config.kind === "email" && config.allowedSenders.length)
-    parts.push(`from ${config.allowedSenders.join(", ")} (authenticated)`);
+    parts.push(
+      t("responsibilities.filter.fromSenders", {
+        senders: config.allowedSenders.join(", "),
+      }),
+    );
   return parts.join(" ");
 }
 
 function Triggers({ goal }: { goal: ResponsibilityRecord }) {
+  const { t } = useTranslation("agents");
   const triggers = useQuery(triggersQueryOptions(goal.id));
   const [adding, setAdding] = useState(false);
   const [freshSecret, setFreshSecret] = useState<{
@@ -706,20 +753,25 @@ function Triggers({ goal }: { goal: ResponsibilityRecord }) {
   return (
     <section className="grid gap-2 border-t pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-medium text-sm">Triggers</h3>
+        <h3 className="font-medium text-sm">
+          {t("responsibilities.triggers.title")}
+        </h3>
         <Button
           size="sm"
           variant="outline"
           type="button"
           onClick={() => setAdding(!adding)}
         >
-          {adding ? "Cancel" : "Add trigger"}
+          {adding
+            ? t("responsibilities.triggers.cancel")
+            : t("responsibilities.triggers.addTrigger")}
         </Button>
       </div>
       {goal.status !== "active" && (
         <p className="text-muted-foreground text-xs">
-          This responsibility is {goal.status}, so its triggers are acknowledged
-          but never run it.
+          {t("responsibilities.triggers.inactiveNote", {
+            status: goal.status,
+          })}
         </p>
       )}
       {adding && (
@@ -744,8 +796,7 @@ function Triggers({ goal }: { goal: ResponsibilityRecord }) {
       )}
       {triggers.data?.length === 0 && !adding && (
         <p className="text-muted-foreground text-xs">
-          No triggers. It runs when you press Run now, or on the event
-          subscriptions above.
+          {t("responsibilities.triggers.none")}
         </p>
       )}
       {triggers.data?.map((trigger) => (
@@ -774,6 +825,7 @@ function TriggerRow({
   freshSecret: string | null;
   onChanged: (secret: string | null) => Promise<void>;
 }) {
+  const { t } = useTranslation("agents");
   const [secret, setSecret] = useState<string | null>(freshSecret);
   const [pasted, setPasted] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -808,13 +860,13 @@ function TriggerRow({
     <div className="grid gap-2 rounded-md bg-muted/50 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p>
-          <span className="font-medium">{KIND_LABEL[trigger.kind]}</span>{" "}
+          <span className="font-medium">{t(KIND_LABEL[trigger.kind])}</span>{" "}
           <span className="text-muted-foreground">
-            {describeFilter(trigger.config)}
+            {describeFilter(t, trigger.config)}
           </span>
           {!trigger.enabled && (
             <span className="ml-2 rounded bg-background px-1.5 py-0.5 text-xs">
-              Paused
+              {t("responsibilities.triggers.paused")}
             </span>
           )}
         </p>
@@ -824,7 +876,9 @@ function TriggerRow({
           disabled={toggle.isPending}
           onClick={() => toggle.mutate()}
         >
-          {trigger.enabled ? "Pause" : "Resume"}
+          {trigger.enabled
+            ? t("responsibilities.triggers.pause")
+            : t("responsibilities.triggers.resume")}
         </Button>
         {confirmRemove ? (
           <span className="flex gap-2">
@@ -834,14 +888,14 @@ function TriggerRow({
               disabled={remove.isPending}
               onClick={() => remove.mutate()}
             >
-              Remove for good
+              {t("responsibilities.triggers.removeForGood")}
             </Button>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setConfirmRemove(false)}
             >
-              Keep
+              {t("responsibilities.triggers.keep")}
             </Button>
           </span>
         ) : (
@@ -850,18 +904,22 @@ function TriggerRow({
             variant="ghost"
             onClick={() => setConfirmRemove(true)}
           >
-            Remove
+            {t("responsibilities.triggers.remove")}
           </Button>
         )}
       </div>
-      <p className="text-muted-foreground text-xs">{KIND_HELP[trigger.kind]}</p>
+      <p className="text-muted-foreground text-xs">
+        {t(KIND_HELP[trigger.kind])}
+      </p>
       {url && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs">POST to</span>
+          <span className="text-xs">
+            {t("responsibilities.triggers.postTo")}
+          </span>
           <code className="break-all rounded bg-background px-2 py-1 text-xs">
             {url}
           </code>
-          <CopyButton value={url} label="Copy URL" />
+          <CopyButton value={url} label={t("responsibilities.copy.url")} />
         </div>
       )}
       {trigger.kind === "email" &&
@@ -870,29 +928,32 @@ function TriggerRow({
             <code className="break-all rounded bg-background px-2 py-1 text-xs">
               {trigger.address}
             </code>
-            <CopyButton value={trigger.address} label="Copy address" />
+            <CopyButton
+              value={trigger.address}
+              label={t("responsibilities.copy.address")}
+            />
           </div>
         ) : (
           <p className="text-amber-600 text-xs dark:text-amber-500">
-            Inbound email is not configured on this deployment
-            (OPENBOT_INBOUND_EMAIL_DOMAIN and
-            OPENBOT_INBOUND_EMAIL_SNS_TOPIC_ARNS), so this address cannot
-            receive mail yet.
+            {t("responsibilities.triggers.emailUnconfigured")}
           </p>
         ))}
       {generated && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs">Key</span>
+          <span className="text-xs">{t("responsibilities.triggers.key")}</span>
           {shown ? (
             <>
               <code className="break-all rounded bg-background px-2 py-1 text-xs">
                 {shown}
               </code>
-              <CopyButton value={shown} label="Copy key" />
+              <CopyButton
+                value={shown}
+                label={t("responsibilities.copy.key")}
+              />
               {trigger.kind === "webhook" && (
                 <CopyButton
                   value={`Authorization: Bearer ${shown}`}
-                  label="Copy header"
+                  label={t("responsibilities.copy.header")}
                 />
               )}
             </>
@@ -903,7 +964,7 @@ function TriggerRow({
               disabled={reveal.isPending}
               onClick={() => reveal.mutate()}
             >
-              Show key
+              {t("responsibilities.triggers.showKey")}
             </Button>
           )}
           <Button
@@ -912,7 +973,7 @@ function TriggerRow({
             disabled={rotate.isPending}
             onClick={() => rotate.mutate()}
           >
-            Rotate key
+            {t("responsibilities.triggers.rotateKey")}
           </Button>
         </div>
       )}
@@ -937,8 +998,8 @@ function TriggerRow({
             }
           >
             {trigger.hasSecret
-              ? "Signing secret stored"
-              : "Waiting for the signing secret"}
+              ? t("responsibilities.triggers.secretStored")
+              : t("responsibilities.triggers.waitingSecret")}
           </span>
           <Input
             className="h-8 max-w-64"
@@ -946,15 +1007,15 @@ function TriggerRow({
             autoComplete="new-password"
             placeholder={
               trigger.hasSecret
-                ? "Paste a new secret to rotate"
-                : "Paste the signing secret"
+                ? t("responsibilities.triggers.newSecretPlaceholder")
+                : t("responsibilities.triggers.secretPlaceholder")
             }
             value={pasted}
             onChange={(event) => setPasted(event.target.value)}
             required
           />
           <Button size="sm" type="submit" disabled={rotate.isPending}>
-            Save secret
+            {t("responsibilities.triggers.saveSecret")}
           </Button>
         </form>
       )}
@@ -982,6 +1043,7 @@ function NewTrigger({
     secret: string | null;
   }) => Promise<void>;
 }) {
+  const { t } = useTranslation("agents");
   const id = useId();
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<TriggerKind>("webhook");
@@ -1041,15 +1103,15 @@ function NewTrigger({
       });
     },
   });
-  const placeholder: Record<TriggerKind, string> = {
-    webhook: "deploy.finished (blank: any)",
-    github: "issues.opened, pull_request",
-    linear: "Issue.create, Comment",
-    sentry: "issue.created, event_alert.triggered",
-    pagerduty: "incident.triggered",
-    email: "received",
-    slack: "",
-  };
+  const placeholder = {
+    webhook: "responsibilities.placeholder.webhook",
+    github: "responsibilities.placeholder.github",
+    linear: "responsibilities.placeholder.linear",
+    sentry: "responsibilities.placeholder.sentry",
+    pagerduty: "responsibilities.placeholder.pagerduty",
+    email: "responsibilities.placeholder.email",
+    slack: "responsibilities.placeholder.slack",
+  } as const satisfies Record<TriggerKind, string>;
   return (
     <form
       className="grid gap-3 rounded-md border p-3"
@@ -1059,7 +1121,7 @@ function NewTrigger({
       }}
     >
       <label className={fieldClass}>
-        Trigger
+        {t("responsibilities.newTrigger.trigger")}
         <select
           className={selectClass}
           value={kind}
@@ -1067,16 +1129,16 @@ function NewTrigger({
         >
           {(Object.keys(KIND_LABEL) as TriggerKind[]).map((value) => (
             <option key={value} value={value}>
-              {KIND_LABEL[value]}
+              {t(KIND_LABEL[value])}
             </option>
           ))}
         </select>
       </label>
-      <p className="text-muted-foreground text-xs">{KIND_HELP[kind]}</p>
+      <p className="text-muted-foreground text-xs">{t(KIND_HELP[kind])}</p>
       {kind === "slack" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={fieldClass} htmlFor={`${id}-team`}>
-            Slack team ID
+            {t("responsibilities.newTrigger.teamId")}
             <Input
               id={`${id}-team`}
               required
@@ -1086,21 +1148,29 @@ function NewTrigger({
             />
           </label>
           <label className={fieldClass}>
-            Fire on
+            {t("responsibilities.newTrigger.fireOn")}
             <select
               className={selectClass}
               value={mode}
               onChange={(event) => setMode(event.target.value as typeof mode)}
             >
-              <option value="mention">The Bot is mentioned</option>
-              <option value="phrase">A message contains a phrase</option>
-              <option value="reaction">A reaction is added</option>
-              <option value="message">Any message</option>
+              <option value="mention">
+                {t("responsibilities.newTrigger.mode.mention")}
+              </option>
+              <option value="phrase">
+                {t("responsibilities.newTrigger.mode.phrase")}
+              </option>
+              <option value="reaction">
+                {t("responsibilities.newTrigger.mode.reaction")}
+              </option>
+              <option value="message">
+                {t("responsibilities.newTrigger.mode.message")}
+              </option>
             </select>
           </label>
           {mode === "phrase" && (
             <label className={fieldClass} htmlFor={`${id}-phrases`}>
-              Phrases (comma separated)
+              {t("responsibilities.newTrigger.phrases")}
               <Input
                 id={`${id}-phrases`}
                 required
@@ -1111,7 +1181,7 @@ function NewTrigger({
           )}
           {mode === "reaction" && (
             <label className={fieldClass} htmlFor={`${id}-reactions`}>
-              Reactions (blank: any)
+              {t("responsibilities.newTrigger.reactions")}
               <Input
                 id={`${id}-reactions`}
                 placeholder="eyes, rotating_light"
@@ -1121,7 +1191,7 @@ function NewTrigger({
             </label>
           )}
           <label className={fieldClass} htmlFor={`${id}-channels`}>
-            Channel IDs (blank: all the Bot is in)
+            {t("responsibilities.newTrigger.channels")}
             <Input
               id={`${id}-channels`}
               placeholder="C0123ABCD"
@@ -1133,16 +1203,16 @@ function NewTrigger({
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
           <label className={fieldClass} htmlFor={`${id}-types`}>
-            Event types
+            {t("responsibilities.newTrigger.eventTypes")}
             <Input
               id={`${id}-types`}
-              placeholder={placeholder[kind]}
+              placeholder={t(placeholder[kind])}
               value={eventTypes}
               onChange={(event) => setEventTypes(event.target.value)}
             />
           </label>
           <label className={fieldClass} htmlFor={`${id}-path`}>
-            Only when field
+            {t("responsibilities.newTrigger.field")}
             <Input
               id={`${id}-path`}
               placeholder="data.team.key"
@@ -1151,7 +1221,7 @@ function NewTrigger({
             />
           </label>
           <label className={fieldClass} htmlFor={`${id}-equals`}>
-            equals
+            {t("responsibilities.newTrigger.equals")}
             <Input
               id={`${id}-equals`}
               placeholder="ENG"
@@ -1161,7 +1231,7 @@ function NewTrigger({
           </label>
           {kind === "github" && (
             <label className={fieldClass} htmlFor={`${id}-repo`}>
-              Repository (optional)
+              {t("responsibilities.newTrigger.repository")}
               <Input
                 id={`${id}-repo`}
                 placeholder="owner/name"
@@ -1172,7 +1242,7 @@ function NewTrigger({
           )}
           {kind === "email" && (
             <label className={fieldClass} htmlFor={`${id}-senders`}>
-              Allowed senders (blank: anyone)
+              {t("responsibilities.newTrigger.senders")}
               <Input
                 id={`${id}-senders`}
                 placeholder="ops@example.com, example.com"
@@ -1183,7 +1253,7 @@ function NewTrigger({
           )}
           {VENDOR_SECRET.has(kind) && (
             <label className={fieldClass} htmlFor={`${id}-secret`}>
-              Signing secret (can be added later)
+              {t("responsibilities.newTrigger.signingSecret")}
               <Input
                 id={`${id}-secret`}
                 type="password"
@@ -1202,7 +1272,11 @@ function NewTrigger({
         </p>
       )}
       <Button type="submit" disabled={create.isPending}>
-        {create.isPending ? "Adding…" : `Add ${KIND_LABEL[kind]} trigger`}
+        {create.isPending
+          ? t("responsibilities.newTrigger.adding")
+          : t("responsibilities.newTrigger.addKind", {
+              kind: t(KIND_LABEL[kind]),
+            })}
       </Button>
     </form>
   );

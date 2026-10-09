@@ -2,6 +2,7 @@ import { IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
   attentionSummary,
@@ -26,26 +27,24 @@ export const Route = createFileRoute("/_authed/_app/bots/")({
 
 /** Every Bot the person can reach, with what each needs from them, each opening its profile. */
 function BotsPage() {
+  const { t } = useTranslation("channels");
   const agents = useQuery(agentListQueryOptions());
   const attention = useQuery(botAttentionQueryOptions());
   const byId = new Map((attention.data ?? []).map((bot) => [bot.agentId, bot]));
   return (
-    <PageShell
-      description="What each of your Bots is doing, what it needs from you, and whether it is paused."
-      title="Bots"
-    >
+    <PageShell description={t("bots.description")} title={t("bots.title")}>
       {agents.isPending ? null : agents.error ? (
         <p className="mt-6 text-destructive text-sm" role="alert">
-          Could not load your Bots.
+          {t("bots.loadError")}
         </p>
       ) : agents.data.length === 0 ? (
-        <PageEmpty>You have no Bots yet.</PageEmpty>
+        <PageEmpty>{t("bots.empty")}</PageEmpty>
       ) : (
         <PageRows className="mt-6">
           {agents.data.map((agent, index) => {
             const state = byId.get(agent.id);
             const summary = state
-              ? [state.paused ? "Paused" : "", attentionSummary(state)]
+              ? [state.paused ? t("bots.paused") : "", attentionSummary(state)]
                   .filter(Boolean)
                   .join(" · ")
               : "";

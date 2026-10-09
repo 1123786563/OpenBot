@@ -1,0 +1,82 @@
+{
+  "title": "Agent 技能",
+  "description": "技能是一条有名称的指令，你用 <code>/</code> 调用，Bot 会照着执行。你的技能只属于你，并部署在你拥有的 Bot 上。",
+  "newSkill": "新建技能",
+  "yourSkills": "你的技能",
+  "loadError": "无法加载你的技能。",
+  "empty": "你还没有任何技能。",
+  "edit": "编辑",
+  "deleteSlug": "删除 /{{slug}}",
+  "workspace": {
+    "title": "工作区技能",
+    "description": "由管理员为所有人编写。哪些 Bot 携带它们在“管理”中决定。"
+  },
+  "editing": {
+    "loadError": "无法加载此技能。",
+    "missing": "该技能已不存在，或者不属于你编辑。",
+    "title": "编辑技能",
+    "changesApply": "更改将在下次使用 <code>/{{slug}}</code> 时生效。已携带它的 Agents 会继续保留它。",
+    "save": "保存更改"
+  },
+  "new": {
+    "description": "一条用 <code>/</code> 调用的有名称的指令。它部署在你拥有的 Bot 上，其他人看不到。",
+    "save": "保存技能"
+  },
+  "fields": {
+    "command": "命令",
+    "commandPlaceholder": "standup",
+    "commandLocked": "命令无法更改。要重命名技能，请新建一个并删除这个。",
+    "commandHint": "你在斜杠后输入的内容。<code>/{command}</code>",
+    "title": "标题",
+    "titlePlaceholder": "我的站会技能",
+    "oneLiner": "一句话简介",
+    "oneLinerPlaceholder": "把昨天的工作变成站会汇报",
+    "oneLinerHint": "显示在此列表和 <code>/</code> 菜单中命令的旁边。可选。",
+    "instructions": "指令",
+    "instructionsPlaceholder": "从频道总结我昨天做了什么，然后列出还剩什么。",
+    "instructionsHint": "在使用命令时加入运行。请把它写成给 Bot 的指令，而不是对它们的描述。",
+    "saving": "保存中…",
+    "cancel": "取消"
+  },
+  "agents": {
+    "title": "Agents",
+    "noneOwned": "你还没有可以部署它的 Agent。",
+    "offersHint": "携带此技能的 Agent 会在其输入框中提供 <code>/{{slug}}</code>。"
+  },
+  "tools": {
+    "label": "它需要的工具",
+    "loadError": "无法加载此部署拥有的工具。",
+    "noneOffered": "还没有已连接的服务器提供工具。技能仍然可以编写——大多数是指令而非工具调用。",
+    "changesSomething": "会更改内容",
+    "notConnectedHere": "此处未连接",
+    "notOfferedTitle": "{{ref}} — 没有已连接的服务器提供此项",
+    "elsewhereHint": "此技能引用了这些工具，但此处连接的服务器都没有提供——因为连接器尚未添加，或已被移除。在它存在之前，它们不产生任何开销，也不会加载任何内容。点击其中一个可停止引用它。",
+    "grantsNothing": "选中此技能才会为某一轮加载这些工具。这并不代表授予它们——Bot 仍然只能调用被授予的内容，因此在这里命名工具不会给任何人访问权限。"
+  },
+  "proposed": {
+    "done": "完成",
+    "writing": "正在编写技能…",
+    "waiting": "等待你的决定",
+    "replaces": "这将替换 {{title}}，它是{{ownership}}。",
+    "nothingSavedYet": "在你按下按钮之前，什么都不会保存。",
+    "command": "命令",
+    "title": "标题",
+    "oneLiner": "一句话简介",
+    "needs": "需要",
+    "instructions": "指令",
+    "grantsNothing": "命名一个工具并不授予任何权限。只有管理员已经将它们授予某个 Bot，该 Bot 才会被提供这些工具。",
+    "couldNotBeSaved": "技能未保存。",
+    "saving": "保存中…",
+    "replaceIt": "替换它",
+    "createIt": "创建它",
+    "declining": "…",
+    "decline": "不保存",
+    "aNewSkill": "一个新技能",
+    "replaceName": "替换 {{name}}",
+    "createName": "创建 {{name}}",
+    "putItOnABot": "把它部署到 Bot 上",
+    "notSaved": "未保存",
+    "cardTitle": "技能",
+    "unwritable": "Bot 的草稿不是有效的技能，因此没有保存任何内容。它已被告知需要修正什么。"
+  }
+}

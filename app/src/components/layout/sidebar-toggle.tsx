@@ -1,4 +1,5 @@
 import { IconLayoutSidebar } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { useOptionalSidebar } from "@/components/ui/sidebar";
@@ -69,6 +70,7 @@ export function useSidebarToggleVisible(): boolean {
  * contradict the label below. The state still belongs to the primitive: `toggleSidebar` is its hook.
  */
 export function SidebarToggle({ className }: { className?: string }) {
+  const { t } = useTranslation("nav");
   const sidebar = useOptionalSidebar();
   const visible = useSidebarToggleVisible();
   if (!sidebar || !visible) return null;
@@ -76,8 +78,8 @@ export function SidebarToggle({ className }: { className?: string }) {
 
   // The label says what the click will do, not what is on screen.
   const label = (isMobile ? openMobile : open)
-    ? "Hide sidebar"
-    : "Show sidebar";
+    ? t("hideSidebar")
+    : t("showSidebar");
 
   return (
     <Tooltip>

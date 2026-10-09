@@ -1,5 +1,6 @@
 // app/src/components/plugins/account-mode-dialog.tsx
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,6 +38,7 @@ export function AccountModeDialog({
   onOpenChange: (open: boolean) => void;
   names?: Record<string, string>;
 }) {
+  const { t } = useTranslation("admin");
   const queryClient = useQueryClient();
   /**
    * Kept out of the `["plugins", …]` family on purpose. `invalidatePlugins` — which every plugin
@@ -58,11 +60,13 @@ export function AccountModeDialog({
   const goes =
     preview.data?.wouldRevoke.holder === "deployment"
       ? count > 0
-        ? "The shared account will be disconnected."
-        : "No shared account is connected."
-      : `${count} personal ${count === 1 ? "account" : "accounts"} will be disconnected.`;
+        ? t("accountMode.sharedWillDisconnect")
+        : t("accountMode.noSharedConnected")
+      : t("accountMode.personalWillDisconnect", { count });
   const action =
-    target === "shared" ? `Make ${title} shared` : `Make ${title} personal`;
+    target === "shared"
+      ? t("accountMode.makeShared", { title })
+      : t("accountMode.makePersonal", { title });
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -70,19 +74,16 @@ export function AccountModeDialog({
         <DialogHeader>
           <DialogTitle>
             {target === "shared"
-              ? `Share one ${title} account?`
-              : `Give everyone their own ${title} account?`}
+              ? t("accountMode.shareTitle", { title })
+              : t("accountMode.ownTitle", { title })}
           </DialogTitle>
           <DialogDescription>
-            {preview.data ? goes : "Checking what this would change…"}
+            {preview.data ? goes : t("accountMode.checking")}
           </DialogDescription>
         </DialogHeader>
         {target === "shared" ? (
           <div className="mt-4 space-y-3 text-sm">
-            <p>
-              Everyone who can use a Bot granted this app will act as this one
-              account.
-            </p>
+            <p>{t("accountMode.everyoneActsAsOne")}</p>
             {preview.data?.bots.length ? (
               <ul className="space-y-1">
                 {preview.data.bots.map((bot) => (
@@ -108,7 +109,7 @@ export function AccountModeDialog({
             size="sm"
             variant="outline"
           >
-            Cancel
+            {t("accountMode.cancel")}
           </Button>
           <Button
             disabled={!preview.data || change.isPending}

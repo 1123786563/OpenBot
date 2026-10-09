@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import {
   startDemonstration,
   stopDemonstration,
 } from "@/lib/demonstrations";
+import { useDateTime } from "@/lib/i18n/datetime";
 import {
   grantPlugin,
   invalidatePlugins,
@@ -42,10 +44,10 @@ const clock = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
 const SCHEDULES = [
-  { label: "Every weekday at 09:00", cron: "0 9 * * 1-5" },
-  { label: "Every day at 09:00", cron: "0 9 * * *" },
-  { label: "Every Monday at 09:00", cron: "0 9 * * 1" },
-  { label: "Every hour", cron: "0 * * * *" },
+  { label: "demonstration.schedules.weekdayAt9", cron: "0 9 * * 1-5" },
+  { label: "demonstration.schedules.everyDayAt9", cron: "0 9 * * *" },
+  { label: "demonstration.schedules.mondayAt9", cron: "0 9 * * 1" },
+  { label: "demonstration.schedules.everyHour", cron: "0 * * * *" },
 ] as const;
 
 /** Save the demonstrated path as a routine that reruns the published skill. */
@@ -56,6 +58,8 @@ function ScheduleSkill({
   recording: Demonstration;
   onDone: () => void;
 }) {
+  const { t } = useTranslation("computer");
+  const { formatDateTime } = useDateTime();
   const id = useId();
   const [cron, setCron] = useState<string>(SCHEDULES[0].cron);
   const [custom, setCustom] = useState("");
@@ -83,13 +87,13 @@ function ScheduleSkill({
   if (scheduled)
     return (
       <p className="w-full text-xs">
-        Scheduled. /{recording.skillSlug} next runs{" "}
-        {new Date(scheduled.nextRunAt).toLocaleString()}.{" "}
+        {t("demonstration.scheduledLead")} /{recording.skillSlug}{" "}
+        {t("demonstration.nextRuns")} {formatDateTime(scheduled.nextRunAt)}.{" "}
         <Link to="/routines" className="underline">
-          See routines
+          {t("demonstration.seeRoutines")}
         </Link>{" "}
         <button type="button" className="underline" onClick={onDone}>
-          Close
+          {t("demonstration.close")}
         </button>
       </p>
     );
@@ -102,7 +106,7 @@ function ScheduleSkill({
       }}
     >
       <label htmlFor={`${id}-when`} className="grid gap-1">
-        When it runs ({timezone})
+        {t("demonstration.whenItRuns", { timezone })}
         <select
           id={`${id}-when`}
           className="h-8 rounded-md border bg-background px-2"
@@ -111,15 +115,15 @@ function ScheduleSkill({
         >
           {SCHEDULES.map((option) => (
             <option key={option.cron} value={option.cron}>
-              {option.label}
+              {t(option.label)}
             </option>
           ))}
-          <option value="custom">Custom cron expression</option>
+          <option value="custom">{t("demonstration.customCron")}</option>
         </select>
       </label>
       {cron === "custom" && (
         <label htmlFor={`${id}-cron`} className="grid gap-1">
-          Cron (minute hour day month weekday)
+          {t("demonstration.cronFormat")}
           <Input
             id={`${id}-cron`}
             required
@@ -131,14 +135,14 @@ function ScheduleSkill({
         </label>
       )}
       <label htmlFor={`${id}-channel`} className="grid gap-1">
-        Report in
+        {t("demonstration.reportIn")}
         <select
           id={`${id}-channel`}
           className="h-8 rounded-md border bg-background px-2"
           value={channelId}
           onChange={(event) => setChannelId(event.target.value)}
         >
-          <option value="">This Bot's only conversation</option>
+          <option value="">{t("demonstration.onlyConversation")}</option>
           {botChannels.map((channel) => (
             <option key={channel.id} value={channel.id}>
               {channel.name}
@@ -147,13 +151,13 @@ function ScheduleSkill({
         </select>
       </label>
       <label htmlFor={`${id}-inputs`} className="grid gap-1">
-        Inputs for each run (optional)
+        {t("demonstration.inputsLabel")}
         <Input
           id={`${id}-inputs`}
           maxLength={1000}
           value={inputs}
           onChange={(event) => setInputs(event.target.value)}
-          placeholder="input_1: last month's invoices"
+          placeholder={t("demonstration.inputsPlaceholder")}
         />
       </label>
       {schedule.error && (
@@ -168,10 +172,10 @@ function ScheduleSkill({
           type="submit"
           disabled={schedule.isPending || (cron === "custom" && !custom.trim())}
         >
-          Schedule
+          {t("demonstration.schedule")}
         </Button>
         <Button size="sm" variant="ghost" type="button" onClick={onDone}>
-          Cancel
+          {t("demonstration.cancel")}
         </Button>
       </div>
     </form>
@@ -186,6 +190,7 @@ export function DemonstrationRecorder({
   driving: boolean;
   onRecordingChange: () => void;
 }) {
+  const { t } = useTranslation("computer");
   const id = useId();
   const [title, setTitle] = useState("");
   const [draft, setDraft] = useState<DemonstrationDraft | null>(null);
@@ -251,17 +256,18 @@ export function DemonstrationRecorder({
   return (
     <section className="mt-4 grid gap-3 rounded-lg border p-4 text-left">
       <div>
-        <h3 className="font-semibold">Teach a browser workflow</h3>
+        <h3 className="font-semibold">{t("demonstration.title")}</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Take control, record the steps, then review a skill draft. Typed
-          values and images are omitted. Sensitive fields stay in your hands.
-          Recording stops automatically after ten minutes.
+          {t("demonstration.intro")}
         </p>
       </div>
       {active ? (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm">
-            Recording {active.title} · {active.actions.length} steps
+            {t("demonstration.recordingLine", {
+              title: active.title,
+              count: active.actions.length,
+            })}
           </span>
           {secondsLeft !== null && (
             <span
@@ -273,8 +279,8 @@ export function DemonstrationRecorder({
               }
             >
               {secondsLeft > 0
-                ? `${clock(secondsLeft)} left`
-                : "Time limit reached. Stopping…"}
+                ? t("demonstration.timeLeft", { time: clock(secondsLeft) })
+                : t("demonstration.timeLimitReached")}
             </span>
           )}
           <Button
@@ -282,7 +288,7 @@ export function DemonstrationRecorder({
             disabled={stop.isPending}
             onClick={() => stop.mutate(active.id)}
           >
-            Stop recording
+            {t("demonstration.stopRecording")}
           </Button>
         </div>
       ) : (
@@ -294,14 +300,14 @@ export function DemonstrationRecorder({
           }}
         >
           <label htmlFor={id} className="grid grow gap-1 text-xs">
-            Workflow name
+            {t("demonstration.workflowName")}
             <Input
               id={id}
               required
               maxLength={120}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Find an invoice"
+              placeholder={t("demonstration.workflowPlaceholder")}
             />
           </label>
           {/* Base UI's Button defaults to type="button", which never submits the form. */}
@@ -310,11 +316,11 @@ export function DemonstrationRecorder({
             type="submit"
             disabled={!driving || start.isPending || !title.trim()}
           >
-            Record your steps
+            {t("demonstration.recordSteps")}
           </Button>
           {!driving && (
             <p className="w-full text-xs text-muted-foreground">
-              Take control of the browser to start recording.
+              {t("demonstration.takeControlFirst")}
             </p>
           )}
         </form>
@@ -341,11 +347,12 @@ export function DemonstrationRecorder({
             className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm"
           >
             <span>
-              {recording.title} · {recording.actions.length} steps
+              {recording.title} · {recording.actions.length}{" "}
+              {t("demonstration.stepsUnit")}
               {recording.reachedTimeLimit && (
                 <span className="text-xs text-muted-foreground">
                   {" "}
-                  · stopped at the ten-minute limit
+                  {t("demonstration.stoppedAtLimit")}
                 </span>
               )}
             </span>
@@ -357,7 +364,7 @@ export function DemonstrationRecorder({
                     search={{ edit: recording.skillSlug }}
                     className="text-xs underline"
                   >
-                    Edit /{recording.skillSlug}
+                    {t("demonstration.edit")} /{recording.skillSlug}
                   </Link>
                   <Button
                     size="sm"
@@ -368,7 +375,7 @@ export function DemonstrationRecorder({
                       )
                     }
                   >
-                    Run on a schedule
+                    {t("demonstration.runOnSchedule")}
                   </Button>
                 </>
               ) : (
@@ -378,7 +385,7 @@ export function DemonstrationRecorder({
                   disabled={!recording.actions.length || generate.isPending}
                   onClick={() => generate.mutate(recording.id)}
                 >
-                  Review skill draft
+                  {t("demonstration.reviewDraft")}
                 </Button>
               )}
               <Button
@@ -387,7 +394,7 @@ export function DemonstrationRecorder({
                 disabled={remove.isPending}
                 onClick={() => remove.mutate(recording.id)}
               >
-                Delete
+                {t("demonstration.delete")}
               </Button>
             </div>
             {scheduling === recording.id && (
@@ -400,15 +407,14 @@ export function DemonstrationRecorder({
         ))}
       {draft && (
         <div className="grid gap-3 border-t pt-4">
-          <h3 className="font-semibold">Review and edit the skill</h3>
+          <h3 className="font-semibold">{t("demonstration.reviewTitle")}</h3>
           <p className="text-xs text-muted-foreground">
-            Replace parameter names and clarify the expected outcome. Saving
-            uses the same skill permissions as Skills.
+            {t("demonstration.reviewIntro")}
           </p>
           <SkillFields
             key={draft.sourceRecordingId}
             defaultValues={draft}
-            submitLabel="Save and use with this Bot"
+            submitLabel={t("demonstration.saveAndUse")}
             error={saveError || save.error}
             onCancel={() => setDraft(null)}
             onSubmit={async (values) => {
@@ -432,7 +438,7 @@ export function DemonstrationRecorder({
                 setSaveError(
                   error instanceof Error
                     ? error
-                    : new Error("The skill could not be saved."),
+                    : new Error(t("demonstration.couldNotSave")),
                 );
                 await refresh();
               }
@@ -442,9 +448,7 @@ export function DemonstrationRecorder({
       )}
       {savedSlug && (
         <p className="text-sm">
-          /{savedSlug} is ready on this Bot. Invoke it in the conversation with
-          the inputs you want to use, or choose Run on a schedule to rerun it as
-          a routine.
+          {t("demonstration.savedReady", { slug: savedSlug })}
         </p>
       )}
     </section>

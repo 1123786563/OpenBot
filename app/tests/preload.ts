@@ -25,4 +25,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 /* `@base-ui/utils` is not a dependency of this package; the react package that owns it is. */
 await import("@base-ui/react/dialog");
+/*
+ * i18n is initialized while the DOM exists so language detection can read localStorage and
+ * navigator, and with `initImmediate: false` it settles synchronously here: every component a
+ * test renders afterwards gets real strings, so text-asserting tests keep meaning what they
+ * meant before translations existed.
+ */
+await import("../src/lib/i18n");
 GlobalRegistrator.unregister();

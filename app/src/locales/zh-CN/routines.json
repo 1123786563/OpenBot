@@ -1,0 +1,61 @@
+{
+  "title": "例行任务",
+  "description": "Bot 按计划执行的任务，无需每次询问。通过与 Bot 对话来创建和修改——此页面只显示当前有哪些任务，并允许你停止它们。",
+  "lastRun": {
+    "never": "从未运行",
+    "running": "运行中…",
+    "recently": "最近",
+    "failed": "{{when}}失败",
+    "skipped": "{{when}}跳过",
+    "ran": "{{when}}运行",
+    "finished": "{{when}}完成"
+  },
+  "runs": {
+    "running": "运行中",
+    "succeeded": "已成功",
+    "failed": "已失败",
+    "skipped": "已跳过",
+    "waiting": "等待你处理",
+    "loading": "正在加载运行记录…",
+    "none": "还没有运行记录。",
+    "source": {
+      "runNow": "手动运行",
+      "triggered": "由触发器触发",
+      "scheduled": "按计划运行"
+    },
+    "openThread": "打开对话"
+  },
+  "workerStalled": {
+    "title": "没有程序在执行这些",
+    "lastChecked": "例行任务工作进程上次检查是在{{when}}。在它重新运行之前，这些任务都不会触发。",
+    "neverChecked": "从未有例行任务工作进程登记，因此这些任务都不会触发。部署需要一个正在运行的工作进程来执行它们。"
+  },
+  "loadError": "无法加载你的例行任务。",
+  "empty": {
+    "title": "暂无计划任务",
+    "agentTitle": "这位同事暂无计划任务",
+    "hint": "向 Bot 提出请求——“每个工作日 9 点，……”——它就会出现在这里。",
+    "agentHint": "在频道中向它提出请求——“每个工作日 9 点，……”——它就会出现在这里。"
+  },
+  "channelGone": "此频道已不存在",
+  "unnamedChannel": "未命名频道",
+  "paused": "已暂停",
+  "due": "待运行",
+  "next": "下次 {{when}}",
+  "actions": {
+    "runNow": "立即运行",
+    "runNowAria": "立即运行计划为 {{schedule}} 的例行任务",
+    "runNowTitle": "会真实立即运行：Bot 会执行任务并在频道中发布。",
+    "runNowPausedTitle": "已暂停的例行任务不会运行。请先开启它。",
+    "historyAria": "计划为 {{schedule}} 的例行任务的运行历史",
+    "enableAria": "启用计划为 {{schedule}} 的例行任务",
+    "deleteAria": "删除计划为 {{schedule}} 的例行任务"
+  },
+  "delete": {
+    "title": "删除“{{schedule}}”？",
+    "description": "此常驻指令将永久停止。不会再按此计划运行任何内容，且无法撤销。",
+    "cancel": "取消",
+    "deleting": "删除中…",
+    "confirm": "删除"
+  }
+}

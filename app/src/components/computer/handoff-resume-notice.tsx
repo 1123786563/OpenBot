@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { readControl } from "@/lib/computers/control";
 import {
   forgetHandoff,
@@ -25,6 +26,7 @@ export function HandoffResumeNotice({
   ready: boolean;
   run: () => Promise<unknown>;
 }) {
+  const { t } = useTranslation("computer");
   const [pending, setPending] = useState<PendingHandoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export function HandoffResumeNotice({
       await resumeHandoffTask(botId, pending, agent, run, abort.signal);
     } catch (error) {
       setProblem(
-        error instanceof Error ? error.message : "The task could not resume.",
+        error instanceof Error ? error.message : t("handoff.couldNotResume"),
       );
     } finally {
       setBusy(false);
@@ -96,9 +98,7 @@ export function HandoffResumeNotice({
     >
       <span>
         {problem ??
-          (busy
-            ? "Waiting for this browser handoff to finish."
-            : "A browser task is paused in this conversation.")}
+          (busy ? t("handoff.waitingFinish") : t("handoff.pausedNotice"))}
       </span>
       {busy ? (
         <button
@@ -106,7 +106,7 @@ export function HandoffResumeNotice({
           className="underline"
           onClick={() => controller.current?.abort()}
         >
-          Stop waiting
+          {t("handoff.stopWaiting")}
         </button>
       ) : (
         <button
@@ -115,7 +115,7 @@ export function HandoffResumeNotice({
           disabled={!pending || agent.isRunning}
           onClick={() => void resume()}
         >
-          Resume task
+          {t("handoff.resumeTask")}
         </button>
       )}
     </div>

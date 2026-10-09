@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { Trans, useTranslation } from "react-i18next";
 import { SkillTools } from "@/components/skills/skill-tools";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,7 @@ export function SkillFields({
    */
   slugLocked?: boolean;
 }) {
+  const { t } = useTranslation("skills");
   const form = useForm({
     defaultValues,
     validators: { onSubmit: skillFormSchema },
@@ -68,7 +70,9 @@ export function SkillFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Command</FieldLabel>
+                <FieldLabel htmlFor={field.name}>
+                  {t("fields.command")}
+                </FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
                   disabled={slugLocked}
@@ -83,7 +87,7 @@ export function SkillFields({
                   onChange={(event) =>
                     field.handleChange(event.target.value.toLowerCase())
                   }
-                  placeholder="standup"
+                  placeholder={t("fields.commandPlaceholder")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -91,14 +95,13 @@ export function SkillFields({
                 ) : (
                   <p className="text-muted-foreground text-xs">
                     {slugLocked ? (
-                      "A command cannot be changed. To rename a skill, write a new one and delete this."
+                      t("fields.commandLocked")
                     ) : (
-                      <>
-                        What you type after a slash.{" "}
-                        <code>
-                          /{"{"}command{"}"}
-                        </code>
-                      </>
+                      <Trans
+                        i18nKey="fields.commandHint"
+                        t={t}
+                        components={{ code: <code /> }}
+                      />
                     )}
                   </p>
                 )}
@@ -113,14 +116,16 @@ export function SkillFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Title</FieldLabel>
+                <FieldLabel htmlFor={field.name}>
+                  {t("fields.title")}
+                </FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="My standup skill"
+                  placeholder={t("fields.titlePlaceholder")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -137,22 +142,27 @@ export function SkillFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>One-liner</FieldLabel>
+                <FieldLabel htmlFor={field.name}>
+                  {t("fields.oneLiner")}
+                </FieldLabel>
                 <Input
                   aria-invalid={isInvalid}
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="Turns yesterday's work into a standup update"
+                  placeholder={t("fields.oneLinerPlaceholder")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
                   <FieldError errors={field.state.meta.errors} />
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    Shown beside the command in this list and in the{" "}
-                    <code>/</code> menu. Optional.
+                    <Trans
+                      i18nKey="fields.oneLinerHint"
+                      t={t}
+                      components={{ code: <code /> }}
+                    />
                   </p>
                 )}
               </Field>
@@ -166,7 +176,9 @@ export function SkillFields({
               field.state.meta.isTouched && !field.state.meta.isValid;
             return (
               <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Instructions</FieldLabel>
+                <FieldLabel htmlFor={field.name}>
+                  {t("fields.instructions")}
+                </FieldLabel>
                 <Textarea
                   aria-invalid={isInvalid}
                   className="min-h-40"
@@ -174,15 +186,14 @@ export function SkillFields({
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="Summarise what I did yesterday from the channel, then list what is left."
+                  placeholder={t("fields.instructionsPlaceholder")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
                   <FieldError errors={field.state.meta.errors} />
                 ) : (
                   <p className="text-muted-foreground text-xs">
-                    Added to the run when the command is used. Write it as
-                    instructions to the Bot, not as a description of them.
+                    {t("fields.instructionsHint")}
                   </p>
                 )}
               </Field>
@@ -221,13 +232,13 @@ export function SkillFields({
         >
           {([canSubmit, isSubmitting]) => (
             <Button disabled={!canSubmit || isSubmitting} type="submit">
-              {isSubmitting ? "Saving…" : submitLabel}
+              {isSubmitting ? t("fields.saving") : submitLabel}
             </Button>
           )}
         </form.Subscribe>
         {onCancel ? (
           <Button onClick={onCancel} type="button" variant="outline">
-            Cancel
+            {t("fields.cancel")}
           </Button>
         ) : null}
       </div>

@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
   startChatLink,
   startSms,
 } from "@/lib/delivery";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { queryClient } from "@/query-client";
 
 /**
@@ -46,6 +48,8 @@ export const Route = createFileRoute("/_authed/_app/reachability")({
   component: ReachabilityPage,
 });
 function ReachabilityPage() {
+  const { t } = useTranslation("agents");
+  const { formatDateTime } = useDateTime();
   const reach = useQuery(deliveryQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
   const bots = useQuery(agentListQueryOptions());
@@ -97,8 +101,8 @@ function ReachabilityPage() {
     deviceRemove.error;
   return (
     <PageShell
-      title="Reachability"
-      description="Continue a conversation in Slack, Microsoft Teams, by text message, or on your phone. Questions and approval requests reach the same person who owns the conversation."
+      title={t("reachability.title")}
+      description={t("reachability.description")}
     >
       <div className="grid gap-5">
         {error && (
@@ -107,9 +111,9 @@ function ReachabilityPage() {
           </p>
         )}
         <div className="grid gap-3 rounded-lg border p-4">
-          <h2 className="font-semibold">Connect a conversation</h2>
+          <h2 className="font-semibold">{t("reachability.connect.title")}</h2>
           <label className="grid gap-1 text-sm">
-            Conversation
+            {t("reachability.connect.conversation")}
             <select
               className="h-9 rounded border bg-background px-3"
               value={channelId}
@@ -118,7 +122,9 @@ function ReachabilityPage() {
                 setAgentId("");
               }}
             >
-              <option value="">Choose a conversation</option>
+              <option value="">
+                {t("reachability.connect.chooseConversation")}
+              </option>
               {channels.data
                 ?.filter((channel) => channel.active)
                 .map((channel) => (
@@ -129,13 +135,13 @@ function ReachabilityPage() {
             </select>
           </label>
           <label className="grid gap-1 text-sm">
-            Bot
+            {t("reachability.connect.bot")}
             <select
               className="h-9 rounded border bg-background px-3"
               value={agentId}
               onChange={(event) => setAgentId(event.target.value)}
             >
-              <option value="">Choose a Bot</option>
+              <option value="">{t("reachability.connect.chooseBot")}</option>
               {selected?.agentIds.map((id) => (
                 <option key={id} value={id}>
                   {botName(id)}
@@ -145,7 +151,7 @@ function ReachabilityPage() {
           </label>
           {channels.hasNextPage && (
             <Button variant="outline" onClick={() => channels.fetchNextPage()}>
-              Load more conversations
+              {t("reachability.connect.loadMore")}
             </Button>
           )}
           <div className="flex flex-wrap gap-2">
@@ -155,7 +161,7 @@ function ReachabilityPage() {
               }
               onClick={() => link.mutate("slack")}
             >
-              Link Slack
+              {t("reachability.connect.linkSlack")}
             </Button>
             <Button
               variant="outline"
@@ -164,16 +170,19 @@ function ReachabilityPage() {
               }
               onClick={() => link.mutate("teams")}
             >
-              Link Microsoft Teams
+              {t("reachability.connect.linkTeams")}
             </Button>
           </div>
           {link.data && (
             <div className="grid gap-2 rounded border bg-muted/40 p-3 text-sm">
               <p>
-                Send this message to the OpenBot app in{" "}
-                {link.data.platform === "teams" ? "Microsoft Teams" : "Slack"}{" "}
-                within {link.data.expiresInMinutes} minutes. It links that
-                account to this conversation and Bot.
+                {t("reachability.connect.linkInstructions", {
+                  platform:
+                    link.data.platform === "teams"
+                      ? "Microsoft Teams"
+                      : "Slack",
+                  minutes: link.data.expiresInMinutes,
+                })}
               </p>
               <div className="flex items-center gap-2">
                 <code className="min-w-0 flex-1 break-all rounded bg-background px-2 py-1">
@@ -189,19 +198,19 @@ function ReachabilityPage() {
                     setCopied(true);
                   }}
                 >
-                  {copied ? "Copied" : "Copy"}
+                  {copied
+                    ? t("reachability.connect.copied")
+                    : t("reachability.connect.copy")}
                 </Button>
               </div>
             </div>
           )}
           <p className="text-sm text-muted-foreground">
-            In a channel other people can read, the Bot answers you in a direct
-            message instead.
+            {t("reachability.connect.directNote")}
           </p>
           {reach.data && !reach.data.available.slack && (
             <p className="text-sm text-muted-foreground">
-              An administrator needs to pair OpenBot with OpenTag before Slack
-              or Teams can be linked.
+              {t("reachability.connect.adminPairing")}
             </p>
           )}
           <form
@@ -212,7 +221,7 @@ function ReachabilityPage() {
             }}
           >
             <label htmlFor="delivery-phone" className="grid gap-1 text-sm">
-              Phone number
+              {t("reachability.connect.phone")}
               <Input
                 id="delivery-phone"
                 type="tel"
@@ -227,7 +236,7 @@ function ReachabilityPage() {
               type="submit"
               disabled={!agentId || !reach.data?.available.sms || sms.isPending}
             >
-              Send verification code
+              {t("reachability.connect.sendCode")}
             </Button>
           </form>
           {challengeId && (
@@ -239,22 +248,24 @@ function ReachabilityPage() {
               }}
             >
               <Input
-                aria-label="Verification code"
+                aria-label={t("reachability.connect.codeAria")}
                 autoComplete="one-time-code"
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
                 required
               />
               <Button type="submit" disabled={confirm.isPending}>
-                Confirm phone
+                {t("reachability.connect.confirmPhone")}
               </Button>
             </form>
           )}
         </div>
         <section className="grid gap-3 rounded-lg border p-4">
-          <h2 className="font-semibold">Connected destinations</h2>
+          <h2 className="font-semibold">
+            {t("reachability.destinations.title")}
+          </h2>
           {reach.isPending ? (
-            <p>Loading connections…</p>
+            <p>{t("reachability.destinations.loading")}</p>
           ) : (
             reach.data?.bindings
               .filter((binding) => binding.enabled)
@@ -269,7 +280,9 @@ function ReachabilityPage() {
                       : binding.transport === "teams"
                         ? "Microsoft Teams"
                         : binding.optedOutAt
-                          ? `${binding.address} (replied STOP; text START to resume)`
+                          ? t("reachability.destinations.optedOut", {
+                              address: binding.address,
+                            })
                           : binding.address}{" "}
                     · {botName(binding.agentId)}
                   </p>
@@ -279,22 +292,21 @@ function ReachabilityPage() {
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(binding.id)}
                   >
-                    Disconnect
+                    {t("reachability.destinations.disconnect")}
                   </Button>
                 </div>
               ))
           )}
           {reach.data?.bindings.every((binding) => !binding.enabled) && (
             <p className="text-sm text-muted-foreground">
-              No destinations connected.
+              {t("reachability.destinations.none")}
             </p>
           )}
         </section>
         <section className="grid gap-3 rounded-lg border p-4">
-          <h2 className="font-semibold">Native devices</h2>
+          <h2 className="font-semibold">{t("reachability.devices.title")}</h2>
           <p className="text-sm text-muted-foreground">
-            Sign in to the OpenBot native app and enable notifications to
-            register your device.
+            {t("reachability.devices.description")}
           </p>
           {reach.data?.devices.map((device) => (
             <div key={device.id} className="flex items-center justify-between">
@@ -305,18 +317,20 @@ function ReachabilityPage() {
                 disabled={deviceRemove.isPending}
                 onClick={() => deviceRemove.mutate(device.id)}
               >
-                Remove device
+                {t("reachability.devices.remove")}
               </Button>
             </div>
           ))}
         </section>
         <section className="grid gap-2 rounded-lg border p-4">
-          <h2 className="font-semibold">Recent deliveries</h2>
+          <h2 className="font-semibold">
+            {t("reachability.deliveries.title")}
+          </h2>
           {reach.data?.deliveries.map((delivery) => (
             <div key={delivery.id} className="border-t pt-2 text-sm">
               <p>
                 {delivery.transport} · {delivery.kind} · {delivery.state} ·{" "}
-                {new Date(delivery.createdAt).toLocaleString()}
+                {formatDateTime(delivery.createdAt)}
               </p>
               {delivery.error && (
                 <p className="text-destructive">{delivery.error}</p>
@@ -324,7 +338,9 @@ function ReachabilityPage() {
             </div>
           ))}
           {reach.data?.deliveries.length === 0 && (
-            <p className="text-sm text-muted-foreground">No deliveries yet.</p>
+            <p className="text-sm text-muted-foreground">
+              {t("reachability.deliveries.none")}
+            </p>
           )}
         </section>
       </div>

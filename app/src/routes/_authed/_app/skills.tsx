@@ -2,6 +2,7 @@ import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { z } from "zod";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
@@ -55,6 +56,7 @@ export const Route = createFileRoute("/_authed/_app/skills")({
 });
 
 function SkillsPage() {
+  const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
   const { new: isCreating, edit: editingSlug } = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -108,12 +110,9 @@ function SkillsPage() {
     >
       <PageShell
         description={
-          <>
-            A skill is a named instruction you invoke with <code>/</code> and a
-            Bot follows. Yours are yours alone, and go on the Bots you own.
-          </>
+          <Trans i18nKey="description" t={t} components={{ code: <code /> }} />
         }
-        title="Agent Skills"
+        title={t("title")}
       >
         {error ? (
           <p className="text-sm text-destructive" role="alert">
@@ -131,10 +130,10 @@ function SkillsPage() {
               variant="ghost"
             >
               <IconPlus />
-              New skill
+              {t("newSkill")}
             </Button>
           }
-          title="Your skills"
+          title={t("yourSkills")}
         >
           {/*
            * Nothing while the two queries are still in flight. The alternative is the empty state
@@ -147,13 +146,13 @@ function SkillsPage() {
            */}
           {loading ? null : !data ? (
             <p className="mt-4 text-destructive text-sm" role="alert">
-              Your skills could not be loaded.
+              {t("loadError")}
             </p>
           ) : mine.length === 0 ? (
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
-                  You don't have any skills yet.
+                  {t("empty")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
@@ -195,7 +194,7 @@ function SkillsPage() {
                                 navigate({ search: { edit: skill.slug } })
                               }
                             >
-                              Edit
+                              {t("edit")}
                             </DropdownMenuItem>
                             {/*
                              * Deleting is immediate and there is no undo. It is behind a menu rather
@@ -210,7 +209,7 @@ function SkillsPage() {
                               }}
                               variant="destructive"
                             >
-                              Delete /{skill.slug}
+                              {t("deleteSlug", { slug: skill.slug })}
                             </DropdownMenuItem>
                           </DropdownMenuGroup>
                         </DropdownMenuContent>
@@ -236,8 +235,8 @@ function SkillsPage() {
          */}
         {deployment.length > 0 ? (
           <PageSection
-            description="Written for everyone by an administrator. Which Bots carry them is decided in Admin."
-            title="Workspace skills"
+            description={t("workspace.description")}
+            title={t("workspace.title")}
           >
             <PageRows>
               {deployment.map((skill, index) => (

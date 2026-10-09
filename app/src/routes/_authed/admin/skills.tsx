@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -57,6 +58,7 @@ export const Route = createFileRoute("/_authed/admin/skills")({
 const EMPTY_DRAFT = { slug: "", title: "", summary: "", instructions: "" };
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   const queryClient = useQueryClient();
   const plugins = useQuery(pluginsPageQueryOptions());
   const { data: agents } = useQuery(agentListQueryOptions());
@@ -91,11 +93,11 @@ function RouteComponent() {
       action={
         <Button onClick={() => setWriting(true)} size="lg" type="button">
           <IconPlus />
-          Write a skill
+          {t("skills.write")}
         </Button>
       }
-      description="Named instructions anybody here can invoke with a slash. A skill adds no capability: it can only ask a Bot to use what that Bot already holds, and every one of those calls is still decided and recorded."
-      title="Skills"
+      description={t("skills.description")}
+      title={t("skills.title")}
     >
       {error ? (
         <p className="text-destructive text-sm" role="alert">
@@ -104,16 +106,16 @@ function RouteComponent() {
       ) : null}
 
       <PageSection
-        description="Written for the whole deployment. People write their own on their Skills page."
-        title="Installed"
+        description={t("skills.installed.description")}
+        title={t("skills.installed.title")}
       >
         {/* A read that failed says so; `isPending` goes false on it too, and it is not "none". */}
         {plugins.isPending ? null : !plugins.data ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Skills could not be loaded.
+            {t("skills.installed.loadError")}
           </p>
         ) : skills.length === 0 ? (
-          <PageEmpty>No skills yet.</PageEmpty>
+          <PageEmpty>{t("skills.installed.empty")}</PageEmpty>
         ) : (
           <PageRows>
             {skills.map((skill, index) => (
@@ -164,7 +166,7 @@ function RouteComponent() {
                       type="button"
                       variant="ghost"
                     >
-                      Remove
+                      {t("skills.installed.remove")}
                     </Button>
                   </ItemActions>
                 </Item>
@@ -178,17 +180,17 @@ function RouteComponent() {
       <Dialog onOpenChange={setWriting} open={writing}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Write a skill for the deployment</DialogTitle>
+            <DialogTitle>{t("skills.dialog.title")}</DialogTitle>
             <DialogDescription>
-              The slug is what a person types after a slash, and the
-              instructions are added to the run when they do. Everybody here can
-              use it, and you decide which Bots have it.
+              {t("skills.dialog.description")}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="skill-slug">Slug</FieldLabel>
+                <FieldLabel htmlFor="skill-slug">
+                  {t("skills.dialog.slug")}
+                </FieldLabel>
                 <Input
                   id="skill-slug"
                   onChange={(event) =>
@@ -202,7 +204,9 @@ function RouteComponent() {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="skill-title">Title</FieldLabel>
+                <FieldLabel htmlFor="skill-title">
+                  {t("skills.dialog.titleField")}
+                </FieldLabel>
                 <Input
                   id="skill-title"
                   onChange={(event) =>
@@ -211,12 +215,14 @@ function RouteComponent() {
                       title: event.target.value,
                     }))
                   }
-                  placeholder="Title"
+                  placeholder={t("skills.dialog.titlePlaceholder")}
                   value={draft.title}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="skill-summary">Summary</FieldLabel>
+                <FieldLabel htmlFor="skill-summary">
+                  {t("skills.dialog.summary")}
+                </FieldLabel>
                 <Input
                   id="skill-summary"
                   onChange={(event) =>
@@ -225,13 +231,13 @@ function RouteComponent() {
                       summary: event.target.value,
                     }))
                   }
-                  placeholder="One line"
+                  placeholder={t("skills.dialog.summaryPlaceholder")}
                   value={draft.summary}
                 />
               </Field>
               <Field>
                 <FieldLabel htmlFor="skill-instructions">
-                  Instructions
+                  {t("skills.dialog.instructions")}
                 </FieldLabel>
                 <Textarea
                   className="h-28 font-mono text-sm"
@@ -242,7 +248,7 @@ function RouteComponent() {
                       instructions: event.target.value,
                     }))
                   }
-                  placeholder="What the Bot should do when this skill is used."
+                  placeholder={t("skills.dialog.instructionsPlaceholder")}
                   value={draft.instructions}
                 />
               </Field>
@@ -250,7 +256,7 @@ function RouteComponent() {
           </DialogBody>
           <DialogFooter className="mt-4">
             <Button onClick={() => setWriting(false)} size="sm" variant="ghost">
-              Cancel
+              {t("skills.cancel")}
             </Button>
             <Button
               disabled={!(draft.slug && draft.title && draft.instructions)}
@@ -262,7 +268,7 @@ function RouteComponent() {
               }}
               size="sm"
             >
-              Install skill
+              {t("skills.dialog.install")}
             </Button>
           </DialogFooter>
         </DialogContent>

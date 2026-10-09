@@ -1,0 +1,357 @@
+{
+  "new": {
+    "title": "Start a new channel",
+    "fallbackHint": "Sent to the coworker it is for. Type <code>@</code> to choose one yourself.",
+    "startError": "Could not start the conversation.",
+    "loadError": "Your coworkers couldn't be loaded, so there's no one to send this to yet."
+  },
+  "explore": {
+    "title": "Explore agents",
+    "loadError": "Agents shared with you couldn't be loaded.",
+    "empty": "Nobody has shared an agent with you yet."
+  },
+  "avatar": {
+    "working": "Working…"
+  },
+  "attachments": {
+    "aria": "Attachments",
+    "attachmentName": "Attachment",
+    "attachmentFallback": "attachment",
+    "uploadingAria": "{{name}}, uploading",
+    "uploading": "Uploading…",
+    "truncationTitle": "The model reads the first 120,000 characters of this file.",
+    "mayBeCut": " · may be cut",
+    "removeAria": "Remove {{name}}"
+  },
+  "bot": {
+    "computer": "Computer",
+    "newChat": "New chat",
+    "subtitle": "Ask it to open a page and watch it work.",
+    "historyUnavailable": "Earlier messages in this conversation could not be loaded, and the Bot is answering without them.",
+    "loadErrorBots": "Bots couldn't be loaded.",
+    "loadErrorBot": "Bot couldn't be loaded.",
+    "noBotNamed": "This deployment has no Bot called \"{{name}}\".",
+    "noBots": "This deployment has no Bots yet."
+  },
+  "botProfile": {
+    "description": "What this Bot is doing for you, and how it runs.",
+    "titleFallback": "Bot",
+    "unreachable": "This Bot is not one you can reach."
+  },
+  "bots": {
+    "title": "Bots",
+    "description": "What each of your Bots is doing, what it needs from you, and whether it is paused.",
+    "loadError": "Could not load your Bots.",
+    "empty": "You have no Bots yet.",
+    "paused": "Paused"
+  },
+  "browser": {
+    "browsing": "Browsing…",
+    "browsedOne": "Browsed 1 page",
+    "browsedMany": "Browsed {{pages}} pages",
+    "activity": "Browser activity",
+    "issueOne": "1 issue",
+    "issueMany": "{{issues}} issues",
+    "inProgress": "In progress",
+    "notCompleted": "Not completed",
+    "stepFailed": "This step could not be completed.",
+    "step": {
+      "navigate": "Opened page",
+      "read": "Read page",
+      "snapshot": "Inspected page",
+      "click": "Clicked on page",
+      "type": "Filled in field",
+      "key": "Pressed key",
+      "scroll": "Scrolled page"
+    }
+  },
+  "channelDetail": {
+    "computer": "Computer",
+    "channelFallback": "Channel",
+    "coworkerAria": "Channel coworker",
+    "loadError": "Could not load this channel."
+  },
+  "channelNew": {
+    "rosterError": "Coworkers couldn't be loaded.",
+    "notAvailable": "This Bot isn't available to you. It may be unpublished, not shared with you, or not described yet.",
+    "detailError": "Coworker couldn't be loaded.",
+    "noAgents": "No agents found."
+  },
+  "chat": {
+    "historyUnavailable": "Earlier messages are temporarily unavailable. You can keep using this conversation.",
+    "historyUnreadableOne": "One earlier message could not be read and is not shown. The rest of this conversation is complete.",
+    "historyUnreadableMany": "{{messages}} earlier messages could not be read and are not shown. The rest of this conversation is complete.",
+    "sentFile": "Sent {{name}}",
+    "sentAttachment": "Sent an attachment",
+    "sentAttachments": "Sent {{number}} attachments",
+    "voiceContextUnavailable": "Earlier voice context wasn’t available for this message. The agent may need you to repeat details from the call.",
+    "agentBusy": "The agent is still working on another request. Please wait or stop that task first.",
+    "stoppedByUser": "The user stopped this task before it completed.",
+    "voiceArchiveError": "Voice chats couldn’t be loaded. Refresh to try again.",
+    "coworkerDeleted": "This coworker has been deleted. The conversation stays readable, but it can no longer reply."
+  },
+  "composer": {
+    "tooManyStaged": "{{staged}} attachments are staged and a message can carry at most {{max}}. Remove {{remove}} to send the rest.",
+    "droppedMergedOverCap": "dropped when queued messages were merged into one: a message can carry at most {{max}} attachments.",
+    "droppedQueuedRemoved": "removed along with the queued message it was attached to.",
+    "dropCannotSend": "was not attached: this conversation can no longer take messages.",
+    "dropNoConversation": "was not attached: there is no conversation here yet. Send this message first, then attach to the one it opens.",
+    "queueMessage": "Queue message",
+    "sendMessage": "Send message",
+    "stopAria": "Stop the Bot",
+    "showVoiceCall": "Show voice call",
+    "startVoiceCall": "Start voice call",
+    "callThisAgent": "Call this agent",
+    "voiceUnsupported": "Voice calls need HTTPS or localhost and microphone support",
+    "attachFile": "Attach a file",
+    "optionsUnavailable": "More message options unavailable",
+    "messageAria": "Message",
+    "placeholder": "Ask anything"
+  },
+  "consent": {
+    "skipped": "Skipped. Nothing of yours was used.",
+    "allowedOnce": "Allowed once. Ask the Bot to try again.",
+    "allowedAllTeamBots": "Always allowed for every Team Bot. Ask it to try again.",
+    "allowedAlways": "Always allowed for this Bot. Ask it to try again.",
+    "allowOnce": "Allow once",
+    "alwaysAllowThis": "Always allow for this Bot",
+    "alwaysAllowAll": "Always allow for all Team Bots",
+    "skip": "Skip"
+  },
+  "dictation": {
+    "dictateAria": "Dictate a message",
+    "unsupported": "Dictation requires a supported browser and HTTPS (or localhost)",
+    "cancelAria": "Cancel dictation",
+    "waitingPermission": "Waiting for microphone permission…",
+    "transcribing": "Transcribing…",
+    "listening": "Listening",
+    "durationAria": "Recording duration",
+    "retry": "Retry",
+    "recordAgain": "Record again",
+    "stopAria": "Stop and transcribe",
+    "stopTitle": "Stop and add to draft",
+    "sendAria": "Transcribe and send",
+    "sendTitle": "Transcribe and send"
+  },
+  "group": {
+    "empty": "Say something to {{names}}. Every Bot answers in turn; start with @Name to ask just one.",
+    "and": " and ",
+    "botGone": "A Bot no longer here",
+    "you": "You",
+    "teammate": "A teammate",
+    "anotherBot": "another Bot",
+    "answerFrom": " · answer from {{name}}",
+    "thinking": "Thinking",
+    "waiting": "Waiting for your response.",
+    "openApprovals": "Open approvals",
+    "consentAsked": "Asked a teammate for permission to use their own {{server}} account.",
+    "answerFailed": "This Bot could not answer.",
+    "addPerson": "Add a person",
+    "emailAria": "Their email",
+    "emailPlaceholder": "Their email",
+    "add": "Add",
+    "people": "People:",
+    "leaveAria": "Leave this group",
+    "removePersonAria": "Remove {{email}}",
+    "leave": "leave"
+  },
+  "groupDetail": {
+    "groupFallback": "Group"
+  },
+  "groupNew": {
+    "title": "New group conversation",
+    "description": "Choose at least two Bots, in the order they should answer. Each sees what the others said and can hand the conversation to another with @Name.",
+    "first": "first",
+    "second": "second",
+    "third": "third",
+    "answers": "answers {{position}}",
+    "start": "Start group"
+  },
+  "recipient": {
+    "to": "To:",
+    "removeAria": "Remove {{name}}",
+    "chooseAria": "Choose a coworker",
+    "choosePlaceholder": "Choose a coworker…",
+    "noMatch": "No coworker by that name."
+  },
+  "rejectedFiles": {
+    "dismissOne": "Dismiss this refusal",
+    "dismissMany": "Dismiss these {{number}} refusals"
+  },
+  "toolBoundary": {
+    "failedSuffix": "could not be drawn. The rest of this conversation is unaffected."
+  },
+  "toolLine": {
+    "blocked": "Blocked: {{label}}",
+    "failed": "{{label}}, didn't work"
+  },
+  "transcript": {
+    "loadingAria": "Loading this conversation",
+    "thinking": "Thinking",
+    "attachmentFallback": "attachment",
+    "queued": "Queued",
+    "removeQueuedAria": "Remove queued message: {{message}}",
+    "remove": "Remove",
+    "routineRan": "Routine ran.",
+    "responsibilityRan": "Responsibility ran.",
+    "responsibilityTrigger": "Trigger: {{trigger}}",
+    "details": "Details",
+    "via": "via {{name}}",
+    "untitledFile": "Untitled file",
+    "attachmentLabel": "Attachment",
+    "attachmentAlt": "Attachment: {{name}}",
+    "fileUnavailable": "{{name}} is unavailable.",
+    "attachmentUnavailable": "This attachment is unavailable.",
+    "openAttachment": "Open {{name}}",
+    "close": "Close",
+    "generatedInterface": "This Bot's generated interface"
+  },
+  "voice": {
+    "statusUnavailable": "Call unavailable",
+    "connecting": "Connecting…",
+    "speaking": "{{name}} is speaking",
+    "working": "Working on your request",
+    "muted": "Your microphone is muted",
+    "listening": "Listening to you",
+    "ready": "Ready when you are",
+    "callAria": "Voice call with {{name}}",
+    "durationAria": "Call duration",
+    "expandAria": "Expand voice call",
+    "expandTitle": "Expand call",
+    "endAria": "End voice call",
+    "endTitle": "End call",
+    "youMuted": "You · microphone muted",
+    "you": "You",
+    "youNamedAria": "{{name}} (you)",
+    "settings": "Call settings",
+    "captions": "Show live captions",
+    "returnAria": "Return to chat",
+    "returnTitle": "Return to chat · keep call open",
+    "unmuteAria": "Unmute your microphone",
+    "muteAria": "Mute your microphone",
+    "unmuteTitle": "Unmute your microphone",
+    "muteTitle": "Mute your microphone · you’ll still hear the agent",
+    "captionsHint": "Speak when you’re ready. This call uses the current chat.",
+    "tryAgain": "Try again"
+  },
+  "voiceCard": {
+    "title": "Voice chat",
+    "savingAria": "Saving voice chat",
+    "you": "You",
+    "agent": "Agent",
+    "saving": "Saving your conversation and preparing a summary…",
+    "unsaved": "Couldn’t confirm this voice chat was saved.",
+    "summaryFailed": "Transcript saved. A summary couldn’t be generated.",
+    "expandHint": "You can still expand the transcript.",
+    "retrySave": "Retry save",
+    "retrySummary": "Retry summary"
+  },
+  "preview": {
+    "loadError": "Preview could not be loaded.",
+    "publishToSee": "Publish in the playground to see a preview.",
+    "publishedTitle": "Published component with saved sample arguments",
+    "conversationOnly": "This one is only drawn in a conversation.",
+    "publishedInPlayground": "Published in the playground.",
+    "cannotDraw": "This build cannot draw this."
+  },
+  "gallery": {
+    "activity": {
+      "couldNotRead": "That data could not be read.",
+      "reportTitle": "Report",
+      "choosingReport": "Choosing a report…",
+      "readingCaption": "Reading from this deployment",
+      "reading": "Reading…",
+      "notShown": "Not shown",
+      "botActivity": "Bot activity",
+      "nothingDone": "No Bot has done anything in the last {{days}} days.",
+      "askBusiest": "What has {{bot}} actually been doing? Look at the audit trail and summarise it.",
+      "askAboutBusiest": "Ask about the busiest",
+      "countedFrom": "Counted from this deployment's audit trail, last {{days}} days",
+      "recentRefusals": "Recent refusals",
+      "refusedNothing": "This deployment has refused nothing.",
+      "askExplainLatest": "Explain the most recent refusal in that list, and what would have to change for it to be allowed.",
+      "explainLatest": "Explain the latest",
+      "readFromAudit": "Read from this deployment's audit trail"
+    },
+    "cards": {
+      "of": "{{done}} of {{total}}",
+      "tone": {
+        "neutral": "neutral",
+        "positive": "positive",
+        "caution": "caution",
+        "negative": "negative"
+      }
+    },
+    "charts": {
+      "empty": "There is no data to chart."
+    },
+    "decisions": {
+      "waitingAssistant": "Waiting for the assistant…",
+      "preparingRequest": "Preparing the request…",
+      "approved": "Approved",
+      "declined": "Declined",
+      "waitingOnYou": "Waiting on you",
+      "reasonOptional": "A reason, if you want to give one",
+      "sending": "Sending…",
+      "approve": "Approve",
+      "decline": "Decline",
+      "preparingQuestion": "Preparing the question…",
+      "answered": "Answered"
+    },
+    "form": {
+      "preparingTitle": "Preparing your form…",
+      "preparingBody": "The assistant is putting the questions together.",
+      "invalidMessage": "The form could not be displayed because its questions were invalid. Send a corrected form with unique field IDs, valid types, and options for each select field.",
+      "unavailableTitle": "Form unavailable",
+      "hadInvalidQuestions": "The form had invalid questions. The Bot can send a corrected form.",
+      "hasInvalidQuestions": "The form has invalid questions and could not be displayed.",
+      "returnToBot": "Return to the Bot",
+      "enterValidNumber": "Enter a valid number.",
+      "fieldRequired": "{{label}} is required.",
+      "tooLong": "Use 2,000 characters or fewer.",
+      "enterValidEmail": "Enter a valid email address.",
+      "chooseListed": "Choose one of the listed options.",
+      "enterMin": "Enter {{min}} or more.",
+      "enterMax": "Enter {{max}} or less.",
+      "submitted": "Submitted",
+      "waitingOnYou": "Waiting on you",
+      "notProvided": "Not provided",
+      "completedUnavailable": "This form has been completed. Its saved answers are unavailable.",
+      "requiredNote": "Fields marked * are required. Your answers will be shared with the Bot.",
+      "chooseOption": "Choose an option",
+      "couldNotSend": "Your answers could not be sent. Try again.",
+      "submitAnswers": "Submit answers",
+      "sending": "Sending…"
+    },
+    "preview": {
+      "loading": "Loading what it can draw…",
+      "noComponents": "This Bot has not been granted any components, so it answers in prose.",
+      "drawsOwnRecords": "Draws this deployment's own records, so it has nothing to show until a Bot asks for it.",
+      "kind": {
+        "chart": "chart",
+        "card": "card",
+        "decision": "decision"
+      }
+    },
+    "quote": {
+      "title": "Quotation",
+      "nothingToQuote": "There is nothing to quote."
+    },
+    "refused": {
+      "notShown": "Not shown: {{title}}"
+    },
+    "table": {
+      "title": "Table",
+      "waitingForData": "Waiting for complete table data…",
+      "rowCount_one": "{{count}} row",
+      "rowCount_other": "{{count}} rows",
+      "scrollAria": "{{title}} table, scroll for more columns",
+      "sortCaption": "{{title}}. Select a column heading to sort.",
+      "emptyCell": "Empty",
+      "noRows": "No rows to show.",
+      "sortedAscending": "Sorted by {{column}}, ascending.",
+      "sortedDescending": "Sorted by {{column}}, descending.",
+      "selectToSort": "Select a column heading to sort."
+    }
+  }
+}

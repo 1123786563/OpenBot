@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { supplySecret } from "@/lib/computers/control";
 import {
   readPageFrame,
@@ -115,6 +116,7 @@ function NothingToSee({
   /** The page that turn opened, named when there is no picture of it. */
   page?: { url?: string; title?: string } | undefined;
 }) {
+  const { t } = useTranslation("computer");
   return (
     <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-muted-foreground text-sm">
       {settled ? (
@@ -134,35 +136,30 @@ function NothingToSee({
           */}
           {page?.url ? (
             <>
-              <span className="font-medium">{page.title || "A page"}</span>
-              <span className="break-all">{hostOf(page.url)}</span>
-              <span>
-                Opened during this turn. The screen has moved on since.
+              <span className="font-medium">
+                {page.title || t("view.aPage")}
               </span>
+              <span className="break-all">{hostOf(page.url)}</span>
+              <span>{t("view.openedDuringTurn")}</span>
             </>
           ) : (
             /*
              * A turn that ended without getting anywhere: refused by a boundary, stopped, or failed.
              * Saying "opened during this turn" here would describe something that did not happen.
              */
-            <span>This turn did not open a page.</span>
+            <span>{t("view.noPageThisTurn")}</span>
           )}
         </>
       ) : problem ? (
         <>
-          <span className="font-medium">
-            You cannot see the screen right now
-          </span>
+          <span className="font-medium">{t("view.cannotSeeScreen")}</span>
           <span>{problem}</span>
-          <span>
-            The assistant may still be working. An administrator can check
-            whether its computer is running.
-          </span>
+          <span>{t("view.mayStillBeWorking")}</span>
         </>
       ) : blankBrowser ? (
-        <span>The assistant has not opened a page yet.</span>
+        <span>{t("view.notOpenedPageYet")}</span>
       ) : (
-        <span>Waiting for the assistant's screen…</span>
+        <span>{t("view.waitingForScreen")}</span>
       )}
     </span>
   );
@@ -218,6 +215,7 @@ export function ComputerView({
   finished,
   toolCallId,
 }: Props) {
+  const { t } = useTranslation("computer");
   const [shot, setShot] = useState<Screenshot | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -345,7 +343,7 @@ export function ComputerView({
         if (generation.current !== mine) return;
 
         if (!frame) {
-          setProblem(error ?? "The screen is not available right now.");
+          setProblem(error ?? t("view.screenUnavailable"));
         } else {
           // Exact byte comparison is the settling signal.
           unchanged = frame.base64 === lastFrame ? unchanged + 1 : 0;
@@ -430,7 +428,7 @@ export function ComputerView({
   const polledScreen = showScreen ? (
     <img
       src={`data:image/png;base64,${drawn.base64}`}
-      alt="What the assistant is looking at"
+      alt={t("view.altLooking")}
       // Keep unexpected screenshot dimensions inside the reserved frame.
       className="absolute inset-0 h-full w-full object-contain opacity-100 transition-opacity duration-300 starting:opacity-0"
     />
@@ -452,7 +450,7 @@ export function ComputerView({
            */
           className="relative block w-full cursor-pointer bg-muted"
           style={frameStyle}
-          aria-label="Open the assistant's screen full size"
+          aria-label={t("view.openFullSize")}
         >
           {polledScreen}
 
@@ -467,7 +465,7 @@ export function ComputerView({
               ) : null}
               {wheelHere ? (
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-black text-xs shadow-sm">
-                  You have control
+                  {t("view.youHaveControl")}
                 </span>
               ) : null}
             </span>
@@ -487,7 +485,7 @@ export function ComputerView({
         {!driving && !settled && control?.requested ? (
           <div className="flex items-start justify-between gap-3 border-t bg-amber-500/10 px-3 py-2 text-sm">
             <span>
-              <strong className="font-medium">The assistant needs you.</strong>{" "}
+              <strong className="font-medium">{t("view.needsYou")}</strong>{" "}
               {control.reason}
             </span>
           </div>
@@ -501,19 +499,19 @@ export function ComputerView({
               disabled={changingControl}
               onClick={() => void changeControl?.("cancel")}
             >
-              Cancel request
+              {t("view.cancelRequest")}
             </button>
           </div>
         ) : null}
         {!settled && control?.transitioning ? (
           <p className="px-3 py-2 text-sm">
-            Finishing the assistant's current action before giving you control…
+            {t("view.finishingAssistantAction")}
           </p>
         ) : null}
         {!settled && control?.request?.status === "interrupted" ? (
           <p className="px-3 py-2 text-sm">
-            The browser was interrupted. {control.request.interruption} Open the
-            screen and take control again to check it.
+            {t("view.browserInterrupted")} {control.request.interruption}{" "}
+            {t("view.browserInterruptedCheck")}
           </p>
         ) : null}
         {/*
@@ -537,7 +535,7 @@ export function ComputerView({
             }}
           >
             <label className="block" htmlFor="openbot-secret">
-              <span className="font-medium">The assistant needs </span>
+              <span className="font-medium">{t("view.secretLabel")} </span>
               <span>{control.secretWanted}</span>
             </label>
             <div className="mt-1.5 flex gap-2">
@@ -549,7 +547,7 @@ export function ComputerView({
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder="Typed here, never shown to the assistant"
+                placeholder={t("view.secretPlaceholder")}
                 className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
               />
               <button
@@ -557,12 +555,11 @@ export function ComputerView({
                 disabled={!secret || sendingSecret}
                 className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
               >
-                {sendingSecret ? "Sending…" : "Send to the page"}
+                {sendingSecret ? t("view.sending") : t("view.sendToPage")}
               </button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              This goes straight to the page. It is not shown in the
-              conversation and the assistant never receives it.
+              {t("view.secretNote")}
             </p>
             {secretProblem ? (
               <p className="mt-1 text-xs text-destructive">{secretProblem}</p>
@@ -574,12 +571,12 @@ export function ComputerView({
           <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
             <span className="text-xs text-muted-foreground">
               {!control
-                ? "Checking who has control…"
+                ? t("view.checkingControl")
                 : control.transitioning
-                  ? "Finishing the current action…"
+                  ? t("controls.finishing")
                   : driving
-                    ? "You have control. Open the screen to click and type."
-                    : "The assistant has control."}
+                    ? t("view.youHaveControlHint")
+                    : t("view.assistantHasControl")}
             </span>
             <ComputerControlButton
               computerId={computerId}
@@ -597,7 +594,7 @@ export function ComputerView({
             <div
               role="dialog"
               aria-modal="true"
-              aria-label="The assistant's screen"
+              aria-label={t("view.dialogLabel")}
               className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-8"
             >
               {/*
@@ -607,7 +604,7 @@ export function ComputerView({
               <button
                 type="button"
                 onClick={() => !wheelHere && setExpanded(false)}
-                aria-label="Close the assistant's screen"
+                aria-label={t("view.closeScreen")}
                 aria-hidden={wheelHere}
                 tabIndex={wheelHere ? -1 : 0}
                 className={`absolute inset-0 bg-black/80 ${wheelHere ? "cursor-default" : "cursor-zoom-out"}`}
@@ -633,7 +630,7 @@ export function ComputerView({
                      */
                     <div className="relative w-full" style={{ aspectRatio }}>
                       <img
-                        alt="What this turn had open"
+                        alt={t("view.altTurnFrame")}
                         className="absolute inset-0 h-full w-full object-contain"
                         src={`data:image/png;base64,${drawn.base64}`}
                       />
@@ -663,7 +660,7 @@ export function ComputerView({
                               setRetryKey((value) => value + 1);
                             }}
                           >
-                            Retry
+                            {t("view.retry")}
                           </button>
                         </div>
                       ) : null}
@@ -687,7 +684,7 @@ export function ComputerView({
                 */}
                 {control?.transitioning ? (
                   <p className="mt-3 text-center text-sm">
-                    Finishing the current action before giving you control…
+                    {t("view.finishingBeforeControl")}
                   </p>
                 ) : null}
                 {settled ? null : (
@@ -704,13 +701,13 @@ export function ComputerView({
                       ) : null}
                       {driving ? (
                         <span className="truncate text-muted-foreground">
-                          You have control — click and type on the page.
+                          {t("view.youHaveControlClickType")}
                           {control?.reason ? ` ${control.reason}` : null}
                         </span>
                       ) : control?.requested ? (
                         <span className="truncate text-muted-foreground">
                           <strong className="font-medium text-foreground">
-                            The assistant needs you.
+                            {t("view.needsYou")}
                           </strong>{" "}
                           {control.reason}
                         </span>

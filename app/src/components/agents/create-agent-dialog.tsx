@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { Trans, useTranslation } from "react-i18next";
 import { useState } from "react";
 import useMeasure from "react-use-measure";
 import { Button } from "@/components/ui/button";
@@ -77,18 +78,18 @@ type StepName = (typeof STEPS)[number];
 /** The two ways a coworker can be seen. */
 const VISIBILITY_OPTIONS: Array<{
   value: AgentFormValues["visibility"];
-  title: string;
-  description: string;
+  title: "visibility.optionPrivate" | "visibility.optionPublic";
+  description: "visibility.privateHint" | "visibility.publicHint";
 }> = [
   {
     value: "private",
-    title: "Private",
-    description: "Only you can see it and start channels with it.",
+    title: "visibility.optionPrivate",
+    description: "visibility.privateHint",
   },
   {
     value: "public",
-    title: "Public",
-    description: "Everyone in the deployment can find and use it.",
+    title: "visibility.optionPublic",
+    description: "visibility.publicHint",
   },
 ];
 
@@ -100,20 +101,20 @@ type AgentKind = "builtin" | "managed";
 
 const KIND_OPTIONS: Array<{
   value: AgentKind;
-  title: string;
-  description: string;
+  title: "create.kind.builtinTitle" | "create.kind.managedTitle";
+  description:
+    | "create.kind.builtinDescription"
+    | "create.kind.managedDescription";
 }> = [
   {
     value: "builtin",
-    title: "Built-in",
-    description:
-      "Runs on this deployment's own Bot. Nothing to host or connect — it is ready the moment it is created.",
+    title: "create.kind.builtinTitle",
+    description: "create.kind.builtinDescription",
   },
   {
     value: "managed",
-    title: "Managed",
-    description:
-      "Runs on an agent you host, spoken to over AG-UI. This server dials your endpoint on every run.",
+    title: "create.kind.managedTitle",
+    description: "create.kind.managedDescription",
   },
 ];
 
@@ -154,6 +155,7 @@ function CreateAgentWizard({
   onClose: () => void;
   onCreated: (agentId: string) => void;
 }) {
+  const { t } = useTranslation("agents");
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
   /*
    * Whether "built-in" is a coworker this deployment can actually make. Assumed true while the
@@ -198,7 +200,7 @@ function CreateAgentWizard({
   const endpointError = !tried
     ? undefined
     : kind === "managed" && values.endpoint.trim() === ""
-      ? "An endpoint is required for a managed coworker."
+      ? t("create.endpointRequired")
       : agentFormSchema.shape.endpoint.safeParse(values.endpoint).error
           ?.issues[0]?.message;
 
@@ -245,7 +247,7 @@ function CreateAgentWizard({
     <>
       {/* Read aloud, never shown: each step carries its own heading, and a dialog-level title
           above them made two heading sizes compete. The popup still needs an accessible name. */}
-      <DialogTitle className="sr-only">New coworker</DialogTitle>
+      <DialogTitle className="sr-only">{t("create.newCoworker")}</DialogTitle>
       <DialogBody className="overflow-y-auto">
         <Questionnaire
           item={STEPS[step]}
@@ -275,7 +277,7 @@ function CreateAgentWizard({
           {/* A plain element rather than QuestionnaireProgress: only the active step is mounted,
               so the primitive would count one question and announce the wrong total. */}
           <p className="text-xs font-medium text-muted-foreground tabular-nums">
-            Step {step + 1} of {STEPS.length}
+            {t("create.stepOf", { current: step + 1, total: STEPS.length })}
           </p>
           <MotionConfig
             transition={{ duration: 0.5, type: "spring", bounce: 0 }}
@@ -353,7 +355,7 @@ function CreateAgentWizard({
               type="button"
               variant="outline"
             >
-              {step === 0 ? "Cancel" : "Back"}
+              {step === 0 ? t("create.cancel") : t("create.back")}
             </Button>
             <Button
               disabled={createAgent.isPending}
@@ -362,9 +364,9 @@ function CreateAgentWizard({
             >
               {last
                 ? createAgent.isPending
-                  ? "Creating…"
-                  : "Create coworker"
-                : "Continue"}
+                  ? t("create.creating")
+                  : t("create.createCoworker")
+                : t("create.continue")}
             </Button>
           </div>
         </Questionnaire>
@@ -407,20 +409,23 @@ function IdentityStep({
     value: AgentFormValues[K],
   ) => void;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <StepItem name="identity">
-      <QuestionnaireTitle>Who is this coworker?</QuestionnaireTitle>
+      <QuestionnaireTitle>{t("create.identity.title")}</QuestionnaireTitle>
       <QuestionnaireDescription>
-        The role you write here applies in every channel this coworker works in.
+        {t("create.identity.description")}
       </QuestionnaireDescription>
       <FieldGroup>
         <Field data-invalid={errors.name ? true : undefined}>
-          <FieldLabel htmlFor="create-agent-name">Name</FieldLabel>
+          <FieldLabel htmlFor="create-agent-name">
+            {t("fields.name")}
+          </FieldLabel>
           <Input
             aria-invalid={errors.name ? true : undefined}
             id="create-agent-name"
             onChange={(event) => set("name", event.target.value)}
-            placeholder="Expense Manager"
+            placeholder={t("create.identity.namePlaceholder")}
             value={values.name}
           />
           {errors.name ? (
@@ -428,12 +433,14 @@ function IdentityStep({
           ) : null}
         </Field>
         <Field data-invalid={errors.title ? true : undefined}>
-          <FieldLabel htmlFor="create-agent-title">Title</FieldLabel>
+          <FieldLabel htmlFor="create-agent-title">
+            {t("fields.title")}
+          </FieldLabel>
           <Input
             aria-invalid={errors.title ? true : undefined}
             id="create-agent-title"
             onChange={(event) => set("title", event.target.value)}
-            placeholder="Finance Operations"
+            placeholder={t("create.identity.titlePlaceholder")}
             value={values.title}
           />
           {errors.title ? (
@@ -441,12 +448,14 @@ function IdentityStep({
           ) : null}
         </Field>
         <Field data-invalid={errors.roleDescription ? true : undefined}>
-          <FieldLabel htmlFor="create-agent-role">Role</FieldLabel>
+          <FieldLabel htmlFor="create-agent-role">
+            {t("fields.role")}
+          </FieldLabel>
           <Textarea
             aria-invalid={errors.roleDescription ? true : undefined}
             id="create-agent-role"
             onChange={(event) => set("roleDescription", event.target.value)}
-            placeholder="Review receipts, categorize expenses, and prepare reimbursement reports."
+            placeholder={t("create.identity.rolePlaceholder")}
             rows={4}
             value={values.roleDescription}
           />
@@ -469,9 +478,10 @@ function VisibilityStep({
     value: AgentFormValues[K],
   ) => void;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <StepItem name="visibility">
-      <QuestionnaireTitle>Who can see it?</QuestionnaireTitle>
+      <QuestionnaireTitle>{t("create.visibilityTitle")}</QuestionnaireTitle>
       <QuestionnaireChoices>
         {VISIBILITY_OPTIONS.map((option) => (
           <QuestionnaireChoice
@@ -480,9 +490,9 @@ function VisibilityStep({
             onChange={() => set("visibility", option.value)}
             value={option.value}
           >
-            <span className="font-medium">{option.title}</span>
+            <span className="font-medium">{t(option.title)}</span>
             <QuestionnaireChoiceDescription>
-              {option.description}
+              {t(option.description)}
             </QuestionnaireChoiceDescription>
           </QuestionnaireChoice>
         ))}
@@ -518,9 +528,10 @@ function KindStep({
   testing: boolean;
   onTest: () => void;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <StepItem name="kind">
-      <QuestionnaireTitle>Where does it run?</QuestionnaireTitle>
+      <QuestionnaireTitle>{t("create.kind.title")}</QuestionnaireTitle>
       <QuestionnaireChoices>
         {KIND_OPTIONS.map((option) => {
           /*
@@ -537,11 +548,11 @@ function KindStep({
               onChange={() => onKind(option.value)}
               value={option.value}
             >
-              <span className="font-medium">{option.title}</span>
+              <span className="font-medium">{t(option.title)}</span>
               <QuestionnaireChoiceDescription>
                 {unavailable
-                  ? "Not available here: this deployment has no Bot of its own for a coworker to run on."
-                  : option.description}
+                  ? t("create.kind.unavailable")
+                  : t(option.description)}
               </QuestionnaireChoiceDescription>
             </QuestionnaireChoice>
           );
@@ -549,14 +560,14 @@ function KindStep({
       </QuestionnaireChoices>
       {showKindError ? (
         <p className="text-sm text-destructive" role="alert">
-          Choose where this coworker runs.
+          {t("create.kind.chooseError")}
         </p>
       ) : null}
       {kind === "managed" ? (
         <FieldGroup>
           <Field data-invalid={endpointError ? true : undefined}>
             <FieldLabel htmlFor="create-agent-endpoint">
-              Agent endpoint
+              {t("create.kind.endpointLabel")}
             </FieldLabel>
             <div className="flex gap-2">
               <Input
@@ -572,7 +583,7 @@ function KindStep({
                 type="button"
                 variant="outline"
               >
-                {testing ? "Testing…" : "Test"}
+                {testing ? t("create.kind.testing") : t("create.kind.test")}
               </Button>
             </div>
             {endpointError ? (
@@ -584,19 +595,20 @@ function KindStep({
                 role="status"
               >
                 {connection.ok
-                  ? `It answered: ${connection.events.join(", ")}`
+                  ? t("create.kind.answered", {
+                      events: connection.events.join(", "),
+                    })
                   : connection.reason}
               </p>
             ) : (
               <p className="text-muted-foreground text-sm">
-                Anything that speaks AG-UI works. This server dials your agent,
-                so an agent on your own machine has to be reachable from here.
+                {t("create.kind.aguiHint")}
               </p>
             )}
           </Field>
           <Field>
             <FieldLabel htmlFor="create-agent-key">
-              Key for that agent (optional)
+              {t("create.kind.keyLabel")}
             </FieldLabel>
             <Input
               autoComplete="off"
@@ -607,8 +619,14 @@ function KindStep({
               value={values.authValue}
             />
             <p className="text-muted-foreground text-sm">
-              Sent as an <code>Authorization</code> header on every run, and
-              kept in the credential vault.
+              <Trans
+                components={{ code: <code /> }}
+                i18nKey="create.kind.keyNote"
+                t={t}
+              >
+                Sent as an <code>Authorization</code> header on every run, and
+                kept in the credential vault.
+              </Trans>
             </p>
           </Field>
         </FieldGroup>

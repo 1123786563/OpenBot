@@ -1,6 +1,7 @@
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { galleryComponent } from "@/lib/copilot/gallery-registry";
 import {
   type SandboxedRecord,
@@ -15,13 +16,14 @@ export function AdminComponentPreview({
   name: string;
   kind: string;
 }) {
+  const { t } = useTranslation("channels");
   const sandboxed = useQuery({
     ...sandboxedListQueryOptions(),
     enabled: kind === "sandboxed",
   });
   if (kind === "sandboxed" && sandboxed.isPending) return null;
   if (kind === "sandboxed" && sandboxed.error) {
-    return <PreviewNotice>Preview could not be loaded.</PreviewNotice>;
+    return <PreviewNotice>{t("preview.loadError")}</PreviewNotice>;
   }
   return (
     <ComponentPreview
@@ -52,6 +54,7 @@ export function ComponentPreview({
   sandboxed?: SandboxedRecord;
   fill?: number;
 }) {
+  const { t } = useTranslation("channels");
   const entry = galleryComponent(name);
   if (entry?.preview) {
     return (
@@ -63,11 +66,7 @@ export function ComponentPreview({
 
   if (sandboxed?.name === name) {
     if (!sandboxed.published || sandboxed.publishedHtml === null) {
-      return (
-        <PreviewNotice>
-          Publish in the playground to see a preview.
-        </PreviewNotice>
-      );
+      return <PreviewNotice>{t("preview.publishToSee")}</PreviewNotice>;
     }
     const content = {
       css: sandboxed.publishedCss ?? "",
@@ -80,10 +79,7 @@ export function ComponentPreview({
     };
     return (
       <FittedPreview fill={fill}>
-        <div
-          className="w-full"
-          title="Published component with saved sample arguments"
-        >
+        <div className="w-full" title={t("preview.publishedTitle")}>
           <OpenGenerativeUIActivityRenderer
             activityType="open-generative-ui"
             agent={null}
@@ -99,10 +95,10 @@ export function ComponentPreview({
   return (
     <PreviewNotice>
       {entry
-        ? "This one is only drawn in a conversation."
+        ? t("preview.conversationOnly")
         : kind === "sandboxed"
-          ? "Published in the playground."
-          : "This build cannot draw this."}
+          ? t("preview.publishedInPlayground")
+          : t("preview.cannotDraw")}
     </PreviewNotice>
   );
 }

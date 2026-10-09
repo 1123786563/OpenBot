@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
@@ -23,6 +24,7 @@ export function SkillAgents({
   slug: string;
   grantedTo: string[];
 }) {
+  const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
   const { data: agents } = useQuery(agentListQueryOptions());
   const mine = (agents ?? []).filter((agent) => agent.mine);
@@ -36,11 +38,9 @@ export function SkillAgents({
 
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium">Agents</h2>
+      <h2 className="text-sm font-medium">{t("agents.title")}</h2>
       {mine.length === 0 ? (
-        <p className="text-muted-foreground text-xs">
-          You do not own an Agent to put this on yet.
-        </p>
+        <p className="text-muted-foreground text-xs">{t("agents.noneOwned")}</p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2">
@@ -66,7 +66,12 @@ export function SkillAgents({
             })}
           </div>
           <p className="text-muted-foreground text-xs">
-            An Agent carrying this offers <code>/{slug}</code> in its composer.
+            <Trans
+              i18nKey="agents.offersHint"
+              t={t}
+              values={{ slug }}
+              components={{ code: <code /> }}
+            />
           </p>
         </>
       )}

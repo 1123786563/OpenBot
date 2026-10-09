@@ -1,0 +1,979 @@
+{
+  "overview": {
+    "title": "Admin",
+    "description": "Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences.",
+    "reach": {
+      "title": "What Bots can reach",
+      "description": "Everything a Bot can touch outside this app, and the limits on it.",
+      "credentials": {
+        "title": "Credentials",
+        "description": "Keys and tokens held for this deployment."
+      },
+      "boundaries": {
+        "title": "Boundaries",
+        "description": "Rules that decide what a Bot may never do."
+      },
+      "computers": {
+        "title": "Computers",
+        "description": "The machines Bots run their tools on."
+      }
+    },
+    "do": {
+      "title": "What Bots can do",
+      "description": "Capabilities and interface pieces available across Bots.",
+      "plugins": {
+        "title": "Plugins",
+        "description": "The services this deployment can reach, and which Bots may."
+      },
+      "skills": {
+        "title": "Skills",
+        "description": "Named instructions anybody can invoke with a slash."
+      },
+      "learning": {
+        "title": "Automatic Learning",
+        "description": "Learn from completed conversations and review proposed skills."
+      },
+      "components": {
+        "title": "UI Components",
+        "description": "Custom pieces a Bot can draw in a conversation."
+      },
+      "playground": {
+        "title": "Playground",
+        "description": "Write a component and watch it render as you type."
+      }
+    },
+    "access": {
+      "title": "Who can get in",
+      "people": {
+        "title": "People",
+        "description": "Everybody who has signed in, who administers this deployment, and whose access has been removed."
+      },
+      "enterprise": {
+        "title": "Enterprise controls",
+        "description": "Capabilities by role and group, SSO required, SCIM, network policy, MCP and model allowlists, Action Recording."
+      },
+      "identityProviders": {
+        "title": "Identity providers",
+        "description": "A company's own SAML or OpenID Connect provider, routed by email domain."
+      }
+    },
+    "history": {
+      "title": "What happened",
+      "audit": {
+        "title": "Audit",
+        "description": "Every action taken in this deployment, and by whom."
+      }
+    }
+  },
+  "sidebar": {
+    "backToApp": "Back to app",
+    "overview": "Overview",
+    "reach": "What Bots can reach",
+    "do": "What Bots can do",
+    "access": "Who can get in",
+    "history": "What happened",
+    "credentials": "Credentials",
+    "boundaries": "Boundaries",
+    "computers": "Computers",
+    "plugins": "Plugins",
+    "skills": "Skills",
+    "learning": "Automatic Learning",
+    "components": "UI Components",
+    "playground": "Playground",
+    "people": "People",
+    "identityProviders": "Identity providers",
+    "audit": "Audit"
+  },
+  "audit": {
+    "title": "Audit",
+    "description": "Every action a Bot took, and every one this deployment's policy refused.",
+    "refresh": "Refresh",
+    "loadError": "The audit trail could not be loaded.",
+    "noMatches": "No events match this filter yet.",
+    "when": "When",
+    "what": "What",
+    "on": "On",
+    "bot": "Bot",
+    "startedBy": "Started by",
+    "decision": "Decision",
+    "filters": {
+      "everything": "Everything",
+      "computerActions": "Computer actions",
+      "blocked": "Blocked",
+      "didNotHappen": "Did not happen",
+      "nobodyWatching": "Nobody watching"
+    },
+    "initiator": {
+      "routine": "A routine",
+      "handedOnBy": "Handed on by {{name}}",
+      "handedOn": "Handed on",
+      "memorySource": "A memory source",
+      "responsibility": "A responsibility",
+      "deployment": "This deployment",
+      "person": "A person"
+    },
+    "routed": {
+      "personChose": "The person chose this coworker",
+      "default": "Sent to the default coworker",
+      "intended": "Sent to the coworker it is for"
+    },
+    "toolsOffered": "{{offered}} of {{granted}} tools",
+    "decisionBlocked": "Blocked",
+    "decisionDidNotHappen": "Did not happen",
+    "decisionAllowed": "Allowed",
+    "reportedByBot": ", reported by the Bot itself",
+    "dryRunRecorded": "dry-run: recorded, not enforced",
+    "discovery": {
+      "underFloor": "Few enough tools to offer them all",
+      "nothingDeclared": "No skill declares any of these tools",
+      "unavailable": "Could not choose, so all were offered",
+      "nothingChosen": "No skill applied, so all were offered",
+      "selected": "Chosen by skill"
+    },
+    "decisions": {
+      "botDeclined": "The Bot declined",
+      "streamStalled": "The Bot stopped responding",
+      "boundaryAtStartup": "Boundary at start-up",
+      "isolationAtStartup": "Isolation at start-up",
+      "controlTaken": "A person took the wheel",
+      "controlReleased": "The wheel was handed back",
+      "helpRequested": "The Bot asked for help",
+      "secretRequested": "The Bot asked for a secret",
+      "secretSupplied": "A person supplied a secret",
+      "computerReset": "The computer was reset",
+      "computerUpdated": "The computer was updated",
+      "personPressedStop": "A person pressed stop",
+      "grantedToBot": "Granted to this Bot",
+      "takenFromBot": "Taken away from this Bot",
+      "published": "Published, so every Bot may use it",
+      "unpublished": "Unpublished, so no Bot may use it",
+      "draftSaved": "Draft saved, not yet published",
+      "refused": "Refused",
+      "mayRead": "May read this",
+      "mayNoLongerRead": "May no longer read this",
+      "readRealData": "Read real data",
+      "refusedFunction": "Refused",
+      "couldNotBeRead": "Could not be read",
+      "toolsOfferedForRun": "Tools offered for one run",
+      "calledOnBehalf": "Called on this Bot's behalf",
+      "blocked": "Blocked",
+      "serverDidNotAnswer": "The server did not answer",
+      "couldNotProveBot": "Could not prove which Bot it was",
+      "configurationChanged": "Configuration changed",
+      "credentialSaved": "Credential saved"
+    }
+  },
+  "boundaries": {
+    "title": "Boundaries",
+    "description": "What every Bot may and may not do with its computer. Rules are checked on every action before it happens, and a refusal is recorded in <audit>Audit</audit> with the rule that refused it.",
+    "whenRuleMatches": {
+      "title": "When a rule matches",
+      "description": "Enforce stops the action. Record it and allow it writes the same row and lets the action through, which is how a rule is tried on real traffic before it starts refusing anybody."
+    },
+    "mode": {
+      "enforce": "Stop the action",
+      "dryRun": "Record it and allow it",
+      "enforceHint": "The Bot is stopped and told which rule refused it.",
+      "dryRunHint": "Nothing is stopped. Every action a rule matches is recorded as it would have been refused, which is how a rule is tried out before it is switched on."
+    },
+    "never": {
+      "title": "It may never",
+      "description": "Checked first, and a match ends it: nothing below is consulted and the Bot is told which rule refused it. Rules are CEL, and can ask about <code>tool.name</code>, <code>intent</code>, <code>bot.id</code>, <code>actor.id</code>, <code>page.url</code> and <code>page.host</code>, the element being acted on, the <code>key</code> being pressed, the file being touched, the <code>command</code> being run, and <code>mcp.server</code>, <code>mcp.tool</code> and <code>mcp.effect</code> for a call to somebody else's tools. <code>initiator.kind</code> says what started the run — <code>person</code>, <code>routine</code> or <code>handoff</code> — which <code>actor.id</code> cannot, because a scheduled run carries its owner's authority while nobody is watching. A rule that cannot be evaluated counts as a match, so a mistyped deny refuses rather than quietly permitting what it was meant to forbid.",
+      "empty": "No rules. Every action is allowed and recorded."
+    },
+    "remove": "Remove",
+    "ruleAria": "A rule, written in CEL",
+    "testing": "Testing…",
+    "testFirst": "Test first",
+    "addRule": "Add rule",
+    "presets": {
+      "noForms": {
+        "label": "Never submit a form",
+        "cost": "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields."
+      },
+      "noPasswords": {
+        "label": "Never type into a password field",
+        "cost": "A password box the page labels something else is not covered, the rule matches the label."
+      },
+      "socialMedia": {
+        "label": "Stay off social media",
+        "cost": "Only the two hosts named. A link that redirects there from somewhere else is allowed."
+      }
+    },
+    "otherwise": {
+      "title": "Otherwise it may",
+      "description": "The floor, applied to anything the deny list did not catch. It is not a formality: an empty list here permits nothing, so a deployment that clears this refuses every action rather than allowing every action.",
+      "trueRule": "true, anything not refused above"
+    },
+    "savedNotice": "Saved. It applies to the next action any Bot takes.",
+    "pendingNotice": "Changes apply to the next action any Bot takes, and are kept: a restart comes back up enforcing what is here.",
+    "test": {
+      "noneYet": "No recorded computer actions to test against yet. The rule is valid; what it matches will only be known once Bots have acted.",
+      "refusedNone": "Tested against the last {{scanned}} recorded actions: this rule would have refused none of them. It may still match future actions.",
+      "refusedSome": "Tested against the last {{scanned}} recorded actions: this rule would have refused {{wouldRefuse}}.",
+      "wouldRefuse": "Would refuse",
+      "wouldAllow": "Would now allow",
+      "on": "on “{{name}}”",
+      "running": "running",
+      "touching": "touching {{file}}",
+      "more": "Showing the first {{shown}}; the count above covers everything scanned."
+    }
+  },
+  "computers": {
+    "title": "Computers",
+    "description": "Each Bot's browser and the profile it keeps. A profile is what makes a Bot still signed in tomorrow, and resetting one signs it out of everything.",
+    "loadError": "The computers could not be listed.",
+    "working": "Working…",
+    "cancel": "Cancel",
+    "isolation": {
+      "shared": "<bold>Every Bot is sharing one computer.</bold> They share its logins, its files and its session, so a Bot can reach what another signed into. Set <code>COMPUTER_SUPERVISOR_URL</code> to give each Bot its own.",
+      "perBot": "Each Bot has a computer of its own: its own container, its own files and its own browser profile."
+    },
+    "fleet": {
+      "title": "Computers in this deployment",
+      "listError": "The list could not be loaded.",
+      "empty": "No computers yet. One appears the first time a Bot opens a page.",
+      "runningSince": "Browser running since {{time}}",
+      "notRunning": "No browser running. It starts when the Bot next needs it.",
+      "egressUnknown": "Egress not reported",
+      "egressDirect": "Leaves directly",
+      "egressProxy": "Leaves through {{host}}",
+      "updateAvailable": " · Update available",
+      "update": "Update computer",
+      "stopBrowser": "Stop browser",
+      "reset": "Reset"
+    },
+    "resetDialog": {
+      "title": "Reset {{name}}'s computer?",
+      "description": "Its profile is deleted, so the Bot is signed out of every service it had logged into and starts clean. This cannot be undone.",
+      "resetting": "Resetting…",
+      "resetIt": "Reset it"
+    },
+    "updateDialog": {
+      "title": "Update {{name}}'s computer?",
+      "description": "It moves onto the computer image this deployment now runs. Its files and sign-ins are kept. If it is running it restarts, which interrupts anything it is doing right now.",
+      "updating": "Updating…",
+      "updateIt": "Update it"
+    },
+    "legend": "<stop>Stop</stop> closes the browser and keeps its logins: the next thing the Bot does starts it again where it left off. <reset>Reset</reset> deletes the profile, so the Bot is signed out of everything and starts clean. <update>Update computer</update> appears when a computer runs an older image than this deployment, and moves it onto the new one with its files and sign-ins kept. All three are recorded in <audit>Audit</audit>.",
+    "folders": {
+      "title": "Folders on this computer",
+      "description": "Choose folders a Bot can read on this computer. The desktop app asks before each edit or command. Access ends when you stop OpenBot.",
+      "offline": "The desktop app is offline. Folders can only be approved from the desktop app, and command access stays unavailable while it is offline.",
+      "noBots": "No Bots yet. Create a Bot before choosing folders.",
+      "waiting": "Waiting…",
+      "choose": "Choose folder",
+      "readOnlyNote": "Grants are read-only by default. Writes are requested from the native desktop prompt when a Bot needs them.",
+      "stopping": "Stopping…",
+      "stopAccess": "Stop folder access",
+      "viewAudit": "View audit",
+      "readOnly": "Read-only",
+      "revoking": "Revoking…",
+      "revoke": "Revoke",
+      "pendingLine": "{{action}} from {{owner}}",
+      "pendingFor": " for {{folder}}",
+      "activeFolders_one": "{{count}} read-only folder",
+      "activeFolders_other": "{{count}} read-only folders",
+      "pendingRequests_one": "{{count}} pending request",
+      "pendingRequests_other": "{{count}} pending requests",
+      "none": "No folders approved.",
+      "owner": "the desktop owner",
+      "pending": {
+        "writeFile": "File change awaiting approval or completion",
+        "runCommand": "Command awaiting approval or completion",
+        "listFiles": "Listing files",
+        "readFile": "Reading a file",
+        "stopping": "Stopping folder work",
+        "default": "Folder access awaiting approval"
+      }
+    }
+  },
+  "credentials": {
+    "title": "Credentials",
+    "description": "Credentials are write-only. OpenBot never displays their secret values.",
+    "add": "Add credential",
+    "cancel": "Cancel",
+    "dialog": {
+      "title": "Add credential",
+      "description": "Held for this deployment and never shown again once saved.",
+      "replaceWarning": "This key already holds a live credential. Saving replaces it, and the one it replaces is revoked.",
+      "saveError": "Could not save the credential. Try again.",
+      "saving": "Saving…",
+      "save": "Save credential"
+    },
+    "fields": {
+      "type": "Type",
+      "provider": "Provider",
+      "keyId": "Key ID",
+      "secret": "Secret"
+    },
+    "kinds": {
+      "model": "Model",
+      "connector": "Connector"
+    },
+    "configured": {
+      "title": "Configured credentials",
+      "loadError": "Could not load credentials.",
+      "empty": "No credentials are configured.",
+      "revoked": "revoked",
+      "active": "active",
+      "revoke": "Revoke"
+    }
+  },
+  "enterprise": {
+    "title": "Enterprise controls",
+    "description": "What members may use, how Bot computers reach the network, and what is recorded about it. Every change is on the audit trail.",
+    "loadError": "Could not load enterprise controls.",
+    "on": "On",
+    "off": "Off",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "done": "Done",
+    "signIn": {
+      "title": "Sign-in",
+      "description": "Social sign-in stays available to addresses in INITIAL_ADMIN_EMAILS as a break-glass way in, and every such sign-in is audited.",
+      "requireSso": "Require SSO",
+      "ssoOn": "Only a registered SAML or OpenID Connect provider may sign anybody in.",
+      "ssoOff": "People may also sign in with Google, Microsoft or Okta."
+    },
+    "scim": {
+      "title": "SCIM provisioning",
+      "configured": "Directory base URL {{url}} with the SCIM_BEARER_TOKEN bearer token. Deprovisioning ends sessions, deny-lists the address, retires connector credentials and stops their computers.",
+      "setBetterAuthUrl": "(set BETTER_AUTH_URL)",
+      "off": "Off. Set SCIM_BEARER_TOKEN to accept provisioning from Okta, Entra or another directory."
+    },
+    "capabilities": {
+      "title": "Capabilities",
+      "description": "The switch is the whole organization. Roles can be given a different answer, and a directory group can be granted a capability the organization has off.",
+      "nobodyMay": "Nobody may, unless a role or group grants it."
+    },
+    "overrides": {
+      "title": "Role and group overrides",
+      "none": "None: everybody gets the switches above",
+      "count": "{{number}} set",
+      "administrators": "Administrators",
+      "members": "Members",
+      "groupLabel": "Group: {{name}}",
+      "scopeAria": "Scope",
+      "groupHint": "A group can only widen: Grant gives its members the capability even where the organization has it off.",
+      "roleHint": "A role's answer replaces the organization switch for everybody holding that role.",
+      "capabilityFor": "{{title}} for {{scope}}",
+      "inherit": "Inherit",
+      "grant": "Grant"
+    },
+    "network": {
+      "title": "Network",
+      "description": "Where Bot computers may connect. Applied to running computers within seconds, without a restart. A group policy replaces the organization's unless it is locked.",
+      "organization": "Organization",
+      "group": "Group: {{name}}",
+      "addGroupPolicy": "Add a group policy",
+      "noPolicy": "No policy: Bot computers may reach anything the cluster allows",
+      "ruleCount_one": "{{count}} rule",
+      "ruleCount_other": "{{count}} rules",
+      "locked": "locked",
+      "modes": {
+        "allowAll": "Allow all network access",
+        "defaultsPlusAllowlist": "Defaults plus team allowlist",
+        "allowlistOnly": "Team allowlist only"
+      },
+      "orgPolicyTitle": "Organization network policy",
+      "groupPolicyTitle": "Group network policy",
+      "groupLabelShort": "Group",
+      "modeLabel": "Mode",
+      "allowlistLabel": "Allowlist",
+      "allowlistHint": "One per line. A domain covers its subdomains; *.name covers only subdomains. An IP range may name ports. Defaults are {{defaults}} and {{more}} more package and source hosts.",
+      "lockLabel": "Lock: groups may not replace this policy",
+      "removePolicy": "Remove policy"
+    },
+    "mcp": {
+      "title": "MCP servers",
+      "description": "With the allowlist on, a Bot may call tools only on the MCP servers approved here. Every other server's calls are refused.",
+      "onlyApproved": "Only approved servers",
+      "onlyApprovedAria": "Only approved MCP servers",
+      "approvedCount": "{{number}} approved",
+      "off": "Off: every registered server may be used as its grants allow.",
+      "approveAria": "Approve {{title}}"
+    },
+    "models": {
+      "title": "Models",
+      "description": "The built-in Bot runs on {{model}}. A remote Bot chooses its own; the model its stream names is recorded.",
+      "configuredDefault": "the deployment's configured model",
+      "allowlistTitle": "Model allowlist",
+      "allowlistOn": "A built-in Bot on a model not listed is refused before it runs.",
+      "allowlistOff": "Off: any model may serve a run.",
+      "allowed": "Allowed models",
+      "noneListed": "None listed",
+      "listHint": "One model per line, as provider/model, for example openai/gpt-5.6-terra.",
+      "usageError": "Could not load model usage.",
+      "usageEmpty": "No Bot runs have been recorded in the last 30 days.",
+      "usageLine_one": "{{runs}} runs by {{count}} person in 30 days",
+      "usageLine_other": "{{runs}} runs by {{count}} people in 30 days",
+      "offAllowlist": " · {{number}} off the allowlist"
+    },
+    "recording": {
+      "title": "Recording and export",
+      "description": "Audit events and Bot actions stream to your OpenTelemetry collector or SIEM when OTEL_EXPORTER_OTLP_ENDPOINT is set, tagged openbot.surface.",
+      "actionRecording": "Action Recording",
+      "on": "Shell commands Bots run are recorded with secrets scrubbed and kept {{days}} days.",
+      "off": "Off: commands are on the audit trail only.",
+      "loadError": "Could not load recorded actions.",
+      "noCommands": "No commands recorded yet.",
+      "membersMachine": "Member's machine",
+      "botMachine": "Bot {{botId}}",
+      "otel": "OpenTelemetry export",
+      "otelOn": "Exporting over OTLP/HTTP.",
+      "otelOff": "Not configured. Set OTEL_EXPORTER_OTLP_ENDPOINT on the server."
+    },
+    "computers": {
+      "title": "Computers",
+      "description": "Stopping a computer ends its running Bots and keeps its disk. The Bot gets a fresh computer next session. Stop one person's from People.",
+      "stopInactive": "Stop inactive computers",
+      "afterDays": "After {{days}} days without use",
+      "stopNow": "Stop inactive computers now",
+      "stopping": "Stopping…",
+      "stoppedCount": "Stopped {{number}}.",
+      "daysWithoutUse": "Days without use",
+      "daysHint": "0 turns it off. Checked hourly."
+    }
+  },
+  "identityProviders": {
+    "title": "Identity providers",
+    "description": "A company's own identity provider, by SAML or OpenID Connect. Somebody types their email address and the domain decides which one they are sent to.",
+    "add": "Add a provider",
+    "loadError": "Could not load identity providers.",
+    "cancel": "Cancel",
+    "registered": {
+      "title": "Registered",
+      "description": "Google, Microsoft and Okta are configured in the environment instead and do not appear here.",
+      "empty": "No identity providers are registered. Add one with the metadata your identity team supplied.",
+      "remove": "Remove"
+    },
+    "dialog": {
+      "title": "Add an identity provider",
+      "name": "Name",
+      "emailDomain": "Email domain",
+      "domainHint": "Anybody signing in with an address at this domain is sent here. Separate several with commas.",
+      "issuer": "Issuer",
+      "signOnUrl": "Sign-on URL",
+      "metadataXml": "Metadata XML",
+      "metadataHint": "The document your identity team supplied. It carries the signing certificate.",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "adding": "Adding…",
+      "add": "Add"
+    }
+  },
+  "learning": {
+    "title": "Automatic Learning",
+    "description": "Collect completed conversations as evidence, review the skills Intelligence proposes, and deliver published guidance to Bots.",
+    "loading": "Loading Learning settings…",
+    "saving": "Saving…",
+    "save": "Save Learning settings",
+    "saved": "Settings saved.",
+    "targetFields": {
+      "container": "{{label}} container ID",
+      "containerAria": "{{label}} container ID",
+      "revision": "Exact revision (optional)",
+      "revisionAria": "{{label}} revision",
+      "latestPublished": "Latest published"
+    },
+    "participation": {
+      "title": "Participation",
+      "description": "Changes to container assignments apply to new threads. Existing threads keep their first assignment. Containers must already exist in the same Intelligence project.",
+      "enable": "Enable Automatic Learning and skill delivery",
+      "default": "Default",
+      "idHint": "An empty default leaves unmapped Bots out. IDs use 1–64 lowercase letters, numbers, and single hyphens. Leave revision empty to follow the latest published skills.",
+      "perBot": "Per-Bot participation",
+      "rosterError": "The Bot list could not be loaded. Existing mappings are shown below.",
+      "botAria": "{{name}} participation",
+      "useDefault": "Use deployment default",
+      "exclude": "Exclude from Learning",
+      "useContainer": "Use a specific container"
+    },
+    "review": {
+      "title": "Review and publish",
+      "description": "Intelligence analyzes completed runs and proposes skills. Review their supporting evidence and publish approved revisions in Intelligence before Bots can use them.",
+      "inspectFor": "Inspect container for",
+      "deploymentDefault": "Deployment default",
+      "checking": "Checking Intelligence…",
+      "invalid": "The selected container or instrumentation is unavailable.",
+      "selectionRequired": "Select a Bot or configure a default container.",
+      "notAssigned": "No Learning container is assigned.",
+      "threadsReady": "Threads ready",
+      "candidates": "Candidates to review",
+      "publishedSkills": "Published skills",
+      "insights": "Insights",
+      "analysisRunning": "An analysis is running.",
+      "latestAnalysis": "Latest analysis: {{status}}.",
+      "noAnalysis": "No analysis has run yet.",
+      "manageLink": "Manage Learning in Intelligence",
+      "candidatesLink": "Review skill candidates",
+      "runsLink": "View analysis runs",
+      "refresh": "Refresh status",
+      "permissionsNote": "Management requires your Intelligence account and project permissions. OpenBot keeps project credentials on the server. Pausing here preserves settings and thread assignments; schedules and publication remain managed in Intelligence."
+    },
+    "delivery": {
+      "title": "Skill delivery",
+      "checking": "Checking delivery…",
+      "off": "Delivery is off for this Bot.",
+      "waitingSnapshot": "Waiting for the first verified skill snapshot.",
+      "stale": "Using the last verified snapshot; refresh is pending.",
+      "verified": "A verified snapshot is available.",
+      "loadedRevision": "Loaded revision: {{revision}}",
+      "lastChecked": "Last checked: {{time}}"
+    }
+  },
+  "people": {
+    "title": "People",
+    "description": "Everybody who has signed in. Administrators reach these screens; everybody else talks to Bots.",
+    "whoIsHere": {
+      "title": "Who is here",
+      "description": "An address named in INITIAL_ADMIN_EMAILS is an administrator whatever this screen says, so it cannot be changed here."
+    },
+    "lastSignedIn": "last signed in {{date}}",
+    "neverSignedIn": "never signed in",
+    "noProvider": "no provider",
+    "accessRemoved": "Access removed · {{providers}} · {{when}}",
+    "adminByConfiguration": "Administrator by configuration · {{when}}",
+    "providersAndWhen": "{{providers}} · {{when}}",
+    "stoppedCount_one": "Stopped {{count}} computer",
+    "stoppedCount_other": "Stopped {{count}} computers",
+    "stopFailed": "; {{number}} could not be stopped",
+    "disksKept": ". Their disks are kept.",
+    "searchAria": "Search people",
+    "searchPlaceholder": "Search by name or address",
+    "loadError": "Could not load people.",
+    "noMatches": "Nobody here matches \"{{query}}\".",
+    "nobodyYet": "Nobody has signed in yet. People appear here once they do.",
+    "stopComputers": "Stop computers",
+    "restore": "Restore",
+    "remove": "Remove",
+    "adminAria": "Administrator: {{email}}",
+    "loading": "Loading…",
+    "showMore": "Show more"
+  },
+  "playground": {
+    "title": "Playground",
+    "description": "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.",
+    "saveDraft": "Save draft",
+    "publish": "Publish",
+    "invalidJson": "invalid JSON",
+    "mustBeValidJson": "{{label}} must be valid JSON: {{reason}}",
+    "mustBeJsonObject": "{{label}} must be a JSON object, not {{kind}}.",
+    "fixBeforeSaving": "Fix the JSON fields before saving.",
+    "fixBeforePreviewing": "Fix the JSON fields before previewing.",
+    "draftSaved": "Draft saved.",
+    "published": "Published.",
+    "sampleUnavailable": "The sample arguments are not available.",
+    "fields": {
+      "name": "Name",
+      "title": "Title",
+      "titlePlaceholder": "Refund card",
+      "description": "What the model is told about it",
+      "descriptionPlaceholder": "Show a refund with its amount, reason and status.",
+      "html": "HTML",
+      "css": "CSS",
+      "javascript": "JavaScript",
+      "argumentSchema": "Arguments (JSON Schema)",
+      "sampleArguments": "Sample arguments"
+    },
+    "preview": "Preview",
+    "savedHere": "Saved here",
+    "nothingYet": "Nothing yet.",
+    "publishedRevision": "published, revision {{revision}}",
+    "draftOnly": "draft only, no Bot can draw it",
+    "editedSincePublishing": " · edited since publishing",
+    "open": "Open",
+    "delete": "Delete",
+    "publishingNote": "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.",
+    "cancel": "Cancel",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteDescription": "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.",
+    "deleteIt": "Delete it"
+  },
+  "skills": {
+    "title": "Skills",
+    "description": "Named instructions anybody here can invoke with a slash. A skill adds no capability: it can only ask a Bot to use what that Bot already holds, and every one of those calls is still decided and recorded.",
+    "write": "Write a skill",
+    "cancel": "Cancel",
+    "installed": {
+      "title": "Installed",
+      "description": "Written for the whole deployment. People write their own on their Skills page.",
+      "loadError": "Skills could not be loaded.",
+      "empty": "No skills yet.",
+      "remove": "Remove"
+    },
+    "dialog": {
+      "title": "Write a skill for the deployment",
+      "description": "The slug is what a person types after a slash, and the instructions are added to the run when they do. Everybody here can use it, and you decide which Bots have it.",
+      "slug": "Slug",
+      "titleField": "Title",
+      "titlePlaceholder": "Title",
+      "summary": "Summary",
+      "summaryPlaceholder": "One line",
+      "instructions": "Instructions",
+      "instructionsPlaceholder": "What the Bot should do when this skill is used.",
+      "install": "Install skill"
+    }
+  },
+  "components": {
+    "loadError": "Could not load components.",
+    "backLabel": "UI Components",
+    "componentsTitle": "Components",
+    "unpublishedFallback": "Nothing is published, so no Bot is told about this.",
+    "nothingYet": "Nothing yet",
+    "cancel": "Cancel",
+    "save": "Save",
+    "done": "Done",
+    "gallery": {
+      "title": "UI Components",
+      "description": "What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit.",
+      "emptyTitle": "No components yet",
+      "emptyDescription": "Components that your Agents can use will be shown here."
+    },
+    "noSuch": {
+      "title": "No such component",
+      "description": "Nothing here answers to that name.",
+      "hint": "It may have been renamed, or this deployment may no longer ship it.",
+      "back": "Back to components"
+    },
+    "configuration": {
+      "title": "Configuration",
+      "description": "What this component is for, and which Bots are allowed to answer with it."
+    },
+    "notInBuild": {
+      "title": "Not in this build",
+      "description": "Nothing here can draw it, whatever else is set."
+    },
+    "published": {
+      "title": "Published",
+      "on": "Bots may answer with it.",
+      "off": "No Bot may use it.",
+      "hasChanges": "The description has changes that are not published."
+    },
+    "description": {
+      "title": "Description",
+      "dialogDescription": "What the model reads when deciding to call this. It changes nothing until the component is published."
+    },
+    "grants": {
+      "title": "Available to",
+      "noBots": "There are no Bots yet",
+      "noBotsYet": "There are no Bots yet.",
+      "all": "All {{number}} Bots",
+      "none": "No Bots",
+      "of": "{{held}} of {{total}} Bots",
+      "dialogDescription": "Switch a Bot off and it is never told this component exists, so it cannot ask for it and does not apologise for not having it. Each change takes effect immediately."
+    },
+    "functions": {
+      "title": "May read",
+      "noneGranted": "This deployment grants no data functions",
+      "noneGrantedFull": "This deployment grants no data functions.",
+      "drawsOnly": "Nothing — it draws only what the model hands it",
+      "dialogDescription": "A separate grant from Available to, and not implied by it: that one decides who may draw this, and this decides what it may go and fetch in order to draw itself. Until one of these is on it shows only what the Bot passes it, and every read it does make is a row in Audit. Each change takes effect immediately."
+    },
+    "details": {
+      "title": "Details",
+      "kind": "Kind",
+      "calledAs": "Called as",
+      "lastChanged": "Last changed",
+      "changedBy": " by {{name}}"
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "description": "What this deployment can reach, and which Bots may reach it. Adding a plugin is account-wide; which Bots hold its tools is decided on its own page.",
+    "loadError": "Plugins could not be loaded.",
+    "notConnected": "Not connected",
+    "noToolsYet": "No tools yet",
+    "toolCount_one": "{{count}} tool",
+    "toolCount_other": "{{count}} tools",
+    "noBots": "no Bots",
+    "botCount_one": "{{count}} Bot",
+    "botCount_other": "{{count}} Bots",
+    "notAdded": "Not added",
+    "connected": {
+      "title": "Connected",
+      "description": "Added for the whole deployment. Open one to set what it needs and which Bots hold its tools.",
+      "empty": "Nothing connected yet. Everything available is below."
+    },
+    "explore": {
+      "title": "Explore plugins",
+      "description": "Reviewed, first-party servers this build will talk to. Open one to add it.",
+      "empty": "Everything in the catalogue is connected."
+    },
+    "moreApps": {
+      "title": "More apps",
+      "description": "A directory this deployment has not reviewed, reached through Composio.",
+      "browse": "Browse Composio",
+      "browseDescription": "A few hundred apps, reached as whoever is asking. Each person connects their own account.",
+      "composio": "Composio",
+      "composioDescription": "Add your Composio key to enable a catalogue of tools. Set COMPOSIO_API_KEY on this deployment."
+    }
+  },
+  "composio": {
+    "title": "Browse Composio",
+    "description": "Composio's own directory. Adding an app makes its tools available to grant; each person still connects their own account before any of them reads anything.",
+    "searchAria": "Search Composio apps",
+    "searchPlaceholder": "Search by app name",
+    "directoryUnavailable": "Composio's app directory could not be read.",
+    "noMatches": "Nothing in Composio's directory matches \"{{query}}\".",
+    "noApps": "Composio returned no apps.",
+    "actionCount": "{{number}} actions",
+    "added": "Added",
+    "adding": "Adding…",
+    "add": "Add",
+    "apps": {
+      "title": "Apps",
+      "description": "Search by name. The directory is too long to read, and nothing here has been reviewed by this deployment."
+    }
+  },
+  "pluginDetail": {
+    "plugin": "Plugin",
+    "notApproved": "Not approved",
+    "yourAccount": "Your account",
+    "connectionUnreadable": "Whether you have connected an account here could not be loaded, so nothing about it is shown rather than something that may be wrong. Reload the page, and check this deployment's logs if it persists.",
+    "noConsentLink": "This deployment answered without a consent link, so there was nowhere to send you and nothing was connected. Try again, and check this connector's setup if it persists.",
+    "reassurance": "Setup is complete without it, and it reaches your documents only.",
+    "notSet": "Not set",
+    "connected": "Connected",
+    "connect": "Connect",
+    "teamAccount": "Team account",
+    "teamAccountNotice": "Sign in as the team account, not your own.",
+    "connectedAs": " as {{name}}",
+    "connectedBy": " by {{name}}",
+    "sharedConnected": "Connected{{as}}{{by}}. Every Bot granted these tools acts as this account.",
+    "sharedDisconnected": "No team account is connected, so Bots granted these tools are refused.",
+    "personalConnected": "Connected, so a Bot granted these tools uses your {{title}} as you. Disconnecting ends the account at Composio, not just here.",
+    "connectOwn": "Connect your own account to try this connector. {{reassurance}}",
+    "oauthConnected": "Connected, so a Bot granted these tools uses your {{title}} as you. Everybody else connects their own.",
+    "notAPlugin": {
+      "title": "Not a plugin",
+      "description": "This deployment does not have a plugin by that name, and the catalogue does not offer one.",
+      "empty": "Nothing to configure."
+    },
+    "enable": {
+      "title": "Enable for this deployment",
+      "on": "Bots may be granted its tools. Switching this off removes it and every grant on its tools.",
+      "off": "No Bot can reach this vendor. Switch it on to configure it and grant its tools.",
+      "aria": "Enable {{title}} for this deployment"
+    },
+    "accountMode": {
+      "title": "Whose account",
+      "shared": "One shared account for everyone.",
+      "personal": "Each person connects their own.",
+      "makePersonal": "Make personal",
+      "makeShared": "Make shared"
+    },
+    "connection": {
+      "title": "Connection",
+      "descriptionOauth": "This vendor answers as whoever is asking. The deployment registers an OAuth client, and each person connects their own account, so a Bot only ever sees what that person can see.",
+      "descriptionBuiltin": "Built into this deployment. There is no vendor to reach and no credential to hold — a call runs as whoever asked.",
+      "descriptionBrokered": "Reached through Composio, which holds each person's own account.",
+      "descriptionBearer": "What this deployment presents to the vendor. One credential, used for everybody.",
+      "builtinRow": "Nothing to configure. These tools run inside this deployment, on the tables it already owns.",
+      "builtInBadge": "Built in",
+      "howReached": "How this is reached",
+      "howReachedDescription": "This app is reached through Composio, which holds the account. This deployment sends one key and the name of whoever is asking, so each person connects their own and a Bot sees only what that person can see. There is no token to paste.",
+      "throughComposio": "Through Composio",
+      "accessToken": "Access token",
+      "accessTokenDescription": "Sent as a bearer token on every call to this vendor.",
+      "held": "Held",
+      "oauthClient": "OAuth client",
+      "dynamicClientRow": "This deployment registers itself with the vendor on first connect. There is nothing to paste.",
+      "selfRegistered": "Self-registered",
+      "clientRow": "Identifies this deployment to the vendor. It reaches nobody's documents on its own.",
+      "registered": "Registered",
+      "notRegistered": "Not registered",
+      "instanceHost": "Instance host",
+      "instanceHostDescription": "This vendor gives every customer their own hostname, checked against its pattern before anything is stored.",
+      "documentation": "Documentation",
+      "vendorDocumentation": "Vendor documentation",
+      "builtinDocs": "What these tools offer, from the people who maintain them.",
+      "vendorDocs": "What this server offers, from the people who maintain it."
+    },
+    "redirect": {
+      "dynamic": "The deployment registers its redirect URI itself, so there is nothing to add at the vendor.",
+      "manual": "Add this to the client's authorised redirect URIs at the vendor, exactly as written. A single wrong character fails there, with a message that does not mention OpenBot.",
+      "missingUrl": "This deployment has no public URL, so nobody can complete a consent flow. Set OPENBOT_PUBLIC_URL."
+    },
+    "tools": {
+      "title": "Tools",
+      "description": "A Bot is told about a tool only when it holds it. Every call is decided again when it happens, so removing a grant takes effect on the next one.",
+      "refresh": "Refresh tools",
+      "grantTools": "Grant tools…",
+      "empty": "No tools listed. Refresh to ask the vendor again.",
+      "changesThings": "changes things",
+      "reads": "reads",
+      "byBot": "By Bot",
+      "botRow": "Every action this app offers, switched one at a time.",
+      "hiddenBotRow": "Hidden from your roster. Every action this app offers, switched one at a time."
+    },
+    "withdrawn": {
+      "title": "Held but not offered",
+      "description": "This vendor no longer lists these, so no Bot is told about them and no model can call one. The grant is still recorded, and the tool would be offered again if the vendor started listing it. Revoke from the Bot's own page if that is not what you want.",
+      "notListedBy": "Not listed by {{title}}",
+      "asOfRefresh": " as of the last refresh"
+    },
+    "dialogs": {
+      "clientTitle": "OAuth client for {{title}}",
+      "instanceTitle": "Instance host for {{title}}",
+      "tokenTitle": "Access token for {{title}}",
+      "clientDescription": "From the vendor's console. The secret is stored in this deployment's vault and never read back.",
+      "instanceDescription": "Your own hostname with this vendor. It is checked against their pattern before anything is stored.",
+      "tokenDescription": "Stored in this deployment's vault and never read back.",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret"
+    },
+    "cancel": "Cancel",
+    "save": "Save",
+    "grant": {
+      "title": "Grant tools",
+      "description": "Each grant is its own entry on the audit trail, and a granted write is still checked against the boundaries on every call.",
+      "to": "To",
+      "reads": "Reads",
+      "selectAll": "Select all",
+      "changesThings": "Changes things",
+      "sentence": "Grant {{tools}}{{writes}} to {{names}}.",
+      "toolCount_one": "{{count}} tool",
+      "toolCount_other": "{{count}} tools",
+      "writesClause_one": ", {{count}} of which changes things,",
+      "writesClause_other": ", {{count}} of which change things,",
+      "progress": "Granting {{current}} of {{total}}…",
+      "grant": "Grant"
+    },
+    "grants": {
+      "noBots": "No Bots",
+      "oneBot": "1 Bot",
+      "allBots": "All Bots",
+      "ofBots": "{{held}} of {{total}} Bots"
+    },
+    "held": {
+      "noTools": "No tools",
+      "oneTool": "1 tool",
+      "everyTool": "Every tool",
+      "ofTools": "{{held}} of {{total}} tools"
+    }
+  },
+  "botGrants": {
+    "botTitle": "Bot",
+    "notEnabled": {
+      "description": "This deployment has not enabled an app by that name.",
+      "empty": "There is nothing here to grant."
+    },
+    "notABot": {
+      "title": "Not a Bot",
+      "description": "This deployment has no Bot by that name, so there is nobody to grant these actions to.",
+      "empty": "It may have been deleted since this page was opened."
+    },
+    "description": "Which of {{app}}'s actions {{bot}} may call. Every call is decided again when it happens, so switching one off takes effect on the next one.",
+    "title": "{{bot}} and {{app}}",
+    "noActions": "{{app}} lists no actions. Refresh its tools to ask again.",
+    "searchAria": "Search {{app}} actions",
+    "searchPlaceholder": "Search by action name",
+    "wouldHold_one": "This Bot would then hold {{count}} tool from this app.",
+    "wouldHold_other": "This Bot would then hold {{count}} tools from this app.",
+    "granting": "Granting {{current}} of {{total}}…",
+    "turnOnReads": "Turn on every read-only action",
+    "reads": {
+      "title": "Reads",
+      "description": "These only read. A boundary written about writes does not apply to them.",
+      "noMatches": "Nothing that only reads matches \"{{query}}\".",
+      "offersNothing": "{{app}} offers nothing that only reads."
+    },
+    "writes": {
+      "title": "Changes things",
+      "description": "These change something at the vendor. A boundary written about writes applies to them, and each call is refused when one matches.",
+      "noMatches": "Nothing that changes things matches \"{{query}}\".",
+      "offersNothing": "{{app}} offers nothing that changes anything."
+    },
+    "noDescription": "This action came with no description.",
+    "destroysThings": "destroys things",
+    "letCallAria": "Let {{bot}} call {{tool}}",
+    "sharedDialogTitle": "Let {{bot}} use the shared {{app}} account?",
+    "cancel": "Cancel",
+    "grantingShort": "Granting…",
+    "letItIn": "Let it in"
+  },
+  "toolGrants": {
+    "toolTitle": "Tool",
+    "pluginFallback": "Plugin",
+    "noDescription": "This tool came with no description.",
+    "noTool": {
+      "description": "This connector does not advertise a tool by that name.",
+      "withdrawn": "It may have been withdrawn since the tool list was last refreshed.",
+      "notEnabled": "This deployment has not enabled that connector."
+    },
+    "whatItDoes": {
+      "title": "What it does",
+      "write": "This tool changes something at the vendor. A boundary written about writes applies to it, and it is refused when one matches.",
+      "read": "This tool only reads. A boundary written about writes does not apply to it."
+    },
+    "effect": {
+      "title": "Effect",
+      "description": "Decided by the connector, not by the tool's name. Anything unrecognised counts as a write."
+    },
+    "bots": {
+      "title": "Bots",
+      "description": "A Bot may call this tool only while its switch is on. Turning one off takes effect on the next call, with nothing cached in between.",
+      "empty": "This deployment has no Bots yet, so there is nobody to grant this to."
+    },
+    "hiddenPrefix": "Hidden from your roster. ",
+    "mayCall": "May call this tool. Every call is still checked against the boundaries and written to the audit trail.",
+    "noCredential": "Granted, but this Bot has no credential for calling tools back, so every call is refused before it reaches the boundary. Issue one on its own page, or set AGENT_TOOL_TOKEN for the deployment.",
+    "cannotCall": "Cannot call this tool. It is not offered to the model at all, so it has nothing to refuse.",
+    "letCallAria": "Let {{bot}} call {{tool}}"
+  },
+  "accountMode": {
+    "sharedWillDisconnect": "The shared account will be disconnected.",
+    "noSharedConnected": "No shared account is connected.",
+    "personalWillDisconnect_one": "{{count}} personal account will be disconnected.",
+    "personalWillDisconnect_other": "{{count}} personal accounts will be disconnected.",
+    "makeShared": "Make {{title}} shared",
+    "makePersonal": "Make {{title}} personal",
+    "shareTitle": "Share one {{title}} account?",
+    "ownTitle": "Give everyone their own {{title}} account?",
+    "checking": "Checking what this would change…",
+    "everyoneActsAsOne": "Everyone who can use a Bot granted this app will act as this one account.",
+    "cancel": "Cancel"
+  },
+  "brokered": {
+    "noConsentPage": "This app is connected with a key you hold rather than through a consent screen, so there was no page to send you to and nothing was connected. Reload this page and press Connect again.",
+    "keyMissing": "Set COMPOSIO_API_KEY on this deployment. Without it there is no broker to reach, so this account can be neither connected nor ended from here. The app stays enabled and every grant on its tools still stands.",
+    "needsNoAccount": "{{title}} needs no account. A Bot granted these tools can use it as it is.",
+    "lastCheckedOn": "Connected with a key you provided, last checked {{date}}.",
+    "checkUnclean": "A check against {{title}} was made with your key and did not come back clean — that may be the key, and it may be {{title}} itself. The account still stands at Composio, so press Re-check to try again, or disconnect it here and connect again with a fresh key.",
+    "acceptedUnchecked": "Connected with a key you provided. It was accepted without being checked against {{title}}, which published nothing safe to try a key on at the time — that is about the app, not about your key.",
+    "acceptedUncheckedBrief": "Connected with a key you provided. It was accepted without being checked against {{title}}.",
+    "removedKeyLive": "Removed from Composio. Your key still works at {{title}} — rotate it there if you meant to end its access.",
+    "keyHeld": "This app is connected with a key you already hold, not a trip to {{title}}'s consent screen. Connect asks for it.",
+    "consentConnected": "Connected through {{title}}'s consent screen.",
+    "yourAccount": "Your account",
+    "keyMissingBadge": "Key missing",
+    "connected": "Connected",
+    "checking": "Checking…",
+    "recheck": "Re-check",
+    "disconnect": "Disconnect",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "connectYourAccount": "Connect your account",
+    "askingApp": "Asking the app what it needs…",
+    "couldNotAsk": "That app could not be asked what it needs. Close this and try again."
+  },
+  "sharedNotice": {
+    "savingApproves": "Saving also approves the shared {{title}} account for whoever can reach this Bot.",
+    "waiting": "Waiting for an administrator: shared {{title}}",
+    "refused": "{{title}} calls from this Bot are refused until an administrator approves who can reach it.",
+    "requestAria": "Request approval for {{title}}",
+    "requestApproval": "Request approval"
+  },
+  "sharedApproval": {
+    "sectionWrite": "Anyone who can use this Bot can do this as the shared account.",
+    "sectionRead": "Anyone who can use this Bot can read what this account can read.",
+    "onlyOwner": "Only its owner",
+    "named": "Named: {{description}}",
+    "everyone": "Everyone",
+    "whoMayUse": "Who may use the shared account through this Bot",
+    "outsideInput": "Outside input (email, Slack, webhooks) may use it"
+  }
+}

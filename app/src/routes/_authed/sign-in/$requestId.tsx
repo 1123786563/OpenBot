@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
 import { SignInForm } from "@/components/passwords/sign-in-form";
 import { signInRequestQueryOptions } from "@/lib/passwords/queries";
@@ -16,15 +17,17 @@ export const Route = createFileRoute("/_authed/sign-in/$requestId")({
 });
 
 function SignInPage() {
+  const { t } = useTranslation("common");
   const { requestId } = Route.useParams();
   const request = useQuery(signInRequestQueryOptions(requestId));
   return (
     <PageShell
-      title={request.data ? `Sign in to ${request.data.origin}` : "Sign in"}
-      description={
-        request.data?.reason ??
-        "Your Bot needs to be signed in to continue. What you enter here goes to its browser, not to the conversation."
+      title={
+        request.data
+          ? t("signInPage.titleWithOrigin", { origin: request.data.origin })
+          : t("signInPage.title")
       }
+      description={request.data?.reason ?? t("signInPage.description")}
     >
       <SignInForm requestId={requestId} />
     </PageShell>

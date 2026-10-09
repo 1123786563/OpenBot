@@ -1,6 +1,7 @@
 import { IconArrowRight } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import Avatar from "boring-avatars";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { Button } from "@/components/ui/button";
 import type { AgentProfile } from "@/lib/agents/queries";
@@ -12,6 +13,7 @@ export function AgentCard({
   agent: AgentProfile;
   appearance?: "compact" | "artwork";
 }) {
+  const { t } = useTranslation("agents");
   if (appearance === "artwork") {
     return (
       <div className="relative h-[180px] w-[144px] overflow-hidden rounded-2xl bg-foreground/10">
@@ -53,11 +55,11 @@ export function AgentCard({
         <Button
           variant="ghost"
           size="xs"
-          aria-label={`View details for ${agent.name}`}
+          aria-label={t("card.viewDetails", { name: agent.name })}
           className="-ml-2 text-muted-foreground after:absolute after:inset-0"
           render={<Link to="/agents" search={{ agent: agent.id }} />}
         >
-          Details
+          {t("card.details")}
         </Button>
         <IconArrowRight
           aria-hidden="true"

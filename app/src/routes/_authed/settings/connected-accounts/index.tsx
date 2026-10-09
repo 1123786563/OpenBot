@@ -8,6 +8,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageSection,
@@ -121,6 +122,7 @@ export function connectedAccountSections(
 }
 
 function RouteComponent() {
+  const { t } = useTranslation("settings");
   const { connected: outcome } = Route.useSearch();
   const [search, setSearch] = React.useState("");
   const plugins = useQuery(pluginsPageQueryOptions());
@@ -193,7 +195,9 @@ function RouteComponent() {
     ...brokered.map((server) => ({
       key: server.id,
       title: server.title,
-      summary: server.summary || `Connect your ${server.title} account.`,
+      summary:
+        server.summary ||
+        t("connectedAccounts.connectFallback", { title: server.title }),
       mark: <PluginLogo logo={server.logo} />,
     })),
   ];
@@ -206,11 +210,11 @@ function RouteComponent() {
   ).length;
   const sections = [
     {
-      title: "Connected",
+      title: t("connectedAccounts.connected"),
       accounts: matching.filter((account) => connected.has(account.key)),
     },
     {
-      title: "Not connected",
+      title: t("connectedAccounts.notConnected"),
       accounts: matching.filter((account) => !connected.has(account.key)),
     },
   ];
@@ -218,8 +222,8 @@ function RouteComponent() {
   return (
     <PageShell
       className="max-w-4xl @container"
-      description="Connect your apps so your Bots can work with them."
-      title="Connected accounts"
+      description={t("connectedAccounts.description")}
+      title={t("connectedAccounts.title")}
     >
       {/*
        * Only the failure is worth saying. A success needs no sentence: the row it came back to now
@@ -227,7 +231,7 @@ function RouteComponent() {
        */}
       {outcome === "failed" ? (
         <p className="text-destructive text-sm" role="alert">
-          That account could not be connected. Nothing was saved — try again.
+          {t("connectedAccounts.connectFailed")}
         </p>
       ) : null}
       {/*
@@ -246,36 +250,34 @@ function RouteComponent() {
       {plugins.isPending || connections.isPending ? null : plugins.error ||
         connections.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Your connected accounts could not be loaded, so nothing is listed here
-          rather than a list that may be wrong. Reload the page, and tell an
-          administrator if it persists.
+          {t("connectedAccounts.loadError")}
         </p>
       ) : sectionsToShow.includes("empty") ? (
         <PageSection>
-          <PageEmpty>
-            Nothing to connect yet. These appear once an administrator enables a
-            connector that reads as the person asking.
-          </PageEmpty>
+          <PageEmpty>{t("connectedAccounts.empty")}</PageEmpty>
         </PageSection>
       ) : (
         <>
           <p className="mt-5 text-xs text-muted-foreground">
-            {connectedCount} connected · {accounts.length} available
+            {t("connectedAccounts.counts", {
+              connected: connectedCount,
+              available: accounts.length,
+            })}
           </p>
           <InputGroup className="mt-3 h-9 border-transparent bg-muted/60 shadow-none dark:bg-muted/60">
             <InputGroupAddon>
               <IconSearch aria-hidden="true" className="size-4" />
             </InputGroupAddon>
             <InputGroupInput
-              aria-label="Search apps"
-              placeholder="Search apps"
+              aria-label={t("connectedAccounts.searchApps")}
+              placeholder={t("connectedAccounts.searchApps")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
           </InputGroup>
           {matching.length === 0 ? (
             <p className="mt-8 text-sm text-muted-foreground" role="status">
-              No apps match “{search.trim()}”.
+              {t("connectedAccounts.noMatches", { query: search.trim() })}
             </p>
           ) : (
             sections
@@ -322,11 +324,11 @@ function RouteComponent() {
                                 aria-hidden="true"
                                 className="size-3.5 text-emerald-600 dark:text-emerald-400"
                               />
-                              Connected
+                              {t("connectedAccounts.connected")}
                             </span>
                           ) : (
                             <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium">
-                              Connect
+                              {t("connectedAccounts.connect")}
                             </span>
                           )}
                         </ItemActions>
@@ -357,7 +359,7 @@ function RouteComponent() {
       !plugins.error &&
       !connections.error &&
       sectionsToShow.includes("shared") ? (
-        <PageSection title="Shared by your organisation">
+        <PageSection title={t("connectedAccounts.sharedTitle")}>
           <div className="grid grid-cols-1 gap-x-6 gap-y-2 @min-[36rem]:grid-cols-2">
             {shared.map((server) => (
               <Item
@@ -375,9 +377,9 @@ function RouteComponent() {
                   </ItemTitle>
                   <ItemDescription
                     className="line-clamp-1 break-all text-xs"
-                    title="Shared by your organisation. Bots act as the team account."
+                    title={t("connectedAccounts.sharedDescription")}
                   >
-                    Shared by your organisation. Bots act as the team account.
+                    {t("connectedAccounts.sharedDescription")}
                   </ItemDescription>
                 </ItemContent>
               </Item>

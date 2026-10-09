@@ -10,11 +10,16 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import i18n from "../src/lib/i18n";
 import {
   SharedApprovalFields,
   sharedSectionSentence,
 } from "../src/components/plugins/shared-approval-fields";
 import type { SharedUseApproval } from "../src/lib/plugins/shared-use";
+
+// The suite's preload initializes i18n with English, so a fixed-t bound here renders the exact
+// sentences these assertions were written against.
+const t = i18n.getFixedT(null, "admin");
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
@@ -22,13 +27,13 @@ afterAll(() => GlobalRegistrator.unregister());
 
 describe("sharedSectionSentence", () => {
   test("says what a shared write and a shared read let people do", () => {
-    expect(sharedSectionSentence("write", true)).toBe(
+    expect(sharedSectionSentence("write", true, t)).toBe(
       "Anyone who can use this Bot can do this as the shared account.",
     );
-    expect(sharedSectionSentence("read", true)).toBe(
+    expect(sharedSectionSentence("read", true, t)).toBe(
       "Anyone who can use this Bot can read what this account can read.",
     );
-    expect(sharedSectionSentence("write", false)).toBeNull();
+    expect(sharedSectionSentence("write", false, t)).toBeNull();
   });
 });
 

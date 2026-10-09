@@ -1,0 +1,979 @@
+{
+  "overview": {
+    "title": "管理",
+    "description": "作用于本部署中每个人的设置。这里的任何改动都会影响每一个人和每一个 Bot，这也是它与你个人偏好之间的分界。",
+    "reach": {
+      "title": "Bot 可以触及什么",
+      "description": "Bot 在此应用之外能接触到的一切，以及对其的限制。",
+      "credentials": {
+        "title": "凭据",
+        "description": "为本部署保存的密钥与令牌。"
+      },
+      "boundaries": {
+        "title": "边界",
+        "description": "决定 Bot 绝不可以做什么的规则。"
+      },
+      "computers": {
+        "title": "计算机",
+        "description": "Bot 运行其工具所用的机器。"
+      }
+    },
+    "do": {
+      "title": "Bot 可以做什么",
+      "description": "各 Bot 可用的能力与界面组件。",
+      "plugins": {
+        "title": "Plugins",
+        "description": "本部署可以连接的服务，以及哪些 Bot 可以连接。"
+      },
+      "skills": {
+        "title": "技能",
+        "description": "任何人都可以用斜杠调用的命名指令。"
+      },
+      "learning": {
+        "title": "自动学习",
+        "description": "从已完成的对话中学习，并审阅提议的技能。"
+      },
+      "components": {
+        "title": "UI 组件",
+        "description": "Bot 可以在对话中绘制的自定义组件。"
+      },
+      "playground": {
+        "title": "试验场",
+        "description": "编写组件，边输入边看它渲染。"
+      }
+    },
+    "access": {
+      "title": "谁可以进入",
+      "people": {
+        "title": "人员",
+        "description": "所有登录过的人、管理本部署的人，以及访问权限已被移除的人。"
+      },
+      "enterprise": {
+        "title": "企业控制",
+        "description": "按角色与分组的能力、强制 SSO、SCIM、网络策略、MCP 与模型允许列表、操作录制。"
+      },
+      "identityProviders": {
+        "title": "身份提供方",
+        "description": "公司自己的 SAML 或 OpenID Connect 提供方，按邮箱域名路由。"
+      }
+    },
+    "history": {
+      "title": "发生过什么",
+      "audit": {
+        "title": "审计",
+        "description": "本部署中发生的每一个操作，以及操作者。"
+      }
+    }
+  },
+  "sidebar": {
+    "backToApp": "返回应用",
+    "overview": "概览",
+    "reach": "Bot 可以触及什么",
+    "do": "Bot 可以做什么",
+    "access": "谁可以进入",
+    "history": "发生过什么",
+    "credentials": "凭据",
+    "boundaries": "边界",
+    "computers": "计算机",
+    "plugins": "Plugins",
+    "skills": "技能",
+    "learning": "自动学习",
+    "components": "UI 组件",
+    "playground": "试验场",
+    "people": "人员",
+    "identityProviders": "身份提供方",
+    "audit": "审计"
+  },
+  "audit": {
+    "title": "审计",
+    "description": "Bot 做过的每一个操作，以及本部署策略拒绝过的每一个操作。",
+    "refresh": "刷新",
+    "loadError": "无法加载审计记录。",
+    "noMatches": "尚无事件匹配此筛选条件。",
+    "when": "时间",
+    "what": "内容",
+    "on": "对象",
+    "bot": "Bot",
+    "startedBy": "发起者",
+    "decision": "决定",
+    "filters": {
+      "everything": "全部",
+      "computerActions": "计算机操作",
+      "blocked": "已拦截",
+      "didNotHappen": "未发生",
+      "nobodyWatching": "无人监督"
+    },
+    "initiator": {
+      "routine": "一个例程",
+      "handedOnBy": "由 {{name}} 交接",
+      "handedOn": "已交接",
+      "memorySource": "一个记忆源",
+      "responsibility": "一项职责",
+      "deployment": "本部署",
+      "person": "一个人"
+    },
+    "routed": {
+      "personChose": "此人选择了该同事",
+      "default": "发送给了默认同事",
+      "intended": "发送给了负责此事的同事"
+    },
+    "toolsOffered": "{{granted}} 个工具中的 {{offered}} 个",
+    "decisionBlocked": "已拦截",
+    "decisionDidNotHappen": "未发生",
+    "decisionAllowed": "已允许",
+    "reportedByBot": "，由 Bot 自行报告",
+    "dryRunRecorded": "dry-run：已记录，未强制执行",
+    "discovery": {
+      "underFloor": "工具足够少，全部提供",
+      "nothingDeclared": "没有技能声明这些工具",
+      "unavailable": "无法选择，因此全部提供",
+      "nothingChosen": "没有技能适用，因此全部提供",
+      "selected": "由技能选定"
+    },
+    "decisions": {
+      "botDeclined": "Bot 拒绝了",
+      "streamStalled": "Bot 停止了响应",
+      "boundaryAtStartup": "启动时的边界",
+      "isolationAtStartup": "启动时的隔离",
+      "controlTaken": "一个人接管了控制",
+      "controlReleased": "控制已交还",
+      "helpRequested": "Bot 请求了帮助",
+      "secretRequested": "Bot 请求了密钥",
+      "secretSupplied": "一个人提供了密钥",
+      "computerReset": "计算机已重置",
+      "computerUpdated": "计算机已更新",
+      "personPressedStop": "一个人按下了停止",
+      "grantedToBot": "已授予此 Bot",
+      "takenFromBot": "已从此 Bot 收回",
+      "published": "已发布，每个 Bot 都可以使用",
+      "unpublished": "已取消发布，任何 Bot 都不可以使用",
+      "draftSaved": "草稿已保存，尚未发布",
+      "refused": "已拒绝",
+      "mayRead": "可以读取此项",
+      "mayNoLongerRead": "不再可以读取此项",
+      "readRealData": "读取了真实数据",
+      "refusedFunction": "已拒绝",
+      "couldNotBeRead": "无法读取",
+      "toolsOfferedForRun": "为一次运行提供的工具",
+      "calledOnBehalf": "代表此 Bot 调用",
+      "blocked": "已拦截",
+      "serverDidNotAnswer": "服务器未应答",
+      "couldNotProveBot": "无法证明是哪个 Bot",
+      "configurationChanged": "配置已更改",
+      "credentialSaved": "凭据已保存"
+    }
+  },
+  "boundaries": {
+    "title": "边界",
+    "description": "每个 Bot 对其计算机可以做什么、不可以做什么。规则在每次操作发生前都会被检查，拒绝会连同触发它的规则一起记录到<audit>审计</audit>中。",
+    "whenRuleMatches": {
+      "title": "当规则匹配时",
+      "description": "强制执行会阻止操作。记录但允许会写入同样的记录并放行操作，这是在规则真正开始拒绝任何人之前先在真实流量上试用的方式。"
+    },
+    "mode": {
+      "enforce": "阻止操作",
+      "dryRun": "记录但允许",
+      "enforceHint": "Bot 会被阻止，并被告知是哪条规则拒绝了它。",
+      "dryRunHint": "不会阻止任何操作。规则匹配到的每个操作都会按会被拒绝的样子记录下来，这是在启用规则之前的试用方式。"
+    },
+    "never": {
+      "title": "绝不可以",
+      "description": "最先检查，一旦匹配即终止：下面的内容都不会被参考，Bot 会被告知是哪条规则拒绝了它。规则使用 CEL 编写，可以询问 <code>tool.name</code>、<code>intent</code>、<code>bot.id</code>、<code>actor.id</code>、<code>page.url</code> 和 <code>page.host</code>、被操作的元素、被按下的<code>key</code>、被触碰的文件、被运行的<code>command</code>，以及调用他人工具时的 <code>mcp.server</code>、<code>mcp.tool</code> 和 <code>mcp.effect</code>。<code>initiator.kind</code> 说明是什么启动了这次运行——<code>person</code>、<code>routine</code> 或 <code>handoff</code>——这是 <code>actor.id</code> 做不到的，因为无人监督时，计划的运行带着其所有者的权限。无法求值的规则视为匹配，所以写错的 deny 会拒绝而不是悄悄放行本应禁止的操作。",
+      "empty": "没有规则。每个操作都被允许并记录。"
+    },
+    "remove": "移除",
+    "ruleAria": "用 CEL 编写的规则",
+    "testing": "测试中…",
+    "testFirst": "先测试",
+    "addRule": "添加规则",
+    "presets": {
+      "noForms": {
+        "label": "绝不提交表单",
+        "cost": "同时也会阻止 Bot 在其他任何地方按 Enter，因为表单的任意字段都可以用 Enter 提交。"
+      },
+      "noPasswords": {
+        "label": "绝不向密码框输入",
+        "cost": "页面用其他名称标注的密码框不被覆盖，规则按名称匹配。"
+      },
+      "socialMedia": {
+        "label": "远离社交媒体",
+        "cost": "仅限点名的两个主机。从别处重定向过去的链接是允许的。"
+      }
+    },
+    "otherwise": {
+      "title": "否则它可以",
+      "description": "兜底规则，作用于拒绝列表没有拦下的一切。它不是走过场：这里的空列表不允许任何操作，所以清空此列表的部署会拒绝每个操作，而不是允许每个操作。",
+      "trueRule": "true，未被上方拒绝的一切"
+    },
+    "savedNotice": "已保存。它应用于任何 Bot 的下一个操作。",
+    "pendingNotice": "更改应用于任何 Bot 的下一个操作，并且会被保留：重启后仍会强制执行这里的规则。",
+    "test": {
+      "noneYet": "尚无已记录的计算机操作可供测试。规则本身有效；它匹配什么要等 Bot 实际操作后才能知道。",
+      "refusedNone": "针对最近 {{scanned}} 条已记录操作测试：此规则本不会拒绝其中任何一个。它仍可能匹配未来的操作。",
+      "refusedSome": "针对最近 {{scanned}} 条已记录操作测试：此规则本会拒绝 {{wouldRefuse}} 个。",
+      "wouldRefuse": "将会拒绝",
+      "wouldAllow": "现在会允许",
+      "on": "于“{{name}}”",
+      "running": "运行",
+      "touching": "触碰 {{file}}",
+      "more": "仅显示前 {{shown}} 条；上方的计数覆盖全部已扫描内容。"
+    }
+  },
+  "computers": {
+    "title": "计算机",
+    "description": "每个 Bot 的浏览器及其保留的配置档案。配置档案让 Bot 明天仍保持登录，重置会使其退出所有登录。",
+    "loadError": "无法列出计算机。",
+    "working": "处理中…",
+    "cancel": "取消",
+    "isolation": {
+      "shared": "<bold>所有 Bot 正在共用一台计算机。</bold>它们共用其登录、文件和会话，所以一个 Bot 可以访问另一个 Bot 登录过的内容。设置 <code>COMPUTER_SUPERVISOR_URL</code> 可让每个 Bot 拥有自己的计算机。",
+      "perBot": "每个 Bot 都有自己的计算机：自己的容器、自己的文件和自己的浏览器配置档案。"
+    },
+    "fleet": {
+      "title": "本部署中的计算机",
+      "listError": "无法加载列表。",
+      "empty": "还没有计算机。Bot 第一次打开页面时就会出现一台。",
+      "runningSince": "浏览器自 {{time}} 起运行中",
+      "notRunning": "没有运行中的浏览器。Bot 下次需要时会自动启动。",
+      "egressUnknown": "未上报出口",
+      "egressDirect": "直接发出",
+      "egressProxy": "经 {{host}} 发出",
+      "updateAvailable": " · 有可用更新",
+      "update": "更新计算机",
+      "stopBrowser": "停止浏览器",
+      "reset": "重置"
+    },
+    "resetDialog": {
+      "title": "重置 {{name}} 的计算机？",
+      "description": "其配置档案将被删除，Bot 会退出登录过的所有服务并从头开始。此操作无法撤销。",
+      "resetting": "重置中…",
+      "resetIt": "重置"
+    },
+    "updateDialog": {
+      "title": "更新 {{name}} 的计算机？",
+      "description": "它会迁移到本部署当前运行的计算机镜像。其文件和登录会保留。如果它正在运行则会重启，这会打断它当前正在做的任何事。",
+      "updating": "更新中…",
+      "updateIt": "更新"
+    },
+    "legend": "<stop>停止</stop>会关闭浏览器并保留其登录：Bot 下次做事时会从上次中断处继续。<reset>重置</reset>会删除配置档案，Bot 会退出所有登录并从头开始。<update>更新计算机</update>在计算机运行比本部署旧的镜像时出现，会将其连同文件和登录一起迁移到新镜像。三者都会记录到<audit>审计</audit>中。",
+    "folders": {
+      "title": "此计算机上的文件夹",
+      "description": "选择 Bot 可以在这台计算机上读取的文件夹。桌面应用在每次编辑或执行命令前都会询问。停止 OpenBot 后访问即结束。",
+      "offline": "桌面应用处于离线状态。文件夹只能从桌面应用批准，离线期间命令访问保持不可用。",
+      "noBots": "还没有 Bot。请先创建 Bot 再选择文件夹。",
+      "waiting": "等待中…",
+      "choose": "选择文件夹",
+      "readOnlyNote": "授权默认为只读。Bot 需要写入时会通过桌面原生提示请求。",
+      "stopping": "停止中…",
+      "stopAccess": "停止文件夹访问",
+      "viewAudit": "查看审计",
+      "readOnly": "只读",
+      "revoking": "撤销中…",
+      "revoke": "撤销",
+      "pendingLine": "来自 {{owner}} 的 {{action}}",
+      "pendingFor": "，用于 {{folder}}",
+      "activeFolders_one": "{{count}} 个只读文件夹",
+      "activeFolders_other": "{{count}} 个只读文件夹",
+      "pendingRequests_one": "{{count}} 个待处理请求",
+      "pendingRequests_other": "{{count}} 个待处理请求",
+      "none": "尚未批准任何文件夹。",
+      "owner": "桌面应用所有者",
+      "pending": {
+        "writeFile": "等待批准或完成的文件更改",
+        "runCommand": "等待批准或完成的命令",
+        "listFiles": "正在列出文件",
+        "readFile": "正在读取文件",
+        "stopping": "正在停止文件夹操作",
+        "default": "等待批准的文件夹访问"
+      }
+    }
+  },
+  "credentials": {
+    "title": "凭据",
+    "description": "凭据只写不读。OpenBot 绝不会显示其机密值。",
+    "add": "添加凭据",
+    "cancel": "取消",
+    "dialog": {
+      "title": "添加凭据",
+      "description": "为本部署保存，保存后不再显示。",
+      "replaceWarning": "此密钥已持有一个有效凭据。保存会替换它，被替换的那个将被撤销。",
+      "saveError": "无法保存凭据。请重试。",
+      "saving": "保存中…",
+      "save": "保存凭据"
+    },
+    "fields": {
+      "type": "类型",
+      "provider": "提供方",
+      "keyId": "密钥 ID",
+      "secret": "机密"
+    },
+    "kinds": {
+      "model": "模型",
+      "connector": "连接器"
+    },
+    "configured": {
+      "title": "已配置的凭据",
+      "loadError": "无法加载凭据。",
+      "empty": "尚未配置任何凭据。",
+      "revoked": "已撤销",
+      "active": "有效",
+      "revoke": "撤销"
+    }
+  },
+  "enterprise": {
+    "title": "企业控制",
+    "description": "成员可以使用什么、Bot 计算机如何访问网络，以及记录了什么。每次更改都会记入审计记录。",
+    "loadError": "无法加载企业控制。",
+    "on": "开",
+    "off": "关",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "done": "完成",
+    "signIn": {
+      "title": "登录",
+      "description": "社交登录仍对 INITIAL_ADMIN_EMAILS 中的地址开放，作为紧急入口，且每次此类登录都会被审计。",
+      "requireSso": "要求 SSO",
+      "ssoOn": "只有已注册的 SAML 或 OpenID Connect 提供方可以让人登录。",
+      "ssoOff": "人们还可以使用 Google、Microsoft 或 Okta 登录。"
+    },
+    "scim": {
+      "title": "SCIM 预配",
+      "configured": "目录基础 URL 为 {{url}}，使用 SCIM_BEARER_TOKEN 令牌。取消预配会结束会话、将地址加入拒访列表、停用连接器凭据并停止其计算机。",
+      "setBetterAuthUrl": "（设置 BETTER_AUTH_URL）",
+      "off": "关。设置 SCIM_BEARER_TOKEN 以接受来自 Okta、Entra 或其他目录的预配。"
+    },
+    "capabilities": {
+      "title": "能力",
+      "description": "开关作用于整个组织。角色可以有不同答案，目录组也可以被授予组织已关闭的能力。",
+      "nobodyMay": "谁都不可以，除非某个角色或分组授予。"
+    },
+    "overrides": {
+      "title": "角色与分组覆盖",
+      "none": "无：所有人都按上方的开关",
+      "count": "已设置 {{number}} 项",
+      "administrators": "管理员",
+      "members": "成员",
+      "groupLabel": "分组：{{name}}",
+      "scopeAria": "范围",
+      "groupHint": "分组只能放宽：授予会让其成员在组织关闭该能力时也能使用它。",
+      "roleHint": "角色的答案会为持有该角色的每个人替换组织开关。",
+      "capabilityFor": "{{scope}} 的 {{title}}",
+      "inherit": "继承",
+      "grant": "授予"
+    },
+    "network": {
+      "title": "网络",
+      "description": "Bot 计算机可以连接到哪里。几秒内应用于运行中的计算机，无需重启。分组策略会替换组织策略，除非后者已锁定。",
+      "organization": "组织",
+      "group": "分组：{{name}}",
+      "addGroupPolicy": "添加分组策略",
+      "noPolicy": "无策略：Bot 计算机可以访问集群允许的任何内容",
+      "ruleCount_one": "{{count}} 条规则",
+      "ruleCount_other": "{{count}} 条规则",
+      "locked": "已锁定",
+      "modes": {
+        "allowAll": "允许所有网络访问",
+        "defaultsPlusAllowlist": "默认项加团队允许列表",
+        "allowlistOnly": "仅团队允许列表"
+      },
+      "orgPolicyTitle": "组织网络策略",
+      "groupPolicyTitle": "分组网络策略",
+      "groupLabelShort": "分组",
+      "modeLabel": "模式",
+      "allowlistLabel": "允许列表",
+      "allowlistHint": "每行一条。域名覆盖其子域；*.name 只覆盖子域。IP 段可以指定端口。默认项为 {{defaults}}，另有 {{more}} 个软件包与源主机。",
+      "lockLabel": "锁定：分组不得替换此策略",
+      "removePolicy": "移除策略"
+    },
+    "mcp": {
+      "title": "MCP 服务器",
+      "description": "允许列表开启后，Bot 只能调用此处批准的 MCP 服务器上的工具。其他所有服务器的调用都会被拒绝。",
+      "onlyApproved": "仅已批准的服务器",
+      "onlyApprovedAria": "仅已批准的 MCP 服务器",
+      "approvedCount": "已批准 {{number}} 个",
+      "off": "关：每个已注册的服务器都可按其授权使用。",
+      "approveAria": "批准 {{title}}"
+    },
+    "models": {
+      "title": "模型",
+      "description": "内置 Bot 运行于 {{model}}。远程 Bot 自行选择；其流中指名的模型会被记录。",
+      "configuredDefault": "本部署配置的模型",
+      "allowlistTitle": "模型允许列表",
+      "allowlistOn": "内置 Bot 使用未列出的模型会在运行前被拒绝。",
+      "allowlistOff": "关：任何模型都可以为运行服务。",
+      "allowed": "允许的模型",
+      "noneListed": "未列出任何模型",
+      "listHint": "每行一个模型，格式为 provider/model，例如 openai/gpt-5.6-terra。",
+      "usageError": "无法加载模型使用情况。",
+      "usageEmpty": "最近 30 天没有记录到 Bot 运行。",
+      "usageLine_one": "30 天内 {{count}} 人的 {{runs}} 次运行",
+      "usageLine_other": "30 天内 {{count}} 人的 {{runs}} 次运行",
+      "offAllowlist": " · {{number}} 次不在允许列表"
+    },
+    "recording": {
+      "title": "录制与导出",
+      "description": "设置 OTEL_EXPORTER_OTLP_ENDPOINT 后，审计事件和 Bot 操作会流式传输到你的 OpenTelemetry 收集器或 SIEM，并带 openbot.surface 标签。",
+      "actionRecording": "操作录制",
+      "on": "Bot 运行的 Shell 命令会被录制，机密已清除并保留 {{days}} 天。",
+      "off": "关：命令仅记入审计记录。",
+      "loadError": "无法加载已录制的操作。",
+      "noCommands": "尚未录制任何命令。",
+      "membersMachine": "成员的机器",
+      "botMachine": "Bot {{botId}}",
+      "otel": "OpenTelemetry 导出",
+      "otelOn": "正在通过 OTLP/HTTP 导出。",
+      "otelOff": "未配置。请在服务器上设置 OTEL_EXPORTER_OTLP_ENDPOINT。"
+    },
+    "computers": {
+      "title": "计算机",
+      "description": "停止一台计算机会结束其上运行的 Bot 并保留其磁盘。该 Bot 下次会话会获得新的计算机。停止某个人的计算机请到“人员”。",
+      "stopInactive": "停止不活跃的计算机",
+      "afterDays": "在 {{days}} 天未使用后",
+      "stopNow": "立即停止不活跃的计算机",
+      "stopping": "停止中…",
+      "stoppedCount": "已停止 {{number}} 台。",
+      "daysWithoutUse": "未使用天数",
+      "daysHint": "0 表示关闭。每小时检查一次。"
+    }
+  },
+  "identityProviders": {
+    "title": "身份提供方",
+    "description": "公司自己的身份提供方，支持 SAML 或 OpenID Connect。用户输入邮箱地址后，由域名决定将其送往哪一个。",
+    "add": "添加提供方",
+    "loadError": "无法加载身份提供方。",
+    "cancel": "取消",
+    "registered": {
+      "title": "已注册",
+      "description": "Google、Microsoft 和 Okta 改为在环境中配置，不会显示在这里。",
+      "empty": "尚未注册任何身份提供方。请使用身份团队提供的元数据添加一个。",
+      "remove": "移除"
+    },
+    "dialog": {
+      "title": "添加身份提供方",
+      "name": "名称",
+      "emailDomain": "邮箱域名",
+      "domainHint": "任何使用此域名地址登录的人都会被送往这里。多个域名用逗号分隔。",
+      "issuer": "Issuer",
+      "signOnUrl": "登录 URL",
+      "metadataXml": "元数据 XML",
+      "metadataHint": "你的身份团队提供的文档。其中带有签名证书。",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "adding": "添加中…",
+      "add": "添加"
+    }
+  },
+  "learning": {
+    "title": "自动学习",
+    "description": "将已完成的对话收集为证据，审阅 Intelligence 提议的技能，并向 Bot 交付已发布的指导。",
+    "loading": "正在加载学习设置…",
+    "saving": "保存中…",
+    "save": "保存学习设置",
+    "saved": "设置已保存。",
+    "targetFields": {
+      "container": "{{label}}容器 ID",
+      "containerAria": "{{label}}容器 ID",
+      "revision": "确切修订版本（可选）",
+      "revisionAria": "{{label}}修订版本",
+      "latestPublished": "最新发布版本"
+    },
+    "participation": {
+      "title": "参与",
+      "description": "容器分配的更改只应用于新线程。已有线程保留其首次分配。容器必须已存在于同一个 Intelligence 项目中。",
+      "enable": "启用自动学习与技能交付",
+      "default": "默认",
+      "idHint": "默认留空会让未映射的 Bot 不参与。ID 使用 1–64 个小写字母、数字和单个连字符。修订版本留空表示跟随最新发布的技能。",
+      "perBot": "逐个 Bot 参与",
+      "rosterError": "无法加载 Bot 列表。下方显示现有的映射。",
+      "botAria": "{{name}} 的参与方式",
+      "useDefault": "使用部署默认值",
+      "exclude": "不参与学习",
+      "useContainer": "使用指定容器"
+    },
+    "review": {
+      "title": "审阅与发布",
+      "description": "Intelligence 分析已完成的运行并提出技能。审阅其支撑证据，并在 Intelligence 中发布批准的修订版本后 Bot 才能使用。",
+      "inspectFor": "查看容器：",
+      "deploymentDefault": "部署默认值",
+      "checking": "正在检查 Intelligence…",
+      "invalid": "所选容器或检测不可用。",
+      "selectionRequired": "请选择一个 Bot 或配置默认容器。",
+      "notAssigned": "尚未分配学习容器。",
+      "threadsReady": "就绪的线程",
+      "candidates": "待审阅的候选",
+      "publishedSkills": "已发布的技能",
+      "insights": "洞察",
+      "analysisRunning": "一次分析正在运行。",
+      "latestAnalysis": "最近一次分析：{{status}}。",
+      "noAnalysis": "尚未运行过分析。",
+      "manageLink": "在 Intelligence 中管理学习",
+      "candidatesLink": "审阅技能候选",
+      "runsLink": "查看分析运行",
+      "refresh": "刷新状态",
+      "permissionsNote": "管理需要你的 Intelligence 账户和项目权限。OpenBot 将项目凭据保存在服务器上。在这里暂停会保留设置和线程分配；计划与发布仍由 Intelligence 管理。"
+    },
+    "delivery": {
+      "title": "技能交付",
+      "checking": "正在检查交付…",
+      "off": "此 Bot 的交付已关闭。",
+      "waitingSnapshot": "等待首个经过验证的技能快照。",
+      "stale": "使用上一个经过验证的快照；刷新待处理。",
+      "verified": "有一个经过验证的快照可用。",
+      "loadedRevision": "已加载修订版本：{{revision}}",
+      "lastChecked": "上次检查：{{time}}"
+    }
+  },
+  "people": {
+    "title": "人员",
+    "description": "所有登录过的人。管理员可以访问这些界面；其他人则与 Bot 交流。",
+    "whoIsHere": {
+      "title": "谁在这里",
+      "description": "INITIAL_ADMIN_EMAILS 中指名的地址无论此界面如何显示都是管理员，因此无法在这里更改。"
+    },
+    "lastSignedIn": "上次登录于 {{date}}",
+    "neverSignedIn": "从未登录",
+    "noProvider": "无提供方",
+    "accessRemoved": "访问已移除 · {{providers}} · {{when}}",
+    "adminByConfiguration": "由配置指定的管理员 · {{when}}",
+    "providersAndWhen": "{{providers}} · {{when}}",
+    "stoppedCount_one": "已停止 {{count}} 台计算机",
+    "stoppedCount_other": "已停止 {{count}} 台计算机",
+    "stopFailed": "；{{number}} 台无法停止",
+    "disksKept": "。磁盘已保留。",
+    "searchAria": "搜索人员",
+    "searchPlaceholder": "按姓名或地址搜索",
+    "loadError": "无法加载人员。",
+    "noMatches": "这里没有人匹配“{{query}}”。",
+    "nobodyYet": "还没有人登录过。有人登录后会出现在这里。",
+    "stopComputers": "停止计算机",
+    "restore": "恢复",
+    "remove": "移除",
+    "adminAria": "管理员：{{email}}",
+    "loading": "加载中…",
+    "showMore": "显示更多"
+  },
+  "playground": {
+    "title": "试验场",
+    "description": "在这里编写组件并发布，无需部署。你编辑的是草稿；对话只会绘制已发布的内容。",
+    "saveDraft": "保存草稿",
+    "publish": "发布",
+    "invalidJson": "无效的 JSON",
+    "mustBeValidJson": "{{label}}必须是有效的 JSON：{{reason}}",
+    "mustBeJsonObject": "{{label}}必须是 JSON 对象，而不是 {{kind}}。",
+    "fixBeforeSaving": "保存前请修正 JSON 字段。",
+    "fixBeforePreviewing": "预览前请修正 JSON 字段。",
+    "draftSaved": "草稿已保存。",
+    "published": "已发布。",
+    "sampleUnavailable": "示例参数不可用。",
+    "fields": {
+      "name": "名称",
+      "title": "标题",
+      "titlePlaceholder": "退款卡片",
+      "description": "告知模型的描述",
+      "descriptionPlaceholder": "展示退款的金额、原因和状态。",
+      "html": "HTML",
+      "css": "CSS",
+      "javascript": "JavaScript",
+      "argumentSchema": "参数（JSON Schema）",
+      "sampleArguments": "示例参数"
+    },
+    "preview": "预览",
+    "savedHere": "保存在这里",
+    "nothingYet": "还没有内容。",
+    "publishedRevision": "已发布，修订版本 {{revision}}",
+    "draftOnly": "仅草稿，任何 Bot 都无法绘制它",
+    "editedSincePublishing": " · 发布后已编辑",
+    "open": "打开",
+    "delete": "删除",
+    "publishingNote": "发布后每个 Bot 都可以使用它。要为某个特定 Bot 关闭，请到组件页面操作，与此版本自带的组件相同。",
+    "cancel": "取消",
+    "deleteTitle": "删除 {{name}}？",
+    "deleteDescription": "它会从此部署中移除。能够绘制它的任何 Bot 都将不再可以，且此操作无法撤销。",
+    "deleteIt": "删除"
+  },
+  "skills": {
+    "title": "技能",
+    "description": "这里的任何人都可以用斜杠调用的命名指令。技能不增加任何能力：它只能让 Bot 使用该 Bot 已持有的东西，且每一次调用仍会被裁决和记录。",
+    "write": "编写技能",
+    "cancel": "取消",
+    "installed": {
+      "title": "已安装",
+      "description": "为整个部署编写。人们在自己的技能页面编写自己的。",
+      "loadError": "无法加载技能。",
+      "empty": "还没有技能。",
+      "remove": "移除"
+    },
+    "dialog": {
+      "title": "为部署编写技能",
+      "description": "slug 是人在斜杠后输入的内容，输入后指令会加入该次运行。这里的每个人都能使用，由你决定哪些 Bot 拥有它。",
+      "slug": "Slug",
+      "titleField": "标题",
+      "titlePlaceholder": "标题",
+      "summary": "摘要",
+      "summaryPlaceholder": "一句话",
+      "instructions": "指令",
+      "instructionsPlaceholder": "使用此技能时 Bot 应该做什么。",
+      "install": "安装技能"
+    }
+  },
+  "components": {
+    "loadError": "无法加载组件。",
+    "backLabel": "UI 组件",
+    "componentsTitle": "组件",
+    "unpublishedFallback": "尚未发布任何内容，因此没有 Bot 得知此组件。",
+    "nothingYet": "暂无内容",
+    "cancel": "取消",
+    "save": "保存",
+    "done": "完成",
+    "gallery": {
+      "title": "UI 组件",
+      "description": "每个 Bot 可以用什么来回答。每个已发布的组件都对每个 Bot 可用；在这里关掉某个后，该 Bot 就不会得知它。每次更改和每次拒绝都是审计中的一行。",
+      "emptyTitle": "还没有组件",
+      "emptyDescription": "你的 Agents 可以使用的组件将显示在这里。"
+    },
+    "noSuch": {
+      "title": "没有这样的组件",
+      "description": "这里没有任何东西响应这个名称。",
+      "hint": "它可能已被重命名，或者本部署不再随附它。",
+      "back": "返回组件"
+    },
+    "configuration": {
+      "title": "配置",
+      "description": "此组件的用途，以及哪些 Bot 可以用它回答。"
+    },
+    "notInBuild": {
+      "title": "不在此版本中",
+      "description": "无论其他设置如何，这里没有任何东西能绘制它。"
+    },
+    "published": {
+      "title": "已发布",
+      "on": "Bot 可以用它回答。",
+      "off": "任何 Bot 都不可以使用它。",
+      "hasChanges": "描述有尚未发布的更改。"
+    },
+    "description": {
+      "title": "描述",
+      "dialogDescription": "模型决定调用此组件时读取的内容。在组件发布之前它不会改变任何东西。"
+    },
+    "grants": {
+      "title": "可用于",
+      "noBots": "还没有 Bot",
+      "noBotsYet": "还没有 Bot。",
+      "all": "全部 {{number}} 个 Bot",
+      "none": "没有 Bot",
+      "of": "{{total}} 个 Bot 中的 {{held}} 个",
+      "dialogDescription": "关掉一个 Bot 后，它就不会得知此组件存在，因此不会请求它，也不会为没有它而道歉。每次更改立即生效。"
+    },
+    "functions": {
+      "title": "可以读取",
+      "noneGranted": "本部署未授予任何数据函数",
+      "noneGrantedFull": "本部署未授予任何数据函数。",
+      "drawsOnly": "没有——它只绘制模型递给它的内容",
+      "dialogDescription": "这是与“可用于”分开的另一项授权，也不由其隐含：那个决定谁可以绘制此组件，这个决定它可以为绘制自己而获取什么。在这些开启之前，它只显示 Bot 递给它的内容；它每次读取都会记入审计。每次更改立即生效。"
+    },
+    "details": {
+      "title": "详情",
+      "kind": "种类",
+      "calledAs": "调用名",
+      "lastChanged": "上次更改",
+      "changedBy": "，更改者 {{name}}"
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "description": "本部署可以连接什么，以及哪些 Bot 可以连接。添加插件对整个账户生效；哪些 Bot 持有其工具在其自己的页面上决定。",
+    "loadError": "无法加载 Plugins。",
+    "notConnected": "未连接",
+    "noToolsYet": "还没有工具",
+    "toolCount_one": "{{count}} 个工具",
+    "toolCount_other": "{{count}} 个工具",
+    "noBots": "无 Bot",
+    "botCount_one": "{{count}} 个 Bot",
+    "botCount_other": "{{count}} 个 Bot",
+    "notAdded": "未添加",
+    "connected": {
+      "title": "已连接",
+      "description": "为整个部署添加。打开一个可设置它需要什么以及哪些 Bot 持有其工具。",
+      "empty": "尚未连接任何内容。所有可用的都在下面。"
+    },
+    "explore": {
+      "title": "探索插件",
+      "description": "此版本会与之通信的、经审核的第一方服务器。打开一个即可添加。",
+      "empty": "目录中的所有内容均已连接。"
+    },
+    "moreApps": {
+      "title": "更多应用",
+      "description": "本部署尚未审核的目录，通过 Composio 访问。",
+      "browse": "浏览 Composio",
+      "browseDescription": "数百个应用，以发起请求者的身份访问。每个人连接自己的账户。",
+      "composio": "Composio",
+      "composioDescription": "添加你的 Composio 密钥以启用工具目录。在此部署上设置 COMPOSIO_API_KEY。"
+    }
+  },
+  "composio": {
+    "title": "浏览 Composio",
+    "description": "Composio 自己的目录。添加应用后其工具可供授予；每个人仍需连接自己的账户，它们才能读取任何内容。",
+    "searchAria": "搜索 Composio 应用",
+    "searchPlaceholder": "按应用名称搜索",
+    "directoryUnavailable": "无法读取 Composio 的应用目录。",
+    "noMatches": "Composio 的目录中没有匹配“{{query}}”的内容。",
+    "noApps": "Composio 未返回任何应用。",
+    "actionCount": "{{number}} 个操作",
+    "added": "已添加",
+    "adding": "添加中…",
+    "add": "添加",
+    "apps": {
+      "title": "应用",
+      "description": "按名称搜索。目录太长无法通读，且这里的内容未经本部署审核。"
+    }
+  },
+  "pluginDetail": {
+    "plugin": "插件",
+    "notApproved": "未批准",
+    "yourAccount": "你的账户",
+    "connectionUnreadable": "无法加载你在这里是否已连接账户，因此不显示任何内容，而不是显示可能错误的内容。请重新加载页面，如持续出现请检查本部署的日志。",
+    "noConsentLink": "本部署的应答中没有授权链接，因此无处可去，也没有连接任何内容。请重试；如持续出现请检查此连接器的设置。",
+    "reassurance": "没有它设置也是完整的，而且它只访问你的文档。",
+    "notSet": "未设置",
+    "connected": "已连接",
+    "connect": "连接",
+    "teamAccount": "团队账户",
+    "teamAccountNotice": "请以团队账户登录，而不是你自己的。",
+    "connectedAs": "（身份为 {{name}}）",
+    "connectedBy": "（由 {{name}} 连接）",
+    "sharedConnected": "已连接{{as}}{{by}}。被授予这些工具的每个 Bot 都以此账户身份执行操作。",
+    "sharedDisconnected": "未连接团队账户，因此被授予这些工具的 Bot 会被拒绝。",
+    "personalConnected": "已连接，因此被授予这些工具的 Bot 会以你的 {{title}} 身份代表你操作。断开连接会终止 Composio 处的账户，而不仅仅是这里。",
+    "connectOwn": "连接你自己的账户来试用此连接器。{{reassurance}}",
+    "oauthConnected": "已连接，因此被授予这些工具的 Bot 会以你的 {{title}} 身份代表你操作。其他所有人都连接自己的。",
+    "notAPlugin": {
+      "title": "不是插件",
+      "description": "本部署没有该名称的插件，目录中也没有提供。",
+      "empty": "没有可配置的内容。"
+    },
+    "enable": {
+      "title": "为此部署启用",
+      "on": "Bot 可以被授予其工具。关掉它会移除它及其工具上的所有授权。",
+      "off": "任何 Bot 都无法连接此服务提供商。开启它以进行配置并授予其工具。",
+      "aria": "为此部署启用 {{title}}"
+    },
+    "accountMode": {
+      "title": "使用谁的账户",
+      "shared": "所有人共用一个共享账户。",
+      "personal": "每个人连接自己的。",
+      "makePersonal": "改为个人",
+      "makeShared": "改为共享"
+    },
+    "connection": {
+      "title": "连接",
+      "descriptionOauth": "此服务提供方以发起请求者的身份应答。部署注册一个 OAuth 客户端，每个人连接自己的账户，因此 Bot 只能看到该人能看到的内容。",
+      "descriptionBuiltin": "内置于本部署。没有要连接的服务提供方，也没有要保存的凭据——调用以发起请求者的身份运行。",
+      "descriptionBrokered": "通过 Composio 访问，它持有每个人自己的账户。",
+      "descriptionBearer": "本部署呈现给服务提供方的内容。一个凭据，供所有人使用。",
+      "builtinRow": "无需配置。这些工具运行在本部署内部，使用它已拥有的表。",
+      "builtInBadge": "内置",
+      "howReached": "访问方式",
+      "howReachedDescription": "此应用通过 Composio 访问，由它持有账户。本部署发送一个密钥和发起请求者的名称，因此每个人连接自己的账户，Bot 只能看到该人能看到的内容。没有要粘贴的令牌。",
+      "throughComposio": "通过 Composio",
+      "accessToken": "访问令牌",
+      "accessTokenDescription": "在此服务提供方的每次调用中作为令牌发送。",
+      "held": "已持有",
+      "oauthClient": "OAuth 客户端",
+      "dynamicClientRow": "本部署在首次连接时向服务提供方自行注册。没有要粘贴的内容。",
+      "selfRegistered": "自行注册",
+      "clientRow": "向服务提供方标识本部署。它自己无法访问任何人的文档。",
+      "registered": "已注册",
+      "notRegistered": "未注册",
+      "instanceHost": "实例主机",
+      "instanceHostDescription": "此服务提供方为每个客户提供自己的主机名，存储前会与其模式核对。",
+      "documentation": "文档",
+      "vendorDocumentation": "服务提供方文档",
+      "builtinDocs": "这些工具提供的功能，来自维护它们的人。",
+      "vendorDocs": "此服务器提供的功能，来自维护它的人。"
+    },
+    "redirect": {
+      "dynamic": "部署会自行注册其重定向 URI，因此无需在服务提供方添加任何内容。",
+      "manual": "将此内容原样添加到服务提供方客户端的已授权重定向 URI 中。一个字符写错都会在那里失败，且错误消息不会提到 OpenBot。",
+      "missingUrl": "本部署没有公共 URL，因此没有人能完成授权流程。请设置 OPENBOT_PUBLIC_URL。"
+    },
+    "tools": {
+      "title": "工具",
+      "description": "Bot 只有在持有某个工具时才会得知它。每次调用发生时都会再次裁决，因此撤销授权会在下一次调用时生效。",
+      "refresh": "刷新工具",
+      "grantTools": "授予工具…",
+      "empty": "未列出工具。刷新以再次询问服务提供方。",
+      "changesThings": "更改事物",
+      "reads": "只读",
+      "byBot": "按 Bot",
+      "botRow": "此应用提供的每个操作，逐个开关。",
+      "hiddenBotRow": "已在你的名册中隐藏。此应用提供的每个操作，逐个开关。"
+    },
+    "withdrawn": {
+      "title": "持有但未提供",
+      "description": "此服务提供方不再列出这些内容，因此没有 Bot 会得知它们，模型也无法调用。授权仍有记录，如果服务提供方重新列出，该工具会再次提供。如果这不是你想要的，请从 Bot 自己的页面撤销。",
+      "notListedBy": "未被 {{title}} 列出",
+      "asOfRefresh": "（截至上次刷新）"
+    },
+    "dialogs": {
+      "clientTitle": "{{title}} 的 OAuth 客户端",
+      "instanceTitle": "{{title}} 的实例主机",
+      "tokenTitle": "{{title}} 的访问令牌",
+      "clientDescription": "来自服务提供方的控制台。机密存储在本部署的保险库中，永远不会读回。",
+      "instanceDescription": "你在此服务提供方的主机名。存储前会与其模式核对。",
+      "tokenDescription": "存储在本部署的保险库中，永远不会读回。",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret"
+    },
+    "cancel": "取消",
+    "save": "保存",
+    "grant": {
+      "title": "授予工具",
+      "description": "每次授予都是审计记录中独立的一条，被授予的写入操作在每次调用时仍会对照边界检查。",
+      "to": "授予给",
+      "reads": "只读",
+      "selectAll": "全选",
+      "changesThings": "更改事物",
+      "sentence": "将{{tools}}{{writes}}授予 {{names}}。",
+      "toolCount_one": "{{count}} 个工具",
+      "toolCount_other": "{{count}} 个工具",
+      "writesClause_one": "（其中 {{count}} 个会更改事物）",
+      "writesClause_other": "（其中 {{count}} 个会更改事物）",
+      "progress": "正在授予 {{current}}/{{total}}…",
+      "grant": "授予"
+    },
+    "grants": {
+      "noBots": "没有 Bot",
+      "oneBot": "1 个 Bot",
+      "allBots": "所有 Bot",
+      "ofBots": "{{total}} 个 Bot 中的 {{held}} 个"
+    },
+    "held": {
+      "noTools": "没有工具",
+      "oneTool": "1 个工具",
+      "everyTool": "每个工具",
+      "ofTools": "{{total}} 个工具中的 {{held}} 个"
+    }
+  },
+  "botGrants": {
+    "botTitle": "Bot",
+    "notEnabled": {
+      "description": "本部署尚未启用该名称的应用。",
+      "empty": "这里没有可授予的内容。"
+    },
+    "notABot": {
+      "title": "不是 Bot",
+      "description": "本部署没有该名称的 Bot，因此没有人可以被授予这些操作。",
+      "empty": "它可能在此页面打开后已被删除。"
+    },
+    "description": "{{bot}} 可以调用 {{app}} 的哪些操作。每次调用发生时都会再次裁决，因此关掉一个会在下一次调用时生效。",
+    "title": "{{bot}} 与 {{app}}",
+    "noActions": "{{app}} 未列出任何操作。刷新其工具以再次询问。",
+    "searchAria": "搜索 {{app}} 操作",
+    "searchPlaceholder": "按操作名称搜索",
+    "wouldHold_one": "此后此 Bot 将持有此应用的 {{count}} 个工具。",
+    "wouldHold_other": "此后此 Bot 将持有此应用的 {{count}} 个工具。",
+    "granting": "正在授予 {{current}}/{{total}}…",
+    "turnOnReads": "开启所有只读操作",
+    "reads": {
+      "title": "只读",
+      "description": "这些操作只读取。针对写入的边界不适用于它们。",
+      "noMatches": "没有匹配“{{query}}”的只读操作。",
+      "offersNothing": "{{app}} 没有提供任何只读操作。"
+    },
+    "writes": {
+      "title": "更改事物",
+      "description": "这些操作会在服务提供方更改内容。针对写入的边界适用于它们，且每次调用在匹配时都会被拒绝。",
+      "noMatches": "没有匹配“{{query}}”的更改事物的操作。",
+      "offersNothing": "{{app}} 没有提供任何会更改内容的操作。"
+    },
+    "noDescription": "此操作没有附带描述。",
+    "destroysThings": "销毁事物",
+    "letCallAria": "允许 {{bot}} 调用 {{tool}}",
+    "sharedDialogTitle": "允许 {{bot}} 使用共享的 {{app}} 账户？",
+    "cancel": "取消",
+    "grantingShort": "授予中…",
+    "letItIn": "允许使用"
+  },
+  "toolGrants": {
+    "toolTitle": "工具",
+    "pluginFallback": "插件",
+    "noDescription": "此工具没有附带描述。",
+    "noTool": {
+      "description": "此连接器没有宣传该名称的工具。",
+      "withdrawn": "它可能在上次刷新工具列表后已被撤回。",
+      "notEnabled": "本部署尚未启用该连接器。"
+    },
+    "whatItDoes": {
+      "title": "它做什么",
+      "write": "此工具会在服务提供方更改内容。针对写入的边界适用于它，匹配时会被拒绝。",
+      "read": "此工具只读取。针对写入的边界不适用于它。"
+    },
+    "effect": {
+      "title": "效果",
+      "description": "由连接器决定，而不是由工具名称决定。任何无法识别的都视为写入。"
+    },
+    "bots": {
+      "title": "Bots",
+      "description": "Bot 只有在其开关开启时才能调用此工具。关掉一个会在下一次调用时生效，中间不缓存任何内容。",
+      "empty": "本部署还没有 Bot，因此没有人可以被授予此工具。"
+    },
+    "hiddenPrefix": "已在你的名册中隐藏。",
+    "mayCall": "可以调用此工具。每次调用仍会对照边界检查并写入审计记录。",
+    "noCredential": "已授予，但此 Bot 没有用于回调工具的凭据，因此每次调用在到达边界之前就会被拒绝。请在其自己的页面上签发一个，或为部署设置 AGENT_TOOL_TOKEN。",
+    "cannotCall": "无法调用此工具。它根本不会提供给模型，因此没有什么可拒绝的。",
+    "letCallAria": "允许 {{bot}} 调用 {{tool}}"
+  },
+  "accountMode": {
+    "sharedWillDisconnect": "共享账户将被断开。",
+    "noSharedConnected": "未连接共享账户。",
+    "personalWillDisconnect_one": "{{count}} 个个人账户将被断开。",
+    "personalWillDisconnect_other": "{{count}} 个个人账户将被断开。",
+    "makeShared": "将 {{title}} 改为共享",
+    "makePersonal": "将 {{title}} 改为个人",
+    "shareTitle": "共享一个 {{title}} 账户？",
+    "ownTitle": "让每个人都拥有自己的 {{title}} 账户？",
+    "checking": "正在检查这会更改什么…",
+    "everyoneActsAsOne": "所有能使用被授予此应用的 Bot 的人都将以此账户身份操作。",
+    "cancel": "取消"
+  },
+  "brokered": {
+    "noConsentPage": "此应用是使用你持有的密钥连接的，而不是通过授权页面，因此没有页面可去，也没有连接任何内容。请重新加载此页面并再次按“连接”。",
+    "keyMissing": "请在此部署上设置 COMPOSIO_API_KEY。没有它就无法连接代理，因此此账户既无法从这里连接也无法从这里终止。应用保持启用，其工具上的所有授权仍然有效。",
+    "needsNoAccount": "{{title}}无需账户。被授予这些工具的 Bot 可以直接使用它。",
+    "lastCheckedOn": "已使用你提供的密钥连接，上次检查于 {{date}}。",
+    "checkUnclean": "曾用你的密钥对 {{title}} 进行过一次检查且未正常返回——可能是密钥的问题，也可能是 {{title}} 本身的问题。账户仍保留在 Composio，请按“重新检查”再试一次，或在此断开并用新密钥重新连接。",
+    "acceptedUnchecked": "已使用你提供的密钥连接。它被接受时没有对照 {{title}} 检查，因为当时该应用没有发布任何可以安全尝试密钥的操作——这是应用的问题，不是你的密钥的问题。",
+    "acceptedUncheckedBrief": "已使用你提供的密钥连接。它被接受时没有对照 {{title}} 检查。",
+    "removedKeyLive": "已从 Composio 移除。你的密钥在 {{title}} 仍然有效——如果你想终止其访问，请在那里轮换它。",
+    "keyHeld": "此应用使用你已持有的密钥连接，而不是前往 {{title}} 的授权页面。按“连接”会要求输入该密钥。",
+    "consentConnected": "已通过 {{title}} 的授权页面连接。",
+    "yourAccount": "你的账户",
+    "keyMissingBadge": "缺少密钥",
+    "connected": "已连接",
+    "checking": "检查中…",
+    "recheck": "重新检查",
+    "disconnect": "断开连接",
+    "connect": "连接",
+    "connecting": "连接中…",
+    "connectYourAccount": "连接你的账户",
+    "askingApp": "正在询问应用需要什么…",
+    "couldNotAsk": "无法询问该应用需要什么。请关闭此窗口并重试。"
+  },
+  "sharedNotice": {
+    "savingApproves": "保存还会为能访问此 Bot 的所有人批准共享的 {{title}} 账户。",
+    "waiting": "等待管理员处理：共享的 {{title}}",
+    "refused": "在管理员批准谁能访问此 Bot 之前，此 Bot 的 {{title}} 调用都会被拒绝。",
+    "requestAria": "请求批准 {{title}}",
+    "requestApproval": "请求批准"
+  },
+  "sharedApproval": {
+    "sectionWrite": "能使用此 Bot 的每个人都可以以共享账户身份执行此操作。",
+    "sectionRead": "能使用此 Bot 的每个人都可以读取此账户能读取的内容。",
+    "onlyOwner": "仅其所有者",
+    "named": "指定人员：{{description}}",
+    "everyone": "所有人",
+    "whoMayUse": "谁可以通过此 Bot 使用共享账户",
+    "outsideInput": "外部输入（邮件、Slack、webhook）可以使用它"
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "title": "Approvals",
+  "description": "Choose what your Bots may do, and review actions waiting for you.",
+  "hostPolicy": {
+    "ask": "Ask every time",
+    "alwaysAllow": "Always allow",
+    "never": "Never"
+  },
+  "behaviour": {
+    "allow": "Take action without asking",
+    "preApproved": "Take action if pre-approved",
+    "ask": "Ask before taking action",
+    "handOff": "Hand off to you"
+  },
+  "askBeforeChanges": {
+    "title": "Ask before making changes",
+    "description": "Review a Bot's changes to websites, connected apps, and files."
+  },
+  "autoReview": {
+    "title": "Auto-review",
+    "requiredByTeam": "Required by your team. ",
+    "description": "Before an action that could affect your accounts or share information, a model checks it against what you asked for, your rules and the safety requirements. If it cannot decide, it asks you."
+  },
+  "hostCommands": {
+    "title": "Commands on your computer",
+    "teamLimit": "Your team limits this to \"{{policy}}\". ",
+    "description": "The OpenBot desktop app still shows each command before it runs on your computer."
+  },
+  "waitingForYou": "Waiting for you",
+  "questionAsks": "{{bot}} asks: ",
+  "yourAnswer": "Your answer",
+  "sendAnswer": "Send answer",
+  "loading": "Loading approvals…",
+  "nothingPending": "No actions need your approval.",
+  "wantsTo": "{{bot}} wants to ",
+  "handedToYou": "Handed to you: ",
+  "decision": {
+    "handled": "I did it myself",
+    "dontDoIt": "Don't do it",
+    "allowOnce": "Allow once",
+    "alwaysAllowHere": "Always allow here",
+    "deny": "Deny"
+  },
+  "inline": {
+    "waitingAria": "Waiting for your approval",
+    "needsYou": "This needs you",
+    "waiting": "Waiting for your approval",
+    "onScope": "on {{scope}}"
+  },
+  "rules": {
+    "title": "Rules",
+    "description": "The strictest matching rule wins, so an \"ask\" rule beats an \"allow\" one. Team rules are locked. Changing a password, security settings and payments are always handed to you.",
+    "offNote": " Your team has switched personal rules off, so they are kept but do not apply.",
+    "none": "No rules saved.",
+    "add": "Add a rule"
+  },
+  "teamRuleSuffix": " (team rule)",
+  "behaviourFor": "Behaviour for {{tool}}",
+  "ruleEffectSuffix": ", {{effect}}",
+  "ruleScopeSuffix": " on {{scope}}",
+  "ruleBotSuffix": " for {{bot}}",
+  "locked": "Locked",
+  "remove": "Remove",
+  "form": {
+    "toolOrApp": "Tool or app",
+    "kindOfAction": "Kind of action",
+    "target": "Target",
+    "targetHint": "*, a site, a folder, a Bot name",
+    "bot": "Bot",
+    "botHint": "* for every Bot",
+    "behaviour": "Behaviour",
+    "saveRule": "Save rule"
+  },
+  "teamSettings": {
+    "title": "Team settings",
+    "enforceAutoReview": "Require auto-review for everyone",
+    "customRules": "Let members set personal rules",
+    "hostCommandsCap": {
+      "title": "Commands on members' computers, at most",
+      "description": "A member's own stricter setting still applies."
+    },
+    "addTeamRule": "Add a team rule"
+  },
+  "sharedUse": {
+    "title": "Shared account requests",
+    "why": {
+      "refusedCall": "A call was refused because this Bot reaches more people than approved.",
+      "publish": "Its owner widened who can reach it.",
+      "trigger": "Its owner added a trigger that lets outside input steer it.",
+      "grant": "It was granted the app's actions."
+    },
+    "wantsAccount": "{{bot}} wants the shared {{account}} account",
+    "nowLabel": "Now:",
+    "notApproved": "Not approved",
+    "askedLabel": "Asked:",
+    "approve": "Approve",
+    "decline": "Decline"
+  }
+}

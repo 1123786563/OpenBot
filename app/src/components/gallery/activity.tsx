@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { callComponentFunction } from "@/lib/components/queries";
 import { useActiveBotId } from "@/lib/copilot/active-bot";
 import { useConversation } from "@/lib/copilot/conversation";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
 
@@ -57,6 +59,7 @@ export function ActivityReportCard({
   title,
   days,
 }: Partial<ActivityArgs>) {
+  const { t } = useTranslation("channels");
   const botId = useActiveBotId();
   const conversation = useConversation();
   const [state, setState] = useState<State>({ status: "reading" });
@@ -81,7 +84,9 @@ export function ActivityReportCard({
           : {
               status: "refused",
               reason:
-                result.reason ?? result.error ?? "That data could not be read.",
+                result.reason ??
+                result.error ??
+                t("gallery.activity.couldNotRead"),
             },
       );
     });
@@ -89,12 +94,14 @@ export function ActivityReportCard({
     return () => {
       current = false;
     };
-  }, [functionName, days, botId]);
+  }, [functionName, days, botId, t]);
 
   if (!report) {
     return (
-      <GalleryFrame title="Report">
-        <p className="text-sm text-muted-foreground">Choosing a report…</p>
+      <GalleryFrame title={title ?? t("gallery.activity.reportTitle")}>
+        <p className="text-sm text-muted-foreground">
+          {t("gallery.activity.choosingReport")}
+        </p>
       </GalleryFrame>
     );
   }
@@ -102,18 +109,22 @@ export function ActivityReportCard({
   if (state.status === "reading") {
     return (
       <GalleryFrame
-        caption="Reading from this deployment"
-        title={title ?? "Report"}
+        caption={t("gallery.activity.readingCaption")}
+        title={title ?? t("gallery.activity.reportTitle")}
       >
-        <p className="text-sm text-muted-foreground">Reading…</p>
+        <p className="text-sm text-muted-foreground">
+          {t("gallery.activity.reading")}
+        </p>
       </GalleryFrame>
     );
   }
 
   if (state.status === "refused") {
     return (
-      <GalleryFrame title={title ?? "Report"}>
-        <p className="text-sm text-destructive">Not shown</p>
+      <GalleryFrame title={title ?? t("gallery.activity.reportTitle")}>
+        <p className="text-sm text-destructive">
+          {t("gallery.activity.notShown")}
+        </p>
         <p className="mt-1 text-sm text-foreground/80">{state.reason}</p>
       </GalleryFrame>
     );
@@ -143,12 +154,13 @@ function ActivityChart({
   title?: string;
   ask?: (text: string) => void;
 }) {
+  const { t } = useTranslation("channels");
   const rows = data?.rows ?? [];
   if (rows.length === 0) {
     return (
-      <GalleryFrame title={title ?? "Bot activity"}>
+      <GalleryFrame title={title ?? t("gallery.activity.botActivity")}>
         <p className="text-sm text-muted-foreground">
-          No Bot has done anything in the last {data?.days ?? 7} days.
+          {t("gallery.activity.nothingDone", { days: data?.days ?? 7 })}
         </p>
       </GalleryFrame>
     );
@@ -163,19 +175,17 @@ function ActivityChart({
         ask && busiest ? (
           <Button
             onClick={() =>
-              ask(
-                `What has ${busiest.bot} actually been doing? Look at the audit trail and summarise it.`,
-              )
+              ask(t("gallery.activity.askBusiest", { bot: busiest.bot }))
             }
             size="sm"
             variant="outline"
           >
-            Ask about the busiest
+            {t("gallery.activity.askAboutBusiest")}
           </Button>
         ) : undefined
       }
-      caption={`Counted from this deployment's audit trail, last ${data.days} days`}
-      title={title ?? "Bot activity"}
+      caption={t("gallery.activity.countedFrom", { days: data.days })}
+      title={title ?? t("gallery.activity.botActivity")}
     >
       <ul className="flex flex-col gap-2">
         {rows.map((row, index) => (
@@ -212,12 +222,14 @@ function RefusalList({
   title?: string;
   ask?: (text: string) => void;
 }) {
+  const { t } = useTranslation("channels");
+  const { formatDateTime } = useDateTime();
   const rows = data?.rows ?? [];
   if (rows.length === 0) {
     return (
-      <GalleryFrame title={title ?? "Recent refusals"}>
+      <GalleryFrame title={title ?? t("gallery.activity.recentRefusals")}>
         <p className="text-sm text-muted-foreground">
-          This deployment has refused nothing.
+          {t("gallery.activity.refusedNothing")}
         </p>
       </GalleryFrame>
     );
@@ -228,20 +240,16 @@ function RefusalList({
       action={
         ask ? (
           <Button
-            onClick={() =>
-              ask(
-                "Explain the most recent refusal in that list, and what would have to change for it to be allowed.",
-              )
-            }
+            onClick={() => ask(t("gallery.activity.askExplainLatest"))}
             size="sm"
             variant="outline"
           >
-            Explain the latest
+            {t("gallery.activity.explainLatest")}
           </Button>
         ) : undefined
       }
-      caption="Read from this deployment's audit trail"
-      title={title ?? "Recent refusals"}
+      caption={t("gallery.activity.readFromAudit")}
+      title={title ?? t("gallery.activity.recentRefusals")}
     >
       <ul className="flex flex-col gap-2">
         {rows.map((row) => (
@@ -252,7 +260,7 @@ function RefusalList({
                 <span className="text-xs text-muted-foreground">{row.bot}</span>
               ) : null}
               <span className="ml-auto text-xs text-muted-foreground">
-                {new Date(row.at).toLocaleString()}
+                {formatDateTime(row.at)}
               </span>
             </div>
             {row.reason ? (

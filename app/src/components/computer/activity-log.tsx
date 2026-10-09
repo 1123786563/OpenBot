@@ -12,12 +12,14 @@
  */
 import { IconFile, IconFolder, IconTerminal2 } from "@tabler/icons-react";
 import { useSyncExternalStore } from "react";
+import { useTranslation } from "react-i18next";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   activityFor,
   type ComputerActivity,
   subscribeToActivity,
 } from "@/lib/computers/activity";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { CommandOutput } from "./command-output";
 
 const ICONS = {
@@ -29,21 +31,15 @@ const ICONS = {
 
 /** What the line says was done. The subject beside it says what it was done to. */
 const LABELS = {
-  command: "Ran",
-  read_file: "Read",
-  write_file: "Saved",
-  list_files: "Listed",
+  command: "activity.ran",
+  read_file: "activity.read",
+  write_file: "activity.saved",
+  list_files: "activity.listed",
 } as const;
 
-function timeOf(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
 function Entry({ entry }: { entry: ComputerActivity }) {
+  const { t } = useTranslation("computer");
+  const { formatTime } = useDateTime();
   const Icon = ICONS[entry.kind];
   const failed =
     entry.refused === true ||
@@ -59,7 +55,7 @@ function Entry({ entry }: { entry: ComputerActivity }) {
           }`}
         />
         <span className="shrink-0 text-muted-foreground text-xs">
-          {LABELS[entry.kind]}
+          {t(LABELS[entry.kind])}
         </span>
         {/*
           The command wraps rather than truncating. In the transcript one line per call is what keeps
@@ -70,13 +66,17 @@ function Entry({ entry }: { entry: ComputerActivity }) {
           {entry.subject}
         </code>
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground tabular-nums">
-          {timeOf(entry.at)}
+          {formatTime(entry.at, {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })}
         </span>
       </div>
 
       {entry.refused === true ? (
         <p className="mt-1 pl-5 text-destructive text-xs">
-          {entry.output || "A boundary refused it."}
+          {entry.output || t("activity.refused")}
         </p>
       ) : (
         <div className="mt-1 max-h-64 overflow-auto pl-5">
@@ -95,6 +95,7 @@ function Entry({ entry }: { entry: ComputerActivity }) {
 }
 
 export function ActivityLog({ computerId }: { computerId: string }) {
+  const { t } = useTranslation("computer");
   const entries = useSyncExternalStore(
     subscribeToActivity,
     () => activityFor(computerId),
@@ -106,8 +107,7 @@ export function ActivityLog({ computerId }: { computerId: string }) {
       <Empty className="h-[180px] border border-dashed">
         <EmptyHeader>
           <EmptyTitle className="text-muted-foreground">
-            Nothing yet. Commands the Bot runs, and files it reads, appear here
-            as they happen.
+            {t("activity.empty")}
           </EmptyTitle>
         </EmptyHeader>
       </Empty>

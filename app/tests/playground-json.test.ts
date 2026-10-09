@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import i18n from "../src/lib/i18n";
 import {
   parseJsonObject,
   validatePlaygroundDraft,
 } from "../src/routes/_authed/admin/playground";
+
+// The suite's preload initializes i18n with English, so a fixed-t bound here renders the exact
+// sentences these assertions were written against.
+const t = i18n.getFixedT(null, "admin");
 
 const draft = {
   slug: "s8_visual_check",
@@ -17,7 +22,10 @@ const draft = {
 
 describe("playground JSON editors", () => {
   test("reject malformed JSON instead of producing an empty object payload", () => {
-    const result = validatePlaygroundDraft({ ...draft, sampleArguments: "{" });
+    const result = validatePlaygroundDraft(
+      { ...draft, sampleArguments: "{" },
+      t,
+    );
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -30,7 +38,7 @@ describe("playground JSON editors", () => {
   test.each(["[]", "null", '"text"'])(
     "rejects %p because the editors must contain objects",
     (raw) => {
-      const result = parseJsonObject(raw, "Sample arguments");
+      const result = parseJsonObject(raw, "Sample arguments", t);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -40,7 +48,7 @@ describe("playground JSON editors", () => {
   );
 
   test("preserves typed object JSON in the save payload", () => {
-    const result = validatePlaygroundDraft(draft);
+    const result = validatePlaygroundDraft(draft, t);
 
     expect(result.ok).toBe(true);
     if (result.ok) {

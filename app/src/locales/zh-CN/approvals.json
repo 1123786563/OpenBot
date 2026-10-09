@@ -1,0 +1,99 @@
+{
+  "title": "审批",
+  "description": "决定你的 Bots 可以做什么，并查看等待你处理的操作。",
+  "hostPolicy": {
+    "ask": "每次询问",
+    "alwaysAllow": "始终允许",
+    "never": "从不"
+  },
+  "behaviour": {
+    "allow": "不询问直接执行",
+    "preApproved": "预先批准时直接执行",
+    "ask": "执行前先询问",
+    "handOff": "转交给你"
+  },
+  "askBeforeChanges": {
+    "title": "做出更改前先询问",
+    "description": "审阅 Bot 对网站、已连接应用和文件所做的更改。"
+  },
+  "autoReview": {
+    "title": "自动审阅",
+    "requiredByTeam": "你的团队强制要求。",
+    "description": "在执行可能影响你的账户或共享信息的操作之前，模型会根据你的要求、你的规则和安全要求对其进行检查。如果无法做出判断，它会询问你。"
+  },
+  "hostCommands": {
+    "title": "在你电脑上执行的命令",
+    "teamLimit": "你的团队将此限制为“{{policy}}”。",
+    "description": "OpenBot 桌面应用仍会在命令于你的电脑上运行之前逐一显示。"
+  },
+  "waitingForYou": "等待你处理",
+  "questionAsks": "{{bot}} 问：",
+  "yourAnswer": "你的回答",
+  "sendAnswer": "发送回答",
+  "loading": "正在加载审批…",
+  "nothingPending": "没有需要你批准的操作。",
+  "wantsTo": "{{bot}} 想要",
+  "handedToYou": "已转交给你：",
+  "decision": {
+    "handled": "我自己做了",
+    "dontDoIt": "不要执行",
+    "allowOnce": "允许一次",
+    "alwaysAllowHere": "在此处始终允许",
+    "deny": "拒绝"
+  },
+  "inline": {
+    "waitingAria": "等待你的批准",
+    "needsYou": "这需要你处理",
+    "waiting": "等待你的批准",
+    "onScope": "作用于 {{scope}}"
+  },
+  "rules": {
+    "title": "规则",
+    "description": "最严格的匹配规则优先，因此“询问”规则会压过“允许”规则。团队规则处于锁定状态。更改密码、安全设置和付款始终会转交给你。",
+    "offNote": "你的团队已关闭个人规则，因此它们会被保留但不会生效。",
+    "none": "没有保存的规则。",
+    "add": "添加规则"
+  },
+  "teamRuleSuffix": "（团队规则）",
+  "behaviourFor": "{{tool}} 的行为",
+  "ruleEffectSuffix": "，{{effect}}",
+  "ruleScopeSuffix": "，作用于 {{scope}}",
+  "ruleBotSuffix": "，用于 {{bot}}",
+  "locked": "已锁定",
+  "remove": "移除",
+  "form": {
+    "toolOrApp": "工具或应用",
+    "kindOfAction": "操作类型",
+    "target": "目标",
+    "targetHint": "*、某个网站、某个文件夹、某个 Bot 名称",
+    "bot": "Bot",
+    "botHint": "* 表示所有 Bot",
+    "behaviour": "行为",
+    "saveRule": "保存规则"
+  },
+  "teamSettings": {
+    "title": "团队设置",
+    "enforceAutoReview": "要求所有人使用自动审阅",
+    "customRules": "允许成员设置个人规则",
+    "hostCommandsCap": {
+      "title": "成员电脑上命令的上限",
+      "description": "成员自己更严格的设置仍然生效。"
+    },
+    "addTeamRule": "添加团队规则"
+  },
+  "sharedUse": {
+    "title": "共享账户请求",
+    "why": {
+      "refusedCall": "一次调用被拒绝，因为此 Bot 触达的人数超出了批准范围。",
+      "publish": "其所有者扩大了可以触达它的人员范围。",
+      "trigger": "其所有者添加了允许外部输入操纵它的触发器。",
+      "grant": "它被授予了该应用的操作权限。"
+    },
+    "wantsAccount": "{{bot}} 想要使用共享的 {{account}} 账户",
+    "nowLabel": "当前：",
+    "notApproved": "未批准",
+    "askedLabel": "请求：",
+    "approve": "批准",
+    "decline": "拒绝"
+  }
+}

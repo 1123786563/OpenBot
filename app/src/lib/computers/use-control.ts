@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import i18n from "@/lib/i18n";
 import {
   cancelControl,
   type ControlState,
@@ -45,14 +46,15 @@ function createControlStore(computerId: string): ControlStore {
     ).catch(() => null);
     if (reading === abort) reading = undefined;
     if (abort.signal.aborted || mine !== version || snapshot.busy) return;
+    const reconnecting = i18n.t("computer:control.reconnecting");
     publish({
       ...snapshot,
       control,
       problem: control
-        ? snapshot.problem?.startsWith("Reconnecting:")
+        ? snapshot.problem === reconnecting
           ? null
           : snapshot.problem
-        : "Reconnecting: browser ownership could not be checked. Input is paused.",
+        : reconnecting,
     });
   };
   // Keep the same store through Strict Mode resubscriptions and pending mutations.
@@ -68,8 +70,7 @@ function createControlStore(computerId: string): ControlStore {
     if (action !== "take" && !requestId) {
       publish({
         ...snapshot,
-        problem:
-          "The handoff request could not be identified. Retry the connection.",
+        problem: i18n.t("computer:control.handoffUnidentified"),
       });
       return false;
     }
@@ -91,16 +92,14 @@ function createControlStore(computerId: string): ControlStore {
       publish({
         control: next ?? control,
         busy: false,
-        problem: next
-          ? null
-          : "Control could not be changed. Check the connection and retry.",
+        problem: next ? null : i18n.t("computer:control.couldNotChange"),
       });
       return next !== null;
     } catch {
       publish({
         ...snapshot,
         busy: false,
-        problem: "The computer could not be reached. Retry when it reconnects.",
+        problem: i18n.t("computer:control.couldNotReach"),
       });
       return false;
     } finally {

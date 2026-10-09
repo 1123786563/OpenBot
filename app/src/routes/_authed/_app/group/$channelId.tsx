@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { GroupChat } from "@/components/channels/group-chat";
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/_authed/_app/group/$channelId")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("channels");
   const { channelId } = Route.useParams();
   const channel = useQuery(channelQueryOptions(channelId));
   return (
@@ -23,7 +25,7 @@ function RouteComponent() {
           size={22}
         />
         <span className="min-w-0 truncate text-sm tracking-tight">
-          {channel.data?.name ?? "Group"}
+          {channel.data?.name ?? t("groupDetail.groupFallback")}
         </span>
       </div>
       {(channel.data?.agentIds ?? []).map((agentId) => (

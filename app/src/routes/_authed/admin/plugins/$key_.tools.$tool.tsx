@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -38,6 +39,7 @@ export const Route = createFileRoute(
 )({ component: RouteComponent });
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   const { key, tool: toolName } = useParams({
     from: "/_authed/admin/plugins/$key_/tools/$tool",
   });
@@ -71,7 +73,7 @@ function RouteComponent() {
   const tool = server?.tools.find((row) => row.name === toolName);
 
   const back = {
-    label: server?.title ?? "Plugin",
+    label: server?.title ?? t("toolGrants.pluginFallback"),
     linkProps: {
       params: { key },
       to: "/admin/plugins/$key" as const,
@@ -80,7 +82,7 @@ function RouteComponent() {
 
   /* Nothing rather than a placeholder, so no sentence asserts anything while the fetch is open. */
   if (plugins.isPending) {
-    return <PageShell title="Tool">{null}</PageShell>;
+    return <PageShell title={t("toolGrants.toolTitle")}>{null}</PageShell>;
   }
 
   /*
@@ -93,7 +95,7 @@ function RouteComponent() {
     return (
       <PageShell backButton={back} title={toolName}>
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Plugins could not be loaded.
+          {t("plugins.loadError")}
         </p>
       </PageShell>
     );
@@ -103,7 +105,7 @@ function RouteComponent() {
     return (
       <PageShell
         backButton={back}
-        description="This connector does not advertise a tool by that name."
+        description={t("toolGrants.noTool.description")}
         title={toolName}
       >
         {/*
@@ -112,8 +114,8 @@ function RouteComponent() {
          */}
         <PageEmpty>
           {server
-            ? "It may have been withdrawn since the tool list was last refreshed."
-            : "This deployment has not enabled that connector."}
+            ? t("toolGrants.noTool.withdrawn")
+            : t("toolGrants.noTool.notEnabled")}
         </PageEmpty>
       </PageShell>
     );
@@ -137,7 +139,7 @@ function RouteComponent() {
   return (
     <PageShell
       backButton={back}
-      description={tool.description || "This tool came with no description."}
+      description={tool.description || t("toolGrants.noDescription")}
       title={toolName}
     >
       {error ? (
@@ -149,10 +151,10 @@ function RouteComponent() {
       <PageSection
         description={
           tool.effect === "write"
-            ? "This tool changes something at the vendor. A boundary written about writes applies to it, and it is refused when one matches."
-            : "This tool only reads. A boundary written about writes does not apply to it."
+            ? t("toolGrants.whatItDoes.write")
+            : t("toolGrants.whatItDoes.read")
         }
-        title="What it does"
+        title={t("toolGrants.whatItDoes.title")}
       >
         <PageRows>
           {/*
@@ -162,10 +164,9 @@ function RouteComponent() {
            */}
           <Item size="sm">
             <ItemContent>
-              <ItemTitle>Effect</ItemTitle>
+              <ItemTitle>{t("toolGrants.effect.title")}</ItemTitle>
               <ItemDescription>
-                Decided by the connector, not by the tool's name. Anything
-                unrecognised counts as a write.
+                {t("toolGrants.effect.description")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -176,7 +177,9 @@ function RouteComponent() {
                     : "text-muted-foreground text-xs"
                 }
               >
-                {tool.effect === "write" ? "changes things" : "reads"}
+                {tool.effect === "write"
+                  ? t("pluginDetail.tools.changesThings")
+                  : t("pluginDetail.tools.reads")}
               </span>
             </ItemActions>
           </Item>
@@ -184,14 +187,11 @@ function RouteComponent() {
       </PageSection>
 
       <PageSection
-        description="A Bot may call this tool only while its switch is on. Turning one off takes effect on the next call, with nothing cached in between."
-        title="Bots"
+        description={t("toolGrants.bots.description")}
+        title={t("toolGrants.bots.title")}
       >
         {bots.length === 0 ? (
-          <PageEmpty>
-            This deployment has no Bots yet, so there is nobody to grant this
-            to.
-          </PageEmpty>
+          <PageEmpty>{t("toolGrants.bots.empty")}</PageEmpty>
         ) : (
           <PageRows>
             {bots.map((bot, index) => {
@@ -202,12 +202,12 @@ function RouteComponent() {
                     <ItemContent>
                       <ItemTitle>{bot.name}</ItemTitle>
                       <ItemDescription>
-                        {bot.hidden ? "Hidden from your roster. " : ""}
+                        {bot.hidden ? t("toolGrants.hiddenPrefix") : ""}
                         {held
                           ? canCallBack(bot)
-                            ? "May call this tool. Every call is still checked against the boundaries and written to the audit trail."
-                            : "Granted, but this Bot has no credential for calling tools back, so every call is refused before it reaches the boundary. Issue one on its own page, or set AGENT_TOOL_TOKEN for the deployment."
-                          : "Cannot call this tool. It is not offered to the model at all, so it has nothing to refuse."}
+                            ? t("toolGrants.mayCall")
+                            : t("toolGrants.noCredential")
+                          : t("toolGrants.cannotCall")}
                       </ItemDescription>
                     </ItemContent>
                     <ItemActions>
@@ -217,7 +217,10 @@ function RouteComponent() {
                        * flight, so switching one Bot does not freeze the rest of the list.
                        */}
                       <Switch
-                        aria-label={`Let ${bot.name} call ${toolName}`}
+                        aria-label={t("toolGrants.letCallAria", {
+                          bot: bot.name,
+                          tool: toolName,
+                        })}
                         checked={held}
                         disabled={
                           setGrant.isPending &&

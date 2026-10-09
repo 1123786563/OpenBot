@@ -1,0 +1,82 @@
+{
+  "selfHostBanner": {
+    "ariaLabel": "Self-host OpenBot",
+    "text": "Self-host OpenBot for your organization.",
+    "cta": "Talk to an engineer",
+    "dismiss": "Dismiss"
+  },
+  "signIn": {
+    "title": "Sign in to {{product}}",
+    "ssoRequired": "Your organization requires single sign-on.",
+    "noProvider": "No sign-in provider is configured for this deployment.",
+    "opening": "Opening…",
+    "openingProvider": "Opening {{provider}}…",
+    "continueWith": "Continue with {{provider}}",
+    "or": "or",
+    "emailPlaceholder": "you@company.com",
+    "continueCompany": "Continue with your company account",
+    "adminSignIn": "Administrator sign-in",
+    "noProviderForAddress": "No identity provider is registered for that address.",
+    "couldNotStart": "Could not start {{provider}} sign-in."
+  },
+  "signInPage": {
+    "title": "Sign in",
+    "titleWithOrigin": "Sign in to {{origin}}",
+    "description": "Your Bot needs to be signed in to continue. What you enter here goes to its browser, not to the conversation."
+  },
+  "signInForm": {
+    "signedIn": "Signed in",
+    "closed": "Closed",
+    "noLongerOpen": "This sign-in request is no longer open.",
+    "takeOverTitle": "Sign in by hand",
+    "takeOverDescription": "Take the Bot's browser, sign in, and hand it back. Then say you are done so the Bot carries on.",
+    "openBrowser": "Open the Bot's browser",
+    "finishing": "Finishing…",
+    "iHaveSignedIn": "I've signed in",
+    "cancel": "Cancel",
+    "useSavedTitle": "Use a saved login",
+    "useSavedDescription": "Choosing one confirms it may be used for this sign-in to {{origin}}.",
+    "confirmAndSignIn": "Confirm and sign in",
+    "enterTitle": "Enter your login",
+    "enterDescription": "Typed straight into the Bot's browser. The Bot is only told whether it worked.",
+    "username": "Username or email",
+    "password": "Password",
+    "code": "Verification code, if the site asks for one",
+    "saveToPasswords": "Save to Passwords",
+    "signingIn": "Signing in…",
+    "signIn": "Sign in",
+    "takeOver": "Take over to sign in",
+    "decline": "Decline"
+  },
+  "onboarding": {
+    "welcome": "Welcome to {{product}}",
+    "composerPlaceholder": "Hand off tasks to your team of agents",
+    "computerTitle": "Each agent has its own computer",
+    "rosterTitle": "Choose from a variety of agents or create your own",
+    "example": {
+      "research": "Research Analyst",
+      "data": "Data Analyst",
+      "support": "Support Agent"
+    },
+    "exampleLabel": "Example",
+    "yourOwnAgent": "Your own agent",
+    "saving": "Saving…",
+    "getStarted": "Get started",
+    "continue": "Continue",
+    "back": "Back"
+  },
+  "detailPanel": {
+    "defaultTitle": "Details",
+    "close": "Close details"
+  },
+  "questionnaire": {
+    "previous": "Previous",
+    "skip": "Skip",
+    "next": "Next",
+    "submit": "Submit"
+  },
+  "messageScroller": {
+    "scrollToEnd": "Scroll to end",
+    "scrollToStart": "Scroll to start"
+  }
+}

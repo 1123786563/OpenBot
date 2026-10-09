@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { IconDeviceDesktop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useComputerControl } from "@/lib/computers/use-control";
@@ -11,6 +12,7 @@ export function ComputerControlButton({
   computerId: string;
   onTakeControl?: () => void;
 }) {
+  const { t } = useTranslation("computer");
   const { control, busy, problem, change } = useComputerControl(computerId);
   const human = control?.holder === "human";
   return (
@@ -26,11 +28,11 @@ export function ComputerControlButton({
           }
         }}
       >
-        {human ? "Hand back" : "Take control"}
+        {human ? t("controls.handBack") : t("controls.takeControl")}
       </Button>
       {control?.transitioning ? (
         <span className="text-xs text-muted-foreground" role="status">
-          Finishing the current action…
+          {t("controls.finishing")}
         </span>
       ) : null}
       {problem ? (
@@ -51,6 +53,7 @@ export function ComputerChatControls({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation("computer");
   const { control } = useComputerControl(computerId ?? "", Boolean(computerId));
   const needsYou = Boolean(
     control &&
@@ -74,18 +77,20 @@ export function ComputerChatControls({
       <Button
         size="sm"
         variant={open ? "secondary" : "ghost"}
-        aria-label={open ? "Close Computer" : "Open Computer"}
+        aria-label={
+          open ? t("controls.closeComputer") : t("controls.openComputer")
+        }
         aria-expanded={open}
         disabled={!computerId}
         onClick={() => onOpenChange(!open)}
       >
         <IconDeviceDesktop className="size-4" />
-        Computer
+        {t("controls.computer")}
         {needsYou ? (
           <span
             className="size-2 rounded-full bg-amber-500"
             role="img"
-            aria-label="Needs you"
+            aria-label={t("controls.needsYou")}
           />
         ) : null}
       </Button>

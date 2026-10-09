@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   type ApprovalDecision,
@@ -21,6 +22,7 @@ export function InlineApproval({
   toolCallId?: string;
   fallback: ReactNode;
 }) {
+  const { t } = useTranslation("approvals");
   const cache = useQueryClient();
   const inbox = useQuery(approvalInboxOptions());
   const decision = useMutation({
@@ -37,25 +39,25 @@ export function InlineApproval({
   const handOff = request.action.policy?.behaviour === "hand_off";
   const choices: [ApprovalDecision, string][] = handOff
     ? [
-        ["handled", "I did it myself"],
-        ["deny", "Don't do it"],
+        ["handled", t("decision.handled")],
+        ["deny", t("decision.dontDoIt")],
       ]
     : [
-        ["allow_once", "Allow once"],
-        ["allow_always", "Always allow here"],
-        ["deny", "Deny"],
+        ["allow_once", t("decision.allowOnce")],
+        ["allow_always", t("decision.alwaysAllowHere")],
+        ["deny", t("decision.deny")],
       ];
   return (
     <section
-      aria-label="Waiting for your approval"
+      aria-label={t("inline.waitingAria")}
       className="space-y-2 rounded-lg border p-3 text-sm"
     >
       <p className="font-medium">
-        {handOff ? "This needs you" : "Waiting for your approval"}:{" "}
+        {handOff ? t("inline.needsYou") : t("inline.waiting")}:{" "}
         {request.action.toolRef
           .replace(/^computer_|^host\//, "")
           .replaceAll("_", " ")}{" "}
-        on {request.action.scope}
+        {t("inline.onScope", { scope: request.action.scope })}
       </p>
       {request.action.policy ? (
         <p className="text-muted-foreground">{request.action.policy.reason}</p>

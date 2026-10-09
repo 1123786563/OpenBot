@@ -1,6 +1,7 @@
 import { IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { EASE_OUT } from "@/lib/motion";
@@ -46,6 +47,7 @@ export function DetailPanel({
   children: ReactNode;
 }) {
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
+  const { t } = useTranslation("common");
   const shouldReduceMotion = useReducedMotion();
   const container = useRef<HTMLDivElement>(null);
   const [overlay, setOverlay] = useState(true);
@@ -77,7 +79,7 @@ export function DetailPanel({
             style={{ width: `min(${detailWidth}px, 100vw)`, maxWidth: "100vw" }}
           >
             <SheetTitle className="h-12 shrink-0 px-4 pr-12 flex items-center">
-              {title ?? "Details"}
+              {title ?? t("detailPanel.defaultTitle")}
             </SheetTitle>
             <div className="flex-1 min-h-0 overflow-y-auto">
               {open ? detail : null}
@@ -106,7 +108,7 @@ export function DetailPanel({
               </div>
               <div className="flex flex-row gap-1.5">
                 <Button
-                  aria-label="Close details"
+                  aria-label={t("detailPanel.close")}
                   onClick={onClose}
                   variant="ghost"
                   size="icon"

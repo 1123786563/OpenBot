@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
   Empty,
@@ -36,6 +37,7 @@ import {
  * which is exactly the row kind a Switch means everywhere else in this app.
  */
 export function HandoffPanel({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("agents");
   const queryClient = useQueryClient();
   const handoff = useQuery(agentHandoffQueryOptions(agentId));
   const agents = useQuery(agentListQueryOptions());
@@ -68,33 +70,29 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
     <section className="grid gap-2">
       <header className="flex items-baseline justify-between gap-2">
         <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-          Bots it may ask
+          {t("handoff.title")}
         </h2>
         {/* The current answer at a glance, so the list below is detail rather than homework. */}
         {grantable && total > 0 ? (
           <span className="text-muted-foreground text-xs tabular-nums">
-            {granted} of {total}
+            {t("handoff.grantedOf", { granted, total })}
           </span>
         ) : null}
       </header>
 
-      <p className="text-muted-foreground text-sm">
-        Who this Bot may ask, not who may ask it. What the asked Bot says comes
-        back into the conversation that asked, relayed and attributed.
-      </p>
+      <p className="text-muted-foreground text-sm">{t("handoff.intro")}</p>
 
       {enabled ? null : (
         <Item variant="muted">
           <ItemContent>
-            <ItemTitle>Switched off for this deployment</ItemTitle>
+            <ItemTitle>{t("handoff.switchedOff")}</ItemTitle>
             {/*
              * Unclamped: `ItemDescription` clips to two lines, which is right for a roster row
              * whose description is a subtitle and wrong for an item that exists to explain. The
              * sentence that gets cut is the one saying what to do about it.
              */}
             <ItemDescription className="line-clamp-none">
-              These grants are kept but none takes effect until handing work
-              between Bots is switched back on.
+              {t("handoff.switchedOffDescription")}
             </ItemDescription>
           </ItemContent>
         </Item>
@@ -103,12 +101,10 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
       {grantable ? null : (
         <Item variant="muted">
           <ItemContent>
-            <ItemTitle>This coworker cannot hand work on</ItemTitle>
+            <ItemTitle>{t("handoff.cannotGrant")}</ItemTitle>
             {/* Unclamped for the same reason as above: three lines, and the third is the useful one. */}
             <ItemDescription className="line-clamp-none">
-              This deployment has nowhere to record which Bots it may hand work
-              to, so there is nothing to grant it. It can still be asked by Bots
-              that can.
+              {t("handoff.cannotGrantDescription")}
             </ItemDescription>
           </ItemContent>
         </Item>
@@ -124,11 +120,10 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
         <Empty className="h-[180px] border border-dashed">
           <EmptyHeader>
             <EmptyTitle className="text-muted-foreground">
-              No other Bot here yet
+              {t("handoff.noOthers")}
             </EmptyTitle>
             <EmptyDescription>
-              When this deployment has more Bots, this is where this one is
-              allowed to ask them.
+              {t("handoff.noOthersDescription")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -153,13 +148,15 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
                  */}
                 <ItemDescription>
                   {candidate.hidden
-                    ? `${candidate.title} · hidden from your roster`
+                    ? t("handoff.hiddenFromRoster", {
+                        title: candidate.title,
+                      })
                     : candidate.title}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <Switch
-                  aria-label={`Let this Bot ask ${candidate.name}`}
+                  aria-label={t("handoff.letAsk", { name: candidate.name })}
                   checked={reachable.includes(candidate.id)}
                   disabled={!canGrant || setGrant.isPending}
                   onCheckedChange={(next: boolean) =>
@@ -178,7 +175,7 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
 
       {canGrant ? null : (
         <p className="text-muted-foreground text-xs">
-          An administrator decides which Bots may be asked.
+          {t("handoff.adminDecides")}
         </p>
       )}
     </section>

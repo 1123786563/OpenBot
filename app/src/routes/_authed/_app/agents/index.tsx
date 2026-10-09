@@ -1,6 +1,7 @@
 import { IconChevronDown, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AgentCard } from "@/components/agents/agent-card";
 import { AgentDialog } from "@/components/agents/agent-dialog";
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/_authed/_app/agents/")({
 
 // Two equal columns let cards fill the available width at a consistent height.
 function AgentsScreen() {
+  const { t } = useTranslation("agents");
   const { new: isCreating, agent: selectedAgentId } = Route.useSearch();
   const navigate = Route.useNavigate();
   /*
@@ -74,7 +76,7 @@ function AgentsScreen() {
       <div className="max-w-2xl px-4 w-full mx-auto">
         {pinned?.length ? (
           <div className="mt-12 w-full max-w-2xl">
-            <h2 className="font-bold text-lg">Pinned</h2>
+            <h2 className="font-bold text-lg">{t("roster.pinned")}</h2>
             <div className="mt-4 grid grid-cols-2 gap-4">
               {pinned.map((agent, index) => (
                 <StaggerItem className="min-w-0" index={index} key={agent.id}>
@@ -88,7 +90,7 @@ function AgentsScreen() {
           className={`${pinned?.length ? "mt-8" : "mt-12"} w-full max-w-2xl`}
         >
           <div className="flex flex-row w-full items-center justify-between">
-            <h2 className="font-bold text-lg">Your agents</h2>
+            <h2 className="font-bold text-lg">{t("roster.yourAgents")}</h2>
             <Button
               variant="ghost"
               size="sm"
@@ -97,7 +99,7 @@ function AgentsScreen() {
               )}
             >
               <IconPlus />
-              New agent
+              {t("roster.newAgent")}
             </Button>
           </div>
           {loading ? (
@@ -122,7 +124,7 @@ function AgentsScreen() {
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
-                  Your agents are all pinned above.
+                  {t("roster.allPinned")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
@@ -139,7 +141,7 @@ function AgentsScreen() {
             <Empty className="mt-4 h-[180px] border border-dashed border-destructive">
               <EmptyHeader>
                 <EmptyTitle className="text-destructive">
-                  Your agents couldn't be loaded.
+                  {t("roster.loadError")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
@@ -150,14 +152,14 @@ function AgentsScreen() {
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
-                  You don't have any agents created.
+                  {t("roster.noneCreated")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
           )}
         </div>
         <div className="mt-8 w-full max-w-2xl">
-          <h2 className="font-bold text-lg">Explore agents</h2>
+          <h2 className="font-bold text-lg">{t("roster.explore")}</h2>
           {loading ? (
             // Approximate one row of cards while the roster loads.
             <Skeleton className="mt-4 h-[180px]" />
@@ -177,7 +179,7 @@ function AgentsScreen() {
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
-                  The agents shared with you are all pinned above.
+                  {t("roster.sharedAllPinned")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
@@ -194,7 +196,7 @@ function AgentsScreen() {
             <Empty className="mt-4 h-[180px] border border-dashed border-destructive">
               <EmptyHeader>
                 <EmptyTitle className="text-destructive">
-                  Agents shared with you couldn't be loaded.
+                  {t("roster.sharedLoadError")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
@@ -205,7 +207,7 @@ function AgentsScreen() {
             <Empty className="mt-4 h-[180px] border border-dashed">
               <EmptyHeader>
                 <EmptyTitle className="text-muted-foreground">
-                  Nobody has shared an agent with you yet.
+                  {t("roster.noneShared")}
                 </EmptyTitle>
               </EmptyHeader>
             </Empty>
@@ -214,7 +216,7 @@ function AgentsScreen() {
         {hiddenAgents?.length ? (
           <details className="group mt-8 mb-12 w-full max-w-2xl">
             <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
-              <h2 className="font-bold text-lg">Hidden</h2>
+              <h2 className="font-bold text-lg">{t("roster.hidden")}</h2>
               <span className="text-sm text-muted-foreground">
                 {hiddenAgents.length}
               </span>

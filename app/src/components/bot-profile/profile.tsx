@@ -8,6 +8,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
@@ -52,52 +53,53 @@ import { queryClient } from "@/query-client";
 import { BotActivitySections } from "./activity";
 import { BotPausedBanner } from "./pause-banner";
 
-const NOTIFY_LABEL: Record<BotNotify, string> = {
-  all: "Everything",
-  needs_input: "Only when it needs me",
-  none: "Nothing (badges only)",
-};
+/* Key literals stay literal (`as const satisfies`) so `t(...)` sees a known key, not `string`. */
+const NOTIFY_LABEL = {
+  all: "profile.notify.all",
+  needs_input: "profile.notify.needsInput",
+  none: "profile.notify.none",
+} as const satisfies Record<BotNotify, string>;
 
-const KIND_LABEL: Record<UpdateKind, { title: string; description: string }> = {
+const KIND_LABEL = {
   progress: {
-    title: "Progress",
-    description: "Replies and results from work you were not watching.",
+    title: "profile.updateKind.progress.title",
+    description: "profile.updateKind.progress.description",
   },
   decision: {
-    title: "Decisions",
-    description: "Approvals a Bot needs before it acts.",
+    title: "profile.updateKind.decision.title",
+    description: "profile.updateKind.decision.description",
   },
   question: {
-    title: "Questions",
-    description: "Things a Bot asked you and is waiting on.",
+    title: "profile.updateKind.question.title",
+    description: "profile.updateKind.question.description",
   },
-};
+} as const satisfies Record<UpdateKind, { title: string; description: string }>;
 
-const TRANSPORTS: { id: UpdateTransport; label: string }[] = [
-  { id: "push", label: "Push" },
-  { id: "slack", label: "Slack" },
-  { id: "teams", label: "Microsoft Teams" },
-  { id: "sms", label: "SMS" },
-];
+const TRANSPORTS = [
+  { id: "push", label: "profile.transport.push" },
+  { id: "slack", label: "profile.transport.slack" },
+  { id: "teams", label: "profile.transport.teams" },
+  { id: "sms", label: "profile.transport.sms" },
+] as const satisfies readonly { id: UpdateTransport; label: string }[];
 
 const selectClass = "h-8 rounded-md border bg-background px-2 text-sm";
 
 /** Each count the notice lists, in the words the person reads, skipping the kinds with nothing. */
-function resetLines(plan: ResetPlan): string[] {
-  const lines: [number, string, string][] = [
-    [plan.conversations, "conversation", "conversations"],
-    [plan.memorySources, "memory source", "memory sources"],
-    [plan.memories, "imported memory", "imported memories"],
-    [plan.routines, "routine", "routines"],
-    [plan.responsibilities, "responsibility", "responsibilities"],
-    [plan.followUps, "scheduled follow-up", "scheduled follow-ups"],
-    [plan.formedMemories, "memory it formed", "memories it formed"],
-    [plan.backgroundResearch, "background research", "background research"],
-    [plan.standingApprovals, "standing permission", "standing permissions"],
-  ];
+function resetLines(plan: ResetPlan) {
+  const lines = [
+    [plan.conversations, "profile.resetItems.conversations"],
+    [plan.memorySources, "profile.resetItems.memorySources"],
+    [plan.memories, "profile.resetItems.memories"],
+    [plan.routines, "profile.resetItems.routines"],
+    [plan.responsibilities, "profile.resetItems.responsibilities"],
+    [plan.followUps, "profile.resetItems.followUps"],
+    [plan.formedMemories, "profile.resetItems.formedMemories"],
+    [plan.backgroundResearch, "profile.resetItems.backgroundResearch"],
+    [plan.standingApprovals, "profile.resetItems.standingApprovals"],
+  ] as const;
   return lines
     .filter(([count]) => count > 0)
-    .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`);
+    .map(([count, key]) => ({ count, key }));
 }
 
 function ResetDialog({
@@ -109,6 +111,7 @@ function ResetDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const { t } = useTranslation("computer");
   const plan = useQuery({
     ...botResetPlanQueryOptions(agent.id),
     enabled: open,
@@ -119,43 +122,47 @@ function ResetDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Reset {agent.name}?</DialogTitle>
+          <DialogTitle>
+            {t("profile.reset.title", { name: agent.name })}
+          </DialogTitle>
           <DialogDescription>
-            This deletes what {agent.name} has with you, and only with you.
-            Nobody else's conversations or data are touched. It cannot be
-            undone.
+            {t("profile.reset.description", { name: agent.name })}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="mt-4 overflow-y-auto">
           {plan.isPending ? null : plan.error ? (
             <p className="text-destructive text-sm" role="alert">
-              Could not count what a reset would delete.
+              {t("profile.reset.countError")}
             </p>
           ) : reset.isSuccess ? (
-            <p className="text-sm">Done. {agent.name} starts fresh with you.</p>
+            <p className="text-sm">
+              {t("profile.reset.done", { name: agent.name })}
+            </p>
           ) : (
             <div className="grid gap-2 text-sm">
               {lines.length === 0 ? (
-                <p>There is nothing of yours to delete.</p>
+                <p>{t("profile.reset.nothingToDelete")}</p>
               ) : (
                 <>
-                  <p>This will delete:</p>
+                  <p>{t("profile.reset.willDelete")}</p>
                   <ul className="list-disc pl-5">
                     {lines.map((line) => (
-                      <li key={line}>{line}</li>
+                      <li key={line.key}>
+                        {t(line.key, { count: line.count })}
+                      </li>
                     ))}
                   </ul>
                 </>
               )}
               {plan.data.sharedConversationsKept > 0 ? (
                 <p className="text-muted-foreground">
-                  {plan.data.sharedConversationsKept} conversation
-                  {plan.data.sharedConversationsKept === 1 ? " is" : "s are"}{" "}
-                  shared with other people or Bots and will be kept.
+                  {t("profile.reset.sharedKept", {
+                    count: plan.data.sharedConversationsKept,
+                  })}
                 </p>
               ) : null}
               <p className="text-muted-foreground">
-                Your own memories, the ones you told a Bot directly, are kept.
+                {t("profile.reset.ownMemoriesKept")}
               </p>
             </div>
           )}
@@ -171,7 +178,9 @@ function ResetDialog({
             size="sm"
             variant="outline"
           >
-            {reset.isSuccess ? "Close" : "Cancel"}
+            {reset.isSuccess
+              ? t("profile.reset.close")
+              : t("profile.reset.cancel")}
           </Button>
           {reset.isSuccess ? null : (
             <Button
@@ -180,7 +189,9 @@ function ResetDialog({
               size="sm"
               variant="destructive"
             >
-              {reset.isPending ? "Resetting…" : "Delete and reset"}
+              {reset.isPending
+                ? t("profile.reset.resetting")
+                : t("profile.reset.deleteAndReset")}
             </Button>
           )}
         </DialogFooter>
@@ -190,16 +201,17 @@ function ResetDialog({
 }
 
 function UpdateRoutingSection() {
+  const { t } = useTranslation("computer");
   const routing = useQuery(updateRoutingQueryOptions());
   const save = useMutation(setUpdateRoutingMutationOptions(queryClient));
   return (
     <PageSection
-      description="Where each kind of update goes when you are not looking. The web always shows everything. Applies to all your Bots."
-      title="Where updates go"
+      description={t("profile.routing.description")}
+      title={t("profile.routing.title")}
     >
       {routing.isPending ? null : routing.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          Could not load where your updates go.
+          {t("profile.routing.loadError")}
         </p>
       ) : (
         <PageRows>
@@ -215,9 +227,9 @@ function UpdateRoutingSection() {
                     <IconRoute />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{KIND_LABEL[kind].title}</ItemTitle>
+                    <ItemTitle>{t(KIND_LABEL[kind].title)}</ItemTitle>
                     <ItemDescription>
-                      {KIND_LABEL[kind].description}
+                      {t(KIND_LABEL[kind].description)}
                     </ItemDescription>
                   </ItemContent>
                   <ItemFooter className="gap-4 pl-8">
@@ -227,7 +239,10 @@ function UpdateRoutingSection() {
                         key={transport.id}
                       >
                         <Switch
-                          aria-label={`${KIND_LABEL[kind].title} by ${transport.label}`}
+                          aria-label={t("profile.transportAria", {
+                            kind: t(KIND_LABEL[kind].title),
+                            transport: t(transport.label),
+                          })}
                           checked={allowed(transport.id)}
                           disabled={save.isPending}
                           onCheckedChange={(checked) => {
@@ -245,7 +260,7 @@ function UpdateRoutingSection() {
                           }}
                           size="sm"
                         />
-                        {transport.label}
+                        {t(transport.label)}
                       </div>
                     ))}
                   </ItemFooter>
@@ -261,6 +276,7 @@ function UpdateRoutingSection() {
 
 /** A Bot's own page: its state for you, what it is doing, and the lifecycle controls. */
 export function BotProfile({ agent }: { agent: AgentProfile }) {
+  const { t } = useTranslation("computer");
   const lifecycle = useQuery(botLifecycleQueryOptions(agent.id));
   const pause = useMutation(setBotPausedMutationOptions(queryClient));
   const notify = useMutation(setBotNotifyMutationOptions(queryClient));
@@ -290,13 +306,13 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
         <BotPausedBanner agentId={agent.id} />
       </div>
 
-      <PageSection title="For you">
+      <PageSection title={t("profile.forYou")}>
         {agent.canManage ? (
           <SharedAppNotice botId={agent.id} reason="publish" />
         ) : null}
         {lifecycle.isPending ? null : lifecycle.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Could not load this Bot's state.
+            {t("profile.stateLoadError")}
           </p>
         ) : (
           <PageRows>
@@ -305,16 +321,16 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconPlayerPause />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Paused</ItemTitle>
+                <ItemTitle>{t("profile.paused.title")}</ItemTitle>
                 <ItemDescription>
                   {lifecycle.data.paused
-                    ? "No routine, responsibility, hand-off or follow-up starts for you, and what was running has stopped."
-                    : "Runs its routines, responsibilities, hand-offs and follow-ups for you."}
+                    ? t("profile.paused.on")
+                    : t("profile.paused.off")}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <Switch
-                  aria-label="Paused"
+                  aria-label={t("profile.paused.title")}
                   checked={lifecycle.data.paused}
                   disabled={pause.isPending}
                   onCheckedChange={(paused) =>
@@ -329,15 +345,15 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconBell />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Notifications</ItemTitle>
+                <ItemTitle>{t("profile.notifications.title")}</ItemTitle>
                 <ItemDescription>
-                  {NOTIFY_LABEL[lifecycle.data.notify]}. Sidebar badges always
-                  show.
+                  {t(NOTIFY_LABEL[lifecycle.data.notify])}.{" "}
+                  {t("profile.notifications.badgesAlways")}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <select
-                  aria-label="Notifications"
+                  aria-label={t("profile.notifications.title")}
                   className={selectClass}
                   disabled={notify.isPending}
                   onChange={(event) =>
@@ -350,7 +366,7 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 >
                   {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
                     <option key={value} value={value}>
-                      {NOTIFY_LABEL[value]}
+                      {t(NOTIFY_LABEL[value])}
                     </option>
                   ))}
                 </select>
@@ -364,10 +380,11 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                     <IconBell />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>Browser notifications</ItemTitle>
+                    <ItemTitle>
+                      {t("profile.browserNotifications.title")}
+                    </ItemTitle>
                     <ItemDescription>
-                      Off in this browser. Turn them on to hear when a Bot needs
-                      you.
+                      {t("profile.browserNotifications.off")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -382,7 +399,7 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                       size="sm"
                       variant="outline"
                     >
-                      Turn on
+                      {t("profile.browserNotifications.turnOn")}
                     </Button>
                   </ItemActions>
                 </Item>
@@ -397,8 +414,12 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconMessage />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Message {agent.name}</ItemTitle>
-                <ItemDescription>Start a conversation.</ItemDescription>
+                <ItemTitle>
+                  {t("profile.message.title", { name: agent.name })}
+                </ItemTitle>
+                <ItemDescription>
+                  {t("profile.message.description")}
+                </ItemDescription>
               </ItemContent>
             </Item>
             <Separator />
@@ -412,10 +433,9 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconRefresh />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Reset</ItemTitle>
+                <ItemTitle>{t("profile.resetEntry.title")}</ItemTitle>
                 <ItemDescription>
-                  Delete your conversations with it, what it remembers for you,
-                  and its scheduled work. You see what will go first.
+                  {t("profile.resetEntry.description")}
                 </ItemDescription>
               </ItemContent>
             </Item>

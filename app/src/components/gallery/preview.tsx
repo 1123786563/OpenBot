@@ -1,4 +1,8 @@
-import { GALLERY_COMPONENTS } from "@/lib/copilot/gallery-registry";
+import { useTranslation } from "react-i18next";
+import {
+  type GalleryKind,
+  GALLERY_COMPONENTS,
+} from "@/lib/copilot/gallery-registry";
 
 /**
  * The answers a Bot can give, drawn rather than described.
@@ -25,6 +29,12 @@ import { GALLERY_COMPONENTS } from "@/lib/copilot/gallery-registry";
  */
 const ORDER: Record<string, number> = { chart: 0, card: 1, decision: 2 };
 
+const KIND_LABEL = {
+  chart: "gallery.preview.kind.chart",
+  card: "gallery.preview.kind.card",
+  decision: "gallery.preview.kind.decision",
+} as const satisfies Record<GalleryKind, string>;
+
 export function GalleryPreview({
   /**
    * What this Bot may actually answer with, as the deployment reports it.
@@ -46,9 +56,12 @@ export function GalleryPreview({
   available?: readonly { name: string; description: string }[];
   columns?: 1 | 2;
 }) {
+  const { t } = useTranslation("channels");
   if (!available) {
     return (
-      <p className="text-muted-foreground text-sm">Loading what it can draw…</p>
+      <p className="text-muted-foreground text-sm">
+        {t("gallery.preview.loading")}
+      </p>
     );
   }
 
@@ -62,7 +75,7 @@ export function GalleryPreview({
   if (shown.length === 0) {
     return (
       <p className="text-muted-foreground text-sm">
-        This Bot has not been granted any components, so it answers in prose.
+        {t("gallery.preview.noComponents")}
       </p>
     );
   }
@@ -81,7 +94,7 @@ export function GalleryPreview({
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="font-medium text-sm">{component.title}</h3>
             <span className="shrink-0 text-[11px] text-muted-foreground uppercase tracking-wider">
-              {component.kind}
+              {t(KIND_LABEL[component.kind])}
             </span>
           </div>
 
@@ -107,6 +120,7 @@ export function GalleryPreview({
  * one to fit a tile; this draws at natural size, which is what the per-Bot panel below wants.
  */
 function PreviewOf({ name }: { name: string }) {
+  const { t } = useTranslation("channels");
   const component = GALLERY_COMPONENTS.find((entry) => entry.name === name);
   if (!component) return null;
   if (!component.preview) {
@@ -117,8 +131,7 @@ function PreviewOf({ name }: { name: string }) {
      */
     return (
       <p className="text-muted-foreground text-sm">
-        Draws this deployment's own records, so it has nothing to show until a
-        Bot asks for it.
+        {t("gallery.preview.drawsOwnRecords")}
       </p>
     );
   }

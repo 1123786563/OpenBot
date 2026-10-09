@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { SkillAgents } from "@/components/skills/skill-agents";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
@@ -14,6 +15,7 @@ import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
  * refused anyone editing a skill that is not theirs before it gets that far.
  */
 export function EditSkill({ slug }: { slug: string }) {
+  const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data, isPending } = useQuery(pluginsPageQueryOptions());
@@ -38,7 +40,7 @@ export function EditSkill({ slug }: { slug: string }) {
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
         <p className="text-destructive text-sm" role="alert">
-          This skill could not be loaded.
+          {t("editing.loadError")}
         </p>
       </div>
     );
@@ -53,9 +55,7 @@ export function EditSkill({ slug }: { slug: string }) {
          * empty form here would invite them to write it back into existence under a slug they may
          * not own.
          */}
-        <p className="text-muted-foreground text-sm">
-          That skill no longer exists, or it is not yours to edit.
-        </p>
+        <p className="text-muted-foreground text-sm">{t("editing.missing")}</p>
       </div>
     );
   }
@@ -63,10 +63,14 @@ export function EditSkill({ slug }: { slug: string }) {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold">Edit skill</h1>
+        <h1 className="text-2xl font-semibold">{t("editing.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Changes apply the next time <code>/{skill.slug}</code> is used. Agents
-          already carrying it keep it.
+          <Trans
+            i18nKey="editing.changesApply"
+            t={t}
+            values={{ slug: skill.slug }}
+            components={{ code: <code /> }}
+          />
         </p>
       </header>
 
@@ -92,7 +96,7 @@ export function EditSkill({ slug }: { slug: string }) {
           await navigate({ search: {}, to: "/skills" });
         }}
         slugLocked
-        submitLabel="Save changes"
+        submitLabel={t("editing.save")}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 import Avatar from "boring-avatars";
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 /**
@@ -62,9 +63,10 @@ export const ChannelAvatar = memo(function ChannelAvatar({
  * a different point in the same bounce, which is what makes the three read as one wave.
  */
 function TypingBadge() {
+  const { t } = useTranslation("channels");
   return (
     <div className="absolute -bottom-0.5 -right-0.5 flex items-center gap-0.5 rounded-full bg-sidebar p-0.5 ring-2 ring-sidebar">
-      <span className="sr-only">Working…</span>
+      <span className="sr-only">{t("avatar.working")}</span>
       <Dot className="[animation-delay:-0.3s]" />
       <Dot className="[animation-delay:-0.15s]" />
       <Dot />

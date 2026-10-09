@@ -7,6 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { LiveWaveform } from "@/components/ui/live-waveform";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
@@ -22,14 +23,15 @@ export function DictationButton({
   dictation: Dictation;
   disabled: boolean;
 }) {
+  const { t } = useTranslation("channels");
   if (!dictation.available) return null;
   return (
     <Button
-      aria-label="Dictate a message"
+      aria-label={t("dictation.dictateAria")}
       title={
         dictation.supported
-          ? "Dictate a message"
-          : "Dictation requires a supported browser and HTTPS (or localhost)"
+          ? t("dictation.dictateAria")
+          : t("dictation.unsupported")
       }
       className="size-8 shrink-0 self-end rounded-full"
       disabled={disabled || !dictation.supported || dictation.busy}
@@ -85,6 +87,7 @@ function RecordingControls({
   dictation: Dictation;
   canSend: boolean;
 }) {
+  const { t } = useTranslation("channels");
   const { state, session } = dictation;
   const reduceMotion = useReducedMotion();
   const cancel = useRef<HTMLButtonElement>(null);
@@ -108,8 +111,8 @@ function RecordingControls({
     >
       <Button
         ref={cancel}
-        aria-label="Cancel dictation"
-        title="Cancel dictation"
+        aria-label={t("dictation.cancelAria")}
+        title={t("dictation.cancelAria")}
         size="icon"
         type="button"
         variant="ghost"
@@ -135,12 +138,14 @@ function RecordingControls({
           </p>
         ) : state.phase === "requesting" ? (
           <p className="text-sm text-muted-foreground" role="status">
-            Waiting for microphone permission…
+            {t("dictation.waitingPermission")}
           </p>
         ) : (
           <div className="flex min-w-0 items-center gap-3">
             <span className="sr-only" role="status">
-              {transcribing ? "Transcribing…" : "Listening"}
+              {transcribing
+                ? t("dictation.transcribing")
+                : t("dictation.listening")}
             </span>
             <LiveWaveform
               stream={state.stream}
@@ -150,7 +155,7 @@ function RecordingControls({
             />
             <span
               role="timer"
-              aria-label="Recording duration"
+              aria-label={t("dictation.durationAria")}
               className="shrink-0 text-xs text-muted-foreground tabular-nums"
             >
               {time}
@@ -174,13 +179,13 @@ function RecordingControls({
               void (state.canRetry ? session.retry() : session.start())
             }
           >
-            {state.canRetry ? "Retry" : "Record again"}
+            {state.canRetry ? t("dictation.retry") : t("dictation.recordAgain")}
           </Button>
         ) : (
           <div className="flex shrink-0 items-center gap-2">
             <Button
-              aria-label="Stop and transcribe"
-              title="Stop and add to draft"
+              aria-label={t("dictation.stopAria")}
+              title={t("dictation.stopTitle")}
               disabled={!recording}
               size="icon"
               type="button"
@@ -191,8 +196,8 @@ function RecordingControls({
               <IconPlayerStopFilled className="size-3.5" />
             </Button>
             <Button
-              aria-label="Transcribe and send"
-              title="Transcribe and send"
+              aria-label={t("dictation.sendAria")}
+              title={t("dictation.sendTitle")}
               disabled={!recording || !canSend}
               size="icon"
               type="button"

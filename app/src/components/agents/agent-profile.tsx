@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { type ReactNode, useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AgentDialog } from "@/components/agents/agent-dialog";
@@ -48,6 +49,7 @@ function ProfileSkeleton() {
  * two places to maintain and a sidebar that scrolled past the conversation it sat beside.
  */
 export function AgentProfile({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("agents");
   /** The full dialog, opened over the chat rather than navigating away from it. */
   const [managing, setManaging] = useState(false);
   const navigate = useNavigate();
@@ -59,7 +61,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   if (agent.error || !agent.data) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        Could not load this coworker.
+        {t("profile.loadError")}
       </p>
     );
   }
@@ -84,14 +86,18 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </div>
 
         <div className="flex flex-wrap justify-center gap-1.5">
-          <Tag>{profile.visibility === "private" ? "Private" : "Public"}</Tag>
-          {profile.systemOwned ? <Tag>System owned</Tag> : null}
+          <Tag>
+            {profile.visibility === "private"
+              ? t("visibility.optionPrivate")
+              : t("visibility.optionPublic")}
+          </Tag>
+          {profile.systemOwned ? <Tag>{t("general.systemOwned")}</Tag> : null}
         </div>
       </header>
 
       <section className="grid gap-2">
         <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Role
+          {t("fields.role")}
         </h2>
         <p className="text-sm whitespace-pre-wrap text-pretty">
           {profile.roleDescription}
@@ -105,14 +111,14 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             void navigate({ search: { agent: agentId }, to: "/channel/new" })
           }
         >
-          Start new channel
+          {t("profile.startNewChannel")}
         </Button>
         <Button
           className="w-full text-sm!"
           onClick={() => setManaging(true)}
           variant="outline"
         >
-          Manage coworker
+          {t("profile.manage")}
         </Button>
       </div>
 

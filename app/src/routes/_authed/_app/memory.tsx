@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
 import {
   ProactiveResearchSettings,
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 import {
   addMemorySource,
   availableMemorySourcesQueryOptions,
@@ -34,6 +36,7 @@ async function refresh() {
   await queryClient.invalidateQueries({ queryKey: memoryKeys.all });
 }
 function MemoryPage() {
+  const { t } = useTranslation("agents");
   const memories = useQuery(memoriesQueryOptions());
   const [content, setContent] = useState("");
   const formId = useId();
@@ -45,10 +48,7 @@ function MemoryPage() {
     },
   });
   return (
-    <PageShell
-      title="Memory"
-      description="Review what your Bots remember, and choose which connected apps can contribute facts."
-    >
+    <PageShell title={t("memory.title")} description={t("memory.description")}>
       <div className="grid gap-6">
         <SuggestionsInbox />
         <form
@@ -58,9 +58,9 @@ function MemoryPage() {
             remember.mutate(content);
           }}
         >
-          <h2 className="font-semibold">Remember a fact</h2>
+          <h2 className="font-semibold">{t("memory.rememberFact")}</h2>
           <label className={field} htmlFor={formId}>
-            Something you want your Bots to know
+            {t("memory.factLabel")}
           </label>
           <Textarea
             id={formId}
@@ -68,14 +68,14 @@ function MemoryPage() {
             maxLength={6000}
             value={content}
             onChange={(event) => setContent(event.target.value)}
-            placeholder="I prefer meetings in the morning."
+            placeholder={t("memory.factPlaceholder")}
           />
           <Button
             type="submit"
             disabled={remember.isPending || !content.trim()}
             className="justify-self-start"
           >
-            Remember
+            {t("memory.remember")}
           </Button>
           {remember.error && (
             <p role="alert" className="text-destructive">
@@ -86,9 +86,9 @@ function MemoryPage() {
         <ProactiveResearchSettings />
         <Sources />
         <section className="grid gap-3">
-          <h2 className="font-semibold">Your memories</h2>
+          <h2 className="font-semibold">{t("memory.yourMemories")}</h2>
           {memories.isPending ? (
-            <p>Loading memories…</p>
+            <p>{t("memory.loadingMemories")}</p>
           ) : memories.error ? (
             <p role="alert" className="text-destructive">
               {memories.error.message}
@@ -98,7 +98,7 @@ function MemoryPage() {
               <MemoryCard key={memory.id} memory={memory} />
             ))
           ) : (
-            <p className="text-muted-foreground">You have no memories yet.</p>
+            <p className="text-muted-foreground">{t("memory.noMemories")}</p>
           )}
         </section>
       </div>
@@ -106,6 +106,8 @@ function MemoryPage() {
   );
 }
 function MemoryCard({ memory }: { memory: MemoryRecord }) {
+  const { t } = useTranslation("agents");
+  const { formatDateTime } = useDateTime();
   const [content, setContent] = useState(memory.content);
   const id = useId();
   const save = useMutation({
@@ -128,19 +130,23 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
         </label>
         <span className="text-xs text-muted-foreground">
           {!memory.enabled
-            ? "Disabled"
+            ? t("memory.card.disabled")
             : memory.reviewState === "unreviewed"
               ? memory.formedBy === "bot"
-                ? "Formed by your Bot · awaiting review"
-                : "Imported · awaiting review"
-              : "Reviewed"}
+                ? t("memory.card.formedAwaiting")
+                : t("memory.card.importedAwaiting")
+              : t("memory.card.reviewed")}
         </span>
       </div>
       {memory.formedBy === "bot" && (
         <p className="text-xs text-muted-foreground">
-          From {memory.sourceApp ?? "a conversation"}
+          {t("memory.card.from", {
+            source: memory.sourceApp ?? t("memory.card.aConversation"),
+          })}
           {memory.observedAt
-            ? `, read ${new Date(memory.observedAt).toLocaleString()}`
+            ? t("memory.card.readSuffix", {
+                when: formatDateTime(memory.observedAt),
+              })
             : ""}
           {memory.sourceLink && (
             <>
@@ -151,7 +157,7 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
                 target="_blank"
                 rel="noreferrer"
               >
-                Open record
+                {t("memory.card.openRecord")}
               </a>
             </>
           )}
@@ -169,7 +175,7 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
           disabled={save.isPending || !content.trim()}
           onClick={() => save.mutate({ content })}
         >
-          Save
+          {t("memory.card.save")}
         </Button>
         {memory.reviewState === "unreviewed" && (
           <Button
@@ -177,7 +183,7 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
             variant="outline"
             onClick={() => save.mutate({ reviewState: "confirmed" })}
           >
-            Confirm
+            {t("memory.card.confirm")}
           </Button>
         )}
         <Button
@@ -185,7 +191,7 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
           variant="outline"
           onClick={() => save.mutate({ enabled: !memory.enabled })}
         >
-          {memory.enabled ? "Disable" : "Enable"}
+          {memory.enabled ? t("memory.card.disable") : t("memory.card.enable")}
         </Button>
         <Button
           size="sm"
@@ -193,7 +199,7 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
           disabled={forget.isPending}
           onClick={() => forget.mutate()}
         >
-          Forget
+          {t("memory.card.forget")}
         </Button>
       </div>
       {(save.error || forget.error) && (
@@ -205,6 +211,8 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
   );
 }
 function Sources() {
+  const { t } = useTranslation("agents");
+  const { formatDateTime } = useDateTime();
   const sources = useQuery(memorySourcesQueryOptions());
   const bots = useQuery(agentListQueryOptions());
   const [agentId, setAgentId] = useState("");
@@ -256,11 +264,9 @@ function Sources() {
   });
   return (
     <section className="grid gap-3">
-      <h2 className="font-semibold">Connected app sources</h2>
+      <h2 className="font-semibold">{t("memory.sources.title")}</h2>
       <p className="text-sm text-muted-foreground">
-        Opt in to a read from an app your Bot can already access. Enabled
-        sources refresh every 15 minutes. Their facts are available to the
-        selected Bot.
+        {t("memory.sources.description")}
       </p>
       <form
         className="grid gap-3 rounded-lg border p-4"
@@ -277,7 +283,9 @@ function Sources() {
               ) {
                 const number = Number(value);
                 if (!Number.isFinite(number))
-                  throw new Error(`Enter a number for ${setting.name}.`);
+                  throw new Error(
+                    t("memory.sources.numberError", { name: setting.name }),
+                  );
                 values[setting.name] = number;
               } else if (setting.schema.type === "boolean")
                 values[setting.name] = value === "true";
@@ -287,9 +295,7 @@ function Sources() {
                   .map((entry) => entry.trim())
                   .filter(Boolean);
               else if (setting.schema.type === "object")
-                throw new Error(
-                  "Choose an action with simple search settings.",
-                );
+                throw new Error(t("memory.sources.simpleSettings"));
               else values[setting.name] = value;
             }
             setError("");
@@ -303,14 +309,14 @@ function Sources() {
             setError(
               cause instanceof Error
                 ? cause.message
-                : "Check the source settings.",
+                : t("memory.sources.checkSettings"),
             );
           }
         }}
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <label className={field}>
-            Bot
+            {t("memory.sources.bot")}
             <select
               required
               className={select}
@@ -320,7 +326,7 @@ function Sources() {
                 setToolRef("");
               }}
             >
-              <option value="">Choose a Bot</option>
+              <option value="">{t("memory.sources.chooseBot")}</option>
               {bots.data?.map((bot) => (
                 <option key={bot.id} value={bot.id}>
                   {bot.name}
@@ -329,7 +335,7 @@ function Sources() {
             </select>
           </label>
           <label className={field}>
-            Connected app action
+            {t("memory.sources.action")}
             <select
               required
               className={select}
@@ -339,7 +345,7 @@ function Sources() {
                 setArgs({});
               }}
             >
-              <option value="">Choose a read action</option>
+              <option value="">{t("memory.sources.chooseAction")}</option>
               {tools.data?.map((tool) => (
                 <option key={tool.ref} value={tool.ref}>
                   {tool.title}
@@ -352,14 +358,14 @@ function Sources() {
           <p className="text-sm text-muted-foreground">{chosen.description}</p>
         )}
         <label className={field} htmlFor={`${id}-name`}>
-          Source name
+          {t("memory.sources.sourceName")}
           <Input
             id={`${id}-name`}
             required
             maxLength={160}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="My project documents"
+            placeholder={t("memory.sources.sourceNamePlaceholder")}
           />
         </label>
         {settings.map(({ name, schema }) => (
@@ -376,7 +382,7 @@ function Sources() {
                   setArgs({ ...args, [name]: event.target.value })
                 }
               >
-                <option value="">Choose a value</option>
+                <option value="">{t("memory.sources.chooseValue")}</option>
                 {(schema.enum ?? ["true", "false"]).map((value) => (
                   <option key={String(value)} value={String(value)}>
                     {String(value)}
@@ -410,7 +416,9 @@ function Sources() {
           className="justify-self-start"
           disabled={add.isPending || !toolRef}
         >
-          {add.isPending ? "Reading source…" : "Add and sync source"}
+          {add.isPending
+            ? t("memory.sources.reading")
+            : t("memory.sources.addAndSync")}
         </Button>
         {(error || add.error || tools.error) && (
           <p role="alert" className="text-destructive">
@@ -430,14 +438,16 @@ function Sources() {
             <span className="text-sm text-muted-foreground">
               {source.enabled
                 ? source.syncStatus === "succeeded"
-                  ? "Up to date"
+                  ? t("memory.sources.upToDate")
                   : source.syncStatus
-                : "Disabled"}
+                : t("memory.sources.disabled")}
             </span>
           </div>
           {source.lastSyncAt && (
             <p className="text-xs text-muted-foreground">
-              Last read {new Date(source.lastSyncAt).toLocaleString()}
+              {t("memory.sources.lastRead", {
+                when: formatDateTime(source.lastSyncAt),
+              })}
             </p>
           )}
           {source.syncError && (
@@ -454,7 +464,7 @@ function Sources() {
                 action.mutate({ sourceId: source.id, name: "sync" })
               }
             >
-              Sync now
+              {t("memory.sources.syncNow")}
             </Button>
             <Button
               size="sm"
@@ -466,7 +476,9 @@ function Sources() {
                 })
               }
             >
-              {source.enabled ? "Disable" : "Enable"}
+              {source.enabled
+                ? t("memory.sources.disable")
+                : t("memory.sources.enable")}
             </Button>
             <Button
               size="sm"
@@ -475,7 +487,7 @@ function Sources() {
                 action.mutate({ sourceId: source.id, name: "remove" })
               }
             >
-              Remove
+              {t("memory.sources.remove")}
             </Button>
           </div>
         </article>

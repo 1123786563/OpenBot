@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { ProviderLogo } from "@/components/auth/provider-logo";
@@ -41,6 +42,7 @@ export const Route = createFileRoute("/sign")({
 });
 
 function SignScreen() {
+  const { t } = useTranslation("common");
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
   const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
@@ -66,7 +68,7 @@ function SignScreen() {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "No identity provider is registered for that address.",
+          : t("signIn.noProviderForAddress"),
       );
       setOpening(null);
     }
@@ -82,7 +84,7 @@ function SignScreen() {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : `Could not start ${providerName(provider)} sign-in.`,
+          : t("signIn.couldNotStart", { provider: providerName(provider) }),
       );
       setOpening(null);
     }
@@ -111,8 +113,10 @@ function SignScreen() {
           {/* Centred against the button, not against the space left of the mark. */}
           <span className="flex-1 text-center">
             {opening === provider
-              ? `Opening ${providerName(provider)}…`
-              : `Continue with ${providerName(provider)}`}
+              ? t("signIn.openingProvider", {
+                  provider: providerName(provider),
+                })
+              : t("signIn.continueWith", { provider: providerName(provider) })}
           </span>
           {/* Balances the mark so the label sits in the middle of the button. */}
           <span aria-hidden="true" className="size-[18px]" />
@@ -154,7 +158,7 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          Sign in to {appConfig.brand.productName}
+          {t("signIn.title", { product: appConfig.brand.productName })}
         </motion.h1>
         <motion.div
           className="mt-8 w-full"
@@ -163,14 +167,14 @@ function SignScreen() {
         >
           {options?.ssoRequired ? (
             <p className="mb-3 text-center text-sm text-muted-foreground">
-              Your organization requires single sign-on.
+              {t("signIn.ssoRequired")}
             </p>
           ) : null}
           {providers.length > 0 && !options?.ssoRequired ? (
             providerButtons
           ) : options?.sso || options?.ssoRequired ? null : (
             <p className="text-center text-sm text-muted-foreground">
-              No sign-in provider is configured for this deployment.
+              {t("signIn.noProvider")}
             </p>
           )}
           {/*
@@ -184,14 +188,16 @@ function SignScreen() {
               {providers.length > 0 ? (
                 <div className="mb-3 flex items-center gap-3">
                   <Separator className="flex-1" />
-                  <span className="text-muted-foreground text-xs">or</span>
+                  <span className="text-muted-foreground text-xs">
+                    {t("signIn.or")}
+                  </span>
                   <Separator className="flex-1" />
                 </div>
               ) : null}
               <Input
                 autoComplete="email"
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@company.com"
+                placeholder={t("signIn.emailPlaceholder")}
                 required
                 type="email"
                 value={email}
@@ -204,8 +210,8 @@ function SignScreen() {
                 variant="outline"
               >
                 {opening === "sso"
-                  ? "Opening…"
-                  : "Continue with your company account"}
+                  ? t("signIn.opening")
+                  : t("signIn.continueCompany")}
               </Button>
             </form>
           ) : null}
@@ -213,7 +219,7 @@ function SignScreen() {
           {options?.ssoRequired && providers.length > 0 ? (
             <details className="mt-4 text-sm">
               <summary className="cursor-pointer text-center text-muted-foreground">
-                Administrator sign-in
+                {t("signIn.adminSignIn")}
               </summary>
               <div className="mt-3">{providerButtons}</div>
             </details>

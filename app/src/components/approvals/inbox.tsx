@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SharedUseRequests } from "@/components/approvals/shared-use-requests";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -10,7 +11,6 @@ import {
   type ApprovalRuleRow,
   answerPersonQuestion,
   approvalInboxOptions,
-  BEHAVIOUR_LABELS,
   createApprovalRule,
   createTeamApprovalRule,
   decideApproval,
@@ -26,15 +26,24 @@ import {
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 
-const HOST_LABELS: Record<HostCommandPolicy, string> = {
-  ask: "Ask every time",
-  allow: "Always allow",
-  never: "Never",
-};
+const HOST_LABELS = {
+  ask: "hostPolicy.ask",
+  allow: "hostPolicy.alwaysAllow",
+  never: "hostPolicy.never",
+} as const satisfies Record<HostCommandPolicy, string>;
+
+const BEHAVIOUR_LABELS = {
+  allow: "behaviour.allow",
+  pre_approved: "behaviour.preApproved",
+  ask: "behaviour.ask",
+  hand_off: "behaviour.handOff",
+} as const satisfies Record<RuleBehaviour, string>;
+
 const selectClass =
   "h-9 rounded-md border bg-background px-2 text-sm disabled:opacity-50";
 
 export function ApprovalInbox() {
+  const { t } = useTranslation("approvals");
   const cache = useQueryClient();
   const inbox = useQuery(approvalInboxOptions());
   const refresh = () => cache.invalidateQueries({ queryKey: ["approvals"] });
@@ -119,14 +128,16 @@ export function ApprovalInbox() {
         className="flex items-center justify-between gap-4 rounded-lg border p-4"
       >
         <span>
-          <span className="block font-medium">Ask before making changes</span>
+          <span className="block font-medium">
+            {t("askBeforeChanges.title")}
+          </span>
           <span className="text-sm text-muted-foreground">
-            Review a Bot's changes to websites, connected apps, and files.
+            {t("askBeforeChanges.description")}
           </span>
         </span>
         <Switch
           id="ask-before-changes"
-          aria-label="Ask before making changes"
+          aria-label={t("askBeforeChanges.title")}
           checked={inbox.data?.enabled ?? false}
           disabled={inbox.isLoading || preference.isPending}
           onCheckedChange={(enabled) => preference.mutate(enabled)}
@@ -140,17 +151,14 @@ export function ApprovalInbox() {
           >
             <span>
               <span id="auto-review-title" className="block font-medium">
-                Auto-review
+                {t("autoReview.title")}
               </span>
               <span
                 id="auto-review-description"
                 className="text-sm text-muted-foreground"
               >
-                {enforced ? "Required by your team. " : ""}
-                Before an action that could affect your accounts or share
-                information, a model checks it against what you asked for, your
-                rules and the safety requirements. If it cannot decide, it asks
-                you.
+                {enforced ? t("autoReview.requiredByTeam") : ""}
+                {t("autoReview.description")}
               </span>
             </span>
             <Switch
@@ -172,20 +180,21 @@ export function ApprovalInbox() {
           >
             <span>
               <span className="block font-medium">
-                Commands on your computer
+                {t("hostCommands.title")}
               </span>
               <span className="text-sm text-muted-foreground">
                 {inbox.data.hostCommands &&
                 inbox.data.hostCommands !== inbox.data.preferences.hostCommands
-                  ? `Your team limits this to "${HOST_LABELS[inbox.data.hostCommands]}". `
+                  ? t("hostCommands.teamLimit", {
+                      policy: t(HOST_LABELS[inbox.data.hostCommands]),
+                    })
                   : ""}
-                The OpenBot desktop app still shows each command before it runs
-                on your computer.
+                {t("hostCommands.description")}
               </span>
             </span>
             <select
               id="host-commands"
-              aria-label="Commands on your computer"
+              aria-label={t("hostCommands.title")}
               className={selectClass}
               value={inbox.data.preferences.hostCommands}
               disabled={preferences.isPending}
@@ -197,7 +206,7 @@ export function ApprovalInbox() {
             >
               {(Object.keys(HOST_LABELS) as HostCommandPolicy[]).map((key) => (
                 <option key={key} value={key}>
-                  {HOST_LABELS[key]}
+                  {t(HOST_LABELS[key])}
                 </option>
               ))}
             </select>
@@ -205,21 +214,22 @@ export function ApprovalInbox() {
         </>
       ) : null}
       <div className="space-y-3">
-        <h2 className="font-medium">Waiting for you</h2>
+        <h2 className="font-medium">{t("waitingForYou")}</h2>
         {inbox.data?.questions.map((question) => (
           <article
             key={question.id}
             className="space-y-3 rounded-lg border p-4"
           >
             <h3 className="font-medium">
-              {question.botId} asks: {question.question}
+              {t("questionAsks", { bot: question.botId })}
+              {question.question}
             </h3>
             {question.why ? (
               <p className="text-sm text-muted-foreground">{question.why}</p>
             ) : null}
             <Textarea
-              aria-label="Your answer"
-              placeholder="Your answer"
+              aria-label={t("yourAnswer")}
+              placeholder={t("yourAnswer")}
               value={answers[question.id] ?? ""}
               onChange={(event) =>
                 setAnswers((prior) => ({
@@ -237,16 +247,14 @@ export function ApprovalInbox() {
                 })
               }
             >
-              Send answer
+              {t("sendAnswer")}
             </Button>
           </article>
         ))}
         {inbox.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading approvals…</p>
+          <p className="text-sm text-muted-foreground">{t("loading")}</p>
         ) : pending.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No actions need your approval.
-          </p>
+          <p className="text-sm text-muted-foreground">{t("nothingPending")}</p>
         ) : (
           pending.map((request) => (
             <article
@@ -255,7 +263,7 @@ export function ApprovalInbox() {
             >
               <div>
                 <h3 className="font-medium">
-                  {request.action.botId} wants to{" "}
+                  {t("wantsTo", { bot: request.action.botId })}
                   {request.action.toolRef
                     .replace(/^computer_|^host\//, "")
                     .replaceAll("_", " ")}
@@ -266,7 +274,7 @@ export function ApprovalInbox() {
                 {request.action.policy ? (
                   <p className="text-sm">
                     {request.action.policy.behaviour === "hand_off"
-                      ? "Handed to you: "
+                      ? t("handedToYou")
                       : ""}
                     {request.action.policy.reason}
                   </p>
@@ -283,7 +291,7 @@ export function ApprovalInbox() {
                       decision.mutate({ id: request.id, choice: "handled" })
                     }
                   >
-                    I did it myself
+                    {t("decision.handled")}
                   </Button>
                   <Button
                     variant="outline"
@@ -292,7 +300,7 @@ export function ApprovalInbox() {
                       decision.mutate({ id: request.id, choice: "deny" })
                     }
                   >
-                    Don't do it
+                    {t("decision.dontDoIt")}
                   </Button>
                 </div>
               ) : (
@@ -303,7 +311,7 @@ export function ApprovalInbox() {
                       decision.mutate({ id: request.id, choice: "allow_once" })
                     }
                   >
-                    Allow once
+                    {t("decision.allowOnce")}
                   </Button>
                   <Button
                     variant="outline"
@@ -315,7 +323,7 @@ export function ApprovalInbox() {
                       })
                     }
                   >
-                    Always allow here
+                    {t("decision.alwaysAllowHere")}
                   </Button>
                   <Button
                     variant="outline"
@@ -324,7 +332,7 @@ export function ApprovalInbox() {
                       decision.mutate({ id: request.id, choice: "deny" })
                     }
                   >
-                    Deny
+                    {t("decision.deny")}
                   </Button>
                 </div>
               )}
@@ -334,14 +342,10 @@ export function ApprovalInbox() {
       </div>
       <SharedUseRequests />
       <div className="space-y-3">
-        <h2 className="font-medium">Rules</h2>
+        <h2 className="font-medium">{t("rules.title")}</h2>
         <p className="text-sm text-muted-foreground">
-          The strictest matching rule wins, so an "ask" rule beats an "allow"
-          one. Team rules are locked. Changing a password, security settings and
-          payments are always handed to you.
-          {rulesOff
-            ? " Your team has switched personal rules off, so they are kept but do not apply."
-            : ""}
+          {t("rules.description")}
+          {rulesOff ? t("rules.offNote") : ""}
         </p>
         {inbox.data?.teamRules.map((rule) => (
           <RuleRow
@@ -369,11 +373,11 @@ export function ApprovalInbox() {
           />
         ))}
         {!inbox.data?.rules.length && !inbox.data?.teamRules.length ? (
-          <p className="text-sm text-muted-foreground">No rules saved.</p>
+          <p className="text-sm text-muted-foreground">{t("rules.none")}</p>
         ) : null}
         {inbox.data?.preferences && !rulesOff ? (
           <RuleForm
-            label="Add a rule"
+            label={t("rules.add")}
             pending={addRule.isPending}
             onSave={(input) => addRule.mutate(input)}
           />
@@ -381,13 +385,13 @@ export function ApprovalInbox() {
       </div>
       {isAdmin && inbox.data?.team ? (
         <div className="space-y-3">
-          <h2 className="font-medium">Team settings</h2>
+          <h2 className="font-medium">{t("teamSettings.title")}</h2>
           <label
             htmlFor="enforce-auto-review"
             className="flex items-center justify-between gap-4 rounded-lg border p-4"
           >
             <span id="enforce-auto-review-title" className="font-medium">
-              Require auto-review for everyone
+              {t("teamSettings.enforceAutoReview")}
             </span>
             <Switch
               id="enforce-auto-review"
@@ -404,7 +408,7 @@ export function ApprovalInbox() {
             className="flex items-center justify-between gap-4 rounded-lg border p-4"
           >
             <span id="custom-rules-title" className="font-medium">
-              Let members set personal rules
+              {t("teamSettings.customRules")}
             </span>
             <Switch
               id="custom-rules"
@@ -422,15 +426,15 @@ export function ApprovalInbox() {
           >
             <span>
               <span className="block font-medium">
-                Commands on members' computers, at most
+                {t("teamSettings.hostCommandsCap.title")}
               </span>
               <span className="text-sm text-muted-foreground">
-                A member's own stricter setting still applies.
+                {t("teamSettings.hostCommandsCap.description")}
               </span>
             </span>
             <select
               id="host-commands-cap"
-              aria-label="Commands on members' computers, at most"
+              aria-label={t("teamSettings.hostCommandsCap.title")}
               className={selectClass}
               value={inbox.data.team.hostCommandsCap}
               disabled={team.isPending}
@@ -442,13 +446,13 @@ export function ApprovalInbox() {
             >
               {(Object.keys(HOST_LABELS) as HostCommandPolicy[]).map((key) => (
                 <option key={key} value={key}>
-                  {HOST_LABELS[key]}
+                  {t(HOST_LABELS[key])}
                 </option>
               ))}
             </select>
           </label>
           <RuleForm
-            label="Add a team rule"
+            label={t("teamSettings.addTeamRule")}
             pending={addTeamRule.isPending}
             onSave={(input) => addTeamRule.mutate(input)}
           />
@@ -473,7 +477,9 @@ function RuleRow({
   onRevoke: () => void;
   onChange: (behaviour: RuleBehaviour) => void;
 }) {
-  const label = `${BEHAVIOUR_LABELS[rule.behaviour]}${team ? " (team rule)" : ""}`;
+  const { t } = useTranslation("approvals");
+  const label =
+    t(BEHAVIOUR_LABELS[rule.behaviour]) + (team ? t("teamRuleSuffix") : "");
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
       <div className="space-y-1">
@@ -481,7 +487,7 @@ function RuleRow({
           <p className="text-sm font-medium">{label}</p>
         ) : (
           <select
-            aria-label={`Behaviour for ${rule.toolRef}`}
+            aria-label={t("behaviourFor", { tool: rule.toolRef })}
             className={selectClass}
             value={rule.behaviour}
             disabled={disabled}
@@ -492,24 +498,28 @@ function RuleRow({
           >
             {(Object.keys(BEHAVIOUR_LABELS) as RuleBehaviour[]).map((key) => (
               <option key={key} value={key}>
-                {BEHAVIOUR_LABELS[key]}
-                {team ? " (team rule)" : ""}
+                {t(BEHAVIOUR_LABELS[key])}
+                {team ? t("teamRuleSuffix") : ""}
               </option>
             ))}
           </select>
         )}
         <p className="text-sm text-muted-foreground">
           {rule.toolRef}
-          {rule.effect !== "*" ? `, ${rule.effect}` : ""}
-          {rule.scope !== "*" ? ` on ${rule.scope}` : ""}
-          {rule.botId !== "*" ? ` for ${rule.botId}` : ""}
+          {rule.effect !== "*"
+            ? t("ruleEffectSuffix", { effect: rule.effect })
+            : ""}
+          {rule.scope !== "*"
+            ? t("ruleScopeSuffix", { scope: rule.scope })
+            : ""}
+          {rule.botId !== "*" ? t("ruleBotSuffix", { bot: rule.botId }) : ""}
         </p>
       </div>
       {locked ? (
-        <span className="text-sm text-muted-foreground">Locked</span>
+        <span className="text-sm text-muted-foreground">{t("locked")}</span>
       ) : (
         <Button variant="outline" disabled={disabled} onClick={onRevoke}>
-          Remove
+          {t("remove")}
         </Button>
       )}
     </div>
@@ -537,6 +547,7 @@ function RuleForm({
   pending: boolean;
   onSave: (input: ApprovalRuleInput) => void;
 }) {
+  const { t } = useTranslation("approvals");
   const [rule, setRule] = useState<ApprovalRuleInput>(EMPTY_RULE);
   const field = (key: keyof ApprovalRuleInput, title: string, hint: string) => (
     <label className="grid gap-1 text-sm">
@@ -564,14 +575,18 @@ function RuleForm({
       }}
     >
       <h3 className="font-medium sm:col-span-2">{label}</h3>
-      {field("toolRef", "Tool or app", "mcp/gmail/*, computer_click, host/*")}
-      {field("effect", "Kind of action", "* , write, read, delegate")}
-      {field("scope", "Target", "*, a site, a folder, a Bot name")}
-      {field("botId", "Bot", "* for every Bot")}
+      {field(
+        "toolRef",
+        t("form.toolOrApp"),
+        "mcp/gmail/*, computer_click, host/*",
+      )}
+      {field("effect", t("form.kindOfAction"), "* , write, read, delegate")}
+      {field("scope", t("form.target"), t("form.targetHint"))}
+      {field("botId", t("form.bot"), t("form.botHint"))}
       <label className="grid gap-1 text-sm">
-        <span>Behaviour</span>
+        <span>{t("form.behaviour")}</span>
         <select
-          aria-label="Behaviour"
+          aria-label={t("form.behaviour")}
           className={selectClass}
           value={rule.behaviour}
           onChange={(event) => {
@@ -581,14 +596,14 @@ function RuleForm({
         >
           {(Object.keys(BEHAVIOUR_LABELS) as RuleBehaviour[]).map((key) => (
             <option key={key} value={key}>
-              {BEHAVIOUR_LABELS[key]}
+              {t(BEHAVIOUR_LABELS[key])}
             </option>
           ))}
         </select>
       </label>
       <div className="flex items-end">
         <Button type="submit" disabled={pending || !rule.toolRef.trim()}>
-          Save rule
+          {t("form.saveRule")}
         </Button>
       </div>
     </form>

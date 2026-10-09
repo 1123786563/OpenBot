@@ -1,0 +1,357 @@
+{
+  "new": {
+    "title": "开始新频道",
+    "fallbackHint": "发送给负责此事的同事。输入 <code>@</code> 自行选择。",
+    "startError": "无法开始对话。",
+    "loadError": "无法加载你的同事，暂时没有人可以发送。"
+  },
+  "explore": {
+    "title": "探索 Agents",
+    "loadError": "无法加载与你共享的 Agents。",
+    "empty": "还没有人与你共享 Agent。"
+  },
+  "avatar": {
+    "working": "工作中…"
+  },
+  "attachments": {
+    "aria": "附件",
+    "attachmentName": "附件",
+    "attachmentFallback": "附件",
+    "uploadingAria": "{{name}}，上传中",
+    "uploading": "上传中…",
+    "truncationTitle": "模型会读取此文件的前 120,000 个字符。",
+    "mayBeCut": " · 可能被截断",
+    "removeAria": "移除 {{name}}"
+  },
+  "bot": {
+    "computer": "计算机",
+    "newChat": "新聊天",
+    "subtitle": "让它打开一个页面，看它如何工作。",
+    "historyUnavailable": "无法加载此对话中较早的消息，Bot 正在没有这些消息的情况下回答。",
+    "loadErrorBots": "无法加载 Bots。",
+    "loadErrorBot": "无法加载该 Bot。",
+    "noBotNamed": "此部署中没有名为“{{name}}”的 Bot。",
+    "noBots": "此部署还没有任何 Bot。"
+  },
+  "botProfile": {
+    "description": "此 Bot 正在为你做什么，以及它如何运行。",
+    "titleFallback": "Bot",
+    "unreachable": "你无法访问此 Bot。"
+  },
+  "bots": {
+    "title": "Bots",
+    "description": "你的每个 Bot 正在做什么、需要你做什么，以及是否已暂停。",
+    "loadError": "无法加载你的 Bots。",
+    "empty": "你还没有任何 Bot。",
+    "paused": "已暂停"
+  },
+  "browser": {
+    "browsing": "正在浏览…",
+    "browsedOne": "已浏览 1 个页面",
+    "browsedMany": "已浏览 {{pages}} 个页面",
+    "activity": "浏览器活动",
+    "issueOne": "1 个问题",
+    "issueMany": "{{issues}} 个问题",
+    "inProgress": "进行中",
+    "notCompleted": "未完成",
+    "stepFailed": "此步骤未能完成。",
+    "step": {
+      "navigate": "打开了页面",
+      "read": "读取了页面",
+      "snapshot": "检查了页面",
+      "click": "点击了页面",
+      "type": "填写了字段",
+      "key": "按下了按键",
+      "scroll": "滚动了页面"
+    }
+  },
+  "channelDetail": {
+    "computer": "计算机",
+    "channelFallback": "频道",
+    "coworkerAria": "频道同事",
+    "loadError": "无法加载此频道。"
+  },
+  "channelNew": {
+    "rosterError": "无法加载同事。",
+    "notAvailable": "此 Bot 对你不可用。它可能尚未发布、未与你共享，或还没有描述。",
+    "detailError": "无法加载该同事。",
+    "noAgents": "未找到任何 Agent。"
+  },
+  "chat": {
+    "historyUnavailable": "较早的消息暂时无法使用。你可以继续使用此对话。",
+    "historyUnreadableOne": "有 1 条较早的消息无法读取，因此未显示。此对话的其余部分是完整的。",
+    "historyUnreadableMany": "有 {{messages}} 条较早的消息无法读取，因此未显示。此对话的其余部分是完整的。",
+    "sentFile": "发送了 {{name}}",
+    "sentAttachment": "发送了一个附件",
+    "sentAttachments": "发送了 {{number}} 个附件",
+    "voiceContextUnavailable": "此消息未能获取较早的语音上下文。Agent 可能需要你重复通话中的细节。",
+    "agentBusy": "Agent 仍在处理另一个请求。请稍候，或先停止该任务。",
+    "stoppedByUser": "用户在此任务完成前停止了它。",
+    "voiceArchiveError": "无法加载语音聊天。请刷新重试。",
+    "coworkerDeleted": "这位同事已被删除。对话仍可阅读，但无法再回复。"
+  },
+  "composer": {
+    "tooManyStaged": "已暂存 {{staged}} 个附件，而一条消息最多只能携带 {{max}} 个。请移除 {{remove}} 个再发送其余附件。",
+    "droppedMergedOverCap": "在排队的消息合并为一条时被丢弃：一条消息最多只能携带 {{max}} 个附件。",
+    "droppedQueuedRemoved": "已随其所属的排队消息一起被移除。",
+    "dropCannotSend": "未能附加：此对话已无法再接收消息。",
+    "dropNoConversation": "未能附加：这里还没有对话。请先发送这条消息，再向它打开的对话添加附件。",
+    "queueMessage": "排队发送消息",
+    "sendMessage": "发送消息",
+    "stopAria": "停止 Bot",
+    "showVoiceCall": "显示语音通话",
+    "startVoiceCall": "开始语音通话",
+    "callThisAgent": "呼叫此 Agent",
+    "voiceUnsupported": "语音通话需要 HTTPS 或 localhost 以及麦克风支持",
+    "attachFile": "添加附件",
+    "optionsUnavailable": "更多消息选项不可用",
+    "messageAria": "消息",
+    "placeholder": "随便问点什么"
+  },
+  "consent": {
+    "skipped": "已跳过。未使用你的任何内容。",
+    "allowedOnce": "已允许一次。请让 Bot 再试一次。",
+    "allowedAllTeamBots": "已对所有 Team Bot 始终允许。请让它再试一次。",
+    "allowedAlways": "已对此 Bot 始终允许。请让它再试一次。",
+    "allowOnce": "允许一次",
+    "alwaysAllowThis": "始终允许此 Bot",
+    "alwaysAllowAll": "始终允许所有 Team Bot",
+    "skip": "跳过"
+  },
+  "dictation": {
+    "dictateAria": "听写消息",
+    "unsupported": "听写需要受支持的浏览器以及 HTTPS（或 localhost）",
+    "cancelAria": "取消听写",
+    "waitingPermission": "正在等待麦克风权限…",
+    "transcribing": "正在转写…",
+    "listening": "正在聆听",
+    "durationAria": "录音时长",
+    "retry": "重试",
+    "recordAgain": "重新录音",
+    "stopAria": "停止并转写",
+    "stopTitle": "停止并添加到草稿",
+    "sendAria": "转写并发送",
+    "sendTitle": "转写并发送"
+  },
+  "group": {
+    "empty": "对 {{names}} 说点什么。每个 Bot 会依次回答；以 @Name 开头可只问其中一个。",
+    "and": "和",
+    "botGone": "已不在此处的 Bot",
+    "you": "你",
+    "teammate": "一位队友",
+    "anotherBot": "另一个 Bot",
+    "answerFrom": " · 来自 {{name}} 的回答",
+    "thinking": "思考中",
+    "waiting": "正在等待你的响应。",
+    "openApprovals": "打开审批",
+    "consentAsked": "已请求一位队友授权使用其本人的 {{server}} 账户。",
+    "answerFailed": "此 Bot 无法回答。",
+    "addPerson": "添加人员",
+    "emailAria": "对方的邮箱",
+    "emailPlaceholder": "对方的邮箱",
+    "add": "添加",
+    "people": "成员：",
+    "leaveAria": "退出此群组",
+    "removePersonAria": "移除 {{email}}",
+    "leave": "退出"
+  },
+  "groupDetail": {
+    "groupFallback": "群组"
+  },
+  "groupNew": {
+    "title": "新建群组对话",
+    "description": "选择至少两个 Bot，并按它们回答的顺序排列。每个 Bot 都能看到其他人说了什么，也可以通过 @Name 把对话交给另一个 Bot。",
+    "first": "第一",
+    "second": "第二",
+    "third": "第三",
+    "answers": "{{position}}个回答",
+    "start": "开始群组"
+  },
+  "recipient": {
+    "to": "收件人：",
+    "removeAria": "移除 {{name}}",
+    "chooseAria": "选择同事",
+    "choosePlaceholder": "选择同事…",
+    "noMatch": "没有叫这个名字的同事。"
+  },
+  "rejectedFiles": {
+    "dismissOne": "关闭此拒绝提示",
+    "dismissMany": "关闭这 {{number}} 条拒绝提示"
+  },
+  "toolBoundary": {
+    "failedSuffix": "无法绘制。此对话的其余部分不受影响。"
+  },
+  "toolLine": {
+    "blocked": "已阻止：{{label}}",
+    "failed": "{{label}}，未成功"
+  },
+  "transcript": {
+    "loadingAria": "正在加载此对话",
+    "thinking": "思考中",
+    "attachmentFallback": "附件",
+    "queued": "已排队",
+    "removeQueuedAria": "移除排队的消息：{{message}}",
+    "remove": "移除",
+    "routineRan": "例程已运行。",
+    "responsibilityRan": "职责已运行。",
+    "responsibilityTrigger": "触发方式：{{trigger}}",
+    "details": "详情",
+    "via": "来自 {{name}}",
+    "untitledFile": "未命名文件",
+    "attachmentLabel": "附件",
+    "attachmentAlt": "附件：{{name}}",
+    "fileUnavailable": "{{name}} 已不可用。",
+    "attachmentUnavailable": "此附件已不可用。",
+    "openAttachment": "打开 {{name}}",
+    "close": "关闭",
+    "generatedInterface": "此 Bot 的生成界面"
+  },
+  "voice": {
+    "statusUnavailable": "通话不可用",
+    "connecting": "连接中…",
+    "speaking": "{{name}} 正在说话",
+    "working": "正在处理你的请求",
+    "muted": "你的麦克风已静音",
+    "listening": "正在听你说话",
+    "ready": "随时准备就绪",
+    "callAria": "与 {{name}} 的语音通话",
+    "durationAria": "通话时长",
+    "expandAria": "展开语音通话",
+    "expandTitle": "展开通话",
+    "endAria": "结束语音通话",
+    "endTitle": "结束通话",
+    "youMuted": "你 · 麦克风已静音",
+    "you": "你",
+    "youNamedAria": "{{name}}（你）",
+    "settings": "通话设置",
+    "captions": "显示实时字幕",
+    "returnAria": "返回聊天",
+    "returnTitle": "返回聊天 · 保持通话",
+    "unmuteAria": "取消麦克风静音",
+    "muteAria": "静音麦克风",
+    "unmuteTitle": "取消麦克风静音",
+    "muteTitle": "静音麦克风 · 你仍能听到 Agent 的声音",
+    "captionsHint": "准备好后请开口。此通话使用当前聊天。",
+    "tryAgain": "重试"
+  },
+  "voiceCard": {
+    "title": "语音聊天",
+    "savingAria": "正在保存语音聊天",
+    "you": "你",
+    "agent": "Agent",
+    "saving": "正在保存你的对话并准备摘要…",
+    "unsaved": "无法确认此语音聊天已保存。",
+    "summaryFailed": "文字记录已保存，但无法生成摘要。",
+    "expandHint": "你仍可以展开查看文字记录。",
+    "retrySave": "重试保存",
+    "retrySummary": "重试生成摘要"
+  },
+  "preview": {
+    "loadError": "无法加载预览。",
+    "publishToSee": "在 Playground 中发布后即可看到预览。",
+    "publishedTitle": "已发布的组件（含保存的示例参数）",
+    "conversationOnly": "此组件只在对话中绘制。",
+    "publishedInPlayground": "已在 Playground 中发布。",
+    "cannotDraw": "当前构建无法绘制此组件。"
+  },
+  "gallery": {
+    "activity": {
+      "couldNotRead": "无法读取该数据。",
+      "reportTitle": "报告",
+      "choosingReport": "正在选择报告…",
+      "readingCaption": "正在从本部署读取",
+      "reading": "读取中…",
+      "notShown": "未显示",
+      "botActivity": "Bot 活动",
+      "nothingDone": "过去 {{days}} 天内没有任何 Bot 进行过操作。",
+      "askBusiest": "{{bot}} 实际上在做什么？请查看审计记录并总结。",
+      "askAboutBusiest": "询问最繁忙的",
+      "countedFrom": "统计自本部署的审计记录，最近 {{days}} 天",
+      "recentRefusals": "最近的拒绝",
+      "refusedNothing": "本部署没有拒绝过任何操作。",
+      "askExplainLatest": "解释该列表中最近一次拒绝的原因，以及需要做出什么更改才能允许它。",
+      "explainLatest": "解释最近一次",
+      "readFromAudit": "读取自本部署的审计记录"
+    },
+    "cards": {
+      "of": "{{done}} / {{total}}",
+      "tone": {
+        "neutral": "中性",
+        "positive": "正面",
+        "caution": "注意",
+        "negative": "负面"
+      }
+    },
+    "charts": {
+      "empty": "没有可绘制图表的数据。"
+    },
+    "decisions": {
+      "waitingAssistant": "正在等待助手…",
+      "preparingRequest": "正在准备请求…",
+      "approved": "已批准",
+      "declined": "已拒绝",
+      "waitingOnYou": "等待你处理",
+      "reasonOptional": "理由（如需填写）",
+      "sending": "发送中…",
+      "approve": "批准",
+      "decline": "拒绝",
+      "preparingQuestion": "正在准备问题…",
+      "answered": "已回答"
+    },
+    "form": {
+      "preparingTitle": "正在准备你的表单…",
+      "preparingBody": "助手正在组织问题。",
+      "invalidMessage": "表单无法显示，因为其问题无效。请发送字段 ID 唯一、类型有效且每个选择字段都带有选项的更正表单。",
+      "unavailableTitle": "表单不可用",
+      "hadInvalidQuestions": "该表单的问题无效。Bot 可以发送更正后的表单。",
+      "hasInvalidQuestions": "该表单的问题无效，无法显示。",
+      "returnToBot": "返回给 Bot",
+      "enterValidNumber": "请输入有效的数字。",
+      "fieldRequired": "{{label}} 为必填项。",
+      "tooLong": "请使用不超过 2,000 个字符。",
+      "enterValidEmail": "请输入有效的电子邮箱地址。",
+      "chooseListed": "请选择列表中的一个选项。",
+      "enterMin": "请输入不小于 {{min}} 的值。",
+      "enterMax": "请输入不大于 {{max}} 的值。",
+      "submitted": "已提交",
+      "waitingOnYou": "等待你的操作",
+      "notProvided": "未提供",
+      "completedUnavailable": "此表单已完成。其保存的答案不可用。",
+      "requiredNote": "标有 * 的字段为必填项。你的回答将与 Bot 共享。",
+      "chooseOption": "选择一个选项",
+      "couldNotSend": "无法发送你的回答。请重试。",
+      "submitAnswers": "提交回答",
+      "sending": "发送中…"
+    },
+    "preview": {
+      "loading": "正在加载它可绘制的内容…",
+      "noComponents": "此 Bot 未被授予任何组件，因此它以纯文本回答。",
+      "drawsOwnRecords": "它绘制的是本部署自己的记录，因此在 Bot 请求之前没有可显示的内容。",
+      "kind": {
+        "chart": "图表",
+        "card": "卡片",
+        "decision": "决策"
+      }
+    },
+    "quote": {
+      "title": "引用",
+      "nothingToQuote": "没有可引用的内容。"
+    },
+    "refused": {
+      "notShown": "未显示：{{title}}"
+    },
+    "table": {
+      "title": "表格",
+      "waitingForData": "正在等待完整的表格数据…",
+      "rowCount_one": "{{count}} 行",
+      "rowCount_other": "{{count}} 行",
+      "scrollAria": "{{title}}表格，滚动查看更多列",
+      "sortCaption": "{{title}}。选择列标题进行排序。",
+      "emptyCell": "空",
+      "noRows": "没有可显示的行。",
+      "sortedAscending": "已按 {{column}} 升序排序。",
+      "sortedDescending": "已按 {{column}} 降序排序。",
+      "selectToSort": "选择列标题进行排序。"
+    }
+  }
+}

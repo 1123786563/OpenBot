@@ -2,6 +2,7 @@ import { IconPlug } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -62,6 +63,7 @@ export function matchingApps(apps: ComposioApp[]): ComposioApp[] {
 }
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   const [search, setSearch] = React.useState("");
   /*
    * Debounced, as on People, and for a stronger reason: every distinct term is a cache key of its
@@ -128,13 +130,16 @@ function RouteComponent() {
 
   return (
     <PageShell
-      backButton={{ label: "Plugins", linkProps: { to: "/admin/plugins" } }}
-      description="Composio's own directory. Adding an app makes its tools available to grant; each person still connects their own account before any of them reads anything."
-      title="Browse Composio"
+      backButton={{
+        label: t("plugins.title"),
+        linkProps: { to: "/admin/plugins" },
+      }}
+      description={t("composio.description")}
+      title={t("composio.title")}
     >
       <PageSection
-        description="Search by name. The directory is too long to read, and nothing here has been reviewed by this deployment."
-        title="Apps"
+        description={t("composio.apps.description")}
+        title={t("composio.apps.title")}
       >
         {enableError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
@@ -143,10 +148,10 @@ function RouteComponent() {
         ) : null}
 
         <Input
-          aria-label="Search Composio apps"
+          aria-label={t("composio.searchAria")}
           className="mt-4"
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by app name"
+          placeholder={t("composio.searchPlaceholder")}
           value={search}
         />
 
@@ -159,14 +164,11 @@ function RouteComponent() {
              * thing an operator who reached this URL needs to read; the hardcoded line stays as
              * the fallback for a failure that arrived carrying no message of its own.
              */}
-            {apps.error.message ||
-              "Composio's app directory could not be read."}
+            {apps.error.message || t("composio.directoryUnavailable")}
           </p>
         ) : listed.length === 0 ? (
           <PageEmpty>
-            {query
-              ? `Nothing in Composio's directory matches "${query}".`
-              : "Composio returned no apps."}
+            {query ? t("composio.noMatches", { query }) : t("composio.noApps")}
           </PageEmpty>
         ) : (
           <PageRows>
@@ -195,7 +197,9 @@ function RouteComponent() {
                       {/* The size of the decision, stated before it is made: an app is not one
                           tool, and "167 actions" is what says so. */}
                       <span className="text-muted-foreground text-xs">
-                        {entry.actionCount} actions
+                        {t("composio.actionCount", {
+                          number: entry.actionCount,
+                        })}
                       </span>
                       {/*
                        * An app this deployment already has says so rather than offering Add again.
@@ -204,7 +208,7 @@ function RouteComponent() {
                        */}
                       {entry.enabled ? (
                         <span className="text-muted-foreground text-xs">
-                          Added
+                          {t("composio.added")}
                         </span>
                       ) : (
                         <Button
@@ -213,7 +217,7 @@ function RouteComponent() {
                           size="sm"
                           variant="outline"
                         >
-                          {isAdding ? "Adding…" : "Add"}
+                          {isAdding ? t("composio.adding") : t("composio.add")}
                         </Button>
                       )}
                     </ItemActions>

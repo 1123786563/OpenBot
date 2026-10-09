@@ -8,6 +8,7 @@ import {
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
@@ -47,6 +48,7 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("channels");
   const { channelId } = Route.useParams();
   const { settings, watch } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
@@ -123,7 +125,7 @@ function RouteComponent() {
       onClose={() => show(null)}
       open={(isSettingsOpen || isWatching) && agentId !== undefined}
       detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
-      title={isWatching ? "Computer" : undefined}
+      title={isWatching ? t("channelDetail.computer") : undefined}
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action.
@@ -171,7 +173,7 @@ function RouteComponent() {
                 ease: EASE_OUT,
               }}
             >
-              {channel.data?.name ?? "Channel"}
+              {channel.data?.name ?? t("channelDetail.channelFallback")}
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
@@ -181,7 +183,7 @@ function RouteComponent() {
               onOpenChange={(open) => show(open ? "watch" : null)}
             />
             <Button
-              aria-label="Channel coworker"
+              aria-label={t("channelDetail.coworkerAria")}
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
@@ -219,12 +221,13 @@ function ChannelBody({
   isPending: boolean;
   hasError: boolean;
 }) {
+  const { t } = useTranslation("channels");
   // Nothing while the channel loads: a placeholder inside a local round-trip is a flicker.
   if (isPending) return null;
   if (hasError || !channel) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        Could not load this channel.
+        {t("channelDetail.loadError")}
       </p>
     );
   }

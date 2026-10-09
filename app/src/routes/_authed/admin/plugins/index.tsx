@@ -7,6 +7,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -83,17 +85,19 @@ function summaryFor(
    */
   auth: CatalogueItem["auth"] | undefined,
   youConnected: boolean,
+  t: TFunction<"admin">,
 ): string {
-  if (auth === "user-oauth" && !youConnected) return "Not connected";
-  if (server.tools.length === 0) return "No tools yet";
+  if (auth === "user-oauth" && !youConnected) return t("plugins.notConnected");
+  if (server.tools.length === 0) return t("plugins.noToolsYet");
 
   const bots = new Set(server.tools.flatMap((tool) => tool.grantedTo)).size;
-  const tools = `${server.tools.length} ${server.tools.length === 1 ? "tool" : "tools"}`;
-  if (bots === 0) return `${tools} · no Bots`;
-  return `${tools} · ${bots} ${bots === 1 ? "Bot" : "Bots"}`;
+  const tools = t("plugins.toolCount", { count: server.tools.length });
+  if (bots === 0) return `${tools} · ${t("plugins.noBots")}`;
+  return `${tools} · ${t("plugins.botCount", { count: bots })}`;
 }
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   const plugins = useQuery(pluginsPageQueryOptions());
   const connections = useQuery(connectionsQueryOptions());
 
@@ -118,24 +122,22 @@ function RouteComponent() {
 
   return (
     <PageShell
-      description="What this deployment can reach, and which Bots may reach it. Adding a plugin is account-wide; which Bots hold its tools is decided on its own page."
-      title="Plugins"
+      description={t("plugins.description")}
+      title={t("plugins.title")}
     >
       {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
       {plugins.isPending ? null : plugins.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Plugins could not be loaded.
+          {t("plugins.loadError")}
         </p>
       ) : (
         <>
           <PageSection
-            description="Added for the whole deployment. Open one to set what it needs and which Bots hold its tools."
-            title="Connected"
+            description={t("plugins.connected.description")}
+            title={t("plugins.connected.title")}
           >
             {plugins.data?.servers.length === 0 ? (
-              <PageEmpty>
-                Nothing connected yet. Everything available is below.
-              </PageEmpty>
+              <PageEmpty>{t("plugins.connected.empty")}</PageEmpty>
             ) : (
               <PageRows>
                 {plugins.data?.servers.map((server, index) => {
@@ -181,6 +183,7 @@ function RouteComponent() {
                               server,
                               authByKey.get(server.id),
                               connected.has(server.id),
+                              t,
                             )}
                           </span>
                           <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -197,11 +200,11 @@ function RouteComponent() {
           </PageSection>
 
           <PageSection
-            description="Reviewed, first-party servers this build will talk to. Open one to add it."
-            title="Explore plugins"
+            description={t("plugins.explore.description")}
+            title={t("plugins.explore.title")}
           >
             {explore.length === 0 ? (
-              <PageEmpty>Everything in the catalogue is connected.</PageEmpty>
+              <PageEmpty>{t("plugins.explore.empty")}</PageEmpty>
             ) : (
               <PageRows>
                 {explore.map((entry: CatalogueItem, index) => {
@@ -227,7 +230,7 @@ function RouteComponent() {
                         </ItemContent>
                         <ItemActions>
                           <span className="text-muted-foreground text-xs">
-                            Not added
+                            {t("plugins.notAdded")}
                           </span>
                           <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
                         </ItemActions>
@@ -241,8 +244,8 @@ function RouteComponent() {
           </PageSection>
 
           <PageSection
-            description="A directory this deployment has not reviewed, reached through Composio."
-            title="More apps"
+            description={t("plugins.moreApps.description")}
+            title={t("plugins.moreApps.title")}
           >
             <PageRows>
               {/*
@@ -262,10 +265,9 @@ function RouteComponent() {
                     <IconPlug className="size-4" />
                   </RowMark>
                   <ItemContent>
-                    <ItemTitle>Browse Composio</ItemTitle>
+                    <ItemTitle>{t("plugins.moreApps.browse")}</ItemTitle>
                     <ItemDescription>
-                      A few hundred apps, reached as whoever is asking. Each
-                      person connects their own account.
+                      {t("plugins.moreApps.browseDescription")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -280,10 +282,9 @@ function RouteComponent() {
                     <IconPlug className="size-4" />
                   </RowMark>
                   <ItemContent>
-                    <ItemTitle>Composio</ItemTitle>
+                    <ItemTitle>{t("plugins.moreApps.composio")}</ItemTitle>
                     <ItemDescription>
-                      Add your Composio key to enable a catalogue of tools. Set
-                      COMPOSIO_API_KEY on this deployment.
+                      {t("plugins.moreApps.composioDescription")}
                     </ItemDescription>
                   </ItemContent>
                 </Item>

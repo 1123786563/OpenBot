@@ -2,6 +2,7 @@ import { IconKey, IconLock, IconPointer } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,6 +40,7 @@ import { queryClient } from "@/query-client";
  * Four answers: type a login, confirm a saved one, take over the browser, or decline.
  */
 export function SignInForm({ requestId }: { requestId: string }) {
+  const { t } = useTranslation("common");
   const request = useQuery({
     ...signInRequestQueryOptions(requestId),
     // Polled so a takeover finishing elsewhere, or the request expiring, shows here.
@@ -83,9 +85,15 @@ export function SignInForm({ requestId }: { requestId: string }) {
 
   if (FINAL_SIGN_IN.includes(data.status))
     return (
-      <PageSection title={data.status === "signed_in" ? "Signed in" : "Closed"}>
+      <PageSection
+        title={
+          data.status === "signed_in"
+            ? t("signInForm.signedIn")
+            : t("signInForm.closed")
+        }
+      >
         <p className="text-muted-foreground text-sm">
-          {data.outcome ?? "This sign-in request is no longer open."}
+          {data.outcome ?? t("signInForm.noLongerOpen")}
         </p>
       </PageSection>
     );
@@ -93,8 +101,8 @@ export function SignInForm({ requestId }: { requestId: string }) {
   if (data.status === "taken_over")
     return (
       <PageSection
-        title="Sign in by hand"
-        description="Take the Bot's browser, sign in, and hand it back. Then say you are done so the Bot carries on."
+        title={t("signInForm.takeOverTitle")}
+        description={t("signInForm.takeOverDescription")}
       >
         <div className="flex flex-wrap gap-2">
           <Button
@@ -104,14 +112,16 @@ export function SignInForm({ requestId }: { requestId: string }) {
               <Link to="/bot" search={{ agent: data.botId, watch: true }} />
             }
           >
-            Open the Bot's browser
+            {t("signInForm.openBrowser")}
           </Button>
           <Button
             size="sm"
             disabled={busy}
             onClick={() => finish.mutate(requestId)}
           >
-            {finish.isPending ? "Finishing…" : "I've signed in"}
+            {finish.isPending
+              ? t("signInForm.finishing")
+              : t("signInForm.iHaveSignedIn")}
           </Button>
           <Button
             size="sm"
@@ -119,7 +129,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
             disabled={busy}
             onClick={() => cancel.mutate(requestId)}
           >
-            Cancel
+            {t("signInForm.cancel")}
           </Button>
         </div>
         {failure ? (
@@ -139,8 +149,10 @@ export function SignInForm({ requestId }: { requestId: string }) {
       ) : null}
       {data.savedLogins.length > 0 ? (
         <PageSection
-          title="Use a saved login"
-          description={`Choosing one confirms it may be used for this sign-in to ${data.origin}.`}
+          title={t("signInForm.useSavedTitle")}
+          description={t("signInForm.useSavedDescription", {
+            origin: data.origin,
+          })}
         >
           <PageRows>
             {data.savedLogins.map((login, index) => (
@@ -169,7 +181,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
                         )
                       }
                     >
-                      Confirm and sign in
+                      {t("signInForm.confirmAndSignIn")}
                     </Button>
                   </ItemActions>
                 </Item>
@@ -179,8 +191,8 @@ export function SignInForm({ requestId }: { requestId: string }) {
         </PageSection>
       ) : null}
       <PageSection
-        title="Enter your login"
-        description="Typed straight into the Bot's browser. The Bot is only told whether it worked."
+        title={t("signInForm.enterTitle")}
+        description={t("signInForm.enterDescription")}
       >
         <form
           className="flex flex-col gap-3"
@@ -212,7 +224,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
             className="flex flex-col gap-1 text-sm"
             htmlFor={`${id}-username`}
           >
-            Username or email
+            {t("signInForm.username")}
             <Input
               id={`${id}-username`}
               autoComplete="username"
@@ -225,7 +237,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
             className="flex flex-col gap-1 text-sm"
             htmlFor={`${id}-password`}
           >
-            Password
+            {t("signInForm.password")}
             <Input
               id={`${id}-password`}
               autoComplete="current-password"
@@ -237,7 +249,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
             />
           </label>
           <label className="flex flex-col gap-1 text-sm" htmlFor={`${id}-code`}>
-            Verification code, if the site asks for one
+            {t("signInForm.code")}
             <Input
               id={`${id}-code`}
               autoComplete="one-time-code"
@@ -258,7 +270,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
                 checked={save}
                 onCheckedChange={(checked) => setSave(checked === true)}
               />
-              Save to Passwords
+              {t("signInForm.saveToPasswords")}
             </label>
           ) : null}
           {failure ? (
@@ -269,7 +281,9 @@ export function SignInForm({ requestId }: { requestId: string }) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" type="submit" disabled={busy || !password}>
               <IconLock />
-              {submit.isPending ? "Signing in…" : "Sign in"}
+              {submit.isPending
+                ? t("signInForm.signingIn")
+                : t("signInForm.signIn")}
             </Button>
             <Button
               size="sm"
@@ -279,7 +293,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
               onClick={() => takeOver.mutate(requestId)}
             >
               <IconPointer />
-              Take over to sign in
+              {t("signInForm.takeOver")}
             </Button>
             <Button
               size="sm"
@@ -288,7 +302,7 @@ export function SignInForm({ requestId }: { requestId: string }) {
               disabled={busy}
               onClick={() => cancel.mutate(requestId)}
             >
-              Decline
+              {t("signInForm.decline")}
             </Button>
           </div>
         </form>

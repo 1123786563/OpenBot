@@ -2,6 +2,8 @@ import { IconHistory, IconPlayerPlay, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,7 +53,10 @@ import { queryClient } from "@/query-client";
  * right now" — which is also what a run stuck open after repeated dispatch failures looks like from
  * here. Neither is a failure, so neither gets the destructive tone; only `status: "failed"` does.
  */
-function lastRunLabel(lastRun: RoutineRecord["lastRun"]): {
+function lastRunLabel(
+  t: TFunction<"routines">,
+  lastRun: RoutineRecord["lastRun"],
+): {
   text: string;
   className: string;
   /** The chip's dot, which carries the tone so the text can stay readable. */
@@ -59,36 +64,36 @@ function lastRunLabel(lastRun: RoutineRecord["lastRun"]): {
 } {
   if (lastRun === null) {
     return {
-      text: "Never run yet",
+      text: t("lastRun.never"),
       className: "text-muted-foreground",
       dot: "bg-muted-foreground/40",
     };
   }
   if (lastRun.status === null) {
     return {
-      text: "Running…",
+      text: t("lastRun.running"),
       className: "text-muted-foreground",
       dot: "animate-pulse bg-muted-foreground",
     };
   }
-  const when = lastRun.at ? relativeTime(lastRun.at) : "recently";
+  const when = lastRun.at ? relativeTime(lastRun.at) : t("lastRun.recently");
   if (lastRun.status === "failed") {
     return {
-      text: `Failed ${when}`,
+      text: t("lastRun.failed", { when }),
       className: "text-destructive",
       dot: "bg-destructive",
     };
   }
   if (lastRun.status === "skipped") {
     return {
-      text: `Skipped ${when}`,
+      text: t("lastRun.skipped", { when }),
       className: "text-amber-600 dark:text-amber-500",
       dot: "bg-amber-500",
     };
   }
   if (lastRun.status === "succeeded") {
     return {
-      text: `Ran ${when}`,
+      text: t("lastRun.ran", { when }),
       className: "text-muted-foreground",
       dot: "bg-emerald-500",
     };
@@ -97,7 +102,7 @@ function lastRunLabel(lastRun: RoutineRecord["lastRun"]): {
   // success — the contract typing (`RoutineRunOutcome | null`) makes a fourth outcome a build-time
   // error, but this is the runtime fallback if that ever slips through.
   return {
-    text: `Finished ${when}`,
+    text: t("lastRun.finished", { when }),
     className: "text-muted-foreground",
     dot: "bg-muted-foreground/40",
   };
@@ -126,34 +131,35 @@ function Chip({
   );
 }
 
-const RUN_STATUS: Record<
-  RoutineRunRecord["status"],
-  { text: string; dot: string; className: string }
-> = {
+const RUN_STATUS = {
   running: {
-    text: "Running",
+    key: "runs.running",
     dot: "animate-pulse bg-muted-foreground",
     className: "",
   },
-  succeeded: { text: "Succeeded", dot: "bg-emerald-500", className: "" },
+  succeeded: { key: "runs.succeeded", dot: "bg-emerald-500", className: "" },
   failed: {
-    text: "Failed",
+    key: "runs.failed",
     dot: "bg-destructive",
     className: "text-destructive",
   },
   skipped: {
-    text: "Skipped",
+    key: "runs.skipped",
     dot: "bg-amber-500",
     className: "text-amber-600 dark:text-amber-500",
   },
-  waiting: { text: "Waiting for you", dot: "bg-sky-500", className: "" },
-};
+  waiting: { key: "runs.waiting", dot: "bg-sky-500", className: "" },
+} as const satisfies Record<
+  RoutineRunRecord["status"],
+  { key: string; dot: string; className: string }
+>;
 
 /** Every firing of one routine, newest first, each linking to the thread it ran in. */
 function RoutineRuns({ routine }: { routine: RoutineRecord }) {
+  const { t } = useTranslation("routines");
   const runs = useQuery(routineRunsQueryOptions(routine.id));
   if (runs.isPending)
-    return <p className="text-muted-foreground text-xs">Loading runs…</p>;
+    return <p className="text-muted-foreground text-xs">{t("runs.loading")}</p>;
   if (runs.error)
     return (
       <p className="text-destructive text-xs" role="alert">
@@ -161,7 +167,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
       </p>
     );
   if (!runs.data?.length)
-    return <p className="text-muted-foreground text-xs">No runs yet.</p>;
+    return <p className="text-muted-foreground text-xs">{t("runs.none")}</p>;
   return (
     <ul className="flex w-full flex-col gap-1.5">
       {runs.data.map((run) => {
@@ -178,14 +184,14 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
               )}
             >
               <span className={cn("size-1.5 rounded-full", status.dot)} />
-              {status.text}
+              {t(status.key)}
             </span>
             <span className="text-muted-foreground">
               {run.source === "run_now"
-                ? "Run now"
+                ? t("runs.source.runNow")
                 : run.source === "trigger"
-                  ? "Triggered"
-                  : "Scheduled"}{" "}
+                  ? t("runs.source.triggered")
+                  : t("runs.source.scheduled")}{" "}
               · {relativeTime(run.startedAt)}
             </span>
             {routine.channel.gone ? null : (
@@ -194,7 +200,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
                 params={{ channelId: routine.channel.id }}
                 to="/channel/$channelId"
               >
-                Open thread
+                {t("runs.openThread")}
               </Link>
             )}
             {run.error ? (
@@ -225,6 +231,7 @@ export function RoutinesList({
   /** Inside a dialog, where the page section's own top margin is somebody else's spacing. */
   embedded?: boolean;
 } = {}) {
+  const { t } = useTranslation("routines");
   const routines = useQuery(routinesQueryOptions());
   const setEnabled = useMutation(setRoutineEnabledMutationOptions(queryClient));
   const deleteRoutine = useMutation(deleteRoutineMutationOptions(queryClient));
@@ -256,12 +263,14 @@ export function RoutinesList({
         >
           <ItemContent>
             <ItemTitle className="text-amber-600 dark:text-amber-500">
-              Nothing is running these
+              {t("workerStalled.title")}
             </ItemTitle>
             <ItemDescription>
               {sweep?.lastSweptAt
-                ? `The routines worker last checked ${relativeTime(sweep.lastSweptAt)}. Until it is running again, none of these will fire.`
-                : "No routines worker has ever checked in, so none of these will fire. A deployment needs one running to carry them out."}
+                ? t("workerStalled.lastChecked", {
+                    when: relativeTime(sweep.lastSweptAt),
+                  })
+                : t("workerStalled.neverChecked")}
             </ItemDescription>
           </ItemContent>
         </Item>
@@ -270,27 +279,23 @@ export function RoutinesList({
       {/* Pending renders nothing: the empty-state sentence would otherwise flash for the fetch. */}
       {routines.isPending ? null : routines.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          Your routines could not be loaded.
+          {t("loadError")}
         </p>
       ) : rows.length === 0 ? (
         <Empty className="h-[180px] border border-dashed">
           <EmptyHeader>
             <EmptyTitle className="text-muted-foreground">
-              {agentId
-                ? "Nothing scheduled for this coworker"
-                : "Nothing scheduled"}
+              {agentId ? t("empty.agentTitle") : t("empty.title")}
             </EmptyTitle>
             <EmptyDescription>
-              {agentId
-                ? 'Ask it in a channel — "every weekday at 9, …" — and it will appear here.'
-                : 'Ask a Bot — "every weekday at 9, …" — and it will appear here.'}
+              {agentId ? t("empty.agentHint") : t("empty.hint")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((routine) => {
-            const lastRun = lastRunLabel(routine.lastRun);
+            const lastRun = lastRunLabel(t, routine.lastRun);
             return (
               <Item key={routine.id} variant="muted">
                 {/* Paused reads at a glance: the content dims, and a chip below says the word. */}
@@ -309,7 +314,7 @@ export function RoutinesList({
                     <div className="flex flex-wrap items-center gap-1.5">
                       {routine.channel.gone ? (
                         <Chip className="border-destructive/40 text-destructive">
-                          This channel is gone
+                          {t("channelGone")}
                         </Chip>
                       ) : (
                         // Where it posts is a place, so the chip goes there.
@@ -318,7 +323,7 @@ export function RoutinesList({
                           to="/channel/$channelId"
                         >
                           <Chip className="text-muted-foreground transition-colors hover:text-foreground">
-                            {routine.channel.name ?? "Unnamed channel"}
+                            {routine.channel.name ?? t("unnamedChannel")}
                           </Chip>
                         </Link>
                       )}
@@ -335,7 +340,9 @@ export function RoutinesList({
                        * takes its place, so the switch's state has a word as well as a position.
                        */}
                       {!routine.enabled ? (
-                        <Chip className="text-muted-foreground">Paused</Chip>
+                        <Chip className="text-muted-foreground">
+                          {t("paused")}
+                        </Chip>
                       ) : new Date(routine.nextRunAt).getTime() <=
                         Date.now() ? (
                         /*
@@ -344,11 +351,11 @@ export function RoutinesList({
                          */
                         <Chip className="text-amber-600 dark:text-amber-500">
                           <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                          Due
+                          {t("due")}
                         </Chip>
                       ) : (
                         <Chip className="text-muted-foreground">
-                          Next {relativeTime(routine.nextRunAt)}
+                          {t("next", { when: relativeTime(routine.nextRunAt) })}
                         </Chip>
                       )}
                     </div>
@@ -366,7 +373,9 @@ export function RoutinesList({
                    * because a paused routine never runs.
                    */}
                   <Button
-                    aria-label={`Run the routine scheduled ${routine.schedule} now`}
+                    aria-label={t("actions.runNowAria", {
+                      schedule: routine.schedule,
+                    })}
                     disabled={
                       !routine.enabled ||
                       (runNow.isPending && runNow.variables === routine.id)
@@ -379,18 +388,20 @@ export function RoutinesList({
                     size="sm"
                     title={
                       routine.enabled
-                        ? "Runs it for real, now: the Bot does the work and posts in the channel."
-                        : "Paused routines never run. Switch it on first."
+                        ? t("actions.runNowTitle")
+                        : t("actions.runNowPausedTitle")
                     }
                     type="button"
                     variant="outline"
                   >
                     <IconPlayerPlay />
-                    Run now
+                    {t("actions.runNow")}
                   </Button>
                   <Button
                     aria-expanded={historyId === routine.id}
-                    aria-label={`Run history for the routine scheduled ${routine.schedule}`}
+                    aria-label={t("actions.historyAria", {
+                      schedule: routine.schedule,
+                    })}
                     onClick={() =>
                       setHistoryId(historyId === routine.id ? null : routine.id)
                     }
@@ -407,7 +418,9 @@ export function RoutinesList({
                    * page uses for its per-Bot grant switches.
                    */}
                   <Switch
-                    aria-label={`Enable the routine scheduled ${routine.schedule}`}
+                    aria-label={t("actions.enableAria", {
+                      schedule: routine.schedule,
+                    })}
                     checked={routine.enabled}
                     disabled={
                       setEnabled.isPending &&
@@ -418,7 +431,9 @@ export function RoutinesList({
                     }
                   />
                   <Button
-                    aria-label={`Delete the routine scheduled ${routine.schedule}`}
+                    aria-label={t("actions.deleteAria", {
+                      schedule: routine.schedule,
+                    })}
                     onClick={() => {
                       deleteRoutine.reset();
                       setConfirmingId(routine.id);
@@ -452,11 +467,10 @@ export function RoutinesList({
             UI would otherwise render a nested dialog with no backdrop at all. */}
         <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
           <DialogHeader>
-            <DialogTitle>Delete "{confirming?.schedule}"?</DialogTitle>
-            <DialogDescription>
-              This standing instruction stops for good. Nothing further runs on
-              this schedule, and there is no undo.
-            </DialogDescription>
+            <DialogTitle>
+              {t("delete.title", { schedule: confirming?.schedule ?? "" })}
+            </DialogTitle>
+            <DialogDescription>{t("delete.description")}</DialogDescription>
           </DialogHeader>
           {deleteRoutine.error ? (
             <p className="text-destructive text-sm" role="alert">
@@ -469,7 +483,7 @@ export function RoutinesList({
               size="sm"
               variant="ghost"
             >
-              Cancel
+              {t("delete.cancel")}
             </Button>
             <Button
               disabled={deleteRoutine.isPending}
@@ -482,7 +496,9 @@ export function RoutinesList({
               size="sm"
               variant="destructive"
             >
-              {deleteRoutine.isPending ? "Deleting…" : "Delete"}
+              {deleteRoutine.isPending
+                ? t("delete.deleting")
+                : t("delete.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

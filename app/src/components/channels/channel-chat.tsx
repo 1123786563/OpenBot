@@ -6,6 +6,9 @@ import {
   useAgent,
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
+import i18next from "i18next";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { observeApprovalAgent } from "@/lib/copilot/approval-context";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -101,19 +104,23 @@ export function channelHistoryNotice({
   historyReadFailed?: boolean;
   unreadable: number;
 }): string | null {
+  // Exported for tests that call it with no component in scope, so the translator is bound from
+  // the shared instance rather than passed in; `ChannelChat` re-invokes this on every render,
+  // which keeps the sentence following the active language.
+  const t = i18next.getFixedT<"channels">(null, "channels");
   if (restoring) return null;
 
   if (
     historyAvailability === "unavailable" &&
     (historyReadFailed || (messageCount === 0 && lastMessageAt !== null))
   ) {
-    return "Earlier messages are temporarily unavailable. You can keep using this conversation.";
+    return t("chat.historyUnavailable");
   }
 
   if (unreadable > 0) {
     return unreadable === 1
-      ? "One earlier message could not be read and is not shown. The rest of this conversation is complete."
-      : `${unreadable} earlier messages could not be read and are not shown. The rest of this conversation is complete.`;
+      ? t("chat.historyUnreadableOne")
+      : t("chat.historyUnreadableMany", { messages: unreadable });
   }
 
   return null;
@@ -228,12 +235,17 @@ export function toMessageContent(
 }
 
 /** What the roster's "last thing said" reads when a message carried no caption. */
-function describeAttachments(attachments: readonly Attachment[]): string {
+function describeAttachments(
+  t: TFunction<"channels">,
+  attachments: readonly Attachment[],
+): string {
   if (attachments.length === 1) {
     const { filename } = uploadedAttachment(attachments[0]);
-    return filename ? `Sent ${filename}` : "Sent an attachment";
+    return filename
+      ? t("chat.sentFile", { name: filename })
+      : t("chat.sentAttachment");
   }
-  return `Sent ${attachments.length} attachments`;
+  return t("chat.sentAttachments", { number: attachments.length });
 }
 
 /**
@@ -249,6 +261,7 @@ export function ChannelChat({
   channel: AgentChannel;
   runtimeAgentId: string;
 }) {
+  const { t } = useTranslation("channels");
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
   // Mentions are scoped to the channel's permitted agents.
@@ -650,9 +663,7 @@ export function ChannelChat({
       }),
     ])
       .catch(() => {
-        setVoiceContextNotice(
-          "Earlier voice context wasn’t available for this message. The agent may need you to repeat details from the call.",
-        );
+        setVoiceContextNotice(t("chat.voiceContextUnavailable"));
         return cachedVoiceArchive(channel.id);
       })
       .finally(() => clearTimeout(voiceHistoryTimer));
@@ -707,7 +718,7 @@ export function ChannelChat({
       id: newId(),
       role: "user",
     });
-    report(trimmed || describeAttachments(attachments), null);
+    report(trimmed || describeAttachments(t, attachments), null);
 
     // Providers reject later turns if prior tool calls have no result; repair before sending.
     const repaired = repairUnansweredToolCalls(target.messages);
@@ -778,9 +789,7 @@ export function ChannelChat({
 
     // Voice and typed requests share this turn boundary, including gaps between frontend tools.
     if (turnsRef.current > 0 || agentRef.current.isRunning) {
-      throw new Error(
-        "The agent is still working on another request. Please wait or stop that task first.",
-      );
+      throw new Error(t("chat.agentBusy"));
     }
 
     turnsRef.current += 1;
@@ -857,7 +866,7 @@ export function ChannelChat({
         send: (text) => sayRef.current(text),
       });
       if (started !== stopEpoch.current)
-        throw new Error("The user stopped this task before it completed.");
+        throw new Error(t("chat.stoppedByUser"));
       return answer;
     },
   });
@@ -968,7 +977,7 @@ export function ChannelChat({
                 />
                 {voiceArchive.error && (
                   <p className="pb-2 text-sm text-destructive" role="alert">
-                    Voice chats couldn’t be loaded. Refresh to try again.
+                    {t("chat.voiceArchiveError")}
                   </p>
                 )}
                 {voiceContextNotice && (
@@ -992,8 +1001,7 @@ export function ChannelChat({
                     className="pb-2 text-sm text-muted-foreground"
                     role="status"
                   >
-                    This coworker has been deleted. The conversation stays
-                    readable, but it can no longer reply.
+                    {t("chat.coworkerDeleted")}
                   </p>
                 )}
               </>
