@@ -708,7 +708,11 @@
       "browse": "Browse Composio",
       "browseDescription": "A few hundred apps, reached as whoever is asking. Each person connects their own account.",
       "composio": "Composio",
-      "composioDescription": "Add your Composio key to enable a catalogue of tools. Set COMPOSIO_API_KEY on this deployment."
+      "composioDescription": "Add your Composio key to enable a catalogue of tools. Set COMPOSIO_API_KEY on this deployment.",
+      "openConnector": "OpenConnector",
+      "openConnectorDescription": "Run the open-connector container to enable a self-hosted catalogue of apps. Set OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN on this deployment.",
+      "openConnectorBrowse": "Browse OpenConnector",
+      "openConnectorBrowseDescription": "Apps reached through this deployment's own OpenConnector container. Each person connects their own account; credentials stay in this deployment."
     }
   },
   "composio": {
@@ -726,6 +730,23 @@
     "apps": {
       "title": "Apps",
       "description": "Search by name. The directory is too long to read, and nothing here has been reviewed by this deployment."
+    }
+  },
+  "openConnector": {
+    "title": "Browse OpenConnector",
+    "description": "This deployment's own OpenConnector directory. Adding an app makes its tools available to grant; each person still connects their own account, and the credentials they type stay in this deployment.",
+    "searchAria": "Search OpenConnector apps",
+    "searchPlaceholder": "Search by app name",
+    "directoryUnavailable": "OpenConnector's app directory could not be read.",
+    "noMatches": "Nothing in OpenConnector's directory matches \"{{query}}\".",
+    "noApps": "OpenConnector returned no apps.",
+    "actionCount": "{{number}} actions",
+    "added": "Added",
+    "adding": "Adding…",
+    "add": "Add",
+    "apps": {
+      "title": "Apps",
+      "description": "Search by name. Nothing here has been reviewed by this deployment, and apps that connect through a consent screen are not offered."
     }
   },
   "pluginDetail": {

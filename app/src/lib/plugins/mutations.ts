@@ -267,6 +267,29 @@ export function enableComposioAppMutationOptions(queryClient: QueryClient) {
 }
 
 /**
+ * Add an OpenConnector app to the deployment, named by its slug.
+ *
+ * The twin of the Composio enable above, aimed at the second broker's endpoint: same slug-only
+ * body (the directory entry is what the server validates against), same single refetch of
+ * everything on either outcome, for the non-atomicity reason that head-comment states once for
+ * every write in this file.
+ */
+export function enableOpenConnectorAppMutationOptions(
+  queryClient: QueryClient,
+) {
+  return mutationOptions({
+    mutationFn: async (input: { slug: string }) => {
+      await client("/api/plugins/openconnector/apps", {
+        method: "POST",
+        body: input,
+        fallback: "That app could not be added.",
+      });
+    },
+    onSettled: () => invalidatePlugins(queryClient),
+  });
+}
+
+/**
  * Re-read a server's tool list, which is what makes a newly-added tool appear.
  *
  * The id is encoded, as every id in this file is. It is not this app's text: a custom server's id

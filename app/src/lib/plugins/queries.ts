@@ -183,6 +183,14 @@ export type PluginsPage = {
    * server.
    */
   composioConfigured: boolean;
+  /**
+   * Whether this deployment has OpenConnector configured.
+   *
+   * The same boolean for the second broker, read by the same row for the same reason: an unset
+   * pair of tokens is a supported state with its own inert row, and that row is drawn from this
+   * flag rather than from anything the tokens themselves could say.
+   */
+  openConnectorConfigured: boolean;
 };
 
 /** What one Bot holds, which is all the runtime needs to offer it. */
@@ -208,6 +216,8 @@ export const pluginKeys = {
   connections: () => ["plugins", "connections"] as const,
   composioApps: (query: string) =>
     ["plugins", "composio", "apps", query] as const,
+  openConnectorApps: (query: string) =>
+    ["plugins", "open-connector", "apps", query] as const,
 };
 
 /**
@@ -383,6 +393,26 @@ export function composioAppsQueryOptions(query: string) {
       const response = await client(
         `/api/plugins/composio/apps?q=${encodeURIComponent(query)}`,
         { fallback: "Composio's app directory could not be read." },
+      );
+      return response.json();
+    },
+  });
+}
+
+/**
+ * OpenConnector's app directory, narrowed by a search term — the twin of the Composio read above.
+ *
+ * `ComposioApp` is kept as the type name for now, but it is the BROKER DIRECTORY shape (`BrokerApp`
+ * plus `enabled`), not Composio's alone: both brokers answer it, and renaming is a wider pass than
+ * this second caller.
+ */
+export function openConnectorAppsQueryOptions(query: string) {
+  return queryOptions({
+    queryKey: pluginKeys.openConnectorApps(query),
+    queryFn: async (): Promise<{ apps: ComposioApp[] }> => {
+      const response = await client(
+        `/api/plugins/openconnector/apps?q=${encodeURIComponent(query)}`,
+        { fallback: "OpenConnector's app directory could not be read." },
       );
       return response.json();
     },

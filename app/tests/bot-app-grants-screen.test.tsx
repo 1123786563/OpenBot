@@ -148,6 +148,7 @@ function pluginsPage(overrides: Partial<PluginsPage> = {}): PluginsPage {
     botsMayCallBack: true,
     redirectUri: null,
     composioConfigured: false,
+    openConnectorConfigured: false,
     ...overrides,
   };
 }

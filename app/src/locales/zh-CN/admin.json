@@ -708,7 +708,11 @@
       "browse": "浏览 Composio",
       "browseDescription": "数百个应用，以发起请求者的身份访问。每个人连接自己的账户。",
       "composio": "Composio",
-      "composioDescription": "添加你的 Composio 密钥以启用工具目录。在此部署上设置 COMPOSIO_API_KEY。"
+      "composioDescription": "添加你的 Composio 密钥以启用工具目录。在此部署上设置 COMPOSIO_API_KEY。",
+      "openConnector": "OpenConnector",
+      "openConnectorDescription": "运行 open-connector 容器以启用自托管的应用目录。在此部署上设置 OPENCONNECTOR_ADMIN_TOKEN 和 OPENCONNECTOR_RUNTIME_TOKEN。",
+      "openConnectorBrowse": "浏览 OpenConnector",
+      "openConnectorBrowseDescription": "通过本部署自己的 OpenConnector 容器访问的应用。每个人连接自己的账户；凭据保留在本部署中。"
     }
   },
   "composio": {
@@ -726,6 +730,23 @@
     "apps": {
       "title": "应用",
       "description": "按名称搜索。目录太长无法通读，且这里的内容未经本部署审核。"
+    }
+  },
+  "openConnector": {
+    "title": "浏览 OpenConnector",
+    "description": "本部署自己的 OpenConnector 目录。添加应用后其工具可供授予；每个人仍需连接自己的账户，而他们输入的凭据保留在本部署中。",
+    "searchAria": "搜索 OpenConnector 应用",
+    "searchPlaceholder": "按应用名称搜索",
+    "directoryUnavailable": "无法读取 OpenConnector 的应用目录。",
+    "noMatches": "OpenConnector 的目录中没有匹配“{{query}}”的内容。",
+    "noApps": "OpenConnector 未返回任何应用。",
+    "actionCount": "{{number}} 个操作",
+    "added": "已添加",
+    "adding": "添加中…",
+    "add": "添加",
+    "apps": {
+      "title": "应用",
+      "description": "按名称搜索。这里的内容未经本部署审核，且通过授权页面连接的应用不会被提供。"
     }
   },
   "pluginDetail": {
