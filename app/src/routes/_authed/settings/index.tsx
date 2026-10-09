@@ -26,7 +26,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
-import { SUPPORTED_LANGUAGES } from "@/lib/i18n";
+import { FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
@@ -35,6 +35,14 @@ export const Route = createFileRoute("/_authed/settings/")({
 /** Interface language, switched live and persisted by the language detector's localStorage cache. */
 function LanguagePreference() {
   const { t, i18n } = useTranslation("settings");
+  // "en-US" from the browser is the "en" bundle; the trigger shows that bundle's own name.
+  const current =
+    SUPPORTED_LANGUAGES.find(
+      (language) =>
+        language === (i18n.resolvedLanguage ?? i18n.language) ||
+        language.split("-")[0] ===
+          (i18n.resolvedLanguage ?? i18n.language).split("-")[0],
+    ) ?? FALLBACK_LANGUAGE;
 
   return (
     <Item size="sm">
@@ -44,13 +52,13 @@ function LanguagePreference() {
       </ItemContent>
       <ItemActions>
         <Select
-          value={i18n.resolvedLanguage ?? i18n.language}
+          value={current}
           onValueChange={(language) => {
             if (language) void i18n.changeLanguage(language);
           }}
         >
           <SelectTrigger aria-label={t("language.label")}>
-            <SelectValue />
+            <SelectValue>{t(`language.${current}`)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {SUPPORTED_LANGUAGES.map((language) => (
