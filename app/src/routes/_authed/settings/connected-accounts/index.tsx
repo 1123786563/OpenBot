@@ -34,6 +34,7 @@ import {
   personalConnections,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
+import { isBrokeredProvenance } from "@/lib/brokered-provenance";
 
 /**
  * The services a Bot reads as you.
@@ -77,7 +78,12 @@ export function brokeredAccountsListedOn(
 ): PluginServer[] {
   return servers.filter(
     (server) =>
-      server.provenance === "composio" &&
+      /*
+       * ASKED THROUGH THE SHARED LIST, not by naming a broker: both Composio and OpenConnector rows
+       * answer as the person asking, and the page's one clause — a per-person account somebody may
+       * hold — is the same question for either. A third broker needs no edit here.
+       */
+      isBrokeredProvenance(server.provenance) &&
       server.authScheme !== "NO_AUTH" &&
       server.accountMode !== "shared",
   );
@@ -89,7 +95,8 @@ export function sharedAccountsListedOn(
 ): PluginServer[] {
   return servers.filter(
     (server) =>
-      server.provenance === "composio" && server.accountMode === "shared",
+      // The same shared list, for the same reason as `brokeredAccountsListedOn` above.
+      isBrokeredProvenance(server.provenance) && server.accountMode === "shared",
   );
 }
 

@@ -32,21 +32,50 @@ import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
 import {
   connectionsQueryOptions,
   type PluginServer,
+  type PluginsPage,
   personalConnections,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
+import { isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
- * Whether this server is reached through Composio AS THIS PERSON.
+ * Whether this server is reached through a BROKER as this person.
  *
- * A Shared app is also `provenance === "composio"` — it is still Composio that holds the account —
- * but there is no "your account" here to confirm: the one account is the deployment's, and every
- * Bot holding a grant acts as it regardless of who is asking. Exported so the test for this file can
- * pin the distinction without rendering the page.
+ * A Shared app is also a brokered row — the broker that holds the account is whichever the row
+ * names, not a fixed one — but there is no "your account" here to confirm: the one account is the
+ * deployment's, and every Bot holding a grant acts as it regardless of who is asking. Exported so
+ * the test for this file can pin the distinction without rendering the page.
  */
 export function brokeredFor(server: PluginServer | undefined): boolean {
-  return server?.provenance === "composio" && server.accountMode !== "shared";
+  return (
+    server !== undefined &&
+    isBrokeredProvenance(server.provenance) &&
+    server.accountMode !== "shared"
+  );
+}
+
+/**
+ * Which broker's configured flag a row's key form is gated on.
+ *
+ * TWO CASES, AND ONLY TWO. A brokered row is gated on ITS OWN broker's flag — an OpenConnector row
+ * whose container has no tokens would otherwise draw a key form on the strength of Composio being
+ * configured, a form the route behind it would refuse to accept — and a row that is not brokered at
+ * all has no broker to be unconfigured, so it is `true` rather than read off either flag: the flag
+ * drives a key-form state, and a first-party or custom connector's form is never broker-gated.
+ */
+function brokerConfigured(
+  server: PluginServer | undefined,
+  page: PluginsPage | undefined,
+): boolean {
+  if (server === undefined || !isBrokeredProvenance(server.provenance)) {
+    return true;
+  }
+  return (
+    (server.provenance === "open-connector"
+      ? page?.openConnectorConfigured
+      : page?.composioConfigured) ?? false
+  );
 }
 
 /**
@@ -116,7 +145,7 @@ function RouteComponent() {
   const brokeredAccount = useBrokeredAccount({
     authScheme: server?.authScheme ?? null,
     brokered,
-    configured: plugins.data?.composioConfigured ?? false,
+    configured: brokerConfigured(server, plugins.data),
     recorded: connection !== undefined,
     report: setNotice,
     returnTo: "settings",
