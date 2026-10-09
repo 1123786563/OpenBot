@@ -379,6 +379,20 @@
       "when": 1791540174625,
       "tag": "0053_clean_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791554052944,
+      "tag": "0054_enterprise_tenancy",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791554273690,
+      "tag": "0055_enterprise_tenancy_rls",
+      "breakpoints": true
     }
   ]
 }
