@@ -1,42 +1,17 @@
 {
-  "commit": "a4d4670ae2ce093cf913e7c7aa2528a165939f9d",
+  "commit": "48f9041218f6315e09aab92cd815f1adb3c04f2c",
   "go_version": "go version go1.26.3 darwin/arm64",
   "workspace_digest": {
     "dirty": true,
     "summary": [
-      "M .env.example",
-      " M app/src/routes/sign.tsx",
-      " M docker-compose.yml",
-      " M runtime-go/cmd/runtime/main.go",
-      " M runtime-go/internal/adapter/agui_test.go",
-      " M runtime-go/internal/runtimeconfig/config_test.go",
-      " M runtime-go/internal/server/auth.go",
-      " M runtime-go/internal/server/auth_test.go",
-      " M runtime-go/internal/server/runs.go",
-      " M runtime-go/testdata/compatibility-report.json",
-      " M server/drizzle/meta/_journal.json",
-      " M server/scripts/enterprise-runtime-probe.ts",
-      " M server/src/enterprise/runtime/validation-routes.ts",
-      " M server/src/plugins/composio-adapter.ts",
-      " M server/tests/enterprise/runtime-contract.test.ts",
-      "?? casdoor/",
-      "?? runtime-go/internal/runtimeconfig/config.go",
-      "?? runtime-go/internal/server/inputguard.go",
-      "?? runtime-go/internal/server/inputguard_test.go",
-      "?? server/drizzle/0055_steady_machine_man.sql",
-      "?? server/drizzle/0056_enterprise_tenancy_rls.sql",
-      "?? server/drizzle/meta/0055_snapshot.json",
-      "?? server/drizzle/meta/0056_snapshot.json",
-      "?? server/ops/",
-      "?? server/scripts/enterprise-test-db.ts",
-      "?? server/tests/enterprise/runtime-invocation.test.ts",
-      "?? server/tests/enterprise/tenancy/rls.test.ts"
+      "M runtime-go/testdata/compatibility-report.json",
+      "?? server/tests/support/pg-errors.ts"
     ]
   },
   "document_baseline": {
     "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
-    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "5e6115f12f8df8368683d81fed6f680d39b19d8e7d08b01d926ea5df047315b7",
-    "server/scripts/enterprise-runtime-probe.ts": "5f1ef90931fae7fffed659da0efb349e373a856a4a26be533acb2434f0688986",
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "6ab62b26dc2a8506716ee68e25e306bfde298dcbe72c55b43ca9759d9c614935",
+    "server/scripts/enterprise-runtime-probe.ts": "38ef2b9e132aac1171e8cc6b328d417b2d43af9f67312e1b6d1e7ad745a320bc",
     "runtime-go/cmd/runtime/main.go": "2cee75fdeb424b680431be462c3dec250a1c1e92d54c5dbc5d69dae268a7c352",
     "runtime-go/internal/adapter/agui_test.go": "f32e48245e48cba5cf4311ac441b2e7ebc8a9e7911cef80359f9dabdd388f67d",
     "runtime-go/internal/adapter/agui.go": "c59c944795f6a8f78f6689588577c7068b2ea81fd9d507ff03a95cfbe67fe33f",
@@ -739,7 +714,7 @@
         "-o",
         "rss=",
         "-p",
-        "92690"
+        "11462"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -790,7 +765,7 @@
     },
     "cancel": {
       "status": "passed",
-      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 2ms after the cancel"
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 1ms after the cancel"
     },
     "backpressure": {
       "status": "not_run",
@@ -825,10 +800,10 @@
     }
   },
   "measurements": {
-    "rssBytes": 25100288,
-    "firstEventMs": 8,
-    "cancelLagMs": 2,
-    "streamDurationMs": 10
+    "rssBytes": 25182208,
+    "firstEventMs": 4,
+    "cancelLagMs": 1,
+    "streamDurationMs": 6
   },
   "reviewers": {
     "G1a": {
