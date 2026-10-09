@@ -18,6 +18,7 @@ import {
   connectBrokeredWithFieldsMutationOptions,
   disconnectBrokeredMutationOptions,
   enableComposioAppMutationOptions,
+  enableOpenConnectorAppMutationOptions,
   recheckBrokeredConnectionMutationOptions,
   refreshPluginServerMutationOptions,
   registerOAuthClientMutationOptions,
@@ -201,6 +202,21 @@ const REFUSALS: {
       "The app was added, but its tools could not be read just now. Press Refresh on the Plugins page.",
     factory: enableComposioAppMutationOptions,
     variables: { slug: "linear" },
+  },
+  /*
+   * The second broker's enable, with the SAME status and sentence its route answers: the OpenConnector
+   * twin's catch maps a deployment fault to 409 and `deploymentFaultSentence` exactly as the Composio
+   * route above does — the broker is the only thing that differs, and the property under test (the
+   * screen is refetched on a refusal over a row that stands) is broker-generic by design.
+   */
+  {
+    name: "enabling an OpenConnector app",
+    route: "POST /api/plugins/openconnector/apps",
+    status: 409,
+    message:
+      "The app was added, but its tools could not be read just now. Press Refresh on the Plugins page.",
+    factory: enableOpenConnectorAppMutationOptions,
+    variables: { slug: "github" },
   },
   {
     name: "refreshing a server's tools",

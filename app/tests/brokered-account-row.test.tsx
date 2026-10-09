@@ -195,6 +195,9 @@ function pluginsPage(
     botsMayCallBack: true,
     redirectUri: null,
     composioConfigured,
+    // The second broker's flag, defaulted off: these cases render Composio rows, whose configured
+    // state is the argument above and whose broker is never OpenConnector.
+    openConnectorConfigured: false,
   };
 }
 
