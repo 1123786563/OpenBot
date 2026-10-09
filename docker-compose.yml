@@ -418,6 +418,28 @@ services:
     networks:
       - data
 
+  # OpenConnector, the self-hosted broker behind this deployment's own app catalogue. Unlike every
+  # other broker here it is a container of this deployment's: the credentials people type stay in
+  # the volume below, encrypted by the container when OPENCONNECTOR_ENCRYPTION_KEY is set, and
+  # reachable by nobody outside this machine.
+  open-connector:
+    image: ghcr.io/oomol-lab/open-connector:latest   # pin to a digest when cutting a release
+    restart: unless-stopped
+    environment:
+      OOMOL_CONNECT_ADMIN_TOKEN: ${OPENCONNECTOR_ADMIN_TOKEN:-}
+      OOMOL_CONNECT_RUNTIME_TOKEN: ${OPENCONNECTOR_RUNTIME_TOKEN:-}
+      OOMOL_CONNECT_ENCRYPTION_KEY: ${OPENCONNECTOR_ENCRYPTION_KEY:-}
+    volumes:
+      - open-connector-data:/app/data
+    ports:
+      # Loopback, like every other port in this file. The API server runs on the host and reaches
+      # the broker at OPENCONNECTOR_URL, http://localhost:3100 by default; the two tokens are the
+      # boundary against everything else on this machine. Both loopback families, for the reason
+      # postgres gives above: `localhost` is not one address, and a host-run Bun server does not
+      # fall back from the family it tried first.
+      - "127.0.0.1:3100:3000"
+      - "[::1]:3100:3000"
+
 networks:
   # The database and the services that reach it by name. Nothing a Bot can reach is on it.
   #
@@ -430,6 +452,7 @@ networks:
 
 volumes:
   postgres-data:
+  open-connector-data:
   agent-workspace:
   spire-server-data:
   spire-server-socket:
