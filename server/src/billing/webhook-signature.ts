@@ -1,15 +1,25 @@
-import { createHmac, createSign, createVerify, timingSafeEqual } from "node:crypto";
+import {
+  createHmac,
+  createSign,
+  createVerify,
+  timingSafeEqual,
+} from "node:crypto";
 import type { VerifiedWebhook, WebhookVerifier } from "./types";
 
 /**
  * The provider's own two webhook signature modes, verified the way it signs.
  *
  * jwt (its default): `X-Lago-Signature` carries a compact JWT whose `data` claim is the webhook
- * payload. The signature is RS256 over `header.payload`, so the verifier needs the provider
- * instance's public key — supplied here at construction, never fetched at runtime: a runtime fetch
- * of the trust root would let a hijacked API URL hand us the key that verifies its own forgeries.
- * The `alg` in the token header is a whitelist (`RS256`), not a value honoured: `none` and an
- * HMAC algorithm impersonating the public-key mode are both refused before anything is verified.
+ * payload, encoded twice: the provider's own signer builds the claim as `{ data: payload.to_json }`
+ * (getlago/lago-api app/models/webhook.rb `jwt_signature`), so what rides inside the JWT payload is
+ * a JSON *string*, not the payload object. The verifier unwraps that string before comparing, and
+ * also accepts the object spelling as a defensive compatibility — but the string is the shape a
+ * real delivery arrives in, and the only one the signer below produces. The signature is RS256 over
+ * `header.payload`, so the verifier needs the provider instance's public key — supplied here at
+ * construction, never fetched at runtime: a runtime fetch of the trust root would let a hijacked
+ * API URL hand us the key that verifies its own forgeries. The `alg` in the token header is a
+ * whitelist (`RS256`), not a value honoured: `none` and an HMAC algorithm impersonating the
+ * public-key mode are both refused before anything is verified.
  *
  * hmac: chosen when the provider's webhook endpoint is created with the hmac algorithm.
  * `X-Lago-Signature` is `base64(HMAC-SHA256(rawBody))`, compared in constant time.
@@ -82,7 +92,9 @@ function deliveryOf(data: unknown): VerifiedWebhook | null {
   return {
     eventId,
     webhookType,
-    ...(typeof objectId === "string" && objectId.length > 0 ? { objectId } : {}),
+    ...(typeof objectId === "string" && objectId.length > 0
+      ? { objectId }
+      : {}),
     ...(typeof externalCustomerId === "string" && externalCustomerId.length > 0
       ? { externalCustomerId }
       : {}),
@@ -130,18 +142,25 @@ export function createWebhookVerifier(config: {
         if (!verified) return { ok: false };
 
         // The signed `data` claim must be the body that arrived, or the signature is over a
-        // different message than the one we are about to act on.
+        // different message than the one we are about to act on. The claim is double-encoded on the
+        // wire — a JSON string, per the provider's own signer — so a string is parsed into the
+        // payload first; an object claim is read as-is, as defensive compatibility for an assembly
+        // that ever produced that shape. A `data` string whose JSON is not the body fails the same
+        // equality either way.
         const signedData = parseJson(
           Buffer.from(encodedPayload, "base64url").toString("utf8"),
-        ) as { data?: unknown } | undefined;
-        if (
-          !signedData ||
-          typeof signedData !== "object" ||
-          !jsonEqual(signedData.data, parseJson(rawBody))
-        ) {
+        ) as { data?: unknown } | undefined | string | number | boolean;
+        if (!signedData || typeof signedData !== "object") {
           return { ok: false };
         }
-        const delivery = deliveryOf(signedData.data);
+        const payload =
+          typeof signedData.data === "string"
+            ? parseJson(signedData.data)
+            : signedData.data;
+        if (!jsonEqual(payload, parseJson(rawBody))) {
+          return { ok: false };
+        }
+        const delivery = deliveryOf(payload);
         return delivery ? { ok: true, delivery } : { ok: false };
       }
 
@@ -164,14 +183,25 @@ export function createWebhookVerifier(config: {
   };
 }
 
-/** Signs a delivery the way the provider does, for this file's own tests. */
+/**
+ * Signs a delivery the way the provider does, for this file's own tests: the `data` claim is the
+ * payload serialised to a JSON string — the double encoding the provider's own signer applies
+ * (webhook.rb builds `{ data: payload.to_json }`) — so a test token has the real wire shape rather
+ * than a shape the signer and the verifier agreed on between themselves. An `iss` claim is present
+ * in real tokens and deliberately not reproduced or checked (see the header note).
+ */
 export function signDeliveryLikeProvider(
   payload: unknown,
   privateKeyPem: string,
   header: { alg: string } = { alg: "RS256" },
 ): string {
-  const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const claims = { data: JSON.stringify(payload) };
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString(
+    "base64url",
+  );
+  const encodedPayload = Buffer.from(JSON.stringify(claims)).toString(
+    "base64url",
+  );
   const signature = createSign("RSA-SHA256")
     .update(`${encodedHeader}.${encodedPayload}`)
     .sign(privateKeyPem)

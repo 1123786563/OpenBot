@@ -1,12 +1,54 @@
 {
   "$schema": "https://raw.githubusercontent.com/golang/go/master/src/cmd/go/internal/modindex/schema.txt",
-  "note": "Dependency facts for the Go runtime candidate, measured after the R2 lock-down. Every value below was produced by a command run in this workspace, never pre-filled.",
+  "note": "Dependency facts for the Go runtime candidate. Every value under graph/ and vulnerabilityScan/ was produced by a command run in this workspace against the CURRENT go.mod/go.sum, never pre-filled. R4-B rule this file obeys: when the dependency graph moves, the risk record moves with it or it is not a record (上游API路径/依赖变动时先适配契约再验收，不复制过期测试成功记录).",
   "module": "openbot/runtime-go",
   "recordedAt": "2026-10-09",
+  "rescanTrigger": {
+    "reason": "commit fbdecc2 expanded the frozen graph after the R2-era record was written: go.sum grew 117 -> 169 lines (+52, adding golang.org/x/crypto, trpc.group/trpc-go/trpc-mcp-go, github.com/lestrrat-go/jwx/v2, github.com/golang-jwt/jwt/v5 among others) and github.com/ag-ui-protocol/ag-ui/sdks/community/go became a DIRECT dependency of go.mod. The previous scan (20 reachable findings) described that older graph, so the graph and the vulnerability scan were re-measured and re-run from scratch on 2026-10-09.",
+    "previousRecordLocation": "history[0] of this file (also preserved verbatim in git history)"
+  },
   "toolchain": {
     "goVersion": "go1.26.3 darwin/arm64",
     "GOTOOLCHAIN": "auto (local toolchain already satisfies the highest dependency floor, no download)",
     "verifiedWith": "go version / go env GOVERSION"
+  },
+  "graph": {
+    "commit": "fbdecc29cd786952c4b496abc68384b31a320b17",
+    "measuredAt": "2026-10-09",
+    "goMod": {
+      "sha256": "aa869ff54106a5a4b53ff3aa55940639326b7708ce73e16e69747443093ec43a",
+      "lines": 48
+    },
+    "goSum": {
+      "present": true,
+      "lines": 169,
+      "sha256": "1cb4a7ff4ddf45ebf0b34dc393744254c47106b2f465884859f2369956aa0950",
+      "sha256First16": "1cb4a7ff4ddf45eb",
+      "modVerifyOutput": "all modules verified",
+      "measuredWith": "wc -l go.sum; shasum -a 256 go.sum; env GOPROXY=off go mod verify  (in runtime-go/)"
+    },
+    "resolvedDirectDependencies": {
+      "github.com/ag-ui-protocol/ag-ui/sdks/community/go": "v0.0.0-20260514093510-e9e910b230b9",
+      "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
+      "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
+    },
+    "goListAll": {
+      "moduleCount": 119,
+      "keyTransitiveVersions": {
+        "golang.org/x/crypto": "v0.46.0",
+        "golang.org/x/net": "v0.48.0",
+        "google.golang.org/grpc": "v1.79.3",
+        "google.golang.org/protobuf": "v1.36.10",
+        "go.opentelemetry.io/otel": "v1.40.0",
+        "trpc.group/trpc-go/trpc-a2a-go": "v0.2.6-0.20260721084546-18c8244d0acb",
+        "trpc.group/trpc-go/trpc-mcp-go": "v0.0.10",
+        "github.com/lestrrat-go/jwx/v2": "v2.1.4",
+        "github.com/golang-jwt/jwt/v5": "v5.2.3"
+      },
+      "fullOutput": "119 modules, produced by 'env GOPROXY=off go list -m all' in runtime-go/; the compatibility report's modules array (runtime-go/testdata/compatibility-report.json) holds the same list with indirect flags"
+    },
+    "replaceDirectives": "none; the upstream repository-internal 'replace => ../../' lines were deliberately not copied into this standalone module",
+    "toolchainFloorCheck": "highest dependency floor on the current graph is go 1.24.4 (github.com/ag-ui-protocol/ag-ui/sdks/community/go and trpc-agent-go/server/agui); the main module declares go 1.26.3 and local go1.26.3 satisfies it with no toolchain download (env GOPROXY=off go list -m -e -f '{{.Path}} {{.GoVersion}}' all)"
   },
   "r2LockDown": {
     "networkRule": "this machine defaults to GOPROXY=off and GOSUMDB=off; every network-touching command was prefixed with env GOPROXY=https://goproxy.cn,direct",
@@ -17,31 +59,7 @@
       "env GOPROXY=https://goproxy.cn,direct go list -m all",
       "go version"
     ],
-    "sequencingNote": "go get ran before the adapter was written (to read the framework's real interfaces from the module cache); go mod tidy ran after internal/adapter/agui.go imported the framework, exactly as the plan requires, so tidy could not strip the not-yet-imported candidate modules",
-    "resolvedDirectDependencies": {
-      "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
-      "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
-    },
-    "goSum": {
-      "present": true,
-      "lines": 117,
-      "sha256First16": "9002479a01ee927e",
-      "modVerifyOutput": "all modules verified"
-    },
-    "goListAll": {
-      "moduleCount": 113,
-      "keyTransitiveVersions": {
-        "github.com/ag-ui-protocol/ag-ui/sdks/community/go": "v0.0.0-20260514093510-e9e910b230b9",
-        "golang.org/x/net": "v0.48.0",
-        "google.golang.org/grpc": "v1.79.3",
-        "google.golang.org/protobuf": "v1.36.10",
-        "go.opentelemetry.io/otel": "v1.40.0",
-        "trpc.group/trpc-go/trpc-a2a-go": "v0.2.6-0.20260721084546-18c8244d0acb"
-      },
-      "fullOutput": "113 lines, produced by 'env GOPROXY=https://goproxy.cn,direct go list -m all' in runtime-go/"
-    },
-    "replaceDirectives": "none; the upstream repository-internal 'replace => ../../' lines were deliberately not copied into this standalone module",
-    "toolchainFloorCheck": "agui submodule declares go 1.24.4; local go1.26.3 satisfies it with no toolchain download"
+    "sequencingNote": "go get ran before the adapter was written (to read the framework's real interfaces from the module cache); go mod tidy ran after internal/adapter/agui.go imported the framework, exactly as the plan requires, so tidy could not strip the not-yet-imported candidate modules. The graph facts this section originally carried (goSum 117 lines / sha256First16 9002479a01ee927e / 113 modules) moved to history[0]: they describe the pre-fbdecc2 graph."
   },
   "candidate": {
     "dependency": "trpc.group/trpc-go/trpc-agent-go",
@@ -54,39 +72,63 @@
   "vulnerabilityScan": {
     "tool": "govulncheck",
     "installedVersion": "v1.8.0",
-    "installationCommands": [
-      "env GOPROXY=https://goproxy.cn,direct go list -m -versions golang.org/x/vuln  (latest listed: v1.8.0)",
-      "env GOPROXY=https://goproxy.cn,direct go install golang.org/x/vuln/cmd/govulncheck@v1.8.0"
-    ],
-    "scanCommand": "govulncheck ./...  (in runtime-go/)",
+    "scanCommand": "env GOPROXY=off govulncheck ./...  (in runtime-go/; the vulnerability database is fetched over HTTPS from vuln.go.dev)",
+    "scannedAt": "2026-10-09",
+    "scannedGoSumSha256": "1cb4a7ff4ddf45ebf0b34dc393744254c47106b2f465884859f2369956aa0950",
     "exitCode": 3,
-    "summary": "code is affected by 20 reachable vulnerabilities from 3 modules and the Go standard library; 15 further vulnerabilities exist in imported packages and 8 in required modules that this code does not call",
+    "summary": "code is affected by 24 reachable vulnerabilities from 3 modules and the Go standard library; 11 further vulnerabilities exist in imported packages and 8 in required modules that this code does not call. Up from 20 reachable findings on the pre-fbdecc2 graph: GO-2026-5026, GO-2026-6218, GO-2026-6605 and GO-2026-6610 are newly reachable on the expanded graph.",
     "reachableFindings": [
       {
-        "source": "Go standard library go1.26.3",
-        "ids": "GO-2026-6617, GO-2026-6613, GO-2026-6612, GO-2026-6611, GO-2026-6608, GO-2026-6607, GO-2026-6603, GO-2026-6600, GO-2026-6599, GO-2026-6091, GO-2026-6090, GO-2026-6089, GO-2026-5972, GO-2026-5856, GO-2026-5506(stdlib share), GO-2026-5039, GO-2026-5037",
-        "fixedIn": "go1.26.4 through go1.26.9 depending on the id"
+        "source": "Go standard library go1.26.3 (crypto/tls, crypto/x509, encoding/asn1, html/template, net/http, net/textproto, net/url)",
+        "ids": "GO-2026-5026, GO-2026-5037, GO-2026-5039, GO-2026-5856, GO-2026-5972, GO-2026-6089, GO-2026-6090, GO-2026-6091, GO-2026-6218, GO-2026-6599, GO-2026-6600, GO-2026-6603, GO-2026-6605, GO-2026-6607, GO-2026-6608, GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6613, GO-2026-6617",
+        "fixedIn": "go1.26.4 through go1.26.9 depending on the id (net/http and net/textproto findings need go1.26.9)"
       },
       {
         "source": "golang.org/x/net v0.48.0",
-        "ids": "GO-2026-6617, GO-2026-6612, GO-2026-6611, GO-2026-6603",
-        "fixedIn": "golang.org/x/net v0.60.0"
+        "ids": "GO-2026-5026, GO-2026-6603, GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6617",
+        "fixedIn": "golang.org/x/net v0.55.0 (GO-2026-5026); v0.60.0 for the rest"
       },
       {
-        "source": "go.opentelemetry.io/otel v1.40.0 (+ exporters v1.29.0, sdk v1.40.0)",
-        "ids": "GO-2026-6505, GO-2026-5506",
+        "source": "go.opentelemetry.io/otel v1.40.0 (+ exporters otlptrace v1.29.0, sdk v1.40.0)",
+        "ids": "GO-2026-5506, GO-2026-6505",
         "fixedIn": "otel v1.41.0; exporters/sdk v1.45.0"
       },
       {
         "source": "google.golang.org/grpc v1.79.3",
-        "ids": "GO-2026-6348, GO-2026-6061",
+        "ids": "GO-2026-6061, GO-2026-6348",
         "fixedIn": "grpc v1.82.1 / v1.83.1"
       }
     ],
-    "disposition": "NOT remediated in R2, recorded for the G1 adoption review: the transitive versions above are what the pinned candidate commit resolves to, and bumping them (x/net v0.60.0, otel v1.41+/v1.45.0, grpc v1.82.1/v1.83.1) would alter the frozen candidate graph the plan locked with its two go get commands; the stdlib findings need a toolchain patch (go1.26.4..1.26.9), and the plan freezes toolchain patch versions to the execution environment. This candidate runs only in the isolated test process behind G1a; production isolation is the G1b gate's question, where these findings must be answered (patch toolchain + security-bump transitives, or reject the candidate) before any tenant traffic."
+    "disposition": "NOT remediated; recorded for the G1a/G1b reviews. The versions above are what the pinned candidate commit plus the fbdecc2 expansion resolve to. Patch candidates are identified (x/net v0.60.0, otel v1.41.0 + exporters/sdk v1.45.0, grpc v1.83.1, toolchain go1.26.9 for the stdlib set); applying them changes the frozen graph, which the plan allows ONLY as: generate the new dependency graph, then re-run R2–R4 against it (冻结版本不是拒绝安全升级的理由；修复可改变冻结版本，但必须生成新依赖图并复跑R2–R4). The stdlib findings need a toolchain patch, and the plan freezes toolchain patch versions to the execution environment. Until a fix or a non-applicability disposition is evidenced and signed, the candidate stays isolated-research only and G1b cannot pass.",
+    "securitySignOff": {
+      "requiredBy": "安全/运行负责人 (G1b sign-off, master plan §6 / 01 plan R4-B)",
+      "status": "pending — this rescan records facts only; no fix or non-applicability evidence has been reviewed and signed yet"
+    }
   },
   "network": {
     "localDefaults": "GOPROXY=off, GOSUMDB=off on this machine",
-    "rule": "any command needing the network must be prefixed explicitly, e.g. env GOPROXY=https://goproxy.cn,direct go get ..."
-  }
+    "rule": "any command needing the module proxy must be prefixed explicitly, e.g. env GOPROXY=https://goproxy.cn,direct go get ...; govulncheck's database fetch (vuln.go.dev over HTTPS) is the only other network use in this record"
+  },
+  "history": [
+    {
+      "record": "R2-era scan (superseded by the graph/vulnerabilityScan sections above)",
+      "context": "measured after the R2 lock-down, before commit fbdecc2 expanded go.sum 117 -> 169 lines",
+      "goSum": {
+        "lines": 117,
+        "sha256First16": "9002479a01ee927e",
+        "modVerifyOutput": "all modules verified"
+      },
+      "goListAll": {
+        "moduleCount": 113
+      },
+      "resolvedDirectDependencies": {
+        "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
+        "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
+      },
+      "vulnerabilityScan": {
+        "exitCode": 3,
+        "summary": "20 reachable vulnerabilities from 3 modules and the Go standard library; 15 further in imported packages and 8 in required modules that this code does not call"
+      }
+    }
+  ]
 }

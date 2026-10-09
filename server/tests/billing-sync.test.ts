@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createLagoClient } from "../src/billing/lago";
+import { checkOutboundUrl } from "../src/billing/outbound";
 import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
-import { checkOutboundUrl } from "../src/billing/outbound";
 import { memoryBillingStore } from "./support/billing";
 
 const BASE_URL = "https://lago.stub.test";
@@ -43,7 +43,10 @@ function stubProvider() {
       headers: { "content-type": "application/json" },
     });
 
-  const fetchStub = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetchStub = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const url = input instanceof URL ? input : new URL(String(input));
     const method =
       init?.method ?? (input instanceof Request ? input.method : "GET");
@@ -53,7 +56,7 @@ function stubProvider() {
         : input instanceof Request
           ? await input.text()
           : null;
-    let body: unknown = undefined;
+    let body: unknown;
     if (rawBody) {
       try {
         body = JSON.parse(rawBody);
@@ -81,8 +84,9 @@ function stubProvider() {
     }
 
     if (method === "POST" && url.pathname === "/api/v1/customers") {
-      const sent = (body as { customer?: { external_id?: string; name?: string } })
-        .customer ?? {};
+      const sent =
+        (body as { customer?: { external_id?: string; name?: string } })
+          .customer ?? {};
       const externalId = sent.external_id ?? "";
       if (behaviour.silentCustomer) {
         customers.set(externalId, { name: sent.name ?? "" });
@@ -121,15 +125,16 @@ function stubProvider() {
     }
 
     if (method === "POST" && url.pathname === "/api/v1/subscriptions") {
-      const sent = (
-        body as {
-          subscription?: {
-            external_customer_id?: string;
-            plan_code?: string;
-            external_id?: string;
-          };
-        }
-      ).subscription ?? {};
+      const sent =
+        (
+          body as {
+            subscription?: {
+              external_customer_id?: string;
+              plan_code?: string;
+              external_id?: string;
+            };
+          }
+        ).subscription ?? {};
       const externalCustomerId = sent.external_customer_id ?? "";
       const existing = [...subscriptions.values()].filter(
         (subscription) =>
@@ -190,7 +195,8 @@ function syncFixture() {
       const verdict = await checkOutboundUrl(url.toString(), {
         resolveDns: async () => [{ address: "93.184.216.34" }],
       });
-      if (!verdict.allowed) throw new Error(`target refused: ${url.toString()}`);
+      if (!verdict.allowed)
+        throw new Error(`target refused: ${url.toString()}`);
     },
   });
   const store = memoryBillingStore();
@@ -289,8 +295,7 @@ describe("createBillingService.ensureSubscription", () => {
     ]);
     const create = stub.requests.find(
       (request) =>
-        request.method === "POST" &&
-        request.path === "/api/v1/subscriptions",
+        request.method === "POST" && request.path === "/api/v1/subscriptions",
     );
     expect(create?.body).toEqual({
       subscription: {

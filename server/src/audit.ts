@@ -527,6 +527,12 @@ export const auditEventTypes = [
   "routine.enabled_changed",
   /* A run refused because its model is not on the team model allowlist. */
   "model.refused",
+  /*
+   * An administrator pressed Sync on the billing page: the customer and subscription the deployment
+   * is known by at the provider were read or created for the plan named in the payload. Idempotent
+   * by construction (read-before-create), so a repeated row means a repeated press, nothing more.
+   */
+  "billing.synced",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

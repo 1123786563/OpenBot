@@ -63,8 +63,24 @@ func verifiedCtx() context.Context {
 }
 
 func verifiedRun() identity.VerifiedRun {
+	// A complete §4.2 envelope. TurnID is "r1" because the AG-UI runId these
+	// tests drive IS the envelope's turn (master §4.3).
 	return identity.VerifiedRun{
-		TenantID: "t1", ActorID: "a1", BotID: "b1", RunID: "r1", ThreadID: "th1",
+		TenantID:            "t1",
+		PrincipalID:         "p1",
+		ActorID:             "a1",
+		InitiatorKind:       identity.InitiatorUser,
+		RunID:               "biz_run_1",
+		AttemptID:           "attempt_1",
+		TurnID:              "r1",
+		ThreadID:            "th1",
+		ExpertVersion:       "expert@1.0.0",
+		InputDigest:         "digest_1",
+		ModelRouteRef:       "route@1",
+		BudgetReservationID: "budget_1",
+		LeaseID:             "lease_1",
+		FencingToken:        "fencing_1",
+		ExpiresAt:           "2099-01-01T00:00:00Z",
 	}
 }
 
@@ -121,7 +137,7 @@ func TestCancelTargetsOnlyTheVerifiedRun(t *testing.T) {
 	if runID != "r1" || threadID != "th1" {
 		t.Fatalf("canceler asked for run %q thread %q, want the verified run r1/th1", runID, threadID)
 	}
-	if seen.RunID != "r1" || seen.ActorID != "a1" || seen.TenantID != "t1" {
+	if seen.TurnID != "r1" || seen.PrincipalID != "p1" || seen.TenantID != "t1" {
 		t.Fatalf("canceler context identity = %+v, want the caller's verified run", seen)
 	}
 }
@@ -217,7 +233,7 @@ func TestStartupFailureCleansUpTheRun(t *testing.T) {
 	v := verifiedRun()
 	ctx := identity.WithVerified(context.Background(), v)
 	events, err := canceler.Run(ctx, &aguiadapter.RunAgentInput{
-		RunID:    v.RunID,
+		RunID:    v.TurnID,
 		ThreadID: v.ThreadID,
 		Messages: []aguitypes.Message{{Role: aguitypes.RoleUser, Content: "hi"}},
 	})
@@ -226,7 +242,7 @@ func TestStartupFailureCleansUpTheRun(t *testing.T) {
 	}
 	// The startup failure ends the run; the framework unregisters it.
 	waitStreamClosed(t, consumeEvents(events))
-	if err := canceler.Cancel(ctx, &aguiadapter.RunAgentInput{RunID: v.RunID, ThreadID: v.ThreadID}); !errors.Is(err, aguirunner.ErrRunNotFound) {
+	if err := canceler.Cancel(ctx, &aguiadapter.RunAgentInput{RunID: v.TurnID, ThreadID: v.ThreadID}); !errors.Is(err, aguirunner.ErrRunNotFound) {
 		t.Fatalf("after a failed startup, cancel err = %v, want ErrRunNotFound", err)
 	}
 }
@@ -242,9 +258,11 @@ func TestCancelRefusesAnotherUsersRun(t *testing.T) {
 	// ...and a DIFFERENT verified user asks to cancel. Its identity is real,
 	// its run binding is self-consistent, and it still gets nothing: the run
 	// it may control is its own, which this process is not running.
-	other := identity.WithVerified(context.Background(), identity.VerifiedRun{
-		TenantID: "t1", ActorID: "a2", BotID: "b1", RunID: "r2", ThreadID: "th2",
-	})
+	otherRun := verifiedRun()
+	otherRun.ActorID = "a2"
+	otherRun.TurnID = "r2"
+	otherRun.ThreadID = "th2"
+	other := identity.WithVerified(context.Background(), otherRun)
 	err := canceler.Cancel(other, &aguiadapter.RunAgentInput{RunID: "r2", ThreadID: "th2"})
 	if !errors.Is(err, aguirunner.ErrRunNotFound) {
 		t.Fatalf("another user's cancel err = %v, want ErrRunNotFound", err)

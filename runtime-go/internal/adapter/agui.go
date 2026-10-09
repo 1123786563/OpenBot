@@ -35,6 +35,7 @@ import (
 
 	"openbot/runtime-go/internal/callback"
 	"openbot/runtime-go/internal/identity"
+	"openbot/runtime-go/internal/trustedinput"
 )
 
 // appName names the runner inside the framework's bookkeeping.
@@ -66,6 +67,39 @@ func WithCancelerSink(sink func(Canceler)) Option {
 	return func(o *options) { o.cancelerSink = sink }
 }
 
+// CompositeCanceler fans one cancel out over every runner a host assembled
+// (one per expert in the fixed catalog) and reports the first decisive
+// answer: a run one runner holds is cancelled there, a run nobody holds is
+// ErrRunNotFound, and a real failure is returned as soon as one runner has
+// it. Order is irrelevant — the verified identity keys which runner's run
+// this can even touch, so only the owning runner can answer anything else.
+func CompositeCanceler(cancelers ...Canceler) Canceler {
+	return composite{cancelers: cancelers}
+}
+
+type composite struct {
+	cancelers []Canceler
+}
+
+func (c composite) Cancel(ctx context.Context, input *aguiadapter.RunAgentInput) error {
+	var notFound error = aguirunner.ErrRunNotFound
+	for _, canceler := range c.cancelers {
+		if canceler == nil {
+			continue
+		}
+		err := canceler.Cancel(ctx, input)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, aguirunner.ErrRunNotFound):
+			continue
+		default:
+			return err
+		}
+	}
+	return notFound
+}
+
 // New wires an agent into the AG-UI HTTP handler.
 //
 // Every runner the framework builds behind this handler resolves its user and
@@ -93,7 +127,7 @@ func New(a agent.Agent, opts ...Option) (http.Handler, func() error, error) {
 		aguiserver.WithAGUIRunnerOptions(
 			aguirunner.WithUserIDResolver(ResolveUser),
 			aguirunner.WithStateResolver(ResolveState),
-			aguirunner.WithRunAgentInputHook(clearForwardedProps),
+			aguirunner.WithRunAgentInputHook(validateAndStripInput),
 		),
 		// The runner factory is intercepted only to hand the host the cancel
 		// seam; the options the framework aggregated above (including this
@@ -118,22 +152,25 @@ func New(a agent.Agent, opts ...Option) (http.Handler, func() error, error) {
 
 // ResolveUser derives the framework user id for a run.
 //
-// The id is a JSON array of the verified whitelist — tenant, actor, bot — and
-// nothing else: no client actorId/userId is read, and a context that did not
-// come through the auth middleware fails here with UNAUTHENTICATED_RUNTIME
-// rather than falling back to a default user. The run binding is re-checked
-// (the TS plane already compared it) so a verified identity for one run
-// cannot steer a different run on the same thread. This resolver also runs
-// on the cancel path, which is what makes a cancel key owner-scoped.
+// The id is a JSON array of the verified whitelist — tenant, principal,
+// expert version — and nothing else: no client actorId/userId is read, and a
+// context that did not come through the auth middleware fails here with
+// UNAUTHENTICATED_RUNTIME rather than falling back to a default user. The
+// run binding is re-checked (the TS plane and the middleware already
+// compared it): the AG-UI input's RunID IS the envelope's TurnID (master
+// §4.3 — one business run fans out into attempts and turns), so a verified
+// identity for one turn cannot steer a different turn on the same thread.
+// This resolver also runs on the cancel path, which is what makes a cancel
+// key owner-scoped.
 func ResolveUser(ctx context.Context, in *aguiadapter.RunAgentInput) (string, error) {
 	v, err := identity.FromContext(ctx)
 	if err != nil {
 		return "", err
 	}
-	if in == nil || in.RunID != v.RunID || in.ThreadID != v.ThreadID {
+	if in == nil || in.RunID != v.TurnID || in.ThreadID != v.ThreadID {
 		return "", errors.New("RUN_BINDING_MISMATCH")
 	}
-	data, err := json.Marshal([]string{v.TenantID, v.ActorID, v.BotID})
+	data, err := json.Marshal([]string{v.TenantID, v.PrincipalID, v.ExpertVersion})
 	if err != nil {
 		return "", err
 	}
@@ -150,17 +187,31 @@ func ResolveState(context.Context, *aguiadapter.RunAgentInput) (map[string]any, 
 	return nil, nil
 }
 
-// clearForwardedProps empties forwardedProps before the input is processed.
+// validateAndStripInput is the input hook every runner applies: the SAME
+// trusted-input rules the auth middleware enforced on the raw body (one rule
+// set, two gates — the middleware answers the caller with a clean 4xx, this
+// hook is the seam that holds even if a handler is mounted without it), then
+// forwardedProps is emptied before the input is processed.
 //
 // In the legacy TS stack the run assertion travelled to agent code in
 // forwardedProps, because that is the part of a run a framework hands to
-// customer code. Here the assertion is a credential that already lives in the
-// private Go context (see identity.WithRunAssertion), so anything a client
-// puts in forwardedProps — a forged assertion included — is dropped before
-// the model or any tool can read it.
-func clearForwardedProps(_ context.Context, in *aguiadapter.RunAgentInput) (*aguiadapter.RunAgentInput, error) {
+// customer code. Here credentials live in the private Go context (see
+// identity.WithRunAssertion), so anything a client puts in forwardedProps —
+// a forged assertion, a model-route override, a resume object included — is
+// either refused (resume-shaped keys) or dropped before the model or any
+// tool can read it.
+func validateAndStripInput(_ context.Context, in *aguiadapter.RunAgentInput) (*aguiadapter.RunAgentInput, error) {
 	if in == nil {
 		return nil, nil
+	}
+	// Re-serialize to the wire shape and apply the frozen trusted-input
+	// rules, so the hook and the middleware can never drift apart.
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := trustedinput.Parse(raw); err != nil {
+		return nil, err
 	}
 	stripped := *in
 	stripped.ForwardedProps = nil

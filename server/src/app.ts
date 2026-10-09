@@ -43,6 +43,12 @@ import {
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import {
+  createBillingAdminRoutes,
+  createBillingRoutes,
+  createBillingWebhookRoutes,
+} from "./billing/routes";
+import type { BillingService } from "./billing/types";
+import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
 } from "./channels/attachments";
@@ -435,6 +441,24 @@ export function createApp(
    * resolver still answers from `config.selfHostBanner` rather than asking the network.
    */
   selfHostBanner?: SelfHostBanner,
+  /**
+   * The billing seam's one service, mounted as its three route groups.
+   *
+   * A field here rather than another positional parameter, for the same reason the coworker object
+   * above exists: everything past `auditReader` is optional and positional, and a mislaid argument
+   * there is silent. Absent — a deployment that configured no provider — mounts none of the billing
+   * surfaces, not ones that refuse: no webhook door, no entitlements read, no admin snapshot.
+   *
+   * `externalCustomerKey` arrives derived rather than derived here, because the tenant identity it
+   * comes from (`deploymentExternalCustomerId(config.deploymentId ?? tenantPackage.tenantId)`) is
+   * only whole in the assembly, and the sync and any future caller must not drift apart on it.
+   */
+  billing?: {
+    service: BillingService;
+    externalCustomerKey: string;
+    /** What the provider's customer record calls this deployment. */
+    customerName: string;
+  },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   mountDesktopConnectionFailure(app, desktopHostToken);
@@ -490,6 +514,21 @@ export function createApp(
        */
       ssoRequired:
         enterpriseControls()?.snapshot()?.settings.ssoRequired === true,
+      /*
+       * Whether this deployment has a paid-plan provider behind it, and whether it currently pays.
+       *
+       * Two booleans, nothing else — the same allow-list discipline as every field above. The
+       * provider's name for anything, the plan anybody is on, the codes a plan grants: none of that
+       * is this endpoint's to hand to somebody who has not signed in. `paid` comes from the cached
+       * entitlement read, which never reaches the provider on a read path and fails closed, so a
+       * projection that cannot be read answers "not paid" rather than erroring this endpoint.
+       */
+      billing: billing
+        ? {
+            enabled: true,
+            paid: (await billing.service.entitlements()).active,
+          }
+        : { enabled: false, paid: false },
     }),
   );
   /*
@@ -1812,6 +1851,39 @@ export function createApp(
           createIntelligenceClient(config.runtime.intelligence),
         ),
       ),
+    );
+  }
+
+  /*
+   * The billing surfaces, when a provider is configured.
+   *
+   * Three groups, three doors. The webhook group sits under `/api` with no session on purpose: its
+   * caller is the provider, whose whole credential is the signature the service verifies against the
+   * raw body — the same shape as the delivery lane's webhook mount above, and safe for the same
+   * reason (the enterprise gate passes a path it has no rule for straight through). The entitlement
+   * read is a person's; the admin pair is an administrator's, behind the same double layer
+   * `/api/admin/package` uses. All three are absent on a deployment that configured no provider:
+   * a feature that is not configured should be missing, not broken.
+   */
+  if (billing) {
+    app.route(
+      "/api/billing/webhooks",
+      createBillingWebhookRoutes({ service: billing.service }),
+    );
+    app.route(
+      "/api/billing",
+      createBillingRoutes({ service: billing.service, requireUser }),
+    );
+    app.route(
+      "/api/admin/billing",
+      createBillingAdminRoutes({
+        service: billing.service,
+        requireUser,
+        requireAdmin,
+        audit: auditStore,
+        externalCustomerKey: billing.externalCustomerKey,
+        customerName: billing.customerName,
+      }),
     );
   }
 

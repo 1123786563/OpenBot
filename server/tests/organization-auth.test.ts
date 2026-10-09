@@ -274,7 +274,7 @@ describe("official Better Auth desktop exchange", () => {
   });
 });
 
-test.each(["google", "microsoft", "okta"])(
+test.each(["google", "microsoft", "okta", "casdoor"])(
   "native browser handoff reuses configured %s provider",
   async (provider) => {
     const params = new URLSearchParams({
@@ -285,7 +285,7 @@ test.each(["google", "microsoft", "okta"])(
     });
     const response = desktopAuthPage(
       new Request(`https://customer.example/api/auth/desktop?${params}`),
-      ["google", "microsoft", "okta"],
+      ["google", "microsoft", "okta", "casdoor"],
     );
     expect(response.status).toBe(200);
     const html = await response.text();

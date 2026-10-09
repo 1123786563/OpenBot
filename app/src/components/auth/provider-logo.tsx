@@ -8,18 +8,19 @@ import type { AuthProviderId } from "@/lib/auth/queries";
  * page has to be trustworthy, and a request to a third party from an unauthenticated page is a
  * request nobody asked for.
  *
- * Reproduced at their published colours because two of the three require it. Google's guidelines say
+ * Reproduced at their published colours because two of them require it. Google's guidelines say
  * the standard colour G, at its own aspect ratio, neither recoloured nor restretched, and Microsoft
  * publish the four squares the same way. They are trade marks used to say "this button signs you in
  * with them", which is what the guidelines are for.
  *
- * All three are drawn into the same 18x18 box so the buttons line up. Google's G is not square, so
- * it is centred in the box rather than stretched to fill it.
+ * All are drawn into the same 18x18 box so the buttons line up. Google's G is not square, so it is
+ * centred in the box rather than stretched to fill it.
  */
 export function ProviderLogo({ provider }: { provider: AuthProviderId }) {
   if (provider === "google") return <GoogleMark />;
   if (provider === "microsoft") return <MicrosoftMark />;
-  return <OktaMark />;
+  if (provider === "okta") return <OktaMark />;
+  return <CasdoorMark />;
 }
 
 /** Google's four-colour G, at the published path and colours. */
@@ -91,6 +92,31 @@ function OktaMark() {
         d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"
         fill="currentColor"
       />
+    </svg>
+  );
+}
+
+/**
+ * Casdoor's arched door, a dot for the handle.
+ *
+ * `currentColor` for the same reason as Okta's mark: Casdoor is whichever Casdoor the company
+ * running this deployment happens to host, not a consumer button recognised by its colours, and a
+ * monochrome mark stays legible in both themes without a second asset.
+ */
+function CasdoorMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-[18px]"
+      focusable="false"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12 2a8 8 0 0 0-8 8v11h3v-10a5 5 0 0 1 10 0v10h3V10a8 8 0 0 0-8-8z"
+        fill="currentColor"
+      />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
     </svg>
   );
 }

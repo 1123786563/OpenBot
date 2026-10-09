@@ -55,6 +55,9 @@ describe("runtime capabilities", () => {
       // sign-in page which companies use this deployment.
       ssoConfigured: false,
       ssoRequired: false,
+      // Two booleans and nothing more: no provider name, no plan, no codes. This deployment
+      // configured no billing provider, so the whole feature is absent rather than off-but-mounted.
+      billing: { enabled: false, paid: false },
     });
   });
 
@@ -78,6 +81,7 @@ describe("runtime capabilities", () => {
       "authProviders",
       "ssoConfigured",
       "ssoRequired",
+      "billing",
     ]);
     // The provider list is names, never the clients and secrets behind them.
     expect(body).not.toContain("google-client-secret");

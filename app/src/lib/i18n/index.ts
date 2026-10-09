@@ -12,11 +12,23 @@ import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
 import nav from "../../locales/en/nav.json";
+import zhApprovals from "../../locales/zh-CN/approvals.json";
+import zhAdmin from "../../locales/zh-CN/admin.json";
+import zhAgents from "../../locales/zh-CN/agents.json";
+import zhChannels from "../../locales/zh-CN/channels.json";
+import zhCommon from "../../locales/zh-CN/common.json";
+import zhComputer from "../../locales/zh-CN/computer.json";
+import zhErrors from "../../locales/zh-CN/errors.json";
+import zhRoutines from "../../locales/zh-CN/routines.json";
+import zhSettings from "../../locales/zh-CN/settings.json";
+import zhSkills from "../../locales/zh-CN/skills.json";
+import zhNav from "../../locales/zh-CN/nav.json";
 
 /**
  * Translation namespaces, split by feature area so a namespace stays reviewable and can be
- * lazy-loaded per surface later. The en bundle is the source of truth for keys; other languages
- * fall back to it key-by-key, so a partial translation is never a missing string.
+ * split into lazy chunks later if the catalog grows. The en bundle is the source of truth for
+ * keys; other languages fall back to it key-by-key, so a partial translation is never a missing
+ * string.
  */
 export const NAMESPACES = [
   "common",
@@ -41,66 +53,69 @@ export type Language = (typeof SUPPORTED_LANGUAGES)[number];
 
 export const FALLBACK_LANGUAGE: Language = "en";
 
-const enResources = {
-  common,
-  nav,
-  channels,
-  agents,
-  computer,
-  settings,
-  admin,
-  approvals,
-  routines,
-  skills,
-  errors,
-};
-
-/*
- * Non-source languages load on demand: the static prefix keeps this a Vite-analyzable dynamic
- * import, one small JSON chunk per namespace, added to the instance once loaded. Until a bundle
- * arrives the fallback language answers, so a cold start in zh-CN renders English for a beat
- * rather than keys or blanks.
+/**
+ * Maps a detected language code onto the bundle this build carries: exact match wins, otherwise
+ * the supported language sharing its base ("en-US" answers "en", "zh" answers "zh-CN"), and
+ * anything unmatched keeps its base so it falls through to the fallback language.
+ *
+ * Replaces `nonExplicitSupportedLngs`, which in i18next 26 breaks resolution for the explicit
+ * language itself — with it set, `changeLanguage("zh-CN")` against `supportedLngs` resolves the
+ * whole chain to the fallback and every translation reads English.
  */
-const loaded = new Set<string>(["en"]);
+export function normalizeDetectedLanguage(detected: string): string {
+  if (SUPPORTED_LANGUAGES.includes(detected as Language)) return detected;
+  const base = detected.split("-")[0];
+  return (
+    SUPPORTED_LANGUAGES.find(
+      (supported) => supported.split("-")[0] === base,
+    ) ?? base
+  );
+}
 
 /**
- * The bundle that carries a requested language: itself when exact, otherwise the supported
- * language sharing its base ("en-US" answers "en", "zh" answers "zh-CN"). A language with no
- * bundle at all answers undefined and nothing is loaded — the fallback language covers it.
+ * Every language bundle is imported statically, on purpose.
+ *
+ * A lazy loader loses a race it cannot win: `changeLanguage` resolves the new language against
+ * the resources that exist AT THAT MOMENT, locks the fallback chain to en when the bundle is not
+ * there yet, and neither `addResourceBundle` nor a repeated `changeLanguage` to the same language
+ * ever recomputes it — the interface stays in English whatever the events say. Bundled up front,
+ * detection on a cold start and a switch from Settings both resolve against resources that are
+ * already present, and react-i18next re-renders on the languageChanged event as usual.
  */
-function bundleLanguage(language: string): Language | undefined {
-  if (SUPPORTED_LANGUAGES.includes(language as Language)) {
-    return language as Language;
-  }
-  const base = language.split("-")[0];
-  return SUPPORTED_LANGUAGES.find(
-    (supported) => supported.split("-")[0] === base,
-  );
-}
-
-/** Loads a language's bundles. Answers whether anything was actually loaded. */
-async function loadLanguage(language: string): Promise<boolean> {
-  const bundle = bundleLanguage(language);
-  if (!bundle || loaded.has(bundle)) return false;
-  const bundles = await Promise.all(
-    NAMESPACES.map((ns) => import(`../../locales/${bundle}/${ns}.json`)),
-  );
-  for (const [i, ns] of NAMESPACES.entries()) {
-    i18next.addResourceBundle(bundle, ns, bundles[i].default, true, true);
-  }
-  loaded.add(bundle);
-  return true;
-}
-
 void i18next
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources: { en: enResources },
+    resources: {
+      en: {
+        common,
+        nav,
+        channels,
+        agents,
+        computer,
+        settings,
+        admin,
+        approvals,
+        routines,
+        skills,
+        errors,
+      },
+      "zh-CN": {
+        common: zhCommon,
+        nav: zhNav,
+        channels: zhChannels,
+        agents: zhAgents,
+        computer: zhComputer,
+        settings: zhSettings,
+        admin: zhAdmin,
+        approvals: zhApprovals,
+        routines: zhRoutines,
+        skills: zhSkills,
+        errors: zhErrors,
+      },
+    },
     fallbackLng: FALLBACK_LANGUAGE,
     supportedLngs: SUPPORTED_LANGUAGES,
-    // "zh" from the browser resolves to the zh-CN bundle rather than being refused.
-    nonExplicitSupportedLngs: true,
     ns: NAMESPACES,
     defaultNS: "common",
     interpolation: { escapeValue: false },
@@ -108,26 +123,9 @@ void i18next
       order: ["localStorage", "navigator"],
       caches: ["localStorage"],
       lookupLocalStorage: "openbot.language",
+      convertDetectedLanguage: normalizeDetectedLanguage,
     },
     react: { useSuspense: false },
   });
-
-/*
- * A lazy bundle arrives AFTER the languageChanged event that asked for it, and react-i18next
- * re-renders subscribed components on that event alone — addResourceBundle emits nothing. Without
- * the replay below, switching to zh-CN leaves every translated surface in fallback English until
- * some unrelated state change happens to re-render it.
- *
- * The boolean return is the loop guard: the replayed event runs this listener again, and the
- * second loadLanguage call loads nothing, so no further event is emitted.
- */
-i18next.on("languageChanged", async (language) => {
-  if (await loadLanguage(language)) {
-    i18next.emit("languageChanged", language);
-  }
-});
-
-// The detector may already have settled on a non-source language before any listener existed.
-void loadLanguage(i18next.language);
 
 export default i18next;

@@ -63,10 +63,11 @@ func Cancel(canceler RunCanceler) http.Handler {
 		// The target is the identity's own run — never a runId from the
 		// body, which is client-chosen and untrusted here. The auth
 		// middleware has already made the request's stated runId agree with
-		// this identity (the TS plane checks the assertion against it), so
-		// consulting the body again would only add a way to be lied to.
+		// this identity's TURN (the AG-UI runId is the envelope's turn_id,
+		// master §4.3), so consulting the body again would only add a way to
+		// be lied to.
 		err = canceler.Cancel(r.Context(), &aguiadapter.RunAgentInput{
-			RunID:    v.RunID,
+			RunID:    v.TurnID,
 			ThreadID: v.ThreadID,
 		})
 		switch {

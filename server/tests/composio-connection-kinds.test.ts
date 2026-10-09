@@ -28,6 +28,7 @@ import {
 import {
   BrokerRefusalError,
   type ConnectedAppBroker,
+  isFieldScheme,
   SCHEME_KINDS,
   type SchemeKind,
   schemeKind,
@@ -482,6 +483,20 @@ for (const padded of PADDED_SCHEMES) {
     );
   });
 }
+
+/**
+ * OPENCONNECTOR'S OWN MEMBER OF THE FIELD VOCABULARY, asserted here for the reason every other
+ * member is: `isFieldScheme` is the one guard the whole fields path hangs off, and a scheme the
+ * list does not carry would be answered `unreadable` by the classifier and refused as a scheme
+ * nobody can read — which is exactly the wrong verdict for a provider whose fields are a set the
+ * person already holds rather than one secret box. Composio never writes this literal; the broker
+ * that does arrives with the OpenConnector adapter, and this cell is what holds the vocabulary
+ * open for it.
+ */
+test("custom_credential is a field scheme the person types", () => {
+  expect(isFieldScheme("CUSTOM_CREDENTIAL")).toBe(true);
+  expect(schemeKind("CUSTOM_CREDENTIAL")).toBe("key");
+});
 
 /*
  * ═══════════════════════════════════════════════════════════════════════════════════════════════

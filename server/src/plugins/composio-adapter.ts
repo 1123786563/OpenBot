@@ -710,12 +710,19 @@ async function pageOf<Row>(
  * THE ORDER ITSELF IS THE PERSON'S AND NOT THE WIRE'S, and it is unchanged: a plain key first,
  * because it is the one they are likeliest to already hold, then the other three ways of spelling a
  * secret they have to go and assemble.
+ *
+ * `CUSTOM_CREDENTIAL` HAS A PLACE HERE AND CAN NEVER BE MET HERE. It is OpenConnector's member of
+ * {@link FieldScheme} — Composio never publishes it, and this order ranks nothing but what Composio
+ * publishes — so the position exists only because the record refuses to compile until every member
+ * has one, and it sits last so it makes no claim about where a set of fields somebody already holds
+ * would rank among the schemes a person has to go and assemble.
  */
 const FIELD_SCHEME_ORDER: Record<FieldScheme, number> = {
   API_KEY: 0,
   BEARER_TOKEN: 1,
   BASIC: 2,
   BASIC_WITH_JWT: 3,
+  CUSTOM_CREDENTIAL: 4,
 };
 
 /**

@@ -336,6 +336,9 @@ policies apply. See [OpenAI WebRTC](https://developers.openai.com/api/docs/guide
 | `OKTA_OAUTH_CLIENT_ID`       | Okta client id.                                                                        |
 | `OKTA_OAUTH_CLIENT_SECRET`   | Okta client secret.                                                                    |
 | `OKTA_OAUTH_ISSUER`          | Which Okta, for example `https://example.okta.com/oauth2/default`.                     |
+| `CASDOOR_OAUTH_CLIENT_ID`    | Casdoor client id, from the Application you register in Casdoor.                       |
+| `CASDOOR_OAUTH_CLIENT_SECRET`| Casdoor client secret.                                                                 |
+| `CASDOOR_OAUTH_ISSUER`       | Which Casdoor, the origin it is served on, for example `http://localhost:8000`.        |
 | `BETTER_AUTH_SECRET`         | At least 32 characters. Required with any provider.                                    |
 | `BETTER_AUTH_URL`            | Public API server base URL, where OAuth callbacks return. Required with any provider.  |
 | `TRUSTED_ORIGINS`            | Comma-separated app origins accepted by the API, plus every host in a registered OIDC provider's discovery document. |
@@ -386,9 +389,9 @@ other than `/` is refused at start-up. Naming one settles sign-in by itself, ahe
 `OPENBOT_SINGLE_USER`.
 
 **Any one provider turns sign-in on**, and several may be configured at once. Each provider's id and
-secret must be set together, Okta additionally needs its issuer, and any of them requires
-`BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and `INITIAL_ADMIN_EMAILS`. Every incomplete combination is
-refused at start-up rather than at somebody's first attempt to sign in.
+secret must be set together, Okta and Casdoor additionally need their issuer, and any of them
+requires `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and `INITIAL_ADMIN_EMAILS`. Every incomplete
+combination is refused at start-up rather than at somebody's first attempt to sign in.
 
 `INITIAL_ADMIN_EMAILS` is required because nothing else grants the administrator role at first: an
 address it names becomes an administrator at every sign-in and cannot be demoted from the People
@@ -410,7 +413,7 @@ added it. The client secret and any SAML signing material are encrypted at rest 
 `KEY_ENCRYPTION_KEY`.
 
 The redirect URI to register with each provider is `<BETTER_AUTH_URL>/api/auth/callback/<provider>`,
-where `<provider>` is `google`, `microsoft` or `okta`.
+where `<provider>` is `google`, `microsoft`, `okta` or `casdoor`.
 
 `OPENBOT_PUBLIC_URL` and `OPENBOT_APP_URL` matter only for a connector each person connects their own account to, such as Google Drive.
 

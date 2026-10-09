@@ -14,15 +14,43 @@ import (
 	"errors"
 )
 
-// VerifiedRun is the whitelist of identity fields the TS plane vouches for.
-// Go adds nothing to it and reads nothing else: no client actorId/userId is
-// accepted as identity, and no signing key ever reaches this process.
+// Initiator kinds the enterprise wire contract freezes (master plan §4.2:
+// MVP human principals plus revocable plan delegations — nothing else).
+const (
+	// InitiatorUser marks a run a human principal started directly.
+	InitiatorUser = "user"
+	// InitiatorSchedule marks a run a scheduled plan started on a human
+	// principal's behalf; it must carry a DelegationRef.
+	InitiatorSchedule = "schedule"
+)
+
+// VerifiedRun is the whitelist of identity fields the TS plane vouches for:
+// the master-plan §4.2 RuntimeInvocation, mapped to wire snake_case by the
+// auth middleware. Go adds nothing to it and reads nothing else: no client
+// actorId/userId is accepted as identity, and no signing key ever reaches
+// this process.
+//
+// DelegationRef is the one optional field: only a scheduled initiation must
+// carry one (the auth middleware enforces that pairing; FromContext checks
+// only that everything else is present, because it is a completeness
+// assertion, not the place where initiator policy lives).
 type VerifiedRun struct {
-	TenantID string
-	ActorID  string
-	BotID    string
-	RunID    string
-	ThreadID string
+	TenantID            string
+	PrincipalID         string
+	ActorID             string
+	InitiatorKind       string
+	RunID               string
+	AttemptID           string
+	TurnID              string
+	ThreadID            string
+	ExpertVersion       string
+	InputDigest         string
+	ModelRouteRef       string
+	BudgetReservationID string
+	LeaseID             string
+	FencingToken        string
+	ExpiresAt           string
+	DelegationRef       string
 }
 
 type key struct{}
@@ -37,10 +65,16 @@ func WithVerified(ctx context.Context, v VerifiedRun) context.Context {
 }
 
 // FromContext returns the verified run, or an error when the caller is not
-// verified. Incomplete identities are refused rather than repaired.
+// verified. Incomplete identities are refused rather than repaired: every
+// envelope field except DelegationRef must have arrived, because a field the
+// plane did not vouch for is a field no run may execute on.
 func FromContext(ctx context.Context) (VerifiedRun, error) {
 	v, ok := ctx.Value(key{}).(VerifiedRun)
-	if !ok || v.TenantID == "" || v.ActorID == "" || v.BotID == "" || v.RunID == "" || v.ThreadID == "" {
+	if !ok || v.TenantID == "" || v.PrincipalID == "" || v.ActorID == "" ||
+		v.InitiatorKind == "" || v.RunID == "" || v.AttemptID == "" || v.TurnID == "" ||
+		v.ThreadID == "" || v.ExpertVersion == "" || v.InputDigest == "" ||
+		v.ModelRouteRef == "" || v.BudgetReservationID == "" ||
+		v.LeaseID == "" || v.FencingToken == "" || v.ExpiresAt == "" {
 		return VerifiedRun{}, errors.New("UNAUTHENTICATED_RUNTIME")
 	}
 	return v, nil

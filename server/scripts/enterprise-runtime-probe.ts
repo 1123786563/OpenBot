@@ -16,9 +16,12 @@
  * production wiring.
  *
  * Run from the repository root: `bun server/scripts/enterprise-runtime-probe.ts`
- * Exit code: 0 only when every check passed; any failure (or any check that
- * could not run) exits non-zero — a missing check is a failed check, and the
- * report says "rejected", never a pre-written pass.
+ * Exit code: 0 only when every check the probe EXECUTED passed and the report
+ * was written; any FAILED check exits non-zero. A check with no executable
+ * harness in this probe is recorded as "not_run" — it does not fail the run,
+ * but it BLOCKS the G1a gate in the report (master plan §6: gates register
+ * not_run/passed/failed/blocked, and nothing passes before it actually ran).
+ * There is deliberately no single adoption conclusion in the report.
  *
  * Every child process below is spawned with an explicit argv array and no
  * shell: nothing that crosses a trust boundary (a URL, a credential, a pid)
@@ -26,15 +29,17 @@
  */
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { HttpAgent } from "@ag-ui/client";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   hashCallbackToken,
   looksLikeCallbackToken,
@@ -57,7 +62,7 @@ export const runtimeGoDir = (): string => join(repoRoot(), "runtime-go");
 
 /** Runs one external tool with an explicit argv (no shell, no string commands). */
 async function runTool(
-  argv: readonly string[],
+  argv: string[],
   cwd?: string,
 ): Promise<{ code: number; text: string }> {
   const proc = Bun.spawn(argv, {
@@ -73,6 +78,28 @@ async function runTool(
     proc.exited,
   ]);
   return { code, text: code === 0 ? stdout : stderr || stdout };
+}
+
+/**
+ * Every external command this probe run spawned, with the exit code each
+ * invocation returned. This journal IS the report's `commands` field: what
+ * ran, labelled by static purpose strings, never a pre-typed transcript.
+ */
+const commandJournal: Array<{ argv: string[]; exitCode: number; purpose: string }> = [];
+
+/**
+ * runTool, journalled: every probe-spawned command lands in the report with
+ * its argv and its exit code (the report's `commands`/`exit_codes` sections
+ * are read straight out of this journal).
+ */
+async function probeTool(
+  argv: string[],
+  purpose: string,
+  cwd?: string,
+): Promise<{ code: number; text: string }> {
+  const result = await runTool(argv, cwd);
+  commandJournal.push({ argv: [...argv], exitCode: result.code, purpose });
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,10 +288,10 @@ async function buildCandidateOnce(): Promise<string> {
   // Tidy resolves the launcher's own require set offline (the module cache
   // already holds everything runtime-go pinned); without it the build refuses
   // to guess which requirements the composition pulls in.
-  const tidy = await runTool(["go", "mod", "tidy"], dir);
+  const tidy = await probeTool(["go", "mod", "tidy"], "candidate build: resolve the launcher module offline", dir);
   if (tidy.code !== 0)
     throw new Error(`tidying the launcher module failed:\n${tidy.text.trim()}`);
-  const build = await runTool(["go", "build", "-o", "candidate", "."], dir);
+  const build = await probeTool(["go", "build", "-o", "candidate", "."], "candidate build: compile the real Go candidate binary", dir);
   if (build.code !== 0)
     throw new Error(`building the Go candidate failed (${build.code}):\n${build.text.trim()}`);
   return join(dir, "candidate");
@@ -686,33 +713,125 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Pr
 // The probe itself.
 // ---------------------------------------------------------------------------
 
+/**
+ * The R4 report contract (01 plan R4 + master plan §6): every gate registers
+ * one of not_run/passed/failed/blocked with evidence refs — there is no
+ * single adoption boolean anywhere — and the artifact carries the plan's
+ * field list: commit, workspace_digest, document_baseline, go_version,
+ * dependency_graph_digest, sdk_versions, environment, commands, exit_codes,
+ * evidence_refs, limitations.
+ */
+export type CheckStatus = "passed" | "failed" | "not_run";
+export type GateStatus = "not_run" | "passed" | "failed" | "blocked";
+
+export type CheckOutcome = { status: CheckStatus; evidence: string };
+export type GateOutcome = { status: GateStatus; evidence: string[] };
+
+/** The nine check categories the 01 plan R4 contract names, in plan order. */
+export const R4_CHECK_NAMES = [
+  "identity",
+  "trusted_input",
+  "text",
+  "tool",
+  "wait",
+  "error",
+  "cancel",
+  "backpressure",
+  "restart",
+] as const;
+export type R4CheckName = (typeof R4_CHECK_NAMES)[number];
+export type R4Checks = Record<R4CheckName, CheckOutcome>;
+
 export type CompatibilityReport = {
   commit: string;
-  goVersion: string;
-  modules: Array<{ path: string; version: string; indirect: boolean }>;
-  checks: {
-    identity: boolean;
-    stream: boolean;
-    callback: boolean;
-    cancel: boolean;
-    restart: boolean;
+  go_version: string;
+  workspace_digest: { dirty: boolean; summary: string[] };
+  document_baseline: Record<string, string>;
+  dependency_graph_digest: {
+    goModSha256: string;
+    goSumSha256: string;
+    goSumLines: number;
+    moduleCount: number;
   };
-  measurements: { rssBytes: number; firstEventMs: number };
-  adoption: "candidate" | "rejected";
+  sdk_versions: Record<string, string>;
+  environment: Record<string, string>;
+  commands: Array<{ argv: string[]; exitCode: number; purpose: string }>;
+  exit_codes: { probe: number };
+  evidence_refs: string[];
+  limitations: string[];
+  modules: Array<{ path: string; version: string; indirect: boolean }>;
+  checks: R4Checks;
+  gates: { G1a: GateOutcome; G1b: GateOutcome; G2: GateOutcome };
+  measurements: {
+    rssBytes: number;
+    firstEventMs: number;
+    cancelLagMs: number;
+    streamDurationMs: number;
+  };
+  /** Who must sign each gate (master plan §6 sign-off table); a probe signs nothing. */
+  reviewers: Record<string, { required: string[]; signed: string[] }>;
 };
 
 const SERVICE_CREDENTIAL = "probe-service-credential-not-a-real-one";
 
+/** The governing documents and code this report answers to, hashed. */
+const BASELINE_FILES = [
+  "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md",
+  "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md",
+  "server/scripts/enterprise-runtime-probe.ts",
+];
+
+const sha256Of = (path: string): string =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
+
+/** Every .go file under runtime-go, walked deterministically. */
+function goSourcesOf(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...goSourcesOf(path));
+    else if (entry.name.endsWith(".go")) out.push(path);
+  }
+  return out;
+}
+
+/** The direct (non-indirect) requires of runtime-go/go.mod, as path -> version. */
+export function directGoDependencies(): Record<string, string> {
+  const goMod = readFileSync(join(runtimeGoDir(), "go.mod"), "utf8");
+  const deps: Record<string, string> = {};
+  for (const match of goMod.matchAll(/^\t(\S+)\s+(v\S+)$/gm)) {
+    deps[match[1]] = match[2];
+  }
+  return deps;
+}
+
 async function gatherEnvironment(): Promise<{
   commit: string;
-  goVersion: string;
+  go_version: string;
+  workspace_digest: CompatibilityReport["workspace_digest"];
+  document_baseline: CompatibilityReport["document_baseline"];
+  dependency_graph_digest: CompatibilityReport["dependency_graph_digest"];
+  sdk_versions: CompatibilityReport["sdk_versions"];
+  environment: CompatibilityReport["environment"];
   modules: CompatibilityReport["modules"];
 }> {
-  const commit = await runTool(["git", "rev-parse", "HEAD"], repoRoot());
+  const commit = await probeTool(
+    ["git", "rev-parse", "HEAD"],
+    "environment: which commit the candidate is probed at",
+    repoRoot(),
+  );
   if (commit.code !== 0) throw new Error(`git rev-parse failed: ${commit.text.trim()}`);
-  const goVersion = await runTool(["go", "version"]);
+  const status = await probeTool(
+    ["git", "status", "--porcelain"],
+    "environment: workspace difference summary (master §6 工作区差异摘要)",
+    repoRoot(),
+  );
+  const porcelain = status.code === 0 ? status.text.trim().split("\n").filter(Boolean) : [];
+  const goVersion = await probeTool(["go", "version"], "environment: toolchain version");
   if (goVersion.code !== 0) throw new Error(`go version failed: ${goVersion.text.trim()}`);
-  const modules = await runTool(
+  const modules = await probeTool(
     // -e: the frozen graph names test-only members (Azure SDKs among them)
     // whose go.mod files a probe host has no reason to hold; their versions
     // are still the ones the frozen pins resolve to, so they are listed
@@ -726,25 +845,67 @@ async function gatherEnvironment(): Promise<{
       "{{.Path}} {{if .Version}}{{.Version}}{{else}}(main){{end}} {{.Indirect}}",
       "all",
     ],
+    "environment: the frozen module graph (go list -m all)",
     runtimeGoDir(),
   );
   if (modules.code !== 0) throw new Error(`go list -m failed: ${modules.text.trim()}`);
+
+  const moduleList = modules.text
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [path, version, indirect] = line.trim().split(/\s+/);
+      return { path, version, indirect: indirect === "true" };
+    });
+
+  const goModPath = join(runtimeGoDir(), "go.mod");
+  const goSumPath = join(runtimeGoDir(), "go.sum");
+  const serverPackage = JSON.parse(
+    readFileSync(join(repoRoot(), "server", "package.json"), "utf8"),
+  ) as { dependencies: Record<string, string> };
+
+  const document_baseline: Record<string, string> = {};
+  for (const file of BASELINE_FILES) {
+    document_baseline[file] = sha256Of(join(repoRoot(), file));
+  }
+  for (const absolute of goSourcesOf(runtimeGoDir())) {
+    document_baseline[relative(repoRoot(), absolute)] = sha256Of(absolute);
+  }
+
   return {
     commit: commit.text.trim(),
-    goVersion: goVersion.text.trim(),
-    modules: modules.text
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const [path, version, indirect] = line.trim().split(/\s+/);
-        return { path, version, indirect: indirect === "true" };
-      }),
+    go_version: goVersion.text.trim(),
+    workspace_digest: {
+      dirty: porcelain.length > 0,
+      summary: porcelain.slice(0, 100),
+    },
+    document_baseline,
+    dependency_graph_digest: {
+      goModSha256: sha256Of(goModPath),
+      goSumSha256: sha256Of(goSumPath),
+      goSumLines: readFileSync(goSumPath, "utf8").trim().split("\n").length,
+      moduleCount: moduleList.length,
+    },
+    sdk_versions: {
+      "@ag-ui/client": serverPackage.dependencies["@ag-ui/client"] ?? "unknown",
+      ...directGoDependencies(),
+    },
+    environment: {
+      platform: `${process.platform}/${process.arch}`,
+      bun: Bun.version,
+      network:
+        "every spawned Go command runs with GOPROXY=off (module cache only); the probe talks to localhost fakes and nothing else",
+    },
+    modules: moduleList,
   };
 }
 
 async function rssBytesOf(pid: number): Promise<number> {
-  const result = await runTool(["ps", "-o", "rss=", "-p", String(pid)]);
+  const result = await probeTool(
+    ["ps", "-o", "rss=", "-p", String(pid)],
+    "measurement: resident set size of the candidate process",
+  );
   const kb = Number(result.text.trim());
   return Number.isFinite(kb) && kb > 0 ? Math.round(kb * 1024) : 0;
 }
@@ -756,15 +917,131 @@ function writeReport(report: CompatibilityReport): string {
   return path;
 }
 
-async function runProbe(): Promise<number> {
-  const checks: CompatibilityReport["checks"] = {
-    identity: false,
-    stream: false,
-    callback: false,
-    cancel: false,
-    restart: false,
+/** Why the two not_run check categories have no executable harness here. */
+export const WAIT_NOT_RUN_EVIDENCE =
+  "no input-required/wait protocol seam exists in this candidate yet (01 plan R4-A 等待输入/审批 row: the mapping must follow the locked protocol's verified fields, which this runtime does not expose yet)";
+export const BACKPRESSURE_NOT_RUN_EVIDENCE =
+  "no slow-consumer/bounded-queue harness is exercised against the candidate yet (01 plan R4-A 慢消费者 row)";
+
+const LIMITATIONS = [
+  `check 'wait' is not_run: ${WAIT_NOT_RUN_EVIDENCE}`,
+  `check 'backpressure' is not_run: ${BACKPRESSURE_NOT_RUN_EVIDENCE}`,
+  "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
+  "G1b/G2 evidence sets (T1–T3/E1–E4/P2–P4/D2/D4, D5/business acceptance, and the dependency risk closure in runtime-go/dependency-review.json) are not produced by this probe",
+];
+
+const EVIDENCE_REFS = [
+  "runtime-go/testdata/compatibility-report.json (this artifact, written only by the probe)",
+  "server/scripts/enterprise-runtime-probe.ts (the probe that wrote it)",
+  "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same candidate)",
+  "server/tests/enterprise/runtime-artifacts.test.ts (asserts this artifact's R4 shape)",
+  "runtime-go/internal/adapter/agui_test.go (Go-side semantics, incl. RUN_ERROR and leak refusal)",
+  "runtime-go/internal/server/auth_test.go (identity and run-binding refusals)",
+  "runtime-go/dependency-review.json (the dependency risk record the G1b gate must close)",
+];
+
+/** Master plan §6 sign-off table; the probe itself signs nothing. */
+const REVIEWERS: CompatibilityReport["reviewers"] = {
+  G1a: { required: ["技术", "运行", "QA"], signed: [] },
+  G1b: { required: ["安全", "运行", "SRE", "技术"], signed: [] },
+  G2: { required: ["产品", "业务", "技术", "安全", "SRE"], signed: [] },
+};
+
+function initialChecks(): R4Checks {
+  return {
+    identity: { status: "not_run", evidence: "not reached before the probe ended" },
+    trusted_input: { status: "not_run", evidence: "not reached before the probe ended" },
+    text: { status: "not_run", evidence: "not reached before the probe ended" },
+    tool: { status: "not_run", evidence: "not reached before the probe ended" },
+    wait: { status: "not_run", evidence: WAIT_NOT_RUN_EVIDENCE },
+    error: { status: "not_run", evidence: "not reached before the probe ended" },
+    cancel: { status: "not_run", evidence: "not reached before the probe ended" },
+    backpressure: { status: "not_run", evidence: BACKPRESSURE_NOT_RUN_EVIDENCE },
+    restart: { status: "not_run", evidence: "not reached before the probe ended" },
   };
-  const measurements = { rssBytes: 0, firstEventMs: 0 };
+}
+
+/**
+ * Gate registration from the check outcomes, per master plan §6: failed checks
+ * fail G1a; checks that could not run BLOCK it (nothing passes before it
+ * actually ran); G1b/G2 evidence is not produced by this probe, so they stay
+ * not_run — this book never auto-passes them.
+ */
+function deriveGates(
+  checks: R4Checks,
+  failure?: string,
+): CompatibilityReport["gates"] {
+  const failed = R4_CHECK_NAMES.filter((name) => checks[name].status === "failed");
+  const notRun = R4_CHECK_NAMES.filter((name) => checks[name].status === "not_run");
+  const g1a: GateOutcome =
+    failed.length > 0 || failure !== undefined
+      ? {
+          status: "failed",
+          evidence: [
+            ...(failed.length > 0 ? [`failed checks: ${failed.join(", ")}`] : []),
+            ...(failure
+              ? [`the probe run itself failed before completing every check: ${failure}`]
+              : []),
+            "runtime-go/testdata/compatibility-report.json#checks",
+          ],
+        }
+      : notRun.length > 0
+        ? {
+            status: "blocked",
+            evidence: [
+              `blocked by check categories with no executable harness yet: ${notRun.join(", ")}`,
+              "G1a can only be reviewed as passed once every R4 check category actually ran (master §6: 所有项只有实际执行后才填pass/fail)",
+              "runtime-go/testdata/compatibility-report.json#checks",
+            ],
+          }
+        : {
+            status: "passed",
+            evidence: [
+              "all nine R4 check categories ran and passed",
+              "measurements recorded in this artifact (no capacity threshold is approved by a probe)",
+              "server/tests/enterprise/runtime-contract.test.ts",
+              "runtime-go/internal/adapter/agui_test.go",
+            ],
+          };
+  return {
+    G1a: g1a,
+    G1b: {
+      status: "not_run",
+      evidence: [
+        "G1b evidence (T1–T3, E1–E4, P2–P4, D2/D4, and current dependency risk closure) is not produced by this probe",
+        "runtime-go/dependency-review.json (open reachable-vulnerability record the gate must answer)",
+      ],
+    },
+    G2: {
+      status: "not_run",
+      evidence: [
+        "G2 depends on G1b plus D5/business acceptance with capacity and recovery evidence; nothing in this probe executed it",
+      ],
+    },
+  };
+}
+
+function fallbackEnvironment(): Awaited<ReturnType<typeof gatherEnvironment>> {
+  return {
+    commit: "unknown",
+    go_version: "unknown",
+    workspace_digest: { dirty: true, summary: [] },
+    document_baseline: {},
+    dependency_graph_digest: { goModSha256: "", goSumSha256: "", goSumLines: 0, moduleCount: 0 },
+    sdk_versions: {},
+    environment: {},
+    modules: [],
+  };
+}
+
+async function runProbe(): Promise<number> {
+  const checks = initialChecks();
+  const measurements: CompatibilityReport["measurements"] = {
+    rssBytes: 0,
+    firstEventMs: 0,
+    cancelLagMs: 0,
+    streamDurationMs: 0,
+  };
   const model = startFakeModel();
   const validation = startValidationPlane();
   const callbackPlane = startCallbackPlane();
@@ -810,16 +1087,44 @@ async function runProbe(): Promise<number> {
       }),
       body: JSON.stringify(runStreamInput),
     });
-    checks.identity =
+    const identityOk =
       noCredential.status === 401 &&
       forgedAssertion.status === 401 &&
       model.requests.length === 0;
-    if (!checks.identity)
+    checks.identity = {
+      status: identityOk ? "passed" : "failed",
+      evidence: `no-credential request -> ${noCredential.status}, forged assertion -> ${forgedAssertion.status} (both want 401); provider requests during the refusals: ${model.requests.length} (want 0)`,
+    };
+    if (!identityOk)
       throw new Error(
         `identity refusals did not hold: no-credential=${noCredential.status}, forged=${forgedAssertion.status}, provider requests=${model.requests.length}`,
       );
 
-    // -- stream: one real run through @ag-ui/client against the real endpoint.
+    // -- trusted input: valid credentials vouch for ONE run; a body claiming
+    //    somebody else's run must be refused before the framework spends anything.
+    const bindingCreds = validation.mint("run_binding", "thread_binding");
+    const mismatchedBinding = await fetch(`${base}/agui/`, {
+      method: "POST",
+      headers: headers(bindingCreds),
+      body: JSON.stringify(
+        runInput({
+          runId: "run_somebody_elses",
+          threadId: "thread_somebody_elses",
+          text: PROBE_STREAM_TEXT,
+        }),
+      ),
+    });
+    const trustedInputOk = mismatchedBinding.status === 403 && model.requests.length === 0;
+    checks.trusted_input = {
+      status: trustedInputOk ? "passed" : "failed",
+      evidence: `a valid assertion minted for run_binding/thread_binding presented against a body claiming run_somebody_elses -> ${mismatchedBinding.status} (want 403, identity bound to a different run); provider requests so far: ${model.requests.length} (want 0)`,
+    };
+    if (!trustedInputOk)
+      throw new Error(
+        `a run binding mismatch was not refused: status=${mismatchedBinding.status}, provider requests=${model.requests.length}`,
+      );
+
+    // -- text: one real run through @ag-ui/client against the real endpoint.
     const streamT0 = performance.now();
     let firstEventAt = 0;
     const streamEvents = await withTimeout(
@@ -829,21 +1134,28 @@ async function runProbe(): Promise<number> {
         },
       }),
       20_000,
-      "the stream check run",
+      "the text check run",
     );
     measurements.firstEventMs = Math.round(firstEventAt);
-    checks.stream =
+    measurements.streamDurationMs = Math.round(performance.now() - streamT0);
+    const textOk =
       satisfiesEventContract(streamEvents) &&
       textOf(streamEvents) === "probe-stream-ok" &&
       (streamEvents[0] as { threadId?: string }).threadId === "thread_stream" &&
       (streamEvents[0] as { runId?: string }).runId === "run_stream";
-    if (!checks.stream)
+    checks.text = {
+      status: textOk ? "passed" : "failed",
+      evidence: `events=${streamEvents.map((e) => e.type).join(",")}; joined text=${JSON.stringify(
+        textOf(streamEvents),
+      )}; first event echoed threadId=thread_stream runId=run_stream`,
+    };
+    if (!textOk)
       throw new Error(
         `the candidate's stream did not satisfy the contract: ${streamEvents.map((e) => e.type).join(",")}`,
       );
     measurements.rssBytes = await rssBytesOf(candidate.pid);
 
-    // -- callback: a governed tool call crosses the existing plane and the model sees the answer.
+    // -- tool: a governed tool call crosses the existing plane and the model sees the answer.
     const callbackCreds = validation.mint("run_callback", "thread_callback");
     const callbackEvents = await withTimeout(
       collectEvents(
@@ -855,10 +1167,10 @@ async function runProbe(): Promise<number> {
         }),
       ),
       20_000,
-      "the callback check run",
+      "the tool check run",
     );
     const crossed = callbackPlane.captured;
-    checks.callback =
+    const toolOk =
       crossed.length === 1 &&
       crossed[0].name === CANDIDATE_TOOL_NAME &&
       crossed[0].botId === BOT &&
@@ -866,11 +1178,54 @@ async function runProbe(): Promise<number> {
       callbackEvents.some((e) => e.type === "TOOL_CALL_START") &&
       satisfiesEventContract(callbackEvents) &&
       textOf(callbackEvents) === "callback-observed";
-    if (!checks.callback)
+    checks.tool = {
+      status: toolOk ? "passed" : "failed",
+      evidence: `governed calls that crossed /api/agent-tools/call: ${JSON.stringify(
+        crossed.map((c) => ({ name: c.name, botId: c.botId, actorId: c.actorId })),
+      )}; run carried TOOL_CALL_START and finished with text ${JSON.stringify(
+        textOf(callbackEvents),
+      )}`,
+    };
+    if (!toolOk)
       throw new Error(
         `the governed tool call did not cross the plane cleanly: captured=${JSON.stringify(
           crossed.map((c) => ({ name: c.name, botId: c.botId, actorId: c.actorId })),
         )}, events=${callbackEvents.map((e) => e.type).join(",")}`,
+      );
+
+    // -- wait: registered not_run (see WAIT_NOT_RUN_EVIDENCE); nothing is
+    //    pretend-executed here, and it blocks G1a until a real seam exists.
+
+    // -- error: a failing provider ends the run in RUN_ERROR without leaking
+    //    the provider's internal error body to the consumer.
+    const errorCreds = validation.mint("run_error", "thread_error");
+    const errorEvents = await withTimeout(
+      collectEvents(
+        httpAgentFor(base, headers(errorCreds)),
+        runInput({
+          runId: "run_error",
+          threadId: "thread_error",
+          text: PROBE_FAIL_TEXT,
+        }),
+      ),
+      20_000,
+      "the error check run",
+    );
+    const errorOk =
+      satisfiesEventContract(errorEvents) &&
+      errorEvents[errorEvents.length - 1]?.type === "RUN_ERROR" &&
+      !JSON.stringify(errorEvents).includes("leak-bait-secret-detail");
+    checks.error = {
+      status: errorOk ? "passed" : "failed",
+      evidence: `provider 500 -> events=${errorEvents
+        .map((e) => e.type)
+        .join(",")} (terminal RUN_ERROR required); provider's error body 'leak-bait-secret-detail' present in events: ${JSON.stringify(
+        errorEvents,
+      ).includes("leak-bait-secret-detail")} (want false)`,
+    };
+    if (!errorOk)
+      throw new Error(
+        `a failing provider did not end as a clean RUN_ERROR run: ${errorEvents.map((e) => e.type).join(",")}`,
       );
 
     // -- cancel: the owner's cancel is acknowledged and the slow run actually stops.
@@ -882,6 +1237,7 @@ async function runProbe(): Promise<number> {
     });
     const cancelRun = collectEvents(httpAgentFor(base, headers(cancelCreds)), cancelRunInput);
     await model.waitFor(() => model.requests.some((r) => r.userText.includes(PROBE_SLOW_TEXT)));
+    const cancelT0 = performance.now();
     const cancelResponse = await fetch(`${base}/cancel`, {
       method: "POST",
       headers: headers(cancelCreds),
@@ -896,12 +1252,20 @@ async function runProbe(): Promise<number> {
       8_000,
       "the cancelled run kept streaming",
     );
-    checks.cancel =
-      cancelResponse.status === 200 && cancelBody.status === "cancel_requested";
-    if (!checks.cancel)
+    measurements.cancelLagMs = Math.round(performance.now() - cancelT0);
+    const cancelOk = cancelResponse.status === 200 && cancelBody.status === "cancel_requested";
+    checks.cancel = {
+      status: cancelOk ? "passed" : "failed",
+      evidence: `POST /cancel -> ${cancelResponse.status} ${JSON.stringify(
+        cancelBody,
+      )} (want 200 cancel_requested); the cancelled run's stream settled ${measurements.cancelLagMs}ms after the cancel`,
+    };
+    if (!cancelOk)
       throw new Error(
         `cancel did not behave: status=${cancelResponse.status}, body=${JSON.stringify(cancelBody)}`,
       );
+
+    // -- backpressure: registered not_run (see BACKPRESSURE_NOT_RUN_EVIDENCE).
 
     // -- restart: a restarted candidate admits it no longer holds the old run.
     const restartCreds = validation.mint("run_restart", "thread_restart");
@@ -939,42 +1303,57 @@ async function runProbe(): Promise<number> {
       headers: headers(restartCreds),
       body: JSON.stringify({ runId: "run_restart", threadId: "thread_restart" }),
     });
-    checks.restart = oldRunCancel.status === 404;
-    if (!checks.restart)
+    const restartOk = oldRunCancel.status === 404;
+    checks.restart = {
+      status: restartOk ? "passed" : "failed",
+      evidence: `after killing and restarting the candidate, the old run's cancel -> ${oldRunCancel.status} (want 404: the restarted process holds no state it could lie about)`,
+    };
+    if (!restartOk)
       throw new Error(
         `a restarted candidate answered the old run's cancel with ${oldRunCancel.status}`,
       );
 
-    const adoption: CompatibilityReport["adoption"] = Object.values(checks).every(Boolean)
-      ? "candidate"
-      : "rejected";
-    const report: CompatibilityReport = { ...environment, checks, measurements, adoption };
+    const gates = deriveGates(checks);
+    const report: CompatibilityReport = {
+      ...environment,
+      commands: [...commandJournal],
+      exit_codes: { probe: 0 },
+      evidence_refs: EVIDENCE_REFS,
+      limitations: LIMITATIONS,
+      checks,
+      gates,
+      measurements,
+      reviewers: REVIEWERS,
+    };
     const path = writeReport(report);
-    console.log(`[probe] all checks passed; report written to ${path}`);
     console.log(
-      `[probe] measurements: rssBytes=${measurements.rssBytes} firstEventMs=${measurements.firstEventMs}`,
+      `[probe] executed checks all passed; gates: G1a=${gates.G1a.status}, G1b=${gates.G1b.status}, G2=${gates.G2.status}; report written to ${path}`,
+    );
+    console.log(
+      `[probe] measurements: rssBytes=${measurements.rssBytes} firstEventMs=${measurements.firstEventMs} cancelLagMs=${measurements.cancelLagMs} streamDurationMs=${measurements.streamDurationMs}`,
     );
     return 0;
   } catch (error) {
+    const failure = error instanceof Error ? error.message : String(error);
     try {
-      const environment = await gatherEnvironment().catch(() => ({
-        commit: "unknown",
-        goVersion: "unknown",
-        modules: [] as CompatibilityReport["modules"],
-      }));
+      const environment = await gatherEnvironment().catch(() => fallbackEnvironment());
+      const gates = deriveGates(checks, failure);
       const path = writeReport({
         ...environment,
+        commands: [...commandJournal],
+        exit_codes: { probe: 1 },
+        evidence_refs: EVIDENCE_REFS,
+        limitations: LIMITATIONS,
         checks,
+        gates,
         measurements,
-        adoption: "rejected",
+        reviewers: REVIEWERS,
       });
-      console.error(`[probe] FAILED: ${error instanceof Error ? error.message : String(error)}`);
-      console.error(`[probe] report written to ${path} with adoption "rejected"`);
+      console.error(`[probe] FAILED: ${failure}`);
+      console.error(`[probe] report written to ${path} with G1a=${gates.G1a.status}`);
     } catch (reportError) {
       console.error(`[probe] FAILED and the report could not be written: ${String(reportError)}`);
-      console.error(
-        `[probe] original failure: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      console.error(`[probe] original failure: ${failure}`);
     }
     return 1;
   } finally {

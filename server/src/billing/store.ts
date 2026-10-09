@@ -21,7 +21,11 @@ export function createBillingStore(database: Database): BillingStore {
       const now = new Date();
       await database
         .insert(billingCustomers)
-        .values({ externalId: input.externalId, name: input.name, lastSyncedAt: now })
+        .values({
+          externalId: input.externalId,
+          name: input.name,
+          lastSyncedAt: now,
+        })
         .onConflictDoUpdate({
           target: billingCustomers.externalId,
           set: { name: input.name, lastSyncedAt: now },
@@ -73,10 +77,7 @@ export function createBillingStore(database: Database): BillingStore {
           objectId: input.objectId,
         })
         .onConflictDoNothing({
-          target: [
-            billingWebhookEvents.provider,
-            billingWebhookEvents.eventId,
-          ],
+          target: [billingWebhookEvents.provider, billingWebhookEvents.eventId],
         })
         .returning({ eventId: billingWebhookEvents.eventId });
       return rows.length > 0;
