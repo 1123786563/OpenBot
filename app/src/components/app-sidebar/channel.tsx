@@ -2,6 +2,7 @@ import { IconPin, IconPinnedOff, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { memo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -57,6 +58,7 @@ export const Channel = memo(function Channel({
   busy: boolean;
   emphasis: MessageListEmphasis;
 }) {
+  const { t } = useTranslation("nav");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   // Whether this row's channel is the one on screen, as a boolean, so navigating between
@@ -68,7 +70,7 @@ export const Channel = memo(function Channel({
   });
   /* Types in only on arrival; an already-named row draws it outright. */
   const revealed = useTypedReveal(summary);
-  const threadTitle = revealed.text || lastMessage || "New conversation";
+  const threadTitle = revealed.text || lastMessage || t("newConversation");
   const setPinned = useMutation(setChannelPinnedMutationOptions(queryClient));
   const deleteChannel = useMutation(deleteChannelMutationOptions(queryClient));
   const [confirming, setConfirming] = useState(false);
@@ -125,7 +127,7 @@ export const Channel = memo(function Channel({
             <ChannelItemContent
               participantIds={participantIds}
               name={name}
-              title={summary || lastMessage || "New conversation"}
+              title={summary || lastMessage || t("newConversation")}
               displayedTitle={threadTitle}
               lastMessageAt={lastMessageAt}
               emphasis={emphasis}
@@ -147,7 +149,7 @@ export const Channel = memo(function Channel({
             }}
           >
             {pinned ? <IconPinnedOff /> : <IconPin />}
-            {pinned ? "Unpin channel" : "Pin channel"}
+            {pinned ? t("unpinChannel") : t("pinChannel")}
           </ContextMenuItem>
           <ContextMenuItem
             variant="destructive"
@@ -158,7 +160,7 @@ export const Channel = memo(function Channel({
             }}
           >
             <IconTrash />
-            Delete channel…
+            {t("deleteChannel")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -175,9 +177,9 @@ export const Channel = memo(function Channel({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete {name}?</DialogTitle>
+            <DialogTitle>{t("deleteChannelTitle", { name })}</DialogTitle>
             <DialogDescription>
-              The conversation will no longer appear for anyone in it.
+              {t("deleteChannelDescription")}
             </DialogDescription>
           </DialogHeader>
           {deleteChannel.error ? (
@@ -191,7 +193,7 @@ export const Channel = memo(function Channel({
               size="sm"
               variant="ghost"
             >
-              Cancel
+              {t("cancel")}
             </Button>
             <Button
               disabled={deleteChannel.isPending}
@@ -201,7 +203,7 @@ export const Channel = memo(function Channel({
               size="sm"
               variant="destructive"
             >
-              {deleteChannel.isPending ? "Deleting…" : "Delete"}
+              {deleteChannel.isPending ? t("deleting") : t("delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   describeApproval,
   type SharedUseApproval,
@@ -6,11 +8,12 @@ import {
 export function sharedSectionSentence(
   effect: "read" | "write",
   shared: boolean,
+  t: TFunction<"admin">,
 ): string | null {
   if (!shared) return null;
   return effect === "write"
-    ? "Anyone who can use this Bot can do this as the shared account."
-    : "Anyone who can use this Bot can read what this account can read.";
+    ? t("sharedApproval.sectionWrite")
+    : t("sharedApproval.sectionRead");
 }
 
 /**
@@ -25,25 +28,30 @@ export function SharedApprovalFields({
   value: SharedUseApproval;
   onChange: (next: SharedUseApproval) => void;
 }) {
+  const { t } = useTranslation("admin");
   const named = value.audience === "people" || value.members.length > 0;
   const options: { audience: SharedUseApproval["audience"]; label: string }[] =
     [
-      { audience: "owner", label: "Only its owner" },
+      { audience: "owner", label: t("sharedApproval.onlyOwner") },
       ...(named
         ? [
             {
               audience: "people" as const,
-              label: `Named: ${describeApproval({ ...value, audience: "people", outsideInput: false })}`,
+              label: t("sharedApproval.named", {
+                description: describeApproval({
+                  ...value,
+                  audience: "people",
+                  outsideInput: false,
+                }),
+              }),
             },
           ]
         : []),
-      { audience: "team", label: "Everyone" },
+      { audience: "team", label: t("sharedApproval.everyone") },
     ];
   return (
     <fieldset className="space-y-2 text-sm">
-      <legend className="font-medium">
-        Who may use the shared account through this Bot
-      </legend>
+      <legend className="font-medium">{t("sharedApproval.whoMayUse")}</legend>
       {options.map((option) => (
         <label className="flex items-center gap-2" key={option.audience}>
           <input
@@ -69,7 +77,7 @@ export function SharedApprovalFields({
           }
           type="checkbox"
         />
-        Outside input (email, Slack, webhooks) may use it
+        {t("sharedApproval.outsideInput")}
       </label>
     </fieldset>
   );

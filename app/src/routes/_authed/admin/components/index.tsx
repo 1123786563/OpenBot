@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { AdminComponentPreview } from "@/components/component-preview";
 import { PageShell } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
@@ -22,12 +23,13 @@ export const Route = createFileRoute("/_authed/admin/components/")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   const components = useQuery(componentListQueryOptions());
 
   return (
     <PageShell
-      description="What each Bot may answer with. Every published component is available to every Bot; switch one off here and that Bot is never told about it. Each change and each refusal is a row in Audit."
-      title="UI Components"
+      description={t("components.gallery.description")}
+      title={t("components.gallery.title")}
     >
       {/*
        * Pending, error, empty, rows — in that order. Pending draws nothing rather than a
@@ -36,14 +38,14 @@ function RouteComponent() {
        */}
       {components.isPending ? null : components.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Could not load components.
+          {t("components.loadError")}
         </p>
       ) : components.data?.length === 0 ? (
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>
-            <EmptyTitle>No components yet</EmptyTitle>
+            <EmptyTitle>{t("components.gallery.emptyTitle")}</EmptyTitle>
             <EmptyDescription className="text-pretty">
-              Components that your Agents can use will be shown here.
+              {t("components.gallery.emptyDescription")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

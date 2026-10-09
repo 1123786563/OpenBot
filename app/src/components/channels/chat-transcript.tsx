@@ -21,6 +21,8 @@ import {
   useRef,
   useState,
 } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
@@ -144,9 +146,10 @@ const RESTORING_ANSWER_LINES = [
 ] as const;
 
 function RestoringTranscript() {
+  const { t } = useTranslation("channels");
   return (
     // One announcement, with every bar hidden from it: nine empty shapes read aloud is worse.
-    <div aria-label="Loading this conversation" role="status">
+    <div aria-label={t("transcript.loadingAria")} role="status">
       <div aria-hidden="true" className="flex justify-end pb-7">
         <Skeleton className="h-10 w-64 rounded-xl bg-muted/40 motion-reduce:animate-none" />
       </div>
@@ -174,6 +177,7 @@ function RestoringTranscript() {
  * work is a tool call or a model that has not spoken yet.
  */
 function Thinking() {
+  const { t } = useTranslation("channels");
   return (
     <p
       className="tool-line-running text-muted-foreground text-sm"
@@ -181,7 +185,7 @@ function Thinking() {
       // is doing. The text says it, so a screen reader is told the same thing the shimmer implies.
       role="status"
     >
-      Thinking
+      {t("transcript.thinking")}
     </p>
   );
 }
@@ -275,6 +279,7 @@ function parkedTiles(attachments: readonly Attachment[]): SentAttachment[] {
 
 /** What a parked message is called, for somebody who cannot see it: its words, or else its files. */
 function describeParked(
+  t: TFunction<"channels">,
   text: string,
   files: readonly SentAttachment[],
 ): string {
@@ -285,7 +290,9 @@ function describeParked(
     .map((file) => file.filename)
     .filter((filename) => filename !== undefined);
 
-  return named.length > 0 ? named.join(", ") : "attachment";
+  return named.length > 0
+    ? named.join(", ")
+    : t("transcript.attachmentFallback");
 }
 
 /**
@@ -310,6 +317,7 @@ function Queued({
   text: string;
   onRemove?: (() => void) | undefined;
 }) {
+  const { t } = useTranslation("channels");
   /*
    * THE FILES COME WITH IT, and until they did they were on NO SURFACE IN THE APP AT ALL. Parking
    * consumes the draft, so the composer's strip empties in the same beat this line appears; drawing
@@ -343,7 +351,7 @@ function Queued({
            * `status` rather than `alert`, matching the thinking line: a person who has just chosen
            * to queue something is not being interrupted by the news that it is queued.
            */}
-          <span role="status">Queued</span>
+          <span role="status">{t("transcript.queued")}</span>
           {onRemove ? (
             <button
               /*
@@ -356,12 +364,14 @@ function Queued({
                * `describeParked`. An attachment-only message named the label after an empty string
                * and read as "Remove queued message:", which is the same nothing three times over.
                */
-              aria-label={`Remove queued message: ${describeParked(text, files)}`}
+              aria-label={t("transcript.removeQueuedAria", {
+                message: describeParked(t, text, files),
+              })}
               className="ml-2 underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               onClick={onRemove}
               type="button"
             >
-              Remove
+              {t("transcript.remove")}
             </button>
           ) : null}
         </MessageFooter>
@@ -542,6 +552,7 @@ function Arriving({
  * the part a person wrote and the only part addressed to them.
  */
 function RoutineFiring({ instruction }: { instruction: string }) {
+  const { t } = useTranslation("channels");
   const responsibility = readResponsibilityTurn(instruction);
   if (responsibility) {
     return <ResponsibilityFiring raw={instruction} turn={responsibility} />;
@@ -550,7 +561,7 @@ function RoutineFiring({ instruction }: { instruction: string }) {
     <div className="flex min-w-0 items-baseline gap-2 text-muted-foreground text-sm">
       <IconClock aria-hidden className="size-4 shrink-0 translate-y-0.5" />
       <span className="min-w-0">
-        <span className="font-medium">Routine ran.</span>{" "}
+        <span className="font-medium">{t("transcript.routineRan")}</span>{" "}
         <span className="whitespace-pre-wrap">{instruction}</span>
       </span>
     </div>
@@ -580,18 +591,23 @@ function ResponsibilityFiring({
   raw: string;
   turn: { instruction: string; trigger: string };
 }) {
+  const { t } = useTranslation("channels");
   return (
     <div className="flex min-w-0 items-baseline gap-2 text-muted-foreground text-sm">
       <IconClock aria-hidden className="size-4 shrink-0 translate-y-0.5" />
       <div className="min-w-0">
         <p>
-          <span className="font-medium">Responsibility ran.</span> Trigger:{" "}
-          {describeTrigger(turn.trigger)}
+          <span className="font-medium">
+            {t("transcript.responsibilityRan")}
+          </span>{" "}
+          {t("transcript.responsibilityTrigger", {
+            trigger: describeTrigger(turn.trigger),
+          })}
         </p>
         <p className="whitespace-pre-wrap">{turn.instruction}</p>
         <details className="group mt-1">
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            Details
+            {t("transcript.details")}
             <IconChevronDown
               aria-hidden
               className="size-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
@@ -628,6 +644,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   role: "user" | "assistant";
   text: string;
 }) {
+  const { t } = useTranslation("channels");
   const isUser = role === "user";
   /*
    * Checked before anything else a person's message gets. A firing is not a person's message: the
@@ -676,7 +693,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
                 <span className="whitespace-pre-wrap">
                   {origin && (
                     <span className="mr-1.5 inline-flex items-center rounded bg-foreground/10 px-1.5 py-0.5 align-middle text-foreground/70 text-xs">
-                      via {origin.via}
+                      {t("transcript.via", { name: origin.via })}
                     </span>
                   )}
                   {invoked ? (
@@ -982,6 +999,7 @@ function useDocumentIsGone(url: string, ask: boolean): boolean {
 }
 
 function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
+  const { t } = useTranslation("channels");
   const [failedToLoad, setFailedToLoad] = useState(false);
   const { filename, modality, url } = attachment;
   /*
@@ -1030,7 +1048,7 @@ function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
         role="note"
       >
         <IconAlertTriangle className="size-6" />
-        <p className="text-sm">{unavailableSentence(filename)}</p>
+        <p className="text-sm">{unavailableSentence(t, filename)}</p>
       </div>
     );
   }
@@ -1042,9 +1060,11 @@ function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
         <div className="min-w-0">
           {/* `title` because the tile is fixed-width and a long name is cut, not wrapped. */}
           <p className="truncate font-medium text-sm" title={filename}>
-            {filename ?? "Untitled file"}
+            {filename ?? t("transcript.untitledFile")}
           </p>
-          <p className="text-muted-foreground text-xs">Attachment</p>
+          <p className="text-muted-foreground text-xs">
+            {t("transcript.attachmentLabel")}
+          </p>
         </div>
       </div>
     );
@@ -1053,7 +1073,11 @@ function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
   return (
     <AttachmentLightbox filename={filename} url={url}>
       <img
-        alt={filename ? `Attachment: ${filename}` : "Attachment"}
+        alt={
+          filename
+            ? t("transcript.attachmentAlt", { name: filename })
+            : t("transcript.attachmentLabel")
+        }
         className="size-32 rounded-xl object-cover"
         onError={() => setFailedToLoad(true)}
         src={url}
@@ -1072,10 +1096,13 @@ function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
  * A file with no name still gets a sentence rather than a blank: the reader clicked on something,
  * and "this attachment" is the honest way to refer to a thing whose name we never had.
  */
-function unavailableSentence(filename?: string): string {
+function unavailableSentence(
+  t: TFunction<"channels">,
+  filename?: string,
+): string {
   return filename
-    ? `${filename} is unavailable.`
-    : "This attachment is unavailable.";
+    ? t("transcript.fileUnavailable", { name: filename })
+    : t("transcript.attachmentUnavailable");
 }
 
 /**
@@ -1113,6 +1140,7 @@ export function LightboxPicture({
   filename?: string;
   url: string;
 }) {
+  const { t } = useTranslation("channels");
   const [failedToLoad, setFailedToLoad] = useState(false);
 
   if (failedToLoad) {
@@ -1128,14 +1156,14 @@ export function LightboxPicture({
         role="note"
       >
         <IconAlertTriangle className="size-8" />
-        <p className="text-sm">{unavailableSentence(filename)}</p>
+        <p className="text-sm">{unavailableSentence(t, filename)}</p>
       </div>
     );
   }
 
   return (
     <img
-      alt={filename ?? "Attachment"}
+      alt={filename ?? t("transcript.attachmentLabel")}
       className="max-h-[88svh] max-w-[92vw] rounded-lg object-contain"
       onError={() => setFailedToLoad(true)}
       src={url}
@@ -1169,7 +1197,8 @@ function AttachmentLightbox({
   filename?: string;
   url: string;
 }) {
-  const label = filename ?? "Attachment";
+  const { t } = useTranslation("channels");
+  const label = filename ?? t("transcript.attachmentLabel");
   /*
    * Controlled only so that clicking the dark space around the picture closes it, the way every
    * lightbox a reader has used does. The popup covers the viewport (see below), so it — not the
@@ -1184,7 +1213,12 @@ function AttachmentLightbox({
         // tab to a raw image file is not the promise this makes. `block` so the tile is not sitting
         // on a text baseline with a stray gap under it.
         className="block cursor-zoom-in overflow-hidden rounded-xl"
-        render={<button aria-label={`Open ${label}`} type="button" />}
+        render={
+          <button
+            aria-label={t("transcript.openAttachment", { name: label })}
+            type="button"
+          />
+        }
       >
         {children}
       </DialogTrigger>
@@ -1214,7 +1248,7 @@ function AttachmentLightbox({
         <DialogClose
           render={
             <button
-              aria-label="Close"
+              aria-label={t("transcript.close")}
               className="absolute top-4 right-4 grid size-9 place-items-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
               type="button"
             />
@@ -1234,9 +1268,9 @@ function AttachmentLightbox({
  * a person can read instead. An unknown type falls back to its own name rather than to something
  * vague: whoever registered it will recognise it, and nobody else can act on either wording.
  */
-function activityName(activityType: string): string {
+function activityName(t: TFunction<"channels">, activityType: string): string {
   return activityType === "open-generative-ui"
-    ? "This Bot's generated interface"
+    ? t("transcript.generatedInterface")
     : activityType;
 }
 
@@ -1260,6 +1294,7 @@ const TranscriptActivity = memo(function TranscriptActivity({
   delay: number;
   message: ActivityMessage;
 }) {
+  const { t } = useTranslation("channels");
   const { renderActivityMessage } = useRenderActivityMessage();
   const drawn =
     message.activityType === VOICE_CHAT_ACTIVITY ? (
@@ -1271,7 +1306,7 @@ const TranscriptActivity = memo(function TranscriptActivity({
 
   return (
     <Arriving delay={delay}>
-      <ToolRenderBoundary name={activityName(message.activityType)}>
+      <ToolRenderBoundary name={activityName(t, message.activityType)}>
         {drawn}
       </ToolRenderBoundary>
     </Arriving>

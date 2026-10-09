@@ -16,6 +16,7 @@ import {
   Link,
   type LinkOptions,
 } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import {
   PageRows,
   PageSection,
@@ -41,131 +42,126 @@ export const Route = createFileRoute("/_authed/admin/")({
  * "What Bots can reach" is the group an administrator arrives worrying about, so it goes first.
  * Everything in it either grants a capability or fences one in.
  */
-const SECTIONS: {
-  title: string;
-  description: string;
-  items: {
-    description: string;
-    icon: React.ComponentType<{ className?: string }>;
-    linkOptions: LinkOptions;
-    title: string;
-  }[];
-}[] = [
+const SECTIONS = [
   {
-    title: "What Bots can reach",
-    description:
-      "Everything a Bot can touch outside this app, and the limits on it.",
+    title: "overview.reach.title",
+    description: "overview.reach.description",
     items: [
       {
-        title: "Credentials",
-        description: "Keys and tokens held for this deployment.",
+        title: "overview.reach.credentials.title",
+        description: "overview.reach.credentials.description",
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
       },
       {
-        title: "Boundaries",
-        description: "Rules that decide what a Bot may never do.",
+        title: "overview.reach.boundaries.title",
+        description: "overview.reach.boundaries.description",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
       },
       {
-        title: "Computers",
-        description: "The machines Bots run their tools on.",
+        title: "overview.reach.computers.title",
+        description: "overview.reach.computers.description",
         icon: IconDeviceDesktop,
         linkOptions: { to: "/admin/computers" },
       },
     ],
   },
   {
-    title: "What Bots can do",
-    description: "Capabilities and interface pieces available across Bots.",
+    title: "overview.do.title",
+    description: "overview.do.description",
     items: [
       {
-        title: "Plugins",
-        description:
-          "The services this deployment can reach, and which Bots may.",
+        title: "overview.do.plugins.title",
+        description: "overview.do.plugins.description",
         icon: IconPuzzle,
         linkOptions: { to: "/admin/plugins" },
       },
       {
-        title: "Skills",
-        description: "Named instructions anybody can invoke with a slash.",
+        title: "overview.do.skills.title",
+        description: "overview.do.skills.description",
         icon: IconFileText,
         linkOptions: { to: "/admin/skills" },
       },
       {
-        title: "Automatic Learning",
-        description:
-          "Learn from completed conversations and review proposed skills.",
+        title: "overview.do.learning.title",
+        description: "overview.do.learning.description",
         icon: IconFileText,
         linkOptions: { to: "/admin/learning" },
       },
       {
-        title: "UI Components",
-        description: "Custom pieces a Bot can draw in a conversation.",
+        title: "overview.do.components.title",
+        description: "overview.do.components.description",
         icon: IconLayoutGrid,
         linkOptions: { to: "/admin/components" },
       },
       {
-        title: "Playground",
-        description: "Write a component and watch it render as you type.",
+        title: "overview.do.playground.title",
+        description: "overview.do.playground.description",
         icon: IconCode,
         linkOptions: { to: "/admin/playground" },
       },
     ],
   },
   {
-    title: "Who can get in",
+    title: "overview.access.title",
     description: "",
     items: [
       {
-        title: "People",
-        description:
-          "Everybody who has signed in, who administers this deployment, and whose access has been removed.",
+        title: "overview.access.people.title",
+        description: "overview.access.people.description",
         icon: IconUsers,
         linkOptions: { to: "/admin/people" },
       },
       {
-        title: "Enterprise controls",
-        description:
-          "Capabilities by role and group, SSO required, SCIM, network policy, MCP and model allowlists, Action Recording.",
+        title: "overview.access.enterprise.title",
+        description: "overview.access.enterprise.description",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/enterprise" },
       },
       {
-        title: "Identity providers",
-        description:
-          "A company's own SAML or OpenID Connect provider, routed by email domain.",
+        title: "overview.access.identityProviders.title",
+        description: "overview.access.identityProviders.description",
         icon: IconBuildingBank,
         linkOptions: { to: "/admin/identity-providers" },
       },
     ],
   },
   {
-    title: "What happened",
+    title: "overview.history.title",
     description: "",
     items: [
       {
-        title: "Audit",
-        description: "Every action taken in this deployment, and by whom.",
+        title: "overview.history.audit.title",
+        description: "overview.history.audit.description",
         icon: IconListDetails,
         linkOptions: { to: "/admin/audit" },
       },
     ],
   },
-];
+] as const satisfies readonly {
+  title: string;
+  description: string;
+  items: readonly {
+    description: string;
+    icon: React.ComponentType<{ className?: string }>;
+    linkOptions: LinkOptions;
+    title: string;
+  }[];
+}[];
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   return (
     <PageShell
-      description="Settings that apply to everybody in this deployment. Anything here affects every person and every Bot, which is what separates it from your own preferences."
-      title="Admin"
+      description={t("overview.description")}
+      title={t("overview.title")}
     >
       {SECTIONS.map((section) => (
         <PageSection
-          description={section.description || undefined}
+          description={section.description ? t(section.description) : undefined}
           key={section.title}
-          title={section.title}
+          title={t(section.title)}
         >
           <PageRows>
             {section.items.map((item, index) => (
@@ -182,8 +178,8 @@ function RouteComponent() {
                     <item.icon className="size-4 text-muted-foreground" />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{item.title}</ItemTitle>
-                    <ItemDescription>{item.description}</ItemDescription>
+                    <ItemTitle>{t(item.title)}</ItemTitle>
+                    <ItemDescription>{t(item.description)}</ItemDescription>
                   </ItemContent>
                   <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </Item>

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
 import { RoutinesList } from "@/components/routines/routines-list";
 
@@ -19,11 +20,9 @@ export const Route = createFileRoute("/_authed/_app/routines")({
 });
 
 function RoutinesPage() {
+  const { t } = useTranslation("routines");
   return (
-    <PageShell
-      description="What a Bot does on a schedule, without being asked each time. Made and changed by talking to a Bot — this page only shows what is standing, and lets you stop one."
-      title="Routines"
-    >
+    <PageShell description={t("description")} title={t("title")}>
       <RoutinesList />
     </PageShell>
   );

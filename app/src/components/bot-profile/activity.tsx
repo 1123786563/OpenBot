@@ -10,6 +10,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -46,14 +47,15 @@ const ICONS: Record<ActivityKind, typeof IconBell> = {
   follow_up: IconClockPlay,
 };
 
-const KIND_LABEL: Record<ActivityKind, string> = {
-  routine: "Routine",
-  responsibility: "Responsibility",
-  handoff: "Delegated task",
-  approval: "Approval",
-  question: "Question",
-  follow_up: "Follow-up",
-};
+/* Key literals stay literal so `t(...)` sees a known key, not `string`. */
+const KIND_LABEL = {
+  routine: "botActivity.kind.routine",
+  responsibility: "botActivity.kind.responsibility",
+  handoff: "botActivity.kind.handoff",
+  approval: "botActivity.kind.approval",
+  question: "botActivity.kind.question",
+  follow_up: "botActivity.kind.followUp",
+} as const satisfies Record<ActivityKind, string>;
 
 /** Where an item opens: its conversation when it has one, otherwise the screen that owns its kind. */
 function linkFor(item: ActivityItem) {
@@ -81,6 +83,7 @@ function ActivityRow({
   agentId: string;
   item: ActivityItem;
 }) {
+  const { t } = useTranslation("computer");
   const stop = useMutation(stopHandoffMutationOptions(queryClient));
   const cancel = useMutation(cancelFollowUpMutationOptions(queryClient));
   const Icon = ICONS[item.kind];
@@ -93,7 +96,7 @@ function ActivityRow({
       size="sm"
       variant="outline"
     >
-      {stop.isPending ? "Stopping…" : "Stop"}
+      {stop.isPending ? t("botActivity.stopping") : t("botActivity.stop")}
     </Button>
   ) : item.cancellable ? (
     <Button
@@ -102,7 +105,7 @@ function ActivityRow({
       size="sm"
       variant="outline"
     >
-      {cancel.isPending ? "Cancelling…" : "Cancel"}
+      {cancel.isPending ? t("botActivity.cancelling") : t("botActivity.cancel")}
     </Button>
   ) : null;
   const content = (
@@ -113,7 +116,8 @@ function ActivityRow({
       <ItemContent>
         <ItemTitle>{item.title}</ItemTitle>
         <ItemDescription>
-          {KIND_LABEL[item.kind]} · {item.needsYou ? "needs you" : item.status}
+          {t(KIND_LABEL[item.kind])} ·{" "}
+          {item.needsYou ? t("botActivity.needsYou") : item.status}
           {when ? ` · ${when}` : ""}
           {item.detail ? ` · ${item.detail}` : ""}
         </ItemDescription>
@@ -131,7 +135,7 @@ function ActivityRow({
         <ItemActions>
           {link ? (
             <Button render={link} size="sm" variant="ghost">
-              Open
+              {t("botActivity.open")}
             </Button>
           ) : null}
           {control}
@@ -178,13 +182,14 @@ function ActivitySection({
 
 /** In progress, Scheduled and Completed, read from the ledgers the work already lives in. */
 export function BotActivitySections({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("computer");
   const activity = useQuery(botActivityQueryOptions(agentId));
   if (activity.isPending) return null;
   if (activity.error)
     return (
-      <PageSection title="Activity">
+      <PageSection title={t("botActivity.title")}>
         <p className="mt-4 text-destructive text-sm" role="alert">
-          Could not load this Bot's activity.
+          {t("botActivity.loadError")}
         </p>
       </PageSection>
     );
@@ -192,21 +197,21 @@ export function BotActivitySections({ agentId }: { agentId: string }) {
     <>
       <ActivitySection
         agentId={agentId}
-        empty="Nothing is running or waiting on you."
+        empty={t("botActivity.emptyInProgress")}
         items={activity.data.inProgress}
-        title="In progress"
+        title={t("botActivity.inProgress")}
       />
       <ActivitySection
         agentId={agentId}
-        empty="Nothing is scheduled."
+        empty={t("botActivity.emptyScheduled")}
         items={activity.data.scheduled}
-        title="Scheduled"
+        title={t("botActivity.scheduled")}
       />
       <ActivitySection
         agentId={agentId}
-        empty="Nothing has finished yet."
+        empty={t("botActivity.emptyCompleted")}
         items={activity.data.completed}
-        title="Completed"
+        title={t("botActivity.completed")}
       />
     </>
   );

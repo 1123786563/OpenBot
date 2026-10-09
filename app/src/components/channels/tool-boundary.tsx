@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import i18next from "i18next";
 
 /**
  * A component that throws must not take the conversation with it.
@@ -28,10 +29,13 @@ export class ToolRenderBoundary extends Component<
 
   render() {
     if (this.state.failed) {
+      // A class component cannot take the `useTranslation` hook, so the translator is bound
+      // from the shared instance here; an error fallback renders once and needs no reactivity.
+      const t = i18next.getFixedT<"channels">(null, "channels");
       return (
         <p className="my-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <span className="font-medium">{this.props.name}</span> could not be
-          drawn. The rest of this conversation is unaffected.
+          <span className="font-medium">{this.props.name}</span>{" "}
+          {t("toolBoundary.failedSuffix")}
         </p>
       );
     }

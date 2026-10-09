@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { PendingApprovals } from "@/components/approvals/inline-approval";
 import type { VisibleChatItem } from "./chat-messages";
 import { ToolLine } from "./tool-line";
@@ -10,14 +11,23 @@ export type BrowserGroup = {
 };
 export type TranscriptItem = VisibleChatItem | BrowserGroup;
 
-const labels: Record<string, string> = {
-  computer_navigate: "Opened page",
-  computer_read: "Read page",
-  computer_snapshot: "Inspected page",
-  computer_click: "Clicked on page",
-  computer_type: "Filled in field",
-  computer_key: "Pressed key",
-  computer_scroll: "Scrolled page",
+type StepLabelKey =
+  | "browser.step.navigate"
+  | "browser.step.read"
+  | "browser.step.snapshot"
+  | "browser.step.click"
+  | "browser.step.type"
+  | "browser.step.key"
+  | "browser.step.scroll";
+
+const labelKeys: Record<string, StepLabelKey> = {
+  computer_navigate: "browser.step.navigate",
+  computer_read: "browser.step.read",
+  computer_snapshot: "browser.step.snapshot",
+  computer_click: "browser.step.click",
+  computer_type: "browser.step.type",
+  computer_key: "browser.step.key",
+  computer_scroll: "browser.step.scroll",
 };
 
 /** Group adjacent browsing steps without moving messages or hiding requests for human help. */
@@ -28,7 +38,7 @@ export function groupBrowserSteps(
   for (const item of items) {
     if (
       item.kind !== "tool" ||
-      !Object.hasOwn(labels, item.toolCall.function.name)
+      !Object.hasOwn(labelKeys, item.toolCall.function.name)
     ) {
       grouped.push(item);
       continue;
@@ -71,7 +81,7 @@ export function browserStepDetails(step: BrowserStep) {
     result.refused === true ||
     step.result?.startsWith("Error:") === true;
   return {
-    label: labels[step.toolCall.function.name],
+    labelKey: labelKeys[step.toolCall.function.name],
     href: url?.href,
     title:
       navigation && typeof result.title === "string" && result.title.trim()
@@ -91,6 +101,7 @@ export function BrowserActivity({
   group: BrowserGroup;
   active: boolean;
 }) {
+  const { t } = useTranslation("channels");
   const steps = group.steps.map((step) => ({
     id: step.id,
     ...browserStepDetails(step),
@@ -104,13 +115,19 @@ export function BrowserActivity({
       <ToolLine
         label={
           running
-            ? "Browsing…"
+            ? t("browser.browsing")
             : pages
-              ? `Browsed ${pages} ${pages === 1 ? "page" : "pages"}`
-              : "Browser activity"
+              ? pages === 1
+                ? t("browser.browsedOne")
+                : t("browser.browsedMany", { pages })
+              : t("browser.activity")
         }
         detail={
-          issues ? `${issues} ${issues === 1 ? "issue" : "issues"}` : undefined
+          issues
+            ? issues === 1
+              ? t("browser.issueOne")
+              : t("browser.issueMany", { issues })
+            : undefined
         }
         running={running}
       >
@@ -119,7 +136,7 @@ export function BrowserActivity({
             <li key={step.id} className="min-w-0">
               <div className="flex min-w-0 items-baseline gap-2">
                 <span className="shrink-0 text-muted-foreground">
-                  {step.label}
+                  {t(step.labelKey)}
                 </span>
                 {step.href ? (
                   <a
@@ -133,13 +150,15 @@ export function BrowserActivity({
                 ) : null}
                 {step.pending && (
                   <span className="text-muted-foreground">
-                    {active ? "In progress" : "Not completed"}
+                    {active
+                      ? t("browser.inProgress")
+                      : t("browser.notCompleted")}
                   </span>
                 )}
               </div>
               {step.failed && (
                 <p className="mt-0.5 text-destructive">
-                  {step.reason ?? "This step could not be completed."}
+                  {step.reason ?? t("browser.stepFailed")}
                 </p>
               )}
             </li>

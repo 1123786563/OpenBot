@@ -1,0 +1,252 @@
+{
+  "activity": {
+    "title": "Activity",
+    "ran": "Ran",
+    "read": "Read",
+    "saved": "Saved",
+    "listed": "Listed",
+    "refused": "A boundary refused it.",
+    "empty": "Nothing yet. Commands the Bot runs, and files it reads, appear here as they happen."
+  },
+  "output": {
+    "truncated": "Output was cut short at the start. What follows is the end of it.",
+    "printedNothing": "It printed nothing.",
+    "timedOut": "It ran too long and was stopped.",
+    "exitCode": "Exit code {{exitCode}}."
+  },
+  "controls": {
+    "takeControl": "Take control",
+    "handBack": "Hand back",
+    "finishing": "Finishing the current action…",
+    "openComputer": "Open Computer",
+    "closeComputer": "Close Computer",
+    "computer": "Computer",
+    "needsYou": "Needs you"
+  },
+  "panel": {
+    "ariaLabel": "Computer sidebar"
+  },
+  "control": {
+    "reconnecting": "Reconnecting: browser ownership could not be checked. Input is paused.",
+    "handoffUnidentified": "The handoff request could not be identified. Retry the connection.",
+    "couldNotChange": "Control could not be changed. Check the connection and retry.",
+    "couldNotReach": "The computer could not be reached. Retry when it reconnects."
+  },
+  "view": {
+    "aPage": "A page",
+    "openedDuringTurn": "Opened during this turn. The screen has moved on since.",
+    "noPageThisTurn": "This turn did not open a page.",
+    "cannotSeeScreen": "You cannot see the screen right now",
+    "mayStillBeWorking": "The assistant may still be working. An administrator can check whether its computer is running.",
+    "notOpenedPageYet": "The assistant has not opened a page yet.",
+    "waitingForScreen": "Waiting for the assistant's screen…",
+    "screenUnavailable": "The screen is not available right now.",
+    "altLooking": "What the assistant is looking at",
+    "openFullSize": "Open the assistant's screen full size",
+    "youHaveControl": "You have control",
+    "needsYou": "The assistant needs you.",
+    "cancelRequest": "Cancel request",
+    "finishingAssistantAction": "Finishing the assistant's current action before giving you control…",
+    "browserInterrupted": "The browser was interrupted.",
+    "browserInterruptedCheck": "Open the screen and take control again to check it.",
+    "secretLabel": "The assistant needs",
+    "secretPlaceholder": "Typed here, never shown to the assistant",
+    "sending": "Sending…",
+    "sendToPage": "Send to the page",
+    "secretNote": "This goes straight to the page. It is not shown in the conversation and the assistant never receives it.",
+    "checkingControl": "Checking who has control…",
+    "youHaveControlHint": "You have control. Open the screen to click and type.",
+    "assistantHasControl": "The assistant has control.",
+    "dialogLabel": "The assistant's screen",
+    "closeScreen": "Close the assistant's screen",
+    "altTurnFrame": "What this turn had open",
+    "retry": "Retry",
+    "finishingBeforeControl": "Finishing the current action before giving you control…",
+    "youHaveControlClickType": "You have control — click and type on the page."
+  },
+  "demonstration": {
+    "schedules": {
+      "weekdayAt9": "Every weekday at 09:00",
+      "everyDayAt9": "Every day at 09:00",
+      "mondayAt9": "Every Monday at 09:00",
+      "everyHour": "Every hour"
+    },
+    "scheduledLead": "Scheduled.",
+    "nextRuns": "next runs",
+    "seeRoutines": "See routines",
+    "close": "Close",
+    "whenItRuns": "When it runs ({{timezone}})",
+    "customCron": "Custom cron expression",
+    "cronFormat": "Cron (minute hour day month weekday)",
+    "reportIn": "Report in",
+    "onlyConversation": "This Bot's only conversation",
+    "inputsLabel": "Inputs for each run (optional)",
+    "inputsPlaceholder": "input_1: last month's invoices",
+    "schedule": "Schedule",
+    "cancel": "Cancel",
+    "title": "Teach a browser workflow",
+    "intro": "Take control, record the steps, then review a skill draft. Typed values and images are omitted. Sensitive fields stay in your hands. Recording stops automatically after ten minutes.",
+    "recordingLine": "Recording {{title}} · {{count}} steps",
+    "timeLeft": "{{time}} left",
+    "timeLimitReached": "Time limit reached. Stopping…",
+    "stopRecording": "Stop recording",
+    "workflowName": "Workflow name",
+    "workflowPlaceholder": "Find an invoice",
+    "recordSteps": "Record your steps",
+    "takeControlFirst": "Take control of the browser to start recording.",
+    "stepsUnit": "steps",
+    "stoppedAtLimit": "· stopped at the ten-minute limit",
+    "edit": "Edit",
+    "runOnSchedule": "Run on a schedule",
+    "reviewDraft": "Review skill draft",
+    "delete": "Delete",
+    "reviewTitle": "Review and edit the skill",
+    "reviewIntro": "Replace parameter names and clarify the expected outcome. Saving uses the same skill permissions as Skills.",
+    "saveAndUse": "Save and use with this Bot",
+    "couldNotSave": "The skill could not be saved.",
+    "savedReady": "/{{slug}} is ready on this Bot. Invoke it in the conversation with the inputs you want to use, or choose Run on a schedule to rerun it as a routine."
+  },
+  "handoff": {
+    "couldNotResume": "The task could not resume.",
+    "waitingFinish": "Waiting for this browser handoff to finish.",
+    "pausedNotice": "A browser task is paused in this conversation.",
+    "stopWaiting": "Stop waiting",
+    "resumeTask": "Resume task"
+  },
+  "liveScreen": {
+    "couldNotShow": "The screen could not be shown.",
+    "ariaDriving": "The assistant's screen. You have control: click and type here.",
+    "ariaLive": "The assistant's screen, live"
+  },
+  "botActivity": {
+    "title": "Activity",
+    "loadError": "Could not load this Bot's activity.",
+    "emptyInProgress": "Nothing is running or waiting on you.",
+    "inProgress": "In progress",
+    "emptyScheduled": "Nothing is scheduled.",
+    "scheduled": "Scheduled",
+    "emptyCompleted": "Nothing has finished yet.",
+    "completed": "Completed",
+    "kind": {
+      "routine": "Routine",
+      "responsibility": "Responsibility",
+      "handoff": "Delegated task",
+      "approval": "Approval",
+      "question": "Question",
+      "followUp": "Follow-up"
+    },
+    "needsYou": "needs you",
+    "stopping": "Stopping…",
+    "stop": "Stop",
+    "cancelling": "Cancelling…",
+    "cancel": "Cancel",
+    "open": "Open"
+  },
+  "attention": {
+    "questions_one": "{{count}} question",
+    "questions_other": "{{count}} questions",
+    "approvals_one": "{{count}} approval",
+    "approvals_other": "{{count}} approvals",
+    "handoffs_one": "{{count}} stalled hand-off",
+    "handoffs_other": "{{count}} stalled hand-offs",
+    "unread": "{{count}} unread",
+    "needsYouName": "{{name}} needs you",
+    "paused": "paused"
+  },
+  "paused": {
+    "tapToResume": "Paused, tap to resume",
+    "resuming": "Resuming…"
+  },
+  "profile": {
+    "forYou": "For you",
+    "stateLoadError": "Could not load this Bot's state.",
+    "paused": {
+      "title": "Paused",
+      "on": "No routine, responsibility, hand-off or follow-up starts for you, and what was running has stopped.",
+      "off": "Runs its routines, responsibilities, hand-offs and follow-ups for you."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "badgesAlways": "Sidebar badges always show."
+    },
+    "notify": {
+      "all": "Everything",
+      "needsInput": "Only when it needs me",
+      "none": "Nothing (badges only)"
+    },
+    "browserNotifications": {
+      "title": "Browser notifications",
+      "off": "Off in this browser. Turn them on to hear when a Bot needs you.",
+      "turnOn": "Turn on"
+    },
+    "message": {
+      "title": "Message {{name}}",
+      "description": "Start a conversation."
+    },
+    "resetEntry": {
+      "title": "Reset",
+      "description": "Delete your conversations with it, what it remembers for you, and its scheduled work. You see what will go first."
+    },
+    "updateKind": {
+      "progress": {
+        "title": "Progress",
+        "description": "Replies and results from work you were not watching."
+      },
+      "decision": {
+        "title": "Decisions",
+        "description": "Approvals a Bot needs before it acts."
+      },
+      "question": {
+        "title": "Questions",
+        "description": "Things a Bot asked you and is waiting on."
+      }
+    },
+    "transport": {
+      "push": "Push",
+      "slack": "Slack",
+      "teams": "Microsoft Teams",
+      "sms": "SMS"
+    },
+    "transportAria": "{{kind}} by {{transport}}",
+    "routing": {
+      "title": "Where updates go",
+      "description": "Where each kind of update goes when you are not looking. The web always shows everything. Applies to all your Bots.",
+      "loadError": "Could not load where your updates go."
+    },
+    "reset": {
+      "title": "Reset {{name}}?",
+      "description": "This deletes what {{name}} has with you, and only with you. Nobody else's conversations or data are touched. It cannot be undone.",
+      "countError": "Could not count what a reset would delete.",
+      "done": "Done. {{name}} starts fresh with you.",
+      "nothingToDelete": "There is nothing of yours to delete.",
+      "willDelete": "This will delete:",
+      "sharedKept_one": "{{count}} conversation is shared with other people or Bots and will be kept.",
+      "sharedKept_other": "{{count}} conversations are shared with other people or Bots and will be kept.",
+      "ownMemoriesKept": "Your own memories, the ones you told a Bot directly, are kept.",
+      "close": "Close",
+      "cancel": "Cancel",
+      "resetting": "Resetting…",
+      "deleteAndReset": "Delete and reset"
+    },
+    "resetItems": {
+      "conversations_one": "{{count}} conversation",
+      "conversations_other": "{{count}} conversations",
+      "memorySources_one": "{{count}} memory source",
+      "memorySources_other": "{{count}} memory sources",
+      "memories_one": "{{count}} imported memory",
+      "memories_other": "{{count}} imported memories",
+      "routines_one": "{{count}} routine",
+      "routines_other": "{{count}} routines",
+      "responsibilities_one": "{{count}} responsibility",
+      "responsibilities_other": "{{count}} responsibilities",
+      "followUps_one": "{{count}} scheduled follow-up",
+      "followUps_other": "{{count}} scheduled follow-ups",
+      "formedMemories_one": "{{count}} memory it formed",
+      "formedMemories_other": "{{count}} memories it formed",
+      "backgroundResearch_one": "{{count}} background research",
+      "backgroundResearch_other": "{{count}} background research",
+      "standingApprovals_one": "{{count}} standing permission",
+      "standingApprovals_other": "{{count}} standing permissions"
+    }
+  }
+}

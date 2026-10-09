@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { GalleryFrame } from "./frame";
@@ -22,18 +23,19 @@ export const QuoteCardProps = z.object({
 type QuoteArgs = z.infer<typeof QuoteCardProps>;
 
 export function QuoteCard({ quote, attribution, context }: Partial<QuoteArgs>) {
+  const { t } = useTranslation("channels");
   if (!quote) {
     return (
-      <GalleryFrame title="Quotation">
+      <GalleryFrame title={t("gallery.quote.title")}>
         <p className="text-sm text-muted-foreground">
-          There is nothing to quote.
+          {t("gallery.quote.nothingToQuote")}
         </p>
       </GalleryFrame>
     );
   }
 
   return (
-    <GalleryFrame caption={context} title="Quotation">
+    <GalleryFrame caption={context} title={t("gallery.quote.title")}>
       <blockquote className="border-l-2 border-border pl-4">
         <p className="text-sm leading-relaxed">{quote}</p>
         {attribution ? (

@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,7 @@ export const Route = createFileRoute("/_authed/_app/group/new")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("channels");
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const profiles = useQuery(agentListQueryOptions());
@@ -38,13 +41,11 @@ function RouteComponent() {
     <div className="flex h-full flex-col">
       <div className="sticky top-0 flex h-12 flex-row items-center gap-1.5 border-b border-border px-3">
         <SidebarToggle />
-        <span className="text-sm tracking-tight">New group conversation</span>
+        <span className="text-sm tracking-tight">{t("groupNew.title")}</span>
       </div>
       <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-6">
         <p className="text-sm text-muted-foreground">
-          Choose at least two Bots, in the order they should answer. Each sees
-          what the others said and can hand the conversation to another with
-          @Name.
+          {t("groupNew.description")}
         </p>
         {profiles.isError ? (
           <p className="text-sm text-destructive" role="alert">
@@ -76,7 +77,9 @@ function RouteComponent() {
                 <span className="text-sm">{profile.name}</span>
                 {checked ? (
                   <span className="text-xs text-muted-foreground">
-                    answers {ordinal(chosen.indexOf(profile.id) + 1)}
+                    {t("groupNew.answers", {
+                      position: ordinal(t, chosen.indexOf(profile.id) + 1),
+                    })}
                   </span>
                 ) : null}
                 <span className="truncate text-sm text-muted-foreground">
@@ -96,7 +99,7 @@ function RouteComponent() {
             disabled={chosen.length < 2 || create.isPending}
             onClick={() => void start().catch(() => {})}
           >
-            Start group
+            {t("groupNew.start")}
           </Button>
         </div>
       </div>
@@ -104,6 +107,10 @@ function RouteComponent() {
   );
 }
 
-function ordinal(position: number) {
-  return ["first", "second", "third"][position - 1] ?? `#${position}`;
+function ordinal(t: TFunction<"channels">, position: number) {
+  return (
+    [t("groupNew.first"), t("groupNew.second"), t("groupNew.third")][
+      position - 1
+    ] ?? `#${position}`
+  );
 }

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +27,7 @@ export function CallbackTokenPanel({
   agentId: string;
   hasToken: boolean;
 }) {
+  const { t } = useTranslation("agents");
   const queryClient = useQueryClient();
   const issue = useMutation(issueCallbackTokenMutationOptions(queryClient));
   const revoke = useMutation(revokeCallbackTokenMutationOptions(queryClient));
@@ -37,20 +39,16 @@ export function CallbackTokenPanel({
   return (
     <section className="mt-6 grid gap-2">
       <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-        Calling tools back
+        {t("callback.title")}
       </h2>
 
       <p className="text-muted-foreground text-sm">
-        {hasToken
-          ? "This coworker holds a credential, so it can use the tools it has been granted. Rotating replaces it, and the old one stops working straight away."
-          : "This coworker has no credential, so it can hold a conversation but cannot use any tool it has been granted. Generate one and put it in that agent's configuration."}
+        {hasToken ? t("callback.hasToken") : t("callback.noToken")}
       </p>
 
       {token ? (
         <div className="grid gap-2 rounded-lg border border-border bg-card p-3">
-          <p className="font-medium text-sm">
-            Copy this now. It will not be shown again.
-          </p>
+          <p className="font-medium text-sm">{t("callback.copyNow")}</p>
           {/*
            * Selectable and wrapped rather than a copy button alone: somebody pasting this into a
            * deployment config on another machine may not have a clipboard between the two.
@@ -59,11 +57,10 @@ export function CallbackTokenPanel({
             {token}
           </code>
           <p className="text-muted-foreground text-xs">
-            The deployment keeps only a hash of it, so nothing here can show it
-            to you a second time.
+            {t("callback.hashNote")}
           </p>
           <Button onClick={() => setToken(null)} size="sm" variant="outline">
-            Done
+            {t("callback.done")}
           </Button>
         </div>
       ) : (
@@ -75,10 +72,10 @@ export function CallbackTokenPanel({
             variant="outline"
           >
             {issue.isPending
-              ? "Generating…"
+              ? t("callback.generating")
               : hasToken
-                ? "Rotate token"
-                : "Generate token"}
+                ? t("callback.rotate")
+                : t("callback.generate")}
           </Button>
           {hasToken ? (
             <Button
@@ -87,7 +84,7 @@ export function CallbackTokenPanel({
               size="sm"
               variant="outline"
             >
-              {revoke.isPending ? "Revoking…" : "Revoke"}
+              {revoke.isPending ? t("callback.revoking") : t("callback.revoke")}
             </Button>
           ) : null}
         </div>

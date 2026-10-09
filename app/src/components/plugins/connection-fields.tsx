@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -70,6 +71,7 @@ export function ConnectionFields({
   /** Whether the submission is already in flight, so the button cannot start a second one. */
   busy: boolean;
 }) {
+  const { t } = useTranslation("admin");
   /* Seeded from the defaults the app published, so a field most people keep is already filled in. */
   const [values, setValues] = useState<Record<string, string>>(() =>
     seed(fields),
@@ -134,7 +136,7 @@ export function ConnectionFields({
         </Item>
       ))}
       <Button className="self-end" disabled={busy} size="sm" type="submit">
-        {busy ? "Connecting…" : "Connect"}
+        {busy ? t("brokered.connecting") : t("brokered.connect")}
       </Button>
     </form>
   );

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { useState } from "react";
 import { AgentCard } from "@/components/agents/agent-card";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/_authed/_app/")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("channels");
   const {
     data: agents,
     isPending: loading,
@@ -51,7 +53,7 @@ function RouteComponent() {
             {appConfig.brand.productName}
           </h2>
           <h1 className="text-2xl font-bold tracking-tight mt-1.5 text-center">
-            Start a new channel
+            {t("new.title")}
           </h1>
         </div>
         <div className="mt-8 w-full flex flex-col items-center">
@@ -86,7 +88,7 @@ function RouteComponent() {
                 setError(
                   caught instanceof Error
                     ? caught.message
-                    : "Could not start the conversation.",
+                    : t("new.startError"),
                 );
                 throw caught;
               }
@@ -97,8 +99,11 @@ function RouteComponent() {
             // Said out loud: a message that silently reaches somebody you did not choose is the
             // kind of surprise that costs trust the first time it happens.
             <p className="mt-2 w-full max-w-2xl text-xs text-muted-foreground text-center">
-              Sent to the coworker it is for. Type <code>@</code> to choose one
-              yourself.
+              <Trans
+                components={{ code: <code /> }}
+                i18nKey="new.fallbackHint"
+                t={t}
+              />
             </p>
           ) : null}
           {error ? (
@@ -120,8 +125,7 @@ function RouteComponent() {
               className="mt-2 w-full max-w-2xl text-sm text-destructive"
               role="alert"
             >
-              Your coworkers couldn't be loaded, so there's no one to send this
-              to yet.
+              {t("new.loadError")}
             </p>
           ) : null}
         </div>
@@ -147,7 +151,7 @@ function RouteComponent() {
            */}
           {loading ? (
             <>
-              <h2 className="font-bold text-lg">Explore agents</h2>
+              <h2 className="font-bold text-lg">{t("explore.title")}</h2>
               <Skeleton className="mt-4 h-[180px]" />
             </>
           ) : explore?.length ? (
@@ -160,7 +164,7 @@ function RouteComponent() {
             >
               <div className="flex flex-row items-center justify-between gap-4">
                 <h2 id="explore-agents-heading" className="font-bold text-lg">
-                  Explore agents
+                  {t("explore.title")}
                 </h2>
                 {/*
                  * `static` undoes the primitive's own absolute placement, which parks these either
@@ -194,11 +198,11 @@ function RouteComponent() {
             // card there would say the opposite of what a populated composer beside it (still
             // working off that same, successfully loaded `agents`) proves.
             <>
-              <h2 className="font-bold text-lg">Explore agents</h2>
+              <h2 className="font-bold text-lg">{t("explore.title")}</h2>
               <Empty className="mt-4 h-[180px] border border-dashed border-destructive">
                 <EmptyHeader>
                   <EmptyTitle className="text-destructive">
-                    Agents shared with you couldn't be loaded.
+                    {t("explore.loadError")}
                   </EmptyTitle>
                 </EmptyHeader>
               </Empty>
@@ -208,11 +212,11 @@ function RouteComponent() {
             // when it failed but `agents` is defined — a loaded, empty slice either way. Same
             // plain copy for both: an empty roster is a fact, not an error.
             <>
-              <h2 className="font-bold text-lg">Explore agents</h2>
+              <h2 className="font-bold text-lg">{t("explore.title")}</h2>
               <Empty className="mt-4 h-[180px] border border-dashed">
                 <EmptyHeader>
                   <EmptyTitle className="text-muted-foreground">
-                    Nobody has shared an agent with you yet.
+                    {t("explore.empty")}
                   </EmptyTitle>
                 </EmptyHeader>
               </Empty>

@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +21,7 @@ import { queryClient } from "@/query-client";
  * to write a job description here and get it applied to every coworker at once.
  */
 export function StandingInstructions() {
+  const { t } = useTranslation("settings");
   const stored = useQuery(instructionsQueryOptions());
   const save = useMutation(saveInstructionsMutationOptions(queryClient));
 
@@ -57,8 +59,8 @@ export function StandingInstructions() {
 
   return (
     <PageSection
-      description="Applies to every coworker in every channel. Your role text on a coworker says what it does; this says how you want things done, for example writing style or how to describe your company."
-      title="Standing instructions"
+      description={t("instructions.description")}
+      title={t("instructions.title")}
     >
       {stored.isPending ? null : stored.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -67,14 +69,14 @@ export function StandingInstructions() {
       ) : (
         <div className="mt-4 flex flex-col gap-2">
           <Textarea
-            aria-label="Standing instructions"
+            aria-label={t("instructions.title")}
             className="min-h-40"
             disabled={save.isPending}
             onChange={(event) => {
               setDraft(event.target.value);
               setSaved(false);
             }}
-            placeholder="We are two people, not a team. Write in British English, and never call our product a platform."
+            placeholder={t("instructions.placeholder")}
             value={text}
           />
           <div className="flex flex-row items-center justify-between gap-4">
@@ -85,7 +87,10 @@ export function StandingInstructions() {
                   : "text-muted-foreground text-xs"
               }
             >
-              {text.trim().length} of {INSTRUCTIONS_LIMIT} characters
+              {t("instructions.characterCount", {
+                current: text.trim().length,
+                limit: INSTRUCTIONS_LIMIT,
+              })}
             </p>
             <div className="flex flex-row items-center gap-3">
               {/*
@@ -97,14 +102,16 @@ export function StandingInstructions() {
                   {problem}
                 </span>
               ) : saved ? (
-                <span className="text-muted-foreground text-xs">Saved</span>
+                <span className="text-muted-foreground text-xs">
+                  {t("instructions.saved")}
+                </span>
               ) : null}
               <Button
                 disabled={save.isPending || over || unchanged}
                 onClick={submit}
                 size="sm"
               >
-                Save
+                {t("instructions.save")}
               </Button>
             </div>
           </div>

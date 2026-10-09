@@ -2,6 +2,8 @@ import { IconLock, IconShieldCheck, IconUser } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -28,6 +30,7 @@ import {
   setPersonRoleMutationOptions,
 } from "@/lib/people/mutations";
 import { type Person, peopleListQueryOptions } from "@/lib/people/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/people")({
@@ -47,23 +50,37 @@ const PROVIDER_NAMES: Record<string, string> = {
  * The address is the title, so this is everything else worth knowing at a glance while deciding
  * whether somebody should still have access.
  */
-function describe(person: Person): string {
+function describe(
+  person: Person,
+  t: TFunction<"admin">,
+  formatDate: (value: Date | string | number) => string,
+): string {
   const providers = person.providers
     .map((provider) => PROVIDER_NAMES[provider] ?? provider)
     .join(", ");
   const when = person.lastSignedInAt
-    ? `last signed in ${new Date(person.lastSignedInAt).toLocaleDateString()}`
-    : "never signed in";
+    ? t("people.lastSignedIn", {
+        date: formatDate(person.lastSignedInAt),
+      })
+    : t("people.neverSignedIn");
 
   if (person.revoked)
-    return `Access removed · ${providers || "no provider"} · ${when}`;
+    return t("people.accessRemoved", {
+      providers: providers || t("people.noProvider"),
+      when,
+    });
   if (person.configuredAdmin) {
-    return `Administrator by configuration · ${when}`;
+    return t("people.adminByConfiguration", { when });
   }
-  return `${providers || "no provider"} · ${when}`;
+  return t("people.providersAndWhen", {
+    providers: providers || t("people.noProvider"),
+    when,
+  });
 }
 
 function PeoplePage() {
+  const { t } = useTranslation("admin");
+  const { formatDate } = useDateTime();
   const [search, setSearch] = useState("");
   /*
    * Debounced, so typing a name is one request rather than one per keystroke against an aggregate
@@ -88,13 +105,10 @@ function PeoplePage() {
   const failure = setRole.error ?? setAccess.error ?? terminate.error;
 
   return (
-    <PageShell
-      description="Everybody who has signed in. Administrators reach these screens; everybody else talks to Bots."
-      title="People"
-    >
+    <PageShell description={t("people.description")} title={t("people.title")}>
       <PageSection
-        description="An address named in INITIAL_ADMIN_EMAILS is an administrator whatever this screen says, so it cannot be changed here."
-        title="Who is here"
+        description={t("people.whoIsHere.description")}
+        title={t("people.whoIsHere.title")}
       >
         {failure ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
@@ -103,12 +117,15 @@ function PeoplePage() {
         ) : null}
         {terminate.data ? (
           <p className="mt-4 text-muted-foreground text-sm" role="status">
-            Stopped {terminate.data.stopped.length}{" "}
-            {terminate.data.stopped.length === 1 ? "computer" : "computers"}
+            {t("people.stoppedCount", {
+              count: terminate.data.stopped.length,
+            })}
             {terminate.data.failed.length > 0
-              ? `; ${terminate.data.failed.length} could not be stopped`
+              ? t("people.stopFailed", {
+                  number: terminate.data.failed.length,
+                })
               : ""}
-            . Their disks are kept.
+            {t("people.disksKept")}
           </p>
         ) : null}
         {/*
@@ -116,22 +133,20 @@ function PeoplePage() {
           is the opposite of what somebody looking for a colleague needs.
         */}
         <Input
-          aria-label="Search people"
+          aria-label={t("people.searchAria")}
           className="mt-4"
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by name or address"
+          placeholder={t("people.searchPlaceholder")}
           value={search}
         />
 
         {people.isPending ? null : people.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Could not load people.
+            {t("people.loadError")}
           </p>
         ) : rows.length === 0 ? (
           <PageEmpty>
-            {query
-              ? `Nobody here matches "${query}".`
-              : "Nobody has signed in yet. People appear here once they do."}
+            {query ? t("people.noMatches", { query }) : t("people.nobodyYet")}
           </PageEmpty>
         ) : (
           <PageRows>
@@ -155,7 +170,7 @@ function PeoplePage() {
                       <ItemTitle>{person.name ?? person.email}</ItemTitle>
                       <ItemDescription>
                         {person.name ? `${person.email} · ` : ""}
-                        {describe(person)}
+                        {describe(person, t, formatDate)}
                       </ItemDescription>
                     </ItemContent>
                     <ItemActions>
@@ -170,7 +185,7 @@ function PeoplePage() {
                         size="sm"
                         variant="outline"
                       >
-                        Stop computers
+                        {t("people.stopComputers")}
                       </Button>
                       <Button
                         disabled={busy || isSelf || person.configuredAdmin}
@@ -183,10 +198,14 @@ function PeoplePage() {
                         size="sm"
                         variant={person.revoked ? "outline" : "destructive"}
                       >
-                        {person.revoked ? "Restore" : "Remove"}
+                        {person.revoked
+                          ? t("people.restore")
+                          : t("people.remove")}
                       </Button>
                       <Switch
-                        aria-label={`Administrator: ${person.email}`}
+                        aria-label={t("people.adminAria", {
+                          email: person.email,
+                        })}
                         checked={person.role === "admin"}
                         disabled={busy || person.configuredAdmin || isSelf}
                         onCheckedChange={(checked) =>
@@ -217,7 +236,9 @@ function PeoplePage() {
             size="sm"
             variant="outline"
           >
-            {people.isFetchingNextPage ? "Loading…" : "Show more"}
+            {people.isFetchingNextPage
+              ? t("people.loading")
+              : t("people.showMore")}
           </Button>
         ) : null}
       </PageSection>

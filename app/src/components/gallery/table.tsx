@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { Badge, GalleryFrame } from "./frame";
@@ -35,6 +36,7 @@ export const DataTableProps = z
 
 /** A real table: header buttons sort while the native row/column relationships stay intact. */
 export function DataTable(props: Record<string, unknown>) {
+  const { t } = useTranslation("channels");
   const [sort, setSort] = useState<{
     column: number;
     ascending: boolean;
@@ -42,9 +44,9 @@ export function DataTable(props: Record<string, unknown>) {
   const parsed = DataTableProps.safeParse(props);
   if (!parsed.success) {
     return (
-      <GalleryFrame title="Table">
+      <GalleryFrame title={t("gallery.table.title")}>
         <p className="text-sm text-muted-foreground">
-          Waiting for complete table data…
+          {t("gallery.table.waitingForData")}
         </p>
       </GalleryFrame>
     );
@@ -69,20 +71,18 @@ export function DataTable(props: Record<string, unknown>) {
       title={title}
       caption={caption}
       action={
-        <Badge>
-          {rows.length} {rows.length === 1 ? "row" : "rows"}
-        </Badge>
+        <Badge>{t("gallery.table.rowCount", { count: rows.length })}</Badge>
       }
     >
       <section
         className="overflow-x-auto rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={`${title} table, scroll for more columns`}
+        aria-label={t("gallery.table.scrollAria", { title })}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: Overflow regions need keyboard focus to scroll in Safari; the region has an accessible name.
         tabIndex={0}
       >
         <table className="w-full border-collapse text-left text-sm">
           <caption className="sr-only">
-            {title}. Select a column heading to sort.
+            {t("gallery.table.sortCaption", { title })}
           </caption>
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
@@ -145,7 +145,9 @@ export function DataTable(props: Record<string, unknown>) {
                         >
                           —
                         </span>
-                        <span className="sr-only">Empty</span>
+                        <span className="sr-only">
+                          {t("gallery.table.emptyCell")}
+                        </span>
                       </>
                     ) : (
                       row.cells[index]
@@ -160,7 +162,7 @@ export function DataTable(props: Record<string, unknown>) {
                   colSpan={columns.length}
                   className="px-3 py-8 text-center text-muted-foreground"
                 >
-                  No rows to show.
+                  {t("gallery.table.noRows")}
                 </td>
               </tr>
             )}
@@ -170,8 +172,14 @@ export function DataTable(props: Record<string, unknown>) {
       {rows.length > 1 && (
         <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
           {sort
-            ? `Sorted by ${columns[sort.column]}, ${sort.ascending ? "ascending" : "descending"}.`
-            : "Select a column heading to sort."}
+            ? sort.ascending
+              ? t("gallery.table.sortedAscending", {
+                  column: columns[sort.column],
+                })
+              : t("gallery.table.sortedDescending", {
+                  column: columns[sort.column],
+                })
+            : t("gallery.table.selectToSort")}
         </p>
       )}
     </GalleryFrame>

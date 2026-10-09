@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   type TeamBotConsentDecision,
@@ -20,6 +21,7 @@ export function TeamBotConsentCard({
   serverId: string;
   message: string;
 }) {
+  const { t } = useTranslation("channels");
   const answer = useMutation(teamBotConsentMutationOptions());
   const [chosen, setChosen] = useState<TeamBotConsentDecision | null>(null);
   const choose = (decision: TeamBotConsentDecision) =>
@@ -36,12 +38,12 @@ export function TeamBotConsentCard({
       {chosen ? (
         <p className="text-muted-foreground" role="status">
           {chosen === "skip"
-            ? "Skipped. Nothing of yours was used."
+            ? t("consent.skipped")
             : chosen === "allow_once"
-              ? "Allowed once. Ask the Bot to try again."
+              ? t("consent.allowedOnce")
               : chosen === "allow_all_team_bots"
-                ? "Always allowed for every Team Bot. Ask it to try again."
-                : "Always allowed for this Bot. Ask it to try again."}
+                ? t("consent.allowedAllTeamBots")
+                : t("consent.allowedAlways")}
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">
@@ -50,7 +52,7 @@ export function TeamBotConsentCard({
             onClick={() => choose("allow_once")}
             size="sm"
           >
-            Allow once
+            {t("consent.allowOnce")}
           </Button>
           <Button
             disabled={answer.isPending}
@@ -58,7 +60,7 @@ export function TeamBotConsentCard({
             size="sm"
             variant="outline"
           >
-            Always allow for this Bot
+            {t("consent.alwaysAllowThis")}
           </Button>
           <Button
             disabled={answer.isPending}
@@ -66,7 +68,7 @@ export function TeamBotConsentCard({
             size="sm"
             variant="outline"
           >
-            Always allow for all Team Bots
+            {t("consent.alwaysAllowAll")}
           </Button>
           <Button
             disabled={answer.isPending}
@@ -74,7 +76,7 @@ export function TeamBotConsentCard({
             size="sm"
             variant="ghost"
           >
-            Skip
+            {t("consent.skip")}
           </Button>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
@@ -34,6 +35,7 @@ import { TeamBotConsentCard } from "./team-bot-consent";
  * `@Name` in the composer addresses one Bot; otherwise every Bot answers, one after another.
  */
 export function GroupChat({ channelId }: { channelId: string }) {
+  const { t } = useTranslation("channels");
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
@@ -68,8 +70,9 @@ export function GroupChat({ channelId }: { channelId: string }) {
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
           {messages.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Say something to {bots.map((bot) => bot.name).join(" and ")}.
-              Every Bot answers in turn; start with @Name to ask just one.
+              {t("group.empty", {
+                names: bots.map((bot) => bot.name).join(t("group.and")),
+              })}
             </p>
           ) : null}
           {messages.map((message) => (
@@ -78,14 +81,14 @@ export function GroupChat({ channelId }: { channelId: string }) {
               message={message}
               name={
                 message.agentId
-                  ? (names.get(message.agentId) ?? "A Bot no longer here")
+                  ? (names.get(message.agentId) ?? t("group.botGone"))
                   : message.ownerUserId === me?.id
-                    ? "You"
-                    : "A teammate"
+                    ? t("group.you")
+                    : t("group.teammate")
               }
               answeredBy={
                 message.answeredBy
-                  ? (names.get(message.answeredBy) ?? "another Bot")
+                  ? (names.get(message.answeredBy) ?? t("group.anotherBot"))
                   : undefined
               }
               mine={message.ownerUserId === me?.id}
@@ -138,6 +141,7 @@ function GroupLine({
   answeredBy?: string;
   mine: boolean;
 }) {
+  const { t } = useTranslation("channels");
   if (message.agentId === null)
     return (
       <MessageRow align={mine ? "end" : "start"}>
@@ -163,7 +167,7 @@ function GroupLine({
       <MessageContent>
         <MessageHeader className="text-xs font-medium text-muted-foreground">
           {name}
-          {answeredBy ? ` · answer from ${answeredBy}` : null}
+          {answeredBy ? t("group.answerFrom", { name: answeredBy }) : null}
         </MessageHeader>
         {(message.status === "running" || message.status === "queued") &&
         !message.text ? (
@@ -171,13 +175,13 @@ function GroupLine({
             className="tool-line-running text-sm text-muted-foreground"
             role="status"
           >
-            Thinking
+            {t("group.thinking")}
           </p>
         ) : message.status === "waiting" ? (
           <p className="text-sm text-muted-foreground">
-            {message.reason ?? "Waiting for your response."}{" "}
+            {message.reason ?? t("group.waiting")}{" "}
             <Link className="underline" to="/approvals">
-              Open approvals
+              {t("group.openApprovals")}
             </Link>
           </p>
         ) : message.consent ? (
@@ -190,13 +194,14 @@ function GroupLine({
             />
           ) : (
             <p className="text-sm text-muted-foreground">
-              Asked a teammate for permission to use their own{" "}
-              {message.consent.serverId} account.
+              {t("group.consentAsked", {
+                server: message.consent.serverId,
+              })}
             </p>
           )
         ) : message.status === "failed" ? (
           <p className="text-sm text-destructive" role="alert">
-            {message.text || "This Bot could not answer."}
+            {message.text || t("group.answerFailed")}
           </p>
         ) : (
           <Bubble
@@ -219,6 +224,7 @@ function GroupLine({
 
 /** Invite another person who has signed in here. They see this whole conversation. */
 function AddPerson({ channelId }: { channelId: string }) {
+  const { t } = useTranslation("channels");
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const add = useMutation(addGroupMemberMutationOptions(channelId));
@@ -226,7 +232,7 @@ function AddPerson({ channelId }: { channelId: string }) {
     return (
       <div className="flex justify-end pb-2">
         <Button onClick={() => setOpen(true)} size="sm" variant="ghost">
-          Add a person
+          {t("group.addPerson")}
         </Button>
       </div>
     );
@@ -244,14 +250,14 @@ function AddPerson({ channelId }: { channelId: string }) {
       }}
     >
       <Input
-        aria-label="Their email"
+        aria-label={t("group.emailAria")}
         onChange={(event) => setEmail(event.target.value)}
-        placeholder="Their email"
+        placeholder={t("group.emailPlaceholder")}
         type="email"
         value={email}
       />
       <Button disabled={!email.trim() || add.isPending} size="sm" type="submit">
-        Add
+        {t("group.add")}
       </Button>
       {add.error ? (
         <span className="text-sm text-destructive" role="alert">
@@ -272,6 +278,7 @@ function People({
   me: string | undefined;
   people: GroupPerson[];
 }) {
+  const { t } = useTranslation("channels");
   const queryClient = useQueryClient();
   const remove = useMutation(
     removeGroupMemberMutationOptions(queryClient, channelId),
@@ -282,7 +289,7 @@ function People({
   if (people.length < 2) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5 pb-2 text-xs text-muted-foreground">
-      <span>People:</span>
+      <span>{t("group.people")}</span>
       {people.map((person) => {
         const self = person.userId === me;
         const removable = self ? !person.creator : iCreated;
@@ -291,18 +298,20 @@ function People({
             className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5"
             key={person.userId}
           >
-            {self ? "You" : (person.name ?? person.email)}
+            {self ? t("group.you") : (person.name ?? person.email)}
             {removable ? (
               <button
                 aria-label={
-                  self ? "Leave this group" : `Remove ${person.email}`
+                  self
+                    ? t("group.leaveAria")
+                    : t("group.removePersonAria", { email: person.email })
                 }
                 className="hover:text-foreground"
                 disabled={remove.isPending}
                 onClick={() => remove.mutate(person.userId)}
                 type="button"
               >
-                {self ? "leave" : "×"}
+                {self ? t("group.leave") : "×"}
               </button>
             ) : null}
           </span>

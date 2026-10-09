@@ -2,6 +2,7 @@ import { IconArrowUpRight, IconChevronDown } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -34,6 +35,7 @@ import {
   personalConnections,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
  * Whether this server is reached through Composio AS THIS PERSON.
@@ -60,6 +62,8 @@ export const Route = createFileRoute(
 )({ component: RouteComponent });
 
 function RouteComponent() {
+  const { t } = useTranslation("settings");
+  const dateTime = useDateTime();
   const { key } = useParams({
     from: "/_authed/settings/connected-accounts/$key",
   });
@@ -83,9 +87,7 @@ function RouteComponent() {
        * deployment's own origin. See `connectAccountMutationOptions`.
        */
       if (authorizationUrl === null) {
-        setNotice(
-          "This deployment answered without a consent link, so there was nowhere to send you and nothing was connected. Try again, and tell an administrator if it persists.",
-        );
+        setNotice(t("connectedAccounts.noConsentLink"));
         return;
       }
       window.location.href = authorizationUrl;
@@ -153,11 +155,13 @@ function RouteComponent() {
    * whole of its state defaulted to "you have never connected this".
    */
   if (plugins.isPending || connections.isPending) {
-    return <PageShell title="Account">{null}</PageShell>;
+    return (
+      <PageShell title={t("connectedAccounts.accountTitle")}>{null}</PageShell>
+    );
   }
 
   const back = {
-    label: "Connected accounts",
+    label: t("connectedAccounts.title"),
     linkProps: { to: "/settings/connected-accounts" as const },
   };
 
@@ -181,9 +185,7 @@ function RouteComponent() {
     return (
       <PageShell backButton={back} title={server?.title ?? key}>
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Whether you have connected this account could not be loaded, so
-          nothing about it is shown here rather than something that may be
-          wrong. Reload the page, and tell an administrator if it persists.
+          {t("connectedAccounts.connectionLoadError")}
         </p>
       </PageShell>
     );
@@ -198,9 +200,7 @@ function RouteComponent() {
     return (
       <PageShell backButton={back} title={key}>
         <p className="mt-12 text-destructive text-sm" role="alert">
-          This connector could not be loaded, so nothing about it is shown here
-          rather than something that may be wrong. Reload the page, and tell an
-          administrator if it persists.
+          {t("connectedAccounts.connectorLoadError")}
         </p>
       </PageShell>
     );
@@ -223,9 +223,9 @@ function RouteComponent() {
           <PageRows className="mt-0">
             <Item size="sm">
               <ItemContent>
-                <ItemTitle>Team account</ItemTitle>
+                <ItemTitle>{t("connectedAccounts.teamAccount")}</ItemTitle>
                 <ItemDescription>
-                  Shared by your organisation. Bots act as the team account.
+                  {t("connectedAccounts.sharedDescription")}
                 </ItemDescription>
               </ItemContent>
             </Item>
@@ -246,12 +246,12 @@ function RouteComponent() {
   if (brokered && server) {
     /* Bound once because the row below is told it twice — once inside the whole disconnected
        sentence and once on its own — and two copies of it would drift. */
-    const reassurance = "No Bot can read this as you.";
+    const reassurance = t("connectedAccounts.noBotReads");
 
     return (
       <PageShell
         backButton={back}
-        description="Reached through Composio, which holds the account, so a Bot sees only what you can see."
+        description={t("connectedAccounts.brokeredDescription")}
         title={server.title}
       >
         {notice ? (
@@ -268,8 +268,12 @@ function RouteComponent() {
               /* Said beside the button rather than after it: disconnecting ends the account at
                  Composio, so what it undoes is not the row here but the grant on your own mailbox,
                  and connecting again is a fresh consent. */
-              connectedDescription={`A Bot granted its tools reads your ${server.title} as you. Disconnecting ends the account at Composio, not just here.`}
-              disconnectedDescription={`${reassurance} Connecting takes you to Composio and then to the vendor to consent.`}
+              connectedDescription={t("connectedAccounts.brokeredConnected", {
+                title: server.title,
+              })}
+              disconnectedDescription={`${reassurance} ${t(
+                "connectedAccounts.brokeredDisconnected",
+              )}`}
               /* What is true either way. The trip to Composio is not — an app whose key somebody
                  types never leaves this page — but which Bots can read this person's mail is the
                  whole point of the screen and holds for both kinds. */
@@ -291,13 +295,13 @@ function RouteComponent() {
     return (
       <PageShell
         backButton={back}
-        description="This is not a service you connect for yourself."
+        description={t("connectedAccounts.notPersonal")}
         title={entry?.title ?? key}
       >
         <PageEmpty>
           {entry
-            ? "A Bot reaches this one with a credential the deployment holds, the same for everybody."
-            : "This deployment has no connector by that name."}
+            ? t("connectedAccounts.deploymentCredential")
+            : t("connectedAccounts.noConnector")}
         </PageEmpty>
       </PageShell>
     );
@@ -322,13 +326,13 @@ function RouteComponent() {
             <ItemContent>
               {/* Not "Connect your account": the row is also the connected state, and a title has to
                   read for both. */}
-              <ItemTitle>Your account</ItemTitle>
+              <ItemTitle>{t("connectedAccounts.yourAccount")}</ItemTitle>
               <ItemDescription>
                 {!enabled
-                  ? "An administrator has not enabled this connector, so there is nothing to connect to yet."
+                  ? t("connectedAccounts.notEnabled")
                   : connection
-                    ? "A Bot granted its tools reads this as you, and sees only what you can see."
-                    : "No Bot can read this as you. Connecting takes you to the vendor to consent."}
+                    ? t("connectedAccounts.connectedDescription")
+                    : t("connectedAccounts.disconnectedDescription")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -347,7 +351,7 @@ function RouteComponent() {
                           aria-hidden="true"
                           className="size-1.5 rounded-full bg-emerald-500"
                         />
-                        Connected
+                        {t("connectedAccounts.connected")}
                         <IconChevronDown />
                       </Button>
                     }
@@ -370,13 +374,17 @@ function RouteComponent() {
                          * had not, which is the one outcome worse than not offering it.
                          */
                         setNotice(
-                          `Disconnecting is not built yet. Until it is, revoke it in your ${entry.vendor} account's third-party access settings — that stops this deployment reading anything immediately.`,
+                          t("connectedAccounts.disconnectNotBuilt", {
+                            vendor: entry.vendor,
+                          }),
                         )
                       }
                       className="whitespace-nowrap"
                       variant="destructive"
                     >
-                      Disconnect your {entry.title} account
+                      {t("connectedAccounts.disconnect", {
+                        title: entry.title,
+                      })}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -395,7 +403,7 @@ function RouteComponent() {
                   type="button"
                   variant="outline"
                 >
-                  Connect
+                  {t("connectedAccounts.connect")}
                   <IconArrowUpRight />
                 </Button>
               )}
@@ -406,26 +414,26 @@ function RouteComponent() {
 
       {connection ? (
         <PageSection
-          description="What you agreed to, as the vendor recorded it — not what was asked for. The two differ when a consent screen is only partly accepted."
-          title="Access"
+          description={t("connectedAccounts.accessDescription")}
+          title={t("connectedAccounts.access")}
         >
           <PageRows>
             <Item size="sm">
               <ItemContent>
-                <ItemTitle>Granted</ItemTitle>
+                <ItemTitle>{t("connectedAccounts.granted")}</ItemTitle>
                 <ItemDescription className="line-clamp-none">
-                  {connection.scope || "The vendor named no scope."}
+                  {connection.scope || t("connectedAccounts.noScope")}
                 </ItemDescription>
               </ItemContent>
             </Item>
             <Separator />
             <Item size="sm">
               <ItemContent>
-                <ItemTitle>Connected</ItemTitle>
+                <ItemTitle>{t("connectedAccounts.connected")}</ItemTitle>
               </ItemContent>
               <ItemActions>
                 <span className="text-muted-foreground text-xs">
-                  {new Date(connection.connectedAt).toLocaleString()}
+                  {dateTime.formatDateTime(connection.connectedAt)}
                 </span>
               </ItemActions>
             </Item>

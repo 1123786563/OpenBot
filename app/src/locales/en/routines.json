@@ -1,0 +1,61 @@
+{
+  "title": "Routines",
+  "description": "What a Bot does on a schedule, without being asked each time. Made and changed by talking to a Bot — this page only shows what is standing, and lets you stop one.",
+  "lastRun": {
+    "never": "Never run yet",
+    "running": "Running…",
+    "recently": "recently",
+    "failed": "Failed {{when}}",
+    "skipped": "Skipped {{when}}",
+    "ran": "Ran {{when}}",
+    "finished": "Finished {{when}}"
+  },
+  "runs": {
+    "running": "Running",
+    "succeeded": "Succeeded",
+    "failed": "Failed",
+    "skipped": "Skipped",
+    "waiting": "Waiting for you",
+    "loading": "Loading runs…",
+    "none": "No runs yet.",
+    "source": {
+      "runNow": "Run now",
+      "triggered": "Triggered",
+      "scheduled": "Scheduled"
+    },
+    "openThread": "Open thread"
+  },
+  "workerStalled": {
+    "title": "Nothing is running these",
+    "lastChecked": "The routines worker last checked {{when}}. Until it is running again, none of these will fire.",
+    "neverChecked": "No routines worker has ever checked in, so none of these will fire. A deployment needs one running to carry them out."
+  },
+  "loadError": "Your routines could not be loaded.",
+  "empty": {
+    "title": "Nothing scheduled",
+    "agentTitle": "Nothing scheduled for this coworker",
+    "hint": "Ask a Bot — \"every weekday at 9, …\" — and it will appear here.",
+    "agentHint": "Ask it in a channel — \"every weekday at 9, …\" — and it will appear here."
+  },
+  "channelGone": "This channel is gone",
+  "unnamedChannel": "Unnamed channel",
+  "paused": "Paused",
+  "due": "Due",
+  "next": "Next {{when}}",
+  "actions": {
+    "runNow": "Run now",
+    "runNowAria": "Run the routine scheduled {{schedule}} now",
+    "runNowTitle": "Runs it for real, now: the Bot does the work and posts in the channel.",
+    "runNowPausedTitle": "Paused routines never run. Switch it on first.",
+    "historyAria": "Run history for the routine scheduled {{schedule}}",
+    "enableAria": "Enable the routine scheduled {{schedule}}",
+    "deleteAria": "Delete the routine scheduled {{schedule}}"
+  },
+  "delete": {
+    "title": "Delete \"{{schedule}}\"?",
+    "description": "This standing instruction stops for good. Nothing further runs on this schedule, and there is no undo.",
+    "cancel": "Cancel",
+    "deleting": "Deleting…",
+    "confirm": "Delete"
+  }
+}

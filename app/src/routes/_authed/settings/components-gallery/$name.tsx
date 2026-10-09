@@ -2,6 +2,7 @@ import { IconCode, IconTag } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ComponentPreview } from "@/components/component-preview";
 import {
   PageRows,
@@ -25,12 +26,6 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { componentListQueryOptions } from "@/lib/components/queries";
-
-/** The same way back from every state this route can be in. */
-const BACK = {
-  label: "Components gallery",
-  linkProps: { to: "/settings/components-gallery" },
-} as const;
 
 /**
  * One component, drawn as large as this column allows, and nothing to change.
@@ -69,16 +64,23 @@ function FactRow({
 }
 
 function RouteComponent() {
+  const { t } = useTranslation("settings");
   const { name } = Route.useParams();
   const components = useQuery(componentListQueryOptions());
+
+  /** The same way back from every state this route can be in. */
+  const back = {
+    label: t("gallery.title"),
+    linkProps: { to: "/settings/components-gallery" as const },
+  };
 
   if (components.isPending) return null;
 
   if (components.error) {
     return (
-      <PageShell backButton={BACK} title="Components gallery">
+      <PageShell backButton={back} title={t("gallery.title")}>
         <p className="mt-8 text-destructive text-sm" role="alert">
-          Could not load components.
+          {t("gallery.loadError")}
         </p>
       </PageShell>
     );
@@ -95,16 +97,15 @@ function RouteComponent() {
   if (!component) {
     return (
       <PageShell
-        backButton={BACK}
-        description="Nothing here answers to that name."
-        title="No such component"
+        backButton={back}
+        description={t("gallery.missingDescription")}
+        title={t("gallery.missingTitle")}
       >
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>
             <EmptyTitle>{name}</EmptyTitle>
             <EmptyDescription className="text-pretty">
-              It may have been withdrawn, or this deployment may no longer ship
-              it.
+              {t("gallery.missingEmpty")}
             </EmptyDescription>
           </EmptyHeader>
           <Button
@@ -112,7 +113,7 @@ function RouteComponent() {
             size="sm"
             variant="outline"
           >
-            Back to the gallery
+            {t("gallery.backToGallery")}
           </Button>
         </Empty>
       </PageShell>
@@ -121,7 +122,7 @@ function RouteComponent() {
 
   return (
     <PageShell
-      backButton={BACK}
+      backButton={back}
       description={component.publishedDescription ?? undefined}
       title={component.title}
     >
@@ -134,13 +135,13 @@ function RouteComponent() {
         </div>
       </div>
 
-      <PageSection title="Details">
+      <PageSection title={t("gallery.details")}>
         <PageRows>
-          <FactRow icon={<IconTag />} label="Kind">
+          <FactRow icon={<IconTag />} label={t("gallery.kind")}>
             {component.kind}
           </FactRow>
           <Separator />
-          <FactRow icon={<IconCode />} label="Called as">
+          <FactRow icon={<IconCode />} label={t("gallery.calledAs")}>
             <code className="rounded bg-foreground/5 px-1.5 py-0.5 text-xs">
               {component.name}
             </code>

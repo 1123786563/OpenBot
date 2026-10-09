@@ -25,6 +25,8 @@ import {
   useRef,
   useState,
 } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { attachmentModality } from "@/components/channels/chat-messages";
 import { IconWaveform } from "@/components/icons/waveform";
 import {
@@ -257,12 +259,12 @@ function overCap(draft: ComposerDraft): boolean {
 }
 
 /** What the person is told when Send is held shut by the cap, and what to do about it. */
-function tooManyStagedReason(count: number): string {
-  return (
-    `${count} attachments are staged and a message can carry at most ` +
-    `${MAX_ATTACHMENTS_PER_MESSAGE}. Remove ` +
-    `${count - MAX_ATTACHMENTS_PER_MESSAGE} to send the rest.`
-  );
+function tooManyStagedReason(t: TFunction<"channels">, count: number): string {
+  return t("composer.tooManyStaged", {
+    staged: count,
+    max: MAX_ATTACHMENTS_PER_MESSAGE,
+    remove: count - MAX_ATTACHMENTS_PER_MESSAGE,
+  });
 }
 
 /**
@@ -272,13 +274,15 @@ function tooManyStagedReason(count: number): string {
  * A removal names the removal and nothing else: there is no limit to explain, and inventing one
  * would send somebody hunting for a rule they never hit.
  */
-const DROPPED_REASON: Record<DroppedAttachmentCause, string> = {
-  "merged-over-cap":
-    "dropped when queued messages were merged into one: a " +
-    `message can carry at most ${MAX_ATTACHMENTS_PER_MESSAGE} ` +
-    "attachments.",
-  "queued-message-removed":
-    "removed along with the queued message it was attached to.",
+const DROPPED_REASON: Record<
+  DroppedAttachmentCause,
+  (t: TFunction<"channels">) => string
+> = {
+  "merged-over-cap": (t) =>
+    t("composer.droppedMergedOverCap", {
+      max: MAX_ATTACHMENTS_PER_MESSAGE,
+    }),
+  "queued-message-removed": (t) => t("composer.droppedQueuedRemoved"),
 };
 
 /**
@@ -306,11 +310,9 @@ const DROPPED_REASON: Record<DroppedAttachmentCause, string> = {
  * second time.
  */
 const UNACCEPTED_DROP_REASON = {
-  "cannot-send":
-    "was not attached: this conversation can no longer take messages.",
-  "no-conversation":
-    "was not attached: there is no conversation here yet. Send this " +
-    "message first, then attach to the one it opens.",
+  "cannot-send": (t: TFunction<"channels">) => t("composer.dropCannotSend"),
+  "no-conversation": (t: TFunction<"channels">) =>
+    t("composer.dropNoConversation"),
 } as const;
 
 export function Composer({
@@ -333,6 +335,7 @@ export function Composer({
   // Nothing parked is the right answer for every caller without a queue, which is most of them.
   queuedAttachmentCount = 0,
 }: ComposerProps) {
+  const { t } = useTranslation("channels");
   const [value, setValue] = useState<Segment[]>(
     initialValue ? [{ type: "text", text: initialValue }] : [],
   );
@@ -485,7 +488,7 @@ export function Composer({
     if (!droppedAttachments || droppedAttachments.attachments.length === 0) {
       return;
     }
-    const reason = DROPPED_REASON[droppedAttachments.cause];
+    const reason = DROPPED_REASON[droppedAttachments.cause](t);
     setRejected((current) => [
       ...current,
       ...droppedAttachments.attachments.map((attachment) => ({
@@ -494,11 +497,11 @@ export function Composer({
         // `http://` a queue drop would answer by tearing down the tree that was about to explain
         // it — a blank conversation instead of a list of the files it just lost.
         id: newId(),
-        name: attachment.filename ?? "Attachment",
+        name: attachment.filename ?? t("attachments.attachmentName"),
         reason,
       })),
     ]);
-  }, [droppedAttachments]);
+  }, [droppedAttachments, t]);
 
   /**
    * Called unconditionally, with a config only when there is a channel to upload to. The hook
@@ -928,7 +931,7 @@ export function Composer({
        * messages".
        */
       const reason =
-        UNACCEPTED_DROP_REASON[disabled ? "cannot-send" : "no-conversation"];
+        UNACCEPTED_DROP_REASON[disabled ? "cannot-send" : "no-conversation"](t);
       /*
        * `setRejected` directly rather than through `recordRejection`, which takes the SDK's
        * `UploadFailure` shape — a `file` plus a `message` — and would mean fabricating an upload
@@ -941,7 +944,7 @@ export function Composer({
         ...files.map((file) => ({ id: newId(), name: file.name, reason })),
       ]);
     },
-    [disabled],
+    [disabled, t],
   );
 
   const handlePickedFiles = useCallback(
@@ -1017,7 +1020,7 @@ export function Composer({
         .filter((attachment) => stagedModality(attachment) !== "image")
         .map((attachment) => ({
           id: attachment.id,
-          name: attachment.filename ?? "Attachment",
+          name: attachment.filename ?? t("attachments.attachmentName"),
           size: attachment.size,
           loading: attachment.status === "uploading",
           /*
@@ -1041,7 +1044,7 @@ export function Composer({
             attachment.size !== undefined &&
             mayBeTruncatedForModel(attachment.size),
         })),
-    [staged],
+    [staged, t],
   );
 
   const isBusy = pending || isSubmitting;
@@ -1338,7 +1341,9 @@ export function Composer({
    * the two it is about to do. "Send" on a button that will not send for another minute is a small
    * lie told to exactly the people who cannot see the queue it lands in.
    */
-  const sendLabel = parking ? "Queue message" : "Send message";
+  const sendLabel = parking
+    ? t("composer.queueMessage")
+    : t("composer.sendMessage");
   const callAction =
     draft.isEmpty && draft.attachments.length === 0 ? voiceCall : undefined;
   const actionClassName = cn(
@@ -1347,7 +1352,7 @@ export function Composer({
   );
   const primaryAction = canStop ? (
     <Button
-      aria-label="Stop the Bot"
+      aria-label={t("composer.stopAria")}
       className={actionClassName}
       data-testid="composer-stop"
       onClick={onStop}
@@ -1358,13 +1363,17 @@ export function Composer({
     </Button>
   ) : callAction ? (
     <Button
-      aria-label={callAction.active ? "Show voice call" : "Start voice call"}
+      aria-label={
+        callAction.active
+          ? t("composer.showVoiceCall")
+          : t("composer.startVoiceCall")
+      }
       title={
         callAction.supported
           ? callAction.active
-            ? "Show voice call"
-            : "Call this agent"
-          : "Voice calls need HTTPS or localhost and microphone support"
+            ? t("composer.showVoiceCall")
+            : t("composer.callThisAgent")
+          : t("composer.voiceUnsupported")
       }
       className={actionClassName}
       disabled={disabled || dictation.busy || !callAction.supported}
@@ -1460,7 +1469,7 @@ export function Composer({
    */
   const tooManyStagedNotice = tooManyStaged ? (
     <p className="pb-2 text-sm text-muted-foreground" role="status">
-      {tooManyStagedReason(draft.attachments.length)}
+      {tooManyStagedReason(t, draft.attachments.length)}
     </p>
   ) : null;
 
@@ -1522,7 +1531,7 @@ export function Composer({
             <div className="flex items-center gap-3">
               {attachmentsEnabled ? (
                 <Button
-                  aria-label="Attach a file"
+                  aria-label={t("composer.attachFile")}
                   className="self-end"
                   // The button stays, and stays labelled: a conversation that cannot take another
                   // message has not lost the ability to attach, it has lost the message. Swapping it
@@ -1537,7 +1546,7 @@ export function Composer({
                 </Button>
               ) : (
                 <Button
-                  aria-label="More message options unavailable"
+                  aria-label={t("composer.optionsUnavailable")}
                   className="self-end disabled:opacity-100"
                   disabled
                   size="icon"
@@ -1548,7 +1557,7 @@ export function Composer({
                 </Button>
               )}
               <PromptArea
-                aria-label="Message"
+                aria-label={t("composer.messageAria")}
                 className={cn(
                   "min-w-0 flex-1 border-0 bg-transparent p-0 text-sm shadow-none",
                   editorClassName,
@@ -1559,7 +1568,7 @@ export function Composer({
                 onChange={handleChange}
                 onImagePaste={canAttach ? stagePastedImage : undefined}
                 onSubmit={submitDraft}
-                placeholder="Ask anything"
+                placeholder={t("composer.placeholder")}
                 ref={promptAreaRef}
                 triggers={triggers}
                 value={value}
@@ -1605,7 +1614,7 @@ export function Composer({
               onRemove={discardAttachment}
             />
             <PromptArea
-              aria-label="Message"
+              aria-label={t("composer.messageAria")}
               autoGrow
               className={cn(
                 "w-full border-0 bg-transparent p-0 text-sm shadow-none",
@@ -1616,7 +1625,7 @@ export function Composer({
               onChange={handleChange}
               onImagePaste={canAttach ? stagePastedImage : undefined}
               onSubmit={submitDraft}
-              placeholder="Ask anything"
+              placeholder={t("composer.placeholder")}
               ref={promptAreaRef}
               triggers={triggers}
               value={value}
@@ -1626,7 +1635,7 @@ export function Composer({
           <div className="flex items-center justify-between">
             {attachmentsEnabled ? (
               <Button
-                aria-label="Attach a file"
+                aria-label={t("composer.attachFile")}
                 className="size-7 rounded-full p-0"
                 disabled={disabled}
                 onClick={() => fileInputRef.current?.click()}

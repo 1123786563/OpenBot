@@ -2,6 +2,7 @@ import type { Message } from "@ag-ui/core";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { canSend, type Recipient } from "@/components/channels/compose-state";
 import { ConversationView } from "@/components/channels/conversation-view";
@@ -40,6 +41,7 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
 });
 
 function RouteComponent() {
+  const { t } = useTranslation("channels");
   const { agent } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { startChosen, pending } = useStartChannel();
@@ -78,7 +80,7 @@ function RouteComponent() {
   const urlAgentDetailFailed = needsUrlAgentDetail && detailError && !fetched;
   const loadError =
     rosterError && profiles === undefined
-      ? "Coworkers couldn't be loaded."
+      ? t("channelNew.rosterError")
       : urlAgentDetailFailed
         ? /*
            * The server's 404 sentence (agents/routes.ts `mapStoreError`) means this person cannot see
@@ -86,8 +88,8 @@ function RouteComponent() {
            * other failure is a load that can be retried, and says so.
            */
           detailFailure?.message === AGENT_NOT_FOUND
-          ? "This Bot isn't available to you. It may be unpublished, not shared with you, or not described yet."
-          : "Coworker couldn't be loaded."
+          ? t("channelNew.notAvailable")
+          : t("channelNew.detailError")
         : null;
   const recipients: Recipient[] = chosen
     ? [{ id: chosen.id, name: chosen.name }]
@@ -100,7 +102,9 @@ function RouteComponent() {
     <div className="flex h-full flex-col">
       <div className="h-12 border-b border-border sticky top-0 flex flex-row px-2 items-center">
         <SidebarToggle className="mr-1" />
-        <span className="text-sm text-muted-foreground">To:</span>
+        <span className="text-sm text-muted-foreground">
+          {t("recipient.to")}
+        </span>
         <Combobox
           // Do not auto-open when the recipient came from the URL; the field is already answered.
           defaultOpen={!chosen && !loadError && !waitingForUrlAgent}
@@ -125,13 +129,13 @@ function RouteComponent() {
             // the caret starts here whenever the recipient question is still open. Same condition
             // as `defaultOpen` — a recipient from the URL means the composer takes focus instead.
             autoFocus={!chosen}
-            placeholder="Choose a coworker…"
+            placeholder={t("recipient.choosePlaceholder")}
             // InputGroup owns focus rings via `has-[…:focus-visible]`; disable that wrapper ring here.
             className="border-none w-full bg-transparent! text-sm has-[[data-slot=input-group-control]:focus-visible]:ring-0"
           />
           {/* Allow max-w to constrain the popup even though its anchor is full-width. */}
           <ComboboxContent className="min-w-0 max-w-lg" sideOffset={12}>
-            <ComboboxEmpty>No agents found.</ComboboxEmpty>
+            <ComboboxEmpty>{t("channelNew.noAgents")}</ComboboxEmpty>
             <ComboboxList>
               {(item: AgentProfile) => (
                 <ComboboxItem key={item.id} value={item} className="h-10">
@@ -178,9 +182,7 @@ function RouteComponent() {
             // Preserve the unsent draft when channel creation fails.
             setSent(null);
             setError(
-              caught instanceof Error
-                ? caught.message
-                : "Could not start the conversation.",
+              caught instanceof Error ? caught.message : t("new.startError"),
             );
             throw caught;
           }

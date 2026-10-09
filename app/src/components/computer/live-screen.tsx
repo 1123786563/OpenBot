@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { readControl } from "@/lib/computers/control";
 import {
   connectScreen,
@@ -107,6 +108,7 @@ export function LiveScreen({
   onProblem,
   retryKey = 0,
 }: Props) {
+  const { t } = useTranslation("computer");
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   /** Keydowns handled locally whose matching keyup must not leak to the remote browser. */
@@ -200,7 +202,7 @@ export function LiveScreen({
       };
       if (typeof message.type !== "string") return;
       if (message.type === "error") {
-        onProblem?.(message.error ?? "The screen could not be shown.");
+        onProblem?.(message.error ?? t("liveScreen.couldNotShow"));
         return;
       }
       if (message.type !== "frame" || !message.data) return;
@@ -495,9 +497,7 @@ export function LiveScreen({
           }
         : {})}
       aria-label={
-        driving
-          ? "The assistant's screen. You have control: click and type here."
-          : "The assistant's screen, live"
+        driving ? t("liveScreen.ariaDriving") : t("liveScreen.ariaLive")
       }
       data-connected={connected}
     />

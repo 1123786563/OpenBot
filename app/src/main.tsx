@@ -4,6 +4,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { queryClient } from "./query-client";
 import { router } from "./router";
+// Side effect: initializes i18next (language detection included) before the first render.
+import "./lib/i18n";
 import "@copilotkit/react-core/v2/styles.css";
 import "./styles.css";
 

@@ -1,5 +1,6 @@
 import { IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { deploymentCapabilitiesQueryOptions } from "@/lib/deployment/queries";
 import {
@@ -20,6 +21,7 @@ export const SELF_HOST_URL =
  * preferences have to say they have not closed it.
  */
 export function SelfHostBanner() {
+  const { t } = useTranslation("common");
   const queryClient = useQueryClient();
   const { data: capabilities } = useQuery(deploymentCapabilitiesQueryOptions());
   const { data: preferences, userId } = useUserPreferences();
@@ -32,7 +34,7 @@ export function SelfHostBanner() {
 
   return (
     <aside
-      aria-label="Self-host OpenBot"
+      aria-label={t("selfHostBanner.ariaLabel")}
       className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-border bg-muted/60 px-4 py-1.5 text-sm"
     >
       {/*
@@ -43,9 +45,7 @@ export function SelfHostBanner() {
        * Wraps rather than truncates, so a phone reads the whole sentence. The link and Dismiss stay
        * together and drop to the next line as one, which keeps Dismiss on the left there too.
        */}
-      <p className="text-foreground">
-        Self-host OpenBot for your organization.
-      </p>
+      <p className="text-foreground">{t("selfHostBanner.text")}</p>
       <span className="flex items-center gap-2">
         {/* An anchor, not Button: Base UI gives a rendered anchor role="button", and this is a link. */}
         <a
@@ -58,10 +58,10 @@ export function SelfHostBanner() {
           rel="noopener noreferrer"
           target="_blank"
         >
-          Talk to an engineer
+          {t("selfHostBanner.cta")}
         </a>
         <Button
-          aria-label="Dismiss"
+          aria-label={t("selfHostBanner.dismiss")}
           onClick={() => dismiss.mutate()}
           size="icon-xs"
           variant="ghost"

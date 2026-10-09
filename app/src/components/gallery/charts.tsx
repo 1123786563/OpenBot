@@ -1,5 +1,7 @@
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
 
@@ -23,18 +25,24 @@ const common = {
 /** Charts share a height so several in one answer do not stagger down the page. */
 const HEIGHT = 180;
 
-function formatNumber(value: number): string {
+type NumberFormat = (
+  value: number,
+  options?: Intl.NumberFormatOptions,
+) => string;
+
+function numberLabel(format: NumberFormat, value: number): string {
   if (Math.abs(value) >= 1000) {
-    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return format(value, { maximumFractionDigits: 0 });
   }
   return String(Math.round(value * 100) / 100);
 }
 
 /** Nothing to draw is a sentence. An empty axis reads as a component that failed. */
 function Empty() {
+  const { t } = useTranslation("channels");
   return (
     <p className="py-10 text-center text-sm text-muted-foreground">
-      There is no data to chart.
+      {t("gallery.charts.empty")}
     </p>
   );
 }
@@ -67,6 +75,7 @@ export function BarChartCard({
   caption,
   points: given,
 }: Partial<z.infer<typeof BarChartProps>>) {
+  const { formatNumber } = useDateTime();
   const points = given ?? [];
   const max = Math.max(...points.map((entry) => entry.value ?? 0), 0);
   return (
@@ -82,7 +91,7 @@ export function BarChartCard({
               key={entry.label}
             >
               <span className="text-xs tabular-nums text-muted-foreground">
-                {formatNumber(entry.value)}
+                {numberLabel(formatNumber, entry.value)}
               </span>
               {/* The bar lives in its own flexible box so the number above and the label below keep
                   their natural height and only the bar itself scales. */}
@@ -357,6 +366,7 @@ export function ProgressChartCard({
   caption,
   points: given,
 }: Partial<z.infer<typeof ProgressChartProps>>) {
+  const { formatNumber } = useDateTime();
   const points = given ?? [];
   return (
     <GalleryFrame caption={caption} title={title}>
@@ -374,7 +384,8 @@ export function ProgressChartCard({
                 <div className="flex items-baseline justify-between gap-4 text-sm">
                   <span className="min-w-0 truncate">{entry.label}</span>
                   <span className="tabular-nums text-muted-foreground">
-                    {formatNumber(entry.value)} / {formatNumber(entry.target)}
+                    {numberLabel(formatNumber, entry.value)} /{" "}
+                    {numberLabel(formatNumber, entry.target)}
                   </span>
                 </div>
                 <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-foreground/5">

@@ -1,4 +1,6 @@
 import { Link } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Badge, GalleryFrame } from "@/components/gallery/frame";
 import { Button } from "@/components/ui/button";
@@ -63,6 +65,7 @@ export function ProposedBotCard({
   result,
   create,
 }: ProposedBotCardProps) {
+  const { t } = useTranslation("agents");
   const [sending, setSending] = useState<"create" | "decline" | null>(null);
   /**
    * A refusal from the server, kept on the card rather than answered with.
@@ -83,8 +86,8 @@ export function ProposedBotCard({
     const madeId = wasCreated(result) ? createdBotIdIn(result) : null;
     return (
       <GalleryFrame
-        action={<Badge tone="neutral">Done</Badge>}
-        title={titleFor(args.name, clashes)}
+        action={<Badge tone="neutral">{t("proposed.done")}</Badge>}
+        title={titleFor(t, args.name, clashes)}
       >
         <p className="text-sm">{result}</p>
         {madeId ? <TalkToIt agentId={madeId} name={args.name} /> : null}
@@ -94,8 +97,8 @@ export function ProposedBotCard({
 
   if (!respond) {
     return (
-      <GalleryFrame title={titleFor(args.name, clashes)}>
-        <p className="text-muted-foreground text-sm">Writing the coworker…</p>
+      <GalleryFrame title={titleFor(t, args.name, clashes)}>
+        <p className="text-muted-foreground text-sm">{t("proposed.writing")}</p>
       </GalleryFrame>
     );
   }
@@ -118,7 +121,7 @@ export function ProposedBotCard({
       setRefusal(
         cause instanceof Error
           ? cause.message
-          : "The coworker was not created.",
+          : t("proposed.couldNotBeCreated"),
       );
       return;
     }
@@ -136,33 +139,38 @@ export function ProposedBotCard({
 
   return (
     <GalleryFrame
-      action={<Badge tone="caution">Waiting on you</Badge>}
+      action={<Badge tone="caution">{t("proposed.waiting")}</Badge>}
       caption={
         clashes
-          ? `There is already a ${clashes.title} here, which is ${clashes.ownership}. Names do not have to be unique, but two with the same name are hard to tell apart in a channel list.`
-          : "Nothing is created until you press the button."
+          ? t("proposed.clash", {
+              title: clashes.title,
+              ownership: clashes.ownership,
+            })
+          : t("proposed.noCreateYet")
       }
-      title={titleFor(values.name, clashes)}
+      title={titleFor(t, values.name, clashes)}
     >
       <dl className="grid grid-cols-[minmax(0,7rem)_1fr] gap-x-4 gap-y-1.5 text-sm">
-        <dt className="truncate text-muted-foreground">Name</dt>
+        <dt className="truncate text-muted-foreground">{t("proposed.name")}</dt>
         <dd className="min-w-0 break-words font-medium">{values.name}</dd>
-        <dt className="truncate text-muted-foreground">Job</dt>
+        <dt className="truncate text-muted-foreground">{t("proposed.job")}</dt>
         <dd className="min-w-0 break-words">{values.title}</dd>
-        <dt className="truncate text-muted-foreground">Skills</dt>
+        <dt className="truncate text-muted-foreground">
+          {t("proposed.skills")}
+        </dt>
         <dd className="min-w-0 break-words">
           {skills.length > 0 ? (
             <span className="font-mono text-xs">
               {skills.map((slug) => `/${slug}`).join(", ")}
             </span>
           ) : (
-            <span className="text-muted-foreground">None</span>
+            <span className="text-muted-foreground">{t("proposed.none")}</span>
           )}
         </dd>
       </dl>
 
       <p className="mt-3 text-muted-foreground text-xs">
-        Its standing instructions. This text is given to a model on every turn.
+        {t("proposed.standingInstructions")}
       </p>
       {/*
        * Scrolled rather than clamped, and the distinction is the whole point of the card. A clamp
@@ -174,8 +182,7 @@ export function ProposedBotCard({
       </p>
 
       <p className="mt-2 text-muted-foreground text-xs">
-        It arrives private, with no address, no connector and no tool. Anything
-        it needs to reach is granted on its profile afterwards.
+        {t("proposed.arrivesPrivate")}
       </p>
 
       {refusal ? (
@@ -190,7 +197,9 @@ export function ProposedBotCard({
           onClick={() => void make()}
           size="sm"
         >
-          {sending === "create" ? "Creating…" : "Create it"}
+          {sending === "create"
+            ? t("proposed.creating")
+            : t("proposed.createIt")}
         </Button>
         <Button
           disabled={Boolean(sending)}
@@ -198,7 +207,9 @@ export function ProposedBotCard({
           size="sm"
           variant="outline"
         >
-          {sending === "decline" ? "…" : "Don't create"}
+          {sending === "decline"
+            ? t("proposed.declining")
+            : t("proposed.decline")}
         </Button>
       </div>
     </GalleryFrame>
@@ -206,11 +217,14 @@ export function ProposedBotCard({
 }
 
 function titleFor(
+  t: TFunction<"agents">,
   name: string | undefined,
   clashes: { title: string } | undefined,
 ): string {
-  const called = name?.trim() ? name.trim() : "a new coworker";
-  return clashes ? `Create ${called}, again` : `Create ${called}`;
+  const called = name?.trim() ? name.trim() : t("proposed.aNewCoworker");
+  return clashes
+    ? t("proposed.createNamedAgain", { name: called })
+    : t("proposed.createNamed", { name: called });
 }
 
 /**
@@ -227,13 +241,16 @@ function TalkToIt({
   agentId: string;
   name: string | undefined;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <Link
       className="mt-2 inline-block text-sm underline underline-offset-4"
       search={{ agent: agentId }}
       to="/agents"
     >
-      Open {name?.trim() || "the coworker"}
+      {t("proposed.open", {
+        name: name?.trim() || t("proposed.theCoworker"),
+      })}
     </Link>
   );
 }
@@ -252,6 +269,7 @@ function Unwritable({
   problems: string[];
   respond: (result: unknown) => Promise<void>;
 }) {
+  const { t } = useTranslation("agents");
   /**
    * Answered once, guarded by a ref rather than by the dependency list.
    *
@@ -268,13 +286,10 @@ function Unwritable({
 
   return (
     <GalleryFrame
-      action={<Badge tone="neutral">Not created</Badge>}
-      title="Create a coworker"
+      action={<Badge tone="neutral">{t("proposed.notCreated")}</Badge>}
+      title={t("proposed.createTitle")}
     >
-      <p className="text-sm">
-        The coworker could not be created as written, so nothing was asked of
-        you. It is being redrafted.
-      </p>
+      <p className="text-sm">{t("proposed.unwritable")}</p>
     </GalleryFrame>
   );
 }

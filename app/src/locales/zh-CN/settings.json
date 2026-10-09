@@ -1,0 +1,111 @@
+{
+  "title": "偏好设置",
+  "description": "OpenBot 在你这边的外观与行为。消息列表偏好与你的账号同步。主题保存在此浏览器中。",
+  "general": "通用",
+  "sidebar": {
+    "backToApp": "返回应用",
+    "general": "通用",
+    "connectedAccounts": "已连接的账号",
+    "passwords": "密码",
+    "componentsGallery": "组件库"
+  },
+  "darkTheme": "深色主题",
+  "darkThemeDescription": "在 OpenBot 中使用深色外观。",
+  "keyboardShortcuts": "键盘快捷键",
+  "language": {
+    "label": "语言",
+    "description": "选择界面语言。尚未翻译的内容将回退为英文。",
+    "en": "English",
+    "zh-CN": "简体中文"
+  },
+  "gallery": {
+    "title": "组件库",
+    "description": "Bot 在对话中可以直接绘制的部件，而不是用文字描述。任何单个 Bot 可以使用其中哪些，由管理员决定。",
+    "loadError": "无法加载组件。",
+    "emptyTitle": "尚无已发布组件",
+    "emptyDescription": "当管理员发布组件后，它会出现在这里。",
+    "missingTitle": "组件不存在",
+    "missingDescription": "这里没有叫这个名字的组件。",
+    "missingEmpty": "它可能已被下架，或者此部署已不再附带它。",
+    "backToGallery": "返回组件库",
+    "details": "详情",
+    "kind": "类型",
+    "calledAs": "调用名"
+  },
+  "connectedAccounts": {
+    "title": "已连接的账号",
+    "description": "连接你的应用，让你的 Bot 可以使用它们。",
+    "accountTitle": "账号",
+    "connectFallback": "连接你的 {{title}} 账号。",
+    "connected": "已连接",
+    "notConnected": "未连接",
+    "connect": "连接",
+    "connectFailed": "该账号无法连接。没有保存任何内容——请重试。",
+    "loadError": "无法加载你的已连接账号，因此这里不显示任何内容，而不是显示可能错误的列表。请刷新页面，如问题持续请告知管理员。",
+    "empty": "暂无可连接的内容。当管理员启用一个以本人身份读取数据的连接器后，它们会出现在这里。",
+    "counts": "{{connected}} 个已连接 · {{available}} 个可用",
+    "searchApps": "搜索应用",
+    "noMatches": "没有匹配“{{query}}”的应用。",
+    "sharedTitle": "由你的组织共享",
+    "sharedDescription": "由你的组织共享。Bot 以团队账号行事。",
+    "connectionLoadError": "无法加载你是否已连接此账号，因此这里不显示任何内容，而不是显示可能错误的信息。请刷新页面，如问题持续请告知管理员。",
+    "connectorLoadError": "无法加载此连接器，因此这里不显示任何内容，而不是显示可能错误的信息。请刷新页面，如问题持续请告知管理员。",
+    "teamAccount": "团队账号",
+    "noBotReads": "任何 Bot 都无法以你的身份读取它。",
+    "brokeredDescription": "通过持有该账号的 Composio 接入，因此 Bot 只能看到你能看到的内容。",
+    "brokeredConnected": "获得工具授权的 Bot 会以你的身份读取你的 {{title}}。断开连接会终止 Composio 处的账号，而不只是这里的。",
+    "brokeredDisconnected": "连接会先带你到 Composio，再到服务商进行授权。",
+    "notPersonal": "这不是由你本人连接的服务。",
+    "deploymentCredential": "Bot 使用部署持有的凭据访问此服务，对所有人均相同。",
+    "noConnector": "此部署没有叫这个名字的连接器。",
+    "yourAccount": "你的账号",
+    "notEnabled": "管理员尚未启用此连接器，因此还没有可连接的对象。",
+    "connectedDescription": "获得工具授权的 Bot 会以你的身份读取它，并且只能看到你能看到的内容。",
+    "disconnectedDescription": "任何 Bot 都无法以你的身份读取它。连接会带你到服务商进行授权。",
+    "noConsentLink": "此部署的响应中没有授权链接，因此无处可去，也没有连接任何内容。请重试，如问题持续请告知管理员。",
+    "disconnectNotBuilt": "断开连接功能尚未构建。在此之前，请在你的 {{vendor}} 账号的第三方访问设置中撤销授权——这会立即阻止此部署读取任何内容。",
+    "disconnect": "断开你的 {{title}} 账号",
+    "access": "访问权限",
+    "accessDescription": "你同意的内容，以服务商的记录为准——而不是所请求的内容。当授权屏幕只被部分接受时，两者会有差异。",
+    "granted": "已授予",
+    "noScope": "服务商未指明任何范围。"
+  },
+  "passwords": {
+    "title": "密码",
+    "description": "你在让 Bot 登录网站时保存的登录信息。Bot 永远不会看到它们，且每次使用都需要你确认。",
+    "savedLogins": "已保存的登录信息",
+    "loadError": "无法加载你的密码。",
+    "disabled": "此工作区已关闭保存密码功能。已有的登录信息会保留，但不会被提供使用。",
+    "empty": "没有已保存的登录信息。让 Bot 登录网站时选择“保存到密码”即可。",
+    "lastUsed": "上次使用 {{date}}",
+    "neverUsed": "从未使用",
+    "deleteAria": "删除 {{origin}} 的登录信息"
+  },
+  "messageList": {
+    "title": "消息列表强调",
+    "description": "选择侧边栏中哪个名称显示得更大。",
+    "agentName": "Agent 名称",
+    "threadTitle": "会话标题",
+    "loading": "加载中…",
+    "retry": "重试",
+    "saving": "保存中…",
+    "previewAria": "消息列表预览",
+    "previewName": "通用助手",
+    "previewTitle": "规划下周",
+    "previewTime": "2小时"
+  },
+  "instructions": {
+    "title": "长期指令",
+    "description": "应用于每个频道中的每个同事。同事上的角色文本说明它的用途；这里说明你希望如何做事，例如写作风格或如何描述你的公司。",
+    "placeholder": "我们是两个人，不是一个团队。用英式英语写作，并且永远不要把我们的产品称作平台。",
+    "characterCount": "{{current}}/{{limit}} 个字符",
+    "saved": "已保存",
+    "save": "保存"
+  },
+  "hotkeys": {
+    "new-chat": {
+      "label": "新聊天",
+      "description": "在应用任意位置开启新聊天。"
+    }
+  }
+}

@@ -6,6 +6,7 @@ import {
 import { useEffect } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useLanguageSync } from "@/lib/i18n/language-sync";
 import type { RouterContext } from "../router-context";
 import "@fontsource-variable/inter/wght.css";
 
@@ -118,6 +119,7 @@ export function useUnclaimedDropGuard() {
 
 function RootComponent() {
   useUnclaimedDropGuard();
+  useLanguageSync();
   return (
     <div className="min-h-dvh w-full antialiased">
       <ThemeProvider>

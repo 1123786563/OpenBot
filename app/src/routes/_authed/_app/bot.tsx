@@ -2,6 +2,7 @@ import { CopilotChat } from "@copilotkit/react-core/v2";
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -68,6 +69,7 @@ async function loadExplicitBot(agentId: string): Promise<BotDetailLookup> {
 }
 
 function RouteComponent() {
+  const { t } = useTranslation("channels");
   const search = Route.useSearch();
   const agent = search.agent === "" ? undefined : search.agent;
   const {
@@ -99,7 +101,7 @@ function RouteComponent() {
     return (
       <div className="flex h-screen items-center justify-center p-6">
         <p className="text-destructive text-sm" role="alert">
-          Bots couldn't be loaded.
+          {t("bot.loadErrorBots")}
         </p>
       </div>
     );
@@ -108,7 +110,7 @@ function RouteComponent() {
     return (
       <div className="flex h-screen items-center justify-center p-6">
         <p className="text-destructive text-sm" role="alert">
-          Bot couldn't be loaded.
+          {t("bot.loadErrorBot")}
         </p>
       </div>
     );
@@ -117,9 +119,7 @@ function RouteComponent() {
     return (
       <div className="flex h-screen items-center justify-center p-6">
         <p className="text-muted-foreground text-sm">
-          {agent
-            ? `This deployment has no Bot called "${agent}".`
-            : "This deployment has no Bots yet."}
+          {agent ? t("bot.noBotNamed", { name: agent }) : t("bot.noBots")}
         </p>
       </div>
     );
@@ -133,6 +133,7 @@ function RouteComponent() {
 }
 
 function BotChat({ agentId, name }: { agentId: string; name: string }) {
+  const { t } = useTranslation("channels");
   // Tool calls here act on this Bot's own computer.
   useActiveBot(agentId);
   /*
@@ -160,7 +161,7 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
 
   return (
     <DetailPanel
-      title="Computer"
+      title={t("bot.computer")}
       open={watch === true}
       onClose={() => showComputer(false)}
       detail={<ComputerViewPanel agentId={agentId} name={name} />}
@@ -190,13 +191,11 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
               />
               <Button onClick={startNew} size="sm" variant="ghost">
                 <IconPlus />
-                New chat
+                {t("bot.newChat")}
               </Button>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Ask it to open a page and watch it work.
-          </p>
+          <p className="text-sm text-muted-foreground">{t("bot.subtitle")}</p>
         </header>
         {/*
          * Both banners render as plain siblings in this fixed order, never one nested inside the
@@ -209,8 +208,7 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
             data-testid="bot-chat-history-unavailable"
             role="alert"
           >
-            Earlier messages in this conversation could not be loaded, and the
-            Bot is answering without them.
+            {t("bot.historyUnavailable")}
           </p>
         ) : null}
         {/*

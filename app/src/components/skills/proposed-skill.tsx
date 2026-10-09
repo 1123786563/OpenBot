@@ -1,4 +1,6 @@
 import { Link } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Badge, GalleryFrame } from "@/components/gallery/frame";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,7 @@ export function ProposedSkillCard({
   result,
   save,
 }: ProposedSkillCardProps) {
+  const { t } = useTranslation("skills");
   const [sending, setSending] = useState<"save" | "decline" | null>(null);
   /**
    * A refusal from the server, kept on the card rather than answered with.
@@ -60,8 +63,8 @@ export function ProposedSkillCard({
   if (result !== undefined) {
     return (
       <GalleryFrame
-        action={<Badge tone="neutral">Done</Badge>}
-        title={titleFor(args.slug, replaces)}
+        action={<Badge tone="neutral">{t("proposed.done")}</Badge>}
+        title={titleFor(t, args.slug, replaces)}
       >
         <p className="text-sm">{result}</p>
         {args.slug && wasSaved(result) ? (
@@ -73,8 +76,8 @@ export function ProposedSkillCard({
 
   if (!respond) {
     return (
-      <GalleryFrame title={titleFor(args.slug, replaces)}>
-        <p className="text-sm text-muted-foreground">Writing the skill…</p>
+      <GalleryFrame title={titleFor(t, args.slug, replaces)}>
+        <p className="text-sm text-muted-foreground">{t("proposed.writing")}</p>
       </GalleryFrame>
     );
   }
@@ -94,7 +97,7 @@ export function ProposedSkillCard({
       // Left on the card with the buttons still live. See `refusal` above.
       setSending(null);
       setRefusal(
-        cause instanceof Error ? cause.message : "The skill was not saved.",
+        cause instanceof Error ? cause.message : t("proposed.couldNotBeSaved"),
       );
       return;
     }
@@ -108,28 +111,39 @@ export function ProposedSkillCard({
 
   return (
     <GalleryFrame
-      action={<Badge tone="caution">Waiting on you</Badge>}
+      action={<Badge tone="caution">{t("proposed.waiting")}</Badge>}
       caption={
         replaces
-          ? `This replaces ${replaces.title}, which is ${replaces.ownership}.`
-          : "Nothing is saved until you press the button."
+          ? t("proposed.replaces", {
+              title: replaces.title,
+              ownership: replaces.ownership,
+            })
+          : t("proposed.nothingSavedYet")
       }
-      title={titleFor(values.slug, replaces)}
+      title={titleFor(t, values.slug, replaces)}
     >
       <dl className="grid grid-cols-[minmax(0,7rem)_1fr] gap-x-4 gap-y-1.5 text-sm">
-        <dt className="truncate text-muted-foreground">Command</dt>
+        <dt className="truncate text-muted-foreground">
+          {t("proposed.command")}
+        </dt>
         <dd className="min-w-0 break-words font-mono">/{values.slug}</dd>
-        <dt className="truncate text-muted-foreground">Title</dt>
+        <dt className="truncate text-muted-foreground">
+          {t("proposed.title")}
+        </dt>
         <dd className="min-w-0 break-words">{values.title}</dd>
         {values.summary ? (
           <>
-            <dt className="truncate text-muted-foreground">One-liner</dt>
+            <dt className="truncate text-muted-foreground">
+              {t("proposed.oneLiner")}
+            </dt>
             <dd className="min-w-0 break-words">{values.summary}</dd>
           </>
         ) : null}
         {values.tools.length > 0 ? (
           <>
-            <dt className="truncate text-muted-foreground">Needs</dt>
+            <dt className="truncate text-muted-foreground">
+              {t("proposed.needs")}
+            </dt>
             <dd className="min-w-0 break-words font-mono text-xs">
               {values.tools.join(", ")}
             </dd>
@@ -137,7 +151,9 @@ export function ProposedSkillCard({
         ) : null}
       </dl>
 
-      <p className="mt-3 text-muted-foreground text-xs">Instructions</p>
+      <p className="mt-3 text-muted-foreground text-xs">
+        {t("proposed.instructions")}
+      </p>
       {/* Scrolled rather than clamped: this is the part worth reading before agreeing to it. */}
       <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
         {values.instructions}
@@ -145,8 +161,7 @@ export function ProposedSkillCard({
 
       {values.tools.length > 0 ? (
         <p className="mt-2 text-muted-foreground text-xs">
-          Naming a tool grants nothing. A Bot is offered these only if an
-          administrator has already granted them to it.
+          {t("proposed.grantsNothing")}
         </p>
       ) : null}
 
@@ -163,10 +178,10 @@ export function ProposedSkillCard({
           size="sm"
         >
           {sending === "save"
-            ? "Saving…"
+            ? t("proposed.saving")
             : replaces
-              ? "Replace it"
-              : "Create it"}
+              ? t("proposed.replaceIt")
+              : t("proposed.createIt")}
         </Button>
         <Button
           disabled={Boolean(sending)}
@@ -174,7 +189,9 @@ export function ProposedSkillCard({
           size="sm"
           variant="outline"
         >
-          {sending === "decline" ? "…" : "Don't save"}
+          {sending === "decline"
+            ? t("proposed.declining")
+            : t("proposed.decline")}
         </Button>
       </div>
     </GalleryFrame>
@@ -182,22 +199,26 @@ export function ProposedSkillCard({
 }
 
 function titleFor(
+  t: TFunction<"skills">,
   slug: string | undefined,
   replaces: { title: string } | undefined,
 ): string {
-  const name = slug ? `/${slug}` : "a new skill";
-  return replaces ? `Replace ${name}` : `Create ${name}`;
+  const name = slug ? `/${slug}` : t("proposed.aNewSkill");
+  return replaces
+    ? t("proposed.replaceName", { name })
+    : t("proposed.createName", { name });
 }
 
 /** Where the remaining step happens. A skill on no Bot is inert, and saying so beats implying done. */
 function PutItOnABot({ slug }: { slug: string }) {
+  const { t } = useTranslation("skills");
   return (
     <Link
       className="mt-2 inline-block text-sm underline underline-offset-4"
       search={{ edit: slug }}
       to="/skills"
     >
-      Put it on a Bot
+      {t("proposed.putItOnABot")}
     </Link>
   );
 }
@@ -216,6 +237,7 @@ function Unwritable({
   problems: string[];
   respond: (result: unknown) => Promise<void>;
 }) {
+  const { t } = useTranslation("skills");
   /**
    * Answered once, guarded by a ref rather than by the dependency list.
    *
@@ -232,13 +254,10 @@ function Unwritable({
 
   return (
     <GalleryFrame
-      action={<Badge tone="negative">Not saved</Badge>}
-      title="Skill"
+      action={<Badge tone="negative">{t("proposed.notSaved")}</Badge>}
+      title={t("proposed.cardTitle")}
     >
-      <p className="text-sm">
-        The Bot's draft was not a valid skill, so nothing was saved. It has been
-        told what to fix.
-      </p>
+      <p className="text-sm">{t("proposed.unwritable")}</p>
     </GalleryFrame>
   );
 }

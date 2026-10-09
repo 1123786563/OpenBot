@@ -1,0 +1,82 @@
+{
+  "title": "Agent Skills",
+  "description": "A skill is a named instruction you invoke with <code>/</code> and a Bot follows. Yours are yours alone, and go on the Bots you own.",
+  "newSkill": "New skill",
+  "yourSkills": "Your skills",
+  "loadError": "Your skills could not be loaded.",
+  "empty": "You don't have any skills yet.",
+  "edit": "Edit",
+  "deleteSlug": "Delete /{{slug}}",
+  "workspace": {
+    "title": "Workspace skills",
+    "description": "Written for everyone by an administrator. Which Bots carry them is decided in Admin."
+  },
+  "editing": {
+    "loadError": "This skill could not be loaded.",
+    "missing": "That skill no longer exists, or it is not yours to edit.",
+    "title": "Edit skill",
+    "changesApply": "Changes apply the next time <code>/{{slug}}</code> is used. Agents already carrying it keep it.",
+    "save": "Save changes"
+  },
+  "new": {
+    "description": "A named instruction you invoke with <code>/</code>. It goes on the Bots you own, and nobody else sees it.",
+    "save": "Save skill"
+  },
+  "fields": {
+    "command": "Command",
+    "commandPlaceholder": "standup",
+    "commandLocked": "A command cannot be changed. To rename a skill, write a new one and delete this.",
+    "commandHint": "What you type after a slash. <code>/{command}</code>",
+    "title": "Title",
+    "titlePlaceholder": "My standup skill",
+    "oneLiner": "One-liner",
+    "oneLinerPlaceholder": "Turns yesterday's work into a standup update",
+    "oneLinerHint": "Shown beside the command in this list and in the <code>/</code> menu. Optional.",
+    "instructions": "Instructions",
+    "instructionsPlaceholder": "Summarise what I did yesterday from the channel, then list what is left.",
+    "instructionsHint": "Added to the run when the command is used. Write it as instructions to the Bot, not as a description of them.",
+    "saving": "Saving…",
+    "cancel": "Cancel"
+  },
+  "agents": {
+    "title": "Agents",
+    "noneOwned": "You do not own an Agent to put this on yet.",
+    "offersHint": "An Agent carrying this offers <code>/{{slug}}</code> in its composer."
+  },
+  "tools": {
+    "label": "Tools it needs",
+    "loadError": "Could not load the tools this deployment has.",
+    "noneOffered": "No connected server offers a tool yet. A skill can still be written — most are instructions rather than tool use.",
+    "changesSomething": "changes something",
+    "notConnectedHere": "Not connected here",
+    "notOfferedTitle": "{{ref}} — no connected server offers this",
+    "elsewhereHint": "This skill names these, and no server connected here offers them — because the connector has not been added, or was removed. They cost nothing and load nothing until it exists. Click one to stop naming it.",
+    "grantsNothing": "Picking this skill is what loads these tools for a turn. It does not grant them — a Bot still only calls what it was granted, so naming a tool here gives nobody access to it."
+  },
+  "proposed": {
+    "done": "Done",
+    "writing": "Writing the skill…",
+    "waiting": "Waiting on you",
+    "replaces": "This replaces {{title}}, which is {{ownership}}.",
+    "nothingSavedYet": "Nothing is saved until you press the button.",
+    "command": "Command",
+    "title": "Title",
+    "oneLiner": "One-liner",
+    "needs": "Needs",
+    "instructions": "Instructions",
+    "grantsNothing": "Naming a tool grants nothing. A Bot is offered these only if an administrator has already granted them to it.",
+    "couldNotBeSaved": "The skill was not saved.",
+    "saving": "Saving…",
+    "replaceIt": "Replace it",
+    "createIt": "Create it",
+    "declining": "…",
+    "decline": "Don't save",
+    "aNewSkill": "a new skill",
+    "replaceName": "Replace {{name}}",
+    "createName": "Create {{name}}",
+    "putItOnABot": "Put it on a Bot",
+    "notSaved": "Not saved",
+    "cardTitle": "Skill",
+    "unwritable": "The Bot's draft was not a valid skill, so nothing was saved. It has been told what to fix."
+  }
+}

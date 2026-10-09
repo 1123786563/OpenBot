@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { Badge, GalleryFrame, type Tone } from "./frame";
@@ -7,6 +8,13 @@ const tone = z
   .describe(
     "How this reads at a glance. Use negative and caution sparingly, for a refusal, a breach or a failure, not for anything merely notable",
   );
+
+const TONE_LABEL = {
+  neutral: "gallery.cards.tone.neutral",
+  positive: "gallery.cards.tone.positive",
+  caution: "gallery.cards.tone.caution",
+  negative: "gallery.cards.tone.negative",
+} as const satisfies Record<Tone, string>;
 
 export const RecordCardProps = z.object({
   title: z.string().describe("What this record is, e.g. a person or an order"),
@@ -131,6 +139,7 @@ export function ChecklistCard({
   caption,
   items: given,
 }: Partial<z.infer<typeof ChecklistCardProps>>) {
+  const { t } = useTranslation("channels");
   const items = given ?? [];
   const done = items.filter((item) => item.done).length;
   return (
@@ -141,7 +150,7 @@ export function ChecklistCard({
             done === items.length && items.length > 0 ? "positive" : "neutral"
           }
         >
-          {done} of {items.length}
+          {t("gallery.cards.of", { done, total: items.length })}
         </Badge>
       }
       caption={caption}
@@ -197,11 +206,12 @@ export function NoticeCard({
   tone: noticeTone,
   points,
 }: Partial<z.infer<typeof NoticeCardProps>>) {
+  const { t } = useTranslation("channels");
   return (
     <GalleryFrame
       action={
         noticeTone && noticeTone !== "neutral" ? (
-          <Badge tone={noticeTone}>{noticeTone}</Badge>
+          <Badge tone={noticeTone}>{t(TONE_LABEL[noticeTone])}</Badge>
         ) : undefined
       }
       title={title}

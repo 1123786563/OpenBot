@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { ChannelItemContent } from "@/components/app-sidebar/channel-item-content";
 import { PageRows } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/settings/message-list";
 
 export function MessageListPreference() {
+  const { t } = useTranslation("settings");
   const preferences = useUserPreferences();
   const queryClient = useQueryClient();
   const save = useMutation(
@@ -35,10 +37,8 @@ export function MessageListPreference() {
     <PageRows>
       <Item size="sm">
         <ItemContent>
-          <ItemTitle>Message list emphasis</ItemTitle>
-          <ItemDescription>
-            Choose which name appears larger in the sidebar.
-          </ItemDescription>
+          <ItemTitle>{t("messageList.title")}</ItemTitle>
+          <ItemDescription>{t("messageList.description")}</ItemDescription>
         </ItemContent>
         <ItemActions>
           <Select
@@ -50,18 +50,22 @@ export function MessageListPreference() {
               }
             }}
           >
-            <SelectTrigger aria-label="Message list emphasis">
+            <SelectTrigger aria-label={t("messageList.title")}>
               <SelectValue>
                 {emphasis
                   ? emphasis === "agent"
-                    ? "Agent name"
-                    : "Thread title"
-                  : "Loading…"}
+                    ? t("messageList.agentName")
+                    : t("messageList.threadTitle")
+                  : t("messageList.loading")}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="thread">Thread title</SelectItem>
-              <SelectItem value="agent">Agent name</SelectItem>
+              <SelectItem value="thread">
+                {t("messageList.threadTitle")}
+              </SelectItem>
+              <SelectItem value="agent">
+                {t("messageList.agentName")}
+              </SelectItem>
             </SelectContent>
           </Select>
         </ItemActions>
@@ -76,7 +80,7 @@ export function MessageListPreference() {
             size="sm"
             onClick={() => void preferences.refetch()}
           >
-            Retry
+            {t("messageList.retry")}
           </Button>
         </div>
       ) : null}
@@ -87,20 +91,20 @@ export function MessageListPreference() {
       ) : null}
       {save.isPending ? (
         <p role="status" className="px-3 text-sm text-muted-foreground">
-          Saving…
+          {t("messageList.saving")}
         </p>
       ) : null}
       {emphasis ? (
         <div className="flex justify-center px-6 pt-3 pb-6">
           <figure
-            aria-label="Message list preview"
+            aria-label={t("messageList.previewAria")}
             className="flex h-16 w-full max-w-xs items-center rounded-lg border border-border bg-sidebar px-3"
           >
             <ChannelItemContent
               participantIds={["message-list-preview"]}
-              name="General Assistant"
-              title="Plan next week"
-              lastMessageAt="2h"
+              name={t("messageList.previewName")}
+              title={t("messageList.previewTitle")}
+              lastMessageAt={t("messageList.previewTime")}
               emphasis={emphasis}
             />
           </figure>

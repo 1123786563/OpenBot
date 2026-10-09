@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import React from "react";
 import {
   PageRows,
@@ -15,15 +16,57 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { formatHotkey, HOTKEYS } from "@/lib/hotkeys/hotkeys";
+import { SUPPORTED_LANGUAGES } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authed/settings/")({
   component: RouteComponent,
 });
 
+/** Interface language, switched live and persisted by the language detector's localStorage cache. */
+function LanguagePreference() {
+  const { t, i18n } = useTranslation("settings");
+
+  return (
+    <Item size="sm">
+      <ItemContent>
+        <ItemTitle>{t("language.label")}</ItemTitle>
+        <ItemDescription>{t("language.description")}</ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <Select
+          value={i18n.resolvedLanguage ?? i18n.language}
+          onValueChange={(language) => {
+            if (language) void i18n.changeLanguage(language);
+          }}
+        >
+          <SelectTrigger aria-label={t("language.label")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGUAGES.map((language) => (
+              <SelectItem key={language} value={language}>
+                {t(`language.${language}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </ItemActions>
+    </Item>
+  );
+}
+
 function RouteComponent() {
+  const { t } = useTranslation("settings");
   const { dark, setDark } = useTheme();
 
   /*
@@ -35,27 +78,23 @@ function RouteComponent() {
    * more from a person than one switch, and a section cannot grow a page's worth of that.
    */
   return (
-    <PageShell
-      description="How OpenBot looks and behaves for you. Message list preferences sync with your account. Theme is saved in this browser."
-      title="Preferences"
-    >
-      <PageSection title="General">
+    <PageShell description={t("description")} title={t("title")}>
+      <PageSection title={t("general")}>
         <PageRows>
           <Item size="sm">
             <ItemContent>
-              <ItemTitle>Dark theme</ItemTitle>
-              <ItemDescription>
-                Use the dark appearance across OpenBot.
-              </ItemDescription>
+              <ItemTitle>{t("darkTheme")}</ItemTitle>
+              <ItemDescription>{t("darkThemeDescription")}</ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
-                aria-label="Dark theme"
+                aria-label={t("darkTheme")}
                 checked={dark}
                 onCheckedChange={setDark}
               />
             </ItemActions>
           </Item>
+          <LanguagePreference />
         </PageRows>
         <MessageListPreference />
       </PageSection>
@@ -69,14 +108,14 @@ function RouteComponent() {
        * actually do rather than what somebody remembered they did. Read-only on purpose: these
        * are not rebindable, and a row with nothing to click says so by having nothing to click.
        */}
-      <PageSection title="Keyboard shortcuts">
+      <PageSection title={t("keyboardShortcuts")}>
         <PageRows>
           {HOTKEYS.map((hotkey, index) => (
             <React.Fragment key={hotkey.id}>
               <Item size="sm">
                 <ItemContent>
-                  <ItemTitle>{hotkey.label}</ItemTitle>
-                  <ItemDescription>{hotkey.description}</ItemDescription>
+                  <ItemTitle>{t(hotkey.label)}</ItemTitle>
+                  <ItemDescription>{t(hotkey.description)}</ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <span className="flex gap-1">

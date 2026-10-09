@@ -1,0 +1,252 @@
+{
+  "activity": {
+    "title": "活动记录",
+    "ran": "运行了",
+    "read": "读取了",
+    "saved": "保存了",
+    "listed": "列出了",
+    "refused": "被边界规则拒绝了。",
+    "empty": "暂无记录。Bot 运行的命令和读取的文件会实时显示在这里。"
+  },
+  "output": {
+    "truncated": "输出开头已被截断，以下为输出的结尾部分。",
+    "printedNothing": "它没有输出任何内容。",
+    "timedOut": "它运行时间过长，已被停止。",
+    "exitCode": "退出码 {{exitCode}}。"
+  },
+  "controls": {
+    "takeControl": "接管控制",
+    "handBack": "交还控制",
+    "finishing": "正在完成当前操作…",
+    "openComputer": "打开电脑",
+    "closeComputer": "关闭电脑",
+    "computer": "电脑",
+    "needsYou": "需要你"
+  },
+  "panel": {
+    "ariaLabel": "电脑侧栏"
+  },
+  "control": {
+    "reconnecting": "正在重新连接：无法检查浏览器所有权。输入已暂停。",
+    "handoffUnidentified": "无法识别交接请求。请重试连接。",
+    "couldNotChange": "无法更改控制权。请检查连接并重试。",
+    "couldNotReach": "无法连接到电脑。请在其重新连接后重试。"
+  },
+  "view": {
+    "aPage": "一个页面",
+    "openedDuringTurn": "本轮打开的页面。屏幕此后已发生变化。",
+    "noPageThisTurn": "本轮没有打开任何页面。",
+    "cannotSeeScreen": "你现在无法看到屏幕",
+    "mayStillBeWorking": "助手可能仍在工作。管理员可以检查它的电脑是否在运行。",
+    "notOpenedPageYet": "助手还没有打开页面。",
+    "waitingForScreen": "正在等待助手的屏幕…",
+    "screenUnavailable": "屏幕当前不可用。",
+    "altLooking": "助手正在查看的内容",
+    "openFullSize": "全屏打开助手的屏幕",
+    "youHaveControl": "你已接管控制",
+    "needsYou": "助手需要你。",
+    "cancelRequest": "取消请求",
+    "finishingAssistantAction": "正在完成助手当前的操作，随后将控制权交给你…",
+    "browserInterrupted": "浏览器被中断了。",
+    "browserInterruptedCheck": "打开屏幕并再次接管控制以进行检查。",
+    "secretLabel": "助手需要",
+    "secretPlaceholder": "在此输入，绝不会展示给助手",
+    "sending": "发送中…",
+    "sendToPage": "发送到页面",
+    "secretNote": "内容会直接发送到页面。它不会显示在对话中，助手也不会收到。",
+    "checkingControl": "正在确认谁持有控制权…",
+    "youHaveControlHint": "你已接管控制。打开屏幕即可点击和输入。",
+    "assistantHasControl": "助手持有控制权。",
+    "dialogLabel": "助手的屏幕",
+    "closeScreen": "关闭助手的屏幕",
+    "altTurnFrame": "本轮打开的内容",
+    "retry": "重试",
+    "finishingBeforeControl": "正在完成当前操作，随后将控制权交给你…",
+    "youHaveControlClickType": "你已接管控制——在页面上点击和输入。"
+  },
+  "demonstration": {
+    "schedules": {
+      "weekdayAt9": "每个工作日 09:00",
+      "everyDayAt9": "每天 09:00",
+      "mondayAt9": "每周一 09:00",
+      "everyHour": "每小时"
+    },
+    "scheduledLead": "已排定。",
+    "nextRuns": "下次运行于",
+    "seeRoutines": "查看例行任务",
+    "close": "关闭",
+    "whenItRuns": "运行时间（{{timezone}}）",
+    "customCron": "自定义 cron 表达式",
+    "cronFormat": "Cron（分 时 日 月 星期）",
+    "reportIn": "汇报到",
+    "onlyConversation": "此 Bot 的唯一对话",
+    "inputsLabel": "每次运行的输入（可选）",
+    "inputsPlaceholder": "input_1: 上个月的发票",
+    "schedule": "排定",
+    "cancel": "取消",
+    "title": "教它一个浏览器操作流程",
+    "intro": "接管控制、录制操作步骤，然后审阅技能草稿。输入的值和图像会被省略，敏感字段始终由你掌握。录制会在十分钟后自动停止。",
+    "recordingLine": "正在录制 {{title}} · {{count}} 步",
+    "timeLeft": "剩余 {{time}}",
+    "timeLimitReached": "已达到时间上限。正在停止…",
+    "stopRecording": "停止录制",
+    "workflowName": "流程名称",
+    "workflowPlaceholder": "查找一张发票",
+    "recordSteps": "录制你的步骤",
+    "takeControlFirst": "请先接管浏览器控制权，再开始录制。",
+    "stepsUnit": "步",
+    "stoppedAtLimit": "· 已在十分钟上限处停止",
+    "edit": "编辑",
+    "runOnSchedule": "按计划运行",
+    "reviewDraft": "审阅技能草稿",
+    "delete": "删除",
+    "reviewTitle": "审阅并编辑技能",
+    "reviewIntro": "替换参数名称并明确预期结果。保存时使用与“技能”页相同的技能权限。",
+    "saveAndUse": "保存并用于此 Bot",
+    "couldNotSave": "技能保存失败。",
+    "savedReady": "/{{slug}} 已在此 Bot 上就绪。你可以在对话中用想要的输入调用它，或选择“按计划运行”将其作为例行任务重复运行。"
+  },
+  "handoff": {
+    "couldNotResume": "任务无法恢复。",
+    "waitingFinish": "正在等待此次浏览器交接完成。",
+    "pausedNotice": "此对话中有一个浏览器任务已暂停。",
+    "stopWaiting": "停止等待",
+    "resumeTask": "恢复任务"
+  },
+  "liveScreen": {
+    "couldNotShow": "无法显示屏幕。",
+    "ariaDriving": "助手的屏幕。你已接管控制：在此点击和输入。",
+    "ariaLive": "助手的实时屏幕"
+  },
+  "botActivity": {
+    "title": "活动记录",
+    "loadError": "无法加载此 Bot 的活动记录。",
+    "emptyInProgress": "没有正在运行的任务，也没有在等待你的事项。",
+    "inProgress": "进行中",
+    "emptyScheduled": "暂无计划任务。",
+    "scheduled": "已排定",
+    "emptyCompleted": "还没有已完成的任务。",
+    "completed": "已完成",
+    "kind": {
+      "routine": "例行任务",
+      "responsibility": "职责",
+      "handoff": "交办任务",
+      "approval": "审批",
+      "question": "提问",
+      "followUp": "跟进"
+    },
+    "needsYou": "需要你",
+    "stopping": "正在停止…",
+    "stop": "停止",
+    "cancelling": "正在取消…",
+    "cancel": "取消",
+    "open": "打开"
+  },
+  "attention": {
+    "questions_one": "{{count}} 个提问",
+    "questions_other": "{{count}} 个提问",
+    "approvals_one": "{{count}} 个审批",
+    "approvals_other": "{{count}} 个审批",
+    "handoffs_one": "{{count}} 个停滞的交接",
+    "handoffs_other": "{{count}} 个停滞的交接",
+    "unread": "{{count}} 条未读",
+    "needsYouName": "{{name}} 需要你",
+    "paused": "已暂停"
+  },
+  "paused": {
+    "tapToResume": "已暂停，点击恢复",
+    "resuming": "正在恢复…"
+  },
+  "profile": {
+    "forYou": "为你",
+    "stateLoadError": "无法加载此 Bot 的状态。",
+    "paused": {
+      "title": "已暂停",
+      "on": "不会为你启动任何例行任务、职责、交接或跟进，正在运行的也已停止。",
+      "off": "为你运行它的例行任务、职责、交接和跟进。"
+    },
+    "notifications": {
+      "title": "通知",
+      "badgesAlways": "侧边栏徽标始终显示。"
+    },
+    "notify": {
+      "all": "所有通知",
+      "needsInput": "仅在需要我时",
+      "none": "不通知（仅显示徽标）"
+    },
+    "browserNotifications": {
+      "title": "浏览器通知",
+      "off": "在此浏览器中已关闭。开启后，Bot 需要你时你会收到提醒。",
+      "turnOn": "开启"
+    },
+    "message": {
+      "title": "给 {{name}} 发消息",
+      "description": "开始一段对话。"
+    },
+    "resetEntry": {
+      "title": "重置",
+      "description": "删除你与它的对话、它为你记住的内容以及它排定的工作。你会先看到将删除哪些内容。"
+    },
+    "updateKind": {
+      "progress": {
+        "title": "进展",
+        "description": "你没有盯着的工作的回复和结果。"
+      },
+      "decision": {
+        "title": "决策",
+        "description": "Bot 行动前需要获得的审批。"
+      },
+      "question": {
+        "title": "提问",
+        "description": "Bot 向你提出、正在等待回答的问题。"
+      }
+    },
+    "transport": {
+      "push": "推送",
+      "slack": "Slack",
+      "teams": "Microsoft Teams",
+      "sms": "短信"
+    },
+    "transportAria": "{{kind}}（{{transport}}）",
+    "routing": {
+      "title": "更新去向",
+      "description": "当你不在看时，各类更新发送到哪里。网页端始终显示全部内容。适用于你的所有 Bot。",
+      "loadError": "无法加载你的更新去向设置。"
+    },
+    "reset": {
+      "title": "重置 {{name}}？",
+      "description": "这将删除 {{name}} 与你之间的一切，且仅限你们之间。其他人的对话和数据不会受到影响。此操作无法撤销。",
+      "countError": "无法统计重置将删除的内容。",
+      "done": "完成。{{name}} 将与你重新开始。",
+      "nothingToDelete": "没有属于你的内容可删除。",
+      "willDelete": "将删除以下内容：",
+      "sharedKept_one": "{{count}} 个对话已与其他人或 Bot 共享，将予保留。",
+      "sharedKept_other": "{{count}} 个对话已与其他人或 Bot 共享，将予保留。",
+      "ownMemoriesKept": "你自己直接告诉 Bot 的记忆会被保留。",
+      "close": "关闭",
+      "cancel": "取消",
+      "resetting": "正在重置…",
+      "deleteAndReset": "删除并重置"
+    },
+    "resetItems": {
+      "conversations_one": "{{count}} 个对话",
+      "conversations_other": "{{count}} 个对话",
+      "memorySources_one": "{{count}} 个记忆来源",
+      "memorySources_other": "{{count}} 个记忆来源",
+      "memories_one": "{{count}} 条导入的记忆",
+      "memories_other": "{{count}} 条导入的记忆",
+      "routines_one": "{{count}} 个例行任务",
+      "routines_other": "{{count}} 个例行任务",
+      "responsibilities_one": "{{count}} 项职责",
+      "responsibilities_other": "{{count}} 项职责",
+      "followUps_one": "{{count}} 个已排定的跟进",
+      "followUps_other": "{{count}} 个已排定的跟进",
+      "formedMemories_one": "{{count}} 条它自己形成的记忆",
+      "formedMemories_other": "{{count}} 条它自己形成的记忆",
+      "backgroundResearch_one": "{{count}} 项后台调研",
+      "backgroundResearch_other": "{{count}} 项后台调研",
+      "standingApprovals_one": "{{count}} 项长期授权",
+      "standingApprovals_other": "{{count}} 项长期授权"
+    }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/golang/go/master/src/cmd/go/internal/modindex/schema.txt",
+  "note": "Dependency facts for the Go runtime candidate, measured after the R2 lock-down. Every value below was produced by a command run in this workspace, never pre-filled.",
+  "module": "openbot/runtime-go",
+  "recordedAt": "2026-10-09",
+  "toolchain": {
+    "goVersion": "go1.26.3 darwin/arm64",
+    "GOTOOLCHAIN": "auto (local toolchain already satisfies the highest dependency floor, no download)",
+    "verifiedWith": "go version / go env GOVERSION"
+  },
+  "r2LockDown": {
+    "networkRule": "this machine defaults to GOPROXY=off and GOSUMDB=off; every network-touching command was prefixed with env GOPROXY=https://goproxy.cn,direct",
+    "commandsRun": [
+      "env GOPROXY=https://goproxy.cn,direct go get trpc.group/trpc-go/trpc-agent-go@9bb1c42b968c659124a5bb76eb6a676d546442a1 trpc.group/trpc-go/trpc-agent-go/server/agui@9bb1c42b968c659124a5bb76eb6a676d546442a1",
+      "env GOPROXY=https://goproxy.cn,direct go mod tidy",
+      "go mod verify",
+      "env GOPROXY=https://goproxy.cn,direct go list -m all",
+      "go version"
+    ],
+    "sequencingNote": "go get ran before the adapter was written (to read the framework's real interfaces from the module cache); go mod tidy ran after internal/adapter/agui.go imported the framework, exactly as the plan requires, so tidy could not strip the not-yet-imported candidate modules",
+    "resolvedDirectDependencies": {
+      "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
+      "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
+    },
+    "goSum": {
+      "present": true,
+      "lines": 117,
+      "sha256First16": "9002479a01ee927e",
+      "modVerifyOutput": "all modules verified"
+    },
+    "goListAll": {
+      "moduleCount": 113,
+      "keyTransitiveVersions": {
+        "github.com/ag-ui-protocol/ag-ui/sdks/community/go": "v0.0.0-20260514093510-e9e910b230b9",
+        "golang.org/x/net": "v0.48.0",
+        "google.golang.org/grpc": "v1.79.3",
+        "google.golang.org/protobuf": "v1.36.10",
+        "go.opentelemetry.io/otel": "v1.40.0",
+        "trpc.group/trpc-go/trpc-a2a-go": "v0.2.6-0.20260721084546-18c8244d0acb"
+      },
+      "fullOutput": "113 lines, produced by 'env GOPROXY=https://goproxy.cn,direct go list -m all' in runtime-go/"
+    },
+    "replaceDirectives": "none; the upstream repository-internal 'replace => ../../' lines were deliberately not copied into this standalone module",
+    "toolchainFloorCheck": "agui submodule declares go 1.24.4; local go1.26.3 satisfies it with no toolchain download"
+  },
+  "candidate": {
+    "dependency": "trpc.group/trpc-go/trpc-agent-go",
+    "commit": "9bb1c42b968c659124a5bb76eb6a676d546442a1",
+    "resolvedVersion": "v1.11.1-0.20260925110348-9bb1c42b968c",
+    "resolutionVerified": true,
+    "goVersionFloor": "1.24.4 (server/agui submodule go.mod; root module declares go 1.21 and is NOT the source of truth)",
+    "localToolchainSatisfiesFloor": true
+  },
+  "vulnerabilityScan": {
+    "tool": "govulncheck",
+    "installedVersion": "v1.8.0",
+    "installationCommands": [
+      "env GOPROXY=https://goproxy.cn,direct go list -m -versions golang.org/x/vuln  (latest listed: v1.8.0)",
+      "env GOPROXY=https://goproxy.cn,direct go install golang.org/x/vuln/cmd/govulncheck@v1.8.0"
+    ],
+    "scanCommand": "govulncheck ./...  (in runtime-go/)",
+    "exitCode": 3,
+    "summary": "code is affected by 20 reachable vulnerabilities from 3 modules and the Go standard library; 15 further vulnerabilities exist in imported packages and 8 in required modules that this code does not call",
+    "reachableFindings": [
+      {
+        "source": "Go standard library go1.26.3",
+        "ids": "GO-2026-6617, GO-2026-6613, GO-2026-6612, GO-2026-6611, GO-2026-6608, GO-2026-6607, GO-2026-6603, GO-2026-6600, GO-2026-6599, GO-2026-6091, GO-2026-6090, GO-2026-6089, GO-2026-5972, GO-2026-5856, GO-2026-5506(stdlib share), GO-2026-5039, GO-2026-5037",
+        "fixedIn": "go1.26.4 through go1.26.9 depending on the id"
+      },
+      {
+        "source": "golang.org/x/net v0.48.0",
+        "ids": "GO-2026-6617, GO-2026-6612, GO-2026-6611, GO-2026-6603",
+        "fixedIn": "golang.org/x/net v0.60.0"
+      },
+      {
+        "source": "go.opentelemetry.io/otel v1.40.0 (+ exporters v1.29.0, sdk v1.40.0)",
+        "ids": "GO-2026-6505, GO-2026-5506",
+        "fixedIn": "otel v1.41.0; exporters/sdk v1.45.0"
+      },
+      {
+        "source": "google.golang.org/grpc v1.79.3",
+        "ids": "GO-2026-6348, GO-2026-6061",
+        "fixedIn": "grpc v1.82.1 / v1.83.1"
+      }
+    ],
+    "disposition": "NOT remediated in R2, recorded for the G1 adoption review: the transitive versions above are what the pinned candidate commit resolves to, and bumping them (x/net v0.60.0, otel v1.41+/v1.45.0, grpc v1.82.1/v1.83.1) would alter the frozen candidate graph the plan locked with its two go get commands; the stdlib findings need a toolchain patch (go1.26.4..1.26.9), and the plan freezes toolchain patch versions to the execution environment. This candidate runs only in the isolated test process behind G1a; production isolation is the G1b gate's question, where these findings must be answered (patch toolchain + security-bump transitives, or reject the candidate) before any tenant traffic."
+  },
+  "network": {
+    "localDefaults": "GOPROXY=off, GOSUMDB=off on this machine",
+    "rule": "any command needing the network must be prefixed explicitly, e.g. env GOPROXY=https://goproxy.cn,direct go get ..."
+  }
+}

@@ -15,6 +15,8 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -68,17 +70,18 @@ import {
   type NetworkMode,
   type NetworkPolicy,
 } from "@/lib/enterprise/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/enterprise")({
   component: EnterprisePage,
 });
 
-const MODE_NAMES: Record<NetworkMode, string> = {
-  allow_all: "Allow all network access",
-  defaults_plus_allowlist: "Defaults plus team allowlist",
-  allowlist_only: "Team allowlist only",
-};
+const MODE_NAMES = {
+  allow_all: "enterprise.network.modes.allowAll",
+  defaults_plus_allowlist: "enterprise.network.modes.defaultsPlusAllowlist",
+  allowlist_only: "enterprise.network.modes.allowlistOnly",
+} as const satisfies Record<NetworkMode, string>;
 
 /** One rule per line: `example.com`, `*.corp.example`, or `10.0.0.0/8 443,8443`. */
 function rulesFromText(text: string): EgressRule[] {
@@ -106,14 +109,18 @@ function rulesToText(rules: EgressRule[]): string {
     .join("\n");
 }
 
-function summarizePolicy(policy: NetworkPolicy | undefined): string {
-  if (!policy)
-    return "No policy: Bot computers may reach anything the cluster allows";
-  const count = policy.rules.length;
-  return `${MODE_NAMES[policy.mode]} · ${count} ${count === 1 ? "rule" : "rules"}${policy.locked ? " · locked" : ""}`;
+function summarizePolicy(
+  policy: NetworkPolicy | undefined,
+  t: TFunction<"admin">,
+): string {
+  if (!policy) return t("enterprise.network.noPolicy");
+  return `${t(MODE_NAMES[policy.mode])} · ${t("enterprise.network.ruleCount", {
+    count: policy.rules.length,
+  })}${policy.locked ? ` · ${t("enterprise.network.locked")}` : ""}`;
 }
 
 function EnterprisePage() {
+  const { t } = useTranslation("admin");
   const overview = useQuery(enterpriseOverviewQueryOptions());
   const setCapability = useMutation(setCapabilityMutationOptions(queryClient));
   const setSetting = useMutation(
@@ -123,8 +130,8 @@ function EnterprisePage() {
 
   return (
     <PageShell
-      description="What members may use, how Bot computers reach the network, and what is recorded about it. Every change is on the audit trail."
-      title="Enterprise controls"
+      description={t("enterprise.description")}
+      title={t("enterprise.title")}
     >
       {failure ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -133,7 +140,7 @@ function EnterprisePage() {
       ) : null}
       {overview.isPending ? null : overview.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          Could not load enterprise controls.
+          {t("enterprise.loadError")}
         </p>
       ) : (
         <EnterpriseSections
@@ -171,6 +178,7 @@ function EnterpriseSections({
   ) => void;
   saving: boolean;
 }) {
+  const { t } = useTranslation("admin");
   const [overridesOpen, setOverridesOpen] = useState(false);
   const [networkScope, setNetworkScope] = useState<
     { scopeKind: "organization" | "group"; scopeId: string } | undefined
@@ -193,8 +201,8 @@ function EnterpriseSections({
   return (
     <>
       <PageSection
-        description="Social sign-in stays available to addresses in INITIAL_ADMIN_EMAILS as a break-glass way in, and every such sign-in is audited."
-        title="Sign-in"
+        description={t("enterprise.signIn.description")}
+        title={t("enterprise.signIn.title")}
       >
         <PageRows>
           <Item size="sm">
@@ -202,16 +210,16 @@ function EnterpriseSections({
               <IconShieldLock />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Require SSO</ItemTitle>
+              <ItemTitle>{t("enterprise.signIn.requireSso")}</ItemTitle>
               <ItemDescription>
                 {settings.ssoRequired
-                  ? "Only a registered SAML or OpenID Connect provider may sign anybody in."
-                  : "People may also sign in with Google, Microsoft or Okta."}
+                  ? t("enterprise.signIn.ssoOn")
+                  : t("enterprise.signIn.ssoOff")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
-                aria-label="Require SSO"
+                aria-label={t("enterprise.signIn.requireSso")}
                 checked={settings.ssoRequired}
                 disabled={saving}
                 onCheckedChange={(checked) => onSetting("ssoRequired", checked)}
@@ -224,16 +232,22 @@ function EnterpriseSections({
               <IconFingerprint />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>SCIM provisioning</ItemTitle>
+              <ItemTitle>{t("enterprise.scim.title")}</ItemTitle>
               <ItemDescription className="line-clamp-none">
                 {data.scim.configured
-                  ? `Directory base URL ${data.scim.baseUrl ?? "(set BETTER_AUTH_URL)"} with the SCIM_BEARER_TOKEN bearer token. Deprovisioning ends sessions, deny-lists the address, retires connector credentials and stops their computers.`
-                  : "Off. Set SCIM_BEARER_TOKEN to accept provisioning from Okta, Entra or another directory."}
+                  ? t("enterprise.scim.configured", {
+                      url:
+                        data.scim.baseUrl ??
+                        t("enterprise.scim.setBetterAuthUrl"),
+                    })
+                  : t("enterprise.scim.off")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <span className="text-muted-foreground text-sm">
-                {data.scim.configured ? "On" : "Off"}
+                {data.scim.configured
+                  ? t("enterprise.on")
+                  : t("enterprise.off")}
               </span>
             </ItemActions>
           </Item>
@@ -241,8 +255,8 @@ function EnterpriseSections({
       </PageSection>
 
       <PageSection
-        description="The switch is the whole organization. Roles can be given a different answer, and a directory group can be granted a capability the organization has off."
-        title="Capabilities"
+        description={t("enterprise.capabilities.description")}
+        title={t("enterprise.capabilities.title")}
       >
         <PageRows>
           {data.capabilities.map((capability) => {
@@ -258,7 +272,7 @@ function EnterpriseSections({
                     <ItemDescription>
                       {effective
                         ? capability.description
-                        : "Nobody may, unless a role or group grants it."}
+                        : t("enterprise.capabilities.nobodyMay")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -286,11 +300,13 @@ function EnterpriseSections({
               <IconUsersGroup />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Role and group overrides</ItemTitle>
+              <ItemTitle>{t("enterprise.overrides.title")}</ItemTitle>
               <ItemDescription>
                 {overrideCount === 0
-                  ? "None: everybody gets the switches above"
-                  : `${overrideCount} set`}
+                  ? t("enterprise.overrides.none")
+                  : t("enterprise.overrides.count", {
+                      number: overrideCount,
+                    })}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -301,8 +317,8 @@ function EnterpriseSections({
       </PageSection>
 
       <PageSection
-        description="Where Bot computers may connect. Applied to running computers within seconds, without a restart. A group policy replaces the organization's unless it is locked."
-        title="Network"
+        description={t("enterprise.network.description")}
+        title={t("enterprise.network.title")}
       >
         <PageRows>
           <Item
@@ -320,9 +336,9 @@ function EnterpriseSections({
               <IconWorld />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Organization</ItemTitle>
+              <ItemTitle>{t("enterprise.network.organization")}</ItemTitle>
               <ItemDescription>
-                {summarizePolicy(organizationPolicy)}
+                {summarizePolicy(organizationPolicy, t)}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -350,8 +366,12 @@ function EnterpriseSections({
                   <IconNetwork />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle>Group: {policy.scopeId}</ItemTitle>
-                  <ItemDescription>{summarizePolicy(policy)}</ItemDescription>
+                  <ItemTitle>
+                    {t("enterprise.network.group", { name: policy.scopeId })}
+                  </ItemTitle>
+                  <ItemDescription>
+                    {summarizePolicy(policy, t)}
+                  </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <IconChevronRight className="size-4 text-muted-foreground" />
@@ -367,14 +387,14 @@ function EnterpriseSections({
             size="sm"
             variant="outline"
           >
-            Add a group policy
+            {t("enterprise.network.addGroupPolicy")}
           </Button>
         ) : null}
       </PageSection>
 
       <PageSection
-        description="With the allowlist on, a Bot may call tools only on the MCP servers approved here. Every other server's calls are refused."
-        title="MCP servers"
+        description={t("enterprise.mcp.description")}
+        title={t("enterprise.mcp.title")}
       >
         <PageRows>
           <Item size="sm">
@@ -382,16 +402,18 @@ function EnterpriseSections({
               <IconPlug />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Only approved servers</ItemTitle>
+              <ItemTitle>{t("enterprise.mcp.onlyApproved")}</ItemTitle>
               <ItemDescription>
                 {settings.mcpAllowlist.enabled
-                  ? `${settings.mcpAllowlist.servers.length} approved`
-                  : "Off: every registered server may be used as its grants allow."}
+                  ? t("enterprise.mcp.approvedCount", {
+                      number: settings.mcpAllowlist.servers.length,
+                    })
+                  : t("enterprise.mcp.off")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
-                aria-label="Only approved MCP servers"
+                aria-label={t("enterprise.mcp.onlyApprovedAria")}
                 checked={settings.mcpAllowlist.enabled}
                 disabled={saving}
                 onCheckedChange={(enabled) =>
@@ -418,7 +440,9 @@ function EnterpriseSections({
                   </ItemContent>
                   <ItemActions>
                     <Switch
-                      aria-label={`Approve ${server.title}`}
+                      aria-label={t("enterprise.mcp.approveAria", {
+                        title: server.title,
+                      })}
                       checked={approved}
                       disabled={saving}
                       onCheckedChange={(checked) =>
@@ -441,8 +465,10 @@ function EnterpriseSections({
       </PageSection>
 
       <PageSection
-        description={`The built-in Bot runs on ${data.builtInModel ?? "the deployment's configured model"}. A remote Bot chooses its own; the model its stream names is recorded.`}
-        title="Models"
+        description={t("enterprise.models.description", {
+          model: data.builtInModel ?? t("enterprise.models.configuredDefault"),
+        })}
+        title={t("enterprise.models.title")}
       >
         <PageRows>
           <Item size="sm">
@@ -450,16 +476,16 @@ function EnterpriseSections({
               <IconShieldLock />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Model allowlist</ItemTitle>
+              <ItemTitle>{t("enterprise.models.allowlistTitle")}</ItemTitle>
               <ItemDescription>
                 {settings.modelAllowlist.enabled
-                  ? "A built-in Bot on a model not listed is refused before it runs."
-                  : "Off: any model may serve a run."}
+                  ? t("enterprise.models.allowlistOn")
+                  : t("enterprise.models.allowlistOff")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
-                aria-label="Model allowlist"
+                aria-label={t("enterprise.models.allowlistTitle")}
                 checked={settings.modelAllowlist.enabled}
                 disabled={saving}
                 onCheckedChange={(enabled) =>
@@ -482,10 +508,10 @@ function EnterpriseSections({
               <IconKey />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Allowed models</ItemTitle>
+              <ItemTitle>{t("enterprise.models.allowed")}</ItemTitle>
               <ItemDescription>
                 {settings.modelAllowlist.models.length === 0
-                  ? "None listed"
+                  ? t("enterprise.models.noneListed")
                   : settings.modelAllowlist.models.join(", ")}
               </ItemDescription>
             </ItemContent>
@@ -498,8 +524,8 @@ function EnterpriseSections({
       </PageSection>
 
       <PageSection
-        description="Audit events and Bot actions stream to your OpenTelemetry collector or SIEM when OTEL_EXPORTER_OTLP_ENDPOINT is set, tagged openbot.surface."
-        title="Recording and export"
+        description={t("enterprise.recording.description")}
+        title={t("enterprise.recording.title")}
       >
         <PageRows>
           <Item size="sm">
@@ -507,16 +533,18 @@ function EnterpriseSections({
               <IconTerminal2 />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Action Recording</ItemTitle>
+              <ItemTitle>{t("enterprise.recording.actionRecording")}</ItemTitle>
               <ItemDescription>
                 {settings.actionRecording
-                  ? `Shell commands Bots run are recorded with secrets scrubbed and kept ${data.actionRecordRetentionDays} days.`
-                  : "Off: commands are on the audit trail only."}
+                  ? t("enterprise.recording.on", {
+                      days: data.actionRecordRetentionDays,
+                    })
+                  : t("enterprise.recording.off")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
-                aria-label="Action Recording"
+                aria-label={t("enterprise.recording.actionRecording")}
                 checked={settings.actionRecording}
                 disabled={saving}
                 onCheckedChange={(checked) =>
@@ -531,16 +559,18 @@ function EnterpriseSections({
               <IconChartBar />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>OpenTelemetry export</ItemTitle>
+              <ItemTitle>{t("enterprise.recording.otel")}</ItemTitle>
               <ItemDescription>
                 {data.otel.configured
-                  ? "Exporting over OTLP/HTTP."
-                  : "Not configured. Set OTEL_EXPORTER_OTLP_ENDPOINT on the server."}
+                  ? t("enterprise.recording.otelOn")
+                  : t("enterprise.recording.otelOff")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <span className="text-muted-foreground text-sm">
-                {data.otel.configured ? "On" : "Off"}
+                {data.otel.configured
+                  ? t("enterprise.on")
+                  : t("enterprise.off")}
               </span>
             </ItemActions>
           </Item>
@@ -549,8 +579,8 @@ function EnterpriseSections({
       </PageSection>
 
       <PageSection
-        description="Stopping a computer ends its running Bots and keeps its disk. The Bot gets a fresh computer next session. Stop one person's from People."
-        title="Computers"
+        description={t("enterprise.computers.description")}
+        title={t("enterprise.computers.title")}
       >
         <PageRows>
           <Item
@@ -561,11 +591,13 @@ function EnterpriseSections({
               <IconDeviceDesktop />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Stop inactive computers</ItemTitle>
+              <ItemTitle>{t("enterprise.computers.stopInactive")}</ItemTitle>
               <ItemDescription>
                 {settings.inactiveComputerDays === 0
-                  ? "Off"
-                  : `After ${settings.inactiveComputerDays} days without use`}
+                  ? t("enterprise.off")
+                  : t("enterprise.computers.afterDays", {
+                      days: settings.inactiveComputerDays,
+                    })}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -589,14 +621,14 @@ function EnterpriseSections({
         />
       ) : null}
       <ListDialog
-        description="One model per line, as provider/model, for example openai/gpt-5.6-terra."
+        description={t("enterprise.models.listHint")}
         initial={settings.modelAllowlist.models}
         onClose={() => setModelsOpen(false)}
         onSave={(models) =>
           onSetting("modelAllowlist", { ...settings.modelAllowlist, models })
         }
         open={modelsOpen}
-        title="Allowed models"
+        title={t("enterprise.models.allowed")}
       />
       <DaysDialog
         initial={settings.inactiveComputerDays}
@@ -609,18 +641,18 @@ function EnterpriseSections({
 }
 
 function ModelUsage() {
+  const { t } = useTranslation("admin");
+  const { formatDate } = useDateTime();
   const usage = useQuery(modelUsageQueryOptions(30));
   if (usage.isPending) return null;
   if (usage.error)
     return (
       <p className="mt-4 text-destructive text-sm" role="alert">
-        Could not load model usage.
+        {t("enterprise.models.usageError")}
       </p>
     );
   if (usage.data.summary.length === 0)
-    return (
-      <PageEmpty>No Bot runs have been recorded in the last 30 days.</PageEmpty>
-    );
+    return <PageEmpty>{t("enterprise.models.usageEmpty")}</PageEmpty>;
   return (
     <PageRows>
       {usage.data.summary.map((row, index) => (
@@ -633,15 +665,21 @@ function ModelUsage() {
             <ItemContent>
               <ItemTitle>{row.model}</ItemTitle>
               <ItemDescription>
-                {row.runs} runs by {row.people}{" "}
-                {row.people === 1 ? "person" : "people"} in 30 days
-                {row.refused > 0 ? ` · ${row.refused} off the allowlist` : ""} ·{" "}
-                {row.source}
+                {t("enterprise.models.usageLine", {
+                  runs: row.runs,
+                  count: row.people,
+                })}
+                {row.refused > 0
+                  ? t("enterprise.models.offAllowlist", {
+                      number: row.refused,
+                    })
+                  : ""}{" "}
+                · {row.source}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <span className="text-muted-foreground text-sm">
-                {new Date(row.lastUsedAt).toLocaleDateString()}
+                {formatDate(row.lastUsedAt)}
               </span>
             </ItemActions>
           </Item>
@@ -652,16 +690,18 @@ function ModelUsage() {
 }
 
 function RecordedActions() {
+  const { t } = useTranslation("admin");
+  const { formatDateTime } = useDateTime();
   const actions = useQuery(actionRecordsQueryOptions());
   if (actions.isPending) return null;
   if (actions.error)
     return (
       <p className="mt-4 text-destructive text-sm" role="alert">
-        Could not load recorded actions.
+        {t("enterprise.recording.loadError")}
       </p>
     );
   if (actions.data.length === 0)
-    return <PageEmpty>No commands recorded yet.</PageEmpty>;
+    return <PageEmpty>{t("enterprise.recording.noCommands")}</PageEmpty>;
   return (
     <PageRows>
       {actions.data.map((action, index) => (
@@ -674,10 +714,12 @@ function RecordedActions() {
               </ItemTitle>
               <ItemDescription>
                 {action.surface === "local"
-                  ? "Member's machine"
-                  : `Bot ${action.botId ?? "?"}`}{" "}
-                · {action.outcome} ·{" "}
-                {new Date(action.createdAt).toLocaleString()}
+                  ? t("enterprise.recording.membersMachine")
+                  : t("enterprise.recording.botMachine", {
+                      botId: action.botId ?? "?",
+                    })}
+                {" · "}
+                {action.outcome} · {formatDateTime(action.createdAt)}
               </ItemDescription>
             </ItemContent>
           </Item>
@@ -688,6 +730,7 @@ function RecordedActions() {
 }
 
 function SweepNow() {
+  const { t } = useTranslation("admin");
   const sweep = useMutation(terminateInactiveComputersMutationOptions());
   return (
     <div className="mt-4 flex items-center gap-3">
@@ -697,11 +740,15 @@ function SweepNow() {
         size="sm"
         variant="outline"
       >
-        {sweep.isPending ? "Stopping…" : "Stop inactive computers now"}
+        {sweep.isPending
+          ? t("enterprise.computers.stopping")
+          : t("enterprise.computers.stopNow")}
       </Button>
       {sweep.data ? (
         <span className="text-muted-foreground text-sm">
-          Stopped {sweep.data.stopped.length}.
+          {t("enterprise.computers.stoppedCount", {
+            number: sweep.data.stopped.length,
+          })}
         </span>
       ) : null}
       {sweep.error ? (
@@ -724,14 +771,19 @@ function OverridesDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation("admin");
   const setCapability = useMutation(setCapabilityMutationOptions(queryClient));
   const scopes: { kind: "role" | "group"; id: string; label: string }[] = [
-    { kind: "role", id: "admin", label: "Administrators" },
-    { kind: "role", id: "user", label: "Members" },
+    {
+      kind: "role",
+      id: "admin",
+      label: t("enterprise.overrides.administrators"),
+    },
+    { kind: "role", id: "user", label: t("enterprise.overrides.members") },
     ...data.groups.map((group) => ({
       kind: "group" as const,
       id: group,
-      label: `Group: ${group}`,
+      label: t("enterprise.overrides.groupLabel", { name: group }),
     })),
   ];
   const [scopeIndex, setScopeIndex] = useState(0);
@@ -741,14 +793,14 @@ function OverridesDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Role and group overrides</DialogTitle>
+          <DialogTitle>{t("enterprise.overrides.title")}</DialogTitle>
         </DialogHeader>
         <DialogBody className="mt-4 space-y-4 overflow-y-auto">
           <Select
             onValueChange={(value) => setScopeIndex(Number(value))}
             value={String(scopeIndex)}
           >
-            <SelectTrigger aria-label="Scope">
+            <SelectTrigger aria-label={t("enterprise.overrides.scopeAria")}>
               <SelectValue>{scope?.label}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -766,8 +818,8 @@ function OverridesDialog({
           </Select>
           <p className="text-muted-foreground text-xs">
             {scope?.kind === "group"
-              ? "A group can only widen: Grant gives its members the capability even where the organization has it off."
-              : "A role's answer replaces the organization switch for everybody holding that role."}
+              ? t("enterprise.overrides.groupHint")
+              : t("enterprise.overrides.roleHint")}
           </p>
           {scope
             ? data.capabilities.map((capability) => {
@@ -795,19 +847,28 @@ function OverridesDialog({
                       value={value}
                     >
                       <SelectTrigger
-                        aria-label={`${capability.title} for ${scope.label}`}
+                        aria-label={t("enterprise.overrides.capabilityFor", {
+                          title: capability.title,
+                          scope: scope.label,
+                        })}
                         className="w-36"
                       >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectItem value="inherit">Inherit</SelectItem>
+                          <SelectItem value="inherit">
+                            {t("enterprise.overrides.inherit")}
+                          </SelectItem>
                           <SelectItem value="on">
-                            {scope.kind === "group" ? "Grant" : "On"}
+                            {scope.kind === "group"
+                              ? t("enterprise.overrides.grant")
+                              : t("enterprise.on")}
                           </SelectItem>
                           {scope.kind === "role" ? (
-                            <SelectItem value="off">Off</SelectItem>
+                            <SelectItem value="off">
+                              {t("enterprise.off")}
+                            </SelectItem>
                           ) : null}
                         </SelectGroup>
                       </SelectContent>
@@ -824,7 +885,7 @@ function OverridesDialog({
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={() => onOpenChange(false)} size="sm" type="button">
-            Done
+            {t("enterprise.done")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -841,6 +902,7 @@ function NetworkDialog({
   initial: { scopeKind: "organization" | "group"; scopeId: string };
   onClose: () => void;
 }) {
+  const { t } = useTranslation("admin");
   const existing = data.network.find(
     (row) =>
       row.scopeKind === initial.scopeKind && row.scopeId === initial.scopeId,
@@ -861,8 +923,8 @@ function NetworkDialog({
         <DialogHeader>
           <DialogTitle>
             {initial.scopeKind === "organization"
-              ? "Organization network policy"
-              : "Group network policy"}
+              ? t("enterprise.network.orgPolicyTitle")
+              : t("enterprise.network.groupPolicyTitle")}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -883,12 +945,14 @@ function NetworkDialog({
           <DialogBody className="mt-4 space-y-4 overflow-y-auto">
             {initial.scopeKind === "group" && !initial.scopeId ? (
               <div className="space-y-1.5">
-                <Label>Group</Label>
+                <Label>{t("enterprise.network.groupLabelShort")}</Label>
                 <Select
                   onValueChange={(value) => setGroup(String(value))}
                   value={group}
                 >
-                  <SelectTrigger aria-label="Group">
+                  <SelectTrigger
+                    aria-label={t("enterprise.network.groupLabelShort")}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -904,20 +968,20 @@ function NetworkDialog({
               </div>
             ) : null}
             <div className="space-y-1.5">
-              <Label>Mode</Label>
+              <Label>{t("enterprise.network.modeLabel")}</Label>
               <Select
                 onValueChange={(value) => setMode(value as NetworkMode)}
                 value={mode}
               >
-                <SelectTrigger aria-label="Mode">
-                  <SelectValue>{MODE_NAMES[mode]}</SelectValue>
+                <SelectTrigger aria-label={t("enterprise.network.modeLabel")}>
+                  <SelectValue>{t(MODE_NAMES[mode])}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     {(Object.keys(MODE_NAMES) as NetworkMode[]).map(
                       (candidate) => (
                         <SelectItem key={candidate} value={candidate}>
-                          {MODE_NAMES[candidate]}
+                          {t(MODE_NAMES[candidate])}
                         </SelectItem>
                       ),
                     )}
@@ -926,7 +990,9 @@ function NetworkDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="network-rules">Allowlist</Label>
+              <Label htmlFor="network-rules">
+                {t("enterprise.network.allowlistLabel")}
+              </Label>
               <Textarea
                 className="font-mono text-xs"
                 id="network-rules"
@@ -936,17 +1002,16 @@ function NetworkDialog({
                 value={rules}
               />
               <p className="text-muted-foreground text-xs">
-                One per line. A domain covers its subdomains; *.name covers only
-                subdomains. An IP range may name ports. Defaults are{" "}
-                {data.defaultDestinations.slice(0, 4).join(", ")} and{" "}
-                {data.defaultDestinations.length - 4} more package and source
-                hosts.
+                {t("enterprise.network.allowlistHint", {
+                  defaults: data.defaultDestinations.slice(0, 4).join(", "),
+                  more: data.defaultDestinations.length - 4,
+                })}
               </p>
             </div>
             {initial.scopeKind === "organization" ? (
               <div className="flex items-center justify-between gap-4">
                 <Label htmlFor="network-locked">
-                  Lock: groups may not replace this policy
+                  {t("enterprise.network.lockLabel")}
                 </Label>
                 <Switch
                   checked={locked}
@@ -975,11 +1040,11 @@ function NetworkDialog({
                 type="button"
                 variant="destructive"
               >
-                Remove policy
+                {t("enterprise.network.removePolicy")}
               </Button>
             ) : null}
             <Button onClick={onClose} size="sm" type="button" variant="outline">
-              Cancel
+              {t("enterprise.cancel")}
             </Button>
             <Button
               disabled={
@@ -988,7 +1053,7 @@ function NetworkDialog({
               size="sm"
               type="submit"
             >
-              {save.isPending ? "Saving…" : "Save"}
+              {save.isPending ? t("enterprise.saving") : t("enterprise.save")}
             </Button>
           </DialogFooter>
         </form>
@@ -1012,6 +1077,7 @@ function ListDialog({
   onSave: (values: string[]) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("admin");
   const [text, setText] = useState(initial.join("\n"));
   return (
     <Dialog
@@ -1033,7 +1099,7 @@ function ListDialog({
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={onClose} size="sm" type="button" variant="outline">
-            Cancel
+            {t("enterprise.cancel")}
           </Button>
           <Button
             onClick={() => {
@@ -1048,7 +1114,7 @@ function ListDialog({
             size="sm"
             type="button"
           >
-            Save
+            {t("enterprise.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1067,6 +1133,7 @@ function DaysDialog({
   onSave: (days: number) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("admin");
   const [days, setDays] = useState(String(initial));
   const parsed = Number(days);
   const valid = Number.isInteger(parsed) && parsed >= 0 && parsed <= 3650;
@@ -1077,10 +1144,12 @@ function DaysDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Stop inactive computers</DialogTitle>
+          <DialogTitle>{t("enterprise.computers.stopInactive")}</DialogTitle>
         </DialogHeader>
         <DialogBody className="mt-4 space-y-2">
-          <Label htmlFor="inactive-days">Days without use</Label>
+          <Label htmlFor="inactive-days">
+            {t("enterprise.computers.daysWithoutUse")}
+          </Label>
           <Input
             id="inactive-days"
             inputMode="numeric"
@@ -1088,12 +1157,12 @@ function DaysDialog({
             value={days}
           />
           <p className="text-muted-foreground text-xs">
-            0 turns it off. Checked hourly.
+            {t("enterprise.computers.daysHint")}
           </p>
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={onClose} size="sm" type="button" variant="outline">
-            Cancel
+            {t("enterprise.cancel")}
           </Button>
           <Button
             disabled={!valid}
@@ -1104,7 +1173,7 @@ function DaysDialog({
             size="sm"
             type="button"
           >
-            Save
+            {t("enterprise.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -21,6 +22,7 @@ export function SharedAppNotice({
   botId: string;
   reason: "publish" | "trigger";
 }) {
+  const { t } = useTranslation("admin");
   const queryClient = useQueryClient();
   const me = useQuery(currentUserQueryOptions()).data;
   const shared = useQuery(botSharedAppsQueryOptions(botId));
@@ -33,8 +35,7 @@ export function SharedAppNotice({
       <div className="space-y-1 text-sm">
         {apps.map((app) => (
           <p key={app.serverId}>
-            Saving also approves the shared {app.title} account for whoever can
-            reach this Bot.
+            {t("sharedNotice.savingApproves", { title: app.title })}
           </p>
         ))}
       </div>
@@ -49,16 +50,17 @@ export function SharedAppNotice({
       {apps.map((app) =>
         waiting.has(app.serverId) ? (
           <p className="text-muted-foreground" key={app.serverId}>
-            Waiting for an administrator: shared {app.title}
+            {t("sharedNotice.waiting", { title: app.title })}
           </p>
         ) : app.covered ? null : (
           <div className="flex flex-wrap items-center gap-2" key={app.serverId}>
             <p className="text-amber-700 dark:text-amber-400">
-              {app.title} calls from this Bot are refused until an administrator
-              approves who can reach it.
+              {t("sharedNotice.refused", { title: app.title })}
             </p>
             <Button
-              aria-label={`Request approval for ${app.title}`}
+              aria-label={t("sharedNotice.requestAria", {
+                title: app.title,
+              })}
               disabled={ask.isPending}
               onClick={() =>
                 ask.mutate({ botId, serverId: app.serverId, reason })
@@ -67,7 +69,7 @@ export function SharedAppNotice({
               type="button"
               variant="outline"
             >
-              Request approval
+              {t("sharedNotice.requestApproval")}
             </Button>
           </div>
         ),

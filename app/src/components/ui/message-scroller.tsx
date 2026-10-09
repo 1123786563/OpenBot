@@ -5,6 +5,7 @@ import {
   useMessageScrollerScrollable,
   useMessageScrollerVisibility,
 } from "@shadcn/react/message-scroller";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ function MessageScrollerButton({
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Button> &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
+  const { t } = useTranslation("common");
   return (
     <MessageScrollerPrimitive.Button
       data-slot="message-scroller-button"
@@ -109,7 +111,9 @@ function MessageScrollerButton({
         <>
           <IconArrowDown />
           <span className="sr-only">
-            {direction === "end" ? "Scroll to end" : "Scroll to start"}
+            {direction === "end"
+              ? t("messageScroller.scrollToEnd")
+              : t("messageScroller.scrollToStart")}
           </span>
         </>
       )}

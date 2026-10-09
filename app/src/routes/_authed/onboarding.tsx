@@ -3,6 +3,7 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import Avatar from "boring-avatars";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import useMeasure from "react-use-measure";
 import AgentOrb from "@/components/agents/orb/agent-orb";
 import { Composer } from "@/components/channels/composer";
@@ -29,10 +30,11 @@ export const Route = createFileRoute("/_authed/onboarding")({
 });
 
 function WelcomeStep() {
+  const { t } = useTranslation("common");
   return (
     <div className="w-full flex flex-col items-center justify-center">
       <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Welcome to {appConfig.brand.productName}
+        {t("onboarding.welcome", { product: appConfig.brand.productName })}
       </h1>
       <div className="h-32" />
       <AgentOrb size="72px" />
@@ -56,7 +58,7 @@ function WelcomeStep() {
           compact
           className="scale-90"
           editorClassName="text-base"
-          initialValue="Hand off tasks to your team of agents"
+          initialValue={t("onboarding.composerPlaceholder")}
         />
       </div>
     </div>
@@ -64,10 +66,11 @@ function WelcomeStep() {
 }
 
 function ComputerUseStep() {
+  const { t } = useTranslation("common");
   return (
     <div className="w-full flex flex-col items-center justify-center">
       <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Each agent has its own computer
+        {t("onboarding.computerTitle")}
       </h1>
       <div className="h-8" />
       <div className="relative aspect-5/3 w-full max-w-lg rounded-2xl overflow-hidden border border-border">
@@ -85,21 +88,26 @@ type RosterCard = Pick<AgentProfile, "id" | "name" | "avatarSeed">;
  * Stand-ins for a deployment that has fewer than three public agents to show. Invented names on
  * purpose: they illustrate what a roster looks like without claiming any of these exist here.
  */
-const AGENTS_PLACEHOLDER: RosterCard[] = [
+const AGENTS_PLACEHOLDER = [
   {
     id: "placeholder-research",
-    name: "Research Analyst",
+    name: "onboarding.example.research",
     avatarSeed: "research-analyst",
   },
-  { id: "placeholder-data", name: "Data Analyst", avatarSeed: "data-analyst" },
+  {
+    id: "placeholder-data",
+    name: "onboarding.example.data",
+    avatarSeed: "data-analyst",
+  },
   {
     id: "placeholder-support",
-    name: "Support Agent",
+    name: "onboarding.example.support",
     avatarSeed: "support-agent",
   },
-];
+] as const satisfies readonly RosterCard[];
 
 function RosterStep() {
+  const { t } = useTranslation("common");
   const { data: agents } = useQuery(agentListQueryOptions());
   const explore =
     agents?.filter((a) => !a.mine && a.visibility === "public") ?? [];
@@ -109,6 +117,7 @@ function RosterStep() {
     ...explore.slice(0, 3),
     ...AGENTS_PLACEHOLDER.slice(explore.length).map((placeholder) => ({
       ...placeholder,
+      name: t(placeholder.name),
       example: true,
     })),
   ];
@@ -116,7 +125,7 @@ function RosterStep() {
   return (
     <div className="w-full flex flex-col items-center justify-center">
       <h1 className="text-3xl font-semibold tracking-tight max-w-md text-center">
-        Choose from a variety of agents or create your own
+        {t("onboarding.rosterTitle")}
       </h1>
       <div className="h-8" />
       <div className="w-full max-w-lg overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -133,7 +142,9 @@ function RosterStep() {
                   {a.name}
                 </h3>
                 {a.example ? (
-                  <span className="text-xs text-muted-foreground">Example</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t("onboarding.exampleLabel")}
+                  </span>
                 ) : null}
               </div>
             </div>
@@ -142,7 +153,7 @@ function RosterStep() {
         <div className="bg-card p-4 rounded-lg flex flex-row gap-4 items-center">
           <div className="rounded-full size-[40px] border border-foreground/30 border-dashed" />
           <h3 className="line-clamp-1 text-base font-medium tracking-tight text-foreground/70">
-            Your own agent
+            {t("onboarding.yourOwnAgent")}
           </h3>
         </div>
       </div>
@@ -164,6 +175,7 @@ const variants = {
 };
 
 function RouteComponent() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const complete = useMutation(completeOnboardingMutationOptions(queryClient));
 
@@ -247,10 +259,10 @@ function RouteComponent() {
                   size="lg"
                 >
                   {complete.isPending
-                    ? "Saving…"
+                    ? t("onboarding.saving")
                     : last
-                      ? "Get started"
-                      : "Continue"}
+                      ? t("onboarding.getStarted")
+                      : t("onboarding.continue")}
                 </Button>
                 {step !== 0 && (
                   <Button
@@ -259,7 +271,7 @@ function RouteComponent() {
                     variant="secondary"
                     size="lg"
                   >
-                    Back
+                    {t("onboarding.back")}
                   </Button>
                 )}
               </motion.div>

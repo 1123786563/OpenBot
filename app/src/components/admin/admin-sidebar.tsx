@@ -13,6 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
+import { useTranslation } from "react-i18next";
 import {
   Sidebar,
   SidebarContent,
@@ -35,94 +36,95 @@ const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
  * grouping is the only navigation help this screen offers, so it has to agree with the page it
  * navigates to — two different orderings of the same ten links is worse than either ordering.
  */
-const GROUPS: {
-  label: string;
-  items: {
-    icon: React.ComponentType<{ className?: string }>;
-    linkOptions: LinkOptions;
-    title: string;
-  }[];
-}[] = [
+const GROUPS = [
   {
-    label: "What Bots can reach",
+    label: "sidebar.reach",
     items: [
       {
-        title: "Credentials",
+        title: "sidebar.credentials",
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
       },
       {
-        title: "Boundaries",
+        title: "sidebar.boundaries",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
       },
       {
-        title: "Computers",
+        title: "sidebar.computers",
         icon: IconDeviceDesktop,
         linkOptions: { to: "/admin/computers" },
       },
     ],
   },
   {
-    label: "What Bots can do",
+    label: "sidebar.do",
     items: [
       {
-        title: "Plugins",
+        title: "sidebar.plugins",
         icon: IconPuzzle,
         linkOptions: { to: "/admin/plugins" },
       },
       {
-        title: "Skills",
+        title: "sidebar.skills",
         icon: IconFileText,
         linkOptions: { to: "/admin/skills" },
       },
       {
-        title: "Automatic Learning",
+        title: "sidebar.learning",
         icon: IconFileText,
         linkOptions: { to: "/admin/learning" },
       },
       {
-        title: "UI Components",
+        title: "sidebar.components",
         icon: IconLayoutGrid,
         linkOptions: { to: "/admin/components" },
       },
       {
-        title: "Playground",
+        title: "sidebar.playground",
         icon: IconCode,
         linkOptions: { to: "/admin/playground" },
       },
     ],
   },
   {
-    label: "Who can get in",
+    label: "sidebar.access",
     items: [
       {
-        title: "People",
+        title: "sidebar.people",
         icon: IconUsers,
         linkOptions: { to: "/admin/people" },
       },
       {
-        title: "Identity providers",
+        title: "sidebar.identityProviders",
         icon: IconBuildingBank,
         linkOptions: { to: "/admin/identity-providers" },
       },
     ],
   },
   {
-    label: "What happened",
+    label: "sidebar.history",
     items: [
       {
-        title: "Audit",
+        title: "sidebar.audit",
         icon: IconListDetails,
         linkOptions: { to: "/admin/audit" },
       },
     ],
   },
-];
+] as const satisfies readonly {
+  label: string;
+  items: readonly {
+    icon: React.ComponentType<{ className?: string }>;
+    linkOptions: LinkOptions;
+    title: string;
+  }[];
+}[];
 
 export function AdminSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const { t } = useTranslation("admin");
   return (
     <Sidebar {...props}>
       {/*
@@ -141,7 +143,7 @@ export function AdminSidebar({
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   <IconArrowLeft className="mr-2 h-4 w-4" />
-                  Back to app
+                  {t("sidebar.backToApp")}
                 </Link>
               )}
             />
@@ -164,7 +166,7 @@ export function AdminSidebar({
                     activeProps={{ className: "bg-foreground/5" }}
                     {...props}
                   >
-                    Overview
+                    {t("sidebar.overview")}
                   </Link>
                 )}
               />
@@ -173,7 +175,7 @@ export function AdminSidebar({
         </SidebarGroup>
         {GROUPS.map((group) => (
           <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupLabel>{t(group.label)}</SidebarGroupLabel>
             <SidebarMenu className="gap-px">
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.title}>
@@ -185,7 +187,7 @@ export function AdminSidebar({
                         {...props}
                       >
                         <item.icon className="mr-2 h-4 w-4" />
-                        {item.title}
+                        {t(item.title)}
                       </Link>
                     )}
                   />

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
@@ -43,6 +44,7 @@ export const ApprovalCardProps = z.object({
 type ApprovalArgs = z.infer<typeof ApprovalCardProps>;
 
 export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
+  const { t } = useTranslation("channels");
   const { args, status, respond } = props;
   const [note, setNote] = useState("");
   const [sending, setSending] = useState<"approved" | "declined" | null>(null);
@@ -56,8 +58,12 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
 
   if (status === "inProgress") {
     return (
-      <GalleryFrame title={args.title ?? "Waiting for the assistant…"}>
-        <p className="text-sm text-muted-foreground">Preparing the request…</p>
+      <GalleryFrame
+        title={args.title ?? t("gallery.decisions.waitingAssistant")}
+      >
+        <p className="text-sm text-muted-foreground">
+          {t("gallery.decisions.preparingRequest")}
+        </p>
       </GalleryFrame>
     );
   }
@@ -70,10 +76,12 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
       action={
         decided ? (
           <Badge tone={decided === "approved" ? "positive" : "negative"}>
-            {decided === "approved" ? "Approved" : "Declined"}
+            {decided === "approved"
+              ? t("gallery.decisions.approved")
+              : t("gallery.decisions.declined")}
           </Badge>
         ) : (
-          <Badge tone="caution">Waiting on you</Badge>
+          <Badge tone="caution">{t("gallery.decisions.waitingOnYou")}</Badge>
         )
       }
       title={args.title}
@@ -94,11 +102,11 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
       {decided ? null : (
         <div className="mt-4 space-y-2">
           <input
-            aria-label="A reason, if you want to give one"
+            aria-label={t("gallery.decisions.reasonOptional")}
             className="w-full rounded-md border border-border bg-transparent px-3 py-1.5 text-sm"
             disabled={Boolean(sending)}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="A reason, if you want to give one"
+            placeholder={t("gallery.decisions.reasonOptional")}
             value={note}
           />
           <div className="flex gap-2">
@@ -108,8 +116,8 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
               size="sm"
             >
               {sending === "approved"
-                ? "Sending…"
-                : (args.approveLabel ?? "Approve")}
+                ? t("gallery.decisions.sending")
+                : (args.approveLabel ?? t("gallery.decisions.approve"))}
             </Button>
             <Button
               disabled={Boolean(sending)}
@@ -118,8 +126,8 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
               variant="outline"
             >
               {sending === "declined"
-                ? "Sending…"
-                : (args.rejectLabel ?? "Decline")}
+                ? t("gallery.decisions.sending")
+                : (args.rejectLabel ?? t("gallery.decisions.decline"))}
             </Button>
           </div>
         </div>
@@ -150,13 +158,18 @@ export const ChoiceCardProps = z.object({
 type ChoiceArgs = z.infer<typeof ChoiceCardProps>;
 
 export function ChoiceCard(props: Waiting<ChoiceArgs>) {
+  const { t } = useTranslation("channels");
   const { args, status, respond } = props;
   const [sending, setSending] = useState<string | null>(null);
 
   if (status === "inProgress") {
     return (
-      <GalleryFrame title={args.title ?? "Waiting for the assistant…"}>
-        <p className="text-sm text-muted-foreground">Preparing the question…</p>
+      <GalleryFrame
+        title={args.title ?? t("gallery.decisions.waitingAssistant")}
+      >
+        <p className="text-sm text-muted-foreground">
+          {t("gallery.decisions.preparingQuestion")}
+        </p>
       </GalleryFrame>
     );
   }
@@ -167,9 +180,9 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
     <GalleryFrame
       action={
         chosen ? (
-          <Badge tone="positive">Answered</Badge>
+          <Badge tone="positive">{t("gallery.decisions.answered")}</Badge>
         ) : (
-          <Badge tone="caution">Waiting on you</Badge>
+          <Badge tone="caution">{t("gallery.decisions.waitingOnYou")}</Badge>
         )
       }
       caption={args.summary}

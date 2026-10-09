@@ -1,0 +1,82 @@
+{
+  "selfHostBanner": {
+    "ariaLabel": "自托管 OpenBot",
+    "text": "为你的组织自托管 OpenBot。",
+    "cta": "联系工程师",
+    "dismiss": "关闭"
+  },
+  "signIn": {
+    "title": "登录 {{product}}",
+    "ssoRequired": "你的组织要求使用单点登录。",
+    "noProvider": "此部署未配置任何登录提供商。",
+    "opening": "正在打开…",
+    "openingProvider": "正在打开 {{provider}}…",
+    "continueWith": "使用 {{provider}} 继续",
+    "or": "或",
+    "emailPlaceholder": "you@company.com",
+    "continueCompany": "使用公司账号继续",
+    "adminSignIn": "管理员登录",
+    "noProviderForAddress": "没有为该邮箱地址注册身份提供商。",
+    "couldNotStart": "无法启动 {{provider}} 登录。"
+  },
+  "signInPage": {
+    "title": "登录",
+    "titleWithOrigin": "登录 {{origin}}",
+    "description": "你的 Bot 需要登录才能继续。你在此输入的内容会进入它的浏览器，而不会进入对话。"
+  },
+  "signInForm": {
+    "signedIn": "已登录",
+    "closed": "已关闭",
+    "noLongerOpen": "此登录请求已不再开放。",
+    "takeOverTitle": "手动登录",
+    "takeOverDescription": "接过 Bot 的浏览器，登录后交还。然后告知你已完成，Bot 会继续。",
+    "openBrowser": "打开 Bot 的浏览器",
+    "finishing": "正在完成…",
+    "iHaveSignedIn": "我已登录",
+    "cancel": "取消",
+    "useSavedTitle": "使用已保存的登录信息",
+    "useSavedDescription": "选择其中一个，即确认它可以用于这次登录 {{origin}}。",
+    "confirmAndSignIn": "确认并登录",
+    "enterTitle": "输入你的登录信息",
+    "enterDescription": "直接输入到 Bot 的浏览器。Bot 只会得知是否成功。",
+    "username": "用户名或邮箱",
+    "password": "密码",
+    "code": "验证码（如网站要求）",
+    "saveToPasswords": "保存到密码",
+    "signingIn": "正在登录…",
+    "signIn": "登录",
+    "takeOver": "接管以登录",
+    "decline": "拒绝"
+  },
+  "onboarding": {
+    "welcome": "欢迎使用 {{product}}",
+    "composerPlaceholder": "把任务交给你的 Agent 团队",
+    "computerTitle": "每个 Agent 都有自己的计算机",
+    "rosterTitle": "从多种 Agent 中选择，或创建你自己的",
+    "example": {
+      "research": "研究分析师",
+      "data": "数据分析师",
+      "support": "支持 Agent"
+    },
+    "exampleLabel": "示例",
+    "yourOwnAgent": "你自己的 Agent",
+    "saving": "保存中…",
+    "getStarted": "开始使用",
+    "continue": "继续",
+    "back": "返回"
+  },
+  "detailPanel": {
+    "defaultTitle": "详情",
+    "close": "关闭详情"
+  },
+  "questionnaire": {
+    "previous": "上一步",
+    "skip": "跳过",
+    "next": "下一步",
+    "submit": "提交"
+  },
+  "messageScroller": {
+    "scrollToEnd": "滚动到末尾",
+    "scrollToStart": "滚动到开头"
+  }
+}

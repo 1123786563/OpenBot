@@ -1,0 +1,111 @@
+{
+  "title": "Preferences",
+  "description": "How OpenBot looks and behaves for you. Message list preferences sync with your account. Theme is saved in this browser.",
+  "general": "General",
+  "sidebar": {
+    "backToApp": "Back to app",
+    "general": "General",
+    "connectedAccounts": "Connected accounts",
+    "passwords": "Passwords",
+    "componentsGallery": "Components gallery"
+  },
+  "darkTheme": "Dark theme",
+  "darkThemeDescription": "Use the dark appearance across OpenBot.",
+  "keyboardShortcuts": "Keyboard shortcuts",
+  "language": {
+    "label": "Language",
+    "description": "Choose the interface language. Falls back to English for anything not yet translated.",
+    "en": "English",
+    "zh-CN": "简体中文"
+  },
+  "gallery": {
+    "title": "Components gallery",
+    "description": "The pieces a Bot can draw in a conversation instead of describing something in prose. Which of them any one Bot may use is an administrator's decision.",
+    "loadError": "Could not load components.",
+    "emptyTitle": "Nothing published yet",
+    "emptyDescription": "When an administrator publishes a component, it will show up here.",
+    "missingTitle": "No such component",
+    "missingDescription": "Nothing here answers to that name.",
+    "missingEmpty": "It may have been withdrawn, or this deployment may no longer ship it.",
+    "backToGallery": "Back to the gallery",
+    "details": "Details",
+    "kind": "Kind",
+    "calledAs": "Called as"
+  },
+  "connectedAccounts": {
+    "title": "Connected accounts",
+    "description": "Connect your apps so your Bots can work with them.",
+    "accountTitle": "Account",
+    "connectFallback": "Connect your {{title}} account.",
+    "connected": "Connected",
+    "notConnected": "Not connected",
+    "connect": "Connect",
+    "connectFailed": "That account could not be connected. Nothing was saved — try again.",
+    "loadError": "Your connected accounts could not be loaded, so nothing is listed here rather than a list that may be wrong. Reload the page, and tell an administrator if it persists.",
+    "empty": "Nothing to connect yet. These appear once an administrator enables a connector that reads as the person asking.",
+    "counts": "{{connected}} connected · {{available}} available",
+    "searchApps": "Search apps",
+    "noMatches": "No apps match “{{query}}”.",
+    "sharedTitle": "Shared by your organisation",
+    "sharedDescription": "Shared by your organisation. Bots act as the team account.",
+    "connectionLoadError": "Whether you have connected this account could not be loaded, so nothing about it is shown here rather than something that may be wrong. Reload the page, and tell an administrator if it persists.",
+    "connectorLoadError": "This connector could not be loaded, so nothing about it is shown here rather than something that may be wrong. Reload the page, and tell an administrator if it persists.",
+    "teamAccount": "Team account",
+    "noBotReads": "No Bot can read this as you.",
+    "brokeredDescription": "Reached through Composio, which holds the account, so a Bot sees only what you can see.",
+    "brokeredConnected": "A Bot granted its tools reads your {{title}} as you. Disconnecting ends the account at Composio, not just here.",
+    "brokeredDisconnected": "Connecting takes you to Composio and then to the vendor to consent.",
+    "notPersonal": "This is not a service you connect for yourself.",
+    "deploymentCredential": "A Bot reaches this one with a credential the deployment holds, the same for everybody.",
+    "noConnector": "This deployment has no connector by that name.",
+    "yourAccount": "Your account",
+    "notEnabled": "An administrator has not enabled this connector, so there is nothing to connect to yet.",
+    "connectedDescription": "A Bot granted its tools reads this as you, and sees only what you can see.",
+    "disconnectedDescription": "No Bot can read this as you. Connecting takes you to the vendor to consent.",
+    "noConsentLink": "This deployment answered without a consent link, so there was nowhere to send you and nothing was connected. Try again, and tell an administrator if it persists.",
+    "disconnectNotBuilt": "Disconnecting is not built yet. Until it is, revoke it in your {{vendor}} account's third-party access settings — that stops this deployment reading anything immediately.",
+    "disconnect": "Disconnect your {{title}} account",
+    "access": "Access",
+    "accessDescription": "What you agreed to, as the vendor recorded it — not what was asked for. The two differ when a consent screen is only partly accepted.",
+    "granted": "Granted",
+    "noScope": "The vendor named no scope."
+  },
+  "passwords": {
+    "title": "Passwords",
+    "description": "Logins you saved when signing a Bot in to a website. A Bot never sees them, and each use needs your confirmation.",
+    "savedLogins": "Saved logins",
+    "loadError": "Could not load your passwords.",
+    "disabled": "Saved passwords are turned off for this workspace. Existing logins are kept but not offered.",
+    "empty": "No saved logins. Choose Save to Passwords when you sign a Bot in to a website.",
+    "lastUsed": "last used {{date}}",
+    "neverUsed": "never used",
+    "deleteAria": "Delete the login for {{origin}}"
+  },
+  "messageList": {
+    "title": "Message list emphasis",
+    "description": "Choose which name appears larger in the sidebar.",
+    "agentName": "Agent name",
+    "threadTitle": "Thread title",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "saving": "Saving…",
+    "previewAria": "Message list preview",
+    "previewName": "General Assistant",
+    "previewTitle": "Plan next week",
+    "previewTime": "2h"
+  },
+  "instructions": {
+    "title": "Standing instructions",
+    "description": "Applies to every coworker in every channel. Your role text on a coworker says what it does; this says how you want things done, for example writing style or how to describe your company.",
+    "placeholder": "We are two people, not a team. Write in British English, and never call our product a platform.",
+    "characterCount": "{{current}} of {{limit}} characters",
+    "saved": "Saved",
+    "save": "Save"
+  },
+  "hotkeys": {
+    "new-chat": {
+      "label": "New chat",
+      "description": "Start a new chat from anywhere in the app."
+    }
+  }
+}

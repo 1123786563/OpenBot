@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import * as React from "react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -88,6 +89,7 @@ export function readOnlyRefs(tools: PluginTool[]): string[] {
 }
 
 function RouteComponent() {
+  const { t } = useTranslation("admin");
   const { key, agentId } = useParams({
     from: "/_authed/admin/plugins/$key_/bots/$agentId",
   });
@@ -189,7 +191,7 @@ function RouteComponent() {
 
   /* Nothing rather than a placeholder, so no sentence asserts anything while a fetch is open. */
   if (plugins.isPending || agents.isPending || hiddenAgents.isPending) {
-    return <PageShell title="Bot">{null}</PageShell>;
+    return <PageShell title={t("botGrants.botTitle")}>{null}</PageShell>;
   }
 
   /*
@@ -203,11 +205,14 @@ function RouteComponent() {
   if (plugins.data && !server) {
     return (
       <PageShell
-        backButton={{ label: "Plugins", linkProps: { to: "/admin/plugins" } }}
-        description="This deployment has not enabled an app by that name."
+        backButton={{
+          label: t("plugins.title"),
+          linkProps: { to: "/admin/plugins" },
+        }}
+        description={t("botGrants.notEnabled.description")}
         title={appTitle}
       >
-        <PageEmpty>There is nothing here to grant.</PageEmpty>
+        <PageEmpty>{t("botGrants.notEnabled.empty")}</PageEmpty>
       </PageShell>
     );
   }
@@ -222,11 +227,14 @@ function RouteComponent() {
   if (!server) {
     return (
       <PageShell
-        backButton={{ label: "Plugins", linkProps: { to: "/admin/plugins" } }}
-        title="Plugins"
+        backButton={{
+          label: t("plugins.title"),
+          linkProps: { to: "/admin/plugins" },
+        }}
+        title={t("plugins.title")}
       >
         <p className="mt-12 text-destructive text-sm" role="alert">
-          Plugins could not be loaded.
+          {t("plugins.loadError")}
         </p>
       </PageShell>
     );
@@ -248,12 +256,10 @@ function RouteComponent() {
     return (
       <PageShell
         backButton={back}
-        description="This deployment has no Bot by that name, so there is nobody to grant these actions to."
-        title="Not a Bot"
+        description={t("botGrants.notABot.description")}
+        title={t("botGrants.notABot.title")}
       >
-        <PageEmpty>
-          It may have been deleted since this page was opened.
-        </PageEmpty>
+        <PageEmpty>{t("botGrants.notABot.empty")}</PageEmpty>
       </PageShell>
     );
   }
@@ -334,7 +340,7 @@ function RouteComponent() {
             <ItemContent>
               <ItemTitle className="font-mono text-xs">{tool.name}</ItemTitle>
               <ItemDescription>
-                {tool.description || "This action came with no description."}
+                {tool.description || t("botGrants.noDescription")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -350,7 +356,7 @@ function RouteComponent() {
                */}
               {tool.destructive ? (
                 <span className="text-destructive text-xs">
-                  destroys things
+                  {t("botGrants.destroysThings")}
                 </span>
               ) : null}
               {/*
@@ -360,7 +366,10 @@ function RouteComponent() {
                * while its own write is in flight, so switching one action does not freeze the list.
                */}
               <Switch
-                aria-label={`Let ${botName} call ${tool.name}`}
+                aria-label={t("botGrants.letCallAria", {
+                  bot: botName,
+                  tool: tool.name,
+                })}
                 checked={held(tool)}
                 disabled={
                   granting !== null ||
@@ -408,8 +417,8 @@ function RouteComponent() {
   return (
     <PageShell
       backButton={back}
-      description={`Which of ${appTitle}'s actions ${botName} may call. Every call is decided again when it happens, so switching one off takes effect on the next one.`}
-      title={`${botName} and ${appTitle}`}
+      description={t("botGrants.description", { app: appTitle, bot: botName })}
+      title={t("botGrants.title", { bot: botName, app: appTitle })}
     >
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -419,16 +428,15 @@ function RouteComponent() {
 
       {server.tools.length === 0 ? (
         <PageEmpty>
-          {server.lastError ??
-            `${appTitle} lists no actions. Refresh its tools to ask again.`}
+          {server.lastError ?? t("botGrants.noActions", { app: appTitle })}
         </PageEmpty>
       ) : (
         <>
           <Input
-            aria-label={`Search ${appTitle} actions`}
+            aria-label={t("botGrants.searchAria", { app: appTitle })}
             className="mt-6"
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by action name"
+            placeholder={t("botGrants.searchPlaceholder")}
             value={search}
           />
 
@@ -443,9 +451,7 @@ function RouteComponent() {
           {ungranted.length > 0 ? (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
               <p className="text-muted-foreground text-xs">
-                {`This Bot would then hold ${wouldHold} ${
-                  wouldHold === 1 ? "tool" : "tools"
-                } from this app.`}
+                {t("botGrants.wouldHold", { count: wouldHold })}
               </p>
               <Button
                 disabled={granting !== null}
@@ -456,24 +462,27 @@ function RouteComponent() {
               >
                 {/* The one in flight, not the ones finished: a count starting at zero of forty reads as nothing happening. */}
                 {granting
-                  ? `Granting ${Math.min(granting.done + 1, granting.total)} of ${granting.total}…`
-                  : "Turn on every read-only action"}
+                  ? t("botGrants.granting", {
+                      current: Math.min(granting.done + 1, granting.total),
+                      total: granting.total,
+                    })
+                  : t("botGrants.turnOnReads")}
               </Button>
             </div>
           ) : null}
 
           <PageSection
             description={
-              sharedSectionSentence("read", shared) ??
-              "These only read. A boundary written about writes does not apply to them."
+              sharedSectionSentence("read", shared, t) ??
+              t("botGrants.reads.description")
             }
-            title="Reads"
+            title={t("botGrants.reads.title")}
           >
             {reads.length === 0 ? (
               <PageEmpty>
                 {needle
-                  ? `Nothing that only reads matches "${search.trim()}".`
-                  : `${appTitle} offers nothing that only reads.`}
+                  ? t("botGrants.reads.noMatches", { query: search.trim() })
+                  : t("botGrants.reads.offersNothing", { app: appTitle })}
               </PageEmpty>
             ) : (
               rows(reads)
@@ -482,16 +491,16 @@ function RouteComponent() {
 
           <PageSection
             description={
-              sharedSectionSentence("write", shared) ??
-              "These change something at the vendor. A boundary written about writes applies to them, and each call is refused when one matches."
+              sharedSectionSentence("write", shared, t) ??
+              t("botGrants.writes.description")
             }
-            title="Changes things"
+            title={t("botGrants.writes.title")}
           >
             {writes.length === 0 ? (
               <PageEmpty>
                 {needle
-                  ? `Nothing that changes things matches "${search.trim()}".`
-                  : `${appTitle} offers nothing that changes anything.`}
+                  ? t("botGrants.writes.noMatches", { query: search.trim() })
+                  : t("botGrants.writes.offersNothing", { app: appTitle })}
               </PageEmpty>
             ) : (
               rows(writes)
@@ -512,7 +521,10 @@ function RouteComponent() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
-                  Let {botName} use the shared {appTitle} account?
+                  {t("botGrants.sharedDialogTitle", {
+                    bot: botName,
+                    app: appTitle,
+                  })}
                 </DialogTitle>
               </DialogHeader>
               <DialogBody className="mt-4">
@@ -534,14 +546,16 @@ function RouteComponent() {
                   size="sm"
                   variant="outline"
                 >
-                  Cancel
+                  {t("botGrants.cancel")}
                 </Button>
                 <Button
                   disabled={grantingShared}
                   onClick={() => void confirmSharedGrant()}
                   size="sm"
                 >
-                  {grantingShared ? "Granting…" : "Let it in"}
+                  {grantingShared
+                    ? t("botGrants.grantingShort")
+                    : t("botGrants.letItIn")}
                 </Button>
               </DialogFooter>
             </DialogContent>
