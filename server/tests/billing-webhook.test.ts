@@ -93,17 +93,24 @@ function webhookFixture() {
   return { stub, store, service };
 }
 
-/** A delivery signed the way the provider signs, with the header overrides a test needs. */
+/**
+ * A delivery signed the way the provider signs, in the provider's own wire shape: the subject
+ * object nested under a member named by `object_type`, and the event's identity in the
+ * `X-Lago-Unique-Key` header — the body carries no `event_id` of its own (Webhooks::BaseService
+ * builds the payload; webhook.rb's `generate_headers` sets the header).
+ */
 function signedDelivery(
   eventId: string,
   webhookType: string,
-  fields: Record<string, string> = {},
+  object: Record<string, unknown> = {},
   headers: Record<string, string> = {},
 ): Request {
+  const objectType = webhookType.split(".")[0] ?? "object";
   const body = JSON.stringify({
-    event_id: eventId,
     webhook_type: webhookType,
-    ...fields,
+    object_type: objectType,
+    organization_id: "lago-org-1",
+    [objectType]: { lago_id: `lago-${objectType}-1`, ...object },
   });
   return new Request("https://openbot.example.test/api/billing/webhooks", {
     method: "POST",
@@ -114,6 +121,8 @@ function signedDelivery(
         .digest("base64"),
       // The routing header: absent means jwt, and this deployment is hmac.
       "x-lago-signature-algorithm": "hmac",
+      // The delivery's id: in the header, per the provider's own wire contract.
+      "x-lago-unique-key": eventId,
       ...headers,
     },
     body,
@@ -126,7 +135,12 @@ describe("createBillingService.handleWebhook", () => {
     const response = await service.handleWebhook(
       new Request("https://openbot.example.test/api/billing/webhooks", {
         method: "POST",
-        body: JSON.stringify({ event_id: "evt-1", webhook_type: "x" }),
+        body: JSON.stringify({
+          webhook_type: "customer.created",
+          object_type: "customer",
+          organization_id: "lago-org-1",
+          customer: { lago_id: "lago-customer-1", external_id: "deployment-1" },
+        }),
       }),
     );
     expect(response.status).toBe(401);
@@ -240,8 +254,7 @@ describe("createBillingService.handleWebhook", () => {
     stub.state.customers.set("deployment-1", "Renamed Deployment");
     const response = await service.handleWebhook(
       signedDelivery("evt-c", "customer.updated", {
-        external_customer_id: "deployment-1",
-        object_id: "lago-customer-1",
+        external_id: "deployment-1",
       }),
     );
     expect(response.status).toBe(200);
@@ -254,12 +267,9 @@ describe("createBillingService.handleWebhook", () => {
   test("records the delivery's idempotency key alongside the event", async () => {
     const { store, service } = webhookFixture();
     const response = await service.handleWebhook(
-      signedDelivery(
-        "evt-k",
-        "invoice.created",
-        { object_id: "lago-invoice-1" },
-        { "x-lago-unique-key": "uk-1" },
-      ),
+      signedDelivery("evt-k", "invoice.created", {}, {
+        "x-lago-unique-key": "uk-1",
+      }),
     );
     expect(response.status).toBe(200);
     expect([...store.inbox.values()][0]?.uniqueKey).toBe("uk-1");
@@ -268,9 +278,7 @@ describe("createBillingService.handleWebhook", () => {
   test("a delivery about an object with no projection is finished work", async () => {
     const { stub, store, service } = webhookFixture();
     const response = await service.handleWebhook(
-      signedDelivery("evt-i", "invoice.created", {
-        object_id: "lago-invoice-1",
-      }),
+      signedDelivery("evt-i", "invoice.created", {}),
     );
     expect(response.status).toBe(200);
     expect(stub.state.reads).toBe(0); // nothing to re-read
@@ -304,12 +312,72 @@ describe("createBillingService.handleWebhook", () => {
   test("a subscription delivery naming no customer is refused, not guessed at", async () => {
     const { store, service } = webhookFixture();
     const response = await service.handleWebhook(
-      signedDelivery("evt-b", "subscription.updated", {
-        object_id: "lago-sub-1",
-      }),
+      signedDelivery("evt-b", "subscription.updated", {}),
     );
     expect(response.status).toBe(400);
     expect(store.inbox.size).toBe(0);
+  });
+
+  test("a signed delivery without the unique-key header has no identity, so no acceptance", async () => {
+    const { store, service } = webhookFixture();
+    const body = JSON.stringify({
+      webhook_type: "customer.updated",
+      object_type: "customer",
+      organization_id: "lago-org-1",
+      customer: { lago_id: "lago-customer-1", external_id: "deployment-1" },
+    });
+    const request = new Request(
+      "https://openbot.example.test/api/billing/webhooks",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-lago-signature": createHmac("sha256", WEBHOOK_SIGNING_KEY)
+            .update(body)
+            .digest("base64"),
+          "x-lago-signature-algorithm": "hmac",
+          // Deliberately no x-lago-unique-key: correctly signed bytes, but no event identity —
+          // the provider always sends the header, so this is a probe, not a delivery.
+        },
+        body,
+      },
+    );
+    const response = await service.handleWebhook(request);
+    expect(response.status).toBe(401); // verified bytes, but an event that cannot be named
+    expect(store.inbox.size).toBe(0);
+  });
+
+  test("a subscription delivery on a deployment with no customer row lands one first", async () => {
+    // The foreign key the real database enforces: a subscription projection references the
+    // customer projection. A subscription delivery can be the first thing a deployment receives —
+    // configured but never synced — and it must still land, not die on a 23503 answered as a
+    // terminal 400 that drops the event.
+    const { stub, store, service } = webhookFixture();
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    // No customer.reads were answered 200 and no customer row exists locally.
+    const response = await service.handleWebhook(
+      signedDelivery("evt-fk", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    // The placeholder: nameless, present, exactly what the foreign key needs.
+    expect(store.customers.get("deployment-1")).toEqual({ name: null });
+    expect([...store.subscriptions.values()]).toEqual([
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ]);
   });
 
   test("a service built without a verifier answers 503 (defence in depth for off deployments)", async () => {

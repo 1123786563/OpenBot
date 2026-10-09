@@ -57,9 +57,10 @@ export const billingSubscriptions = pgTable(
  *
  * The row is written only after the authoritative re-read succeeded and the projections were
  * refreshed, so a row always stands for finished work — never for "received and dropped". A
- * redelivery of a known `provider + event_id` is answered from this table alone. `lago_unique_key`
- * carries the delivery's idempotency header for investigation; it is an aid, not the key, because
- * only the pair of columns is guaranteed present on every event.
+ * redelivery of a known `provider + event_id` is answered from this table alone. The event's
+ * identity is the delivery's `X-Lago-Unique-Key` header (the provider's payload carries no event
+ * id of its own), so `event_id` and `lago_unique_key` hold the same value; the column keeps the
+ * header's own name for the trail, and the pair remains the one key a redelivery is answered by.
  */
 export const billingWebhookEvents = pgTable(
   "billing_webhook_events",

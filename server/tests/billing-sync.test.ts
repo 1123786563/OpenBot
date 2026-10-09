@@ -308,8 +308,11 @@ describe("createBillingService.ensureSubscription", () => {
   });
 
   test("a subscription on the asked plan is idempotent: no second POST", async () => {
-    const { stub, service } = syncFixture();
+    const { stub, store, service } = syncFixture();
     stub.customers.set("deployment-1", { name: "Deployment 1" });
+    // The customer projection an ensureCustomer (or the webhook floor) would already have landed:
+    // the subscription projection's foreign key needs it.
+    store.customers.set("deployment-1", { name: "Deployment 1" });
     stub.subscriptions.set("deployment-1-sub", {
       externalCustomerId: "deployment-1",
       externalSubscriptionId: "deployment-1-sub",
@@ -332,8 +335,9 @@ describe("createBillingService.ensureSubscription", () => {
   });
 
   test("a different existing plan is a terminal conflict, not an overwrite", async () => {
-    const { stub, service } = syncFixture();
+    const { stub, store, service } = syncFixture();
     stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
     stub.subscriptions.set("deployment-1-sub", {
       externalCustomerId: "deployment-1",
       externalSubscriptionId: "deployment-1-sub",
@@ -353,8 +357,9 @@ describe("createBillingService.ensureSubscription", () => {
   });
 
   test("a create answered 422 with the same plan re-reads into a receipt", async () => {
-    const { stub, service } = syncFixture();
+    const { stub, store, service } = syncFixture();
     stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
     stub.behaviour.silentSubscriptionPlan = "pro";
     const receipt = await service.ensureSubscription({
       externalCustomerId: "deployment-1",
@@ -372,8 +377,9 @@ describe("createBillingService.ensureSubscription", () => {
   });
 
   test("a create answered 422 with a different plan is a terminal conflict", async () => {
-    const { stub, service } = syncFixture();
+    const { stub, store, service } = syncFixture();
     stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
     stub.behaviour.silentSubscriptionPlan = "team";
     await expect(
       service.ensureSubscription({
@@ -388,8 +394,9 @@ describe("createBillingService.ensureSubscription", () => {
   });
 
   test("a create answered 422 with nothing there afterwards is terminal, never re-created", async () => {
-    const { stub, service } = syncFixture();
+    const { stub, store, service } = syncFixture();
     stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
     stub.behaviour.refuseSubscriptionCreate = true;
     await expect(
       service.ensureSubscription({

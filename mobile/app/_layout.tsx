@@ -1,6 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { router, Stack } from "expo-router";
 import { useEffect, useRef } from "react";
+import { Platform } from "react-native";
 import { authClient } from "../src/auth";
 import { notificationDestination } from "../src/links";
 
@@ -28,7 +29,12 @@ export default function Layout() {
         pending.current = null;
       }
     };
-    const last = Notifications.getLastNotificationResponse();
+    // getLastNotificationResponse throws on web even though the rest of the
+    // notifications API is inert there.
+    const last =
+      Platform.OS === "web"
+        ? null
+        : Notifications.getLastNotificationResponse();
     if (last) open(last);
     const subscription =
       Notifications.addNotificationResponseReceivedListener(open);

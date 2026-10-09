@@ -3,7 +3,14 @@ import type {
   BillingSubscriptionRow,
 } from "../../src/billing/types";
 
-/** An in-memory `BillingStore` for unit tests, with its writes observable. */
+/**
+ * An in-memory `BillingStore` for unit tests, with its writes observable — and with the customer
+ * foreign key the real database enforces: a subscription row whose customer row is missing is
+ * refused here the way PostgreSQL refuses it there, so a code path that would drop a webhook on a
+ * 23503 in production drops it in a unit test too. The thrown error is deliberately a plain Error,
+ * not a `BillingError`: the store layer has no sentinel for a constraint the caller was supposed
+ * to keep, and a plain throw is what the service's catch actually sees from the driver.
+ */
 export function memoryBillingStore(): BillingStore & {
   customers: Map<string, { name: string | null }>;
   subscriptions: Map<string, BillingSubscriptionRow>;
@@ -22,7 +29,17 @@ export function memoryBillingStore(): BillingStore & {
     async upsertCustomer(input) {
       customers.set(input.externalId, { name: input.name });
     },
+    async ensureCustomerRow(input) {
+      if (!customers.has(input.externalId)) {
+        customers.set(input.externalId, { name: null });
+      }
+    },
     async upsertSubscription(input) {
+      if (!customers.has(input.externalCustomerId)) {
+        throw new Error(
+          `billing_subscriptions_external_customer_id_fkey: customer row is missing for ${input.externalCustomerId}`,
+        );
+      }
       subscriptions.set(input.externalSubscriptionId, { ...input });
     },
     async readSubscriptions(externalCustomerId) {

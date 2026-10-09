@@ -23,7 +23,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"sync"
 
 	"trpc.group/trpc-go/trpc-agent-go/agent"
 	baserunner "trpc.group/trpc-go/trpc-agent-go/runner"
@@ -218,40 +220,221 @@ func validateAndStripInput(_ context.Context, in *aguiadapter.RunAgentInput) (*a
 	return &stripped, nil
 }
 
+// ErrSuspendedPendingReceipt is what a governed tool call returns when the
+// platform's receipt for an operation is not final (status submitted or
+// unknown, master plan §4.2/§4.3): the operation may or may not have taken
+// effect, so the model is NOT handed a retryable tool failure — the run
+// ends here, and the business run must be suspended for reconciliation by
+// the plane that owns run state. The receipt rides along for the host.
+var ErrSuspendedPendingReceipt = errors.New("OPERATION_PENDING_RECEIPT")
+
+// PendingReceiptError carries the receipt (or the operation reference, when
+// the receipt never arrived) that froze the operation.
+//
+// It unwraps to an agent.StopError: the framework's own "this run stops
+// now" signal, which ends the invocation WITHOUT asking the model again —
+// the property that makes a frozen operation unfreezable by the model
+// simply calling the tool once more. errors.Is keeps the sentinel:
+// errors.Is(err, ErrSuspendedPendingReceipt) matches.
+type PendingReceiptError struct {
+	OperationID string
+	Status      string
+	Receipt     *callback.Receipt
+	stop        *agent.StopError
+}
+
+func newPendingReceiptError(operationID, status string, receipt *callback.Receipt) *PendingReceiptError {
+	return &PendingReceiptError{
+		OperationID: operationID,
+		Status:      status,
+		Receipt:     receipt,
+		stop:        agent.NewStopError(fmt.Sprintf("%s: %s %s", ErrSuspendedPendingReceipt.Error(), operationID, status)),
+	}
+}
+
+func (e *PendingReceiptError) Error() string { return e.stop.Error() }
+
+func (e *PendingReceiptError) Unwrap() error { return e.stop }
+
+func (e *PendingReceiptError) Is(target error) bool { return target == ErrSuspendedPendingReceipt }
+
+// ErrApprovalRequired is what a governed tool call returns when prepare
+// reports the operation needs a human approval this runtime has no channel
+// to supply (the approval protocol is not part of this candidate): the tool
+// call fails rather than the model being told to "try again", because
+// approval is a platform state change, not a model retry. It is also a
+// stop error, for the same reason as PendingReceiptError.
+var ErrApprovalRequired = errors.New("OPERATION_REQUIRES_APPROVAL")
+
+type approvalRequiredError struct {
+	operationID string
+	stop        *agent.StopError
+}
+
+func (e *approvalRequiredError) Error() string { return e.stop.Error() }
+
+func (e *approvalRequiredError) Unwrap() error { return e.stop }
+
+func (e *approvalRequiredError) Is(target error) bool { return target == ErrApprovalRequired }
+
+// toolCallSequencer assigns the stable tool_call_id for each governed call
+// within one run attempt: (run, attempt, tool) plus the ordinal of the call
+// as this runtime received it. The model cannot choose the id — it is
+// derived, not echoed — and within a process the same call slot always maps
+// to the same id, so the platform's (tenant, run, tool_call_id) dedup has a
+// stable key to hold onto. This is the G1a stand-in for the platform's
+// step/checkpoint mapping (master plan §4.2); it is process-local execution
+// state a restart rebuilds from nothing, which is exactly what the restart
+// boundary promises not to paper over.
+type toolCallSequencer struct {
+	mu   sync.Mutex
+	next map[string]int
+}
+
+func newToolCallSequencer() *toolCallSequencer {
+	return &toolCallSequencer{next: map[string]int{}}
+}
+
+func (s *toolCallSequencer) toolCallID(v identity.VerifiedRun, toolName string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := v.RunID + "|" + v.AttemptID + "|" + toolName
+	s.next[key]++
+	return fmt.Sprintf("%s|%s|%s|%03d", v.RunID, v.AttemptID, toolName, s.next[key])
+}
+
 // GovernedTool builds the framework tool for one platform-governed tool
-// name: calling it executes through the TS plane, where grants, policy and
-// audit live.
+// installation: calling it PROPOSES the operation (prepare) and then SPENDS
+// it (execute) through the TS tool plane, where the operation ledger,
+// approvals, policy and audit live. The runtime executes nothing itself.
 //
 // The model chooses a tool NAME and its ARGS, and that is the whole of its
-// influence: the endpoint and the agent token are fields of the client
-// (operator configuration), the run assertion comes from the private context
-// the auth middleware built, and neither can be overridden by anything in
-// args — identity is not an argument. A context without an assertion refuses
-// rather than calling the plane unauthenticated.
+// influence: the plane address is operator configuration on the client, the
+// credential pair and the binding coordinates (run/attempt/fencing) come
+// from the private verified context, and none of it can be overridden by
+// anything in args — identity is not an argument. The target of the
+// operation is the one piece of args the contract names separately: a
+// string "target" field if the model supplied one, otherwise the tool name
+// itself.
 //
-// The result text is returned to the model verbatim, including when the plane
-// answered isError:true: a revoked grant or refused policy is an answer the
-// person is owed, worded by the plane, not a transport failure here.
-func GovernedTool(client *callback.Client, name, description string, schema *tool.Schema) tool.Tool {
+// Receipt statuses map to exactly three outcomes for the model:
+//
+//   - succeeded / failed / not_submitted: terminal, proven states — the
+//     receipt's answer text goes back to the model verbatim (a refused
+//     policy is an answer the person is owed, worded by the plane).
+//   - submitted / unknown: NOT the model's to retry — ErrSuspendedPendingReceipt
+//     ends the call, and the receipt travels with it for the host to
+//     suspend the business run pending reconciliation.
+//   - approval required: ErrApprovalRequired, for the same reason.
+func GovernedTool(client *callback.Client, name, installationVersion, description string, schema *tool.Schema) tool.Tool {
 	if schema == nil {
 		schema = openArgsSchema()
 	}
+	sequencer := newToolCallSequencer()
 	return function.NewFunctionTool(
 		func(ctx context.Context, args map[string]any) (string, error) {
-			assertion, ok := identity.RunAssertion(ctx)
-			if !ok {
-				return "", errors.New("UNAUTHENTICATED_RUNTIME")
-			}
-			res, err := client.Call(ctx, assertion, name, args)
+			v, err := identity.FromContext(ctx)
 			if err != nil {
 				return "", err
 			}
-			return res.Text, nil
+			// Canonical args bytes: nil becomes an empty object so the plane
+			// reads a proposal, and Go's sorted-key encoding is the frozen
+			// canonical form both sides digest.
+			if args == nil {
+				args = map[string]any{}
+			}
+			canonical, err := json.Marshal(args)
+			if err != nil {
+				return "", err
+			}
+			digest := callback.DigestArgs(canonical)
+
+			preparation, err := client.Prepare(ctx, callback.ToolPreparation{
+				ToolName:            name,
+				RunID:               v.RunID,
+				AttemptID:           v.AttemptID,
+				ToolCallID:          sequencer.toolCallID(v, name),
+				StepID:              v.TurnID,
+				InstallationVersion: installationVersion,
+				Target:              targetOf(name, args),
+				Args:                canonical,
+				FencingToken:        v.FencingToken,
+			})
+			if err != nil {
+				// A reconciliation refusal is the freeze by another door: the
+				// platform already holds this content submitted/unknown under
+				// another key, and a new tool_call_id must not walk past it.
+				var frozen *callback.ReconciliationError
+				if errors.As(err, &frozen) {
+					return "", newPendingReceiptError(frozen.OperationID, callback.StatusUnknown, nil)
+				}
+				// An unknown outcome of the PROPOSAL itself is not bluffed
+				// through either: the platform may hold a proposal this
+				// runtime never saw answered, and the run's state is the
+				// plane's to settle.
+				if errors.Is(err, callback.ErrOutcomeUnknown) {
+					return "", newPendingReceiptError("", callback.StatusUnknown, nil)
+				}
+				return "", err
+			}
+			if preparation.ReconciliationRequired {
+				return "", newPendingReceiptError(preparation.OperationID, callback.StatusUnknown, nil)
+			}
+			if preparation.RequiresApproval {
+				return "", &approvalRequiredError{
+					operationID: preparation.OperationID,
+					stop:        agent.NewStopError(fmt.Sprintf("%s: %s", ErrApprovalRequired.Error(), preparation.OperationID)),
+				}
+			}
+
+			receipt, err := client.Execute(ctx, callback.ToolExecution{
+				OperationID:  preparation.OperationID,
+				AttemptID:    v.AttemptID,
+				ArgsDigest:   digest,
+				FencingToken: v.FencingToken,
+			})
+			if err != nil {
+				// A spend whose receipt never arrived is the unknown state:
+				// the operation may or may not have been submitted, and the
+				// model must not be asked to "just call again".
+				if errors.Is(err, callback.ErrOutcomeUnknown) {
+					return "", newPendingReceiptError(preparation.OperationID, callback.StatusUnknown, nil)
+				}
+				return "", err
+			}
+			if receipt.PendingReconciliation() {
+				return "", newPendingReceiptError(receipt.OperationID, receipt.Status, &receipt)
+			}
+			return answerOf(receipt), nil
 		},
 		function.WithName(name),
 		function.WithDescription(description),
 		function.WithInputSchema(schema),
 	)
+}
+
+// targetOf names the operation's target: the model may designate one with a
+// string "target" argument (it is the thing the tool acts on — data, not a
+// credential); without one, the operation targets the tool itself.
+func targetOf(name string, args map[string]any) string {
+	if target, ok := args["target"].(string); ok && target != "" {
+		return target
+	}
+	return name
+}
+
+// answerOf renders a terminal receipt as the model-visible answer. The
+// receipt's own result text is used verbatim when present; a receipt that
+// carried none is summarized from its proven fields — never invented
+// content.
+func answerOf(receipt callback.Receipt) string {
+	if receipt.ResultText != "" {
+		return receipt.ResultText
+	}
+	if receipt.ErrorCode != "" {
+		return fmt.Sprintf("operation %s: %s", receipt.Status, receipt.ErrorCode)
+	}
+	return fmt.Sprintf("operation %s (%s)", receipt.Status, receipt.ReceiptRef)
 }
 
 // openArgsSchema is the schema for a tool whose argument shape the plane (not

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import {
   hashCallbackToken,
   mintCallbackToken,
@@ -10,19 +11,29 @@ import {
 import type { AgentProfileStore } from "../../src/agents/profile-store";
 import { createApp, type DeploymentToolCaller } from "../../src/app";
 import { loadConfig } from "../../src/config";
+import {
+  canonicalArgsDigest,
+  createFakeToolInvocationPlane,
+  type FakeToolPlane,
+  type ToolCapabilityBinding,
+} from "../../src/enterprise/runtime/tool-invocations";
 import { testEnvironment } from "../support/environment";
 
 /*
- * The Go runtime candidate's tool callback lands on the EXISTING
- * `/api/agent-tools/call`, with the wire shape its client sends:
- *   POST {run, name, args} + x-openbot-agent-token.
+ * Two tool planes, two sections, one rule each (01 plan R3):
  *
- * These tests pin the refusal semantics that route already had — an unknown
- * token, an expired or forged assertion, a token that belongs to another
- * Bot — against that Go-client shape, so the candidate cannot quietly
- * soften them. The refusals must happen BEFORE dispatch (the deployment
- * caller observes nothing), and identity for the audit-bound call must come
- * from the signed assertion, never from args.
+ * 1. The ENTERPRISE contract section (master plan §4.1/§4.2): the internal
+ *    tool-invocations endpoints the Go runtime's Prepare/Execute client
+ *    talks to, expressed by the G1a isolated fake — (tenant, run,
+ *    tool_call_id) dedup, operation binding, approval gating, receipts with
+ *    the frozen status enum. The fake IS the platform semantics under test;
+ *    the real ledger/ActionPolicy is P3's to build.
+ *
+ * 2. The LEGACY regression section below: the existing /api/agent-tools/call
+ *    route and the refusal semantics it already had, pinned against the
+ *    legacy client shape. The plan keeps these as regression (不修改其原
+ *    部署安全语义); they are not the enterprise path and never a fallback
+ *    for it.
  */
 const KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 const BOT = "knowledge";
@@ -261,5 +272,491 @@ describe("the Go runtime's tool callback on /api/agent-tools/call", () => {
       body: JSON.stringify({ run: signedRun(), args: {} }),
     });
     expect(response.status).toBe(400);
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * The enterprise tool-invocation contract (master plan §4.1/§4.2, 01 plan
+ * R3-A), exercised against the G1a isolated fake plane. The fake expresses
+ * the PLATFORM semantics: dedup by (tenant, run, tool_call_id), binding of
+ * step/target/digest/installation, approval gating, fencing, and receipts
+ * with the frozen status enum. Identity never comes from the body: the
+ * capability the headers present is the only tenant/principal source.
+ * ---------------------------------------------------------------------------
+ */
+const TOOL_SERVICE_CREDENTIAL = "test-tool-plane-credential-not-a-real-one";
+const TENANT_A = "tenant_alpha";
+const TENANT_B = "tenant_beta";
+const PRINCIPAL_A = "principal_alpha";
+const RUN_1 = "run_1";
+const ATTEMPT_1 = "attempt_1";
+const FENCING_1 = "fencing_1";
+const TOOL = "probe_governed";
+const INSTALLATION = "probe_governed@1.0.0";
+
+/** A shared capability registry, the way the validation plane holds one. */
+const capabilities = new Map<string, ToolCapabilityBinding>();
+
+function mintCapability(binding: Partial<ToolCapabilityBinding> = {}): string {
+  const capability = `cap_${randomUUID()}`;
+  capabilities.set(capability, {
+    tenant_id: TENANT_A,
+    principal_id: PRINCIPAL_A,
+    run_id: RUN_1,
+    attempt_id: ATTEMPT_1,
+    fencing_token: FENCING_1,
+    expires_at: Date.now() + 10 * 60_000,
+    ...binding,
+  });
+  return capability;
+}
+
+/** The header pair the Go callback client presents. */
+function toolHeaders(capability: string, credential = TOOL_SERVICE_CREDENTIAL) {
+  return {
+    "content-type": "application/json",
+    "x-openbot-runtime-service-credential": credential,
+    "x-openbot-runtime-capability": capability,
+  };
+}
+
+function proposal(over: Record<string, unknown> = {}) {
+  const args = { search: "incident" };
+  return {
+    tool_name: TOOL,
+    run_id: RUN_1,
+    attempt_id: ATTEMPT_1,
+    tool_call_id: "run_1|attempt_1|probe_governed|001",
+    step_id: "turn_1",
+    installation_version: INSTALLATION,
+    target: TOOL,
+    args,
+    args_digest: canonicalArgsDigest(args),
+    fencing_token: FENCING_1,
+    ...over,
+  };
+}
+
+/** One fake plane plus its client-side caller, wired to the shared registry. */
+function planeFixture(deps: Parameters<typeof createFakeToolInvocationPlane>[0] = {
+  serviceCredential: TOOL_SERVICE_CREDENTIAL,
+  capabilities,
+}) {
+  const plane = createFakeToolInvocationPlane(deps);
+  const call = async (
+    path: string,
+    capability: string,
+    body: unknown,
+    credential?: string,
+  ) =>
+    await plane.routes.request(path, {
+      method: "POST",
+      headers: toolHeaders(capability, credential),
+      body: JSON.stringify(body),
+    });
+  return { plane, call };
+}
+
+describe("the enterprise tool-invocations plane (G1a fake)", () => {
+  test("prepare allocates one operation per (tenant, run, tool_call_id) and never acts", async () => {
+    const { plane, call } = planeFixture();
+    const capability = mintCapability();
+
+    const first = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as { operation_id: string; deduplicated: boolean };
+    expect(firstBody.operation_id).toMatch(/^op_/);
+    expect(firstBody.deduplicated).toBe(false);
+
+    // The identical proposal again: SAME operation, marked deduplicated.
+    const again = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    expect(again.status).toBe(200);
+    const againBody = (await again.json()) as { operation_id: string; deduplicated: boolean };
+    expect(againBody.operation_id).toBe(firstBody.operation_id);
+    expect(againBody.deduplicated).toBe(true);
+
+    // One operation, and prepare proposed only: zero external effects.
+    expect(plane.state.operations).toHaveLength(1);
+    expect(plane.state.effects).toBe(0);
+  });
+
+  test("the same tool_call_id with different content is a 409 conflict", async () => {
+    const { plane, call } = planeFixture();
+    const capability = mintCapability();
+    await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+
+    const otherArgs = { search: "somewhere-else" };
+    const conflicting = await call(
+      "/internal/enterprise/v1/tool-invocations/prepare",
+      capability,
+      proposal({ args: otherArgs, args_digest: canonicalArgsDigest(otherArgs) }),
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await conflicting.json()).toMatchObject({ error_code: "operation_conflict" });
+    expect(plane.state.operations).toHaveLength(1);
+    expect(plane.state.effects).toBe(0);
+  });
+
+  test("a submitted operation cannot be re-proposed past with a new tool_call_id", async () => {
+    const { plane, call } = planeFixture({
+      serviceCredential: TOOL_SERVICE_CREDENTIAL,
+      capabilities,
+      outcome: () => ({ status: "submitted" }),
+    });
+    const capability = mintCapability();
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    const executed = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      capability,
+      {
+        operation_id,
+        attempt_id: ATTEMPT_1,
+        args_digest: canonicalArgsDigest({ search: "incident" }),
+        fencing_token: FENCING_1,
+      },
+    );
+    expect(executed.status).toBe(200);
+    expect(((await executed.json()) as { status: string }).status).toBe("submitted");
+
+    // The model proposes the SAME business content under a NEW tool_call_id:
+    // the plane refuses to allocate a fresh operation and points at the
+    // frozen one instead.
+    const bypass = await call(
+      "/internal/enterprise/v1/tool-invocations/prepare",
+      capability,
+      proposal({ tool_call_id: "run_1|attempt_1|probe_governed|002" }),
+    );
+    expect(bypass.status).toBe(409);
+    expect(await bypass.json()).toMatchObject({
+      error_code: "reconciliation_required",
+      operation_id,
+      reconciliation_required: true,
+    });
+    expect(plane.state.operations).toHaveLength(1);
+  });
+
+  test("the prepare body is a strict schema: unknown fields, missing fields, non-object args and wrong digests are all 400", async () => {
+    const { plane, call } = planeFixture();
+    const capability = mintCapability();
+    const path = "/internal/enterprise/v1/tool-invocations/prepare";
+
+    const unknownField = await call(path, capability, proposal({ sneaky: "extra" }));
+    expect(unknownField.status).toBe(400);
+
+    const { tool_name: _drop, ...missingField } = proposal();
+    const missing = await call(path, capability, missingField);
+    expect(missing.status).toBe(400);
+
+    const nonObject = await call(
+      path,
+      capability,
+      proposal({ args: ["not", "an", "object"], args_digest: canonicalArgsDigest({}) }),
+    );
+    expect(nonObject.status).toBe(400);
+
+    const wrongDigest = await call(
+      path,
+      capability,
+      proposal({ args_digest: canonicalArgsDigest({ search: "something-else" }) }),
+    );
+    expect(wrongDigest.status).toBe(400);
+
+    expect(plane.state.operations).toHaveLength(0);
+  });
+
+  test("credentials: missing, wrong or unknown are 401; an expired capability is refused (no ignoreExpiry)", async () => {
+    const { plane, call } = planeFixture();
+    const path = "/internal/enterprise/v1/tool-invocations/prepare";
+
+    const noHeaders = await plane.routes.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(proposal()),
+    });
+    expect(noHeaders.status).toBe(401);
+
+    const wrongCredential = await call(path, mintCapability(), proposal(), "not-the-credential");
+    expect(wrongCredential.status).toBe(401);
+
+    const unknownCapability = await call(path, "cap_signed_by_nobody", proposal());
+    expect(unknownCapability.status).toBe(401);
+
+    const expired = mintCapability({ expires_at: Date.now() - 1_000 });
+    const expiredCall = await call(path, expired, proposal());
+    expect(expiredCall.status).toBe(401);
+  });
+
+  test("a capability bound to another run or fencing cannot propose or spend", async () => {
+    const { plane, call } = planeFixture();
+    const otherRun = mintCapability({ run_id: "run_2" });
+    const refused = await call("/internal/enterprise/v1/tool-invocations/prepare", otherRun, proposal());
+    expect(refused.status).toBe(403);
+
+    // The fencing check on execute: the body must carry the capability's
+    // CURRENT fencing token, not the one the operation was prepared with.
+    const owner = mintCapability();
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", owner, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    const wrongFencing = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      owner,
+      {
+        operation_id,
+        attempt_id: ATTEMPT_1,
+        args_digest: canonicalArgsDigest({ search: "incident" }),
+        fencing_token: "fencing_stale",
+      },
+    );
+    expect(wrongFencing.status).toBe(403);
+    expect(plane.state.effects).toBe(0);
+  });
+
+  test("execute answers the full receipt contract on success", async () => {
+    const { plane, call } = planeFixture();
+    const capability = mintCapability();
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    const executed = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      capability,
+      {
+        operation_id,
+        attempt_id: ATTEMPT_1,
+        args_digest: canonicalArgsDigest({ search: "incident" }),
+        fencing_token: FENCING_1,
+      },
+    );
+    expect(executed.status).toBe(200);
+    const receipt = (await executed.json()) as Record<string, unknown>;
+    // The minimal field set, exactly (master plan §4.2) plus the answer text.
+    expect(Object.keys(receipt).sort()).toEqual([
+      "error_code",
+      "execution_attempt_id",
+      "operation_id",
+      "receipt_ref",
+      "reconciliation_required",
+      "result_text",
+      "status",
+    ]);
+    expect(receipt.operation_id).toBe(operation_id);
+    expect(receipt.execution_attempt_id).toMatch(/^exec_/);
+    expect(receipt.status).toBe("succeeded");
+    expect(receipt.reconciliation_required).toBe(false);
+    expect(typeof receipt.result_text).toBe("string");
+    // The effect happened exactly once, under its own execution attempt.
+    expect(plane.state.effects).toBe(1);
+    expect(plane.state.receipts).toHaveLength(1);
+  });
+
+  test("execute re-checks the current authorization before spending", async () => {
+    const rechecks: unknown[] = [];
+    const { plane, call } = planeFixture({
+      serviceCredential: TOOL_SERVICE_CREDENTIAL,
+      capabilities,
+      recheck: (input) => {
+        rechecks.push(input);
+        return { ok: false, error_code: "membership_revoked" };
+      },
+    });
+    const capability = mintCapability();
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    const refused = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      capability,
+      {
+        operation_id,
+        attempt_id: ATTEMPT_1,
+        args_digest: canonicalArgsDigest({ search: "incident" }),
+        fencing_token: FENCING_1,
+      },
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error_code: "membership_revoked" });
+    expect(plane.state.effects).toBe(0);
+
+    // The re-check ran ONCE, with the operation, the request, and the
+    // capability's own principal — the observable boundary that stands for
+    // membership/ACL/installation/ActionPolicy/budget in G1a.
+    expect(rechecks).toHaveLength(1);
+    const observed = rechecks[0] as {
+      principal_id: string;
+      operation: { operation_id: string; tenant_id: string; target: string };
+      execution: { args_digest: string; fencing_token: string };
+    };
+    expect(observed.principal_id).toBe(PRINCIPAL_A);
+    expect(observed.operation.operation_id).toBe(operation_id);
+    expect(observed.operation.tenant_id).toBe(TENANT_A);
+    expect(observed.execution.fencing_token).toBe(FENCING_1);
+  });
+
+  test("an operation that needs approval is not spent without a valid approval_ref", async () => {
+    const approvals = new Map();
+    const { plane, call } = planeFixture({
+      serviceCredential: TOOL_SERVICE_CREDENTIAL,
+      capabilities,
+      requiresApproval: () => true,
+      approvals,
+    });
+    const capability = mintCapability();
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const executeBody = (over: Record<string, unknown> = {}) => ({
+      operation_id,
+      attempt_id: ATTEMPT_1,
+      args_digest: digest,
+      fencing_token: FENCING_1,
+      ...over,
+    });
+    const executePath = `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`;
+
+    // No approval yet: refused, nothing spent.
+    const without = await call(executePath, capability, executeBody());
+    expect(without.status).toBe(403);
+    expect(await without.json()).toMatchObject({ error_code: "approval_required" });
+    expect(plane.state.effects).toBe(0);
+
+    // An approval for OTHER arguments does not unlock this spend.
+    approvals.set("approval_wrong_digest", {
+      operation_id,
+      args_digest: canonicalArgsDigest({ search: "different" }),
+      expires_at: Date.now() + 60_000,
+    });
+    const wrongDigest = await call(executePath, capability, executeBody({ approval_ref: "approval_wrong_digest" }));
+    expect(wrongDigest.status).toBe(403);
+    expect(await wrongDigest.json()).toMatchObject({ error_code: "approval_invalid" });
+
+    // An expired approval is not an approval.
+    approvals.set("approval_expired", {
+      operation_id,
+      args_digest: digest,
+      expires_at: Date.now() - 1_000,
+    });
+    const expired = await call(executePath, capability, executeBody({ approval_ref: "approval_expired" }));
+    expect(expired.status).toBe(403);
+    expect(await expired.json()).toMatchObject({ error_code: "approval_invalid" });
+
+    // The matching, unexpired approval spends it once.
+    approvals.set("approval_ok", {
+      operation_id,
+      args_digest: digest,
+      expires_at: Date.now() + 60_000,
+    });
+    const approved = await call(executePath, capability, executeBody({ approval_ref: "approval_ok" }));
+    expect(approved.status).toBe(200);
+    expect(((await approved.json()) as { status: string }).status).toBe("succeeded");
+    expect(plane.state.effects).toBe(1);
+  });
+
+  test("a submitted receipt freezes the operation: no second spend, and the re-proposal path is closed", async () => {
+    const { plane, call } = planeFixture({
+      serviceCredential: TOOL_SERVICE_CREDENTIAL,
+      capabilities,
+      outcome: () => ({ status: "submitted" }),
+    });
+    const capability = mintCapability();
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    const executePath = `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`;
+
+    const first = await call(executePath, capability, {
+      operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1,
+    });
+    expect(first.status).toBe(200);
+    const receipt = (await first.json()) as { status: string; reconciliation_required: boolean };
+    expect(receipt.status).toBe("submitted");
+    expect(receipt.reconciliation_required).toBe(true);
+
+    // The same operation cannot be spent a second time while its outcome is
+    // unknown to the plane.
+    const second = await call(executePath, capability, {
+      operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1,
+    });
+    expect(second.status).toBe(409);
+    expect(await second.json()).toMatchObject({ error_code: "reconciliation_required" });
+
+    // Re-preparing under the ORIGINAL tool_call_id answers the freeze too.
+    const reprepare = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    expect(reprepare.status).toBe(200);
+    const reprepareBody = (await reprepare.json()) as {
+      operation_id: string; deduplicated: boolean; reconciliation_required: boolean;
+    };
+    expect(reprepareBody.operation_id).toBe(operation_id);
+    expect(reprepareBody.deduplicated).toBe(true);
+    expect(reprepareBody.reconciliation_required).toBe(true);
+
+    // One execution attempt was ever allocated.
+    expect(plane.state.receipts).toHaveLength(1);
+  });
+
+  test("a receipt may be terminal failed without an effect", async () => {
+    const { plane, call } = planeFixture({
+      serviceCredential: TOOL_SERVICE_CREDENTIAL,
+      capabilities,
+      outcome: () => ({ status: "failed", error_code: "vendor_refused" }),
+    });
+    const capability = mintCapability();
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    const executed = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      capability,
+      { operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1 },
+    );
+    const receipt = (await executed.json()) as { status: string; error_code: string; reconciliation_required: boolean };
+    expect(receipt.status).toBe("failed");
+    expect(receipt.error_code).toBe("vendor_refused");
+    expect(receipt.reconciliation_required).toBe(false);
+    expect(plane.state.effects).toBe(0);
+  });
+
+  test("operations are tenant-scoped: another tenant's capability cannot even see them", async () => {
+    const { plane, call } = planeFixture();
+    const owner = mintCapability();
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", owner, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    const intruder = mintCapability({ tenant_id: TENANT_B, principal_id: "principal_beta" });
+    const probed = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      intruder,
+      { operation_id, attempt_id: ATTEMPT_1, args_digest: canonicalArgsDigest({ search: "incident" }), fencing_token: FENCING_1 },
+    );
+    // 404, not 403: the operation's existence is the owner tenant's knowledge.
+    expect(probed.status).toBe(404);
+    expect(plane.state.effects).toBe(0);
+
+    // The same tool_call_id under the intruder's own run is a DIFFERENT
+    // operation: the dedup key includes the tenant.
+    const own = await call("/internal/enterprise/v1/tool-invocations/prepare", intruder, proposal());
+    expect(own.status).toBe(200);
+    expect(plane.state.operations).toHaveLength(2);
+  });
+
+  test("a reused operation after success stays one effect", async () => {
+    const { plane, call } = planeFixture();
+    const capability = mintCapability();
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    await call(`/internal/enterprise/v1/tool-invocations/${operation_id}/execute`, capability, {
+      operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1,
+    });
+
+    // The same business operation proposed again after success: the SAME
+    // operation is handed back (deduplicated), not a second one.
+    const reprepare = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const body = (await reprepare.json()) as { operation_id: string; deduplicated: boolean };
+    expect(body.operation_id).toBe(operation_id);
+    expect(body.deduplicated).toBe(true);
+    expect(plane.state.operations).toHaveLength(1);
+    expect(plane.state.effects).toBe(1);
   });
 });

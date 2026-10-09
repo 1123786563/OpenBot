@@ -223,6 +223,26 @@ function isBrokerTransport(kind: TransportKind): boolean {
 }
 
 /**
+ * The app a brokered row names, for whichever broker its provenance names; null for every other
+ * row.
+ *
+ * THE STORE'S HALF OF THE REGISTRY. `accessFor` reads the registry to answer a call; this answers
+ * the same question for a row the store is about to act on — whose connection gate to open, whose
+ * app row answers for this url — without the store re-deriving "which broker is this url" per call
+ * site, which is the per-site derivation this registry exists to have removed. A third broker is a
+ * row here plus a TransportKind and this answer follows it; a `composio`-only spelling in the store
+ * would not.
+ */
+export function brokerToolkitOf(
+  provenance: string,
+  url: string,
+): string | null {
+  return isBrokeredProvenance(provenance)
+    ? BROKERS[provenance].toolkitOf(url)
+    : null;
+}
+
+/**
  * A reviewed entry decides for itself; otherwise the row decides — and a row that claims both is
  * refused rather than resolved.
  *

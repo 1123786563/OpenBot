@@ -23,6 +23,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -261,34 +262,57 @@ func newValidation(t *testing.T) *httptest.Server {
 	return s
 }
 
-// planeCall is one tool call the plane stand-in received.
+// planeCall is one request the tool-plane stand-in received.
 type planeCall struct {
-	Token string
-	Run   string
-	Name  string
-	Args  map[string]any
+	Path        string
+	Args        map[string]any
+	Body        map[string]any
+	Capability  string
+	Credential  string
+	RawBody     string
+	OperationID string
 }
 
+// newPlane is the enterprise tool-plane stand-in: the two fixed internal
+// endpoints (master plan §4.1), answering prepare with a fixed operation
+// reference and execute with a scripted receipt. What the plane was asked
+// is recorded for the assertions; what it answers is the test's script.
 func newPlane(t *testing.T) (*httptest.Server, func() []planeCall) {
+	return newScriptedPlane(t, func(path string) (int, string) {
+		switch {
+		case strings.HasSuffix(path, "/prepare"):
+			return http.StatusOK, `{"operation_id":"op_plane_1","requires_approval":false,"safety_preview":"would search","deduplicated":false,"reconciliation_required":false}`
+		case strings.HasSuffix(path, "/execute"):
+			return http.StatusOK, `{"operation_id":"op_plane_1","execution_attempt_id":"exec_plane_1","status":"succeeded","receipt_ref":"rcpt_plane_1","error_code":"","reconciliation_required":false,"result_text":"tool-ok"}`
+		default:
+			return http.StatusNotFound, `{"error_code":"operation_not_found"}`
+		}
+	})
+}
+
+func newScriptedPlane(t *testing.T, script func(path string) (int, string)) (*httptest.Server, func() []planeCall) {
 	t.Helper()
 	var mu sync.Mutex
 	var calls []planeCall
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Run   string         `json:"run"`
-			Name  string         `json:"name"`
-			Args  map[string]any `json:"args"`
-			Extra map[string]any `json:"-"`
-		}
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
-			http.Error(w, "unreadable receipt", http.StatusBadRequest)
-			return
-		}
+		raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body := map[string]any{}
+		_ = json.Unmarshal(raw, &body)
 		mu.Lock()
-		calls = append(calls, planeCall{Token: r.Header.Get("x-openbot-agent-token"), Run: body.Run, Name: body.Name, Args: body.Args})
+		calls = append(calls, planeCall{
+			Path:       r.URL.Path,
+			Body:       body,
+			RawBody:    string(raw),
+			Capability: r.Header.Get("x-openbot-runtime-capability"),
+			Credential: r.Header.Get("x-openbot-runtime-service-credential"),
+		})
 		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"text": "tool-ok", "isError": false})
+		status, response := script(r.URL.Path)
+		if status == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, response)
 	}))
 	t.Cleanup(s.Close)
 	return s, func() []planeCall {
@@ -568,9 +592,9 @@ func TestStreamingDeltasArriveAsContentDeltas(t *testing.T) {
 }
 
 func TestGovernedToolCallCrossesThePlaneWithThePrivateAssertion(t *testing.T) {
-	// The plane stand-in is the existing /api/agent-tools/call shape: the
-	// assertion travels as "run", the tool as "name", the model's data as
-	// "args", the credential in the header.
+	// The plane stand-in is the enterprise tool-invocations pair: prepare
+	// allocates the operation, execute answers a receipt. The receipt's text
+	// is what the model must end up reading.
 	plane, planeCalls := newPlane(t)
 	provider, log := newProvider(t, func(call int, req providerRequest) modelReply {
 		if call == 0 {
@@ -581,11 +605,10 @@ func TestGovernedToolCallCrossesThePlaneWithThePrivateAssertion(t *testing.T) {
 	validation := newValidation(t)
 
 	client := &callback.Client{
-		HTTP:       &http.Client{Timeout: 5 * time.Second},
-		Endpoint:   plane.URL,
-		AgentToken: testAgentToken,
+		HTTP:     &http.Client{Timeout: 5 * time.Second},
+		Endpoint: plane.URL + "/internal/enterprise/v1/tool-invocations",
 	}
-	governed := GovernedTool(client, governedToolName, "Platform-governed contract tool.", nil)
+	governed := GovernedTool(client, governedToolName, "probe_governed@1.0.0", "Platform-governed contract tool.", nil)
 	c := newCandidate(t, newAgent(t, provider.URL, false, governed), provider, log, validation)
 
 	res, body := c.postRun(t, nil)
@@ -599,33 +622,53 @@ func TestGovernedToolCallCrossesThePlaneWithThePrivateAssertion(t *testing.T) {
 	if countType(events, "TOOL_CALL_START") != 1 || countType(events, "TOOL_CALL_END") != 1 {
 		t.Fatalf("tool call events missing: %v", eventTypes(events))
 	}
-	// The model's final answer proves the plane's result came back around.
+	// The model's final answer proves the receipt's text came back around.
 	if got := textDeltas(events); got != "tool-roundtrip-ok" {
 		t.Fatalf("final content = %q, want %q", got, "tool-roundtrip-ok")
 	}
 
-	// Exactly one plane call, with the assertion the REQUEST presented — the
-	// private-context handoff through the framework's event chain, verified
-	// end to end (the question R3 explicitly left to this file).
+	// Exactly one prepare and one execute, in that order, both carrying the
+	// credential pair the REQUEST presented — the private-context handoff
+	// through the framework's event chain, verified end to end.
 	calls := planeCalls()
-	if len(calls) != 1 {
-		t.Fatalf("plane calls = %d, want 1", len(calls))
+	if len(calls) != 2 {
+		t.Fatalf("plane calls = %d, want exactly one prepare and one execute", len(calls))
 	}
-	if calls[0].Token != testAgentToken {
-		t.Fatalf("plane token = %q", calls[0].Token)
+	prepare, execute := calls[0], calls[1]
+	if prepare.Path != "/internal/enterprise/v1/tool-invocations/prepare" {
+		t.Fatalf("prepare path = %q", prepare.Path)
 	}
-	if calls[0].Run != testAssertion {
-		t.Fatalf("plane run = %q, want the request's own assertion", calls[0].Run)
+	if prepare.Capability != testCapability || prepare.Credential != testServiceCredential {
+		t.Fatalf("prepare credentials = %q/%q, want the private-context pair", prepare.Credential, prepare.Capability)
 	}
-	if calls[0].Name != governedToolName {
-		t.Fatalf("plane tool name = %q", calls[0].Name)
+	// The proposal's binding coordinates are the verified envelope's own,
+	// and the tool_call_id is the runtime's derived stable key — never a
+	// model-chosen value.
+	if prepare.Body["run_id"] != "biz_"+testRunID || prepare.Body["attempt_id"] != "attempt_1" {
+		t.Fatalf("prepare binding = %#v", prepare.Body)
 	}
-	if fmt.Sprint(calls[0].Args) != fmt.Sprint(map[string]any{"query": "contract"}) {
-		t.Fatalf("plane args = %v", calls[0].Args)
+	if prepare.Body["fencing_token"] != "fencing_1" {
+		t.Fatalf("prepare fencing = %#v", prepare.Body["fencing_token"])
+	}
+	if prepare.Body["tool_name"] != governedToolName || prepare.Body["installation_version"] != "probe_governed@1.0.0" {
+		t.Fatalf("prepare tool = %#v/%#v", prepare.Body["tool_name"], prepare.Body["installation_version"])
+	}
+	toolCallID, _ := prepare.Body["tool_call_id"].(string)
+	if !strings.HasPrefix(toolCallID, "biz_"+testRunID+"|attempt_1|"+governedToolName+"|") {
+		t.Fatalf("tool_call_id = %q, want the runtime's derived key", toolCallID)
+	}
+	if fmt.Sprint(prepare.Body["args"]) != fmt.Sprint(map[string]any{"query": "contract"}) {
+		t.Fatalf("prepare args = %#v", prepare.Body["args"])
+	}
+	if execute.Path != "/internal/enterprise/v1/tool-invocations/op_plane_1/execute" {
+		t.Fatalf("execute path = %q, want the prepared operation's own path", execute.Path)
+	}
+	if execute.Body["operation_id"] != "op_plane_1" {
+		t.Fatalf("execute operation = %#v", execute.Body["operation_id"])
 	}
 
 	// Two provider calls: the tool-call answer, then the final one — and the
-	// second carried the plane's answer text for the model to read.
+	// second carried the receipt's answer text for the model to read.
 	providerCalls := log.snapshot()
 	if len(providerCalls) != 2 {
 		t.Fatalf("provider calls = %d, want 2", len(providerCalls))
@@ -635,6 +678,132 @@ func TestGovernedToolCallCrossesThePlaneWithThePrivateAssertion(t *testing.T) {
 	}
 	if !strings.Contains(providerCalls[1].Body, "tool-ok") {
 		t.Fatalf("second provider call never saw the plane's answer")
+	}
+}
+
+// A receipt whose status is not final (submitted/unknown) is never a tool
+// failure the model may retry: the call fails with the suspension signal,
+// the run ends in RUN_ERROR, and the model is never asked again — one
+// provider call, no answer text anywhere in the events.
+func TestSubmittedReceiptSuspendsInsteadOfAnswering(t *testing.T) {
+	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
+		switch {
+		case strings.HasSuffix(path, "/prepare"):
+			return http.StatusOK, `{"operation_id":"op_stuck","requires_approval":false,"safety_preview":"would search","deduplicated":false,"reconciliation_required":false}`
+		case strings.HasSuffix(path, "/execute"):
+			return http.StatusOK, `{"operation_id":"op_stuck","execution_attempt_id":"exec_stuck","status":"submitted","receipt_ref":"rcpt_stuck","error_code":"","reconciliation_required":true,"result_text":"never-show-this"}`
+		default:
+			return http.StatusNotFound, `{"error_code":"operation_not_found"}`
+		}
+	})
+	provider, log := newProvider(t, func(call int, req providerRequest) modelReply {
+		return modelReply{body: toolCallCompletion}
+	})
+	validation := newValidation(t)
+
+	client := &callback.Client{
+		HTTP:     &http.Client{Timeout: 5 * time.Second},
+		Endpoint: plane.URL + "/internal/enterprise/v1/tool-invocations",
+	}
+	governed := GovernedTool(client, governedToolName, "probe_governed@1.0.0", "Platform-governed contract tool.", nil)
+	c := newCandidate(t, newAgent(t, provider.URL, false, governed), provider, log, validation)
+
+	res, body := c.postRun(t, nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("run status = %d, body = %s", res.StatusCode, body)
+	}
+	events := parseSSE(t, body)
+	assertContract(t, events)
+	if last := events[len(events)-1]["type"]; last != "RUN_ERROR" {
+		t.Fatalf("terminal = %v, want RUN_ERROR (the run is suspended, not answered)", last)
+	}
+	// The model was asked exactly once and never saw the receipt's text:
+	// retrying the operation is not the model's move to make.
+	providerCalls := log.snapshot()
+	if len(providerCalls) != 1 {
+		t.Fatalf("provider calls = %d, want 1 (no second round for a frozen operation)", len(providerCalls))
+	}
+	if strings.Contains(body, "never-show-this") {
+		t.Fatal("the frozen receipt's result text leaked into the run's events")
+	}
+	// Both plane crossings happened: the proposal was made and the spend
+	// attempted exactly once each.
+	if calls := planeCalls(); len(calls) != 2 {
+		t.Fatalf("plane calls = %d, want one prepare and one execute", len(calls))
+	}
+}
+
+// A proposal the plane answers "reconciliation required" on is the same
+// freeze by another door: the runtime must not execute anything and the run
+// must end without the model being handed a retryable failure.
+func TestReconciliationRefusalSuspendsWithoutExecuting(t *testing.T) {
+	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
+		if strings.HasSuffix(path, "/prepare") {
+			return http.StatusConflict, `{"error_code":"reconciliation_required","operation_id":"op_stuck"}`
+		}
+		return http.StatusForbidden, `{"error_code":"unexpected_execute"}`
+	})
+	provider, log := newProvider(t, func(call int, req providerRequest) modelReply {
+		return modelReply{body: toolCallCompletion}
+	})
+	validation := newValidation(t)
+
+	client := &callback.Client{
+		HTTP:     &http.Client{Timeout: 5 * time.Second},
+		Endpoint: plane.URL + "/internal/enterprise/v1/tool-invocations",
+	}
+	governed := GovernedTool(client, governedToolName, "probe_governed@1.0.0", "Platform-governed contract tool.", nil)
+	c := newCandidate(t, newAgent(t, provider.URL, false, governed), provider, log, validation)
+
+	res, body := c.postRun(t, nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("run status = %d, body = %s", res.StatusCode, body)
+	}
+	events := parseSSE(t, body)
+	assertContract(t, events)
+	if last := events[len(events)-1]["type"]; last != "RUN_ERROR" {
+		t.Fatalf("terminal = %v, want RUN_ERROR", last)
+	}
+	if calls := planeCalls(); len(calls) != 1 {
+		t.Fatalf("plane calls = %d, want exactly the refused prepare (no execute)", len(calls))
+	}
+	if calls := log.snapshot(); len(calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1 (the model is never re-asked)", len(calls))
+	}
+}
+
+// A proposal that needs approval is not executed and not retried by the
+// model: approval is a platform state change this candidate has no channel
+// to supply, so the call fails rather than pretending.
+func TestApprovalRequiredStopsBeforeExecuting(t *testing.T) {	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
+		if strings.HasSuffix(path, "/prepare") {
+			return http.StatusOK, `{"operation_id":"op_approval","requires_approval":true,"safety_preview":"would delete something","deduplicated":false,"reconciliation_required":false}`
+		}
+		return http.StatusForbidden, `{"error_code":"unexpected_execute"}`
+	})
+	provider, log := newProvider(t, func(call int, req providerRequest) modelReply {
+		return modelReply{body: toolCallCompletion}
+	})
+	validation := newValidation(t)
+
+	client := &callback.Client{
+		HTTP:     &http.Client{Timeout: 5 * time.Second},
+		Endpoint: plane.URL + "/internal/enterprise/v1/tool-invocations",
+	}
+	governed := GovernedTool(client, governedToolName, "probe_governed@1.0.0", "Platform-governed contract tool.", nil)
+	c := newCandidate(t, newAgent(t, provider.URL, false, governed), provider, log, validation)
+
+	res, body := c.postRun(t, nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("run status = %d, body = %s", res.StatusCode, body)
+	}
+	events := parseSSE(t, body)
+	assertContract(t, events)
+	if last := events[len(events)-1]["type"]; last != "RUN_ERROR" {
+		t.Fatalf("terminal = %v, want RUN_ERROR", last)
+	}
+	if calls := planeCalls(); len(calls) != 1 {
+		t.Fatalf("plane calls = %d, want exactly the prepare (approval must gate execute)", len(calls))
 	}
 }
 
@@ -879,4 +1048,29 @@ func eventTypes(events []map[string]any) []string {
 		types[i] = fmt.Sprint(e["type"])
 	}
 	return types
+}
+
+// The suspension signal carries both identities at once: a stop error the
+// framework ends the run on, and the sentinel a host reconciles on. Either
+// check alone would let the other half of the contract drift.
+func TestSuspensionSignalsKeepTheirErrorChains(t *testing.T) {
+	pending := newPendingReceiptError("op_x", "submitted", nil)
+	if !errors.Is(pending, ErrSuspendedPendingReceipt) {
+		t.Fatal("pending receipt lost its sentinel")
+	}
+	var stop *agent.StopError
+	if !errors.As(pending, &stop) {
+		t.Fatal("pending receipt is not a stop error: the model could be re-asked")
+	}
+
+	approval := &approvalRequiredError{
+		operationID: "op_y",
+		stop:        agent.NewStopError("OPERATION_REQUIRES_APPROVAL: op_y"),
+	}
+	if !errors.Is(approval, ErrApprovalRequired) {
+		t.Fatal("approval refusal lost its sentinel")
+	}
+	if !errors.As(approval, &stop) {
+		t.Fatal("approval refusal is not a stop error")
+	}
 }

@@ -1,28 +1,73 @@
 {
-  "commit": "48f9041218f6315e09aab92cd815f1adb3c04f2c",
+  "commit": "d49109b3da39b037c64f996757b6b54f14ff12a9",
   "go_version": "go version go1.26.3 darwin/arm64",
   "workspace_digest": {
     "dirty": true,
     "summary": [
-      "M runtime-go/testdata/compatibility-report.json",
-      "?? server/tests/support/pg-errors.ts"
+      "M examples/fintech/model.yaml",
+      " M mobile/app/_layout.tsx",
+      " M mobile/package-lock.json",
+      " M mobile/package.json",
+      " M mobile/src/api.ts",
+      " M mobile/src/auth.ts",
+      " M runtime-go/cmd/runtime/main.go",
+      " M runtime-go/internal/adapter/agui.go",
+      " M runtime-go/internal/adapter/agui_test.go",
+      " M runtime-go/internal/callback/client.go",
+      " M runtime-go/internal/callback/client_test.go",
+      " M runtime-go/internal/identity/context.go",
+      " M runtime-go/internal/identity/context_test.go",
+      " M runtime-go/internal/runtimeconfig/config.go",
+      " M runtime-go/internal/runtimeconfig/config_test.go",
+      " M runtime-go/internal/server/auth.go",
+      " M runtime-go/testdata/compatibility-report.json",
+      " M server/scripts/enterprise-runtime-probe.ts",
+      " M server/src/app.ts",
+      " M server/src/billing/service.ts",
+      " M server/src/billing/store.ts",
+      " M server/src/billing/types.ts",
+      " M server/src/billing/webhook-signature.ts",
+      " M server/src/db/schema/billing.ts",
+      " M server/src/plugins/access.ts",
+      " M server/src/plugins/store.ts",
+      " M server/tests/billing-routes.test.ts",
+      " M server/tests/billing-store.integration.test.ts",
+      " M server/tests/billing-sync.test.ts",
+      " M server/tests/billing-webhook-signature.test.ts",
+      " M server/tests/billing-webhook.test.ts",
+      " M server/tests/enterprise/runtime-callback.test.ts",
+      " M server/tests/plugin-store.integration.test.ts",
+      " M server/tests/support/billing.ts",
+      "?? server/scripts/enterprise-identity-provision.ts",
+      "?? server/scripts/enterprise-provision.ts",
+      "?? server/src/enterprise/authz/",
+      "?? server/src/enterprise/contracts.ts",
+      "?? server/src/enterprise/errors.ts",
+      "?? server/src/enterprise/runtime/tool-invocations.ts",
+      "?? server/src/enterprise/tenancy/",
+      "?? server/tests/enterprise/tenancy/directory.test.ts",
+      "?? server/tests/enterprise/tenancy/provision.test.ts",
+      "?? server/tests/enterprise/tenancy/repository.test.ts",
+      "?? server/tests/enterprise/tenancy/scope.test.ts",
+      "?? server/tests/enterprise/tenancy/transaction.test.ts",
+      "?? shared/enterprise/"
     ]
   },
   "document_baseline": {
     "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
-    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "6ab62b26dc2a8506716ee68e25e306bfde298dcbe72c55b43ca9759d9c614935",
-    "server/scripts/enterprise-runtime-probe.ts": "38ef2b9e132aac1171e8cc6b328d417b2d43af9f67312e1b6d1e7ad745a320bc",
-    "runtime-go/cmd/runtime/main.go": "2cee75fdeb424b680431be462c3dec250a1c1e92d54c5dbc5d69dae268a7c352",
-    "runtime-go/internal/adapter/agui_test.go": "f32e48245e48cba5cf4311ac441b2e7ebc8a9e7911cef80359f9dabdd388f67d",
-    "runtime-go/internal/adapter/agui.go": "c59c944795f6a8f78f6689588577c7068b2ea81fd9d507ff03a95cfbe67fe33f",
-    "runtime-go/internal/callback/client_test.go": "e7cf0b412ed372bb6a7f87ea704fa1d81f5dd0698af756cea0803e53c11c03b7",
-    "runtime-go/internal/callback/client.go": "db6ebdf120ac0457e232cddcfe0374d540bdc23ab71e63806e368e5651768f52",
-    "runtime-go/internal/identity/context_test.go": "d03a97c46ce497183de8a3d1611be3aa6717ca9d1d2fa1fee6622b0d27728c1b",
-    "runtime-go/internal/identity/context.go": "fe45eee5b87d38a5d8bd82c094459aa9f85393a1d4d8cdd6ac86826846889e2f",
-    "runtime-go/internal/runtimeconfig/config_test.go": "cbbd59e0dae9690e15c9c0ec7583720046c1950e8c61e42d484119139018894e",
-    "runtime-go/internal/runtimeconfig/config.go": "ea68f6fea75e574517bf96a1e3a8730ac2d1cf1f37a609f012d7e6934886bca5",
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "8893882fa0522b687c34290ac02849d4c023c99704cc464c5a4cbc2fd0a1854d",
+    "server/scripts/enterprise-runtime-probe.ts": "6b35954a9c4fcc5e026bdd7ab37e1a8cf588a0b7b5b5b314b3806daad623ffea",
+    "runtime-go/cmd/runtime/main.go": "d26cba2c914a8b3963b4ed6edeaec530e65174d27f758972f3bb3cfd6826c3f2",
+    "runtime-go/internal/adapter/agui_test.go": "d79f2a986fc88c8e53ed7a302b7aa8cd6e46f8a1cb2a9d6b8183b73e3950d936",
+    "runtime-go/internal/adapter/agui.go": "444be216cf0e309375fd7db202427ac3d1b7da1a9cdce09e5e5ddbbae1ae31a9",
+    "runtime-go/internal/callback/client_test.go": "a1526f297c71b26c008f25411b9722e2f18ba95f4504553d34af11f69fa57473",
+    "runtime-go/internal/callback/client.go": "528d921ecc19ef458d3ef750a6e5a3cef2e4fa4ea464016e851368798e39c7f2",
+    "runtime-go/internal/identity/context_test.go": "c9cd3b801ab07c84257cc2a32170c4e8a6c836dd34a3dc41c9cf07acfe81fce9",
+    "runtime-go/internal/identity/context.go": "9fc0a382ffbb13832998aafdecc5609edf531a2a16b7778f285347e7c288ca4f",
+    "runtime-go/internal/runtimeconfig/config_test.go": "ae370c24c2a3a895b781dc2526094535596d4ec57cf3bf054415bed0b3f375f3",
+    "runtime-go/internal/runtimeconfig/config.go": "0d2781e19619b89fe4301fc3a18a35fc217dfebaa92e7a92724bc6fb95a3f8db",
     "runtime-go/internal/server/auth_test.go": "ef273bc35f45af435fa947a6ee55c35e24f3757a007c30b88f53cf61ab02a590",
-    "runtime-go/internal/server/auth.go": "b37441ac7ed079cf768371a95da018126ef08bfbc97f03a4b9479318954765c9",
+    "runtime-go/internal/server/auth.go": "92f24a191e43f6cc6b70f903f7af0c150e4bc2b2cf88480a6ac804ad312139a8",
     "runtime-go/internal/server/cancel_test.go": "fb5088ef930cd2754383a54507b3f1b31903b86813be83f028787ff06e8b8b16",
     "runtime-go/internal/server/cancel.go": "41bdd5054c73b847e68e152ae29857483f8efacea226b949581e39ed033b9609",
     "runtime-go/internal/server/health_test.go": "ad1f04c3cc1d68f251f383bdd392d90dee198429e72001f70c47a021d9e4c040",
@@ -714,7 +759,7 @@
         "-o",
         "rss=",
         "-p",
-        "11462"
+        "65899"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -753,7 +798,7 @@
     },
     "tool": {
       "status": "passed",
-      "evidence": "governed calls that crossed /api/agent-tools/call: [{\"name\":\"probe_governed\",\"botId\":\"probe_bot\",\"actorId\":\"actor_probe\"}]; run carried TOOL_CALL_START and finished with text \"callback-observed\""
+      "evidence": "prepare/execute crossings on the fake tool plane: 1 operation (probe_governed on run_callback), 1 receipt (succeeded), effects=1; run carried TOOL_CALL_START and finished with text \"callback-observed\""
     },
     "wait": {
       "status": "not_run",
@@ -765,7 +810,7 @@
     },
     "cancel": {
       "status": "passed",
-      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 1ms after the cancel"
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 2ms after the cancel"
     },
     "backpressure": {
       "status": "not_run",
@@ -800,9 +845,9 @@
     }
   },
   "measurements": {
-    "rssBytes": 25182208,
-    "firstEventMs": 4,
-    "cancelLagMs": 1,
+    "rssBytes": 25165824,
+    "firstEventMs": 5,
+    "cancelLagMs": 2,
     "streamDurationMs": 6
   },
   "reviewers": {

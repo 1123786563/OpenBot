@@ -21,6 +21,15 @@ import type { VerifiedWebhook, WebhookVerifier } from "./types";
  * whitelist (`RS256`), not a value honoured: `none` and an HMAC algorithm impersonating the
  * public-key mode are both refused before anything is verified.
  *
+ * The payload the signature covers is the provider's wire shape (Webhooks::BaseService):
+ * `{ webhook_type, object_type, organization_id, <object_type>: <serialised object> }` — the
+ * subject object sits in a member named by `object_type`, so a `subscription.*` delivery nests its
+ * `subscription` and a `customer.*` delivery nests its `customer`. There is no `event_id` in the
+ * body at all: the event's identity rides only in the `X-Lago-Unique-Key` header (webhook.rb
+ * `generate_headers` sets it to the webhook record's id), which is why the delivery below reads
+ * that header and refuses a delivery without it — an event that cannot be named cannot be
+ * de-duplicated, so it is not accepted as work.
+ *
  * hmac: chosen when the provider's webhook endpoint is created with the hmac algorithm.
  * `X-Lago-Signature` is `base64(HMAC-SHA256(rawBody))`, compared in constant time.
  *
@@ -80,24 +89,49 @@ function parseJson(value: string): unknown {
   }
 }
 
-function deliveryOf(data: unknown): VerifiedWebhook | null {
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Read one verified payload as a delivery, in the provider's wire shape.
+ *
+ * Identity first: the event id is the `X-Lago-Unique-Key` header, never a body member (see the
+ * file header). Then the `webhook_type`, which is at the top level of the payload. The subject
+ * object — where this reads which customer the event concerns, and the provider's own id for the
+ * object — sits in a member named by `object_type`: a subscription delivery carries
+ * `subscription.external_customer_id`, a customer delivery carries `customer.external_id`, and
+ * both carry `lago_id`. A delivery about an object this deployment does not project (an invoice,
+ * a wallet) simply yields no customer: that is finished work, not a refusal.
+ */
+function deliveryOf(headers: Headers, data: unknown): VerifiedWebhook | null {
+  const eventId = nonEmptyString(headers.get("x-lago-unique-key")?.trim());
+  if (eventId === undefined) return null;
+
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const record = data as Record<string, unknown>;
-  const eventId = record.event_id;
-  const webhookType = record.webhook_type;
-  if (typeof eventId !== "string" || eventId.length === 0) return null;
-  if (typeof webhookType !== "string" || webhookType.length === 0) return null;
-  const objectId = record.object_id;
-  const externalCustomerId = record.external_customer_id;
+  const webhookType = nonEmptyString(record.webhook_type);
+  if (webhookType === undefined) return null;
+
+  const objectType = nonEmptyString(record.object_type);
+  const object = objectType !== undefined ? record[objectType] : undefined;
+  const subject =
+    object && typeof object === "object" && !Array.isArray(object)
+      ? (object as Record<string, unknown>)
+      : undefined;
+  // `external_customer_id` on the objects that carry one; `external_id` on a customer object,
+  // which is this deployment's own external key for itself.
+  const externalCustomerId = subject
+    ? (nonEmptyString(subject.external_customer_id) ??
+      nonEmptyString(subject.external_id))
+    : undefined;
+  const objectId = subject ? nonEmptyString(subject.lago_id) : undefined;
+
   return {
     eventId,
     webhookType,
-    ...(typeof objectId === "string" && objectId.length > 0
-      ? { objectId }
-      : {}),
-    ...(typeof externalCustomerId === "string" && externalCustomerId.length > 0
-      ? { externalCustomerId }
-      : {}),
+    ...(objectId !== undefined ? { objectId } : {}),
+    ...(externalCustomerId !== undefined ? { externalCustomerId } : {}),
   };
 }
 
@@ -160,7 +194,7 @@ export function createWebhookVerifier(config: {
         if (!jsonEqual(payload, parseJson(rawBody))) {
           return { ok: false };
         }
-        const delivery = deliveryOf(payload);
+        const delivery = deliveryOf(headers, payload);
         return delivery ? { ok: true, delivery } : { ok: false };
       }
 
@@ -174,7 +208,7 @@ export function createWebhookVerifier(config: {
         // below is the constant-time one on equal-length values.
         if (given.length !== wanted.length) return { ok: false };
         if (!timingSafeEqual(given, wanted)) return { ok: false };
-        const delivery = deliveryOf(parseJson(rawBody));
+        const delivery = deliveryOf(headers, parseJson(rawBody));
         return delivery ? { ok: true, delivery } : { ok: false };
       }
 

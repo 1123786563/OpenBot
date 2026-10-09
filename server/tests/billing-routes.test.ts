@@ -191,12 +191,24 @@ describe("the webhook routes", () => {
     return app;
   }
 
-  /** A signed delivery as a request init, spread straight into `app.request`. */
+  /**
+   * A signed delivery in the provider's wire shape: the subject object nested under its
+   * `object_type` member, and the event's identity in the `X-Lago-Unique-Key` header — the body
+   * carries no `event_id` of its own. `external_customer_id` and `external_id` both name this
+   * deployment because the caller only sends customer deliveries here; the verifier reads whichever
+   * the object type carries.
+   */
   function signedDelivery(eventId: string, webhookType: string) {
+    const objectType = webhookType.split(".")[0] ?? "object";
     const body = JSON.stringify({
-      event_id: eventId,
       webhook_type: webhookType,
-      external_customer_id: DEPLOYMENT_KEY,
+      object_type: objectType,
+      organization_id: "lago-org-1",
+      [objectType]: {
+        lago_id: `lago-${objectType}-1`,
+        external_customer_id: DEPLOYMENT_KEY,
+        external_id: DEPLOYMENT_KEY,
+      },
     });
     return {
       method: "POST" as const,
@@ -206,6 +218,7 @@ describe("the webhook routes", () => {
           .update(body)
           .digest("base64"),
         "x-lago-signature-algorithm": "hmac",
+        "x-lago-unique-key": eventId,
       },
       body,
     };
@@ -214,9 +227,14 @@ describe("the webhook routes", () => {
   test("a bad signature is refused 401 with no session in front of it", async () => {
     const app = webhookApp();
     const body = JSON.stringify({
-      event_id: "evt-1",
       webhook_type: "customer.created",
-      external_customer_id: DEPLOYMENT_KEY,
+      object_type: "customer",
+      organization_id: "lago-org-1",
+      customer: {
+        lago_id: "lago-customer-1",
+        external_id: DEPLOYMENT_KEY,
+        external_customer_id: DEPLOYMENT_KEY,
+      },
     });
     const response = await app.request("/api/billing/webhooks/lago", {
       method: "POST",

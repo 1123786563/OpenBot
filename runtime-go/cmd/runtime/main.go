@@ -72,19 +72,20 @@ func main() {
 	}
 	provider := openaimodel.New(cfg.ModelAlias, modelOptions...)
 
-	// The one governed-tool client (legacy plane) shared by every expert;
-	// GovernedTool keeps the endpoint and credential out of model hands.
+	// The one governed-tool client (the internal tool-invocations plane)
+	// shared by every expert. The plane address is operator configuration;
+	// the credentials each call presents come from the verified run's
+	// private context, so nothing here is model-reachable.
 	var governedTools []tool.Tool
 	if len(cfg.GovernedTools) > 0 {
 		plane := &callback.Client{
-			HTTP:       &http.Client{Timeout: 10 * time.Second},
-			Endpoint:   cfg.CallbackEndpoint,
-			AgentToken: cfg.AgentToken,
+			HTTP:     &http.Client{Timeout: 10 * time.Second},
+			Endpoint: cfg.CallbackEndpoint,
 		}
-		for _, name := range cfg.GovernedTools {
+		for _, entry := range cfg.GovernedTools {
 			governedTools = append(governedTools,
-				adapter.GovernedTool(plane, name,
-					"Platform-governed tool; executes on the TS plane.", nil))
+				adapter.GovernedTool(plane, entry.Name, entry.InstallationVersion,
+					"Platform-governed tool; proposes and executes on the TS plane.", nil))
 		}
 	}
 

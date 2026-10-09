@@ -93,3 +93,27 @@ func TestDelegationRefIsOptionalForUserRuns(t *testing.T) {
 		t.Fatalf("delegation ref = %q, want it carried through", got.DelegationRef)
 	}
 }
+
+// The tool-plane credential pair is whole or absent: a half-empty pair is
+// refused rather than repaired, because the missing half is a credential
+// the middleware never vouched for and no tool call may present.
+func TestToolCredentialsAreWholeOrAbsent(t *testing.T) {
+	if _, ok := ToolCredentialsFromContext(context.Background()); ok {
+		t.Fatal("an unverified context presented tool credentials")
+	}
+	full := WithToolCredentials(context.Background(), ToolCredentials{
+		ServiceCredential: "service-credential",
+		Capability:        "capability",
+	})
+	if _, ok := ToolCredentialsFromContext(full); !ok {
+		t.Fatal("a stored pair was refused")
+	}
+	for name, pair := range map[string]ToolCredentials{
+		"no service credential": {Capability: "capability"},
+		"no capability":         {ServiceCredential: "service-credential"},
+	} {
+		if _, ok := ToolCredentialsFromContext(WithToolCredentials(context.Background(), pair)); ok {
+			t.Fatalf("%s: a half-empty pair was accepted", name)
+		}
+	}
+}
