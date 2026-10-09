@@ -127,6 +127,11 @@ func main() {
 	}
 	auth := server.Authenticate(authConfig)
 	gate := server.NewRunGate(cfg.MaxConcurrentRuns)
+	// This process's own execution bookkeeping: which verified tuple is
+	// executing under which fencing. Process-local by design — a restart
+	// starts it empty and the cancel boundary then answers a plain 404 for
+	// every pre-restart run (R3-B③/R3-B④).
+	executions := server.NewExecutionRegistry()
 
 	var ready atomic.Bool
 	mux := http.NewServeMux()
@@ -137,14 +142,16 @@ func main() {
 	}))
 	// Execution: the gate bounds concurrency and answers 503 while draining;
 	// authentication turns the enterprise envelope into a verified run; the
-	// input guard binds that envelope to the input that actually arrived
+	// execution tracker records the verified tuple while its stream serves;
+	// the input guard binds that envelope to the input that actually arrived
 	// (digest + turn binding); the expert router serves the run with the
 	// handler its VERIFIED expert version names (403 for anything outside
 	// the fixed catalog).
-	mux.Handle(executionRoute, gate.Middleware(auth(server.RequireVerifiedInput()(server.RouteByExpert(catalog)))))
+	mux.Handle(executionRoute, gate.Middleware(auth(executions.TrackExecutions(server.RequireVerifiedInput()(server.RouteByExpert(catalog))))))
 	// Cancel stays reachable while draining: stopping a run is exactly what
-	// drain itself needs to do.
-	mux.Handle(cancelRoute, auth(server.Cancel(adapter.CompositeCanceler(cancelers...))))
+	// drain itself needs to do. The registry resolves the execution by the
+	// full verified tuple and verifies the executing fencing first.
+	mux.Handle(cancelRoute, auth(server.Cancel(adapter.CompositeCanceler(cancelers...), executions)))
 
 	srv := &http.Server{
 		Handler:           mux,

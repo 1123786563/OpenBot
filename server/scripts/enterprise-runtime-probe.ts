@@ -221,10 +221,14 @@ func main() {
 	}
 
 	auth := server.Authenticate(authCfg)
+	// The execution registry: which verified tuple is executing under which
+	// fencing. Process-local; the cancel boundary resolves executions by the
+	// full verified tuple and verifies the executing fencing (R3-B③).
+	executions := server.NewExecutionRegistry()
 	mux := http.NewServeMux()
 	mux.Handle("/health/", server.Health(func() bool { return authCfg.Ready() }))
-	mux.Handle("/agui/", http.StripPrefix("/agui", auth(server.RequireVerifiedInput()(handler))))
-	mux.Handle("/cancel", auth(server.Cancel(canceler)))
+	mux.Handle("/agui/", http.StripPrefix("/agui", auth(executions.TrackExecutions(server.RequireVerifiedInput()(handler)))))
+	mux.Handle("/cancel", auth(server.Cancel(canceler, executions)))
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

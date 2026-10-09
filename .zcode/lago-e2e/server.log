@@ -1,0 +1,5 @@
+LAGO_ALLOW_PRIVATE_HOSTS=true lets the billing provider sit on this deployment's own network. Fine against a local Lago stack; check that this is deliberate before deploying.
+{"type":"computer-isolation","provider":"none","isolation":"off"}
+[CopilotKit Runtime] telemetry enabled — see https://docs.copilotkit.ai/telemetry to opt out (set COPILOTKIT_TELEMETRY_DISABLED=true).
+No identity provider is configured, so every request is treated as dev@openbot.local (administrator). Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_* before anybody else can reach this.
+OpenBot server listening on http://127.0.0.1:3200

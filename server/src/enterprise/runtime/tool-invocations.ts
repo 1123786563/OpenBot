@@ -99,6 +99,8 @@ export type FakeOperationRecord = {
   target: string;
   args_digest: string;
   installation_version: string;
+  /** The lease proof the operation was PROPOSED under; a renewed lease may not spend it. */
+  fencing_token: string;
   status: "proposed" | ReceiptStatus;
   requires_approval: boolean;
 };
@@ -397,6 +399,7 @@ export function createFakeToolInvocationPlane(deps: FakeToolPlaneDeps): FakeTool
       target: proposal.target,
       args_digest: proposal.args_digest,
       installation_version: proposal.installation_version,
+      fencing_token: body.fencing_token as string,
       status: "proposed",
       requires_approval: requiresApproval,
     };

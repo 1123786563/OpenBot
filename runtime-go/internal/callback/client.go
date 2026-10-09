@@ -41,6 +41,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"openbot/runtime-go/internal/identity"
 )
@@ -52,6 +53,12 @@ const (
 	// answer or receipt is small text; anything past this is a plane holding
 	// this process on an endless body.
 	MaxResponseBytes = int64(1 << 20) // 1 MiB
+
+	// DefaultTimeout is the total-time bound one plane round trip gets when
+	// neither the caller nor a supplied client set one. A plane that never
+	// answers must not hold a run forever; the number is a suggested
+	// configuration default, capacity validation owns the production value.
+	DefaultTimeout = 10 * time.Second
 
 	// prepareSuffix and the execute suffix are the fixed sub-paths the
 	// configured plane address (master plan §4.1) is extended by.
@@ -207,12 +214,19 @@ func DigestArgs(canonicalJSON []byte) string {
 //
 // HTTP and Endpoint are operator configuration; the credential pair is not a
 // field at all — it is taken from the private context of each call, because
-// it belongs to the verified run, not to the process. This is a value type
-// on purpose: there is nothing to lifecycle, and a zero HTTP field means
-// "use the default transport with redirects refused".
+// it belongs to the verified run, not to the process. Timeout is the total
+// bound one round trip gets when the supplied client carries none: every
+// call is bounded by SOME total timeout, so a silent plane cannot hold a run
+// forever. This is a value type on purpose: there is nothing to lifecycle,
+// and a zero HTTP field means "use the default transport with redirects
+// refused and the default total timeout".
 type Client struct {
 	HTTP     *http.Client
 	Endpoint string
+	// Timeout bounds one plane round trip when HTTP is nil or carries no
+	// timeout of its own. Zero means DefaultTimeout; an explicit timeout on
+	// a supplied client always wins.
+	Timeout time.Duration
 }
 
 // Prepare proposes one governed operation and returns the platform's
@@ -270,6 +284,12 @@ func (c Client) Execute(ctx context.Context, e ToolExecution) (Receipt, error) {
 			// A 200 whose body is not a readable receipt cannot be shown to
 			// the model as an answer the tool never gave.
 			return Receipt{}, fmt.Errorf("%w: answer is not a receipt", ErrOutcomeUnknown)
+		}
+		if *decoded.OperationID != e.OperationID {
+			// The answer must speak for THIS spend: a receipt naming another
+			// operation proves nothing about the one this call sent (which
+			// may or may not have been spent), so the outcome stays unknown.
+			return Receipt{}, fmt.Errorf("%w: answer is a receipt for a different operation", ErrOutcomeUnknown)
 		}
 		receipt := Receipt{
 			OperationID:            *decoded.OperationID,
@@ -460,6 +480,11 @@ func (c Client) post(ctx context.Context, suffix string, payload any) (int, []by
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
+	// The total bound: a client with no timeout of its own gets this one,
+	// so every call is bounded and a silent plane cannot hold the run.
+	if client.Timeout <= 0 {
+		client.Timeout = c.timeout()
+	}
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -480,6 +505,15 @@ func (c Client) post(ctx context.Context, suffix string, payload any) (int, []by
 		return 0, nil, fmt.Errorf("%w: answer exceeds %d bytes", ErrOutcomeUnknown, MaxResponseBytes)
 	}
 	return res.StatusCode, data, nil
+}
+
+// timeout resolves the total round-trip bound: the caller's explicit Timeout,
+// or the documented default when none was set.
+func (c Client) timeout() time.Duration {
+	if c.Timeout > 0 {
+		return c.Timeout
+	}
+	return DefaultTimeout
 }
 
 // approvedEndpoint accepts a configured http/https URL without userinfo and

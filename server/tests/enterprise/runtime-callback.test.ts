@@ -759,4 +759,168 @@ describe("the enterprise tool-invocations plane (G1a fake)", () => {
     expect(plane.state.operations).toHaveLength(1);
     expect(plane.state.effects).toBe(1);
   });
+
+  /*
+   * R3-C acceptance-matrix G1a row (01 plan): 旧fencing、别租户、别主体、
+   * 不同attempt 的调用 → 拒绝且不调用工具。 The tenant row is pinned above;
+   * these pin the attempt, principal and lease boundaries of a SPEND.
+   */
+  test("a spend from a different attempt of the same run is refused", async () => {
+    const { plane, call } = planeFixture();
+    const owner = mintCapability(); // {RUN_1, ATTEMPT_1, FENCING_1}
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", owner, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    // A resumed run's second attempt, properly credentialed for itself: the
+    // capability and body agree on attempt_2, but the operation belongs to
+    // attempt_1. Cross-attempt spend is refused — that is reconciliation
+    // territory, not a silent re-spend by the new attempt.
+    const resumed = mintCapability({ attempt_id: "attempt_2" });
+    const refused = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      resumed,
+      { operation_id, attempt_id: "attempt_2", args_digest: digest, fencing_token: FENCING_1 },
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error_code: "binding_mismatch" });
+    expect(plane.state.effects).toBe(0);
+    expect(plane.state.receipts).toHaveLength(0);
+  });
+
+  test("a spend from a different principal of the same tenant is refused", async () => {
+    const { plane, call } = planeFixture();
+    const owner = mintCapability(); // principal_alpha's run
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", owner, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    // Same tenant, same run/fencing/attempt binding, DIFFERENT principal:
+    // even a capability the platform minted for that principal spends
+    // nothing of another principal's operation.
+    const colleague = mintCapability({ principal_id: "principal_beta" });
+    const refused = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      colleague,
+      { operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1 },
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error_code: "binding_mismatch" });
+    expect(plane.state.effects).toBe(0);
+    expect(plane.state.receipts).toHaveLength(0);
+  });
+
+  test("an operation is bound to the fencing it was proposed under: a renewed lease cannot spend it", async () => {
+    const { plane, call } = planeFixture();
+    const first = mintCapability(); // fencing_1's lease
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", first, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    // The lease was renewed: a fresh, validly-minted capability now carries
+    // fencing_2 for the same run/attempt/principal. The operation was
+    // PROPOSED under fencing_1 — the old fencing may not spend it, and the
+    // new fencing may not either (master §4.3: 旧fencing不能提交工具).
+    const renewed = mintCapability({ fencing_token: "fencing_2" });
+    const refused = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      renewed,
+      { operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: "fencing_2" },
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error_code: "binding_mismatch" });
+
+    // And the operation the proposal's own lease CAN spend still spends
+    // exactly once — the boundary refused the foreign spend, not the op.
+    const spent = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      first,
+      { operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1 },
+    );
+    expect(spent.status).toBe(200);
+    expect(plane.state.effects).toBe(1);
+  });
+
+  /*
+   * R3-B② (01 plan): an unknown outcome is machine-checkable and queryable.
+   * The unknown receipt freezes the operation, and the freeze is visible
+   * through the plane — re-prepare reports reconciliation_required instead
+   * of a fresh operation, and a second spend is the reconciliation 409.
+   */
+  test("an unknown receipt freezes the operation and the freeze stays queryable", async () => {
+    const { plane, call } = planeFixture({
+      serviceCredential: TOOL_SERVICE_CREDENTIAL,
+      capabilities,
+      outcome: () => ({ status: "unknown" }),
+    });
+    const capability = mintCapability();
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+    const executePath = `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`;
+
+    const first = await call(executePath, capability, {
+      operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1,
+    });
+    expect(first.status).toBe(200);
+    const receipt = (await first.json()) as {
+      status: string; reconciliation_required: boolean; result_text?: string;
+    };
+    // Machine-checkable: the status IS the frozen enum's unknown, flagged
+    // for reconciliation, and it is not dressed up as an answer.
+    expect(receipt.status).toBe("unknown");
+    expect(receipt.reconciliation_required).toBe(true);
+    expect(receipt.result_text).toBeUndefined();
+
+    // Queryable: re-preparing the same business content reports the SAME
+    // frozen operation instead of allocating a fresh one.
+    const requiry = await call("/internal/enterprise/v1/tool-invocations/prepare", capability, proposal());
+    const requiryBody = (await requiry.json()) as {
+      operation_id: string; deduplicated: boolean; reconciliation_required: boolean;
+    };
+    expect(requiryBody.operation_id).toBe(operation_id);
+    expect(requiryBody.deduplicated).toBe(true);
+    expect(requiryBody.reconciliation_required).toBe(true);
+
+    // And a second spend attempt is the reconciliation 409, never a re-run.
+    const second = await call(executePath, capability, {
+      operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1,
+    });
+    expect(second.status).toBe(409);
+    expect(await second.json()).toMatchObject({ error_code: "reconciliation_required" });
+    expect(plane.state.effects).toBe(0);
+    expect(plane.state.receipts).toHaveLength(1);
+  });
+
+  /*
+   * R3-B④ (01 plan): a short-term capability update re-authenticates per
+   * call — the plane never remembers yesterday's credential. A re-issued
+   * capability (the platform re-verified membership/lease before minting it)
+   * spends from the first request; the expired original keeps being refused.
+   */
+  test("a re-issued capability re-authenticates per call; the expired original stays refused", async () => {
+    const { plane, call } = planeFixture();
+    const original = mintCapability();
+    const digest = canonicalArgsDigest({ search: "incident" });
+    const prepared = await call("/internal/enterprise/v1/tool-invocations/prepare", original, proposal());
+    const { operation_id } = (await prepared.json()) as { operation_id: string };
+
+    // The capability is re-issued after the approval round (same binding,
+    // fresh expiry): per-call re-authentication accepts it immediately —
+    // there is no process-level credential the update could bypass.
+    const reissued = mintCapability();
+    const spent = await call(
+      `/internal/enterprise/v1/tool-invocations/${operation_id}/execute`,
+      reissued,
+      { operation_id, attempt_id: ATTEMPT_1, args_digest: digest, fencing_token: FENCING_1 },
+    );
+    expect(spent.status).toBe(200);
+    expect(((await spent.json()) as { status: string }).status).toBe("succeeded");
+    expect(plane.state.effects).toBe(1);
+
+    // The expired original is still refused everywhere (no ignoreExpiry).
+    const expired = mintCapability({ expires_at: Date.now() - 1_000 });
+    const refused = await call("/internal/enterprise/v1/tool-invocations/prepare", expired, proposal());
+    expect(refused.status).toBe(401);
+  });
 });
