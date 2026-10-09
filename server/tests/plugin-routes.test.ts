@@ -1626,6 +1626,13 @@ function brokeredApp(
     id: string;
     title: string;
     url: string;
+    /*
+     * Which broker a brokered row was enabled through, mirroring `ServerAddress`'s own field: the
+     * connect dispatch and the account-mode gate read the row's provenance to decide which broker's
+     * client serves it, so a fixture row without one is a row those routes read as not brokered at
+     * all — exactly what the real store stopped answering when the column gained readers.
+     */
+    provenance: string;
     authScheme: string | null;
     /** Absent is Personal, which is every row below but the one added for the Shared case. */
     accountMode?: "shared";
@@ -1636,6 +1643,7 @@ function brokeredApp(
       // reads it off the row, and the id beside it is what that refusal used to quote instead.
       title: "Linear",
       url: "composio://linear",
+      provenance: "composio",
       /*
        * The scheme this app's config was created as, which is what decides which of the two
        * brokered flows the route opens. `OAUTH2` is a consent app: there is no form to draw, and
@@ -1656,6 +1664,7 @@ function brokeredApp(
       id: "composio-firecrawl",
       title: "Firecrawl",
       url: "composio://firecrawl",
+      provenance: "composio",
       authScheme: "API_KEY",
     },
     /*
@@ -1675,6 +1684,7 @@ function brokeredApp(
       id: "composio-hackernews",
       title: "Hacker News",
       url: "composio://hackernews",
+      provenance: "composio",
       authScheme: "NO_AUTH",
     },
     /*
@@ -1688,6 +1698,9 @@ function brokeredApp(
       id: "notion",
       title: "Notion",
       url: "https://notion.test/mcp",
+      // A curated row's provenance, which is what a not-brokered row carries — the half of the
+      // fixture's answer that "is this row a broker's" has to refuse on.
+      provenance: "first-party",
       // Null is not an older brokered row; it is a row that is not brokered at all.
       authScheme: null,
     },
@@ -1710,6 +1723,7 @@ function brokeredApp(
       id: "composio-slack",
       title: "Slack",
       url: "composio://slack",
+      provenance: "composio",
       authScheme: null,
     },
     /*
@@ -1726,6 +1740,7 @@ function brokeredApp(
       id: "composio-trello",
       title: "Trello",
       url: "composio://trello",
+      provenance: "composio",
       authScheme: "OAUTH1",
     },
     /*
@@ -1737,6 +1752,7 @@ function brokeredApp(
       id: "composio-firecrawl-shared",
       title: "Firecrawl",
       url: "composio://firecrawl",
+      provenance: "composio",
       authScheme: "API_KEY",
       accountMode: "shared",
     },
@@ -1746,9 +1762,10 @@ function brokeredApp(
     /*
      * Every read the plugins surface makes on its way to the route under test.
      *
-     * Three columns, looked up by id, because that is all these routes ask for: the url they read
-     * the app out of and the title a refusal names. The whole server list is what they used to ask
-     * for, and a stub that still answered one would be pretending they need more than they do.
+     * Four columns, looked up by id, because that is all these routes ask for: the url they read
+     * the app out of, the provenance they read the broker off of, and the title a refusal names.
+     * The whole server list is what they used to ask for, and a stub that still answered one would
+     * be pretending they need more than they do.
      */
     serverAddress: async (serverId: string) =>
       rows.find((row) => row.id === serverId),

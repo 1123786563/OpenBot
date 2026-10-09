@@ -676,7 +676,10 @@ export function createPluginRoutes(
       return context.json({ error: "Choose personal or shared." }, 400);
     const serverId = context.req.param("id");
     const row = await store.serverAddress(serverId);
-    if (!row || !toolkitOf(row.url)) {
+    // The registry's read, for the connect branch's reason: this gate asks "is this row a broker's",
+    // and with two brokers that question is answered by the row's provenance, not by one broker's
+    // url scheme alone — an `openconnector://` row is as switchable as a `composio://` one.
+    if (!row || !brokerToolkitOf(row.provenance, row.url)) {
       return context.json(
         { error: "That app is not reached through a broker." },
         400,
@@ -1386,7 +1389,10 @@ export function createPluginRoutes(
      *
      * The app comes off the row's url via `toolkitOf` rather than off its id, for the reason the
      * directory route says: the url is where the transport reads which app a call is against, and
-     * the id is a row name that happens to look similar.
+     * the id is a row name that happens to look similar. WHICH BROKER'S READING IT IS comes off the
+     * row's provenance through {@link brokerToolkitOf}, so an `openconnector://` row is answered by
+     * the same branch a `composio://` one always was — one registry, not a second `if` here that a
+     * third broker would have to find.
      *
      * ONE ROW, BY ID. Every request to this route pays for this read, including the ones that fall
      * through to the OAuth flow below, because the branch cannot be taken until the row is in hand
@@ -1395,7 +1401,7 @@ export function createPluginRoutes(
      * a missing row did when this was a `.find`.
      */
     const row = await store.serverAddress(serverId);
-    const toolkit = row ? toolkitOf(row.url) : null;
+    const toolkit = row ? brokerToolkitOf(row.provenance, row.url) : null;
     if (row && toolkit) {
       /*
        * AN APP THAT NEEDS NO CREDENTIAL IS ANSWERED HERE, BEFORE `brokeredAccountFor` IS EVER
@@ -1440,19 +1446,36 @@ export function createPluginRoutes(
       const { account } = resolved;
 
       /*
-       * `composio` IS CHECKED AGAIN HERE FOR `tsc`'S BENEFIT AND NOT FOR THE REFUSAL. The function
-       * above closes over the same binding and has already returned for everybody it is unset for
-       * — this can only be reached once it answered — but that is a fact about the function's
-       * body and not one the type checker can see across the call above. Without this, every
-       * `composio.broker` read below the field and consent branches would be a `possibly
-       * undefined` it cannot actually be.
+       * THE ROW'S OWN BROKER, RESOLVED HERE ONCE FOR EVERYTHING BELOW. Which client serves this row
+       * is a fact the row itself states — its provenance names the broker — so the read that used
+       * to be "`composio`, checked again for `tsc`'s benefit" is now the dispatch: a row that says
+       * `open-connector` is served by OpenConnector's client or refused with the 503 naming
+       * OpenConnector's two settings, and a row that says anything else keeps the client and the
+       * sentence it always had. `brokeredAccountFor` above has already refused for a brokered row
+       * whose broker has no client, in the same words — but that is a fact about that function's
+       * body and not one the type checker can see across the call above, so without this every
+       * `brokerClient.broker` read below would be a `possibly undefined` it cannot actually be.
        */
-      if (!composio) {
+      const brokerClient =
+        row.provenance === "open-connector" ? openConnector : composio;
+      if (!brokerClient) {
         return context.json(
-          { error: new BrokerUnconfiguredError().message },
+          {
+            error:
+              row.provenance === "open-connector"
+                ? openConnectorUnconfigured().message
+                : new BrokerUnconfiguredError().message,
+          },
           503,
         );
       }
+      /*
+       * The name this branch's own sentences address the party it asked, spelled once so a refusal
+       * on an OpenConnector row never sends somebody to check a Composio key that is perfectly
+       * fine. Composio's rows read exactly what they always read.
+       */
+      const brokerName =
+        row.provenance === "open-connector" ? "OpenConnector" : "Composio";
 
       /*
        * THE ACCOUNT IS `brokeredAccountFor`'S, HERE AND IN THE READ ABOVE IT.
@@ -1585,14 +1608,14 @@ export function createPluginRoutes(
          */
         let published: BrokerField[];
         try {
-          published = await composio.broker.connectionFields({
+          published = await brokerClient.broker.connectionFields({
             toolkit,
             authScheme,
           });
         } catch (error) {
           const refusal = brokerRefusal(
             error,
-            `Composio would not say what ${row.title} asks for, and said nothing about why. Try again, and ask an administrator to check this deployment's Composio key if it persists.`,
+            `${brokerName} would not say what ${row.title} asks for, and said nothing about why. Try again, and ask an administrator to check this deployment's ${brokerName} key if it persists.`,
           );
           return context.json({ error: refusal.error }, refusal.status);
         }
@@ -1622,7 +1645,7 @@ export function createPluginRoutes(
         if (published.length === 0) {
           return context.json(
             {
-              error: `${row.title} publishes no boxes to fill in, so there is nothing you could type that would reach it and no account was made. An administrator has to look at how ${row.title} is set up at Composio; removing it on the Plugins page and adding it again is what records the way Composio connects it now.`,
+              error: `${row.title} publishes no boxes to fill in, so there is nothing you could type that would reach it and no account was made. An administrator has to look at how ${row.title} is set up at ${brokerName}; removing it on the Plugins page and adding it again is what records the way ${brokerName} connects it now.`,
             },
             400,
           );
@@ -1700,7 +1723,7 @@ export function createPluginRoutes(
           const optional = published.map((field) => field.name).join(", ");
           return context.json(
             {
-              error: `${row.title} publishes no box it says has to be filled in — only ${optional} — so nothing you could type would be a credential it insists on, and no account was made. An app that genuinely needs none is one Composio publishes as needing no authentication, and ${row.title} is recorded here as an app whose secret you type. An administrator has to look at how ${row.title} is set up at Composio; removing it on the Plugins page and adding it again is what records the way Composio connects it now.`,
+              error: `${row.title} publishes no box it says has to be filled in — only ${optional} — so nothing you could type would be a credential it insists on, and no account was made. An app that genuinely needs none is one ${brokerName} publishes as needing no authentication, and ${row.title} is recorded here as an app whose secret you type. An administrator has to look at how ${row.title} is set up at ${brokerName}; removing it on the Plugins page and adding it again is what records the way ${brokerName} connects it now.`,
             },
             400,
           );
@@ -1766,7 +1789,7 @@ export function createPluginRoutes(
              */
             return context.json(
               {
-                error: `That is not the form ${row.title} publishes, so nothing was sent to Composio. Press Connect again to draw it from what the app asks for now, and fill in the boxes it shows; each one holds text.`,
+                error: `That is not the form ${row.title} publishes, so nothing was sent to ${brokerName}. Press Connect again to draw it from what the app asks for now, and fill in the boxes it shows; each one holds text.`,
               },
               400,
             );
@@ -1814,7 +1837,7 @@ export function createPluginRoutes(
         if (missing.length > 0) {
           return context.json(
             {
-              error: `${row.title} cannot be connected without ${missing.join(", ")}, so nothing was sent to Composio. Fill in every box the form marks required — a box holding only spaces is an empty one — and press Connect again.`,
+              error: `${row.title} cannot be connected without ${missing.join(", ")}, so nothing was sent to ${brokerName}. Fill in every box the form marks required — a box holding only spaces is an empty one — and press Connect again.`,
             },
             400,
           );
@@ -1855,7 +1878,7 @@ export function createPluginRoutes(
           }
           const refusal = brokerRefusal(
             error,
-            `${row.title} could not be connected with what you entered, and Composio said nothing about why. Try again, and ask an administrator to check this deployment's Composio key if it persists.`,
+            `${row.title} could not be connected with what you entered, and ${brokerName} said nothing about why. Try again, and ask an administrator to check this deployment's ${brokerName} key if it persists.`,
           );
           return context.json({ error: refusal.error }, refusal.status);
         }
@@ -1882,7 +1905,7 @@ export function createPluginRoutes(
       if (kind === "unreadable") {
         return context.json(
           {
-            error: `This deployment cannot tell how ${row.title} connects, so nothing was sent to Composio and no account was made. An administrator has to remove it on the Plugins page and add it again, which records the way Composio connects it now.`,
+            error: `This deployment cannot tell how ${row.title} connects, so nothing was sent to ${brokerName} and no account was made. An administrator has to remove it on the Plugins page and add it again, which records the way ${brokerName} connects it now.`,
           },
           400,
         );
@@ -1917,7 +1940,7 @@ export function createPluginRoutes(
         return context.json(
           {
             error:
-              "This deployment has no app URL configured, so Composio would have nowhere to send you back to. Set OPENBOT_APP_URL.",
+              "This deployment has no app URL configured, so the broker would have nowhere to send you back to. Set OPENBOT_APP_URL.",
           },
           503,
         );
@@ -1961,7 +1984,7 @@ export function createPluginRoutes(
        */
       let redirectUrl: string;
       try {
-        ({ redirectUrl } = await composio.broker.authorize({
+        ({ redirectUrl } = await brokerClient.broker.authorize({
           account,
           toolkit,
           /*
@@ -1980,7 +2003,7 @@ export function createPluginRoutes(
       } catch (error) {
         const refusal = brokerRefusal(
           error,
-          `Composio would not begin a connection to ${row.title}, and said nothing about why. Try again, and ask an administrator to check this deployment's Composio key if it persists.`,
+          `${brokerName} would not begin a connection to ${row.title}, and said nothing about why. Try again, and ask an administrator to check this deployment's ${brokerName} key if it persists.`,
         );
         return context.json({ error: refusal.error }, refusal.status);
       }
@@ -2099,12 +2122,14 @@ export function createPluginRoutes(
    * whether one row is brokered.
    *
    * A ROW THAT IS NOT BROKERED IS REFUSED IN SO MANY WORDS. The id may well name a server this
-   * deployment really has — what is wrong is that its connection does not live at Composio, and
-   * there is nothing for either route to confirm or to end. `null` from `toolkitOf` also covers an
-   * id naming no row at all, which is the same answer from the caller's side.
+   * deployment really has — what is wrong is that its connection does not live at a broker, and
+   * there is nothing for either route to confirm or to end. `null` from the registry's read also
+   * covers an id naming no row at all, which is the same answer from the caller's side.
    *
-   * NO BROKER IS A 503 NAMING THE SETTING, as it is on the directory and on connect, and it is
-   * {@link BrokerUnconfiguredError}'s own message rather than a sentence written here.
+   * NO CLIENT FOR THE ROW'S BROKER IS A 503 NAMING THAT BROKER'S SETTING, as it is on the directory
+   * and on connect: {@link BrokerUnconfiguredError}'s own message for a Composio row, and the
+   * OpenConnector sentence naming both of its tokens for an OpenConnector one — the row's
+   * provenance decides which, never whichever client happens to be present.
    *
    * THE ACCOUNT ITSELF COMES FROM `store.accountRefFor`, WHICH READS THE ROW AND THE ACTOR AND
    * NEVER THE REQUEST. A Personal app answers with the actor's own identity; a Shared app answers
@@ -2113,7 +2138,7 @@ export function createPluginRoutes(
    * actor who is not an administrator is refused here, once, instead of in four routes below.
    *
    * THE CONNECT ROUTE'S BROKERED BRANCH IS THE FOURTH, CALLED ONLY ONCE IT ALREADY KNOWS THE
-   * BRANCH IS TAKEN. That route still asks `toolkitOf` itself before this function is ever reached
+   * BRANCH IS TAKEN. That route still asks the registry itself before this function is ever reached
    * — a row that is not brokered has an OAuth flow below it to fall through to, and refusing it
    * here, where there is no such flow to fall through to, would be wrong. Once that question is
    * settled and the answer is yes, whose account the connection is for is exactly the question
@@ -2138,8 +2163,13 @@ export function createPluginRoutes(
       }
   > => {
     const row = await store.serverAddress(serverId);
-    const toolkit = row ? toolkitOf(row.url) : null;
-    if (!toolkit) {
+    // The registry's reading, not Composio's alone: an `openconnector://` row answers with its own
+    // service here, so confirm, re-check and end reach an OpenConnector app's account as they
+    // always reached a Composio one's.
+    const toolkit = row ? brokerToolkitOf(row.provenance, row.url) : null;
+    // `row` is named in the guard rather than trusted behind `toolkit`: a parsed toolkit implies a
+    // row, but that implication lives in `brokerToolkitOf`'s body and not in any type tsc reads.
+    if (!row || !toolkit) {
       return {
         refusal: {
           error: "That app is not reached through a broker.",
@@ -2147,9 +2177,21 @@ export function createPluginRoutes(
         },
       };
     }
-    if (!composio) {
+    /*
+     * NO CLIENT FOR THE ROW'S OWN BROKER IS A 503 NAMING THAT BROKER'S SETTING, as on the directory
+     * and on connect — and by the row's provenance, not by whichever client happens to be present:
+     * a deployment with Composio configured and OpenConnector not must refuse an OpenConnector row
+     * with OpenConnector's remedy, not answer it against a broker that has never heard of the app.
+     */
+    if (row.provenance === "open-connector" ? !openConnector : !composio) {
       return {
-        refusal: { error: new BrokerUnconfiguredError().message, status: 503 },
+        refusal: {
+          error:
+            row.provenance === "open-connector"
+              ? openConnectorUnconfigured().message
+              : new BrokerUnconfiguredError().message,
+          status: 503,
+        },
       };
     }
     const resolved = await store.accountRefFor(serverId, context.var.actor.id);
