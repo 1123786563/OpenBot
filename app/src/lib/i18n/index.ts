@@ -78,9 +78,10 @@ function bundleLanguage(language: string): Language | undefined {
   );
 }
 
-async function loadLanguage(language: string): Promise<void> {
+/** Loads a language's bundles. Answers whether anything was actually loaded. */
+async function loadLanguage(language: string): Promise<boolean> {
   const bundle = bundleLanguage(language);
-  if (!bundle || loaded.has(bundle)) return;
+  if (!bundle || loaded.has(bundle)) return false;
   const bundles = await Promise.all(
     NAMESPACES.map((ns) => import(`../../locales/${bundle}/${ns}.json`)),
   );
@@ -88,6 +89,7 @@ async function loadLanguage(language: string): Promise<void> {
     i18next.addResourceBundle(bundle, ns, bundles[i].default, true, true);
   }
   loaded.add(bundle);
+  return true;
 }
 
 void i18next
@@ -110,8 +112,19 @@ void i18next
     react: { useSuspense: false },
   });
 
-i18next.on("languageChanged", (language) => {
-  void loadLanguage(language);
+/*
+ * A lazy bundle arrives AFTER the languageChanged event that asked for it, and react-i18next
+ * re-renders subscribed components on that event alone — addResourceBundle emits nothing. Without
+ * the replay below, switching to zh-CN leaves every translated surface in fallback English until
+ * some unrelated state change happens to re-render it.
+ *
+ * The boolean return is the loop guard: the replayed event runs this listener again, and the
+ * second loadLanguage call loads nothing, so no further event is emitted.
+ */
+i18next.on("languageChanged", async (language) => {
+  if (await loadLanguage(language)) {
+    i18next.emit("languageChanged", language);
+  }
 });
 
 // The detector may already have settled on a non-source language before any listener existed.

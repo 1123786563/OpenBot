@@ -1,0 +1,267 @@
+import { createBillingEntitlementReader } from "./entitlement";
+import { LAGO_PROVIDER_ID, type LagoClient, type LagoSubscriptionBody } from "./lago";
+import {
+  BillingError,
+  type BillingEntitlements,
+  type BillingService,
+  type BillingSnapshot,
+  type BillingStore,
+  type BillingSubscriptionRow,
+  type VerifiedWebhook,
+  type WebhookVerifier,
+} from "./types";
+
+/**
+ * The sync, the webhook and the entitlement read, arranged.
+ *
+ * ensureCustomer / ensureSubscription are read-before-create and judge by status code only: a 404
+ * means "absent, create it", a create that answers 422 means somebody else created it between the
+ * read and the write, which is resolved by reading again — never by a second create. A subscription
+ * that exists on a different plan than the one asked for is a terminal conflict, not ours to
+ * overwrite.
+ *
+ * handleWebhook order, fixed deliberately: verify (401) → inbox check (a known event is already
+ * fully applied, 200) → fresh read of the authoritative object (a retryable failure answers 5xx
+ * with nothing recorded, so the provider retries the whole delivery) → refresh the projections →
+ * write the inbox row → 200. An inbox row therefore always means "the work it names is done", which
+ * is the one property that keeps a crash mid-delivery from losing an event. (The Go implementation
+ * this descends from wrote the inbox before acting, so a delivery that failed afterwards was never
+ * retried; that gap is not inherited, and this comment is the record of the divergence.)
+ *
+ * Events about objects this deployment does not project (invoices, wallets, …) have nothing to
+ * refresh, which is also finished work: they are recorded and answered 200.
+ *
+ * The entitlement read is served from the local projections with a per-customer cache (see
+ * ./entitlement.ts) — a webhook keeps the projections fresh, so the cache never has to reach the
+ * provider on a read path.
+ *
+ * reconcile() does not exist yet and says so by refusing, rather than half-working.
+ */
+export function createBillingService(deps: {
+  config: { externalCustomerKey: string; webhookMode: "jwt" | "hmac" | "off" };
+  client: LagoClient;
+  store: BillingStore;
+  /** Absent on a deployment with no webhook key: that deployment mounts no webhook route. */
+  verifier?: WebhookVerifier;
+  /** Plan code → entitlement codes. Injected so a test (or a future config) can differ. */
+  planEntitlements?: ReadonlyMap<string, readonly string[]>;
+  ttlMs?: number;
+  failureTtlMs?: number;
+  now?: () => number;
+  log?: (message: string) => void;
+}): BillingService {
+  const { config, client, store } = deps;
+
+  async function readCustomerIntoStore(externalId: string): Promise<boolean> {
+    const result = await client.getCustomer(externalId);
+    if (result.status === 200 && result.body) {
+      await store.upsertCustomer({
+        externalId,
+        name: result.body.name,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  async function readSubscriptions(
+    externalCustomerId: string,
+  ): Promise<readonly LagoSubscriptionBody[]> {
+    const result = await client.listSubscriptions(externalCustomerId);
+    if (!result.body) throw new BillingError("invalid_response");
+    return result.body;
+  }
+
+  async function writeSubscriptionProjections(
+    subscriptions: readonly LagoSubscriptionBody[],
+  ): Promise<void> {
+    for (const subscription of subscriptions) {
+      await store.upsertSubscription({
+        externalCustomerId: subscription.externalCustomerId,
+        externalSubscriptionId: subscription.externalSubscriptionId,
+        planCode: subscription.planCode,
+        status: subscription.status,
+      });
+    }
+  }
+
+  /**
+   * What a delivery implies locally, refreshed from the authoritative object rather than from the
+   * event payload: a delivery that arrives out of order must not walk a projection backwards.
+   */
+  async function refreshFor(delivery: VerifiedWebhook): Promise<void> {
+    if (delivery.webhookType.startsWith("customer.")) {
+      if (!delivery.externalCustomerId) throw new BillingError("invalid_response");
+      // A 404 leaves the projection alone: the object is gone remotely, and the subscription
+      // projections say what that means for entitlements. The delivery itself is done.
+      await readCustomerIntoStore(delivery.externalCustomerId);
+      return;
+    }
+    if (delivery.webhookType.startsWith("subscription.")) {
+      if (!delivery.externalCustomerId) throw new BillingError("invalid_response");
+      await writeSubscriptionProjections(
+        await readSubscriptions(delivery.externalCustomerId),
+      );
+      return;
+    }
+    // Every other type names an object this deployment does not project. Nothing to refresh is
+    // not a failure: the inbox row below records it as processed.
+  }
+
+  const reader = createBillingEntitlementReader({
+    read: async (externalCustomerId): Promise<BillingEntitlements> => {
+      const key = externalCustomerId ?? config.externalCustomerKey;
+      const rows: readonly BillingSubscriptionRow[] =
+        await store.readSubscriptions(key);
+      const active = rows.find((row) => row.status === "active");
+      if (!active) return { active: false, codes: [] };
+      return {
+        active: true,
+        planCode: active.planCode,
+        codes: deps.planEntitlements?.get(active.planCode) ?? [],
+      };
+    },
+    ...(deps.ttlMs !== undefined ? { ttlMs: deps.ttlMs } : {}),
+    ...(deps.failureTtlMs !== undefined ? { failureTtlMs: deps.failureTtlMs } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.log ? { log: deps.log } : {}),
+  });
+
+  function json(status: number, body: Record<string, unknown>): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  return {
+    async ensureCustomer(input) {
+      if (await readCustomerIntoStore(input.externalId)) {
+        return { externalId: input.externalId };
+      }
+      const created = await client.postCustomer(input);
+      if (created.status === 422) {
+        // Lost a race: it exists now. A re-read that still says absent is a provider that
+        // refused the create and cannot explain itself — terminal, not retried into more POSTs.
+        if (await readCustomerIntoStore(input.externalId)) {
+          return { externalId: input.externalId };
+        }
+        throw new BillingError("invalid_response");
+      }
+      await store.upsertCustomer({
+        externalId: input.externalId,
+        name: created.body?.name ?? input.name,
+      });
+      return { externalId: input.externalId };
+    },
+
+    async ensureSubscription(input) {
+      const existing = await readSubscriptions(input.externalCustomerId);
+      const onThisPlan = existing.find(
+        (subscription) => subscription.planCode === input.planCode,
+      );
+      if (onThisPlan) {
+        await writeSubscriptionProjections(existing);
+        return {
+          externalCustomerId: input.externalCustomerId,
+          externalSubscriptionId: onThisPlan.externalSubscriptionId,
+          planCode: input.planCode,
+        };
+      }
+      if (existing.length > 0) {
+        // Somebody's subscription on another plan. Overwriting it is not a decision this
+        // deployment gets to make from a sync call.
+        throw new BillingError("invalid_response");
+      }
+
+      const created = await client.postSubscription(input);
+      if (created.status === 422) {
+        const reread = await readSubscriptions(input.externalCustomerId);
+        const again = reread.find(
+          (subscription) => subscription.planCode === input.planCode,
+        );
+        if (again) {
+          await writeSubscriptionProjections(reread);
+          return {
+            externalCustomerId: input.externalCustomerId,
+            externalSubscriptionId: again.externalSubscriptionId,
+            planCode: input.planCode,
+          };
+        }
+        // A different plan after the refusal is the conflict above; an empty list after a
+        // refusal is a provider that cannot be argued with. Both terminal, neither retried.
+        throw new BillingError("invalid_response");
+      }
+      await store.upsertSubscription({
+        externalCustomerId: input.externalCustomerId,
+        externalSubscriptionId:
+          created.body?.externalSubscriptionId ?? input.externalSubscriptionId,
+        planCode: input.planCode,
+        status: created.body?.status ?? "active",
+      });
+      return {
+        externalCustomerId: input.externalCustomerId,
+        externalSubscriptionId:
+          created.body?.externalSubscriptionId ?? input.externalSubscriptionId,
+        planCode: input.planCode,
+      };
+    },
+
+    async handleWebhook(request) {
+      // Defensive: an assembly with no webhook key builds this service without a verifier and
+      // mounts no webhook route, so nothing should reach here. Answer as unavailable, never as ok.
+      if (!deps.verifier) {
+        return json(503, { error: "Billing webhooks are not configured." });
+      }
+      const rawBody = await request.text();
+      const verified = await deps.verifier.verify(request.headers, rawBody);
+      if (!verified.ok) {
+        return json(401, { error: "Invalid billing webhook signature." });
+      }
+      const delivery = verified.delivery;
+
+      if (await store.hasWebhookEvent(LAGO_PROVIDER_ID, delivery.eventId)) {
+        // Already fully applied; the inbox row is the proof, and no re-read happens.
+        return json(200, { status: "duplicate" });
+      }
+
+      try {
+        await refreshFor(delivery);
+      } catch (error) {
+        if (error instanceof BillingError && error.retryable) {
+          // Nothing recorded: the provider retries the whole delivery, re-read included.
+          return json(503, { error: "Billing webhook could not be applied." });
+        }
+        return json(400, { error: "Billing webhook could not be applied." });
+      }
+
+      const inserted = await store.recordWebhookEvent({
+        provider: LAGO_PROVIDER_ID,
+        eventId: delivery.eventId,
+        uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
+        webhookType: delivery.webhookType,
+        ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
+      });
+      return json(200, { status: inserted ? "processed" : "duplicate" });
+    },
+
+    entitlements(externalCustomerId) {
+      return reader.active(externalCustomerId);
+    },
+
+    async snapshot(): Promise<BillingSnapshot> {
+      const { customers, subscriptions, lastSyncedAt } = await store.snapshot();
+      return {
+        configured: true,
+        customers,
+        subscriptions,
+        ...(lastSyncedAt ? { lastSyncedAt: lastSyncedAt.toISOString() } : {}),
+        webhookMode: config.webhookMode,
+      };
+    },
+
+    async reconcile(): Promise<never> {
+      throw new BillingError("unsupported");
+    },
+  };
+}

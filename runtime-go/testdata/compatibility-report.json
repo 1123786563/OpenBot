@@ -1,0 +1,613 @@
+{
+  "commit": "dc70ca1841f6a36bb7a1f5c0b4b724ff4816b629",
+  "goVersion": "go version go1.26.3 darwin/arm64",
+  "modules": [
+    {
+      "path": "openbot/runtime-go",
+      "version": "(main)",
+      "indirect": false
+    },
+    {
+      "path": "cel.dev/expr",
+      "version": "v0.25.1",
+      "indirect": true
+    },
+    {
+      "path": "cloud.google.com/go/compute/metadata",
+      "version": "v0.9.0",
+      "indirect": true
+    },
+    {
+      "path": "connectrpc.com/connect",
+      "version": "v1.18.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.17.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
+      "version": "v1.7.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/Azure/azure-sdk-for-go/sdk/internal",
+      "version": "v1.10.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/AzureAD/microsoft-authentication-library-for-go",
+      "version": "v1.2.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp",
+      "version": "v1.30.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/ag-ui-protocol/ag-ui/sdks/community/go",
+      "version": "v0.0.0-20260514093510-e9e910b230b9",
+      "indirect": false
+    },
+    {
+      "path": "github.com/antihax/optional",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/bmatcuk/doublestar/v4",
+      "version": "v4.9.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/bufbuild/protocompile",
+      "version": "v0.14.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/cenkalti/backoff/v4",
+      "version": "v4.3.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/cespare/xxhash/v2",
+      "version": "v2.3.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/clbanning/mxj",
+      "version": "v1.8.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/cncf/xds/go",
+      "version": "v0.0.0-20251210132809-ee656c7534f5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/creack/pty",
+      "version": "v1.1.24",
+      "indirect": true
+    },
+    {
+      "path": "github.com/davecgh/go-spew",
+      "version": "v1.1.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/decred/dcrd/dcrec/secp256k1/v4",
+      "version": "v4.4.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/go-control-plane",
+      "version": "v0.14.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/go-control-plane/envoy",
+      "version": "v1.36.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/go-control-plane/ratelimit",
+      "version": "v0.1.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/protoc-gen-validate",
+      "version": "v1.3.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/getkin/kin-openapi",
+      "version": "v0.124.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-ego/gse",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-jose/go-jose/v4",
+      "version": "v4.1.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-logr/logr",
+      "version": "v1.4.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-logr/stdr",
+      "version": "v1.2.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-openapi/jsonpointer",
+      "version": "v0.20.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-openapi/swag",
+      "version": "v0.22.8",
+      "indirect": true
+    },
+    {
+      "path": "github.com/goccy/go-json",
+      "version": "v0.10.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/golang-jwt/jwt/v5",
+      "version": "v5.2.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/golang/glog",
+      "version": "v1.2.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/golang/protobuf",
+      "version": "v1.5.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/gomutex/godocx",
+      "version": "v0.1.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/gonfva/docxlib",
+      "version": "v0.0.0-20210517191039-d8f39cecf1ad",
+      "indirect": true
+    },
+    {
+      "path": "github.com/google/go-cmp",
+      "version": "v0.7.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/google/go-querystring",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/grpc-ecosystem/grpc-gateway/v2",
+      "version": "v2.22.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/hashicorp/errwrap",
+      "version": "v1.1.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/hashicorp/go-multierror",
+      "version": "v1.1.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/invopop/yaml",
+      "version": "v0.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/josharian/intern",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/kr/pretty",
+      "version": "v0.3.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/kr/text",
+      "version": "v0.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/kylelemons/godebug",
+      "version": "v1.1.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/blackmagic",
+      "version": "v1.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/httpcc",
+      "version": "v1.0.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/httprc",
+      "version": "v1.0.6",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/iter",
+      "version": "v1.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/jwx/v2",
+      "version": "v2.1.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/option",
+      "version": "v1.0.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mailru/easyjson",
+      "version": "v0.9.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mattn/go-sqlite3",
+      "version": "v1.14.32",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mitchellh/mapstructure",
+      "version": "v1.5.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mohae/deepcopy",
+      "version": "v0.0.0-20170929034955-c48cc78d4826",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mozillazg/go-httpheader",
+      "version": "v0.2.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/openai/openai-go",
+      "version": "v1.12.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/panjf2000/ants/v2",
+      "version": "v2.10.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/perimeterx/marshmallow",
+      "version": "v1.1.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/pkg/browser",
+      "version": "v0.0.0-20240102092130-5ac0b6a4141c",
+      "indirect": true
+    },
+    {
+      "path": "github.com/planetscale/vtprotobuf",
+      "version": "v0.6.1-0.20240319094008-0393e58bdf10",
+      "indirect": true
+    },
+    {
+      "path": "github.com/pmezard/go-difflib",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/rogpeppe/fastuuid",
+      "version": "v1.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/rogpeppe/go-internal",
+      "version": "v1.14.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/santhosh-tekuri/jsonschema/v6",
+      "version": "v6.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/segmentio/asm",
+      "version": "v1.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/sirupsen/logrus",
+      "version": "v1.9.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/spiffe/go-spiffe/v2",
+      "version": "v2.6.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/stretchr/objx",
+      "version": "v0.5.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/stretchr/testify",
+      "version": "v1.11.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tencentyun/cos-go-sdk-v5",
+      "version": "v0.7.69",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/gjson",
+      "version": "v1.14.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/match",
+      "version": "v1.1.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/pretty",
+      "version": "v1.2.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/sjson",
+      "version": "v1.2.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/vcaesar/cedar",
+      "version": "v0.20.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/yosida95/uritemplate/v3",
+      "version": "v3.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/yuin/goldmark",
+      "version": "v1.4.13",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/auto/sdk",
+      "version": "v1.2.1",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/contrib/detectors/gcp",
+      "version": "v1.39.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlptrace",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/metric",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/sdk",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/sdk/metric",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/trace",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/proto/otlp",
+      "version": "v1.3.1",
+      "indirect": true
+    },
+    {
+      "path": "go.uber.org/goleak",
+      "version": "v1.3.0",
+      "indirect": true
+    },
+    {
+      "path": "go.uber.org/multierr",
+      "version": "v1.10.0",
+      "indirect": true
+    },
+    {
+      "path": "go.uber.org/zap",
+      "version": "v1.27.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/crypto",
+      "version": "v0.46.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/mod",
+      "version": "v0.30.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/net",
+      "version": "v0.48.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/oauth2",
+      "version": "v0.34.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/sync",
+      "version": "v0.19.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/sys",
+      "version": "v0.40.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/term",
+      "version": "v0.38.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/text",
+      "version": "v0.32.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/tools",
+      "version": "v0.39.0",
+      "indirect": true
+    },
+    {
+      "path": "gonum.org/v1/gonum",
+      "version": "v0.16.0",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/appengine",
+      "version": "v1.6.8",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/genproto/googleapis/api",
+      "version": "v0.0.0-20251202230838-ff82c1b0f217",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/genproto/googleapis/rpc",
+      "version": "v0.0.0-20251202230838-ff82c1b0f217",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/grpc",
+      "version": "v1.79.3",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/protobuf",
+      "version": "v1.36.10",
+      "indirect": true
+    },
+    {
+      "path": "gopkg.in/check.v1",
+      "version": "v1.0.0-20201130134442-10cb98267c6c",
+      "indirect": true
+    },
+    {
+      "path": "gopkg.in/yaml.v3",
+      "version": "v3.0.1",
+      "indirect": true
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-a2a-go",
+      "version": "v0.2.6-0.20260721084546-18c8244d0acb",
+      "indirect": true
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-a2a-go/v2",
+      "version": "v2.0.0-alpha.3.0.20260813112030-aed2c1f02f9c",
+      "indirect": true
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-agent-go",
+      "version": "v1.11.1-0.20260925110348-9bb1c42b968c",
+      "indirect": false
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-agent-go/server/agui",
+      "version": "v1.11.1-0.20260925110348-9bb1c42b968c",
+      "indirect": false
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-mcp-go",
+      "version": "v0.0.10",
+      "indirect": true
+    }
+  ],
+  "checks": {
+    "identity": true,
+    "stream": true,
+    "callback": true,
+    "cancel": true,
+    "restart": true
+  },
+  "measurements": {
+    "rssBytes": 25133056,
+    "firstEventMs": 18
+  },
+  "adoption": "candidate"
+}
