@@ -10,6 +10,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
 import { DICTATION_HTTP_IDLE_SECONDS } from "../../shared/dictation";
+import { getLogger } from "../../shared/logger";
 import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
 import { workOwner } from "../../shared/work-owner";
 import { createActivityStore } from "./activity/activity";
@@ -1018,16 +1019,20 @@ console.info(
  * that dies, so this prints the full reason and keeps serving; what it must never do is stay quiet.
  */
 process.on("unhandledRejection", (reason) => {
-  console.error(
-    JSON.stringify({
+  getLogger("server").error(
+    {
       type: "unhandled-rejection",
-      message: reason instanceof Error ? reason.message : String(reason),
+      reason:
+        reason instanceof Error
+          ? { message: reason.message, stack: reason.stack }
+          : String(reason),
       code:
         reason && typeof reason === "object" && "code" in reason
           ? String((reason as { code: unknown }).code)
           : undefined,
       note: "The server kept running. A remote agent's connection failing must not stop everyone else.",
-    }),
+    },
+    "unhandled rejection",
   );
 });
 

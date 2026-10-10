@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { MAX_IMAGE_BYTES } from "../../shared/attachments";
+import { getLogger } from "../../shared/logger";
 import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
 import { createEnterpriseAdminRoutes } from "./admin/routes";
@@ -132,6 +133,7 @@ import { createCoworkerRoutingService } from "./routing/service";
 import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
+import { createRequestTracking } from "./telemetry/request-tracking";
 import type { PackageStatusReader } from "./tenant-package";
 import {
   INSTRUCTIONS_LIMIT,
@@ -490,6 +492,12 @@ export function createApp(
       }),
     );
   }
+  // Correlation first: every response carries x-request-id, and /api requests get an
+  // access log line with that id on it. Registered before any route so sub-apps
+  // mounted later inherit the ambient request id for their own logs.
+  const tracking = createRequestTracking({ logger: getLogger("server") });
+  app.use("*", tracking.requestId);
+  app.use("/api/*", tracking.accessLog);
   mountDesktopConnectionFailure(app, desktopHostToken);
   mountProviderOAuthProxy(app, modelProviderProxy);
 
