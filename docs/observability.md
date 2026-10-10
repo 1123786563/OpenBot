@@ -87,16 +87,38 @@ and exported over OTLP/HTTP when an endpoint is configured: the signal-level
 recording-only — spans exist in the process, nothing ships. Every exported span carries
 `service.name` set to the process name it came from.
 
-**No collector yet is a quiet state, by design.** The exporter batches in the background, and a
+**A failed export is a quiet state, by design.** The exporter batches in the background, and a
 failed export surfaces as an OpenTelemetry diagnostic error line and nothing else: no request
-fails or waits on its trace's delivery. That is the intended shape of a deployment until the
-Tempo stack ships (P3) and gives these spans somewhere to land.
+fails or waits on its trace's delivery.
+
+### Local Tempo
+
+The compose stack ships the sink these spans land in. Start it with
+`docker compose --profile observability up -d` — a plain `docker compose up -d` never starts it,
+the same arrangement as the `lago` profile — which brings up Tempo with its OTLP/HTTP receiver on
+`127.0.0.1:4318` and the query API on `127.0.0.1:3200`. A host process points at it with
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` in the root `.env` — the generic endpoint gets
+`/v1/traces` appended — plus a restart, because the endpoint is read once at boot; `start.sh`
+hands the root `.env` to the server it launches. A server restarted without the line is the first
+thing to check when search comes back empty: with no endpoint configured the spans stay
+recording-only, which is silent by design.
+
+Within a few seconds of a request — the batch exporter's interval — the API answers queries:
+
+```sh
+curl -s "http://127.0.0.1:3200/api/search" --data-urlencode "serviceName=server"
+curl -s "http://127.0.0.1:3200/api/traces/<traceID>"  # OTLP JSON, spans under batches[].scopeSpans[].spans
+```
+
+In Grafana on port 3003: Explore → pick the Tempo data source → Search → service name `server` →
+open a trace for its waterfall. Loki's log lines carry `trace_id` as a derived field, so a log
+line in Explore links straight to the same trace.
 
 ## Later phases
 
-What follows is sequenced and deliberately not started: the Grafana, Loki and Tempo stack that
-gives the traces above somewhere to land (P3), a `/metrics` endpoint (P4), and client crash
-reporting (P5).
+What follows is sequenced and deliberately not started: a `/metrics` endpoint (P4) and client
+crash reporting (P5). The Grafana, Loki and Tempo stack that gives the traces above somewhere to
+land (P3) is in — see Local Tempo above.
 
 One serialization note worth keeping for that work: pino serializes an `err` key by default,
 message and stack included, which is what error handlers rely on. Every other value belongs in a
