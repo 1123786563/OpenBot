@@ -632,6 +632,131 @@ services:
       - "127.0.0.1:3100:3000"
       - "[::1]:3100:3000"
 
+  # ── Observability: the LGTM stack plus Alloy, behind the `observability` profile. ──
+  #
+  # `docker compose --profile observability up -d` starts it; a plain `docker compose up -d`
+  # never does — the same arrangement as `lago` above, because a deployment that has configured
+  # no telemetry has no need of five more containers. The server points at the stack with
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 (uncomment it in .env after the stack is
+  # up); every port below is loopback-only, like every other port in this file.
+  #
+  # No depends_on between any of these: Alloy's loki.write retries a Loki that is not up yet,
+  # and Grafana's provisioning does not need the datasources to answer at boot. Alloy ships the
+  # logs of every container on the machine into Loki (docker.sock, read-only) and tails .logs
+  # for the host-run processes; Grafana auto-provisions the three datasources and the starter
+  # dashboard from docker/observability/provisioning. Container-side addresses are service names
+  # on `default` (http://loki:3102, http://tempo:4318); the published loopback ports are the
+  # host-side contract (Grafana 3003, Loki 3102, Tempo 3200 + OTLP 4318/4317, Prometheus 9090).
+
+  loki:
+    profiles: ["observability"]
+    image: grafana/loki:3.5.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./docker/observability/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    ports:
+      # Loopback, like every other port in this file. Loki listens on 3102 inside as well, so
+      # the published port, Alloy's push URL (http://loki:3102) and Grafana's datasource all
+      # name the same port; 3100 on the host belongs to open-connector.
+      - "127.0.0.1:${LOKI_PORT:-3102}:3102"
+      - "[::1]:${LOKI_PORT:-3102}:3102"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3102/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  tempo:
+    profiles: ["observability"]
+    image: grafana/tempo:2.7.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./docker/observability/tempo-config.yaml:/etc/tempo/config.yaml:ro
+      # /var/tempo, not /tempo: the tempo image's ENTRYPOINT binary lives at /tempo, so the
+      # data volume mounts beside it.
+      - tempo-data:/var/tempo
+    ports:
+      # Loopback, like every other port in this file. 3200 is the query API the browser and
+      # Grafana use; 4318/4317 are the OTLP HTTP/gRPC receivers the server points
+      # OTEL_EXPORTER_OTLP_ENDPOINT at.
+      - "127.0.0.1:${TEMPO_PORT:-3200}:3200"
+      - "[::1]:${TEMPO_PORT:-3200}:3200"
+      - "127.0.0.1:${TEMPO_OTLP_HTTP_PORT:-4318}:4318"
+      - "[::1]:${TEMPO_OTLP_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${TEMPO_OTLP_GRPC_PORT:-4317}:4317"
+      - "[::1]:${TEMPO_OTLP_GRPC_PORT:-4317}:4317"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v3.4.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      # Loopback, like every other port in this file. Scrapes itself here; application targets
+      # land in docker/observability/prometheus.yml when the server is containerized.
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+      - "[::1]:${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  alloy:
+    profiles: ["observability"]
+    image: grafana/alloy:v1.10.0
+    restart: unless-stopped
+    # Root, so the read-only docker.sock below is openable whatever gid it carries on the host.
+    user: root
+    command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./.logs:/hostlogs
+      - ./docker/observability/alloy-config.alloy:/etc/alloy/config.alloy:ro
+    ports:
+      # Loopback: Alloy's own UI/HTTP port, for debugging the pipeline only. Nothing depends on it.
+      - "127.0.0.1:${ALLOY_PORT:-12345}:12345"
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.6.0
+    restart: unless-stopped
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Datasources and the dashboard provider are provisioned, not clicked into existence: the
+      # provider yaml is mounted alone so the sibling dashboard JSON is not mistaken for a
+      # second provider definition.
+      - ./docker/observability/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/observability/provisioning/dashboards/provider.yaml:/etc/grafana/provisioning/dashboards/provider.yaml:ro
+      - ./docker/observability/provisioning/dashboards/openbot-starter.json:/var/lib/grafana/dashboards/openbot-starter.json:ro
+    ports:
+      # Loopback, like every other port in this file. This is the address in the docs: the
+      # starter dashboard is at http://127.0.0.1:3003, 3000 inside is Grafana's own.
+      - "127.0.0.1:${GRAFANA_PORT:-3003}:3000"
+      - "[::1]:${GRAFANA_PORT:-3003}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 networks:
   # The database and the services that reach it by name. Nothing a Bot can reach is on it.
   #
@@ -653,3 +778,7 @@ volumes:
   spire-agent-socket:
   spire-agent-data:
   agent-profiles:
+  loki-data:
+  tempo-data:
+  prometheus-data:
+  grafana-data:
