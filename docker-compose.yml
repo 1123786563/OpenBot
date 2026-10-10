@@ -216,6 +216,29 @@ services:
       - openbot-sandbox-config:/config
     restart: unless-stopped
 
+  # OpenBot's own Redis — turn locks and event fan-out for the workshop — named to stay
+  # unmistakable from lago-redis and glitchtip-redis, which belong to other stacks. Pure memory
+  # (`--save '' --appendonly no`): persisting it would carry lock state across restarts and
+  # resurrect locks whose owner process is long gone. On `data` beside postgres and never on
+  # `openbot_sandbox`: a sandbox container must not be able to resolve Redis. Port published to
+  # loopback only, like every other port in this file.
+  openbot-redis:
+    image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: --port 6379 --save '' --appendonly no
+    restart: unless-stopped
+    volumes:
+      - openbot-redis-data:/data
+    ports:
+      - "127.0.0.1:${OPENBOT_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: ${OPENBOT_REDIS_MEM_LIMIT:-256m}
+    networks:
+      - data
+
   # Bot identity is attested by SPIRE when these optional services run.
   #
   # SPIRE issues each computer an SVID based on the container labels set by the supervisor. A
@@ -972,6 +995,7 @@ volumes:
   spire-agent-socket:
   spire-agent-data:
   agent-profiles:
+  openbot-redis-data:
   openbot-sandbox-workspace:
   openbot-sandbox-config:
   loki-data:
