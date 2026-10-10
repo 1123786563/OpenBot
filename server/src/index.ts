@@ -105,6 +105,7 @@ import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
+import { createCredits } from "./billing/credits";
 import {
   createBillingService,
   deploymentExternalCustomerId,
@@ -138,6 +139,13 @@ import { createChannelTitler } from "./channels/titler";
 import { createSandboxClient } from "./codesandbox/client";
 import { createCodeRunGateway } from "./codesandbox/gateway";
 import type { CodeRunGatewayFactory } from "./codesandbox/routes";
+import { createRedisPort } from "./redis";
+import { createInProcessTurnLock, createRedisTurnLock } from "./workshop/locks";
+import { createTurnEventBus } from "./workshop/bus";
+import { createWorkshopStore } from "./workshop/store";
+import { createTurnOrchestrator } from "./workshop/orchestrator";
+import { createWorkshopRoutes, type WorkshopRoutesFactory } from "./workshop/routes";
+import { indexArtifacts } from "./workshop/artifacts";
 import { createCodeRunStore } from "./codesandbox/store";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
@@ -3171,6 +3179,20 @@ const statements =
       });
 
 /*
+ * The credit-ledger reads: 套餐与积分. Local only — the ledger lives in this deployment's own
+ * database, so the read needs the shared `database` and the same customer key the billing block
+ * derived, and nothing from the provider.
+ */
+const credits =
+  billing === undefined
+    ? undefined
+    : createCredits({
+        database,
+        externalCustomerKey: billing.externalCustomerKey,
+        catalog: billingSettings?.planCatalog ?? new Map(),
+      });
+
+/*
  * The code sandbox behind run_code: a client per Bot to the agent-sandbox container, one writer
  * for the code_runs table, and the per-call factory the routes build their gateway through. Unset
  * AGENT_SANDBOX_URL (or its token) leaves the client null — the surface still mounts, and every
@@ -3195,6 +3217,65 @@ const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
     initiator: PERSON_INITIATOR,
     store: codeRunStore,
     auditStore: bootAuditStore,
+  });
+
+/*
+ * The workshop module, assembled in one place because its wiring is one decision: whether the
+ * turn lock and the event fan-out ride Redis or stay in-process. createRedisPort answers it —
+ * null when OPENBOT_REDIS_URL is unset (single-replica: an in-process lock and a polling bus,
+ * deliberate, never silent) and a startup throw when WORKSHOP_REQUIRE_REDIS=1 asked for hard
+ * Redis and did not get it (multi-replica: refusing to boot is the only safe answer, because
+ * the in-process lock would let two replicas run the same turn). The gateway factory gains the
+ * artifact hook here too, wiring B4's gallery pipeline into every workshop-driven run.
+ */
+const workshopRedisPort = createRedisPort({
+  OPENBOT_REDIS_URL: process.env.OPENBOT_REDIS_URL,
+  WORKSHOP_REQUIRE_REDIS: process.env.WORKSHOP_REQUIRE_REDIS,
+});
+const workshopStore = createWorkshopStore(database);
+const workshopBus = createTurnEventBus(workshopRedisPort, {
+  reader: workshopStore,
+});
+const workshopLock = workshopRedisPort
+  ? createRedisTurnLock(workshopRedisPort, {
+      ttlMs: Number(process.env.WORKSHOP_LOCK_TTL_MS?.trim() || 30_000),
+    })
+  : createInProcessTurnLock();
+const workshopOrchestrator = createTurnOrchestrator({
+  store: workshopStore,
+  lock: workshopLock,
+  gatewayFor: ({ botId, ownerUserId }) =>
+    createCodeRunGateway({
+      client: workshopClientFor(botId),
+      modelId: runtimeModel.defaultModel,
+      botId,
+      ownerUserId,
+      initiator: PERSON_INITIATOR,
+      store: codeRunStore,
+      auditStore: bootAuditStore,
+    }),
+  auditStore: bootAuditStore,
+  // B4's gallery pipeline, on the streaming path: after the turn's stream ends, the new
+  // files (a before/after listFiles diff) land in the session's workshop_artifacts rows.
+  // Contained here like the gateway's own hook — a gallery miss never fails a turn.
+  indexArtifactsFor: async ({ sessionId, artifacts }) => {
+    await indexArtifacts(workshopStore, sessionId, artifacts);
+  },
+});
+const workshopClientFor = (botId: string) =>
+  sandboxUrl && sandboxToken
+    ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
+    : null;
+const workshopRoutes: WorkshopRoutesFactory = ({ requireUser, canUseBot }) =>
+  createWorkshopRoutes({
+    requireUser,
+    canUseBot,
+    deps: {
+      store: workshopStore,
+      bus: workshopBus,
+      orchestrator: workshopOrchestrator,
+      clientFor: workshopClientFor,
+    },
   });
 
 const app = createApp(
@@ -3399,6 +3480,11 @@ const app = createApp(
   // APPENDED LAST, per the parameter's own docblock: the statement reads, built from the billing
   // service and the payment ledger above.
   statements,
+  credits,
+  // The workshop surface, beside the interpreter it extends. APPENDED LAST like `credits`
+  // beside it: positional parameters only ever go at the end (see the block above the call
+  // for the Redis-or-in-process wiring decision).
+  workshopRoutes,
 );
 
 /**

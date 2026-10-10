@@ -257,7 +257,7 @@ describe("turn orchestrator", () => {
     const orchestrator = createTurnOrchestrator({
       store,
       lock,
-      gateway,
+      gatewayFor: () => gateway,
       auditStore: audit.store,
     });
 
@@ -283,7 +283,7 @@ describe("turn orchestrator", () => {
     const orchestrator = createTurnOrchestrator({
       store,
       lock,
-      gateway,
+      gatewayFor: () => gateway,
       auditStore: audit.store,
     });
     const { turnId } = await orchestrator.enqueue(baseInput);
@@ -306,7 +306,7 @@ describe("turn orchestrator", () => {
     const orchestrator = createTurnOrchestrator({
       store,
       lock,
-      gateway,
+      gatewayFor: () => gateway,
       auditStore: audit.store,
     });
     const { turnId } = await orchestrator.enqueue(baseInput);
@@ -347,7 +347,7 @@ describe("turn orchestrator", () => {
     const orchestrator = createTurnOrchestrator({
       store,
       lock,
-      gateway,
+      gatewayFor: () => gateway,
       auditStore: audit.store,
     });
     const { turnId } = await orchestrator.enqueue(baseInput);
@@ -370,7 +370,7 @@ describe("turn orchestrator", () => {
     const orchestrator = createTurnOrchestrator({
       store,
       lock: broken,
-      gateway,
+      gatewayFor: () => gateway,
       auditStore: audit.store,
     });
     const { turnId } = await orchestrator.enqueue(baseInput);
@@ -389,7 +389,7 @@ describe("turn orchestrator", () => {
     const orchestrator = createTurnOrchestrator({
       store,
       lock,
-      gateway,
+      gatewayFor: () => gateway,
       auditStore: audit.store,
     });
     const { turnId } = await orchestrator.enqueue(baseInput);

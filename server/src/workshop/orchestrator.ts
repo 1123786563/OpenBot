@@ -54,13 +54,30 @@ export type TurnOrchestrator = {
 export type TurnOrchestratorOptions = {
   store: WorkshopStore;
   lock: TurnLock;
-  gateway: CodeRunGateway;
+  /**
+   * One gateway per turn: the sandbox client routes on the Bot's id, so the orchestrator
+   * resolves the gateway when the turn is enqueued (the session's Bot is known there) rather
+   * than sharing one client across every Bot's workspace.
+   */
+  gatewayFor: (input: { botId: string; ownerUserId: string }) => CodeRunGateway;
   auditStore?: AuditStore;
-  /** The artifact indexer for the run's collected files (B4's pipeline, one layer up). */
+  /**
+   * The artifact indexer for the run's collected files (B4's pipeline, one layer up). The
+   * streaming gateway collects nothing itself — the orchestrator diffs the workspace before
+   * and after the turn, and the new files land here.
+   */
   indexArtifactsFor?: (input: {
     sessionId: string;
     artifacts: SandboxArtifact[];
   }) => Promise<void>;
+  /** The Bot's sandbox client for the before/after diff; null where none is configured. */
+  clientFor?: (botId: string) => {
+    listFiles(): Promise<string[]>;
+    readFile(
+      path: string,
+      maxBytes: number,
+    ): Promise<SandboxArtifact>;
+  } | null;
   /** Activity budget handed to the gateway's stream; default 300000. */
   activityTimeoutMs?: number;
   /** DB heartbeat cadence in ms; the lease renews on its own TTL/3 contract. */
@@ -72,7 +89,7 @@ export type TurnOrchestratorOptions = {
 export function createTurnOrchestrator(
   options: TurnOrchestratorOptions,
 ): TurnOrchestrator {
-  const { store, lock, gateway } = options;
+  const { store, lock, gatewayFor } = options;
 
   const audit = (
     eventType:
@@ -126,6 +143,8 @@ export function createTurnOrchestrator(
     sessionId: string;
     prompt: string;
     actorUserId: string;
+    botId: string;
+    ownerUserId: string;
     initiator?: AuditInitiator;
   }): Promise<void> => {
     let lease: TurnLease | null = null;
@@ -157,9 +176,17 @@ export function createTurnOrchestrator(
         return;
       }
 
+      // The workspace before the turn: the diff against after is what the gallery gets.
+      const diffClient = options.clientFor?.(input.botId) ?? null;
+      const before =
+        (await diffClient?.listFiles().catch(() => undefined)) ?? undefined;
+
       let streaming: StreamingRun;
       try {
-        streaming = await gateway.startStreaming(input.prompt, {
+        streaming = await gatewayFor({
+          botId: input.botId,
+          ownerUserId: input.ownerUserId,
+        }).startStreaming(input.prompt, {
           activityTimeoutMs: options.activityTimeoutMs,
         });
       } catch (error) {
@@ -211,6 +238,29 @@ export function createTurnOrchestrator(
             { turnId: input.turnId, sessionId: input.sessionId },
             input,
           );
+        }
+        // The gallery diff, contained: a failed collect or a failed index never un-succeeds
+        // the turn that already completed.
+        if (diffClient && options.indexArtifactsFor && before) {
+          try {
+            const after = await diffClient.listFiles();
+            const created = after.filter((path) => !before.includes(path));
+            const artifacts: SandboxArtifact[] = [];
+            for (const path of created.slice(0, 100)) {
+              const file = await diffClient
+                .readFile(path, 64 * 1024)
+                .catch(() => undefined);
+              if (file) artifacts.push(file);
+            }
+            if (artifacts.length > 0) {
+              await options.indexArtifactsFor({
+                sessionId: input.sessionId,
+                artifacts,
+              });
+            }
+          } catch {
+            // Contained by design: the turn completed; the gallery can lag.
+          }
         }
       } else {
         // Ended without idle: refused from the start, cancelled from under us (the store row
@@ -273,6 +323,8 @@ export function createTurnOrchestrator(
         sessionId: input.sessionId,
         prompt: input.prompt,
         actorUserId: input.actorUserId,
+        botId: input.botId,
+        ownerUserId: input.ownerUserId,
         initiator: input.initiator,
       });
       return { turnId: row.id };
