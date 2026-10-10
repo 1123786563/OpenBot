@@ -4,6 +4,7 @@ import {
   IconKey,
   IconLayoutGrid,
   IconPlug,
+  IconReceipt,
   IconSettings,
   IconShieldCheck,
   IconShoppingCart,
@@ -75,11 +76,24 @@ const ITEMS = [
     linkOptions: { to: "/settings/billing/subscribe" },
   },
   {
-    /* What has been used of that plan in the current billing period. */
-    title: "sidebar.usage",
+    /*
+     * What has been used of that plan, and how much of each resource is left — the screen a person
+     * opens when something stops and they want to know whether they ran out.
+     */
+    title: "sidebar.plansUsage",
     icon: IconChartBar,
     exact: false,
     linkOptions: { to: "/settings/usage" },
+  },
+  {
+    /*
+     * What has been billed, and the receipt for each one. Last, because it is the screen somebody
+     * visits when something needs accounting for, not when something needs deciding.
+     */
+    title: "sidebar.invoices",
+    icon: IconReceipt,
+    exact: false,
+    linkOptions: { to: "/settings/invoices" },
   },
 ] as const satisfies readonly {
   /**
