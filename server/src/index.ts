@@ -3537,6 +3537,12 @@ serve<SocketData>({
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }
+    // The workshop's event streams outlive the default request timeout by design: their
+    // connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
+    // default — without this raise, every quiet stream is cut before its first keepalive.
+    if (url.pathname.startsWith("/api/workshop/") && url.pathname.endsWith("/events")) {
+      server.timeout(request, 255);
+    }
     if (url.pathname === "/api/voice/calls") server.timeout(request, 30);
     if (url.pathname === "/api/voice/sessions") server.timeout(request, 30);
     const streamBotId = streamPathBotId(url.pathname);

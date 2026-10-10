@@ -150,7 +150,7 @@ export function sseBlock(event: SeqencedStreamEvent): Uint8Array {
  * from its own header, so a tab that reconnected at seq 42 and a fresh tab at 0 both get
  * exactly what they asked for.
  */
-export function streamEventsResponse(input: {
+export type StreamEventsInput = {
   bus: TurnEventBus;
   store: WorkshopStore;
   turnIds: string[];
@@ -158,83 +158,101 @@ export function streamEventsResponse(input: {
   keepaliveMs?: number;
   /** Closed when the client detaches; stops keepalives, subscriptions, and the stream. */
   stopSignal?: AbortSignal;
-}): Response {
+};
+
+/** The SSE headers every consumer sends, in one place. */
+export const SSE_HEADERS: Record<string, string> = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache",
+};
+
+export function streamEventsResponse(input: StreamEventsInput): Response {
+  return new Response(eventsStreamBody(input), {
+    status: 200,
+    headers: SSE_HEADERS,
+  });
+}
+
+/** The stream alone, for callers that stream through Hono's context.body instead. */
+export function eventsStreamBody(input: StreamEventsInput): ReadableStream<Uint8Array> {
   const { bus, store, turnIds } = input;
   const keepaliveMs = input.keepaliveMs ?? 15_000;
   const perTurnLastSeq = new Map<string, number>(
     turnIds.map((id) => [id, input.lastEventId ?? 0]),
   );
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+  const stream: ReadableStream<Uint8Array> = new ReadableStream<Uint8Array>({
+    // start() returns synchronously: Bun's serve flushes what a stream's start leaves behind,
+    // and an async start left even the keepalives undelivered until some later pull that a
+    // quiet SSE client never issues. Everything below is fire-and-forget on purpose — the
+    // stopSignal is what ends it, and every enqueue is guarded against the closed stream.
+    start(controller) {
       let live = true;
-
-      // Catch-up first, per turn, from the database.
-      for (const turnId of turnIds) {
-        const since = perTurnLastSeq.get(turnId) ?? 0;
-        const events = await replaySince(store, turnId, since).catch(() => []);
-        for (const event of events) {
-          perTurnLastSeq.set(turnId, event.seq);
-          controller.enqueue(sseBlock(event));
-        }
-      }
-
-      // Then live: every bus ping re-reads the turn's rows past the last seq we sent — the
-      // same dedup the bus holds internally, applied per subscriber so two turns on one
-      // connection never interleave their seq spaces.
-      const stopperPromises = turnIds.map((turnId) =>
-        bus.subscribe(turnId, async () => {
-          if (!live) return;
-          const since = perTurnLastSeq.get(turnId) ?? 0;
-          const events = await replaySince(store, turnId, since, 100).catch(
-            () => [],
-          );
-          for (const event of events) {
-            perTurnLastSeq.set(turnId, event.seq);
-            controller.enqueue(sseBlock(event));
-          }
-        }),
-      );
-
-      const keepalive = setInterval(() => {
-        if (live) {
-          try {
-            controller.enqueue(encoder.encode(": keepalive\n\n"));
-          } catch {
-            // The client is gone; the abort handler closes us out.
-          }
-        }
-      }, keepaliveMs);
-
-      const shutdown = () => {
+      const guard = (bytes: Uint8Array) => {
         if (!live) return;
-        live = false;
-        clearInterval(keepalive);
-        void (async () => {
-          for (const stopPromise of stopperPromises) {
-            const stop = await stopPromise.catch(() => undefined);
-            stop?.();
-          }
-          try {
-            controller.close();
-          } catch {
-            // Already closed by the client dropping: fine.
-          }
-        })();
+        try {
+          controller.enqueue(bytes);
+        } catch {
+          // The client is gone; the abort handler closes us out.
+        }
       };
 
-      if (input.stopSignal) {
-        if (input.stopSignal.aborted) shutdown();
-        else input.stopSignal.addEventListener("abort", shutdown);
-      }
+      void (async () => {
+        // Catch-up first, per turn, from the database.
+        for (const turnId of turnIds) {
+          const since = perTurnLastSeq.get(turnId) ?? 0;
+          const events = await replaySince(store, turnId, since).catch(() => []);
+          for (const event of events) {
+            perTurnLastSeq.set(turnId, event.seq);
+            guard(sseBlock(event));
+          }
+        }
+
+        // Then live: every bus ping re-reads the turn's rows past the last seq we sent — the
+        // same dedup the bus holds internally, applied per subscriber so two turns on one
+        // connection never interleave their seq spaces.
+        const stopperPromises = turnIds.map((turnId) =>
+          bus.subscribe(turnId, async () => {
+            if (!live) return;
+            const since = perTurnLastSeq.get(turnId) ?? 0;
+            const events = await replaySince(store, turnId, since, 100).catch(
+              () => [],
+            );
+            for (const event of events) {
+              perTurnLastSeq.set(turnId, event.seq);
+              guard(sseBlock(event));
+            }
+          }),
+        );
+
+        const keepalive = setInterval(() => {
+          guard(encoder.encode(": keepalive\n\n"));
+        }, keepaliveMs);
+
+        const shutdown = () => {
+          if (!live) return;
+          live = false;
+          clearInterval(keepalive);
+          void (async () => {
+            for (const stopPromise of stopperPromises) {
+              const stop = await stopPromise.catch(() => undefined);
+              stop?.();
+            }
+            try {
+              controller.close();
+            } catch {
+              // Already closed by the client dropping: fine.
+            }
+          })();
+        };
+
+        if (input.stopSignal) {
+          if (input.stopSignal.aborted) shutdown();
+          else input.stopSignal.addEventListener("abort", shutdown);
+        }
+      })();
     },
   });
 
-  return new Response(stream, {
-    status: 200,
-    headers: {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-    },
-  });
+  return stream;
 }
