@@ -106,6 +106,24 @@ describe("the per-bot dev server pool (S8)", () => {
     if (c.ok && a.ok) expect(c.port).toBe(a.port);
   });
 
+  test("a dir that climbs out of the Bot's workspace is refused, not spawned", async () => {
+    const { devservers, spawns } = build();
+    const escaped = await devservers.start({ botId: "alpha", dir: "../../../etc" });
+    expect(escaped).toEqual({ ok: false, reason: "outside-workspace", dir: "../../../etc" });
+    // And the absolute-smuggling shape: an input that starts like a path but resolves elsewhere.
+    const absolute = await devservers.start({ botId: "alpha", dir: "/etc/passwd/../../x" });
+    expect(absolute.ok).toBe(false);
+    if (!absolute.ok) expect(absolute.reason).toBe("outside-workspace");
+    expect(spawns).toHaveLength(0); // Nothing was spawned for either.
+  });
+
+  test("a legal subdirectory (dots and all) resolves inside the workspace", async () => {
+    const { devservers, spawns } = build();
+    const fine = await devservers.start({ botId: "alpha", dir: "apps/./web/dist/../src" });
+    expect(fine.ok).toBe(true);
+    expect(spawns[0]?.cwd).toBe("/workspace/bots/alpha/apps/web/src");
+  });
+
   test("an explicit command overrides vite, verbatim", async () => {
     const { devservers, spawns } = build();
     await devservers.start({ botId: "a", dir: "web", command: "next dev -p 3000" });

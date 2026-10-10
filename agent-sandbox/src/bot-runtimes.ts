@@ -107,6 +107,7 @@ export type BotRuntimes = {
   }): Promise<
     | { ok: true; port: number; command: string }
     | { ok: false; reason: "capacity"; running: number; max: number }
+    | { ok: false; reason: "outside-workspace"; dir: string }
   >;
   /** Stop this Bot's dev servers. Quiet when none. */
   stopDevServer(botId: string): Promise<void>;
