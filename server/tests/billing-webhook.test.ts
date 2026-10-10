@@ -420,6 +420,7 @@ describe("createBillingService.handleWebhook", () => {
       active: true,
       planCode: "pro",
       codes: ["intelligence", "teams"],
+      subscription: null,
     });
   });
 

@@ -11,6 +11,7 @@ import { getLogger } from "../../shared/logger";
 import { singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
+import type { BillingEntitlementEntry } from "./billing/types";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 import {
@@ -1237,8 +1238,8 @@ export type LagoBillingConfig = {
    * a deployment developing against a Lago stack on its own machine.
    */
   allowPrivateHosts: boolean;
-  /** Plan code → the entitlement codes that plan grants. */
-  planEntitlements: ReadonlyMap<string, readonly string[]>;
+  /** Plan code → the entitlement entries that plan grants. */
+  planEntitlements: ReadonlyMap<string, readonly BillingEntitlementEntry[]>;
   /** One request's ceiling, when the default 10s is not what this deployment wants. */
   requestTimeoutMs?: number;
 };
@@ -1329,7 +1330,10 @@ function billingConfig(
 }
 
 /**
- * The plan map, as JSON in one variable: `{"pro": ["intelligence", "teams"]}`.
+ * The plan map, as JSON in one variable. Each plan's list accepts either the legacy bare code
+ * strings (`{"pro": ["intelligence", "teams"]}`) or entries with presentational copy
+ * (`{"pro": [{"code": "intelligence", "label": "..."}]}`); both resolve to entry objects, so a
+ * deployment can move to the richer form one plan at a time.
  *
  * Malformed JSON, or JSON of the wrong shape, refuses to start rather than falling back to an empty
  * map — an operator who wrote entitlements and mistyped them would otherwise run a deployment that
@@ -1338,7 +1342,7 @@ function billingConfig(
  */
 function billingPlanEntitlements(
   environment: Environment,
-): ReadonlyMap<string, readonly string[]> {
+): ReadonlyMap<string, readonly BillingEntitlementEntry[]> {
   const raw = optional(environment, "LAGO_PLAN_ENTITLEMENTS") ?? "{}";
   let parsed: unknown;
   try {
@@ -1351,19 +1355,59 @@ function billingPlanEntitlements(
       "LAGO_PLAN_ENTITLEMENTS must be a JSON object of plan code to a list of entitlement codes",
     );
   }
-  const plans = new Map<string, readonly string[]>();
+  const plans = new Map<string, readonly BillingEntitlementEntry[]>();
   for (const [planCode, codes] of Object.entries(
     parsed as Record<string, unknown>,
   )) {
-    if (
-      !Array.isArray(codes) ||
-      codes.some((code) => typeof code !== "string" || code.length === 0)
-    ) {
+    if (!Array.isArray(codes)) {
       throw new Error(
         `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" must be a list of non-empty entitlement codes`,
       );
     }
-    plans.set(planCode, codes as readonly string[]);
+    const entries: BillingEntitlementEntry[] = [];
+    for (const entry of codes) {
+      if (typeof entry === "string") {
+        if (entry.length === 0) {
+          throw new Error(
+            `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" must be a list of non-empty entitlement codes`,
+          );
+        }
+        entries.push({ code: entry });
+        continue;
+      }
+      if (entry === null || typeof entry !== "object") {
+        throw new Error(
+          `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" entries must be codes or objects with a "code"`,
+        );
+      }
+      const record = entry as Record<string, unknown>;
+      if (typeof record.code !== "string" || record.code.length === 0) {
+        throw new Error(
+          `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" entries must carry a non-empty "code"`,
+        );
+      }
+      if (record.label !== undefined && typeof record.label !== "string") {
+        throw new Error(
+          `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" entry label must be a string`,
+        );
+      }
+      if (
+        record.description !== undefined &&
+        typeof record.description !== "string"
+      ) {
+        throw new Error(
+          `LAGO_PLAN_ENTITLEMENTS plan "${planCode}" entry description must be a string`,
+        );
+      }
+      entries.push({
+        code: record.code,
+        ...(record.label !== undefined ? { label: record.label } : {}),
+        ...(record.description !== undefined
+          ? { description: record.description }
+          : {}),
+      });
+    }
+    plans.set(planCode, entries);
   }
   return plans;
 }

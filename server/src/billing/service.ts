@@ -6,6 +6,7 @@ import {
 } from "./lago";
 import { readBodyCapped } from "./raw-body";
 import {
+  type BillingEntitlementEntry,
   type BillingEntitlements,
   BillingError,
   type BillingService,
@@ -70,8 +71,8 @@ export function createBillingService(deps: {
   store: BillingStore;
   /** Absent on a deployment with no webhook key: that deployment mounts no webhook route. */
   verifier?: WebhookVerifier;
-  /** Plan code → entitlement codes. Injected so a test (or a future config) can differ. */
-  planEntitlements?: ReadonlyMap<string, readonly string[]>;
+  /** Plan code → the entitlement entries that plan grants. Injected so a test (or a future config) can differ. */
+  planEntitlements?: ReadonlyMap<string, readonly BillingEntitlementEntry[]>;
   ttlMs?: number;
   failureTtlMs?: number;
   now?: () => number;
@@ -160,11 +161,15 @@ export function createBillingService(deps: {
       const rows: readonly BillingSubscriptionRow[] =
         await store.readSubscriptions(key);
       const active = rows.find((row) => row.status === "active");
-      if (!active) return { active: false, codes: [] };
+      // The subscription facts ride beside the plan from Task 4; until they are wired the field
+      // is an explicit null, not an absent one, so callers can rely on its presence.
+      if (!active)
+        return { active: false, codes: [], subscription: null };
       return {
         active: true,
         planCode: active.planCode,
         codes: deps.planEntitlements?.get(active.planCode) ?? [],
+        subscription: null,
       };
     },
     ...(deps.ttlMs !== undefined ? { ttlMs: deps.ttlMs } : {}),
