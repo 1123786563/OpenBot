@@ -8,8 +8,8 @@
  * once per process — with an OTLP/HTTP batch exporter when an endpoint is configured,
  * recording-only otherwise — and is safe to call from every process's boot path.
  *
- * Never fatal and off by default: without `OTEL_EXPORTER_OTLP_ENDPOINT` (or the logs
- * endpoint doubling as the collector) spans are still recorded, just never exported,
+ * Never fatal and off by default: without a traces endpoint (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+ * or the generic `OTEL_EXPORTER_OTLP_ENDPOINT`) spans are still recorded, just never exported,
  * and `OPENBOT_TRACES=off` disables the whole thing with an endpoint still set.
  */
 import { type Context, context, propagation, trace } from "@opentelemetry/api";
@@ -26,8 +26,8 @@ import {
  * alone form a weak type Bun's `ProcessEnv` shares nothing with and TypeScript refuses.
  */
 export type TraceProcessEnv = {
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?: string;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
-  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?: string;
   OPENBOT_TRACES?: string;
 } & Record<string, string | undefined>;
 
@@ -74,25 +74,23 @@ let globalsRegistered = false;
 /**
  * Register this process's tracer provider, once. `OPENBOT_TRACES=off` leaves tracing
  * entirely unregistered; otherwise the provider records spans under `service.name`,
- * exporting them through the OTLP/HTTP batch processor when a collector endpoint is
- * configured (same value order as telemetry/otel.ts: the logs endpoint doubles as the
- * collector base, else the generic endpoint with the trace path appended).
+ * exporting them through the OTLP/HTTP batch processor when an endpoint is configured:
+ * the signal-level `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` verbatim (it may carry the full
+ * path), else the generic endpoint with the trace path appended.
  */
 export function initProcessTracing(name: string, env: TraceProcessEnv): void {
   if (provider) return;
   if (env.OPENBOT_TRACES?.trim().toLowerCase() === "off") return;
 
-  const collector =
-    env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim() ||
-    (env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "").trim().replace(/\/$/, "");
+  const tracesEndpoint =
+    env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim() ||
+    (env.OTEL_EXPORTER_OTLP_ENDPOINT
+      ? `${env.OTEL_EXPORTER_OTLP_ENDPOINT.trim().replace(/\/$/, "")}/v1/traces`
+      : undefined);
   const instance = new NodeTracerProvider({
     resource: resourceFromAttributes({ "service.name": name }),
-    spanProcessors: collector
-      ? [
-          new BatchSpanProcessor(
-            new OTLPTraceExporter({ url: `${collector}/v1/traces` }),
-          ),
-        ]
+    spanProcessors: tracesEndpoint
+      ? [new BatchSpanProcessor(new OTLPTraceExporter({ url: tracesEndpoint }))]
       : [],
   });
   // SDK 2.x registers processors through the constructor; addSpanProcessor is gone.
