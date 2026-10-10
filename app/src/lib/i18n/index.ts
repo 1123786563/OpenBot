@@ -14,6 +14,7 @@ import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
 import nav from "../../locales/en/nav.json";
 import tenant from "../../locales/en/tenant.json";
+import workshop from "../../locales/en/workshop.json";
 import zhApprovals from "../../locales/zh-CN/approvals.json";
 import zhAdmin from "../../locales/zh-CN/admin.json";
 import zhAgents from "../../locales/zh-CN/agents.json";
@@ -27,6 +28,7 @@ import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
 import zhNav from "../../locales/zh-CN/nav.json";
 import zhTenant from "../../locales/zh-CN/tenant.json";
+import zhWorkshop from "../../locales/zh-CN/workshop.json";
 
 /**
  * Translation namespaces, split by feature area so a namespace stays reviewable and can be
@@ -48,6 +50,7 @@ export const NAMESPACES = [
   "market",
   "errors",
   "tenant",
+  "workshop",
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -105,6 +108,7 @@ void i18next
         routines,
         skills,
         market,
+        workshop,
         errors,
         tenant,
       },
@@ -120,6 +124,7 @@ void i18next
         routines: zhRoutines,
         skills: zhSkills,
         market: zhMarket,
+        workshop: zhWorkshop,
         errors: zhErrors,
         tenant: zhTenant,
       },

@@ -69,7 +69,8 @@
     "computer": "Computer",
     "channelFallback": "Channel",
     "coworkerAria": "Channel coworker",
-    "loadError": "Could not load this channel."
+    "loadError": "Could not load this channel.",
+    "workshop": "Workshop"
   },
   "channelNew": {
     "rosterError": "Coworkers couldn't be loaded.",

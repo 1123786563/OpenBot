@@ -1,4 +1,4 @@
-import { IconSettings } from "@tabler/icons-react";
+import { IconCode, IconSettings } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -17,6 +17,7 @@ import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
+import { WorkshopPanel } from "@/components/channels/workshop-panel";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ const chatSearchSchema = z.object({
   settings: z.boolean().optional(),
   /** Opens the Bot's screen in the shared detail pane. */
   watch: z.boolean().optional(),
+  /** Opens the Bot's workshop (files, artifacts, the live turn) in the same pane. */
+  workshop: z.boolean().optional(),
 });
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
@@ -42,6 +45,9 @@ const HEADING_ENTRANCE_OFFSET = "translateY(4px)";
 /** Shared detail pane width for the live screen view. */
 const SCREEN_PANEL_WIDTH = 400;
 
+/** The workshop pane is wider: it carries the turn's stream beside the file tree. */
+const WORKSHOP_PANEL_WIDTH = 480;
+
 export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
   validateSearch: chatSearchSchema,
   component: RouteComponent,
@@ -50,10 +56,11 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
 function RouteComponent() {
   const { t } = useTranslation("channels");
   const { channelId } = Route.useParams();
-  const { settings, watch } = Route.useSearch();
+  const { settings, watch, workshop } = Route.useSearch();
   const channel = useQuery(channelQueryOptions(channelId));
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
+  const isWorkshopOpen = workshop === true;
   const prefersReducedMotion = useReducedMotion();
   const isWatching = watch === true;
   /** Channel routing currently supports one coworker. */
@@ -106,8 +113,8 @@ function RouteComponent() {
     });
   }, [agentId, navigate]);
 
-  // Settings and watch share one pane; opening either clears the other URL flag.
-  const show = (next: "settings" | "watch" | null) => {
+  // Settings, watch, and the workshop share one pane; opening one clears the others' flags.
+  const show = (next: "settings" | "watch" | "workshop" | null) => {
     // Dismissal applies only to the current browser-activity run.
     if (next !== "watch" && isWatching)
       dismissedEpoch.current = runEpoch.current;
@@ -116,6 +123,7 @@ function RouteComponent() {
         ...previous,
         settings: next === "settings" ? true : undefined,
         watch: next === "watch" ? true : undefined,
+        workshop: next === "workshop" ? true : undefined,
       }),
     });
   };
@@ -123,13 +131,21 @@ function RouteComponent() {
   return (
     <DetailPanel
       onClose={() => show(null)}
-      open={(isSettingsOpen || isWatching) && agentId !== undefined}
-      detailWidth={isWatching ? SCREEN_PANEL_WIDTH : undefined}
-      title={isWatching ? t("channelDetail.computer") : undefined}
+      open={(isSettingsOpen || isWatching || isWorkshopOpen) && agentId !== undefined}
+      detailWidth={isWatching || isWorkshopOpen ? WORKSHOP_PANEL_WIDTH : undefined}
+      title={
+        isWatching
+          ? t("channelDetail.computer")
+          : isWorkshopOpen
+            ? t("channelDetail.workshop")
+            : undefined
+      }
       detail={
         agentId === undefined ? null : isWatching ? (
           // Manual watch remains active even when there is no current browser action.
           <ComputerViewPanel agentId={agentId} name={channel?.data?.name} />
+        ) : isWorkshopOpen ? (
+          <WorkshopPanel channelId={channelId} botId={agentId} />
         ) : (
           <AgentProfile agentId={agentId} />
         )
@@ -182,6 +198,17 @@ function RouteComponent() {
               open={isWatching}
               onOpenChange={(open) => show(open ? "watch" : null)}
             />
+            <Button
+              aria-label={t("channelDetail.workshop")}
+              aria-pressed={isWorkshopOpen}
+              className={isWorkshopOpen ? "bg-foreground/5" : undefined}
+              disabled={agentId === undefined}
+              onClick={() => show(isWorkshopOpen ? null : "workshop")}
+              variant="ghost"
+              size="icon"
+            >
+              <IconCode className="size-4.5" />
+            </Button>
             <Button
               aria-label={t("channelDetail.coworkerAria")}
               aria-pressed={isSettingsOpen}

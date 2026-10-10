@@ -69,7 +69,8 @@
     "computer": "计算机",
     "channelFallback": "频道",
     "coworkerAria": "频道同事",
-    "loadError": "无法加载此频道。"
+    "loadError": "无法加载此频道。",
+    "workshop": "工作台"
   },
   "channelNew": {
     "rosterError": "无法加载同事。",
