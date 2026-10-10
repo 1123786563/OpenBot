@@ -226,9 +226,14 @@ function RouteComponent() {
         <>
           {data.activePlanCode !== null ? (
             <div className="rounded-xl border bg-card p-5">
-              <p className="text-muted-foreground text-sm">
-                {t("subscribe.statusCardTitle")}
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-muted-foreground text-sm">
+                  {t("subscribe.statusCardTitle")}
+                </p>
+                <span className="rounded-full bg-success/10 px-2.5 py-0.5 text-success text-xs font-medium">
+                  {t("billing.statusActive")}
+                </span>
+              </div>
               <div className="mt-1 flex items-center justify-between">
                 <span className="font-mono text-lg font-semibold">
                   {data.activePlanCode}
@@ -349,11 +354,11 @@ function PlanChooser({
       ) : null}
       <hr className="my-6" />
       <div className="flex items-center justify-between">
-        <p className="text-sm tabular-nums">
-          {selected
-            ? `${selected.planCode} · ${money(selected.amountCents, selected.currency)}`
-            : t("subscribe.noPlans")}
-        </p>
+        {selected ? (
+          <p className="text-sm tabular-nums">
+            {`${selected.planCode} · ${money(selected.amountCents, selected.currency)}`}
+          </p>
+        ) : null}
         <div className="flex items-center gap-3">
           <Button
             disabled={!canBuy || planCode === null || create.isPending}

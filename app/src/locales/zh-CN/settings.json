@@ -34,7 +34,6 @@
     "noPlans": "目前没有可购买的套餐。套餐目录由管理员配置。",
     "plansTitle": "套餐",
     "plansDescription": "一次一个套餐：只有当前没有生效中的订阅时，才能购买新套餐。",
-    "perMonth": "按月计费",
     "perMonthShort": "月",
     "providerTitle": "支付方式",
     "providerDescription": "选择支付渠道。订单只会在该渠道上创建。",
@@ -43,7 +42,6 @@
       "wechat": "微信支付"
     },
     "buy": "继续支付",
-    "activeSubscriptionNotice": "此部署已在“{{planCode}}”套餐上。需等当前套餐结束后才能购买新套餐。",
     "statusCardTitle": "当前订阅",
     "viewEntitlements": "查看权益",
     "checkoutTitle": "扫码支付",
@@ -66,7 +64,6 @@
     "title": "使用记录",
     "description": "这个部署在当前计费周期内的用量。",
     "currentPeriod": "当前周期",
-    "totalThisPeriod": "本周期合计：",
     "noCharges": "本周期还没有产生任何用量。",
     "noSubscription": "没有生效中的订阅，暂无用量可统计。",
     "eventLog": "用量明细",
