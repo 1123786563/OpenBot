@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
+import { WorkshopTurnView } from "./workshop-turn";
 
 /**
  * The workshop tab: one channel's working surface in four panes.
@@ -75,9 +76,7 @@ export function WorkshopPanel({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
             {tab === "process" ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                {t("panel.placeholder.process")}
-              </p>
+              <WorkshopTurnView channelId={channelId} botId={botId} />
             ) : tab === "files" ? (
               <p className="p-4 text-sm text-muted-foreground">
                 {t("panel.placeholder.files")}
