@@ -1,6 +1,11 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
-
+import type {
+  CreateRun,
+  RunEventView,
+  RunView,
+} from "../../../../shared/enterprise/run-contracts";
 import type { Database } from "../../db/client";
+import type { Scope } from "../contracts";
 import { EnterpriseError } from "../errors";
 import type { EnterpriseRuntimeConfig } from "../runtime/config";
 import { invocationEnvelopeDigest } from "../runtime/envelope-digest";
@@ -8,17 +13,11 @@ import {
   parseRuntimeInvocation,
   type RuntimeInvocation,
 } from "../runtime/wire";
+import { assertScope } from "../tenancy/scope";
+import type { TxClient } from "../tenancy/transaction";
+import type { RunCommand, RunService } from "./contracts";
 import { runRequestDigest } from "./digest";
 import { runInputDigest } from "./input-digest";
-import type { TxClient } from "../tenancy/transaction";
-import { assertScope } from "../tenancy/scope";
-import type { Scope } from "../contracts";
-import type {
-  CreateRun,
-  RunEventView,
-  RunView,
-} from "../../../../shared/enterprise/run-contracts";
-import type { RunCommand, RunService } from "./contracts";
 
 /*
  * ---------------------------------------------------------------------------
@@ -177,7 +176,11 @@ async function withRuntimeWriter<T>(
  * policies with no application-side tenant filter to drift out of sync.
  */
 export function createRunService(deps: RunServiceDeps): RunService & {
-  createE1(input: { scope: Scope; key: string; request: CreateRun }): Promise<CreatedRun>;
+  createE1(input: {
+    scope: Scope;
+    key: string;
+    request: CreateRun;
+  }): Promise<CreatedRun>;
   appendEvent(input: {
     tenantId: string;
     runId: string;
@@ -191,7 +194,12 @@ export function createRunService(deps: RunServiceDeps): RunService & {
   markTerminal(input: {
     tenantId: string;
     runId: string;
-    status: "succeeded" | "failed" | "cancelled" | "waiting_approval" | "waiting_input";
+    status:
+      | "succeeded"
+      | "failed"
+      | "cancelled"
+      | "waiting_approval"
+      | "waiting_input";
     reasonCode?: string;
   }): Promise<void>;
   readEventsPinned(input: {
@@ -218,13 +226,12 @@ export function createRunService(deps: RunServiceDeps): RunService & {
      * transaction — reads are non-transactional anyway, and the run row
      * records the revision it pinned.
      */
-    const route = (
-      await deps.runtimeWriterDatabase.$client.begin(async (tx) => {
+    const route = (await deps.runtimeWriterDatabase.$client.begin(
+      async (tx) => {
         await tx.unsafe("set transaction isolation level read committed");
-        await tx.unsafe(
-          "select set_config('app.tenant_id', $1, true)",
-          [scope.tenantId],
-        );
+        await tx.unsafe("select set_config('app.tenant_id', $1, true)", [
+          scope.tenantId,
+        ]);
         const found = (
           await tx.unsafe<Row[]>(SELECT_ROUTE_RUNTIME_TEXT, [
             scope.tenantId,
@@ -245,8 +252,8 @@ export function createRunService(deps: RunServiceDeps): RunService & {
           throw new EnterpriseError("RUN_MODEL_GRANT_MISSING", 403);
         }
         return found;
-      })
-    ) as Row;
+      },
+    )) as Row;
 
     type BusinessOutcome =
       | { replayed: true; view: RunView; threadId: string; runId: string }
@@ -261,153 +268,157 @@ export function createRunService(deps: RunServiceDeps): RunService & {
           reservationId: string;
         };
 
-    const created = await withRunWriter(deps, scope, async (tx): Promise<BusinessOutcome> => {
-      // Idempotency first: the same key with the same content is the SAME run
-      // (replayed authorization, not a cached bypass); the same key with
-      // different content is a caller error.
-      const existing = (
-        await tx.unsafe<Row[]>(SELECT_RUN_BY_KEY_TEXT, [
-          scope.tenantId,
-          scope.principalId,
-          key,
-        ])
-      )[0];
-      if (existing !== undefined) {
-        if (existing.request_digest !== requestDigest) {
-          throw new EnterpriseError("REQUEST_KEY_REUSED", 409);
+    const created = await withRunWriter(
+      deps,
+      scope,
+      async (tx): Promise<BusinessOutcome> => {
+        // Idempotency first: the same key with the same content is the SAME run
+        // (replayed authorization, not a cached bypass); the same key with
+        // different content is a caller error.
+        const existing = (
+          await tx.unsafe<Row[]>(SELECT_RUN_BY_KEY_TEXT, [
+            scope.tenantId,
+            scope.principalId,
+            key,
+          ])
+        )[0];
+        if (existing !== undefined) {
+          if (existing.request_digest !== requestDigest) {
+            throw new EnterpriseError("REQUEST_KEY_REUSED", 409);
+          }
+          return {
+            replayed: true,
+            view: rowsToRunView(existing),
+            threadId: existing.thread_id as string,
+            runId: existing.id as string,
+          };
         }
-        return {
-          replayed: true,
-          view: rowsToRunView(existing),
-          threadId: existing.thread_id as string,
-          runId: existing.id as string,
-        };
-      }
 
-      // The thread the run lives in: reuse or mint under the same owner.
-      let threadId = request.thread_id;
-      if (threadId === undefined) {
-        threadId = `${THREAD_ID_PREFIX}${randomUUID().replaceAll("-", "")}`;
-      }
-      const thread = (
-        await tx.unsafe<Row[]>(SELECT_THREAD_TEXT, [scope.tenantId, threadId])
-      )[0];
-      if (thread === undefined) {
-        await tx.unsafe(INSERT_THREAD_TEXT, [
+        // The thread the run lives in: reuse or mint under the same owner.
+        let threadId = request.thread_id;
+        if (threadId === undefined) {
+          threadId = `${THREAD_ID_PREFIX}${randomUUID().replaceAll("-", "")}`;
+        }
+        const thread = (
+          await tx.unsafe<Row[]>(SELECT_THREAD_TEXT, [scope.tenantId, threadId])
+        )[0];
+        if (thread === undefined) {
+          await tx.unsafe(INSERT_THREAD_TEXT, [
+            scope.tenantId,
+            threadId,
+            scope.principalId,
+            request.workspace_id,
+          ]);
+        }
+
+        // Offline-provisioned catalog: release, its start grant, the model
+        // route for the requested alias, and the principal's model grant.
+        const release = (
+          await tx.unsafe<Row[]>(SELECT_RELEASE_TEXT, [
+            scope.tenantId,
+            request.expert_release_id,
+          ])
+        )[0];
+        if (release === undefined) {
+          throw new EnterpriseError("RUN_RELEASE_MISSING", 404);
+        }
+        if (release.status !== "published") {
+          throw new EnterpriseError("RUN_RELEASE_DISABLED", 403);
+        }
+        const granted = (
+          await tx.unsafe<Row[]>(SELECT_RUN_GRANT_TEXT, [
+            scope.tenantId,
+            release.id as string,
+            scope.principalId,
+          ])
+        )[0];
+        if (granted === undefined) {
+          throw new EnterpriseError("RUN_START_NOT_GRANTED", 403);
+        }
+
+        // The budget hold: one workspace-scoped account, capped by what it
+        // still holds. The conditional UPDATE refuses the hold past the limit
+        // inside the same statement — no read-then-write race.
+        const account = (
+          await tx.unsafe<Row[]>(SELECT_ACCOUNT_TEXT, [
+            scope.tenantId,
+            request.workspace_id,
+            deps.runtime.budgetCurrency,
+          ])
+        )[0];
+        if (account === undefined) {
+          throw new EnterpriseError("BUDGET_ACCOUNT_MISSING", 404);
+        }
+        const cap = BigInt(deps.runtime.budgetCapMicros);
+        const held = await tx.unsafe(HOLD_ACCOUNT_TEXT, [
           scope.tenantId,
-          threadId,
-          scope.principalId,
-          request.workspace_id,
+          account.id as string,
+          cap.toString(),
         ]);
-      }
+        if (held.length === 0) {
+          throw new EnterpriseError("BUDGET_EXHAUSTED", 403);
+        }
 
-      // Offline-provisioned catalog: release, its start grant, the model
-      // route for the requested alias, and the principal's model grant.
-      const release = (
-        await tx.unsafe<Row[]>(SELECT_RELEASE_TEXT, [
+        // The run↔reservation cycle: BOTH foreign keys are deferred and settle
+        // at commit, but the reservation's RLS policy checks the run EXISTS —
+        // so the run row lands first, naming the reservation id it will pair
+        // with, and the reservation lands second, naming the real run.
+        const runId = `${RUN_ID_PREFIX}${randomUUID().replaceAll("-", "")}`;
+        const turnId = `turn_${randomUUID().replaceAll("-", "")}`;
+        const attemptId = `att_${randomUUID().replaceAll("-", "")}`;
+        const reservationId = `res_${randomUUID().replaceAll("-", "")}`;
+        await tx.unsafe(INSERT_RUN_TEXT, [
           scope.tenantId,
-          request.expert_release_id,
-        ])
-      )[0];
-      if (release === undefined) {
-        throw new EnterpriseError("RUN_RELEASE_MISSING", 404);
-      }
-      if (release.status !== "published") {
-        throw new EnterpriseError("RUN_RELEASE_DISABLED", 403);
-      }
-      const granted = (
-        await tx.unsafe<Row[]>(SELECT_RUN_GRANT_TEXT, [
-          scope.tenantId,
-          release.id as string,
+          runId,
           scope.principalId,
-        ])
-      )[0];
-      if (granted === undefined) {
-        throw new EnterpriseError("RUN_START_NOT_GRANTED", 403);
-      }
-
-      // The budget hold: one workspace-scoped account, capped by what it
-      // still holds. The conditional UPDATE refuses the hold past the limit
-      // inside the same statement — no read-then-write race.
-      const account = (
-        await tx.unsafe<Row[]>(SELECT_ACCOUNT_TEXT, [
-          scope.tenantId,
+          scope.userId,
           request.workspace_id,
+          threadId,
+          release.id as string,
+          key,
+          requestDigest,
+          request.input.text,
+          deps.runtime.modelRouteRef,
+          String(route.revision ?? "0"),
+          release.version_digest as string,
+          reservationId,
+          attemptId,
+          turnId,
+        ]);
+        await tx.unsafe(INSERT_RESERVATION_TEXT, [
+          scope.tenantId,
+          reservationId,
+          runId,
+          cap.toString(),
           deps.runtime.budgetCurrency,
-        ])
-      )[0];
-      if (account === undefined) {
-        throw new EnterpriseError("BUDGET_ACCOUNT_MISSING", 404);
-      }
-      const cap = BigInt(deps.runtime.budgetCapMicros);
-      const held = await tx.unsafe(HOLD_ACCOUNT_TEXT, [
-        scope.tenantId,
-        account.id as string,
-        cap.toString(),
-      ]);
-      if (held.length === 0) {
-        throw new EnterpriseError("BUDGET_EXHAUSTED", 403);
-      }
+          account.period_id as string,
+        ]);
+        await tx.unsafe(INSERT_BINDING_TEXT, [
+          scope.tenantId,
+          reservationId,
+          account.id as string,
+        ]);
 
-      // The run↔reservation cycle: BOTH foreign keys are deferred and settle
-      // at commit, but the reservation's RLS policy checks the run EXISTS —
-      // so the run row lands first, naming the reservation id it will pair
-      // with, and the reservation lands second, naming the real run.
-      const runId = `${RUN_ID_PREFIX}${randomUUID().replaceAll("-", "")}`;
-      const turnId = `turn_${randomUUID().replaceAll("-", "")}`;
-      const attemptId = `att_${randomUUID().replaceAll("-", "")}`;
-      const reservationId = `res_${randomUUID().replaceAll("-", "")}`;
-      await tx.unsafe(INSERT_RUN_TEXT, [
-        scope.tenantId,
-        runId,
-        scope.principalId,
-        scope.userId,
-        request.workspace_id,
-        threadId,
-        release.id as string,
-        key,
-        requestDigest,
-        request.input.text,
-        deps.runtime.modelRouteRef,
-        String(route.revision ?? "0"),
-        release.version_digest as string,
-        reservationId,
-        attemptId,
-        turnId,
-      ]);
-      await tx.unsafe(INSERT_RESERVATION_TEXT, [
-        scope.tenantId,
-        reservationId,
-        runId,
-        cap.toString(),
-        deps.runtime.budgetCurrency,
-        account.period_id as string,
-      ]);
-      await tx.unsafe(INSERT_BINDING_TEXT, [
-        scope.tenantId,
-        reservationId,
-        account.id as string,
-      ]);
-
-      return {
-        replayed: false,
-        view: {
-          run_id: runId,
-          thread_id: threadId,
-          status: "queued" as const,
-          revision: "0",
-          latest_seq: "0",
-          reconciliation_required: false,
-          reason_code: null,
-        },
-        threadId,
-        runId,
-        turnId,
-        attemptId,
-        releaseVersion: release.expert_version as string,
-        reservationId,
-      };
-    });
+        return {
+          replayed: false,
+          view: {
+            run_id: runId,
+            thread_id: threadId,
+            status: "queued" as const,
+            revision: "0",
+            latest_seq: "0",
+            reconciliation_required: false,
+            reason_code: null,
+          },
+          threadId,
+          runId,
+          turnId,
+          attemptId,
+          releaseVersion: release.expert_version as string,
+          reservationId,
+        };
+      },
+    );
 
     if (created.replayed) {
       // A replay returns the view; the gateway recognizes a replayed run and
@@ -416,8 +427,18 @@ export function createRunService(deps: RunServiceDeps): RunService & {
         run: created.view,
         replayed: true,
         capabilities: {
-          runtime: deriveCapabilitySecret(deps.keyEncryptionKey, "runtime", scope.tenantId, created.runId),
-          control: deriveCapabilitySecret(deps.keyEncryptionKey, "control", scope.tenantId, created.runId),
+          runtime: deriveCapabilitySecret(
+            deps.keyEncryptionKey,
+            "runtime",
+            scope.tenantId,
+            created.runId,
+          ),
+          control: deriveCapabilitySecret(
+            deps.keyEncryptionKey,
+            "control",
+            scope.tenantId,
+            created.runId,
+          ),
         },
         inputDigest,
         execution: {
@@ -486,8 +507,18 @@ export function createRunService(deps: RunServiceDeps): RunService & {
       replayed: false,
       invocation,
       capabilities: {
-        runtime: deriveCapabilitySecret(deps.keyEncryptionKey, "runtime", scope.tenantId, created.runId),
-        control: deriveCapabilitySecret(deps.keyEncryptionKey, "control", scope.tenantId, created.runId),
+        runtime: deriveCapabilitySecret(
+          deps.keyEncryptionKey,
+          "runtime",
+          scope.tenantId,
+          created.runId,
+        ),
+        control: deriveCapabilitySecret(
+          deps.keyEncryptionKey,
+          "control",
+          scope.tenantId,
+          created.runId,
+        ),
       },
       inputDigest,
       execution: {
@@ -521,20 +552,18 @@ export function createRunService(deps: RunServiceDeps): RunService & {
       if (command.kind !== "cancel") {
         throw new EnterpriseError("COMMAND_KIND_UNSUPPORTED", 400);
       }
-      const row = (
-        await withRunWriter(deps, scope, async (tx) => {
-          const updated = await tx.unsafe<Row[]>(CANCEL_RUN_TEXT, [
-            scope.tenantId,
-            id,
-          ]);
-          if (updated[0] !== undefined) return updated[0];
-          const existing = await tx.unsafe<Row[]>(SELECT_RUN_TEXT, [
-            scope.tenantId,
-            id,
-          ]);
-          return existing[0];
-        })
-      );
+      const row = await withRunWriter(deps, scope, async (tx) => {
+        const updated = await tx.unsafe<Row[]>(CANCEL_RUN_TEXT, [
+          scope.tenantId,
+          id,
+        ]);
+        if (updated[0] !== undefined) return updated[0];
+        const existing = await tx.unsafe<Row[]>(SELECT_RUN_TEXT, [
+          scope.tenantId,
+          id,
+        ]);
+        return existing[0];
+      });
       if (row === undefined) {
         throw new EnterpriseError("RUN_NOT_FOUND", 404);
       }
@@ -551,16 +580,18 @@ export function createRunService(deps: RunServiceDeps): RunService & {
     },
 
     async readEventsPinned({ tenantId, runId, after, limit }) {
-      const rows = await deps.runtimeWriterDatabase.$client.begin(async (tx) => {
-        await tx.unsafe("set transaction isolation level read committed");
-        await tx.unsafe(SET_RUN_CONTEXT_TEXT, [tenantId, runId]);
-        return tx.unsafe<Row[]>(SELECT_EVENTS_TEXT, [
-          tenantId,
-          runId,
-          String(after),
-          String(limit),
-        ]);
-      });
+      const rows = await deps.runtimeWriterDatabase.$client.begin(
+        async (tx) => {
+          await tx.unsafe("set transaction isolation level read committed");
+          await tx.unsafe(SET_RUN_CONTEXT_TEXT, [tenantId, runId]);
+          return tx.unsafe<Row[]>(SELECT_EVENTS_TEXT, [
+            tenantId,
+            runId,
+            String(after),
+            String(limit),
+          ]);
+        },
+      );
       return rows.map((row) => {
         const rawPayload = row.payload;
         const payload =
@@ -580,7 +611,16 @@ export function createRunService(deps: RunServiceDeps): RunService & {
       });
     },
 
-    async appendEvent({ tenantId, runId, attemptId, turnId, sourceEventId, sourceDigest, eventType, payload }) {
+    async appendEvent({
+      tenantId,
+      runId,
+      attemptId,
+      turnId,
+      sourceEventId,
+      sourceDigest,
+      eventType,
+      payload,
+    }) {
       const seq = await deps.runtimeWriterDatabase.$client.begin(async (tx) => {
         await tx.unsafe("set transaction isolation level read committed");
         await tx.unsafe(SET_RUN_CONTEXT_TEXT, [tenantId, runId]);

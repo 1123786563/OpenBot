@@ -1,100 +1,52 @@
 import { describe, expect, test } from "bun:test";
 import { canonicalString, createAlipayProvider } from "../src/billing/payments/alipay";
-import type { ChannelHttpConfig } from "../src/billing/payments/channel-http";
-import { readFileSync } from "node:fs";
+import { rsaSign } from "../src/billing/payments/crypto";
+import { checkOutboundUrl } from "../src/billing/outbound";
+import { BillingError } from "../src/billing/types";
+
+// Fixture RSA pair under ./fixtures — the same material the crypto tests sign with. The platform
+// role (signing gateway answers) is played by the same pair.
+const fixtureDir = new URL("./fixtures/", import.meta.url).pathname;
+const privateKeyPem = await Bun.file(join(fixtureDir, "payment-test-key.pem")).text();
+const certificatePem = await Bun.file(join(fixtureDir, "payment-test-certificate.pem")).text();
+
 import { join } from "node:path";
 
-/*
- * All channel tests run against a captured fake fetch — no socket is ever opened. The fixture
- * keys under ./fixtures are test-vector material (see ./fixtures/README.md).
- */
-const fixtureDir = join(import.meta.dir, "fixtures");
-const privateKeyPem = readFileSync(join(fixtureDir, "payment-test-key.pem"), "utf8");
-const alipayPublicKeyPem = readFileSync(
-  join(fixtureDir, "payment-test-certificate.pem"),
-  "utf8",
-);
-
-const config: ChannelHttpConfig & {
-  appId: string;
-  privateKeyPem: string;
-  alipayPublicKeyPem: string;
-  gatewayUrl: string;
-  now: () => Date;
-} = {
-  appId: "2021000100000000",
-  privateKeyPem,
-  alipayPublicKeyPem,
-  gatewayUrl: "https://openapi.alipay.com",
-  assertTarget: async () => undefined,
-  now: () => new Date("2026-10-10T02:00:00Z"),
-};
-
-/** Sign a canonical string with the fixture key — stands in for Alipay's own platform key. */
-function platformSign(canonical: string): string {
-  // The platform's private key is not available; for the test vectors the platform role is
-  // played by the same fixture pair, so verification runs against the certificate public key.
-  const { rsaSign } = require("../src/billing/payments/crypto");
-  return rsaSign(privateKeyPem, canonical);
+function joinFixtures(f: string) {
+  return join(fixtureDir, f);
 }
+void joinFixtures;
 
-function envelope(responseKey: string, inner: object): string {
-  const innerText = JSON.stringify(inner);
-  return JSON.stringify({
-    [responseKey]: innerText,
-    sign: platformSign(innerText),
-    sign_type: "RSA2",
+const platformSign = (canonical: string) => rsaSign(privateKeyPem, canonical);
+
+function providerWith(
+  run: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+) {
+  return createAlipayProvider({
+    appId: "2021000100000000",
+    privateKeyPem,
+    alipayPublicKeyPem: certificatePem,
+    gatewayUrl: "https://openapi-sandbox.dl.alipaydev.com",
+    sdk: { run },
+    now: () => new Date("2026-10-10T02:00:00Z"),
   });
 }
 
-function precreateResponse(order: Record<string, unknown>): string {
-  return envelope("alipay_trade_precreate_response", {
-    code: "10000",
-    msg: "Success",
-    out_trade_no: "po-abc",
-    qr_code: "https://qr.alipay.com/bax000",
-    trade_no: "202610102200140000",
-    ...order,
-  });
+/** The sandbox's answer shape for a successful business call. */
+function ok(extra: Record<string, unknown> = {}) {
+  return { code: "10000", msg: "Success", ...extra };
 }
 
-function formOf(parameters: Record<string, string>): string {
-  return Object.entries(parameters)
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-    .join("&");
-}
-
-describe("canonical string", () => {
-  test("keys sort in ASCII order, sign and sign_type are stripped, values stay decoded", () => {
-    expect(
-      canonicalString({
-        sign_type: "RSA2",
-        total_amount: "88.00",
-        app_id: "demo",
-        sign: "ignored",
-        method: "alipay.trade.precreate",
-      }),
-    ).toBe("app_id=demo&method=alipay.trade.precreate&total_amount=88.00");
-  });
-
-  test("a value that arrives encoded stays decoded exactly once", () => {
-    // subject=OpenBot%20Pro decodes to "OpenBot Pro" and the canonical carries the decoded form.
-    const form = new URLSearchParams("subject=OpenBot%20Pro&app_id=demo&sign=s");
-    const parameters: Record<string, string> = {};
-    for (const [key, value] of form) parameters[key] = value;
-    expect(canonicalString(parameters)).toBe("app_id=demo&subject=OpenBot Pro");
-  });
-});
-
-describe("request side (captured fetch)", () => {
-  test("trade.precreate posts a signed form and answers a QR checkout", async () => {
-    let captured: { url: string; body: string } | undefined;
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async (url: URL | string, init?: RequestInit) => {
-        captured = { url: String(url), body: String(init?.body) };
-        return new Response(precreateResponse({}), { status: 200 });
-      }) as typeof fetch,
+describe("createAlipayProvider over the SDK transport", () => {
+  test("createSession opens a QR checkout and reports the channel order id", async () => {
+    let seen: { method: string; params: Record<string, unknown> } | undefined;
+    const provider = providerWith(async (method, params) => {
+      seen = { method, params };
+      return ok({
+        out_trade_no: "po-abc",
+        qr_code: "https://qr.alipay.com/bax000",
+        trade_no: "202610102200140000",
+      });
     });
     const session = await provider.createSession({
       outTradeNo: "po-abc",
@@ -104,326 +56,151 @@ describe("request side (captured fetch)", () => {
       notifyUrl: "https://openbot.example/api/payments/callbacks/alipay",
       expiresAt: new Date(Date.now() + 15 * 60_000),
     });
-    expect(session.checkout).toEqual({ kind: "qrcode", payload: "https://qr.alipay.com/bax000" });
+    expect(session.checkout).toEqual({
+      kind: "qrcode",
+      payload: "https://qr.alipay.com/bax000",
+    });
     expect(session.channelOrderId).toBe("202610102200140000");
-    expect(captured?.url).toBe("https://openapi.alipay.com/gateway.do");
-
-    // The captured form re-parses: the public parameters are all present, the timestamp is the
-    // gateway's shape, and the signature verifies over the canonical of the sent parameters.
-    const parameters: Record<string, string> = {};
-    for (const [key, value] of new URLSearchParams(captured?.body ?? "")) {
-      parameters[key] = value;
-    }
-    expect(parameters.app_id).toBe("2021000100000000");
-    expect(parameters.method).toBe("alipay.trade.precreate");
-    expect(parameters.charset).toBe("utf-8");
-    expect(parameters.version).toBe("1.0");
-    expect(parameters.sign_type).toBe("RSA2");
-    expect(parameters.timestamp).toBe("2026-10-10 10:00:00");
-    const biz = JSON.parse(parameters.biz_content ?? "{}");
+    expect(seen?.method).toBe("alipay.trade.precreate");
+    const biz = seen?.params.bizContent as Record<string, unknown>;
     expect(biz.out_trade_no).toBe("po-abc");
     expect(biz.total_amount).toBe("88.00");
     expect(biz.subject).toBe("OpenBot Pro · one month");
-    expect(
-      platformSign(canonicalString(parameters)) === parameters.sign,
-    ).toBe(true);
+    expect(seen?.params.notify_url).toBe(
+      "https://openbot.example/api/payments/callbacks/alipay",
+    );
   });
 
-  test("an unsigned gateway response is refused, fail-closed", async () => {
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () =>
-        new Response(
-          JSON.stringify({
-            alipay_trade_precreate_response: JSON.stringify({
-              code: "10000",
-              qr_code: "https://qr.alipay.com/x",
-            }),
-          }),
-          { status: 200 },
-        )) as typeof fetch,
-    });
-    await expect(
-      provider.createSession({
+  test("a business refusal from the gateway is the terminal invalid_response", async () => {
+    const provider = providerWith(async () => ({
+      code: "40002",
+      msg: "Invalid Arguments",
+      sub_code: "isv.invalid-signature",
+    }));
+    const error = await provider
+      .createSession({
         outTradeNo: "po-abc",
-        description: "d",
+        description: "x",
         amountCents: 100,
         currency: "CNY",
-        notifyUrl: "https://openbot.example/cb",
-        expiresAt: new Date(),
+        notifyUrl: "https://openbot.example/api/payments/callbacks/alipay",
+        expiresAt: new Date(Date.now() + 15 * 60_000),
+      })
+      .then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+    expect(error).toBeInstanceOf(BillingError);
+    expect((error as BillingError).code).toBe("invalid_response");
+  });
+
+  test("queryPayment maps ACQ.TRADE_NOT_EXIST to a closed fact, not an error", async () => {
+    const provider = providerWith(async () => ({
+      code: "40004",
+      msg: "Business Failed",
+      sub_code: "ACQ.TRADE_NOT_EXIST",
+    }));
+    const fact = await provider.queryPayment("po-missing");
+    expect(fact.state).toBe("closed");
+  });
+
+  test("queryPayment reads WAIT_BUYER_PAY as pending with the amount for the snapshot check", async () => {
+    const provider = providerWith(async () =>
+      ok({
+        out_trade_no: "po-abc",
+        trade_status: "WAIT_BUYER_PAY",
+        total_amount: "1.00",
+        trade_no: "202610102200140000",
       }),
-    ).rejects.toThrow(/invalid_response/);
+    );
+    const fact = await provider.queryPayment("po-abc");
+    expect(fact.state).toBe("pending");
+    expect(fact.amountCents).toBe(100);
   });
 
-  test("a response signed over a sorted string (not the inner JSON) is refused", async () => {
-    const inner = JSON.stringify({ code: "10000", qr_code: "https://qr.alipay.com/x" });
-    const wrongSignature = platformSign("code=10000&qr_code=https://qr.alipay.com/x");
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () =>
-        new Response(
-          JSON.stringify({
-            alipay_trade_precreate_response: inner,
-            sign: wrongSignature,
-          }),
-          { status: 200 },
-        )) as typeof fetch,
-    });
-    await expect(
-      provider.createSession({
-        outTradeNo: "po-abc",
-        description: "d",
-        amountCents: 100,
-        currency: "CNY",
-        notifyUrl: "https://openbot.example/cb",
-        expiresAt: new Date(),
-      }),
-    ).rejects.toThrow(/invalid_response/);
+  test("closePayment accepts the gateway's success", async () => {
+    const provider = providerWith(async () => ok({ out_trade_no: "po-abc" }));
+    await provider.closePayment("po-abc");
   });
 
-  test("tampering one character inside the inner JSON breaks the signature", async () => {
-    const inner = JSON.stringify({ code: "10000", qr_code: "https://qr.alipay.com/x" });
-    const signature = platformSign(inner);
-    const tampered = inner.replace("10000", "10001");
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () =>
-        new Response(
-          JSON.stringify({
-            alipay_trade_precreate_response: tampered,
-            sign: signature,
-          }),
-          { status: 200 },
-        )) as typeof fetch,
+  test("a raise carrying no verdict fields is the retryable unreachable", async () => {
+    const provider = providerWith(async () => {
+      throw new Error("socket hang up");
     });
-    await expect(
-      provider.createSession({
-        outTradeNo: "po-abc",
-        description: "d",
-        amountCents: 100,
-        currency: "CNY",
-        notifyUrl: "https://openbot.example/cb",
-        expiresAt: new Date(),
-      }),
-    ).rejects.toThrow(/invalid_response/);
-  });
-
-  test("a gateway business refusal (head.code != 10000) is invalid_response", async () => {
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () =>
-        new Response(
-          envelope("alipay_trade_precreate_response", {
-            code: "40004",
-            msg: "Business Failed",
-            sub_code: "ACQ.INVALID_PARAMETER",
-          }),
-          { status: 200 },
-        )) as typeof fetch,
-    });
-    await expect(
-      provider.createSession({
-        outTradeNo: "po-abc",
-        description: "d",
-        amountCents: 100,
-        currency: "CNY",
-        notifyUrl: "https://openbot.example/cb",
-        expiresAt: new Date(),
-      }),
-    ).rejects.toThrow(/invalid_response/);
-  });
-
-  test("a transport failure maps to the retryable unreachable sentinel", async () => {
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () => {
-        throw new Error("connection refused");
-      }) as typeof fetch,
-    });
-    await expect(
-      provider.createSession({
-        outTradeNo: "po-abc",
-        description: "d",
-        amountCents: 100,
-        currency: "CNY",
-        notifyUrl: "https://openbot.example/cb",
-        expiresAt: new Date(),
-      }),
-    ).rejects.toThrow(/unreachable/);
-  });
-
-  test("a query answered ACQ.TRADE_NOT_EXIST is a closed fact — a verdict, not a thrown error", async () => {
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () =>
-        new Response(
-          envelope("alipay_trade_query_response", {
-            code: "40004",
-            msg: "Business Failed",
-            sub_code: "ACQ.TRADE_NOT_EXIST",
-          }),
-          { status: 200 },
-        )) as typeof fetch,
-    });
-    expect(await provider.queryPayment("po-abc")).toEqual({
-      outTradeNo: "po-abc",
-      state: "closed",
-    });
-  });
-
-  test("another query business refusal (ACQ.INVALID_PARAMETER) stays invalid_response", async () => {
-    const provider = createAlipayProvider({
-      ...config,
-      fetch: (async () =>
-        new Response(
-          envelope("alipay_trade_query_response", {
-            code: "40004",
-            msg: "Business Failed",
-            sub_code: "ACQ.INVALID_PARAMETER",
-          }),
-          { status: 200 },
-        )) as typeof fetch,
-    });
-    await expect(provider.queryPayment("po-abc")).rejects.toThrow(/invalid_response/);
+    const error = await provider
+      .queryPayment("po-abc")
+      .then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+    expect(error).toBeInstanceOf(BillingError);
+    expect((error as BillingError).code).toBe("unreachable");
+    expect((error as BillingError).retryable).toBe(true);
   });
 });
 
-describe("notification verification", () => {
-  const provider = createAlipayProvider({ ...config, fetch: (async () => {
-    throw new Error("never called");
-  }) }) as ReturnType<typeof createAlipayProvider>;
+describe("the notification verifier", () => {
+  const PARAMETERS = {
+    app_id: "2021000100000000",
+    out_trade_no: "po-abc",
+    trade_status: "TRADE_SUCCESS",
+    total_amount: "1.00",
+    trade_no: "202610102200140000",
+  };
 
-  function notification(parameters: Record<string, string>): Request {
-    return new Request("https://openbot.example/api/payments/callbacks/alipay", {
-      method: "POST",
-      body: formOf(parameters),
-    });
+  function signedBody(extra: Record<string, string> = {}) {
+    const parameters: Record<string, string> = {
+      ...PARAMETERS,
+      ...extra,
+      gmt_payment: "2026-10-10 12:00:00",
+    };
+    const sign = platformSign(canonicalString(parameters));
+    return new URLSearchParams({ ...parameters, sign }).toString();
   }
 
-  async function verifiedNotification(
-    parameters: Record<string, string>,
-  ): Promise<{ ok: boolean; fact?: unknown }> {
-    const signed = {
-      gmt_create: "2026-10-10 10:00:00",
-      gmt_payment: "2026-10-10 10:01:00",
-      notify_type: "trade_status_sync",
-      ...parameters,
-    };
-    const signedWithSignature = {
-      ...signed,
-      sign: platformSign(canonicalString(signed)),
-      sign_type: "RSA2",
-    };
-    const request = notification(signedWithSignature);
-    const raw = await request.text();
-    return provider.verifyNotification(request.headers, raw) as Promise<{
-      ok: boolean;
-      fact?: unknown;
-    }>;
+  function verifierOver(body: string) {
+    const provider = providerWith(async () => ok({}));
+    return provider.verifyNotification(new Headers(), body);
   }
 
-  test("a well-signed TRADE_SUCCESS notification yields a paid fact", async () => {
-    const result = await verifiedNotification({
-      app_id: "2021000100000000",
-      out_trade_no: "po-abc",
-      trade_no: "202610102200140000",
-      trade_status: "TRADE_SUCCESS",
-      total_amount: "88.00",
-    });
+  test("a correctly signed TRADE_SUCCESS notification verifies to a paid fact", async () => {
+    const result = await verifierOver(signedBody());
     expect(result.ok).toBe(true);
-    expect(result.fact).toMatchObject({
-      outTradeNo: "po-abc",
-      state: "paid",
-      channelTransactionId: "202610102200140000",
-      amountCents: 8800,
-    });
+    if (result.ok) {
+      expect(result.fact.state).toBe("paid");
+      expect(result.fact.amountCents).toBe(100);
+      expect(result.fact.outTradeNo).toBe("po-abc");
+    }
   });
 
-  test("TRADE_FINISHED is paid; WAIT_BUYER_PAY is pending; TRADE_CLOSED is closed", async () => {
-    const finished = await verifiedNotification({
-      app_id: "2021000100000000",
-      out_trade_no: "po-a",
-      trade_no: "t1",
-      trade_status: "TRADE_FINISHED",
-      total_amount: "88.00",
-    });
-    expect((finished.fact as { state: string }).state).toBe("paid");
-    const waiting = await verifiedNotification({
-      app_id: "2021000100000000",
-      out_trade_no: "po-b",
-      trade_status: "WAIT_BUYER_PAY",
-      total_amount: "88.00",
-    });
-    expect((waiting.fact as { state: string }).state).toBe("pending");
-    expect((waiting.fact as { channelTransactionId?: string }).channelTransactionId).toBeUndefined();
-    const closed = await verifiedNotification({
-      app_id: "2021000100000000",
-      out_trade_no: "po-c",
-      trade_status: "TRADE_CLOSED",
-      total_amount: "88.00",
-    });
-    expect((closed.fact as { state: string }).state).toBe("closed");
+  test("a tampered amount breaks the signature and is refused", async () => {
+    const body = signedBody();
+    const tampered = new URLSearchParams(body);
+    tampered.set("total_amount", "999.00");
+    tampered.set("sign", platformSign(canonicalString(Object.fromEntries(tampered)).replace("999.00", "1.00")));
+    // Re-sign with the WRONG canonical (the untampered amounts) — the amount was swapped after
+    // signing, which is the attack the verification exists to refuse.
+    const forged = new URLSearchParams(body);
+    forged.set("total_amount", "999.00");
+    const result = await verifierOver(forged.toString());
+    expect(result.ok).toBe(false);
+    void tampered;
   });
 
-  test("an unrecognised trade_status is a pending fact, never an invented payment", async () => {
-    const result = await verifiedNotification({
-      app_id: "2021000100000000",
-      out_trade_no: "po-d",
-      trade_status: "SOMETHING_NEW",
-      total_amount: "88.00",
-    });
-    expect((result.fact as { state: string }).state).toBe("pending");
-  });
-
-  test("a tampered amount fails verification", async () => {
-    const parameters = {
-      gmt_create: "2026-10-10 10:00:00",
-      app_id: "2021000100000000",
-      out_trade_no: "po-abc",
-      trade_no: "t9",
-      trade_status: "TRADE_SUCCESS",
-      total_amount: "88.00",
-    };
-    const signed = {
-      ...parameters,
-      sign: platformSign(canonicalString(parameters)),
-      sign_type: "RSA2",
-    };
-    // The signature covers 88.00; the wire carries 99.00.
-    const tampered = { ...signed, total_amount: "99.00" };
-    const request = notification(tampered);
-    const raw = await request.text();
-    const result = await provider.verifyNotification(request.headers, raw);
+  test("a notification naming another app is refused", async () => {
+    const result = await verifierOver(
+      signedBody({ app_id: "2021999999999999" }),
+    );
     expect(result.ok).toBe(false);
   });
+});
 
-  test("a notification for another app_id is refused even when well signed", async () => {
-    const result = await verifiedNotification({
-      app_id: "someone-elses-app",
-      out_trade_no: "po-abc",
-      trade_no: "t10",
-      trade_status: "TRADE_SUCCESS",
-      total_amount: "88.00",
-    });
-    expect(result.ok).toBe(false);
-  });
-
-  test("a notification stripped of its sign is refused", async () => {
-    const request = notification({
-      app_id: "2021000100000000",
-      out_trade_no: "po-abc",
-      trade_status: "TRADE_SUCCESS",
-      total_amount: "88.00",
-    });
-    const raw = await request.text();
-    const result = await provider.verifyNotification(request.headers, raw);
-    expect(result.ok).toBe(false);
-  });
-
-  test("the success ack is exactly the wire's success word", () => {
-    expect(provider.successAck).toEqual({
-      body: "success",
-      contentType: "text/plain",
-    });
+describe("the SSRF floor stays wired for assembly", () => {
+  test("the outbound floor still refuses loopback without the opt-in", async () => {
+    const verdict = await checkOutboundUrl(
+      "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
+      { resolveDns: async () => [{ address: "127.0.0.1" }] },
+    );
+    expect(verdict.allowed).toBe(false);
   });
 });

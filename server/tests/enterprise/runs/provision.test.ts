@@ -8,10 +8,10 @@ import {
   enterpriseModelGrants,
   enterpriseModelRoutes,
   enterprisePrincipals,
+  enterpriseResources,
   enterpriseRunDelegations,
   enterpriseRunGrants,
   enterpriseRunReleases,
-  enterpriseResources,
   enterpriseSecurityEvents,
   enterpriseTenants,
   enterpriseWorkspaces,
@@ -22,8 +22,8 @@ import { createStaticTargetRegistry } from "../../../src/enterprise/models/contr
 import {
   applyRunProvision,
   EMPTY_TOOL_MANIFEST_DIGEST,
-  RunProvisionCommandSchema,
   type RunProvisionCommand,
+  RunProvisionCommandSchema,
   type RunProvisionHooks,
 } from "../../../src/enterprise/runs/provision";
 import { createPrincipal } from "../../../src/enterprise/tenancy/identity";
@@ -69,8 +69,14 @@ const CURRENCY = "USD";
 const KNOWN_TARGET = "openai/gpt-test";
 const TARGETS = createStaticTargetRegistry([KNOWN_TARGET]);
 
-type RouteRegisterCommand = Extract<RunProvisionCommand, { mode: "route-register" }>;
-type ReleaseRegisterCommand = Extract<RunProvisionCommand, { mode: "release-register" }>;
+type RouteRegisterCommand = Extract<
+  RunProvisionCommand,
+  { mode: "route-register" }
+>;
+type ReleaseRegisterCommand = Extract<
+  RunProvisionCommand,
+  { mode: "release-register" }
+>;
 type RunGrantCommand = Extract<RunProvisionCommand, { mode: "run-grant" }>;
 type ModelGrantCommand = Extract<RunProvisionCommand, { mode: "model-grant" }>;
 type BudgetOpenCommand = Extract<RunProvisionCommand, { mode: "budget-open" }>;
@@ -78,9 +84,18 @@ type DelegationRegisterCommand = Extract<
   RunProvisionCommand,
   { mode: "delegation-register" }
 >;
-type DisableReleaseCommand = Extract<RunProvisionCommand, { mode: "disable-release" }>;
-type RevokeRunGrantCommand = Extract<RunProvisionCommand, { mode: "revoke-run-grant" }>;
-type DisableRouteCommand = Extract<RunProvisionCommand, { mode: "disable-route" }>;
+type DisableReleaseCommand = Extract<
+  RunProvisionCommand,
+  { mode: "disable-release" }
+>;
+type RevokeRunGrantCommand = Extract<
+  RunProvisionCommand,
+  { mode: "revoke-run-grant" }
+>;
+type DisableRouteCommand = Extract<
+  RunProvisionCommand,
+  { mode: "disable-route" }
+>;
 type RevokeModelGrantCommand = Extract<
   RunProvisionCommand,
   { mode: "revoke-model-grant" }
@@ -94,9 +109,15 @@ type RevokeDelegationCommand = Extract<
  * 数据库探针：环境或角色缺失时按本套件纪律 fail-closed 跳过真实库断言，绝不换替身。
  * ------------------------------------------------------------------------ */
 
-async function probeProvisionDatabase(): Promise<{ ready: boolean; reason: string }> {
+async function probeProvisionDatabase(): Promise<{
+  ready: boolean;
+  reason: string;
+}> {
   let client:
-    | { unsafe: (query: string) => Promise<unknown[]>; close: () => Promise<void> }
+    | {
+        unsafe: (query: string) => Promise<unknown[]>;
+        close: () => Promise<void>;
+      }
     | undefined;
   try {
     const { SQL } = await import("bun");
@@ -109,13 +130,19 @@ async function probeProvisionDatabase(): Promise<{ ready: boolean; reason: strin
       "select 1 from pg_tables where schemaname = 'public' and tablename = 'enterprise_run_releases'",
     );
     if (tables.length === 0) {
-      return { ready: false, reason: "migrations not applied to the test database" };
+      return {
+        ready: false,
+        reason: "migrations not applied to the test database",
+      };
     }
     const roles = await opened.unsafe(
       "select rolname from pg_roles where rolname in ('ob_ent_operator','ob_ent_identity_operator')",
     );
     if (roles.length < 2) {
-      return { ready: false, reason: "02 operator roles missing; run enterprise-test-db.ts roles" };
+      return {
+        ready: false,
+        reason: "02 operator roles missing; run enterprise-test-db.ts roles",
+      };
     }
     const missing = [
       "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
@@ -138,7 +165,9 @@ async function probeProvisionDatabase(): Promise<{ ready: boolean; reason: strin
 const probe = await probeProvisionDatabase();
 const describeDb = probe.ready ? describe : describe.skip;
 if (!probe.ready) {
-  console.warn(`[provision.test.ts] real-database assertions skipped: ${probe.reason}`);
+  console.warn(
+    `[provision.test.ts] real-database assertions skipped: ${probe.reason}`,
+  );
 }
 
 /* ---------------------------------------------------------------------------
@@ -239,7 +268,9 @@ const budgetCommand = (
 });
 
 const delegationCommand = (
-  overrides: Partial<Omit<DelegationRegisterCommand, "mode" | "tenant_id">> = {},
+  overrides: Partial<
+    Omit<DelegationRegisterCommand, "mode" | "tenant_id">
+  > = {},
   operationId = `${PREFIX}op-delegation-1`,
 ): DelegationRegisterCommand => ({
   mode: "delegation-register",
@@ -442,9 +473,7 @@ async function applyRun(
   );
 }
 
-async function errorOf(
-  run: () => Promise<unknown>,
-): Promise<EnterpriseError> {
+async function errorOf(run: () => Promise<unknown>): Promise<EnterpriseError> {
   try {
     await run();
   } catch (error) {
@@ -467,6 +496,27 @@ async function auditCount(operationId: string): Promise<number> {
       ),
     );
   return rows.length;
+}
+
+/** 审计事件里记录的操作结果：release 无 revision 列（§4.1"仅不可变批准版本"），
+ * 失效的恰一次证据由这里承载（changed:true 恰好一次，其后 changed:false）。 */
+async function auditResult(
+  operationId: string,
+): Promise<Record<string, unknown> | undefined> {
+  const rows = await db
+    .select({ details: enterpriseSecurityEvents.details })
+    .from(enterpriseSecurityEvents)
+    .where(
+      and(
+        eq(enterpriseSecurityEvents.tenantId, TENANT),
+        eq(enterpriseSecurityEvents.id, operationId),
+      ),
+    )
+    .limit(1);
+  const details = rows[0]?.details as
+    | { result?: Record<string, unknown> }
+    | undefined;
+  return details?.result;
 }
 
 async function routeRow(id: string) {
@@ -517,10 +567,19 @@ async function runCli(
     let err = "";
     try {
       const { stdout, stderr, exitCode } = Bun.spawnSync(
-        ["bun", "--no-env-file", "scripts/enterprise-run-provision.ts", ...args],
+        [
+          "bun",
+          "--no-env-file",
+          "scripts/enterprise-run-provision.ts",
+          ...args,
+        ],
         {
           cwd: SERVER_ROOT,
-          env: { PATH: process.env.PATH, HOME: process.env.HOME, ...environment },
+          env: {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            ...environment,
+          },
           stdout: "pipe",
           stderr: "pipe",
         },
@@ -536,7 +595,11 @@ async function runCli(
       return { code, out, err };
     }
     if (attempt >= 4) {
-      return { code, out, err: `[spawn-observability] attempts exhausted (${attempt})` };
+      return {
+        code,
+        out,
+        err: `[spawn-observability] attempts exhausted (${attempt})`,
+      };
     }
     await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
   }
@@ -598,9 +661,7 @@ describeDb("E1-D offline provisioning", () => {
     await db
       .delete(enterpriseTenants)
       .where(inArray(enterpriseTenants.id, [TENANT]));
-    await db
-      .delete(users)
-      .where(inArray(users.id, [USER_A, USER_OUT]));
+    await db.delete(users).where(inArray(users.id, [USER_A, USER_OUT]));
 
     await db.insert(users).values([
       { id: USER_A, email: `${PREFIX}a@enterprise-test.invalid` },
@@ -795,7 +856,10 @@ describeDb("E1-D offline provisioning", () => {
     const error = await errorOf(() =>
       applyRun(
         releaseCommand(
-          { id: `${PREFIX}release-badroute`, model_route_ref: `${PREFIX}route-none` },
+          {
+            id: `${PREFIX}release-badroute`,
+            model_route_ref: `${PREFIX}route-none`,
+          },
           `${PREFIX}op-release-badroute`,
         ),
       ),
@@ -805,9 +869,7 @@ describeDb("E1-D offline provisioning", () => {
 
   test("tool-carrying manifests belong to the tool plane, not this CLI", async () => {
     const withTools = await errorOf(() =>
-      applyRun(
-        releaseCommand({ tool_count: 2 }, `${PREFIX}op-release-tools`),
-      ),
+      applyRun(releaseCommand({ tool_count: 2 }, `${PREFIX}op-release-tools`)),
     );
     expect(withTools.code).toBe("RELEASE_TOOLS_REQUIRE_TOOL_PLANE");
 
@@ -927,7 +989,9 @@ describeDb("E1-D offline provisioning", () => {
 
     /* 同一身份不同限额＝冲突，且既有账户的限额与已发生值原样保留。 */
     const clash = await errorOf(() =>
-      applyRun(budgetCommand({ limit_micros: "777" }, `${PREFIX}op-budget-clash`)),
+      applyRun(
+        budgetCommand({ limit_micros: "777" }, `${PREFIX}op-budget-clash`),
+      ),
     );
     expect(clash.code).toBe("BUDGET_CONFLICT");
     const after = await db
@@ -946,7 +1010,11 @@ describeDb("E1-D offline provisioning", () => {
     const inverted = await errorOf(() =>
       applyRun(
         budgetCommand(
-          { id: `${PREFIX}acc-bad`, starts_at: "2026-11-01T00:00:00Z", ends_at: "2026-10-01T00:00:00Z" },
+          {
+            id: `${PREFIX}acc-bad`,
+            starts_at: "2026-11-01T00:00:00Z",
+            ends_at: "2026-10-01T00:00:00Z",
+          },
           `${PREFIX}op-budget-inverted`,
         ),
       ),
@@ -973,7 +1041,10 @@ describeDb("E1-D offline provisioning", () => {
     const expired = await errorOf(() =>
       applyRun(
         delegationCommand(
-          { id: `${PREFIX}delegation-expired`, expires_at: "2020-01-01T00:00:00Z" },
+          {
+            id: `${PREFIX}delegation-expired`,
+            expires_at: "2020-01-01T00:00:00Z",
+          },
           `${PREFIX}op-delegation-expired`,
         ),
       ),
@@ -983,7 +1054,10 @@ describeDb("E1-D offline provisioning", () => {
     const unknownRelease = await errorOf(() =>
       applyRun(
         delegationCommand(
-          { id: `${PREFIX}delegation-norelease`, release_id: `${PREFIX}release-none` },
+          {
+            id: `${PREFIX}delegation-norelease`,
+            release_id: `${PREFIX}release-none`,
+          },
           `${PREFIX}op-delegation-norelease`,
         ),
       ),
@@ -992,7 +1066,9 @@ describeDb("E1-D offline provisioning", () => {
   });
 
   test("disable-release flips the status once and audits further no-ops", async () => {
-    await applyRun(releaseCommand({ id: `${PREFIX}release-2` }, `${PREFIX}op-release-2`));
+    await applyRun(
+      releaseCommand({ id: `${PREFIX}release-2` }, `${PREFIX}op-release-2`),
+    );
     const disable: DisableReleaseCommand = {
       mode: "disable-release",
       ...base,
@@ -1002,12 +1078,20 @@ describeDb("E1-D offline provisioning", () => {
     };
     await applyRun(disable);
     expect((await releaseRow(`${PREFIX}release-2`))?.status).toBe("disabled");
+    /* release 表无 revision 列（§4.1 字段表"仅不可变批准版本"，0059 同）：失效的恰一次
+     * 证据由审计事件承载——守卫 UPDATE 恰好成功一次，结果记录 changed:true。 */
+    expect(await auditResult(`${PREFIX}op-disable-release-1`)).toMatchObject({
+      changed: true,
+    });
 
     await applyRun({
       ...disable,
       operation_id: `${PREFIX}op-disable-release-2`,
     });
     expect((await releaseRow(`${PREFIX}release-2`))?.status).toBe("disabled");
+    expect(await auditResult(`${PREFIX}op-disable-release-2`)).toMatchObject({
+      changed: false,
+    });
     expect(await auditCount(`${PREFIX}op-disable-release-2`)).toBe(1);
 
     const unknown = await errorOf(() =>
@@ -1047,7 +1131,10 @@ describeDb("E1-D offline provisioning", () => {
       );
     expect(rows).toHaveLength(0);
 
-    await applyRun({ ...revoke, operation_id: `${PREFIX}op-revoke-run-grant-2` });
+    await applyRun({
+      ...revoke,
+      operation_id: `${PREFIX}op-revoke-run-grant-2`,
+    });
     expect(await auditCount(`${PREFIX}op-revoke-run-grant-2`)).toBe(1);
     expect(rows).toHaveLength(0);
 
@@ -1071,7 +1158,12 @@ describeDb("E1-D offline provisioning", () => {
   test("disable-route bumps the revision only on the actual flip", async () => {
     await applyRun(
       routeCommand(
-        { id: `${PREFIX}route-2`, alias: "chat2", revision: "1", is_default_for_alias: false },
+        {
+          id: `${PREFIX}route-2`,
+          alias: "chat2",
+          revision: "1",
+          is_default_for_alias: false,
+        },
         `${PREFIX}op-route-2`,
       ),
     );
@@ -1129,7 +1221,10 @@ describeDb("E1-D offline provisioning", () => {
     expect(rows[0]?.status).toBe("revoked");
     expect(rows[0]?.revision).toBe(2n);
 
-    await applyRun({ ...revoke, operation_id: `${PREFIX}op-revoke-model-grant-2` });
+    await applyRun({
+      ...revoke,
+      operation_id: `${PREFIX}op-revoke-model-grant-2`,
+    });
     rows = await db
       .select()
       .from(enterpriseModelGrants)
@@ -1162,7 +1257,10 @@ describeDb("E1-D offline provisioning", () => {
 
   test("revoke-delegation stamps revoked_at and bumps the revision", async () => {
     await applyRun(
-      delegationCommand({ id: `${PREFIX}delegation-2` }, `${PREFIX}op-delegation-2`),
+      delegationCommand(
+        { id: `${PREFIX}delegation-2` },
+        `${PREFIX}op-delegation-2`,
+      ),
     );
     const revoke: RevokeDelegationCommand = {
       mode: "revoke-delegation",
@@ -1208,7 +1306,12 @@ describeDb("E1-D offline provisioning", () => {
     const error = await errorOf(() =>
       applyRun(
         routeCommand(
-          { id: `${PREFIX}route-corrupt`, alias: "chat-corrupt", revision: "9", is_default_for_alias: false },
+          {
+            id: `${PREFIX}route-corrupt`,
+            alias: "chat-corrupt",
+            revision: "9",
+            is_default_for_alias: false,
+          },
           `${PREFIX}op-corrupt`,
         ),
       ),
@@ -1224,10 +1327,19 @@ describeDb("E1-D offline provisioning", () => {
     try {
       await applyRun(
         routeCommand(
-          { id: `${PREFIX}route-hookfail`, alias: "chat-hook", revision: "9", is_default_for_alias: false },
+          {
+            id: `${PREFIX}route-hookfail`,
+            alias: "chat-hook",
+            revision: "9",
+            is_default_for_alias: false,
+          },
           `${PREFIX}op-hookfail`,
         ),
-        { beforeAudit: async () => { throw new Error("injected audit failure"); } },
+        {
+          beforeAudit: async () => {
+            throw new Error("injected audit failure");
+          },
+        },
       );
     } catch (error) {
       message = (error as Error).message;
@@ -1243,107 +1355,116 @@ describeDb("E1-D offline provisioning", () => {
    * ------------------------------------------------------------------------ */
 
   describe("E1-D provision CLI", () => {
-  test("dry-run is the default and never opens a database", async () => {
-    const before = await db
-      .select({ id: enterpriseRunGrants.releaseId })
-      .from(enterpriseRunGrants)
-      .where(eq(enterpriseRunGrants.tenantId, TENANT));
-    const run = await runCli(
-      [
-        "run-grant",
-        "--input",
-        runGrantInput,
-        "--tenant",
-        TENANT,
-        "--operator",
-        OPERATOR,
-        "--operation-id",
-        `${PREFIX}op-cli-dryrun`,
-      ],
-      /* 不给任何数据库 URL：dry-run 连库即失败——而它必须成功。 */
-    );
-    expect(run.code).toBe(0);
-    expect(run.out).toContain("dry-run");
-    expect(run.out).toContain("run-grant");
-    const after = await db
-      .select({ id: enterpriseRunGrants.releaseId })
-      .from(enterpriseRunGrants)
-      .where(eq(enterpriseRunGrants.tenantId, TENANT));
-    expect(after).toEqual(before);
-  });
-
-  test("--apply without an operation id is a usage refusal", async () => {
-    const run = await runCli(
-      ["run-grant", "--input", runGrantInput, "--tenant", TENANT, "--operator", OPERATOR, "--apply"],
-      {
-        ENTERPRISE_RUN_PROVISION_DATABASE_URL:
-          process.env.TEST_DATABASE_URL,
-      },
-    );
-    expect(run.code).not.toBe(0);
-    expect(run.err).toContain("operation-id");
-  });
-
-  test("an invalid union payload is refused before any database work", async () => {
-    const run = await runCli(
-      [
-        "run-grant",
-        "--input",
-        JSON.stringify({
-          release_id: `${PREFIX}release-1`,
-          principal_id: PRINCIPAL_A,
-          action: "start",
-          id: "smuggled",
-        }),
-        "--tenant",
-        TENANT,
-        "--operator",
-        OPERATOR,
-        "--operation-id",
-        `${PREFIX}op-cli-invalid`,
-        "--apply",
-      ],
-      { ENTERPRISE_RUN_PROVISION_DATABASE_URL: process.env.TEST_DATABASE_URL },
-    );
-    expect(run.code).toBe(1);
-    expect(run.err).toContain("INVALID_PROVISION_INPUT");
-    expect(await auditCount(`${PREFIX}op-cli-invalid`)).toBe(0);
-  });
-
-  test("--apply lands the grant and the audit event in one transaction", async () => {
-    const run = await runCli(
-      [
-        "run-grant",
-        "--input",
-        runGrantInput,
-        "--tenant",
-        TENANT,
-        "--operator",
-        OPERATOR,
-        "--operation-id",
-        `${PREFIX}op-cli-apply`,
-        "--apply",
-      ],
-      {
-        ENTERPRISE_RUN_PROVISION_DATABASE_URL:
-          process.env.TEST_DATABASE_URL,
-      },
-    );
-    expect(run.code).toBe(0);
-    expect(run.out).toContain("applied");
-    const rows = await db
-      .select()
-      .from(enterpriseRunGrants)
-      .where(
-        and(
-          eq(enterpriseRunGrants.tenantId, TENANT),
-          eq(enterpriseRunGrants.releaseId, `${PREFIX}release-1`),
-          eq(enterpriseRunGrants.principalId, PRINCIPAL_A),
-          eq(enterpriseRunGrants.action, "start"),
-        ),
+    test("dry-run is the default and never opens a database", async () => {
+      const before = await db
+        .select({ id: enterpriseRunGrants.releaseId })
+        .from(enterpriseRunGrants)
+        .where(eq(enterpriseRunGrants.tenantId, TENANT));
+      const run = await runCli(
+        [
+          "run-grant",
+          "--input",
+          runGrantInput,
+          "--tenant",
+          TENANT,
+          "--operator",
+          OPERATOR,
+          "--operation-id",
+          `${PREFIX}op-cli-dryrun`,
+        ],
+        /* 不给任何数据库 URL：dry-run 连库即失败——而它必须成功。 */
       );
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    expect(await auditCount(`${PREFIX}op-cli-apply`)).toBe(1);
-  });
+      expect(run.code).toBe(0);
+      expect(run.out).toContain("dry-run");
+      expect(run.out).toContain("run-grant");
+      const after = await db
+        .select({ id: enterpriseRunGrants.releaseId })
+        .from(enterpriseRunGrants)
+        .where(eq(enterpriseRunGrants.tenantId, TENANT));
+      expect(after).toEqual(before);
+    });
+
+    test("--apply without an operation id is a usage refusal", async () => {
+      const run = await runCli(
+        [
+          "run-grant",
+          "--input",
+          runGrantInput,
+          "--tenant",
+          TENANT,
+          "--operator",
+          OPERATOR,
+          "--apply",
+        ],
+        {
+          ENTERPRISE_RUN_PROVISION_DATABASE_URL: process.env.TEST_DATABASE_URL,
+        },
+      );
+      expect(run.code).not.toBe(0);
+      expect(run.err).toContain("operation-id");
+    });
+
+    test("an invalid union payload is refused before any database work", async () => {
+      const run = await runCli(
+        [
+          "run-grant",
+          "--input",
+          JSON.stringify({
+            release_id: `${PREFIX}release-1`,
+            principal_id: PRINCIPAL_A,
+            action: "start",
+            id: "smuggled",
+          }),
+          "--tenant",
+          TENANT,
+          "--operator",
+          OPERATOR,
+          "--operation-id",
+          `${PREFIX}op-cli-invalid`,
+          "--apply",
+        ],
+        {
+          ENTERPRISE_RUN_PROVISION_DATABASE_URL: process.env.TEST_DATABASE_URL,
+        },
+      );
+      expect(run.code).toBe(1);
+      expect(run.err).toContain("INVALID_PROVISION_INPUT");
+      expect(await auditCount(`${PREFIX}op-cli-invalid`)).toBe(0);
+    });
+
+    test("--apply lands the grant and the audit event in one transaction", async () => {
+      const run = await runCli(
+        [
+          "run-grant",
+          "--input",
+          runGrantInput,
+          "--tenant",
+          TENANT,
+          "--operator",
+          OPERATOR,
+          "--operation-id",
+          `${PREFIX}op-cli-apply`,
+          "--apply",
+        ],
+        {
+          ENTERPRISE_RUN_PROVISION_DATABASE_URL: process.env.TEST_DATABASE_URL,
+        },
+      );
+      expect(run.code).toBe(0);
+      expect(run.out).toContain("applied");
+      const rows = await db
+        .select()
+        .from(enterpriseRunGrants)
+        .where(
+          and(
+            eq(enterpriseRunGrants.tenantId, TENANT),
+            eq(enterpriseRunGrants.releaseId, `${PREFIX}release-1`),
+            eq(enterpriseRunGrants.principalId, PRINCIPAL_A),
+            eq(enterpriseRunGrants.action, "start"),
+          ),
+        );
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      expect(await auditCount(`${PREFIX}op-cli-apply`)).toBe(1);
+    });
   });
 });

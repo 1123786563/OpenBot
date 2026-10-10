@@ -76,9 +76,30 @@ function keyOf(route: ApprovedAuthRoute): string {
   return `${route.method} ${route.pathname}`;
 }
 
+/**
+ * The Casdoor login pair, verified live against the local Casdoor deployment (2026-10-10: the
+ * configured `CASDOOR_OAUTH_*` provider signs in through Better Auth's own `casdoor` social
+ * provider, so its callback path is `/callback/casdoor`, not the Google slot the profile was
+ * first compiled with). Per the note on REQUIRED below, the callback is a per-configuration
+ * selection: an operator whose auth config has `casdoor` must select these, and one without it
+ * never should.
+ */
+export const CASDOOR_LOGIN_ROUTES: readonly ApprovedAuthRoute[] = [
+  {
+    method: "GET",
+    pathname: "/api/auth/callback/casdoor",
+    category: "callback",
+  },
+  {
+    method: "POST",
+    pathname: "/api/auth/callback/casdoor",
+    category: "callback",
+  },
+];
+
 /** The whole allowlist an operator may choose from; nothing outside it can ever be forwarded. */
 export const APPROVED_AUTH_ROUTES: ReadonlySet<string> = new Set(
-  GOOGLE_LOGIN_ROUTES.map(keyOf),
+  [...GOOGLE_LOGIN_ROUTES, ...CASDOOR_LOGIN_ROUTES].map(keyOf),
 );
 
 /*

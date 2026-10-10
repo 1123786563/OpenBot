@@ -60,6 +60,38 @@ function announceServerPort(port: number): Plugin {
 }
 
 /*
+ * Local enterprise smoke only (opt-in via OPENBOT_ENTERPRISE_LOCAL=1): answer `/api/me` with the
+ * single-user identity a legacy single-user dev deployment would answer with, so the app shell's
+ * gate opens while the standalone enterprise API keeps its own real session, tenant header and
+ * authorization. Without the flag the request proxies to the server exactly as before — this must
+ * never masquerade as the enterprise auth, which the enterprise API verifies per request.
+ */
+function localSingleUserMeShim(): Plugin {
+  return {
+    name: "openbot-local-enterprise-me-shim",
+    configureServer(server) {
+      if (process.env.OPENBOT_ENTERPRISE_LOCAL !== "1") return;
+      server.middlewares.use("/api/me", (_req, res) => {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json");
+        res.end(
+          JSON.stringify({
+            user: {
+              id: "local-enterprise-smoke",
+              email: "admin@example.com",
+              name: "Local Admin",
+              image: null,
+              role: "admin",
+              onboarding: null,
+            },
+          }),
+        );
+      });
+    },
+  };
+}
+
+/*
  * The same address and the same proxy whether this is the dev server or the preview of a build.
  *
  * `preview` is a separate config key with its own defaults, so a deployment that serves the built
@@ -75,6 +107,10 @@ if (!apiPort.ok) {
   throw new Error(apiPort.reason.replace(/^PORT /, "SERVER_PORT "));
 }
 
+// Same opt-in the `/api/me` shim reads: the enterprise smoke runs app + standalone enterprise
+// entry together, and only then may auth leave the legacy server.
+const enterpriseLocal = process.env.OPENBOT_ENTERPRISE_LOCAL === "1";
+
 const serving = {
   // Both loopbacks, which is what `::` gets you: Node opens a dual-stack socket, so 127.0.0.1 and
   // ::1 both answer. Left to itself Vite binds whichever one this runtime resolves `localhost`
@@ -89,11 +125,16 @@ const serving = {
     // ENTERPRISE_PORT=3101) serves its own API version and the forwarded auth routes; both must
     // reach it same-origin or the tenant selector and the enterprise session never leave the app
     // origin. Specific prefixes first so they win over the catch-all legacy /api proxy.
+    //
+    // Only the enterprise local smoke runs that entry. Plain `bun run dev` has no 3101 process,
+    // and the legacy server still owns `/api/auth` (server/src/app.ts) with its own better-auth
+    // mount and Casdoor callback — so outside the smoke these prefixes fall through to it, or
+    // every sign-in dies in the proxy with a refused connection.
     "/api/enterprise": {
-      target: "http://localhost:3101",
+      target: enterpriseLocal ? "http://localhost:3101" : `http://localhost:${apiPort.port}`,
     },
     "/api/auth": {
-      target: "http://localhost:3101",
+      target: enterpriseLocal ? "http://localhost:3101" : `http://localhost:${apiPort.port}`,
     },
     "/api": {
       target: `http://localhost:${apiPort.port}`,
@@ -180,6 +221,7 @@ export const routeBuildRollupOutputOptions = {
 
 export default defineConfig({
   plugins: [
+    localSingleUserMeShim(),
     announceServerPort(apiPort.port),
     tanstackRouter({
       autoCodeSplitting: true,

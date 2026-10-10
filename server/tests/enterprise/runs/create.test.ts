@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { CreateRun } from "../../../../shared/enterprise/run-contracts";
 import { EnterpriseError } from "../../../src/enterprise/errors";
+import { lockKey } from "../../../src/enterprise/tenancy/transaction";
 import {
   createRunHarness,
   probeRunsDatabase,
+  RUN_TARGET_REF,
   type RunHarness,
 } from "./support";
 
@@ -20,7 +22,9 @@ import {
 const probe = await probeRunsDatabase();
 const describeDb = probe.ready ? describe : describe.skip;
 if (!probe.ready) {
-  console.warn(`[create.test.ts] real-database assertions skipped: ${probe.reason}`);
+  console.warn(
+    `[create.test.ts] real-database assertions skipped: ${probe.reason}`,
+  );
 }
 
 let h: RunHarness;
@@ -87,7 +91,11 @@ describeDb("E1-C run creation", () => {
   test("same key with a different digest is 409 IDEMPOTENCY_CONFLICT", async () => {
     await h.runs.create(h.scope, "r1c-key-conflict", request());
     const error = await errorOf(() =>
-      h.runs.create(h.scope, "r1c-key-conflict", request({ input: { text: "other" } })),
+      h.runs.create(
+        h.scope,
+        "r1c-key-conflict",
+        request({ input: { text: "other" } }),
+      ),
     );
     expect(error.code).toBe("IDEMPOTENCY_CONFLICT");
     expect(error.status).toBe(409);
@@ -223,7 +231,9 @@ describeDb("E1-C run creation", () => {
       const error = await errorOf(() =>
         h.runs.create(h.scope, "r1c-key-route", request()),
       );
-      expect(error.code).toBe("RUN_MODEL_ROUTE_MISSING");
+      /* §8.1：创建时别名解析走 models/catalog 的 resolveRouteInTx，其稳定拒绝码是
+       * MODEL_ROUTE_NOT_FOUND——未知别名、禁用路由与无此别名同答（不可枚举探测）。 */
+      expect(error.code).toBe("MODEL_ROUTE_NOT_FOUND");
       expect(error.status).toBe(404);
     } finally {
       await h.setRouteStatus("active");
@@ -331,4 +341,178 @@ describeDb("E1-C run creation", () => {
     ).rejects.toThrow("INVALID_RUN_INPUT");
     expect(await h.count("runs")).toBe(before);
   });
+
+  test("an alias with no active default resolves to nothing: a non-default revision is never admitted", async () => {
+    /* 计划 §8.1（713 行）：创建时的别名解析是 models/catalog.ts 的 resolveRouteInTx——
+     * 只认 active 的 is_default_for_alias=true；默认被禁用后“最新的非默认修订”不是
+     * 回退答案，否则操作者禁用默认路由会被静默改道到另一 target/价格。 */
+    const routeA2 = "r1c-route-a2";
+    await h.provision({
+      mode: "route-register",
+      tenant_id: h.scope.tenantId,
+      operator: "r1c-operator",
+      operation_id: "r1c-op-route-a2",
+      id: routeA2,
+      resource_id: h.resourceId,
+      alias: h.alias,
+      revision: "2",
+      target_ref: RUN_TARGET_REF,
+      price_revision: "1",
+      currency: "USD",
+      input_unit_micros: "10",
+      output_unit_micros: "30",
+      per_request_micros: "0",
+      max_input_tokens: 8192,
+      max_output_tokens: 2048,
+      max_request_bytes: 262144,
+      protocol_profile: "openai-chat",
+      usage_profile: "tokens",
+      is_default_for_alias: false,
+    });
+    await h.provision({
+      mode: "model-grant",
+      tenant_id: h.scope.tenantId,
+      operator: "r1c-operator",
+      operation_id: "r1c-op-model-grant-a2",
+      route_id: routeA2,
+      principal_id: h.scope.principalId,
+    });
+    await h.setRouteStatus("disabled");
+    try {
+      const before = await h.count("runs");
+      const error = await errorOf(() =>
+        h.runs.create(h.scope, "r1c-key-nodefault", request()),
+      );
+      expect(error.code).toBe("MODEL_ROUTE_NOT_FOUND");
+      expect(error.status).toBe(404);
+      expect(await h.count("runs")).toBe(before);
+    } finally {
+      await h.setRouteStatus("active");
+    }
+  });
+
+  test("a release disabled while create waits on the resource lock refuses admission", async () => {
+    /* 计数必须先于 holder 事务：count 走 owner 连接（max 1），holder 打开后它会被
+     * 池排队，测出的是夹具自身的死锁而不是被测行为。 */
+    const before = await h.count("runs");
+    const lockText = lockKey("resource", h.scope.tenantId, h.resourceId);
+    /* §4.3 步骤 4 的冻结必须发生在资源锁内且复读 release 绑定：disable-release 在
+     * “读取与上锁之间”提交时，已禁用的 release 不能再冻结准入一个新 Run。 */
+    let signalHeld: () => void = () => {};
+    const lockHeld = new Promise<void>((resolve) => {
+      signalHeld = resolve;
+    });
+    let signalProceed: () => void = () => {};
+    const mayProceed = new Promise<void>((resolve) => {
+      signalProceed = resolve;
+    });
+    const holder = h.ownerBegin(async (tx) => {
+      /* 与 store/provision 同一族资源咨询锁（tenancy/transaction lockKey）。 */
+      await tx.unsafe("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        lockText,
+      ]);
+      signalHeld();
+      await mayProceed;
+      /* disable-release 的完整写面：guarded 状态翻转（provision.ts DISABLE_RELEASE）。 */
+      await tx.unsafe(
+        "update enterprise_run_releases set status = 'disabled' where tenant_id = $1 and id = $2",
+        [h.scope.tenantId, h.releaseId],
+      );
+    });
+    await lockHeld;
+    const attempt = h.runs
+      .create(h.scope, "r1c-key-race-release", request())
+      .then(
+        (view) => ({ admitted: true as const, view }),
+        (error: unknown) => ({ admitted: false as const, error }),
+      );
+    try {
+      /* 确定性交错：create 必须已卡在资源锁上（未授予的咨询锁可见）才翻转状态；
+       * withTenant 的 lock_timeout 是 2s，轮询节奏远快于它。 */
+      let pending = false;
+      for (let i = 0; i < 120 && !pending; i++) {
+        const rows = await h.inTenantTx((tx) =>
+          tx.unsafe(
+            "select 1 as ok from pg_locks where locktype = 'advisory' and not granted limit 1",
+          ),
+        );
+        pending = rows.length > 0;
+        if (!pending) await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(pending).toBe(true);
+      signalProceed();
+      const outcome = await attempt;
+      expect(outcome.admitted).toBe(false);
+      if (!outcome.admitted) {
+        expect((outcome.error as EnterpriseError).code).toBe(
+          "RUN_RELEASE_DISABLED",
+        );
+      }
+      expect(await h.count("runs")).toBe(before);
+    } finally {
+      /* 任何断言失败都必须放行 holder 并等它提交，否则 owner 连接被占死；
+       * 模拟的 disable 也要还原，不把禁用状态泄漏给后续用例。 */
+      signalProceed();
+      await holder;
+      await h.setReleaseStatus("published");
+    }
+  }, 15000);
+
+  test("a route disabled while create waits on the resource lock refuses admission", async () => {
+    const before = await h.count("runs");
+    const lockText = lockKey("resource", h.scope.tenantId, h.resourceId);
+    let signalHeld: () => void = () => {};
+    const lockHeld = new Promise<void>((resolve) => {
+      signalHeld = resolve;
+    });
+    let signalProceed: () => void = () => {};
+    const mayProceed = new Promise<void>((resolve) => {
+      signalProceed = resolve;
+    });
+    const holder = h.ownerBegin(async (tx) => {
+      await tx.unsafe("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        lockText,
+      ]);
+      signalHeld();
+      await mayProceed;
+      /* disable-route 对创建路径可见的事实是状态翻转（与本文件 setRouteStatus 同一面）；
+       * 不带 revision 提升——同别名下一条用例注册的 sibling 修订会让 +1 撞唯一索引。 */
+      await tx.unsafe(
+        "update enterprise_model_routes set status = 'disabled' where tenant_id = $1 and id = $2",
+        [h.scope.tenantId, h.routeId],
+      );
+    });
+    await lockHeld;
+    const attempt = h.runs
+      .create(h.scope, "r1c-key-race-route", request())
+      .then(
+        (view) => ({ admitted: true as const, view }),
+        (error: unknown) => ({ admitted: false as const, error }),
+      );
+    try {
+      let pending = false;
+      for (let i = 0; i < 120 && !pending; i++) {
+        const rows = await h.inTenantTx((tx) =>
+          tx.unsafe(
+            "select 1 as ok from pg_locks where locktype = 'advisory' and not granted limit 1",
+          ),
+        );
+        pending = rows.length > 0;
+        if (!pending) await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(pending).toBe(true);
+      signalProceed();
+      const outcome = await attempt;
+      expect(outcome.admitted).toBe(false);
+      if (!outcome.admitted) {
+        expect((outcome.error as EnterpriseError).code).toBe(
+          "RUN_MODEL_ROUTE_MISSING",
+        );
+      }
+      expect(await h.count("runs")).toBe(before);
+    } finally {
+      signalProceed();
+      await holder;
+    }
+  }, 15000);
 });

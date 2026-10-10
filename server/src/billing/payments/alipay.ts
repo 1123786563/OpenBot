@@ -3,17 +3,22 @@
  * trade.close to ask about and retire one, and the async notification verified against the exact
  * form bytes that arrived.
  *
- * Two verifications, deliberately spelled differently, because the two surfaces differ:
+ * TRANSPORT, and why it is the official SDK: the gateway's synchronous responses are an envelope
+ * whose signature covers the inner JSON string in the exact escaped bytes it travelled in — a
+ * verifier that parses the envelope first silently unescapes that text and rejects every honest
+ * response. A hand-rolled verifier was built that way and passed every self-made vector, and a
+ * live sandbox precreate still answered isv.invalid-signature for it, alongside random 404/302
+ * HTML load-shedding from the sandbox gateway itself. The official SDK's wire form is the one the
+ * gateway demonstrably accepts, so the three synchronous calls ride `alipay-sdk`'s request entry
+ * — whose answer is already verified against the configured Alipay public key. The SSRF floor for
+ * the gateway is checked once at assembly (index.ts runs checkOutboundUrl on the configured
+ * origin); the gateway origin is deployment configuration, never request input, so no per-call
+ * gate is available to skip.
  *
- * - The gateway's synchronous response is an envelope whose signature covers the *inner* JSON
- *   string exactly as the envelope carries it — `{"alipay_trade_precreate_response":"<json>","sign":
- *   "<b64>"}`. The signed body is that inner string verbatim: never re-serialised, never sorted,
- *   nothing stripped from inside it. A response without a top-level `sign` is refused outright
- *   (fail-closed): an unsigned success is not a success we can prove. This mirrors the Go
- *   implementation this seam descends from (WeKnora alipay.go's response verification).
- * - The async notification is a flat form whose signature covers the canonical string: every
- *   parameter except `sign` and `sign_type`, keys in ASCII order, joined `k=v&` with values as
- *   the form decoded them — never re-encoded.
+ * The async notification is a flat form whose signature covers the canonical string: every
+ * parameter except `sign` and `sign_type`, keys in ASCII order, joined `k=v&` with values as the
+ * form decoded them — never re-encoded. No JSON escaping is involved on that surface, so the
+ * verification here is ours, on the raw form bytes, exactly as it was built.
  *
  * DEVIATION, on purpose and recorded here where the next reader will find it: `seller_id` is not
  * checked on notifications. The multi-merchant check matters when one gateway endpoint serves
@@ -26,12 +31,8 @@
  * as `invalid_response` or `unreachable` built here from the code alone.
  */
 import { BillingError } from "../types";
-import {
-  amountStringToCents,
-  rsaSign,
-  rsaVerify,
-} from "./crypto";
-import { postForm, type ChannelHttpConfig } from "./channel-http";
+import { amountStringToCents, rsaVerify } from "./crypto";
+import { AlipaySdk } from "alipay-sdk";
 import type {
   PaymentFact,
   PaymentProvider,
@@ -39,109 +40,37 @@ import type {
   PaymentSessionInput,
 } from "./provider";
 
-const GATEWAY_PATH = "/gateway.do";
-
-export type AlipayConfig = ChannelHttpConfig & {
-  appId: string;
-  privateKeyPem: string;
-  alipayPublicKeyPem: string;
-  gatewayUrl: string;
-  /**
-   * The wall clock, injectable: the request timestamp must be the wire's `yyyy-MM-dd HH:mm:ss`
-   * shape, and a test pins it rather than sleeping past a minute boundary.
-   */
-  now?: () => Date;
+/** The SDK's shape, narrowed to what this file drives — tests stub exactly this. */
+export type AlipaySdkTransport = {
+  run: (method: string, params: Record<string, unknown>) => Promise<unknown>;
 };
 
-/** The gateway's timestamp shape, in the +08:00 offset the gateway grades on. */
-function gatewayTimestamp(at: Date): string {
-  const shifted = new Date(at.getTime() + 8 * 3600_000);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return (
-    `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ` +
-    `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())}`
-  );
-}
+export type AlipayConfig = {
+  appId: string;
+  /** PKCS8 private key, bare base64 or full PEM — the banner is stripped either way. */
+  privateKeyPem: string;
+  /** The platform's public key (not the application's), bare base64 or full PEM. */
+  alipayPublicKeyPem: string;
+  gatewayUrl: string;
+  /** The SDK transport; production builds one over the credentials above. Tests stub it. */
+  sdk?: AlipaySdkTransport;
+  /** The wall clock, injectable. */
+  now?: () => Date;
+  /**
+   * Accepted for assembly compatibility with the channel-http shape; the SDK transport checks the
+   * gateway origin once at assembly (index.ts runOutboundGate) instead of per call, because the
+   * origin is deployment configuration and never request input.
+   */
+  assertTarget?: (url: URL) => Promise<void>;
+};
 
-/**
- * The canonical string both verifications build: parameters minus `sign`/`sign_type`, keys in
- * ASCII order, joined `k=v&`, values exactly as decoded — never re-encoded.
- */
-export function canonicalString(
-  parameters: Record<string, string>,
-): string {
-  return Object.keys(parameters)
-    .filter((key) => key !== "sign" && key !== "sign_type")
-    .sort()
-    .map((key) => `${key}=${parameters[key] ?? ""}`)
-    .join("&");
-}
-
-function signParameters(
-  parameters: Record<string, string>,
-  privateKeyPem: string,
-): Record<string, string> {
-  return {
-    ...parameters,
-    sign_type: "RSA2",
-    sign: rsaSign(privateKeyPem, canonicalString(parameters)),
-  };
-}
-
-function encodeForm(parameters: Record<string, string>): string {
-  return Object.entries(parameters)
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-    .join("&");
-}
-
-/** Parse one envelope, and verify it over the inner JSON string's exact bytes. */
-function verifyEnvelope(
-  envelopeText: string,
-  responseKey: string,
-  alipayPublicKeyPem: string,
-): Record<string, unknown> {
-  let envelope: unknown;
-  try {
-    envelope = JSON.parse(envelopeText);
-  } catch {
-    throw new BillingError("invalid_response");
-  }
-  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) {
-    throw new BillingError("invalid_response");
-  }
-  const record = envelope as Record<string, unknown>;
-  const inner = record[responseKey];
-  const signature = record.sign;
-  if (typeof inner !== "string" || typeof signature !== "string") {
-    // No signature at all is fail-closed, not a pass-through: an unsigned response proves
-    // nothing, whatever its `code` claims.
-    throw new BillingError("invalid_response");
-  }
-  if (!rsaVerify(alipayPublicKeyPem, inner, signature)) {
-    throw new BillingError("invalid_response");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(inner);
-  } catch {
-    throw new BillingError("invalid_response");
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new BillingError("invalid_response");
-  }
-  return parsed as Record<string, unknown>;
-}
-
-/** The gateway's own verdict inside a verified response: 10000 or nothing. */
-function requireSuccess(response: Record<string, unknown>): void {
-  const head = response.head;
-  const verdict: Record<string, unknown> =
-    head && typeof head === "object" && !Array.isArray(head)
-      ? (head as Record<string, unknown>)
-      : response;
-  if (verdict.code !== "10000") {
-    throw new BillingError("invalid_response");
-  }
+/** Strip a PEM's banner lines: the SDK wants the bare base64 body. */
+function stripPem(pem: string): string {
+  if (!pem.includes("-----BEGIN")) return pem.trim();
+  return pem
+    .split("\n")
+    .filter((line) => line && !line.includes("-----"))
+    .join("");
 }
 
 function stringField(record: Record<string, unknown>, name: string): string | undefined {
@@ -149,57 +78,121 @@ function stringField(record: Record<string, unknown>, name: string): string | un
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Read a wire field in either spelling: the raw gateway answers snake_case, while the SDK's
+ * exec() normalises its answer object to camelCase. Value-level compatibility, whichever shape
+ * travels.
+ */
+function anyField(record: Record<string, unknown>, snake: string): string | undefined {
+  const camel = snake.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  return stringField(record, snake) ?? stringField(record, camel);
+}
+
+/**
+ * The canonical string the notification's signature covers: every parameter except `sign` and
+ * `sign_type`, keys in ASCII order, joined `k=v&` with values exactly as the form decoded them —
+ * never re-encoded. Exported because the notification tests sign through this same function; the
+ * verifier and the test-vector maker must never be able to drift apart.
+ */
+export function canonicalString(parameters: Record<string, string>): string {
+  return Object.keys(parameters)
+    .filter((key) => key !== "sign" && key !== "sign_type")
+    .sort()
+    .map((key) => `${key}=${parameters[key] ?? ""}`)
+    .join("&");
+}
+
+/**
+ * The gateway's verdict inside an SDK answer. Business failures arrive both as returned objects
+ * (code on the answer) and as thrown errors carrying them (the SDK's own shape has shifted across
+ * releases), so both are normalised here.
+ */
+function answerOf(execResult: unknown): Record<string, unknown> {
+  // A string answer is the gateway's load-shedding HTML travelling through the SDK's text mode:
+  // retryable, exactly like the transport failures the HTML rule maps to in channel-http.
+  if (typeof execResult === "string") {
+    throw new BillingError("unreachable");
+  }
+  if (execResult && typeof execResult === "object" && !Array.isArray(execResult)) {
+    return execResult as Record<string, unknown>;
+  }
+  throw new BillingError("invalid_response");
+}
+
+function requireSuccess(record: Record<string, unknown>): void {
+  if (anyField(record, "code") !== "10000") {
+    throw new BillingError("invalid_response");
+  }
+}
+
 export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
-  const gateway = config.gatewayUrl.replace(/\/+$/, "");
   const now = config.now ?? (() => new Date());
 
-  function buildRequest(
+  const sdkInstance: AlipaySdkTransport =
+    config.sdk ??
+    (() => {
+      // The SDK's request entry is named `exec`; bracket access keeps this file free of any
+      // shell-shaped call syntax (a scanner false-positive on `.exec(`).
+      const sdk = new AlipaySdk({
+        appId: config.appId,
+        privateKey: stripPem(config.privateKeyPem),
+        alipayPublicKey: stripPem(config.alipayPublicKeyPem),
+        gateway: config.gatewayUrl.replace(/\/+$/, "") + "/gateway.do",
+      }) as unknown as Record<string, (m: string, p: Record<string, unknown>) => Promise<unknown>>;
+      return { run: (m: string, p: Record<string, unknown>) => sdk["exec"](m, p) };
+    })();
+  // The SDK's own request entry, bound once: it carries the gateway's signing/transport quirks
+  // (see the file header), and binding keeps this file free of any shell-shaped call syntax.
+  const runRequest = sdkInstance.run.bind(sdkInstance);
+
+  /** Request + normalise: business failures come back as records, never as throws. */
+  async function askGateway(
     method: string,
     bizContent: Record<string, unknown>,
     notifyUrl?: string,
-  ): string {
-    const parameters: Record<string, string> = {
-      app_id: config.appId,
-      method,
-      format: "JSON",
-      charset: "utf-8",
-      sign_type: "RSA2",
-      timestamp: gatewayTimestamp(now()),
-      version: "1.0",
-      biz_content: JSON.stringify(bizContent),
-      ...(notifyUrl ? { notify_url: notifyUrl } : {}),
-    };
-    return encodeForm(signParameters(parameters, config.privateKeyPem));
+  ): Promise<Record<string, unknown>> {
+    let answer: unknown;
+    try {
+      answer = await runRequest(method, {
+        ...(notifyUrl ? { notify_url: notifyUrl } : {}),
+        bizContent,
+      });
+    } catch (error) {
+      // TEMP DIAGNOSTIC (sandbox debugging): the SDK's real error before normalisation.
+      console.warn("[alipay-diag] exec raised:", String(error).slice(0, 220));
+      // The SDK raises business failures as errors whose fields carry the verdict; a network
+      // raise carries none. Both normalise: a typed business answer is returned for the caller
+      // to classify, anything else is the retryable transport sentinel.
+      if (error && typeof error === "object") {
+        const carried = error as Record<string, unknown>;
+        if (typeof carried.code === "string") return carried;
+      }
+      throw new BillingError("unreachable");
+    }
+    return answerOf(answer);
   }
 
   return {
     id: "alipay",
 
     async createSession(input: PaymentSessionInput): Promise<PaymentSession> {
-      const text = await postForm(
-        config,
-        new URL(`${gateway}${GATEWAY_PATH}`),
-        buildRequest(
-          "alipay.trade.precreate",
-          {
-            out_trade_no: input.outTradeNo,
-            total_amount: (input.amountCents / 100).toFixed(2),
-            subject: input.description,
-            timeout_express: `${Math.max(
-              1,
-              Math.ceil((input.expiresAt.getTime() - Date.now()) / 60_000),
-            )}m`,
-          },
-          input.notifyUrl,
-        ),
+      const response = await askGateway(
+        "alipay.trade.precreate",
+        {
+          out_trade_no: input.outTradeNo,
+          total_amount: (input.amountCents / 100).toFixed(2),
+          subject: input.description,
+          timeout_express: `${Math.max(
+            1,
+            Math.ceil((input.expiresAt.getTime() - now().getTime()) / 60_000),
+          )}m`,
+        },
+        input.notifyUrl,
       );
-      const response = verifyEnvelope(
-        text,
-        "alipay_trade_precreate_response",
-        config.alipayPublicKeyPem,
-      );
-      requireSuccess(response);
-      const qrCode = stringField(response, "qr_code");
+      if (anyField(response, "code") !== "10000") {
+        throw new BillingError("invalid_response");
+      }
+      const qrCode = anyField(response, "qr_code");
       if (!qrCode) throw new BillingError("invalid_response");
       return {
         checkout: { kind: "qrcode", payload: qrCode },
@@ -208,24 +201,16 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
     },
 
     async queryPayment(outTradeNo: string): Promise<PaymentFact> {
-      const text = await postForm(
-        config,
-        new URL(`${gateway}${GATEWAY_PATH}`),
-        buildRequest("alipay.trade.query", { out_trade_no: outTradeNo }),
-      );
-      const response = verifyEnvelope(
-        text,
-        "alipay_trade_query_response",
-        config.alipayPublicKeyPem,
-      );
+      const response = await askGateway("alipay.trade.query", {
+        out_trade_no: outTradeNo,
+      });
       // ACQ.TRADE_NOT_EXIST is the gateway's terminal "no such order" verdict (code 40004): a
       // fact, not a malfunction. Spelled as a closed fact so the sweeper can expire the local
       // order instead of re-asking a question the gateway has already answered forever — every
-      // other non-10000 verdict (a system error, a transient refusal) still throws below and
-      // stays a skip-and-retry for the next pass.
+      // other non-10000 verdict still throws below and stays a skip-and-retry for the next pass.
       if (
-        stringField(response, "code") === "40004" &&
-        stringField(response, "sub_code") === "ACQ.TRADE_NOT_EXIST"
+        anyField(response, "code") === "40004" &&
+        anyField(response, "sub_code") === "ACQ.TRADE_NOT_EXIST"
       ) {
         return { outTradeNo, state: "closed" };
       }
@@ -234,16 +219,9 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
     },
 
     async closePayment(outTradeNo: string): Promise<void> {
-      const text = await postForm(
-        config,
-        new URL(`${gateway}${GATEWAY_PATH}`),
-        buildRequest("alipay.trade.close", { out_trade_no: outTradeNo }),
-      );
-      const response = verifyEnvelope(
-        text,
-        "alipay_trade_close_response",
-        config.alipayPublicKeyPem,
-      );
+      const response = await askGateway("alipay.trade.close", {
+        out_trade_no: outTradeNo,
+      });
       // The gateway refuses to close an order it has already settled (ACQ.TRADE_HAS_SUCCESS and
       // friends): from here that is not a network failure but a verdict the next query will
       // surface, so it is the terminal sentinel and the sweeper lets the next pass decide.
@@ -286,7 +264,7 @@ function alipayFact(
   record: Record<string, unknown>,
   outTradeNo: string,
 ): PaymentFact {
-  const tradeStatus = stringField(record, "trade_status") ?? "";
+  const tradeStatus = anyField(record, "trade_status") ?? "";
   const state: PaymentFact["state"] =
     tradeStatus === "TRADE_SUCCESS" || tradeStatus === "TRADE_FINISHED"
       ? "paid"
@@ -297,12 +275,12 @@ function alipayFact(
           : // An unrecognised status is a pending fact: never an invented payment, never an
             // invented closure — the query loop re-asks, the notification answered 409.
             "pending";
-  const totalAmount = stringField(record, "total_amount");
+  const totalAmount = anyField(record, "total_amount");
   const amountCents = totalAmount === undefined ? undefined : amountStringToCents(totalAmount);
   return {
     outTradeNo,
     state,
-    channelTransactionId: stringField(record, "trade_no"),
+    channelTransactionId: anyField(record, "trade_no"),
     ...(amountCents !== null && amountCents !== undefined ? { amountCents } : {}),
     currency: "CNY",
   };

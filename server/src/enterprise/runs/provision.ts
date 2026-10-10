@@ -19,9 +19,12 @@
  * rolls the whole transaction back.
  *
  * Server-owned state: every registered row's initial status and revision are set HERE, never
- * by the caller — releases insert `published`, routes `active`, grants `active` at revision 1,
- * budget accounts `active` at revision 1 with spent/held/overage fixed at 0, delegations with
- * used_runs 0. budget-open NEVER rewrites an existing account's limit or its incurred values:
+ * by the caller — releases insert `published` (§4.1's field contract gives the release NO
+ * revision column — "仅不可变批准版本": a new approved version is a NEW row, so there is no
+ * revision for the server to set), routes `active` at the operator-pinned alias revision,
+ * grants `active` at revision 1, budget accounts `active` at revision 1 with spent/held/overage
+ * fixed at 0, delegations with used_runs 0. budget-open NEVER rewrites an existing account's
+ * limit or its incurred values:
  * the same period identity with a different limit is a 409, and a real adjustment needs its
  * own operation with a stated reason (not expressible in this union by construction).
  *
@@ -41,6 +44,18 @@
  * precedent); disabling/revokeing an object whose PARENT row never existed is a 404, so a
  * typo can never be laundered into an "applied" no-op.
  *
+ * disable-release has no revision to bump BY CONTRACT: §4.1's field table for
+ * enterprise_run_releases lists no revision column and migration 0059 matches it. §4.4's
+ * blanket "release/route/委托更新状态和revision" is therefore executable literally for route
+ * and delegation only; for the release, the guarded `where status = 'published'` flip is the
+ * ENTIRE invalidation surface — exactly-once by the UPDATE's own guard, audited once per
+ * operation id (the audit event's recorded `changed` result is the durable exactly-once
+ * evidence), re-checked by the run policy at every new admission (runs/policy.ts
+ * RUN_RELEASE_DISABLED) while existing runs keep their pinned release id. Adding the column
+ * would be a runs-domain DB-posture expansion (it needs a migration journal entry) that plan
+ * line 24 forbids touching and the master plan §59 reserves for separate approval — so this
+ * package documents the contract instead of inventing a schema.
+ *
  * Delegations are the human-approved pilot instrument only (explicit principal/release/route/
  * term/counts/per-run cap); nothing here mints a long-lived session.
  *
@@ -58,15 +73,12 @@ import { z } from "zod";
 import type { Tx } from "../contracts";
 import { EnterpriseError } from "../errors";
 import {
-  createStaticTargetRegistry,
-  ID,
+  createEnvTargetRegistry,
   Decimal,
+  ID,
   type TargetRegistry,
 } from "../models/contracts";
-import {
-  PAYLOAD_SERIALIZATION,
-  payloadDigest,
-} from "../tenancy/provision";
+import { PAYLOAD_SERIALIZATION, payloadDigest } from "../tenancy/provision";
 import {
   firstRow,
   lockExclusive,
@@ -106,9 +118,7 @@ const Reason = z.string().trim().min(1).max(512);
  * Version labels for the Go expert build and the runtime compatibility claim. Bounded,
  * no whitespace, no separators beyond `._-` — they pin identity, they never carry prose.
  */
-const VersionLabel = z
-  .string()
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
+const VersionLabel = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
 
 /** Lowercase protocol/usage profile names, the same shape ModelRouteSchema enforces. */
 const ProfileName = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/);
@@ -123,7 +133,12 @@ const ProvisionTargetRef = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9/_.:-]{0,127}$/);
 
 const RunGrantActions = ["start", "cancel_own", "resume_own"] as const;
-const BudgetScopeKinds = ["tenant", "workspace", "expert", "principal"] as const;
+const BudgetScopeKinds = [
+  "tenant",
+  "workspace",
+  "expert",
+  "principal",
+] as const;
 
 const RouteRegisterSchema = z
   .object({
@@ -328,26 +343,26 @@ export const EMPTY_TOOL_MANIFEST_DIGEST = new Bun.CryptoHasher("sha256")
   .digest("hex");
 
 /**
- * The default deployment registry: the operator's approved target keys, one comma-separated
- * list. An unset or empty list answers NO to everything — production provisioning without a
- * mapped target is refused closed, never waved through.
+ * The default deployment registry is shared with the run store's alias resolution:
+ * `createEnvTargetRegistry` (models/contracts.ts) reads the same comma-separated
+ * ENTERPRISE_MODEL_TARGETS list, and an unset or empty list answers NO to everything —
+ * production provisioning without a mapped target is refused closed, never waved through.
  */
-function defaultTargetRegistry(): TargetRegistry {
-  const raw = process.env.ENTERPRISE_MODEL_TARGETS ?? "";
-  const refs = raw
-    .split(",")
-    .map((ref) => ref.trim())
-    .filter((ref) => ref.length > 0);
-  return createStaticTargetRegistry(refs);
-}
+const defaultTargetRegistry = createEnvTargetRegistry;
 
 /* ---------------------------------------------------------------------------
  * Stable errors.
  * ------------------------------------------------------------------------ */
 
-const INVALID_PROVISION_INPUT = new EnterpriseError("INVALID_PROVISION_INPUT", 400);
+const INVALID_PROVISION_INPUT = new EnterpriseError(
+  "INVALID_PROVISION_INPUT",
+  400,
+);
 const IDEMPOTENCY_CONFLICT = new EnterpriseError("IDEMPOTENCY_CONFLICT", 409);
-const SECURITY_EVENT_UNREADABLE = new EnterpriseError("SECURITY_EVENT_UNREADABLE", 503);
+const SECURITY_EVENT_UNREADABLE = new EnterpriseError(
+  "SECURITY_EVENT_UNREADABLE",
+  503,
+);
 const TENANT_NOT_FOUND = new EnterpriseError("TENANT_NOT_FOUND", 409);
 const TENANT_NOT_ACTIVE = new EnterpriseError("TENANT_NOT_ACTIVE", 409);
 const RESOURCE_NOT_FOUND = new EnterpriseError("RESOURCE_NOT_FOUND", 404);
@@ -356,8 +371,14 @@ const MEMBER_NOT_ACTIVE = new EnterpriseError("MEMBER_NOT_ACTIVE", 409);
 const WORKSPACE_NOT_FOUND = new EnterpriseError("WORKSPACE_NOT_FOUND", 404);
 const MODEL_TARGET_UNKNOWN = new EnterpriseError("MODEL_TARGET_UNKNOWN", 503);
 const ROUTE_CONFLICT = new EnterpriseError("ROUTE_CONFLICT", 409);
-const ROUTE_REVISION_CONFLICT = new EnterpriseError("ROUTE_REVISION_CONFLICT", 409);
-const ROUTE_DEFAULT_CONFLICT = new EnterpriseError("ROUTE_DEFAULT_CONFLICT", 409);
+const ROUTE_REVISION_CONFLICT = new EnterpriseError(
+  "ROUTE_REVISION_CONFLICT",
+  409,
+);
+const ROUTE_DEFAULT_CONFLICT = new EnterpriseError(
+  "ROUTE_DEFAULT_CONFLICT",
+  409,
+);
 const ROUTE_NOT_FOUND = new EnterpriseError("ROUTE_NOT_FOUND", 404);
 const RELEASE_CONFLICT = new EnterpriseError("RELEASE_CONFLICT", 409);
 const RELEASE_NOT_FOUND = new EnterpriseError("RELEASE_NOT_FOUND", 404);
@@ -433,9 +454,18 @@ const INSERT_RELEASE = `
     max_run_micros, currency, tool_manifest_digest, tool_count, status)
   values ($1, $2, $3, $4, $5, $6, $7, $8::bigint, $9::bigint, $10::bigint, $11, $12, $13::bigint,
     'published')`;
+/* disable-release has NO revision to bump by contract: §4.1's field table for
+ * enterprise_run_releases lists no revision column ("仅不可变批准版本" — a new approved
+ * version is a new row) and migration 0059 matches. The guarded flip is the whole invalidation
+ * surface: exactly-once via the UPDATE's own guard, audited once per operation id (the audit
+ * event's recorded `changed` result is the durable exactly-once evidence), re-checked by the
+ * run policy at every admission. RETURNING is required: Bun SQL answers an UPDATE without it
+ * with an empty row array, so the guard's hit could never be observed. See the module
+ * docstring for the full §4.4/§4.1 reconciliation. */
 const DISABLE_RELEASE = `
   update enterprise_run_releases set status = 'disabled'
-  where tenant_id = $1 and id = $2 and status = 'published'`;
+  where tenant_id = $1 and id = $2 and status = 'published'
+  returning id`;
 
 const SELECT_RUN_GRANT = `
   select revision::text as revision from enterprise_run_grants
@@ -579,7 +609,10 @@ const AUDIT_KINDS: Readonly<Record<RunProvisionMode, string>> = {
  * Shared fact checks (fail-closed; same codes 02 uses).
  * ------------------------------------------------------------------------ */
 
-async function requireActiveTenant(tx: TxClient, tenantId: string): Promise<void> {
+async function requireActiveTenant(
+  tx: TxClient,
+  tenantId: string,
+): Promise<void> {
   const tenant = await firstRow(tx, SELECT_TENANT_STATUS, [tenantId]);
   if (tenant === undefined) {
     throw TENANT_NOT_FOUND;
@@ -594,7 +627,10 @@ async function requireActiveResource(
   tenantId: string,
   resourceId: string,
 ): Promise<void> {
-  const resource = await firstRow(tx, SELECT_RESOURCE_STATUS, [tenantId, resourceId]);
+  const resource = await firstRow(tx, SELECT_RESOURCE_STATUS, [
+    tenantId,
+    resourceId,
+  ]);
   if (resource === undefined || resource.status !== "active") {
     throw RESOURCE_NOT_FOUND;
   }
@@ -624,33 +660,63 @@ async function requireActiveMember(
  * the parent's 404 before any lock is taken; the act re-validates everything inside the lock.
  * ------------------------------------------------------------------------ */
 
-async function lockFor(tx: TxClient, command: RunProvisionCommand): Promise<void> {
+async function lockFor(
+  tx: TxClient,
+  command: RunProvisionCommand,
+): Promise<void> {
   switch (command.mode) {
     case "route-register": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
-      await lockExclusive(tx, lockKey("resource", command.tenant_id, command.resource_id));
+      await lockExclusive(
+        tx,
+        lockKey("resource", command.tenant_id, command.resource_id),
+      );
       await lockExclusive(tx, lockKey("route", command.tenant_id, command.id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "release-register": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
-      await lockExclusive(tx, lockKey("resource", command.tenant_id, command.resource_id));
-      await lockExclusive(tx, lockKey("release", command.tenant_id, command.id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("resource", command.tenant_id, command.resource_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("release", command.tenant_id, command.id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "run-grant": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
-      await lockShared(tx, lockKey("principal", command.tenant_id, command.principal_id));
-      await lockExclusive(tx, lockKey("release", command.tenant_id, command.release_id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockShared(
+        tx,
+        lockKey("principal", command.tenant_id, command.principal_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("release", command.tenant_id, command.release_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "model-grant":
     case "revoke-model-grant": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
-      await lockShared(tx, lockKey("principal", command.tenant_id, command.principal_id));
+      await lockShared(
+        tx,
+        lockKey("principal", command.tenant_id, command.principal_id),
+      );
       const route = await firstRow(tx, SELECT_ROUTE_FULL, [
         command.tenant_id,
         command.route_id,
@@ -661,25 +727,52 @@ async function lockFor(tx: TxClient, command: RunProvisionCommand): Promise<void
           lockKey("resource", command.tenant_id, String(route.resource_id)),
         );
       }
-      await lockExclusive(tx, lockKey("route", command.tenant_id, command.route_id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("route", command.tenant_id, command.route_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "budget-open": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
       if (command.scope_kind === "principal") {
-        await lockShared(tx, lockKey("principal", command.tenant_id, command.scope_ref));
+        await lockShared(
+          tx,
+          lockKey("principal", command.tenant_id, command.scope_ref),
+        );
       }
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "delegation-register": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
-      await lockShared(tx, lockKey("principal", command.tenant_id, command.principal_id));
-      await lockExclusive(tx, lockKey("release", command.tenant_id, command.release_id));
-      await lockExclusive(tx, lockKey("route", command.tenant_id, command.route_id));
-      await lockExclusive(tx, lockKey("delegation", command.tenant_id, command.id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockShared(
+        tx,
+        lockKey("principal", command.tenant_id, command.principal_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("release", command.tenant_id, command.release_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("route", command.tenant_id, command.route_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("delegation", command.tenant_id, command.id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "disable-release": {
@@ -695,8 +788,14 @@ async function lockFor(tx: TxClient, command: RunProvisionCommand): Promise<void
         tx,
         lockKey("resource", command.tenant_id, String(release.resource_id)),
       );
-      await lockExclusive(tx, lockKey("release", command.tenant_id, command.id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("release", command.tenant_id, command.id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "disable-route": {
@@ -713,14 +812,26 @@ async function lockFor(tx: TxClient, command: RunProvisionCommand): Promise<void
         lockKey("resource", command.tenant_id, String(route.resource_id)),
       );
       await lockExclusive(tx, lockKey("route", command.tenant_id, command.id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "revoke-run-grant": {
       await lockShared(tx, lockKey("tenant", command.tenant_id));
-      await lockShared(tx, lockKey("principal", command.tenant_id, command.principal_id));
-      await lockExclusive(tx, lockKey("release", command.tenant_id, command.release_id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockShared(
+        tx,
+        lockKey("principal", command.tenant_id, command.principal_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("release", command.tenant_id, command.release_id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
     case "revoke-delegation": {
@@ -732,8 +843,14 @@ async function lockFor(tx: TxClient, command: RunProvisionCommand): Promise<void
       if (delegation === undefined) {
         throw DELEGATION_NOT_FOUND;
       }
-      await lockExclusive(tx, lockKey("delegation", command.tenant_id, command.id));
-      await lockExclusive(tx, lockKey("operation", command.tenant_id, command.operation_id));
+      await lockExclusive(
+        tx,
+        lockKey("delegation", command.tenant_id, command.id),
+      );
+      await lockExclusive(
+        tx,
+        lockKey("operation", command.tenant_id, command.operation_id),
+      );
       return;
     }
   }
@@ -995,7 +1112,9 @@ async function actBudgetOpen(
     }
   }
 
-  if (new Date(command.starts_at).getTime() >= new Date(command.ends_at).getTime()) {
+  if (
+    new Date(command.starts_at).getTime() >= new Date(command.ends_at).getTime()
+  ) {
     throw PERIOD_INVALID;
   }
 
@@ -1033,7 +1152,13 @@ async function actBudgetOpen(
     command.currency,
     command.limit_micros,
   ]);
-  return { created: true, status: "active", spent_micros: "0", held_micros: "0", overage_micros: "0" };
+  return {
+    created: true,
+    status: "active",
+    spent_micros: "0",
+    held_micros: "0",
+    overage_micros: "0",
+  };
 }
 
 async function actDelegationRegister(

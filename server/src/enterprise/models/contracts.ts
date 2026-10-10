@@ -98,3 +98,19 @@ export function createStaticTargetRegistry(
       TargetRef.safeParse(targetRef).success && known.has(targetRef),
   };
 }
+
+/**
+ * The deployment registry loaded from the operator's approved target list: the
+ * comma-separated `ENTERPRISE_MODEL_TARGETS` environment value, the same source
+ * the offline provision CLI reads. An unset or empty list answers NO to
+ * everything — a deployment without mapped targets refuses every resolution and
+ * registration closed, never waves a route through to an unmapped target.
+ */
+export function createEnvTargetRegistry(raw?: string): TargetRegistry {
+  const source = raw ?? process.env.ENTERPRISE_MODEL_TARGETS ?? "";
+  const refs = source
+    .split(",")
+    .map((ref) => ref.trim())
+    .filter((ref) => ref.length > 0);
+  return createStaticTargetRegistry(refs);
+}

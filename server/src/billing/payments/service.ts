@@ -448,15 +448,28 @@ export function createPaymentService(deps: {
       });
 
       // Order first, code second: a channel failure here leaves a pending order that a retry
-      // replays into, instead of a QR the ledger cannot account for.
-      const session = await provider.createSession({
-        outTradeNo: order.id,
-        description: `OpenBot plan ${order.planCode} · one month`,
-        amountCents: order.amountCents,
-        currency: "CNY",
-        notifyUrl: notifyUrlFor(input.provider),
-        expiresAt: order.expiresAt,
-      });
+      // replays into, instead of a QR the ledger cannot account for. The session create itself
+      // retries the sandbox gateway's load-shedding (404/302 HTML, mapped to retryable
+      // unreachable) a bounded two times — a retried create replays into this same pending
+      // order, so no second order row can appear.
+      let session: Awaited<ReturnType<typeof provider.createSession>>;
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          session = await provider.createSession({
+            outTradeNo: order.id,
+            description: `OpenBot plan ${order.planCode} · one month`,
+            amountCents: order.amountCents,
+            currency: "CNY",
+            notifyUrl: notifyUrlFor(input.provider),
+            expiresAt: order.expiresAt,
+          });
+          break;
+        } catch (error) {
+          const retryable =
+            error instanceof BillingError && error.retryable && attempt < 3;
+          if (!retryable) throw error;
+        }
+      }
       if (session.checkout.kind === "qrcode") {
         await deps.store.setCheckoutPayload(order.id, session.checkout.payload);
       }

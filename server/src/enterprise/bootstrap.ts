@@ -43,11 +43,15 @@ import { createResourceReader } from "./authz/repository";
 import { createAuthz } from "./authz/service";
 import type { EnterpriseConfig, RedactedSecurityError } from "./config";
 import { budgetPort } from "./models/budget";
+import { createEnvTargetRegistry } from "./models/contracts";
 import { createCapabilityLookup } from "./runtime/capability-store";
-import { createToolInvocationPlane, type ToolPlaneRoutes } from "./runtime/tool-plane";
+import {
+  createToolInvocationPlane,
+  type ToolPlaneRoutes,
+} from "./runtime/tool-plane";
 import { createRuntimeVerifier } from "./runtime/verifier";
-import { createRunService, } from "./runs/service";
-import type { GatewayDeps, } from "./runs/gateway";
+import { createRunService } from "./runs/service";
+import type { GatewayDeps } from "./runs/gateway";
 import { createRunPolicy } from "./runs/policy";
 import { createRunStore } from "./runs/store";
 import type { RunServices } from "./runs/contracts";
@@ -360,12 +364,13 @@ export async function bootstrapEnterprise(
       | undefined;
     let runServicesRef: RunServices | undefined;
     if (config.runtime) {
-      const runWriterDb = factory(config.runtime.runWriterDatabaseUrl, { max: 2 });
+      const runWriterDb = factory(config.runtime.runWriterDatabaseUrl, {
+        max: 2,
+      });
       opened.push(runWriterDb);
-      const runtimeWriterDb = factory(
-        config.runtime.runtimeWriterDatabaseUrl,
-        { max: 2 },
-      );
+      const runtimeWriterDb = factory(config.runtime.runtimeWriterDatabaseUrl, {
+        max: 2,
+      });
       opened.push(runtimeWriterDb);
       await assertLoginHoldsNoPowers(runWriterDb);
       await assertTenantBoundaryTables(runWriterDb);
@@ -396,6 +401,7 @@ export async function bootstrapEnterprise(
           policy: createRunPolicy({ authz }),
           budget: budgetPort,
           eventsDatabase: runtimeWriterDb,
+          targets: createEnvTargetRegistry(),
         }),
       };
       runtime = {

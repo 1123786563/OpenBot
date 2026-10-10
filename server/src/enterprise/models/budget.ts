@@ -733,7 +733,13 @@ export async function settleCallInTx(
     await updatedRow(
       tx,
       SETTLE_RESERVATION_CHARGE_TEXT,
-      [tenant, reservationId, actualText, actualText, decimal(attempt.cap_micros)],
+      [
+        tenant,
+        reservationId,
+        actualText,
+        actualText,
+        decimal(attempt.cap_micros),
+      ],
       BUDGET_EXCEEDED,
     );
     for (const accountId of accountIds) {

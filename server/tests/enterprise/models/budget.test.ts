@@ -106,7 +106,16 @@ const ALL_SCENARIOS: Scenario[] = [
   "s8",
 ];
 /** 独立账户组：s1 组由 s1a/s1b 共享；s7b 是 s7 Run 上的第二个 attempt，无组。 */
-const ACCOUNT_GROUPS = ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"] as const;
+const ACCOUNT_GROUPS = [
+  "s1",
+  "s2",
+  "s3",
+  "s4",
+  "s5",
+  "s6",
+  "s7",
+  "s8",
+] as const;
 
 type PgError = { code: string; status: number };
 
@@ -226,8 +235,16 @@ if (dbProbe.ready) {
 
   function accountRows(group: string, period: string) {
     const expired = group === "s6";
-    const limit = group === "s1" ? BigInt(100) : group === "s2" ? null : BigInt(1000);
-    const held = group === "s6" || group === "s4" || group === "s5" || group === "s7" || group === "s8" ? BigInt(80) : BigInt(0);
+    const limit =
+      group === "s1" ? BigInt(100) : group === "s2" ? null : BigInt(1000);
+    const held =
+      group === "s6" ||
+      group === "s4" ||
+      group === "s5" ||
+      group === "s7" ||
+      group === "s8"
+        ? BigInt(80)
+        : BigInt(0);
     const { startsAt, endsAt } = windowDates(expired);
     const scopes: Array<
       ["tenant" | "workspace" | "expert" | "principal", string, bigint]
@@ -517,9 +534,7 @@ if (dbProbe.ready) {
      * s2 租户层只有 50（任一层不足→全部回滚），s6 周期已过期，
      * s4–s8 预置 held=80（等价 reserve 已发生）。 */
     for (const group of ACCOUNT_GROUPS) {
-      const representative = (
-        group === "s1" ? "s1a" : group
-      ) as Scenario;
+      const representative = (group === "s1" ? "s1a" : group) as Scenario;
       await ownerDatabase
         .insert(enterpriseBudgetAccounts)
         .values(accountRows(group, periodOf(representative)));
@@ -650,9 +665,7 @@ if (dbProbe.ready) {
         .from(enterpriseRuns)
         .where(eq(enterpriseRuns.tenantId, TENANT));
       expect(
-        runs.filter((row) =>
-          [runIdOf("s1a"), runIdOf("s1b")].includes(row.id),
-        ),
+        runs.filter((row) => [runIdOf("s1a"), runIdOf("s1b")].includes(row.id)),
       ).toHaveLength(1);
     });
 

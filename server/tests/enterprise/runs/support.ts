@@ -1,8 +1,7 @@
 import { and, eq, inArray, like } from "drizzle-orm";
-import { createDatabase, type Database } from "../../../src/db/client";
+import { createDatabase } from "../../../src/db/client";
 import {
   enterpriseBudgetAccounts,
-  enterpriseRunEvents,
   enterpriseBudgetBindings,
   enterpriseBudgetReservations,
   enterpriseIdentityEvents,
@@ -11,25 +10,31 @@ import {
   enterpriseModelRoutes,
   enterprisePrincipals,
   enterpriseResourceGrants,
+  enterpriseResources,
+  enterpriseRunEvents,
   enterpriseRunGrants,
   enterpriseRunOutbox,
   enterpriseRunReleases,
   enterpriseRuns,
-  enterpriseResources,
   enterpriseSecurityEvents,
   enterpriseTenants,
   enterpriseThreads,
   enterpriseWorkspaces,
   users,
 } from "../../../src/db/schema";
-import type { Scope, Tx } from "../../../src/enterprise/contracts";
-import type { RunService } from "../../../src/enterprise/runs/contracts";
 import { createAuthz } from "../../../src/enterprise/authz/service";
+import type { Scope, Tx } from "../../../src/enterprise/contracts";
 import { budgetPort } from "../../../src/enterprise/models/budget";
-import { createRunPolicy } from "../../../src/enterprise/runs/policy";
+import { createStaticTargetRegistry } from "../../../src/enterprise/models/contracts";
+import type { RunService } from "../../../src/enterprise/runs/contracts";
 import type { RunPolicy } from "../../../src/enterprise/runs/policy";
+import { createRunPolicy } from "../../../src/enterprise/runs/policy";
+import {
+  applyRunProvision,
+  EMPTY_TOOL_MANIFEST_DIGEST,
+  type RunProvisionCommand,
+} from "../../../src/enterprise/runs/provision";
 import { createRunStore } from "../../../src/enterprise/runs/store";
-import { withTenant } from "../../../src/enterprise/tenancy/transaction";
 import { createDirectory } from "../../../src/enterprise/tenancy/directory";
 import { createPrincipal } from "../../../src/enterprise/tenancy/identity";
 import {
@@ -40,17 +45,25 @@ import {
   revokeRead,
 } from "../../../src/enterprise/tenancy/provision";
 import { resolveScope } from "../../../src/enterprise/tenancy/scope";
+import {
+  beginOperation,
+  type TxClient,
+  withTenant,
+} from "../../../src/enterprise/tenancy/transaction";
 import { testDatabaseUrlFrom } from "../../support/database";
 
 /*
- * E1-C 测试夹具（03 分册 §4.3 测试步骤）。
+ * E1-C 测试夹具（03 分册 §4.3 测试步骤：354 行“夹具通过离线provision创建真实租户、
+ * start grant、model grant、预算账户和无工具release”，367 行“通过02的provision与本册
+ * provision建立fixture”）。
  *
  * h 是本册测试 helper：固定专用测试库与真实 RunService，不是永远允许的替身。
  * 身份链（principal/membership/workspace/resource/read grant）通过 02 的领域函数在
- * 受限登录上建立；03 运行域的 release/run grant/model grant/预算账户在 E1-D 未完成
- * 前按计划允许直接 fixture（迁移 owner 连接），不建第二个市场。count 使用固定三条
- * SQL 而非请求拼表名；afterAll 关闭连接，不清除其他测试数据。清理语句全部针对本
- * 夹具的 r1c- 前缀硬编码 id，删除目标不含任何外部输入。
+ * 受限登录上建立；03 运行域的 route/release/run grant/model grant/预算账户通过本册
+ * E1-D 的 applyRunProvision（迁移 owner 连接承载事务，与 provision.test.ts 同一纪律）
+ * 建立——夹具因此证明 provision 产出的状态能被 store 接受，不建第二个市场。
+ * count 使用固定三条 SQL 而非请求拼表名；afterAll 关闭连接，不清除其他测试数据。
+ * 清理语句全部针对本夹具的 r1c- 前缀硬编码 id，删除目标不含任何外部输入。
  */
 
 const PREFIX = "r1c-";
@@ -76,10 +89,12 @@ const PERIOD = "2026-10-r1c";
 const CURRENCY = "USD";
 const OPERATOR = `${PREFIX}operator`;
 const DEFAULT_BUDGET_LIMIT = "10000000";
-const PERIOD_WINDOW = {
-  startsAt: new Date("2026-10-01T00:00:00Z"),
-  endsAt: new Date("2026-11-01T00:00:00Z"),
-};
+/** 预算周期窗口：Timestamptz 必须带时区（E1-D 的 union 输入契约）。 */
+const PERIOD_STARTS_AT = "2026-10-01T00:00:00Z";
+const PERIOD_ENDS_AT = "2026-11-01T00:00:00Z";
+/** 部署映射里已批准的 upstream target key（E1-D 拒绝未映射 target，夹具同规）。 */
+export const RUN_TARGET_REF = "openai/gpt-test";
+const RUN_TARGETS = createStaticTargetRegistry([RUN_TARGET_REF]);
 
 export type RunsProbe = { ready: boolean; reason: string };
 
@@ -156,8 +171,14 @@ export type RunHarness = {
   threadIdC: string;
   routeId: string;
   alias: string;
+  /** release 与 route 共同挂载的专家资源：资源锁家族与撤权竞窗用例用它。 */
+  resourceId: string;
   runs: RunService;
   policy: RunPolicy;
+  /** 追加一条 E1-D 开通命令（迁移 owner 连接事务 + 夹具的静止 target registry）。 */
+  provision(command: RunProvisionCommand): Promise<void>;
+  /** 在迁移 owner 连接的打开事务里执行 fn：撤权竞窗用例先持资源咨询锁再用它。 */
+  ownerBegin<T>(fn: (tx: TxClient) => Promise<T>): Promise<T>;
   /** 同一依赖、可注入故障点的第二实例：故障注入走真实预算端口，不得换替身。 */
   storeWithHooks(hooks: CreateFaultHooks): RunService;
   /** 在 scope 的事务里跑一段断言（RunPolicy 直接测试用）。 */
@@ -165,16 +186,17 @@ export type RunHarness = {
   inTenantTxFor<T>(alt: Scope, fn: (tx: Tx) => Promise<T>): Promise<T>;
   count(kind: "runs" | "reservations" | "start_outbox"): Promise<number>;
   /** 固定 SQL 探针：某 run 的平台事件（RUN_QUEUED 追加取证用）。 */
-  queuedEvent(
-    runId: string,
-  ): Promise<{
-    seq: string;
-    event_type: string;
-    attempt_id: string | null;
-    source_event_id: string;
-    payload: Record<string, unknown>;
-    latest_seq: string;
-  } | undefined>;
+  queuedEvent(runId: string): Promise<
+    | {
+        seq: string;
+        event_type: string;
+        attempt_id: string | null;
+        source_event_id: string;
+        payload: Record<string, unknown>;
+        latest_seq: string;
+      }
+    | undefined
+  >;
   setRunGrant(action: "start" | "resume_own", present: boolean): Promise<void>;
   setModelGrant(status: "active" | "revoked"): Promise<void>;
   setReleaseStatus(status: "published" | "disabled"): Promise<void>;
@@ -228,50 +250,60 @@ export async function createRunHarness(): Promise<RunHarness> {
   );
 
   const cleanup = async (): Promise<void> => {
-  /* 按 FK 拓扑（子表在前）清理本夹具的 r1c- 行；runs/reservations 延迟互引同事务删，
-   * 且必须先于 releases/threads（runs 的复合 FK 指向它们）。 */
-  for (const table of [
-    enterpriseRunEvents,
-    enterpriseRunOutbox,
-    enterpriseRunGrants,
-    enterpriseModelGrants,
-    enterpriseBudgetBindings,
-    enterpriseModelRoutes,
-    enterpriseBudgetAccounts,
-  ] as const) {
-    await ownerDatabase.delete(table).where(eq(table.tenantId, TENANT_A));
-  }
-  await ownerDatabase.transaction(async (tx) => {
-    await tx.delete(enterpriseRuns).where(eq(enterpriseRuns.tenantId, TENANT_A));
-    await tx
-      .delete(enterpriseBudgetReservations)
-      .where(eq(enterpriseBudgetReservations.tenantId, TENANT_A));
-  });
-  for (const table of [
-    enterpriseRunReleases,
-    enterpriseThreads,
-    enterpriseResourceGrants,
-    enterpriseResources,
-    enterpriseWorkspaces,
-  ] as const) {
-    await ownerDatabase.delete(table).where(eq(table.tenantId, TENANT_A));
-  }
-  await ownerDatabase
-    .delete(enterpriseSecurityEvents)
-    .where(inArray(enterpriseSecurityEvents.tenantId, [TENANT_A, TENANT_B]));
-  await ownerDatabase
-    .delete(enterpriseIdentityEvents)
-    .where(like(enterpriseIdentityEvents.id, `${PREFIX}%`));
-  await ownerDatabase
-    .delete(enterpriseMemberships)
-    .where(inArray(enterpriseMemberships.tenantId, [TENANT_A, TENANT_B]));
-  await ownerDatabase
-    .delete(enterprisePrincipals)
-    .where(inArray(enterprisePrincipals.id, [PRINCIPAL_A, PRINCIPAL_B, PRINCIPAL_C]));
-  await ownerDatabase
-    .delete(enterpriseTenants)
-    .where(inArray(enterpriseTenants.id, [TENANT_A, TENANT_B]));
-  await ownerDatabase.delete(users).where(inArray(users.id, [USER_A, USER_B, USER_C]));
+    /* 按 FK 拓扑（子表在前）清理本夹具的 r1c- 行；runs/reservations 延迟互引同事务删，
+     * 且必须先于 releases/threads（runs 的复合 FK 指向它们）。 */
+    for (const table of [
+      enterpriseRunEvents,
+      enterpriseRunOutbox,
+      enterpriseRunGrants,
+      enterpriseModelGrants,
+      enterpriseBudgetBindings,
+      enterpriseModelRoutes,
+      enterpriseBudgetAccounts,
+    ] as const) {
+      await ownerDatabase.delete(table).where(eq(table.tenantId, TENANT_A));
+    }
+    await ownerDatabase.transaction(async (tx) => {
+      await tx
+        .delete(enterpriseRuns)
+        .where(eq(enterpriseRuns.tenantId, TENANT_A));
+      await tx
+        .delete(enterpriseBudgetReservations)
+        .where(eq(enterpriseBudgetReservations.tenantId, TENANT_A));
+    });
+    for (const table of [
+      enterpriseRunReleases,
+      enterpriseThreads,
+      enterpriseResourceGrants,
+      enterpriseResources,
+      enterpriseWorkspaces,
+    ] as const) {
+      await ownerDatabase.delete(table).where(eq(table.tenantId, TENANT_A));
+    }
+    await ownerDatabase
+      .delete(enterpriseSecurityEvents)
+      .where(inArray(enterpriseSecurityEvents.tenantId, [TENANT_A, TENANT_B]));
+    await ownerDatabase
+      .delete(enterpriseIdentityEvents)
+      .where(like(enterpriseIdentityEvents.id, `${PREFIX}%`));
+    await ownerDatabase
+      .delete(enterpriseMemberships)
+      .where(inArray(enterpriseMemberships.tenantId, [TENANT_A, TENANT_B]));
+    await ownerDatabase
+      .delete(enterprisePrincipals)
+      .where(
+        inArray(enterprisePrincipals.id, [
+          PRINCIPAL_A,
+          PRINCIPAL_B,
+          PRINCIPAL_C,
+        ]),
+      );
+    await ownerDatabase
+      .delete(enterpriseTenants)
+      .where(inArray(enterpriseTenants.id, [TENANT_A, TENANT_B]));
+    await ownerDatabase
+      .delete(users)
+      .where(inArray(users.id, [USER_A, USER_B, USER_C]));
   };
 
   await cleanup();
@@ -353,8 +385,8 @@ export async function createRunHarness(): Promise<RunHarness> {
     operationId: `${PREFIX}op-grant-read-a`,
   });
 
-  /* 03 运行域 fixture（E1-D 前的直接方式）：无工具 release、默认 active 路由、
-   * start grant、active model grant、四层预算账户。 */
+  /* 会话域 thread 行（旧 thread 必须预存在，归属 02/会话域，非 E1-D 对象）：
+   * 他人 thread 与归档 thread 反例用。 */
   await ownerDatabase.insert(enterpriseThreads).values([
     {
       tenantId: TENANT_A,
@@ -369,99 +401,97 @@ export async function createRunHarness(): Promise<RunHarness> {
       workspaceId: WORKSPACE_A,
     },
   ]);
-  await ownerDatabase.insert(enterpriseModelRoutes).values({
-    tenantId: TENANT_A,
-    id: ROUTE_A,
-    alias: ALIAS,
-    revision: 1n,
-    resourceId: RESOURCE_A,
-    targetRef: "openai/gpt-test",
-    priceRevision: 1n,
-    currency: CURRENCY,
-    inputUnitMicros: 10n,
-    outputUnitMicros: 30n,
-    perRequestMicros: 0n,
-    maxInputTokens: 8192n,
-    maxOutputTokens: 2048n,
-    maxRequestBytes: 262144n,
-    protocolProfile: "openai-chat",
-    usageProfile: "tokens",
-    isDefaultForAlias: true,
-    status: "active",
-  });
-  await ownerDatabase.insert(enterpriseRunReleases).values({
-    tenantId: TENANT_A,
-    id: RELEASE_A,
-    resourceId: RESOURCE_A,
-    versionDigest: "c".repeat(64),
-    runtimeCompatibility: "go-v1",
-    expertVersion: "1.0.0",
-    modelRouteRef: ROUTE_A,
-    inputLimitBytes: 32768n,
-    maxModelCalls: 8n,
-    maxRunMicros: 1000000n,
-    currency: CURRENCY,
-    toolManifestDigest: "7".repeat(64),
-    toolCount: 0n,
-    status: "published",
-  });
-  await ownerDatabase.insert(enterpriseRunGrants).values([
-    {
-      tenantId: TENANT_A,
-      releaseId: RELEASE_A,
-      principalId: PRINCIPAL_A,
-      action: "start",
-      revision: 1n,
-    },
-    {
-      tenantId: TENANT_A,
-      releaseId: RELEASE_A,
-      principalId: PRINCIPAL_C,
-      action: "start",
-      revision: 1n,
-    },
-  ]);
-  await ownerDatabase.insert(enterpriseModelGrants).values([
-    {
-      tenantId: TENANT_A,
-      routeId: ROUTE_A,
-      principalId: PRINCIPAL_A,
-      revision: 1n,
-      status: "active",
-    },
-    {
-      tenantId: TENANT_A,
-      routeId: ROUTE_A,
-      principalId: PRINCIPAL_C,
-      revision: 1n,
-      status: "active",
-    },
-  ]);
-  const accountIds = ["tenant", "workspace", "expert", "principal"].map(
-    (kind) => `${PREFIX}acc-${kind}`,
-  );
-  await ownerDatabase.insert(enterpriseBudgetAccounts).values(
-    (
+
+  /* 03 运行域 fixture（计划 §4.3 354/367 行）：通过本册 E1-D 的 applyRunProvision
+   * 建立 route/release/start grant/model grant/四层预算账户——provision 产出的状态
+   * 必须就是 store 接受的状态，同一事务按锁序落库并各留一条安全事件。 */
+  await beginOperation(ownerDatabase, async (tx) => {
+    const apply = (command: RunProvisionCommand) =>
+      applyRunProvision(tx, command, { targets: RUN_TARGETS });
+    await apply({
+      mode: "route-register",
+      tenant_id: TENANT_A,
+      operator: OPERATOR,
+      operation_id: `${PREFIX}op-route-register`,
+      id: ROUTE_A,
+      resource_id: RESOURCE_A,
+      alias: ALIAS,
+      revision: "1",
+      target_ref: RUN_TARGET_REF,
+      price_revision: "1",
+      currency: CURRENCY,
+      input_unit_micros: "10",
+      output_unit_micros: "30",
+      per_request_micros: "0",
+      max_input_tokens: 8192,
+      max_output_tokens: 2048,
+      max_request_bytes: 262144,
+      protocol_profile: "openai-chat",
+      usage_profile: "tokens",
+      is_default_for_alias: true,
+    });
+    await apply({
+      mode: "release-register",
+      tenant_id: TENANT_A,
+      operator: OPERATOR,
+      operation_id: `${PREFIX}op-release-register`,
+      id: RELEASE_A,
+      resource_id: RESOURCE_A,
+      version_digest: "c".repeat(64),
+      runtime_compatibility: "go-v1",
+      expert_version: "1.0.0",
+      model_route_ref: ROUTE_A,
+      input_limit_bytes: 32768,
+      max_model_calls: 8,
+      max_run_micros: "1000000",
+      currency: CURRENCY,
+      tool_manifest_digest: EMPTY_TOOL_MANIFEST_DIGEST,
+      tool_count: 0,
+    });
+    for (const principal of [PRINCIPAL_A, PRINCIPAL_C]) {
+      await apply({
+        mode: "run-grant",
+        tenant_id: TENANT_A,
+        operator: OPERATOR,
+        operation_id: `${PREFIX}op-run-grant-${principal}`,
+        release_id: RELEASE_A,
+        principal_id: principal,
+        action: "start",
+      });
+      await apply({
+        mode: "model-grant",
+        tenant_id: TENANT_A,
+        operator: OPERATOR,
+        operation_id: `${PREFIX}op-model-grant-${principal}`,
+        route_id: ROUTE_A,
+        principal_id: principal,
+      });
+    }
+    const budgetScopes = (
       [
         ["tenant", TENANT_A],
         ["workspace", WORKSPACE_A],
         ["expert", RELEASE_A],
         ["principal", PRINCIPAL_A],
       ] as const
-    ).map(([kind, ref], index) => ({
-      tenantId: TENANT_A,
-      id: accountIds[index],
-      scopeKind: kind,
-      scopeRef: ref,
-      periodId: PERIOD,
-      startsAt: PERIOD_WINDOW.startsAt,
-      endsAt: PERIOD_WINDOW.endsAt,
-      currency: CURRENCY,
-      limitMicros: BigInt(DEFAULT_BUDGET_LIMIT),
-      status: "active",
-      revision: 1n,
-    })),
-  );
+    ).map(([kind, ref]) => ({ kind, ref }));
+    for (const [index, { kind, ref }] of budgetScopes.entries()) {
+      await apply({
+        mode: "budget-open",
+        tenant_id: TENANT_A,
+        operator: OPERATOR,
+        operation_id: `${PREFIX}op-budget-open-${kind}`,
+        id: `${PREFIX}acc-${["tenant", "workspace", "expert", "principal"][index]}`,
+        scope_kind: kind,
+        scope_ref: ref,
+        period_id: PERIOD,
+        starts_at: PERIOD_STARTS_AT,
+        ends_at: PERIOD_ENDS_AT,
+        currency: CURRENCY,
+        limit_micros: DEFAULT_BUDGET_LIMIT,
+      });
+    }
+  });
 
   const directory = createDirectory(directoryDatabase);
   const scope = await resolveScope(directory, USER_A, TENANT_A);
@@ -476,6 +506,7 @@ export async function createRunHarness(): Promise<RunHarness> {
     policy,
     budget: budgetPort,
     eventsDatabase: runtimeWriterDatabase,
+    targets: RUN_TARGETS,
   });
 
   const QUEUED_EVENT_SQL = `
@@ -531,14 +562,24 @@ export async function createRunHarness(): Promise<RunHarness> {
     threadIdC: THREAD_C,
     routeId: ROUTE_A,
     alias: ALIAS,
+    resourceId: RESOURCE_A,
     runs,
     policy,
+    provision(command) {
+      return beginOperation(ownerDatabase, (tx) =>
+        applyRunProvision(tx, command, { targets: RUN_TARGETS }),
+      );
+    },
+    ownerBegin(fn) {
+      return beginOperation(ownerDatabase, fn);
+    },
     storeWithHooks(hooks) {
       return createRunStore({
         db: runWriterDatabase,
         policy,
         budget: budgetPort,
         eventsDatabase: runtimeWriterDatabase,
+        targets: RUN_TARGETS,
         hooks,
       });
     },
