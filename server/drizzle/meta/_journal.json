@@ -435,6 +435,13 @@
       "when": 1791613191268,
       "tag": "0061_narrow_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1791616008494,
+      "tag": "0062_amused_fenris",
+      "breakpoints": true
     }
   ]
 }
