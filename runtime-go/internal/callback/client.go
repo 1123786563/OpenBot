@@ -43,6 +43,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
 	"openbot/runtime-go/internal/identity"
 )
 
@@ -479,6 +482,10 @@ func (c Client) post(ctx context.Context, suffix string, payload any) (int, []by
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-openbot-runtime-service-credential", creds.ServiceCredential)
 	req.Header.Set("x-openbot-runtime-capability", creds.Capability)
+	// The active trace rides along: the run's spans stitch across this
+	// boundary. A throwaway when nothing is active — with tracing off the
+	// global propagator is the noop default and injects nothing.
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Redirects are refused even when the caller hands us a stock client
 	// that would follow them: a 3xx must never become a second request the
