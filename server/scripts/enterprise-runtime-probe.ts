@@ -207,6 +207,8 @@ export async function startCandidate(opts: {
     opts.modelBaseUrl,
     "-model-alias",
     "probe-model",
+    "-model-route-ref",
+    "probe-route@1",
     "-validation-endpoint",
     opts.validationEndpoint,
     "-expert",

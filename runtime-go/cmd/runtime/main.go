@@ -123,6 +123,7 @@ func main() {
 	authConfig := server.AuthConfig{
 		ServiceCredential:  cfg.ServiceCredential,
 		ValidationEndpoint: cfg.ValidationEndpoint,
+		ModelRouteRef:      cfg.ModelRouteRef,
 		MaxInboundBytes:    cfg.MaxInboundBytes,
 	}
 	auth := server.Authenticate(authConfig)

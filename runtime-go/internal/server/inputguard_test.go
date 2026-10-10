@@ -24,6 +24,7 @@ func chain(t *testing.T, stub *validationStub, next http.Handler) http.Handler {
 	auth := Authenticate(AuthConfig{
 		ServiceCredential:  testCredential,
 		ValidationEndpoint: srv.URL + "/internal/enterprise/v1/runtime/validate",
+		ModelRouteRef:      "route@1",
 	})
 	return auth(RequireVerifiedInput()(next))
 }

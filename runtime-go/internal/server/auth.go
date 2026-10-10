@@ -74,6 +74,11 @@ const (
 type AuthConfig struct {
 	ServiceCredential  string
 	ValidationEndpoint string
+	// ModelRouteRef is the ONE model route this process was assembled to
+	// serve; a verified run naming any other route is refused before
+	// WithVerified, so a TS approval for a different assembly is never
+	// silently served by this one's fixed model client. Required.
+	ModelRouteRef string
 	// Timeout bounds one validation round trip. Zero means the default.
 	Timeout time.Duration
 	// MaxResponseBytes bounds the validation response read. Zero means default.
@@ -86,7 +91,7 @@ type AuthConfig struct {
 // Health readiness must report this: an unconfigured runtime answers 503 and
 // never falls back to an anonymous user to stay servable.
 func (c AuthConfig) Ready() bool {
-	return c.ServiceCredential != "" && c.ValidationEndpoint != ""
+	return c.ServiceCredential != "" && c.ValidationEndpoint != "" && c.ModelRouteRef != ""
 }
 
 // Authenticate returns the middleware that guards the AG-UI runner.
@@ -150,6 +155,19 @@ func Authenticate(cfg AuthConfig) func(http.Handler) http.Handler {
 			// initiator枚举及计划触发必须带delegation_ref由middleware先检查).
 			if err := checkEnvelope(run); err != nil {
 				writeAuthError(w, err)
+				return
+			}
+
+			// Route correspondence: the plane approved this run for
+			// run.ModelRouteRef; this process was assembled to serve exactly
+			// cfg.ModelRouteRef. A mismatch is a binding refusal (403) — TS
+			// approving route@2 for a process serving route@1 must not be
+			// silently served by route@1's fixed client.
+			if run.ModelRouteRef != cfg.ModelRouteRef {
+				writeAuthError(w, &authError{
+					status: http.StatusForbidden,
+					reason: "verified invocation names a model route this runtime does not serve",
+				})
 				return
 			}
 

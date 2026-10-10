@@ -38,6 +38,7 @@ func minimalArgs(t *testing.T) []string {
 		"-validation-endpoint", "http://127.0.0.1:3000/internal/enterprise/v1/runtime/validate",
 		"-model-base-url", "http://127.0.0.1:4000/v1",
 		"-model-alias", "fixture-model",
+		"-model-route-ref", "fixture-route@1",
 		"-expert", "expert@1.0.0=" + writeInstruction(t, "You are the contract expert."),
 	}
 }
@@ -188,6 +189,7 @@ func TestLoadAcceptsACompleteConfiguration(t *testing.T) {
 		"-validation-endpoint", "http://127.0.0.1:3000/internal/enterprise/v1/runtime/validate",
 		"-model-base-url", "http://127.0.0.1:4000/v1",
 		"-model-alias", "fixture-model",
+		"-model-route-ref", "fixture-route@1",
 		"-expert", "expert@1.0.0=" + instruction,
 		"-expert", "expert@2.0.0=" + secondInstruction,
 		"-governed-tools", "probe_tool=probe_tool@1.0.0",
@@ -269,4 +271,42 @@ func TestLoadRefusesEmptyInstructionFile(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("empty instruction accepted: %v", err)
 	}
+}
+
+// The process declares exactly one model route — the route its one fixed
+// model client serves (review finding on R2-B③). Without the declaration a
+// runtime cannot verify that TS-approved runs name the client it assembled,
+// so the loader refuses to start.
+func TestLoadRequiresTheModelRouteDeclaration(t *testing.T) {
+	_, err := Load(minimalArgsWithoutRouteRef(t), envWith(map[string]string{
+		"OPENBOT_RUNTIME_SERVICE_CREDENTIAL": "test-service-credential",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "model-route-ref") {
+		t.Fatalf("assembly without -model-route-ref accepted: %v", err)
+	}
+
+	cfg, err := Load(minimalArgs(t), envWith(map[string]string{
+		"OPENBOT_RUNTIME_SERVICE_CREDENTIAL": "test-service-credential",
+	}))
+	if err != nil {
+		t.Fatalf("declared route refused: %v", err)
+	}
+	if cfg.ModelRouteRef != "fixture-route@1" {
+		t.Fatalf("model route ref = %q, want fixture-route@1", cfg.ModelRouteRef)
+	}
+}
+
+// minimalArgsWithoutRouteRef is the pre-declaration assembly: everything but
+// -model-route-ref.
+func minimalArgsWithoutRouteRef(t *testing.T) []string {
+	args := minimalArgs(t)
+	trimmed := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-model-route-ref" {
+			i++ // skip its value too
+			continue
+		}
+		trimmed = append(trimmed, args[i])
+	}
+	return trimmed
 }
