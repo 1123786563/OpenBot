@@ -6,6 +6,7 @@ import {
   createRequestTracking,
   currentRequestId,
 } from "../src/telemetry/request-tracking";
+import { testEnvironment } from "./support/environment";
 
 function capture() {
   const lines: string[] = [];
@@ -91,5 +92,15 @@ describe("request tracking", () => {
 
   test("outside a request there is no ambient request id", () => {
     expect(currentRequestId()).toBeUndefined();
+  });
+});
+
+describe("the main deployment app", () => {
+  test("carries x-request-id on a plain route", async () => {
+    const { createApp } = await import("../src/app");
+    const { loadConfig } = await import("../src/config");
+    const app = createApp(loadConfig(testEnvironment()));
+    const response = await app.request("/health");
+    expect(response.headers.get("x-request-id") ?? "").toMatch(UUID);
   });
 });
