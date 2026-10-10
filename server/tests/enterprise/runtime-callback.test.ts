@@ -14,7 +14,6 @@ import { loadConfig } from "../../src/config";
 import {
   canonicalArgsDigest,
   createFakeToolInvocationPlane,
-  type FakeToolPlane,
   type ToolCapabilityBinding,
 } from "../../src/enterprise/runtime/tool-invocations";
 import { testEnvironment } from "../support/environment";

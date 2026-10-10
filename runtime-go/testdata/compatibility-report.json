@@ -1,75 +1,100 @@
 {
-  "commit": "d49109b3da39b037c64f996757b6b54f14ff12a9",
+  "commit": "9f407f839687f19bcbe7948ad396e5caf21148c2",
   "go_version": "go version go1.26.3 darwin/arm64",
   "workspace_digest": {
     "dirty": true,
     "summary": [
-      "M examples/fintech/model.yaml",
-      " M mobile/app/_layout.tsx",
-      " M mobile/package-lock.json",
-      " M mobile/package.json",
-      " M mobile/src/api.ts",
-      " M mobile/src/auth.ts",
-      " M runtime-go/cmd/runtime/main.go",
+      "M .env.example",
+      " M .github/workflows/ci.yml",
+      " M .zcode/lago-e2e/openbot.env",
+      " M .zcode/lago-e2e/server.log",
+      " M app/src/components/settings/settings-sidebar.tsx",
+      " M app/src/locales/en/settings.json",
+      " M app/src/locales/zh-CN/settings.json",
+      " M app/src/routeTree.gen.ts",
+      " M bun.lock",
+      " M docker-compose.yml",
+      " M package.json",
+      " M runtime-go/dependency-review.json",
       " M runtime-go/internal/adapter/agui.go",
       " M runtime-go/internal/adapter/agui_test.go",
       " M runtime-go/internal/callback/client.go",
       " M runtime-go/internal/callback/client_test.go",
-      " M runtime-go/internal/identity/context.go",
-      " M runtime-go/internal/identity/context_test.go",
-      " M runtime-go/internal/runtimeconfig/config.go",
-      " M runtime-go/internal/runtimeconfig/config_test.go",
-      " M runtime-go/internal/server/auth.go",
+      " M runtime-go/internal/server/auth_test.go",
       " M runtime-go/testdata/compatibility-report.json",
+      " M server/drizzle/meta/_journal.json",
+      " M server/package.json",
       " M server/scripts/enterprise-runtime-probe.ts",
-      " M server/src/app.ts",
+      " M server/scripts/enterprise-test-db.ts",
+      " M server/src/auth/index.ts",
+      " M server/src/billing/lago.ts",
+      " M server/src/billing/routes.ts",
       " M server/src/billing/service.ts",
-      " M server/src/billing/store.ts",
       " M server/src/billing/types.ts",
-      " M server/src/billing/webhook-signature.ts",
-      " M server/src/db/schema/billing.ts",
-      " M server/src/plugins/access.ts",
-      " M server/src/plugins/store.ts",
+      " M server/src/config.ts",
+      " M server/src/copilot.ts",
+      " M server/src/enterprise/runtime/tool-invocations.ts",
+      " M server/tests/auth-mobile-scheme.integration.test.ts",
+      " M server/tests/billing-lago-client.test.ts",
       " M server/tests/billing-routes.test.ts",
-      " M server/tests/billing-store.integration.test.ts",
-      " M server/tests/billing-sync.test.ts",
-      " M server/tests/billing-webhook-signature.test.ts",
-      " M server/tests/billing-webhook.test.ts",
+      " M server/tests/copilot.test.ts",
+      " M server/tests/enterprise-controls.integration.test.ts",
       " M server/tests/enterprise/runtime-callback.test.ts",
-      " M server/tests/plugin-store.integration.test.ts",
-      " M server/tests/support/billing.ts",
-      "?? server/scripts/enterprise-identity-provision.ts",
-      "?? server/scripts/enterprise-provision.ts",
-      "?? server/src/enterprise/authz/",
-      "?? server/src/enterprise/contracts.ts",
-      "?? server/src/enterprise/errors.ts",
-      "?? server/src/enterprise/runtime/tool-invocations.ts",
-      "?? server/src/enterprise/tenancy/",
-      "?? server/tests/enterprise/tenancy/directory.test.ts",
-      "?? server/tests/enterprise/tenancy/provision.test.ts",
-      "?? server/tests/enterprise/tenancy/repository.test.ts",
-      "?? server/tests/enterprise/tenancy/scope.test.ts",
-      "?? server/tests/enterprise/tenancy/transaction.test.ts",
-      "?? shared/enterprise/"
+      " M server/tests/enterprise/runtime-contract.test.ts",
+      " M server/tests/tool-selection.integration.test.ts",
+      " M shared/enterprise/contracts.ts",
+      "?? .zcode/gate-lint.log",
+      "?? .zcode/gate-test.log",
+      "?? .zcode/lago-e2e/app-dev.log",
+      "?? .zcode/lago-e2e/server-3001.log",
+      "?? app/src/lib/billing/",
+      "?? app/src/routes/_authed/settings/billing.tsx",
+      "?? app/src/routes/_authed/settings/usage.tsx",
+      "?? docker/lago/",
+      "?? docker/pgvector-partman.Dockerfile",
+      "?? gui-test-screenshots/",
+      "?? runtime-go/internal/adapter/backpressure_test.go",
+      "?? runtime-go/internal/adapter/waitmapping.go",
+      "?? server/drizzle/0057_enterprise_identity_grants.sql",
+      "?? server/drizzle/meta/0057_snapshot.json",
+      "?? server/src/enterprise/app.ts",
+      "?? server/src/enterprise/auth-route-profile.ts",
+      "?? server/src/enterprise/bootstrap.ts",
+      "?? server/src/enterprise/config.ts",
+      "?? server/src/enterprise/index.ts",
+      "?? server/src/enterprise/tenancy/routes.ts",
+      "?? server/tests/enterprise/mobile/",
+      "?? server/tests/enterprise/tenancy/app.test.ts",
+      "?? server/tests/enterprise/tenancy/auth-config-compat.test.ts",
+      "?? server/tests/enterprise/tenancy/bootstrap.test.ts",
+      "?? server/tests/enterprise/tenancy/config.test.ts",
+      "?? server/tsconfig.enterprise-tests.json",
+      "?? shared/enterprise/mobile-contracts.ts",
+      "?? shared/enterprise/mobile-schemas.test.ts",
+      "?? shared/enterprise/mobile-schemas.ts"
     ]
   },
   "document_baseline": {
     "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
-    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "8893882fa0522b687c34290ac02849d4c023c99704cc464c5a4cbc2fd0a1854d",
-    "server/scripts/enterprise-runtime-probe.ts": "6b35954a9c4fcc5e026bdd7ab37e1a8cf588a0b7b5b5b314b3806daad623ffea",
-    "runtime-go/cmd/runtime/main.go": "d26cba2c914a8b3963b4ed6edeaec530e65174d27f758972f3bb3cfd6826c3f2",
-    "runtime-go/internal/adapter/agui_test.go": "d79f2a986fc88c8e53ed7a302b7aa8cd6e46f8a1cb2a9d6b8183b73e3950d936",
-    "runtime-go/internal/adapter/agui.go": "444be216cf0e309375fd7db202427ac3d1b7da1a9cdce09e5e5ddbbae1ae31a9",
-    "runtime-go/internal/callback/client_test.go": "a1526f297c71b26c008f25411b9722e2f18ba95f4504553d34af11f69fa57473",
-    "runtime-go/internal/callback/client.go": "528d921ecc19ef458d3ef750a6e5a3cef2e4fa4ea464016e851368798e39c7f2",
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "805ca0d150b22d31a7ba63672951d770981006cde9afc095507e66348cd93d2e",
+    "server/scripts/enterprise-runtime-probe.ts": "0731caab352d564b41cae72e105abd469ec5af48617e0422b3fbe69ddaa9667a",
+    "runtime-go/cmd/runtime/main.go": "ff1f5c43b2a37cce0acd4262a68580808d07d81a1b0943de3e9436c13ce3b13e",
+    "runtime-go/internal/adapter/agui_test.go": "60b8610a29c54d956fb84da0bc6f4f329b13748770a4d63c81680d4931cba088",
+    "runtime-go/internal/adapter/agui.go": "3048e7b089444220c90f14c8f62b01dacfd31a2ed2f1a4b78d60d423da7565af",
+    "runtime-go/internal/adapter/backpressure_test.go": "544af6ce63ee1a0cafc26b7f22769bc711918b7e816520a014b69b0392f6026b",
+    "runtime-go/internal/adapter/waitmapping.go": "26b5bf1fb6eda66980287de53d084f84edb06a494f6bf5c6fdf15fe81ad704e1",
+    "runtime-go/internal/callback/client_test.go": "0322097b06159d2efdc705bbed075168d2bc5e089ea72e21aba46cb1bee2f340",
+    "runtime-go/internal/callback/client.go": "44e3d8b3b998dcf60ae9539ed966ca2683030885bd600c635aed6ad5c78eebcd",
     "runtime-go/internal/identity/context_test.go": "c9cd3b801ab07c84257cc2a32170c4e8a6c836dd34a3dc41c9cf07acfe81fce9",
     "runtime-go/internal/identity/context.go": "9fc0a382ffbb13832998aafdecc5609edf531a2a16b7778f285347e7c288ca4f",
     "runtime-go/internal/runtimeconfig/config_test.go": "ae370c24c2a3a895b781dc2526094535596d4ec57cf3bf054415bed0b3f375f3",
     "runtime-go/internal/runtimeconfig/config.go": "0d2781e19619b89fe4301fc3a18a35fc217dfebaa92e7a92724bc6fb95a3f8db",
-    "runtime-go/internal/server/auth_test.go": "ef273bc35f45af435fa947a6ee55c35e24f3757a007c30b88f53cf61ab02a590",
+    "runtime-go/internal/server/auth_test.go": "2dcb2582f360da4f7be4f242b815a46afd7040720f589273e9e03b997f233a3a",
     "runtime-go/internal/server/auth.go": "92f24a191e43f6cc6b70f903f7af0c150e4bc2b2cf88480a6ac804ad312139a8",
-    "runtime-go/internal/server/cancel_test.go": "fb5088ef930cd2754383a54507b3f1b31903b86813be83f028787ff06e8b8b16",
-    "runtime-go/internal/server/cancel.go": "41bdd5054c73b847e68e152ae29857483f8efacea226b949581e39ed033b9609",
+    "runtime-go/internal/server/cancel_test.go": "07f10446b55088fd09979818f3e650c7c3476b393a52d9030982a92302a6894f",
+    "runtime-go/internal/server/cancel.go": "3070f7dffcdadfe982c26972ff9e38914f081a75ba4a8b5d8d820acd27640960",
+    "runtime-go/internal/server/executions_test.go": "2c8b2086e37d761b5e5a8e6650cb64c50a2c243812ed1c5cbb9f1951624d95c2",
+    "runtime-go/internal/server/executions.go": "0fef8ed169a98a8eee316bffa29d4fd3626e741c5b483bec1dd27cc26cfdc743",
     "runtime-go/internal/server/health_test.go": "ad1f04c3cc1d68f251f383bdd392d90dee198429e72001f70c47a021d9e4c040",
     "runtime-go/internal/server/health.go": "abf1deee86dcec5c3624cfaf4d2f6f04b36a2e98961f86e37c56cc0e08980f1e",
     "runtime-go/internal/server/inputguard_test.go": "444347329c6ee998adcae7bea6797a97f6b43d4ad4eb069f484cd394b11632ed",
@@ -736,22 +761,13 @@
     {
       "argv": [
         "go",
-        "mod",
-        "tidy"
-      ],
-      "exitCode": 0,
-      "purpose": "candidate build: resolve the launcher module offline"
-    },
-    {
-      "argv": [
-        "go",
         "build",
         "-o",
-        "candidate",
-        "."
+        "/var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/openbot-runtime-probe-HQkZU8/openbot-runtime",
+        "./cmd/runtime"
       ],
       "exitCode": 0,
-      "purpose": "candidate build: compile the real Go candidate binary"
+      "purpose": "candidate build: compile the REAL cmd/runtime binary"
     },
     {
       "argv": [
@@ -759,7 +775,29 @@
         "-o",
         "rss=",
         "-p",
-        "65899"
+        "97215"
+      ],
+      "exitCode": 0,
+      "purpose": "measurement: resident set size of the candidate process"
+    },
+    {
+      "argv": [
+        "ps",
+        "-o",
+        "rss=",
+        "-p",
+        "97215"
+      ],
+      "exitCode": 0,
+      "purpose": "measurement: resident set size of the candidate process"
+    },
+    {
+      "argv": [
+        "ps",
+        "-o",
+        "rss=",
+        "-p",
+        "97215"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -770,23 +808,28 @@
   },
   "evidence_refs": [
     "runtime-go/testdata/compatibility-report.json (this artifact, written only by the probe)",
+    "runtime-go/cmd/runtime/main.go (the REAL binary this probe built and launched: strict config, run gate, auth, input guard, expert router, execution/cancel routes)",
     "server/scripts/enterprise-runtime-probe.ts (the probe that wrote it)",
-    "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same candidate)",
+    "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same real binary)",
     "server/tests/enterprise/runtime-artifacts.test.ts (asserts this artifact's R4 shape)",
     "runtime-go/internal/adapter/agui_test.go (Go-side semantics, incl. RUN_ERROR and leak refusal)",
+    "runtime-go/internal/adapter/waitmapping.go (the R4-A wait mapping: suspension → RUN_FINISHED interrupt outcome on the locked protocol fields)",
+    "runtime-go/internal/adapter/backpressure_test.go (the bounded-queue mechanism proof: a stalled consumer blocks the provider; nothing is lost)",
     "runtime-go/internal/server/auth_test.go (identity and run-binding refusals)",
     "runtime-go/dependency-review.json (the dependency risk record the G1b gate must close)"
   ],
   "limitations": [
-    "check 'wait' is not_run: no input-required/wait protocol seam exists in this candidate yet (01 plan R4-A 等待输入/审批 row: the mapping must follow the locked protocol's verified fields, which this runtime does not expose yet)",
-    "check 'backpressure' is not_run: no slow-consumer/bounded-queue harness is exercised against the candidate yet (01 plan R4-A 慢消费者 row)",
-    "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
+    "the R4-A 断流/重连 row (transport break is not cancellation; E3-ledger resume rebuilds by seq; duplicate proposals deduped; beyond the retention window a snapshot) needs the E3 event ledger to exist — this probe's SSE transport has no persistent event log to resume from, so only the transport-break-is-terminal half is exercised (the cancel and restart checks); seq-重建/去重/快照 remain G1b evidence with E1–E3",
+    "the R4-A 重启/旧租约 row: this probe proves the G1a half (a restarted process holds no state it could lie about — the old run's cancel 404s); actually injecting E2/D2/P3 faults (lost lease revival, old-fencing submission refusal against a persistent ledger) is G1b evidence this probe cannot produce",
+    "the backpressure check proves the MECHANISM at probe scale (one localhost fake provider, 2 MiB deterministic stream, one stalled consumer): the runtime blocked its producer rather than buffering (Go-side mechanism proof: TestSlowConsumerBlocksTheProviderAndLosesNothing) and delivered every byte and the terminal after catch-up. It is NOT a capacity measurement: concurrency/queue-bound thresholds await the SRE-approved load run",
+    "the wait check covers the governed-tool waits this runtime can produce (approval required, receipt pending); multi-interrupt aggregation and resume-entry semantics (a new run answering interrupts) are E-domain protocol work not exercised here",
+    "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs, slow-consumer stall RSS/bytes on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
     "G1b/G2 evidence sets (T1–T3/E1–E4/P2–P4/D2/D4, D5/business acceptance, and the dependency risk closure in runtime-go/dependency-review.json) are not produced by this probe"
   ],
   "checks": {
     "identity": {
       "status": "passed",
-      "evidence": "no-credential request -> 401, forged capability -> 401 (both want 401); provider requests during the refusals: 0 (want 0)"
+      "evidence": "real binary /health/ready -> 200 (want 200); no-credential request -> 401, forged capability -> 401 (both want 401); provider requests during the refusals: 0 (want 0)"
     },
     "trusted_input": {
       "status": "passed",
@@ -801,8 +844,8 @@
       "evidence": "prepare/execute crossings on the fake tool plane: 1 operation (probe_governed on run_callback), 1 receipt (succeeded), effects=1; run carried TOOL_CALL_START and finished with text \"callback-observed\""
     },
     "wait": {
-      "status": "not_run",
-      "evidence": "no input-required/wait protocol seam exists in this candidate yet (01 plan R4-A 等待输入/审批 row: the mapping must follow the locked protocol's verified fields, which this runtime does not expose yet)"
+      "status": "passed",
+      "evidence": "approval-required governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_56f36c11-2793-46cf-86a7-6cd1264151e9\" (want the plane's operation op_56f36c11-2793-46cf-86a7-6cd1264151e9), reason=\"tool_approval\" (want \"tool_approval\"), toolCallId matches the stream's TOOL_CALL_START (\"call_probe\"); receipt-pending governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_ab3224de-af05-46a6-b7ed-d5ff88bedf47\" (want the plane's operation op_ab3224de-af05-46a6-b7ed-d5ff88bedf47), reason=\"operation_receipt_pending\" (want \"operation_receipt_pending\"), receipt status=\"submitted\" (want \"submitted\", the spend crossed but froze); platform mapping: wait run -> waiting_approval (want waiting_approval), receipt run -> suspended_reconciliation (want suspended_reconciliation), plain success -> succeeded (want succeeded); plane effects stayed at 1 (nothing succeeded beyond the tool check)"
     },
     "error": {
       "status": "passed",
@@ -810,11 +853,11 @@
     },
     "cancel": {
       "status": "passed",
-      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 2ms after the cancel"
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 3ms after the cancel"
     },
     "backpressure": {
-      "status": "not_run",
-      "evidence": "no slow-consumer/bounded-queue harness is exercised against the candidate yet (01 plan R4-A 慢消费者 row)"
+      "status": "passed",
+      "evidence": "a consumer stalled 4000ms mid-run received the whole stream afterwards: 520 events, joined deltas byte-identical to the 2097152-byte fixture (2097152 bytes joined, 2170587 bytes on the wire), 1 TOOL_CALL_START with its succeeded receipt intact, exactly one terminal last; runtime RSS during the stall 38453248 vs 31801344 at the stall's start (bounded, want <32 MiB growth); provider asked 2 times (want 2: the tool call, then the long answer). Mechanism proof (a stalled consumer blocks the producer; nothing buffered): runtime-go internal/adapter TestSlowConsumerBlocksTheProviderAndLosesNothing"
     },
     "restart": {
       "status": "passed",
@@ -823,11 +866,13 @@
   },
   "gates": {
     "G1a": {
-      "status": "blocked",
+      "status": "passed",
       "evidence": [
-        "blocked by check categories with no executable harness yet: wait, backpressure",
-        "G1a can only be reviewed as passed once every R4 check category actually ran (master §6: 所有项只有实际执行后才填pass/fail)",
-        "runtime-go/testdata/compatibility-report.json#checks"
+        "all nine R4 check categories ran and passed against the REAL cmd/runtime binary",
+        "measurements recorded in this artifact (no capacity threshold is approved by a probe)",
+        "server/tests/enterprise/runtime-contract.test.ts",
+        "runtime-go/internal/adapter/agui_test.go",
+        "runtime-go/internal/adapter/waitmapping.go + backpressure_test.go"
       ]
     },
     "G1b": {
@@ -845,10 +890,13 @@
     }
   },
   "measurements": {
-    "rssBytes": 25165824,
-    "firstEventMs": 5,
-    "cancelLagMs": 2,
-    "streamDurationMs": 6
+    "rssBytes": 25149440,
+    "firstEventMs": 3,
+    "cancelLagMs": 3,
+    "streamDurationMs": 4,
+    "slowConsumerStallRssBytes": 38453248,
+    "slowConsumerStreamBytes": 2170587,
+    "slowConsumerStallMs": 4000
   },
   "reviewers": {
     "G1a": {

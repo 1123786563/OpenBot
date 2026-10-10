@@ -139,15 +139,36 @@ func sampleExecution() ToolExecution {
 
 // The plan's own first rule, carried to the new contract: a receipt that
 // never arrives must not re-spend the operation. One attempt, then unknown.
+//
+// The arrival signal makes the count deterministic: the test waits until the
+// request HAS reached the plane before it lets the timeout fire, so a slow
+// cold-start dial can no longer produce a false "calls=0" (the timeout must
+// land on an in-flight request, not race the dial), and the exactly-once
+// assertion keeps its full strength.
 func TestExecuteDoesNotRetryUnknownOutcome(t *testing.T) {
 	var n atomic.Int32
+	arrived := make(chan struct{}, 1)
+	blocker := make(chan struct{})
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n.Add(1)
-		time.Sleep(50 * time.Millisecond)
+		arrived <- struct{}{}
+		<-blocker // never answer: the receipt never arrives
 	}))
 	defer s.Close()
-	c := Client{HTTP: &http.Client{Timeout: 10 * time.Millisecond}, Endpoint: planePrefix(s)}
-	_, err := c.Execute(toolCtx(), sampleExecution())
+	defer close(blocker)
+
+	c := Client{HTTP: &http.Client{Timeout: 100 * time.Millisecond}, Endpoint: planePrefix(s)}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := c.Execute(toolCtx(), sampleExecution())
+		errCh <- err
+	}()
+	select {
+	case <-arrived: // the one request is provably in flight; now time it out
+	case <-time.After(5 * time.Second):
+		t.Fatal("the execute call never reached the plane")
+	}
+	err := <-errCh
 	if err == nil || n.Load() != 1 {
 		t.Fatalf("err=%v calls=%d", err, n.Load())
 	}
@@ -597,6 +618,30 @@ func TestOversizedAnswersAreRefused(t *testing.T) {
 	}
 }
 
+// The request side of the body bound: a proposal whose serialized body
+// exceeds the request cap is refused BEFORE any dial. The refusal is local
+// and decisive (ErrInvalidWire, the request provably never left this
+// process), never an unknown outcome — and the configured address is not
+// asked to carry megabytes of model-chosen args at all. The cap mirrors the
+// answer cap: honest proposals and spend requests are small text, and the
+// number is test configuration here.
+func TestOversizedRequestsAreRefusedBeforeDial(t *testing.T) {
+	stub := newPlaneStub(http.StatusOK, validPreparationAnswer)
+	srv := httptest.NewServer(stub)
+	defer srv.Close()
+
+	p := samplePreparation()
+	p.Args = []byte(fmt.Sprintf(`{"blob":"%s"}`, strings.Repeat("x", 1<<20)))
+
+	_, err := callPrepare(Client{HTTP: &http.Client{}, Endpoint: planePrefix(srv)}, toolCtx(), p)
+	if !errors.Is(err, ErrInvalidWire) {
+		t.Fatalf("prepare err = %v, want ErrInvalidWire for an oversized request", err)
+	}
+	if stub.total() != 0 {
+		t.Fatalf("an oversized request still reached the plane %d times", stub.total())
+	}
+}
+
 // The credential pair exists only in the private context the auth middleware
 // builds. A context without it refuses BEFORE any dial — there is no
 // anonymous tool call, and no credentials anywhere a model could set them.
@@ -670,22 +715,38 @@ func TestExecuteBindsTheReceiptToItsOperation(t *testing.T) {
 // us no client at all (or one without its own timeout): a plane that never
 // answers must not hold the run forever. The bound is test configuration
 // here; capacity validation owns the production number.
+//
+// As in the no-retry test above, each call's arrival is signalled before its
+// timeout is allowed to matter, so a slow dial cannot fake a missing request
+// and the "one request per client" count stays deterministic.
 func TestTotalTimeoutBoundsThePlaneCall(t *testing.T) {
 	blocker := make(chan struct{})
 	var n atomic.Int32
+	arrived := make(chan struct{}, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		n.Add(1)
+		arrived <- struct{}{}
 		<-blocker
 	}))
 	defer srv.Close()
 	defer close(blocker)
 
 	for name, client := range map[string]Client{
-		"no configured client":     {Endpoint: planePrefix(srv), Timeout: 40 * time.Millisecond},
-		"stock client, no timeout": {HTTP: &http.Client{}, Endpoint: planePrefix(srv), Timeout: 40 * time.Millisecond},
+		"no configured client":     {Endpoint: planePrefix(srv), Timeout: 100 * time.Millisecond},
+		"stock client, no timeout": {HTTP: &http.Client{}, Endpoint: planePrefix(srv), Timeout: 100 * time.Millisecond},
 	} {
+		errCh := make(chan error, 1)
 		start := time.Now()
-		_, err := callExecute(client, toolCtx(), sampleExecution())
+		go func() {
+			_, err := callExecute(client, toolCtx(), sampleExecution())
+			errCh <- err
+		}()
+		select {
+		case <-arrived: // this client's request is provably in flight
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: the call never reached the plane", name)
+		}
+		err := <-errCh
 		if !errors.Is(err, ErrOutcomeUnknown) {
 			t.Fatalf("%s: err = %v, want OUTCOME_UNKNOWN", name, err)
 		}

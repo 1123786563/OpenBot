@@ -118,6 +118,10 @@ type validationStub struct {
 	status     int
 	response   string
 	delay      time.Duration
+	// arrived, when set, is signalled the moment a request reaches the stub
+	// (before any delay): a timeout test uses it to prove its timeout window
+	// lands on an in-flight request rather than racing the dial.
+	arrived chan struct{}
 }
 
 func newValidationStub(status int, response string) *validationStub {
@@ -134,6 +138,9 @@ func (s *validationStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.credential = r.Header.Get(ServiceCredentialHeader)
 	status, response, delay := s.status, s.response, s.delay
 	s.mu.Unlock()
+	if s.arrived != nil {
+		s.arrived <- struct{}{}
+	}
 	if delay > 0 {
 		time.Sleep(delay)
 	}
@@ -483,15 +490,35 @@ func TestAuthRejectsOversizedInboundBody(t *testing.T) {
 func TestAuthTimesOutSlowValidationWithoutRetry(t *testing.T) {
 	stub := newValidationStub(http.StatusOK, envelopeJSON(nil))
 	stub.delay = 150 * time.Millisecond
+	// The arrival signal makes the count deterministic: the test waits until
+	// the request HAS reached the validation endpoint before the timeout is
+	// allowed to matter, so a slow cold-start dial — which under a parallel
+	// `go test ./...` can outrun a 20ms budget — can no longer produce a
+	// false "hit 0 times". The timeout must land on an in-flight request,
+	// not race the dial, and the exactly-one-attempt assertion keeps its
+	// full strength.
+	arrived := make(chan struct{}, 1)
+	stub.arrived = arrived
 	srv := httptest.NewServer(stub)
 	defer srv.Close()
 	next := &guardedNext{}
 	w := httptest.NewRecorder()
-	Authenticate(AuthConfig{
+	handler := Authenticate(AuthConfig{
 		ServiceCredential:  testCredential,
 		ValidationEndpoint: srv.URL + "/internal/enterprise/v1/runtime/validate",
 		Timeout:            20 * time.Millisecond,
-	})(next.handler()).ServeHTTP(w, validRequest(testRunBody, envelopeJSON(nil)))
+	})(next.handler())
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(w, validRequest(testRunBody, envelopeJSON(nil)))
+		close(done)
+	}()
+	select {
+	case <-arrived: // the one validation call is provably in flight
+	case <-time.After(5 * time.Second):
+		t.Fatal("the validation call never reached the endpoint")
+	}
+	<-done
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502 for a timed-out validation", w.Code)

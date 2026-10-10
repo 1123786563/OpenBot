@@ -54,6 +54,14 @@ const (
 	// this process on an endless body.
 	MaxResponseBytes = int64(1 << 20) // 1 MiB
 
+	// MaxRequestBytes bounds one plane request body BEFORE any dial: the args
+	// are model-chosen data, and a model that stuffed megabytes into them does
+	// not get the configured address asked to carry them. The refusal is local
+	// and decisive (the request provably never left this process), mirroring
+	// the answer cap; the number is a suggested configuration default,
+	// capacity validation owns the production value.
+	MaxRequestBytes = int64(1 << 20) // 1 MiB
+
 	// DefaultTimeout is the total-time bound one plane round trip gets when
 	// neither the caller nor a supplied client set one. A plane that never
 	// answers must not hold a run forever; the number is a suggested
@@ -456,6 +464,12 @@ func (c Client) post(ctx context.Context, suffix string, payload any) (int, []by
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return 0, nil, err
+	}
+	if int64(len(body)) > MaxRequestBytes {
+		// Refused before any dial: the request provably never left this
+		// process, so this is a decisive local refusal, not an unknown
+		// outcome — and no oversized body is shipped to the plane at all.
+		return 0, nil, fmt.Errorf("%w: request exceeds %d bytes", ErrInvalidWire, MaxRequestBytes)
 	}
 	endpoint := strings.TrimSuffix(base, "/") + suffix
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))

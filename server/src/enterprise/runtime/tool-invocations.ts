@@ -444,12 +444,19 @@ export function createFakeToolInvocationPlane(deps: FakeToolPlaneDeps): FakeTool
       return c.json({ error_code: "operation_not_found" }, 404);
     }
 
-    // Binding: the capability names the run this operation belongs to, and
-    // the fencing token it carries is the CURRENT lease's proof — the
-    // platform re-validated the lease when it minted the capability.
+    // Binding: the capability names the CURRENT lease's principal, run,
+    // attempt and fencing, and the operation was proposed under exactly
+    // those. A spend from another attempt of the same run, another
+    // principal, or a renewed lease is refused — that is reconciliation
+    // territory, not a silent cross-boundary spend (master §4.3: 旧fencing
+    // 不能提交工具; R3-C row: 不同attempt/别主体 → 拒绝且不调用工具).
     if (
       binding.run_id !== operation.run_id ||
-      body.fencing_token !== binding.fencing_token
+      binding.principal_id !== operation.principal_id ||
+      body.attempt_id !== binding.attempt_id ||
+      body.attempt_id !== operation.attempt_id ||
+      body.fencing_token !== binding.fencing_token ||
+      body.fencing_token !== operation.fencing_token
     ) {
       return c.json({ error_code: "binding_mismatch" }, 403);
     }
