@@ -13,7 +13,9 @@
  * memberships. A deployment admin gets exactly their own memberships here.
  */
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { AuthService } from "../auth/guards";
+import { createRequestTracking, currentRequestId } from "../telemetry/request-tracking";
 import type { Authz, Directory, ResourceReader, Scope } from "./contracts";
 import { mountConversationsRoutes } from "./conversations/routes";
 import { EnterpriseError } from "./errors";
@@ -66,8 +68,14 @@ const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 export function createEnterpriseApp(deps: EnterpriseDependencies) {
   const app = new Hono<{ Variables: EnterpriseVariables }>();
 
+  const tracking = createRequestTracking({ logger: getLogger("enterprise") });
+  app.use("*", tracking.requestId);
+
   app.onError((error, c) => {
-    const requestId = crypto.randomUUID();
+    // The middleware already minted and echoed the id for any request that reached it;
+    // onError is the fallback for paths that somehow skipped it (and for the mounted
+    // case the ambient store still holds the main app's id).
+    const requestId = currentRequestId() ?? crypto.randomUUID();
     c.header("x-request-id", requestId);
     const known = asEnterpriseError(error);
     const status = known.status;
