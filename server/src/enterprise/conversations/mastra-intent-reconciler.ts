@@ -169,28 +169,17 @@ export function createMastraMessageIntentReconciler({
             unlocked.actorId,
             unlocked.principalId,
           );
-          if (
-            !Array.isArray(unlocked.attachmentIds) ||
-            unlocked.attachmentIds.some(
-              (attachmentId) =>
-                typeof attachmentId !== "string" ||
-                !UUID_PATTERN.test(attachmentId),
-            )
-          ) {
-            return (await advancePendingIntent(
-              tx,
-              tenantId,
-              key.threadId,
-              key.clientMessageKey,
-            ))
-              ? ("mismatch" as const)
-              : null;
-          }
-
+          const lockableAttachmentIds = Array.isArray(unlocked.attachmentIds)
+            ? unlocked.attachmentIds.filter(
+                (attachmentId): attachmentId is string =>
+                  typeof attachmentId === "string" &&
+                  UUID_PATTERN.test(attachmentId),
+              )
+            : [];
           await lockAttachmentChannelsInTransaction(
             tx,
             tenantId,
-            unlocked.attachmentIds,
+            lockableAttachmentIds,
           );
           const conversationLockKey = JSON.stringify([
             "conversation",
@@ -233,13 +222,24 @@ export function createMastraMessageIntentReconciler({
             intent.actorId,
             intent.principalId,
           );
-          const immutableTupleMatches =
-            Array.isArray(intent.attachmentIds) &&
-            intent.attachmentIds.every(
+          if (
+            !Array.isArray(intent.attachmentIds) ||
+            intent.attachmentIds.some(
               (attachmentId) =>
-                typeof attachmentId === "string" &&
-                UUID_PATTERN.test(attachmentId),
-            ) &&
+                typeof attachmentId !== "string" ||
+                !UUID_PATTERN.test(attachmentId),
+            )
+          ) {
+            return (await advancePendingIntent(
+              tx,
+              tenantId,
+              key.threadId,
+              key.clientMessageKey,
+            ))
+              ? ("mismatch" as const)
+              : null;
+          }
+          const immutableTupleMatches =
             intent.tenantId === unlocked.tenantId &&
             intent.threadId === unlocked.threadId &&
             intent.clientMessageKey === unlocked.clientMessageKey &&

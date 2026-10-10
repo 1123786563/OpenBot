@@ -9,11 +9,22 @@ import {
   users,
 } from "../../src/db/schema";
 import {
+  enterpriseConversations,
+  enterpriseMessages,
+} from "../../src/db/schema/enterprise-conversations";
+import {
+  mastraMessageIntentAttachments,
+  mastraMessageIntents,
+} from "../../src/db/schema/mastra-message-intents";
+import {
+  type DataDatabase,
   type DirectoryDatabase,
   type OperatorDatabase,
+  verifyDataDatabase,
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
 } from "../../src/enterprise/tenancy/connections";
+import { createConversationService } from "../../src/enterprise/conversations/service";
 import { provisionDeployment } from "../../src/enterprise/tenancy/provision";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
 import type {
@@ -34,6 +45,7 @@ import {
   type TenantStorageRegistry,
 } from "../../src/mastra/provisioning";
 import { createTenantMastraStorage } from "../../src/mastra/tenant-storage";
+import { createMastraConversationRepository } from "../../src/mastra/conversations";
 import { enterpriseTestDatabaseUrlFrom } from "../support/enterprise-database";
 
 const runId = randomUUID().replaceAll("-", "");
@@ -48,6 +60,7 @@ const resourceId = `private:${randomUUID()}`;
 let database: Database | undefined;
 let admin: PostgresStore | undefined;
 let directory: DirectoryDatabase | undefined;
+let data: DataDatabase | undefined;
 let operator: OperatorDatabase | undefined;
 let trustedScope: Awaited<
   ReturnType<ReturnType<typeof createScopeResolver>["resolve"]>
@@ -163,6 +176,11 @@ beforeAll(async () => {
     { max: 2 },
   );
   operator = await verifyOperatorDatabase(operatorDb);
+  const dataDb = createDatabase(
+    process.env.ENTERPRISE_TEST_DATA_DATABASE_URL!,
+    { max: 2 },
+  );
+  data = await verifyDataDatabase(dataDb);
   await provisionDeployment(operator, {
     operationId: `mastra-${runId}`,
     operator: principalId,
@@ -281,12 +299,136 @@ afterAll(async () => {
   for (const ref of credentials.keys()) credentials.delete(ref);
   await admin?.close().catch((error) => errors.push(error));
   await directory?.$client.close().catch((error) => errors.push(error));
+  await data?.$client.close().catch((error) => errors.push(error));
   await operator?.$client.close().catch((error) => errors.push(error));
   if (errors.length)
     throw new AggregateError(
       errors,
       "Mastra provisioned fixture cleanup failed",
     );
+});
+
+test("legacy Mastra repository exposes only resolve and authorized history", () => {
+  const repository = createMastraConversationRepository({
+    conversations: {} as never,
+    storage: {} as never,
+  });
+
+  expect(typeof repository.resolve).toBe("function");
+  expect(typeof repository.history).toBe("function");
+  expect("append" in repository).toBe(false);
+});
+
+test("public Mastra append survives closing and recreating the restricted tenant pool", async () => {
+  const makeStorage = () =>
+    createTenantMastraStorage(
+      new RegistryTenantStorageLookup({
+        registry,
+        credentials: credentialStore,
+        runtimeConnectionString: connectionString,
+      }),
+    );
+  const firstStorage = makeStorage();
+  let reopenedStorage: ReturnType<typeof createTenantMastraStorage> | undefined;
+  let thread: string | undefined;
+  try {
+    const firstService = createConversationService({
+      data: data!,
+      mastraStorage: firstStorage,
+    });
+    const conversation = await firstService.getOrCreate(trustedScope, {});
+    thread = conversation.thread_id;
+    expect(conversation.storage_backend).toBe("mastra");
+    const message = await firstService.append(trustedScope, {
+      threadId: thread,
+      clientMessageKey: `public-reopen-${runId}`,
+      content: "accepted through the public service",
+      attachments: [],
+      resourceId: `private:${runId}-forged`,
+    });
+    expect(message).toMatchObject({
+      threadId: thread,
+      seq: 1,
+      role: "user",
+      content: "accepted through the public service",
+    });
+    const binding = await firstService.resolveMastraBinding(
+      trustedScope,
+      thread,
+    );
+    expect(binding.resourceId).toBe(
+      `private:${JSON.stringify([tenantA, trustedScope.principalId])}`,
+    );
+    const firstStore = await firstStorage.getStore(trustedScope, binding);
+    const firstMemory = await firstStore.getStore("memory");
+    const persisted = await firstMemory?.listMessages({
+      threadId: thread,
+      resourceId: binding.resourceId,
+      perPage: false,
+    });
+    expect(persisted?.messages).toHaveLength(1);
+    expect(persisted?.messages[0]?.content.metadata?.openbotSeq).toBe(1);
+
+    const platformMessages = await db()
+      .select({ threadId: enterpriseConversations.threadId })
+      .from(enterpriseConversations)
+      .where(eq(enterpriseConversations.threadId, thread));
+    expect(platformMessages).toHaveLength(1);
+    const platformRows = await db()
+      .select({ id: enterpriseMessages.id })
+      .from(enterpriseMessages)
+      .where(eq(enterpriseMessages.threadId, thread));
+    expect(platformRows).toEqual([]);
+
+    await firstStorage.close();
+    reopenedStorage = makeStorage();
+    const reopenedService = createConversationService({
+      data: data!,
+      mastraStorage: reopenedStorage,
+    });
+    await expect(
+      reopenedService.history(trustedScope, {
+        threadId: thread,
+        beforeSeq: null,
+        limit: 20,
+      }),
+    ).resolves.toMatchObject({ items: [message], nextBeforeSeq: null });
+    const reopenedBinding = await reopenedService.resolveMastraBinding(
+      trustedScope,
+      thread,
+    );
+    const reopenedStore = await reopenedStorage.getStore(
+      trustedScope,
+      reopenedBinding,
+    );
+    const reopenedMemory = await reopenedStore.getStore("memory");
+    const reopenedMessages = await reopenedMemory?.listMessages({
+      threadId: thread,
+      resourceId: reopenedBinding.resourceId,
+      perPage: false,
+    });
+    expect(reopenedMessages?.messages).toHaveLength(1);
+    expect(reopenedMessages?.messages[0]?.id).toBe(message.messageId);
+  } finally {
+    await firstStorage.close();
+    await reopenedStorage?.close();
+    if (thread) {
+      await db()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, thread));
+      await db()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, thread));
+      await db()
+        .delete(enterpriseConversations)
+        .where(eq(enterpriseConversations.threadId, thread));
+      const remaining = await db()
+        .select({ threadId: enterpriseConversations.threadId })
+        .from(enterpriseConversations)
+        .where(eq(enterpriseConversations.threadId, thread));
+      expect(remaining).toEqual([]);
+    }
+  }
 });
 
 test("production provisioner issues opaque receipts and two restricted, isolated runtime logins", async () => {
