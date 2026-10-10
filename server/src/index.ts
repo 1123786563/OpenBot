@@ -3147,15 +3147,15 @@ const payments =
       })();
 
 /*
- * The code sandbox behind run_code: one client to the agent-sandbox container, one writer for the
- * code_runs table, and the per-call factory the routes build their gateway through. Unset
+ * The code sandbox behind run_code: a client per Bot to the agent-sandbox container, one writer
+ * for the code_runs table, and the per-call factory the routes build their gateway through. Unset
  * AGENT_SANDBOX_URL (or its token) leaves the client null — the surface still mounts, and every
  * run lands a refused code_runs row beside its audit event rather than a 404 the caller cannot
- * tell apart from a missing deployment. The timeout is the same budget the client itself assumes
- * (client.ts falls back to it when a caller passes none), because a deployment cannot tune what
- * `.env.example` does not name.
+ * tell apart from a missing deployment. The client is created inside the factory rather than
+ * shared, because each one carries the Bot's id as the `x-openbot-bot-id` header the proxy routes
+ * on: one Bot, one workspace. The run budget is the caller's timeoutSeconds, clamped to 1-600
+ * seconds with a 120-second default in the gateway itself.
  */
-const CODE_RUN_TIMEOUT_MS = 120_000;
 const sandboxUrl = process.env.AGENT_SANDBOX_URL?.trim();
 const sandboxToken = process.env.SANDBOX_TOKEN?.trim();
 const codeRunStore = createCodeRunStore(database);
@@ -3163,10 +3163,9 @@ const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
   createCodeRunGateway({
     client:
       sandboxUrl && sandboxToken
-        ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken })
+        ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
         : null,
     modelId: runtimeModel.defaultModel,
-    timeoutMs: CODE_RUN_TIMEOUT_MS,
     botId,
     ownerUserId,
     initiator: PERSON_INITIATOR,

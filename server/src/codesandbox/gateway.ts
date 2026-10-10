@@ -34,7 +34,6 @@ export type CodeRunOutcome =
 export type CodeRunGatewayOptions = {
   client: SandboxClient | null;
   modelId: string;
-  timeoutMs: number;
   botId: string;
   ownerUserId: string;
   initiator: AuditInitiator;
@@ -44,18 +43,44 @@ export type CodeRunGatewayOptions = {
   maxArtifactBytes?: number;
 };
 
+export type CodeRunRunOptions = {
+  /** The caller's ask in seconds; the gateway clamps it into 1-600 before it becomes a budget. */
+  timeoutSeconds?: number;
+  toolCallId?: string;
+};
+
 export type CodeRunGateway = {
-  run(task: string, toolCallId?: string): Promise<CodeRunOutcome>;
+  run(task: string, opts?: CodeRunRunOptions): Promise<CodeRunOutcome>;
+  resetWorkspace(): Promise<{ ok: true } | { ok: false; reason: string }>;
 };
 
 const MAX_RESULT_CHARS = 8_000;
+const DEFAULT_RUN_TIMEOUT_SECONDS = 120;
+const MAX_RUN_TIMEOUT_SECONDS = 600;
+
+/**
+ * The budget a run actually gets, from the seconds a caller asked for. An ask outside 1-600 is not
+ * an error here — the routes reject those — it is an untrusted input, so it falls back to the
+ * default rather than being trusted in either direction: 0 must not buy an instant timeout, and
+ * 100000 must not buy an afternoon.
+ */
+function clampRunSeconds(seconds: number | undefined): number {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 1)
+    return DEFAULT_RUN_TIMEOUT_SECONDS;
+  return Math.min(seconds, MAX_RUN_TIMEOUT_SECONDS);
+}
 
 export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGateway {
   const maxArtifacts = options.maxArtifacts ?? 5;
   const maxArtifactBytes = options.maxArtifactBytes ?? 64 * 1024;
 
   const audit = (
-    eventType: "code.run_started" | "code.run_completed" | "code.run_refused" | "code.run_failed",
+    eventType:
+      | "code.run_started"
+      | "code.run_completed"
+      | "code.run_refused"
+      | "code.run_failed"
+      | "code.workspace_reset",
     payload: Record<string, unknown>,
   ) =>
     options.auditStore
@@ -70,10 +95,12 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       : Promise.resolve();
 
   return {
-    async run(task: string, toolCallId?: string): Promise<CodeRunOutcome> {
+    async run(task: string, opts?: CodeRunRunOptions): Promise<CodeRunOutcome> {
       const runId = newCodeRunId();
+      const toolCallId = opts?.toolCallId;
+      const timeoutMs = clampRunSeconds(opts?.timeoutSeconds) * 1000;
       if (!options.client) {
-        await audit("code.run_refused", { runId, reason: "not-configured", toolCallId });
+        await audit("code.run_refused", { runId, reason: "not-configured", toolCallId, timeoutMs });
         await options.store.create({
           id: runId,
           botId: options.botId,
@@ -89,7 +116,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       }
 
       const client = options.client;
-      await audit("code.run_started", { runId, task, toolCallId });
+      await audit("code.run_started", { runId, task, toolCallId, timeoutMs });
       await options.store.create({
         id: runId,
         botId: options.botId,
@@ -105,7 +132,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         const result = await client.sendMessage(
           sessionId,
           `${TASK_PREAMBLE}${task}`,
-          { modelId: options.modelId, timeoutMs: options.timeoutMs },
+          { modelId: options.modelId, timeoutMs },
         );
 
         const after = await client.listFiles();
@@ -135,13 +162,30 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       } catch (error) {
         const timedOut = error instanceof CodeSandboxTimeoutError;
         const reason = error instanceof Error ? error.message : String(error);
-        await audit("code.run_failed", { runId, sessionId, reason, timedOut });
+        await audit("code.run_failed", { runId, sessionId, reason, timedOut, timeoutMs });
         await options.store.finish(runId, {
           status: timedOut ? "timeout" : "failed",
           sessionId,
           error: reason,
         });
         return { kind: "failed", runId, reason };
+      }
+    },
+
+    async resetWorkspace() {
+      // The audit row goes down before anything is deleted — the same record-first order `run`
+      // holds, so a workspace that vanished always has a trail saying who asked.
+      if (!options.client) {
+        await audit("code.workspace_reset", { reason: "not-configured" });
+        return { ok: false, reason: "not-configured" };
+      }
+      await audit("code.workspace_reset", {});
+      try {
+        await options.client.resetWorkspace();
+        return { ok: true } as const;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, reason };
       }
     },
   };

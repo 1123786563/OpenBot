@@ -3,9 +3,9 @@
 -- Runs once, on the first boot of a fresh data volume; on the volume this stack already has,
 -- the same statements are applied by hand. Idempotent either way, so re-running it is safe.
 --
--- A dedicated DATABASE, not a schema: Casdoor shares the `openbot` database through the
--- `casdoor` schema, and Lago would be the same arrangement if it could — but Lago v1.53
--- cannot live in a non-public schema, three ways:
+-- A dedicated DATABASE, not a schema: Casdoor and OpenConnector share this postgres the same
+-- way (their init-db.sql files), and Lago is the arrangement's most demanding resident — but
+-- Lago v1.53 could not have lived in a shared database under a non-public schema, three ways:
 --
 --   1. db/structure.sql, the file a fresh install loads, is a pg_dump with every statement
 --      schema-qualified to `public` (`CREATE VIEW public.billable_metrics_grouped_charges`,

@@ -18,6 +18,7 @@ function fakeClient(overrides: Partial<SandboxClient> = {}): SandboxClient {
       content: "print(1)",
       truncated: false,
     }),
+    resetWorkspace: async () => undefined,
     ...overrides,
   } as SandboxClient;
 }
@@ -36,12 +37,13 @@ function fakeStore() {
   return { rows, store };
 }
 
-function fakeAudit() {
+function fakeAudit(log?: string[]) {
   const events: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
   return {
     events,
     store: {
       async insert(event: { eventType: string; payload: Record<string, unknown> }) {
+        if (log) log.push(`audit:${event.eventType}`);
         events.push(event);
       },
     } as never,
@@ -53,7 +55,6 @@ const baseOptions = {
   ownerUserId: "user-1",
   initiator: { kind: "person" } as never,
   modelId: "GLM-5.3",
-  timeoutMs: 120_000,
 };
 
 describe("code run gateway", () => {
@@ -150,5 +151,75 @@ describe("code run gateway", () => {
     const outcome = await gateway.run("生成一批文件");
     if (outcome.kind !== "completed") throw new Error("expected completed");
     expect(outcome.artifacts.map((a) => a.path)).toEqual(["a.py", "b.csv", "c.bin"]);
+  });
+
+  test("run converts timeoutSeconds into the sandbox budget, clamped to 1-600", async () => {
+    const { store } = fakeStore();
+    const budgets: Array<number | undefined> = [];
+    const client = fakeClient({
+      sendMessage: async (_sessionId: string, _text: string, options) => {
+        budgets.push(options.timeoutMs);
+        return { sessionId: "ses_x", text: "ok", usage: undefined };
+      },
+    });
+    const gateway = createCodeRunGateway({ ...baseOptions, client, store });
+    await gateway.run("a", { timeoutSeconds: 5 });
+    await gateway.run("b"); // 缺省 → 120 秒
+    await gateway.run("c", { timeoutSeconds: 0 }); // 越下界按缺省处理
+    await gateway.run("d", { timeoutSeconds: 601 }); // 越上界钳到 600
+    expect(budgets).toEqual([5_000, 120_000, 120_000, 600_000]);
+  });
+
+  test("the run's audit row carries the timeout budget actually used", async () => {
+    const { store } = fakeStore();
+    const audit = fakeAudit();
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: fakeClient(),
+      store,
+      auditStore: audit.store,
+    });
+    await gateway.run("慢任务", { timeoutSeconds: 90 });
+    const started = audit.events.find((e) => e.eventType === "code.run_started");
+    expect(started?.payload["timeoutMs"]).toBe(90_000);
+  });
+
+  test("resetWorkspace writes the audit row before the sandbox is told", async () => {
+    const { store } = fakeStore();
+    const order: string[] = [];
+    const audit = fakeAudit(order);
+    let resets = 0;
+    const client = fakeClient({
+      resetWorkspace: async () => {
+        order.push("client:reset");
+        resets += 1;
+      },
+    });
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client,
+      store,
+      auditStore: audit.store,
+    });
+    const result = await gateway.resetWorkspace();
+    expect(result).toEqual({ ok: true });
+    expect(resets).toBe(1);
+    expect(order).toEqual(["audit:code.workspace_reset", "client:reset"]);
+  });
+
+  test("resetWorkspace without a configured sandbox reports not-configured and sends nothing", async () => {
+    const { store } = fakeStore();
+    const audit = fakeAudit();
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: null,
+      store,
+      auditStore: audit.store,
+    });
+    const result = await gateway.resetWorkspace();
+    expect(result).toEqual({ ok: false, reason: "not-configured" });
+    // 拒绝也是一次治理决策：留在审计里，但没有任何 sandbox 调用发生。
+    const refused = audit.events.find((e) => e.eventType === "code.workspace_reset");
+    expect(refused?.payload["reason"]).toBe("not-configured");
   });
 });

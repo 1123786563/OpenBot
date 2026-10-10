@@ -18,10 +18,10 @@ function fakeFetch(scripted: Array<{ match: (url: string, init?: RequestInit) =>
   return { calls, fetchImpl };
 }
 
-const base = { baseUrl: "http://127.0.0.1:4300", token: "sandbox-secret" };
+const base = { baseUrl: "http://127.0.0.1:4300", token: "sandbox-secret", botId: "bot-1" };
 
 describe("createSandboxClient", () => {
-  test("createSession sends the token header and returns the id", async () => {
+  test("createSession sends the token and bot headers and returns the id", async () => {
     const { calls, fetchImpl } = fakeFetch([
       {
         match: (url) => url.endsWith("/session"),
@@ -32,11 +32,13 @@ describe("createSandboxClient", () => {
     const id = await client.createSession("smoke");
     expect(id).toBe("ses_1");
     const init = calls[0]?.init as RequestInit;
-    expect((init.headers as Record<string, string>)["x-sandbox-token"]).toBe("sandbox-secret");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-sandbox-token"]).toBe("sandbox-secret");
+    expect(headers["x-openbot-bot-id"]).toBe("bot-1");
   });
 
-  test("sendMessage joins text parts and parses usage", async () => {
-    const { fetchImpl } = fakeFetch([
+  test("sendMessage joins text parts, parses usage, and carries the bot header", async () => {
+    const { calls, fetchImpl } = fakeFetch([
       {
         match: (url) => url.endsWith("/message"),
         respond: () =>
@@ -56,6 +58,36 @@ describe("createSandboxClient", () => {
     });
     expect(result.text).toBe("第一段。\n第二段。");
     expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 45 });
+    const init = calls[0]?.init as RequestInit;
+    expect((init.headers as Record<string, string>)["x-openbot-bot-id"]).toBe("bot-1");
+  });
+
+  test("sendMessage threads a timeout budget into the fetch signal", async () => {
+    const { calls, fetchImpl } = fakeFetch([
+      {
+        match: (url) => url.endsWith("/message"),
+        respond: () => Response.json({ parts: [{ type: "text", text: "ok" }] }),
+      },
+    ]);
+    const client = createSandboxClient({ ...base, fetchImpl });
+    await client.sendMessage("ses_1", "慢任务", { modelId: "GLM-5.3", timeoutMs: 5000 });
+    const init = calls[0]?.init as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("resetWorkspace posts the bot-scoped reset endpoint", async () => {
+    const { calls, fetchImpl } = fakeFetch([
+      {
+        match: (url) => url.endsWith("/workspace/reset"),
+        respond: () => Response.json({ ok: true }),
+      },
+    ]);
+    const client = createSandboxClient({ ...base, fetchImpl });
+    await client.resetWorkspace();
+    const init = calls[0]?.init as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(calls[0]?.url.endsWith("/workspace/reset")).toBe(true);
+    expect((init.headers as Record<string, string>)["x-openbot-bot-id"]).toBe("bot-1");
   });
 
   test("parseUsage is tolerant about where the token counts live", () => {
@@ -104,6 +136,8 @@ describe("createSandboxClient", () => {
     const client = createSandboxClient({ ...base, fetchImpl });
     const files = await client.listFiles();
     expect(files).toEqual(["hello.py", "out.csv"]);
+    const listed = calls[0]?.init as RequestInit;
+    expect((listed.headers as Record<string, string>)["x-openbot-bot-id"]).toBe("bot-1");
     const file = await client.readFile("hello.py", 1024);
     expect(file.content).toBe("print('hi')\n");
     expect(file.truncated).toBe(false);

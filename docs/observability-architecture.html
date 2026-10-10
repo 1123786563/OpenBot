@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>OpenBot 日志架构</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; padding: 28px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #8b949e; font-size: 13px; margin-bottom: 22px; }
+  .layer { border: 1px solid #30363d; border-radius: 10px; padding: 14px 16px; margin-bottom: 6px; background: #161b22; }
+  .layer h2 { font-size: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: normal; }
+  .apps h2 .tag { background: #1f3a5f; color: #79c0ff; }
+  .collect h2 .tag { background: #3d2c1a; color: #ffa657; }
+  .store h2 .tag { background: #1b3a2a; color: #56d364; }
+  .view h2 .tag { background: #34204a; color: #d2a8ff; }
+  .side h2 .tag { background: #333; color: #aaa; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .box { border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; flex: 1; min-width: 170px; background: #0d1117; }
+  .box b { font-size: 13px; display: block; margin-bottom: 4px; }
+  .box span { font-size: 11.5px; color: #8b949e; display: block; line-height: 1.55; }
+  .box code { color: #79c0ff; font-size: 11px; }
+  .apps .box { border-top: 3px solid #388bfd; }
+  .collect .box { border-top: 3px solid #f0883e; }
+  .store .box { border-top: 3px solid #3fb950; }
+  .view .box { border-top: 3px solid #a371f7; }
+  .side .box { border-top: 3px solid #6e7681; }
+  .arrow-band { display: flex; justify-content: space-around; margin: 2px 0 8px; }
+  .arrow { text-align: center; font-size: 11.5px; color: #ffa657; line-height: 1.4; }
+  .arrow .glyph { font-size: 18px; display: block; }
+  .arrow.green { color: #56d364; }
+  .arrow.blue { color: #79c0ff; }
+  .legend { margin-top: 14px; font-size: 11.5px; color: #8b949e; line-height: 1.8; border-top: 1px dashed #30363d; padding-top: 10px; }
+  .legend code { color: #79c0ff; }
+  .shared { margin-top: 8px; border: 1px dashed #388bfd; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #79c0ff; background: rgba(56,139,253,.07); }
+</style>
+</head>
+<body>
+<h1>OpenBot 日志与链路架构</h1>
+<div class="sub">统一 logger（pino JSON）+ 请求/链路关联 ID + Alloy 双路采集 + LGTM 自托管栈 ｜ 2026-10（P1–P3 已落地）</div>
+
+<div class="layer apps">
+  <h2>应用层 <span class="tag">所有进程统一走 shared/logger + shared/trace</span></h2>
+  <div class="row">
+    <div class="box"><b>server（宿主机进程 :3001）</b><span>中间件顺序：<code>requestId → trace → accessLog</code><br>每请求一行 access log，<code>x-request-id</code> 回写响应头；出站调用（agent fetch / computer / supervisor）注入 <code>traceparent</code></span></div>
+    <div class="box"><b>worker（宿主机进程）</b><span>routines 清扫循环；sweep logger 注入（service=worker）；出站注入待接入</span></div>
+    <div class="box"><b>agent-bot / agent-computer / supervisor（容器）</b><span><code>withTraceFetch</code> 包装入站；supervisor 中间件在 Bearer 之前（401 也被跟踪）</span></div>
+    <div class="box"><b>每 Bot computer（supervisor 动态创建）</b><span>OTEL 端点经 <code>environmentFor</code> 白名单转发；聊天链路的跨服务跳变点</span></div>
+    <div class="box"><b>runtime-go（容器）</b><span><code>TraceMiddleware</code> 挂链最外层 + callback 出站注入；与 Bun 侧 off/端点语义逐字对齐</span></div>
+  </div>
+  <div class="shared">共享模块：<code>shared/logger.ts</code>（pino，service 基字段，LOG_LEVEL，TTY pretty / JSON 单行）＋ <code>shared/trace.ts</code>（W3C traceparent 解析/注入，initProcessTracing，OPENBOT_TRACES=off 总开关）。日志字段：<code>service / request_id / trace_id / method / path / status / duration_ms / msg</code>。Biome <code>noConsole</code> 上锁 server/src 与 worker/src。</div>
+</div>
+
+<div class="arrow-band">
+  <div class="arrow"><span class="glyph">↓</span>stdout（进程输出）</div>
+  <div class="arrow blue"><span class="glyph">↓</span>OTLP/HTTP 4318（traces 直发）</div>
+  <div class="arrow"><span class="glyph">↓</span>start.sh <code>&gt;&gt; .logs/*.log</code>（追加式）</div>
+</div>
+
+<div class="layer collect">
+  <h2>采集层 <span class="tag">Grafana Alloy（observability profile）</span></h2>
+  <div class="row">
+    <div class="box"><b>loki.source.docker</b><span>docker.sock 只读发现全部容器 stdout（label：<code>source=docker</code> + 容器名）</span></div>
+    <div class="box"><b>loki.source.file</b><span>bind-mount <code>.logs/ → /hostlogs</code> tail 宿主机进程日志（label：<code>job=host-process</code>）；位置持久化 named volume</span></div>
+    <div class="box"><b>loki.write → http://loki:3102</b><span>应用对采集器零依赖——Alloy 挂了 <code>docker logs</code> 与 .logs 照常可用</span></div>
+  </div>
+</div>
+
+<div class="arrow-band"><div class="arrow"><span class="glyph">↓</span>push</div><div class="arrow green"><span class="glyph">↓</span>span 导出（BatchSpanProcessor）</div></div>
+
+<div class="layer store">
+  <h2>存储层 <span class="tag">均 7 天留存，自托管于 compose observability profile</span></h2>
+  <div class="row">
+    <div class="box"><b>Loki :3102</b><span>日志（tsdb v13，compactor 留存生效）；按 label/字段全文检索</span></div>
+    <div class="box"><b>Tempo :3200 / OTLP :4318</b><span>链路；宿主进程指 <code>127.0.0.1:4318</code>，容器指 <code>tempo:4318</code></span></div>
+    <div class="box"><b>Prometheus :9090</b><span>指标（应用 /metrics 抓取目标为 P4）</span></div>
+  </div>
+</div>
+
+<div class="arrow-band"><div class="arrow"><span class="glyph">↓</span>查询 API</div></div>
+
+<div class="layer view">
+  <h2>展示层 <span class="tag">provisioning 开箱即用</span></h2>
+  <div class="row">
+    <div class="box"><b>Grafana :3003</b><span>数据源 Loki（默认，<code>derivedFields</code>：日志行 trace_id 蓝链 → Tempo 瀑布图）、Tempo、Prometheus；OpenBot Starter 仪表盘</span></div>
+    <div class="box"><b>终端路径</b><span><code>tail -f .logs/server.log | jq</code> ｜ <code>docker logs</code> —— 观测栈停机时的完整兜底</span></div>
+  </div>
+</div>
+
+<div class="layer side" style="margin-top:10px">
+  <h2>旁路通道 <span class="tag">与主日志管道独立</span></h2>
+  <div class="row">
+    <div class="box"><b>审计事件 OTLP 导出</b><span>audit tap → OTLP Logs（<code>OPENBOT_OTEL_EXPORT</code>），P0 既有通道，与 traces 互不干扰</span></div>
+    <div class="box"><b>GlitchTip :8001（崩溃上报）</b><span>Sentry 协议；协议层已验证（envelope→issue 入库），三端 SDK 接入为 P5</span></div>
+  </div>
+</div>
+
+<div class="legend">
+  <b>一次请求的完整足迹</b>：客户端 → server（requestId 生成/复用，trace span 开启，access log 落盘）→ 出站注入 traceparent → 容器服务续接同一 trace → 日志经 Alloy ~4 秒入 Loki、span 批量入 Tempo → Grafana 中按 <code>request_id</code> 搜日志，点 <code>trace_id</code> 跳瀑布图。<br>
+  <b>两条不变式</b>：① stdout 永远是事实源（观测栈只是搬运工，停机不影响排障）；② 未配置端点时各进程 recording-only（span/日志照常产生，只是不导出），<code>OPENBOT_TRACES=off</code> 可整体关闭。
+</div>
+</body>
+</html>
