@@ -6,7 +6,7 @@ import {
   jevActionPrefix,
   jevToolResultSchema,
   parseJevAction,
-} from "../../../packages/domain/src/jev";
+} from "../packages/domain/src/jev";
 
 export function parseJevResult(value: unknown): JevToolResult | null {
   let result = value;

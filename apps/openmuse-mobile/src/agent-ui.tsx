@@ -22,7 +22,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Linking, Pressable, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import type { Artifact, BrowserSession } from "../../../packages/domain/src";
+import type { Artifact, BrowserSession } from "../packages/domain/src";
 import type {
   AgentArtifact,
   AgentMemory,
@@ -32,7 +32,7 @@ import type {
   Idea,
   Monitor,
   RunEvent,
-} from "../../../packages/domain/src/agent";
+} from "../packages/domain/src/agent";
 import { useAgentWorkspace } from "./agent-workspace";
 import { ActivityScreen, ConnectionsScreen } from "./screens";
 import {

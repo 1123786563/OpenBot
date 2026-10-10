@@ -1,7 +1,11 @@
 const { getDefaultConfig } = require("expo/metro-config");
 const config = getDefaultConfig(__dirname);
-const path = require("node:path");
-config.watchFolders = [path.resolve(__dirname, "../..")];
+
+// Upstream watched the OpenMuse monorepo root so Metro could resolve
+// `packages/domain` living outside this app. That package is vendored under
+// ./packages/domain now (see MIGRATION.md), so watching this directory is enough
+// — pointing at the OpenBot root would make Metro watch the whole backend repo.
+config.watchFolders = [__dirname];
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === "jose" || moduleName.startsWith("jose/")) {

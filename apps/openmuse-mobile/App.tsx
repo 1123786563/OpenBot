@@ -23,7 +23,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import type { Section, Workspace } from "../../packages/domain/src";
+import type { Section, Workspace } from "./packages/domain/src";
 import {
   AgentActivityScreen,
   AgentStatus,

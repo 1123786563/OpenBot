@@ -14,12 +14,12 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Text, View } from "react-native";
-import type { Artifact } from "../../../packages/domain/src";
+import type { Artifact } from "../packages/domain/src";
 import type {
   ComputerCommand,
   ComputerDirectory,
   ComputerSnapshot,
-} from "../../../packages/domain/src/computer";
+} from "../packages/domain/src/computer";
 import { useComputerDraft } from "./computer-drafts";
 import { DesktopStream } from "./desktop-stream";
 import { Button, Card, colors, Empty, ErrorNotice, Field, LinkRow, s, timeLabel } from "./ui";

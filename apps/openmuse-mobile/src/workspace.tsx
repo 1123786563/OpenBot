@@ -9,7 +9,7 @@ import type {
   Mail,
   Section,
   Workspace,
-} from "../../../packages/domain/src";
+} from "../packages/domain/src";
 import type { MuseApi } from "./api";
 export type Detail =
   | { type: "mail"; mail: Mail }

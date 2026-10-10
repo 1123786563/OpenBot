@@ -31,7 +31,7 @@ import {
   eventDraftSchema,
   type Mail,
   type ProposalInput,
-} from "../../../packages/domain/src";
+} from "../packages/domain/src";
 import { DelegateSheet, NotificationsSheet, TaskDetail } from "./agent-ui";
 import BrowserConsole from "./BrowserConsole";
 import { browserAddress, browserSite } from "./browser-address";
