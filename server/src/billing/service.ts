@@ -7,6 +7,7 @@ import {
 import { readBodyCapped } from "./raw-body";
 import {
   type BillingEntitlementEntry,
+  type BillingEntitlementSubscriptionContext,
   type BillingEntitlements,
   BillingError,
   type BillingService,
@@ -60,8 +61,9 @@ export function deploymentExternalCustomerId(tenantId: string): string {
  * refresh, which is also finished work: they are recorded and answered 200.
  *
  * The entitlement read is served from the local projections with a per-customer cache (see
- * ./entitlement.ts) — a webhook keeps the projections fresh, so the cache never has to reach the
- * provider on a read path.
+ * ./entitlement.ts) — a webhook keeps the projections fresh, and the one provider call the read
+ * itself adds (the subscription's current period, answered null when the provider refuses it) rides
+ * behind the same TTL.
  *
  * reconcile() does not exist yet and says so by refusing, rather than half-working.
  */
@@ -161,15 +163,29 @@ export function createBillingService(deps: {
       const rows: readonly BillingSubscriptionRow[] =
         await store.readSubscriptions(key);
       const active = rows.find((row) => row.status === "active");
-      // The subscription facts ride beside the plan from Task 4; until they are wired the field
-      // is an explicit null, not an absent one, so callers can rely on its presence.
-      if (!active)
-        return { active: false, codes: [], subscription: null };
+      if (!active) return { active: false, codes: [], subscription: null };
+      // The subscription read is a courtesy beside the projection: a provider that refuses it
+      // must not fail the entitlement read, whose answer gates the deployment.
+      let subscription: BillingEntitlementSubscriptionContext | null = null;
+      try {
+        const remote = await client.getSubscription(
+          active.externalSubscriptionId,
+        );
+        if (remote.body) {
+          subscription = {
+            status: remote.body.status,
+            currentPeriodStart: remote.body.currentPeriodStart ?? null,
+            currentPeriodEnd: remote.body.currentPeriodEnd ?? null,
+          };
+        }
+      } catch {
+        subscription = null;
+      }
       return {
         active: true,
         planCode: active.planCode,
         codes: deps.planEntitlements?.get(active.planCode) ?? [],
-        subscription: null,
+        subscription,
       };
     },
     ...(deps.ttlMs !== undefined ? { ttlMs: deps.ttlMs } : {}),

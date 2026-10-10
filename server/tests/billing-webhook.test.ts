@@ -88,7 +88,9 @@ function webhookFixture() {
     verifier: createWebhookVerifier({
       key: { mode: "hmac", key: WEBHOOK_SIGNING_KEY },
     }),
-    planEntitlements: new Map([["pro", ["intelligence", "teams"]]]),
+    planEntitlements: new Map([
+      ["pro", [{ code: "intelligence" }, { code: "teams" }]],
+    ]),
   });
   return { stub, store, service };
 }
@@ -267,9 +269,14 @@ describe("createBillingService.handleWebhook", () => {
   test("records the delivery's idempotency key alongside the event", async () => {
     const { store, service } = webhookFixture();
     const response = await service.handleWebhook(
-      signedDelivery("evt-k", "invoice.created", {}, {
-        "x-lago-unique-key": "uk-1",
-      }),
+      signedDelivery(
+        "evt-k",
+        "invoice.created",
+        {},
+        {
+          "x-lago-unique-key": "uk-1",
+        },
+      ),
     );
     expect(response.status).toBe(200);
     expect([...store.inbox.values()][0]?.uniqueKey).toBe("uk-1");
@@ -419,7 +426,7 @@ describe("createBillingService.handleWebhook", () => {
     await expect(service.entitlements()).resolves.toEqual({
       active: true,
       planCode: "pro",
-      codes: ["intelligence", "teams"],
+      codes: [{ code: "intelligence" }, { code: "teams" }],
       subscription: null,
     });
   });

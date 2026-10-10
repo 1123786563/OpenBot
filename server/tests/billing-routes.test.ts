@@ -8,6 +8,7 @@ import {
   createLagoClient,
   type LagoClient,
   type LagoEventPage,
+  type LagoSubscriptionBody,
   type LagoUsageBody,
 } from "../src/billing/lago";
 import {
@@ -16,6 +17,7 @@ import {
   createBillingWebhookRoutes,
 } from "../src/billing/routes";
 import { createBillingService } from "../src/billing/service";
+import { BillingError } from "../src/billing/types";
 import { createWebhookVerifier } from "../src/billing/webhook-signature";
 import { memoryBillingStore } from "./support/billing";
 
@@ -68,6 +70,7 @@ function countingClient() {
     getCustomer: 0,
     postCustomer: 0,
     listSubscriptions: 0,
+    getSubscription: 0,
     postSubscription: 0,
     getUsage: 0,
     postEvent: 0,
@@ -86,6 +89,12 @@ function countingClient() {
   const postedEvents: unknown[] = [];
   /** What the provider's events list answers; null stands in for its unknown-subscription 404. */
   let eventPage: LagoEventPage | null = null;
+  /**
+   * What the provider's single-subscription read answers; null stands in for its gone-subscription
+   * 404, and `failSubscription` makes the read throw the way an unreachable provider does.
+   */
+  let subscription: LagoSubscriptionBody | null = null;
+  let failSubscription = false;
   const client: LagoClient = {
     async getCustomer(externalId) {
       calls.getCustomer += 1;
@@ -113,6 +122,14 @@ function countingClient() {
             subscription.externalCustomerId === externalCustomerId,
         ),
       };
+    },
+    async getSubscription(externalSubscriptionId) {
+      calls.getSubscription += 1;
+      if (failSubscription) throw new BillingError("unreachable");
+      return subscription !== null &&
+        subscription.externalSubscriptionId === externalSubscriptionId
+        ? { status: 200, body: subscription }
+        : { status: 404, body: null };
     },
     async postSubscription(input) {
       calls.postSubscription += 1;
@@ -159,6 +176,12 @@ function countingClient() {
     setEventPage: (value: LagoEventPage | null) => {
       eventPage = value;
     },
+    setSubscription: (value: LagoSubscriptionBody | null) => {
+      subscription = value;
+    },
+    setSubscriptionFailure: (value: boolean) => {
+      failSubscription = value;
+    },
   };
 }
 
@@ -169,7 +192,9 @@ function serviceFixture(client: LagoClient) {
     client,
     store,
     verifier: undefined,
-    planEntitlements: new Map([["pro", ["intelligence", "teams"]]]),
+    planEntitlements: new Map([
+      ["pro", [{ code: "intelligence" }, { code: "teams" }]],
+    ]),
   });
   return { store, service };
 }
@@ -346,8 +371,16 @@ describe("the entitlements route", () => {
     expect(response.status).toBe(401);
   });
 
-  test("the answer's keys are exactly active and codes — no plan vocabulary", async () => {
+  test("GET /entitlements carries the subscription context", async () => {
     const stub = countingClient();
+    stub.setSubscription({
+      externalCustomerId: DEPLOYMENT_KEY,
+      externalSubscriptionId: `${DEPLOYMENT_KEY}-pro`,
+      planCode: "pro",
+      status: "active",
+      currentPeriodStart: "2026-10-01T00:00:00Z",
+      currentPeriodEnd: "2026-11-01T00:00:00Z",
+    });
     const { app } = billingApp(ADMIN, stub.client);
     // A sync first, so the projection the entitlement read serves has an active plan in it — the
     // same chain a deployment drives: the admin presses Sync, everybody reads entitlements.
@@ -360,10 +393,39 @@ describe("the entitlements route", () => {
 
     const response = await app.request("/api/billing/entitlements");
     expect(response.status).toBe(200);
+    // The exact body, keys and all: active, the plan code, the plan's entries and the period the
+    // provider currently runs — and nothing else.
+    expect(await response.json()).toEqual({
+      active: true,
+      planCode: "pro",
+      codes: [{ code: "intelligence" }, { code: "teams" }],
+      subscription: {
+        status: "active",
+        currentPeriodStart: "2026-10-01T00:00:00Z",
+        currentPeriodEnd: "2026-11-01T00:00:00Z",
+      },
+    });
+    expect(stub.calls.getSubscription).toBe(1);
+  });
+
+  test("GET /entitlements degrades to a null subscription when the provider refuses", async () => {
+    const stub = countingClient();
+    stub.setSubscriptionFailure(true);
+    const { app } = billingApp(ADMIN, stub.client);
+    const synced = await app.request("/api/admin/billing/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "pro" }),
+    });
+    expect(synced.status).toBe(200);
+
+    // A provider that refuses the courtesy read does not fail the entitlement read itself: the
+    // answer still gates the deployment, the period just reads as unknown.
+    const response = await app.request("/api/billing/entitlements");
+    expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["active", "codes"]);
+    expect(body.subscription).toBeNull();
     expect(body.active).toBe(true);
-    expect(body.codes).toEqual(["intelligence", "teams"]);
   });
 });
 
