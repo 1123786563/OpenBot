@@ -290,6 +290,13 @@ export const workshopSchedules = pgTable(
     rrule: text("rrule").notNull(),
     /** The timezone the rule's wall clock reads; absent is the deployment's. */
     timezone: text("timezone"),
+    /**
+     * The firing's operating boundary (B17): what a fired turn may do WITHOUT approval —
+     * `{ paths, tools, maxTurnsPerRun }`. Stamped at creation, consumed by the executor as
+     * the boundary it states in the firing prompt; tool calls outside it route through the
+     * agent layer's approval (see schedule-executor.ts's boundary note).
+     */
+    preapproved: jsonb("preapproved"),
     status: text("status")
       .$type<WorkshopScheduleStatus>()
       .notNull()
