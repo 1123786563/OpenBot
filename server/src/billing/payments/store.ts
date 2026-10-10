@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Database } from "../../db/client";
 import { paymentEvents, paymentOrders } from "../../db/schema/payment";
 import { BillingError } from "../types";
@@ -353,6 +353,35 @@ export function createPaymentStore(database: Database): PaymentStore {
         .orderBy(asc(paymentOrders.createdAt))
         .limit(limit);
       return rows.map(rowOf);
+    },
+
+    async listOrdersInWindow({ from, to, limit, offset }) {
+      const rows = await database
+        .select()
+        .from(paymentOrders)
+        .where(
+          and(
+            ...(from ? [gte(paymentOrders.createdAt, from)] : []),
+            ...(to ? [lte(paymentOrders.createdAt, to)] : []),
+          ),
+        )
+        .orderBy(sql`${paymentOrders.createdAt} DESC`)
+        .limit(limit)
+        .offset(offset);
+      return rows.map(rowOf);
+    },
+
+    async countOrdersInWindow({ from, to }) {
+      const [row] = await database
+        .select({ value: count() })
+        .from(paymentOrders)
+        .where(
+          and(
+            ...(from ? [gte(paymentOrders.createdAt, from)] : []),
+            ...(to ? [lte(paymentOrders.createdAt, to)] : []),
+          ),
+        );
+      return row?.value ?? 0;
     },
   };
 }
