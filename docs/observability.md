@@ -158,6 +158,13 @@ curl -s "http://127.0.0.1:3200/api/search" --data-urlencode "serviceName=server"
 curl -s "http://127.0.0.1:3200/api/traces/<traceID>"  # OTLP JSON, spans under batches[].scopeSpans[].spans
 ```
 
+The in-container services (`agent-bot`, `agent-computer`, `supervisor`, and every per-Bot
+computer the supervisor creates) export through the compose network instead of your loopback:
+uncomment `CONTAINER_OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318` in the root `.env` and
+recreate them (`docker compose up -d agent-bot agent-computer supervisor`; the supervisor hands
+the endpoint to each computer it creates). With the variable unset they run recording-only —
+spans stay local, which is also silent by design.
+
 In Grafana on port 3003: Explore → pick the Tempo data source → Search → service name `server` →
 open a trace for its waterfall. Loki's log lines carry `trace_id` as a derived field, so a log
 line in Explore links straight to the same trace.
