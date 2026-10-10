@@ -296,7 +296,10 @@ export const workshopSchedules = pgTable(
      * the boundary it states in the firing prompt; tool calls outside it route through the
      * agent layer's approval (see schedule-executor.ts's boundary note).
      */
-    preapproved: jsonb("preapproved"),
+    preapproved: jsonb("preapproved").$type<
+      | { paths: string[]; tools: string[]; maxTurnsPerRun: number }
+      | null
+    >(),
     status: text("status")
       .$type<WorkshopScheduleStatus>()
       .notNull()
