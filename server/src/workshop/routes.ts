@@ -14,7 +14,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AppVariables } from "../auth/guards";
 import type { TurnEventBus } from "./bus";
-import { streamEventsResponse } from "./events";
+import { eventsStreamBody, SSE_HEADERS } from "./events";
 import type { WorkshopStore } from "./store";
 import type { TurnOrchestrator } from "./orchestrator";
 import { listTree, upload, UploadLimitError } from "./files";
@@ -161,26 +161,37 @@ export function createWorkshopRoutes(input: {
 
   // ── turns ─────────────────────────────────────────────────────────────────────
   app.post("/:channelId/turns", async (context) => {
-    const gateResult = await gate(context);
-    if (!gateResult.ok) return gateResult.response;
-    const { session, actor } = gateResult;
-
+    const channelId = context.req.param("channelId");
+    const actor = context.var.actor;
     const body = (await context.req.json().catch(() => undefined)) as
       | { botId?: unknown; prompt?: unknown }
       | undefined;
-    // botId must be present and match the session's Bot: the gate above checked the session,
-    // but the caller's claim about WHICH Bot is what the orchestrator runs as.
+    // botId first, before anything is gated or created: the turn's Bot is the caller's claim,
+    // and every check below reads it.
     const botId = typeof body?.botId === "string" ? body.botId : "";
     if (!botId)
       return context.json({ error: "botId is a required string." }, 400);
-    if (botId !== session.botId)
+    if (!(await input.canUseBot(actor, botId)))
       return context.json(
-        { error: "botId does not match this channel's Bot." },
-        400,
+        { error: "You may not run a turn as this Bot." },
+        403,
       );
     const prompt = typeof body?.prompt === "string" ? body.prompt : "";
     if (!prompt)
       return context.json({ error: "prompt is a required string." }, 400);
+
+    // The session is created on first turn: a channel has no workshop until somebody turns to
+    // the Bot in it, and the turn's own botId is the Bot the session binds to.
+    const session = await store.getOrCreateSession({
+      channelId,
+      botId,
+      ownerUserId: actor.id,
+    });
+    if (session.botId !== botId)
+      return context.json(
+        { error: "botId does not match this channel's Bot." },
+        400,
+      );
 
     const { turnId } = await orchestrator.enqueue({
       sessionId: session.id,
@@ -315,13 +326,20 @@ export function createWorkshopRoutes(input: {
       ? Number.parseInt(lastEventIdHeader, 10)
       : undefined;
 
-    return streamEventsResponse({
-      bus,
-      store,
-      turnIds,
-      ...(Number.isFinite(lastEventId) ? { lastEventId } : {}),
-      stopSignal: context.req.raw.signal,
-    });
+    // Through context.body rather than a bare Response: the middleware chain (CORS among
+    // them) rebuilds bare responses in a shape Bun will not stream, and context.body keeps
+    // the stream as the body it hands onward — verified live against the mounted chain.
+    return context.body(
+      eventsStreamBody({
+        bus,
+        store,
+        turnIds,
+        ...(Number.isFinite(lastEventId) ? { lastEventId } : {}),
+        stopSignal: context.req.raw.signal,
+      }),
+      200,
+      SSE_HEADERS,
+    );
   });
 
   return app;
