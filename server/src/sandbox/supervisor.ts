@@ -30,6 +30,13 @@ export type SandboxStatus =
   | { kind: "absent" }
   | { kind: "provisioning" };
 
+/** What an idle sweep answers: who slept, and why nobody else did. */
+export type IdleReapReport = {
+  slept: string[];
+  /** Ready rows whose heartbeat is fresh: counted, not named, because they are the nonevent. */
+  fresh: number;
+};
+
 export type SandboxSupervisor = {
   /**
    * The sandbox for a Bot, starting one if none is usable. Idempotent: a ready sandbox answers
@@ -47,6 +54,17 @@ export type SandboxSupervisor = {
   reap(botId: string): Promise<void>;
   /** Tear the sandbox down (… → terminated): a later provision starts fresh, full walk. */
   stop(botId: string): Promise<void>;
+  /**
+   * The idle sweep: every READY sandbox whose heartbeat is older than `idleMs` sleeps. A fresh
+   * heartbeat keeps its sandbox awake (the nonevent, counted not named); sleeping and absent
+   * rows are not the sweep's business — one already cheap, the other already gone. A later
+   * provision wakes a slept sandbox (sleeping → ready), which is the whole point of sleeping
+   * rather than stopping.
+   */
+  reapIdleSupervision(input: {
+    nowMs: number;
+    idleMs: number;
+  }): Promise<IdleReapReport>;
 };
 
 export type SandboxSupervisorOptions = {
@@ -144,7 +162,27 @@ export function createSandboxSupervisor(
     }
   };
 
-  return { provision, status, reap, stop };
+  const reapIdleSupervision: SandboxSupervisor["reapIdleSupervision"] = async (input) => {
+    const lived = await state.listLive();
+    const slept: string[] = [];
+    let fresh = 0;
+    for (const row of lived) {
+      if (row.status !== "ready") continue; // Sleeping is done; provisioning is not ours to judge.
+      const age = row.lastHeartbeatAt === null
+        ? Number.POSITIVE_INFINITY // Never heartbeated: provision died mid-flight, asleep it goes.
+        : input.nowMs - row.lastHeartbeatAt.getTime();
+      if (age <= input.idleMs) {
+        fresh += 1;
+        continue;
+      }
+      // CAS-quiet: if the row moved first (a provision woke it, a stop tore it down), the
+      // transition answers false and the sweep simply disagrees with a newer truth.
+      if (await state.transition(row.id, "ready", "sleeping")) slept.push(row.botId);
+    }
+    return { slept, fresh };
+  };
+
+  return { provision, status, reap, stop, reapIdleSupervision };
 }
 
 /**
