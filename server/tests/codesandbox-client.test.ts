@@ -93,8 +93,12 @@ describe("createSandboxClient", () => {
         respond: () => Response.json(["hello.py", "out.csv"]),
       },
       {
-        match: (url) => url.includes("/file/content"),
+        match: (url) => url.includes("path=hello.py"),
         respond: () => new Response("print('hi')\n"),
+      },
+      {
+        match: (url) => url.includes("path=answer.txt"),
+        respond: () => Response.json({ type: "text", content: "1024" }),
       },
     ]);
     const client = createSandboxClient({ ...base, fetchImpl });
@@ -104,5 +108,8 @@ describe("createSandboxClient", () => {
     expect(file.content).toBe("print('hi')\n");
     expect(file.truncated).toBe(false);
     expect(calls.some((c) => c.url.includes("path=hello.py"))).toBe(true);
+    // opencode wraps text files in a JSON envelope; the artifact content is the file, not the wrapper.
+    const unwrapped = await client.readFile("answer.txt", 1024);
+    expect(unwrapped.content).toBe("1024");
   });
 });

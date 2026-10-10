@@ -18,23 +18,23 @@ describe("writeOpencodeConfig", () => {
   test("writes a 0600 config with the openbot provider and locked-down permissions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sandbox-config-"));
     const path = await writeOpencodeConfig(env, dir);
-    expect(path).toBe(join(dir, "opencode.json"));
+    expect(path).toBe(join(dir, "opencode", "opencode.json"));
     const body = JSON.parse(await readFile(path, "utf8")) as Record<string, never>;
-    const provider = (body["provider"] as Record<string, never>)["openbot"];
+    const provider = (body.provider as Record<string, never>).openbot;
     expect(provider).toBeDefined();
-    expect((provider["options"] as Record<string, unknown>)["baseURL"]).toBe(
+    expect((provider.options as Record<string, unknown>).baseURL).toBe(
       "https://open.bigmodel.cn/api/coding/paas/v4",
     );
-    expect((provider["options"] as Record<string, unknown>)["apiKey"]).toBe(
+    expect((provider.options as Record<string, unknown>).apiKey).toBe(
       process.env.TEST_SANDBOX_PROVIDER_API_KEY ?? "fixture-secret",
     );
-    expect((provider["models"] as Record<string, unknown>)["GLM-5.3"]).toBeDefined();
-    const permission = body["permission"] as Record<string, unknown>;
-    expect(permission["edit"]).toBe("allow");
-    expect(permission["bash"]).toBe("allow");
-    expect(permission["webfetch"]).toBe("deny");
-    expect((body["tools"] as Record<string, unknown>)["webfetch"]).toBe(false);
-    expect(body["share"]).toBe("disabled");
+    expect((provider.models as Record<string, unknown>)["GLM-5.3"]).toBeDefined();
+    const permission = body.permission as Record<string, unknown>;
+    expect(permission.edit).toBe("allow");
+    expect(permission.bash).toBe("allow");
+    expect(permission.webfetch).toBe("deny");
+    expect((body.tools as Record<string, unknown>).webfetch).toBe(false);
+    expect(body.share).toBe("disabled");
   });
 
   test("the file is not group- or world-readable", async () => {

@@ -33,10 +33,10 @@ function allowedPath(method: string, pathname: string): boolean {
   // ^/session/<id>(/message)?$ written as segment checks.)
   if (!pathname.startsWith("/session/")) return false;
   const segments = pathname.slice("/session/".length).split("/");
-  if (segments.length === 1) return segments[0]!.length > 0 && method === "GET";
+  if (segments.length === 1) return segments[0]?.length > 0 && method === "GET";
   if (segments.length === 2)
     return (
-      segments[0]!.length > 0 &&
+      segments[0]?.length > 0 &&
       segments[1] === "message" &&
       (method === "GET" || method === "POST")
     );

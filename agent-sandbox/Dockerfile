@@ -3,7 +3,17 @@
 FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
 
 ARG OPENCODE_VERSION=1.18.7
+# The opencode platform packages are ~60MB binaries; a direct registry.npmjs.org download from a
+# constrained network truncates them and bun reports "Fail extracting tarball". Point
+# NPM_CONFIG_REGISTRY at a reachable mirror when building from one (compose wires the build arg).
+ARG NPM_REGISTRY=https://registry.npmjs.org
 ENV DEBIAN_FRONTEND=noninteractive
+ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+# Bun's global bin dir defaults to /root/.bun, whose 700 perms the runtime user (UID 1000) cannot
+# traverse — the /usr/local/bin/opencode shim would dangle. BUN_INSTALL=/usr/local is the same
+# posture agent-computer's Dockerfile uses: the global tree lands in world-readable /usr/local.
+ENV BUN_INSTALL=/usr/local
+ENV PATH="/usr/local/bin:${PATH}"
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl python3 python3-pip \
     && bun install -g "opencode-ai@${OPENCODE_VERSION}" \

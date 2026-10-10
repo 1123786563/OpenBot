@@ -148,11 +148,27 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
         `/file/content?path=${encodeURIComponent(path)}`,
       );
       const raw = await response.text();
-      const bytes = Buffer.byteLength(raw, "utf8");
+      // opencode answers /file/content with a JSON envelope ({type:"text", content}) for text
+      // files; a plain body means the endpoint passed the bytes through. Unwrap when the envelope
+      // is what came back, so an artifact's content is the file, not the wrapper around it.
+      let text = raw;
+      try {
+        const parsed = JSON.parse(raw) as { type?: unknown; content?: unknown };
+        if (
+          parsed !== null &&
+          typeof parsed === "object" &&
+          parsed.type === "text" &&
+          typeof parsed.content === "string"
+        )
+          text = parsed.content;
+      } catch {
+        // Not JSON: the raw body is the content.
+      }
+      const bytes = Buffer.byteLength(text, "utf8");
       return {
         path,
         size: bytes,
-        content: bytes > maxBytes ? raw.slice(0, maxBytes) : raw,
+        content: bytes > maxBytes ? text.slice(0, maxBytes) : text,
         truncated: bytes > maxBytes,
       };
     },
