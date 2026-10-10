@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
 import { WorkshopTurnView } from "./workshop-turn";
 import { WorkshopFilesView } from "./workshop-files";
+import { WorkshopArtifactsView } from "./workshop-artifacts";
 
 /**
  * The workshop tab: one channel's working surface in four panes.
@@ -81,9 +82,10 @@ export function WorkshopPanel({
             ) : tab === "files" ? (
               <WorkshopFilesView channelId={channelId} />
             ) : tab === "artifacts" ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                {t("panel.placeholder.artifacts")}
-              </p>
+              <WorkshopArtifactsView
+                channelId={channelId}
+                artifacts={snapshot.data.artifacts}
+              />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">
                 {t("panel.placeholder.usage")}

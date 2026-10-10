@@ -11,7 +11,6 @@
       "usage": "Usage"
     },
     "placeholder": {
-      "artifacts": "The artifact gallery arrives in the next batch.",
       "usage": "The usage view arrives in the next batch.",
       "process": "The live turn view arrives with F5."
     }
@@ -46,5 +45,21 @@
     "tooMany": "At most 20 files per upload.",
     "tooLarge": "{{name}} exceeds the 20MB per-file limit.",
     "refresh": "Refresh"
+  },
+  "artifacts": {
+    "empty": "No artifacts from this turn yet.",
+    "download": "Download",
+    "preview": "Preview",
+    "previewUnavailable": "Too large to preview.",
+    "webappPending": "The app preview arrives with the share batch (B14).",
+    "fileCard": "{{path}} ({{size}})",
+    "type": {
+      "csv": "Table",
+      "chart": "Chart",
+      "report": "Report",
+      "webapp": "App",
+      "file": "File",
+      "dataset": "Dataset"
+    }
   }
 }
