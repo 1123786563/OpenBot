@@ -35,6 +35,31 @@ const upstream = serve({
       return new Response("x".repeat(300_000), {
         headers: { "content-length": String(300_000) },
       });
+    // The event bus: a short burst of real captured shapes, then the stream ends. The proxy's
+    // keepalive and filter behaviour is what these tests observe.
+    if (url.pathname === "/event") {
+      const samples = [
+        `data: {"id":"e1","type":"server.heartbeat","properties":{}}\n\n`,
+        `data: {"id":"e2","type":"message.part.delta","properties":{"sessionID":"s","messageID":"m","partID":"p","field":"text","delta":"你好"}}\n\n`,
+        `data: {"id":"e3","type":"plugin.added","properties":{"id":"xai"}}\n\n`,
+        `data: {"id":"e4","type":"session.idle","properties":{"sessionID":"s"}}\n\n`,
+      ];
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          for (const sample of samples) {
+            controller.enqueue(encoder.encode(sample));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          controller.close();
+        },
+      });
+      return new Response(body, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+    if (url.pathname.endsWith("/abort") && request.method === "POST")
+      return Response.json({ aborted: true, port });
     return Response.json({ echo: url.pathname, method: request.method, port });
   },
 });
@@ -111,6 +136,61 @@ describe("proxy", () => {
   test("health needs no token", async () => {
     const response = await call("/health");
     expect(response.status).toBe(200);
+  });
+});
+
+describe("proxy: the workshop surface (S2/S5)", () => {
+  test("GET /events forwards SSE with the family filter and keepalives", async () => {
+    const response = await call("/events", { headers: botHeaders });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const text = await response.text();
+    // The delta (message_chunk) passes and is labelled with its family…
+    expect(text).toContain("event: message_chunk");
+    // …so does session.idle (prompt_response)…
+    expect(text).toContain("event: prompt_response");
+    // …while heartbeat and plugin.added (the 15%-noise) are dropped entirely.
+    expect(text).not.toContain("server.heartbeat");
+    expect(text).not.toContain("plugin.added");
+  });
+
+  test("GET /events without the token is 401, before any runtime is touched", async () => {
+    const response = await call("/events");
+    expect(response.status).toBe(401);
+  });
+
+  test("POST /session/:id/abort forwards to the upstream abort", async () => {
+    const response = await call("/session/ses_1/abort", {
+      method: "POST",
+      headers: botHeaders,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { aborted?: boolean; port?: string };
+    expect(body.aborted).toBe(true);
+    expect(body.port).toBe("4600");
+  });
+
+  test("the not-yet-implemented allow-list entries answer honest 501s", async () => {
+    for (const path of ["/webapp/start", "/webapp/stop", "/runtimes", "/workspace/snapshot", "/workspace/restore"]) {
+      const method = path === "/runtimes" || path === "/workspace/snapshot" ? "GET" : "POST";
+      const response = await call(path, {
+        method,
+        headers: botHeaders,
+        ...(method === "POST" ? { body: "{}" } : {}),
+      });
+      expect(response.status).toBe(501);
+    }
+  });
+
+  test("POST /file is allowed (B5's writeFile verb) and reaches the upstream", async () => {
+    const response = await call("/file?path=data.csv", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "a,b\n1,2\n",
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { echo?: string };
+    expect(body.echo).toBe("/file");
   });
 });
 
