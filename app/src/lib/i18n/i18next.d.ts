@@ -11,6 +11,7 @@ import type settings from "../../locales/en/settings.json";
 import type skills from "../../locales/en/skills.json";
 import type nav from "../../locales/en/nav.json";
 import type tenant from "../../locales/en/tenant.json";
+import type workshop from "../../locales/en/workshop.json";
 
 /**
  * Compile-time key checking for `t(...)`: the en bundle is the source of truth, and a key that
@@ -33,6 +34,7 @@ declare module "i18next" {
       market: typeof market;
       errors: typeof errors;
       tenant: typeof tenant;
+      workshop: typeof workshop;
     };
   }
 }

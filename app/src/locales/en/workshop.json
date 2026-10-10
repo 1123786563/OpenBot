@@ -1,0 +1,51 @@
+{
+  "panel": {
+    "ariaLabel": "Workshop",
+    "loading": "Loading the workshop…",
+    "loadError": "The workshop could not be loaded.",
+    "tabs": {
+      "ariaLabel": "Workshop views",
+      "process": "Process",
+      "files": "Files",
+      "artifacts": "Artifacts",
+      "usage": "Usage"
+    },
+    "placeholder": {
+      "files": "The files view arrives in the next batch.",
+      "artifacts": "The artifact gallery arrives in the next batch.",
+      "usage": "The usage view arrives in the next batch.",
+      "process": "The live turn view arrives with F5."
+    }
+  },
+  "turn": {
+    "empty": "No turns yet. Give {{bot}} a task.",
+    "loading": "Reading the turn…",
+    "live": "Live",
+    "reconnecting": "Reconnecting",
+    "noEvents": "This turn left no events.",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "done": "The turn finished.",
+    "thought": "Thinking",
+    "tool": "Tool",
+    "working": "Working",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "files": {
+    "title": "Workspace files",
+    "empty": "The workspace is empty.",
+    "upload": "Upload files",
+    "uploading": "Uploading…",
+    "uploadDone": "Uploaded {{count}} files.",
+    "refused": "Upload refused",
+    "tooMany": "At most 20 files per upload.",
+    "tooLarge": "Each file must stay under 20MB.",
+    "refresh": "Refresh"
+  }
+}

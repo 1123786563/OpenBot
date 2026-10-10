@@ -1,0 +1,51 @@
+{
+  "panel": {
+    "ariaLabel": "工作台",
+    "loading": "正在加载工作台…",
+    "loadError": "工作台加载失败。",
+    "tabs": {
+      "ariaLabel": "工作台视图",
+      "process": "过程",
+      "files": "文件",
+      "artifacts": "产物",
+      "usage": "用量"
+    },
+    "placeholder": {
+      "files": "文件视图将在下一批就绪。",
+      "artifacts": "产物画廊将在下一批就绪。",
+      "usage": "用量视图将在下一批就绪。",
+      "process": "过程视图随 F5 就绪。"
+    }
+  },
+  "turn": {
+    "empty": "还没有轮次。向 {{bot}} 发一个任务试试。",
+    "loading": "读取轮次…",
+    "live": "实时",
+    "reconnecting": "重连中",
+    "noEvents": "这轮没有留下事件。",
+    "stop": "停止",
+    "stopping": "停止中…",
+    "done": "本轮已完成。",
+    "thought": "思考",
+    "tool": "工具",
+    "working": "进行中",
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "succeeded": "已成功",
+      "failed": "已失败",
+      "cancelled": "已取消"
+    }
+  },
+  "files": {
+    "title": "工作区文件",
+    "empty": "工作区是空的。",
+    "upload": "上传文件",
+    "uploading": "上传中…",
+    "uploadDone": "已上传 {{count}} 个文件。",
+    "refused": "上传被拒绝",
+    "tooMany": "一次最多 20 个文件。",
+    "tooLarge": "单个文件不能超过 20MB。",
+    "refresh": "刷新"
+  }
+}
