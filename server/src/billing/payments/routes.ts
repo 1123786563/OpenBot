@@ -28,9 +28,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../../audit";
 import type { AppVariables } from "../../auth/guards";
-import { BillingError } from "../types";
 import { readBodyCapped } from "../raw-body";
-import { PurchaseError, type CallbackOutcome, type PaymentService } from "./service";
+import { BillingError } from "../types";
+import {
+  type CallbackOutcome,
+  type PaymentService,
+  PurchaseError,
+} from "./service";
 
 /** The shape `requireAdmin` takes in auth/guards.ts: a refusal answer, or nothing to add. */
 type RequireAdmin = (
@@ -77,7 +81,10 @@ async function callbackAnswer(
   const wechat = providerId === "wechat";
   const fail = (status: 400 | 401 | 403 | 404 | 409 | 500) => {
     if (wechat) {
-      return context.json({ code: "FAIL", message: "Payment notification refused." }, status);
+      return context.json(
+        { code: "FAIL", message: "Payment notification refused." },
+        status,
+      );
     }
     return context.json({ error: "Payment notification refused." }, status);
   };
@@ -94,7 +101,13 @@ async function callbackAnswer(
     case "unknown-provider":
       return context.json({ error: "Unknown payment provider." }, 404);
     case "unverified":
-      return fail(outcome.refusal === "stale" ? 401 : outcome.refusal === "decryption" ? 400 : 403);
+      return fail(
+        outcome.refusal === "stale"
+          ? 401
+          : outcome.refusal === "decryption"
+            ? 400
+            : 403,
+      );
     case "not-success":
       return fail(409);
     case "unknown-order":
@@ -150,7 +163,10 @@ export function createPaymentRoutes(deps: {
     }
     if (error instanceof PurchaseError) {
       if (error.refusal.reason === "unknown-plan") {
-        return context.json({ error: "That plan is not purchasable here." }, 400);
+        return context.json(
+          { error: "That plan is not purchasable here." },
+          400,
+        );
       }
       if (error.refusal.reason === "unknown-provider") {
         return context.json(
@@ -221,10 +237,7 @@ export function createPaymentRoutes(deps: {
       return context.json({ error: "No such purchase." }, 404);
     }
     if (result.outcome === "terminal") {
-      return context.json(
-        { error: "That purchase is already settled." },
-        409,
-      );
+      return context.json({ error: "That purchase is already settled." }, 409);
     }
     if (deps.audit && result.outcome === "canceled") {
       await recordAuditEvent(deps.audit, {

@@ -45,7 +45,9 @@ export async function postForm(
     response = await (config.fetch ?? fetch)(url, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ),
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         accept: "application/json",
@@ -82,7 +84,9 @@ export async function postJson(
     response = await (config.fetch ?? fetch)(url, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ),
       headers: {
         "content-type": "application/json",
         accept: "application/json",
@@ -168,7 +172,9 @@ export async function getJsonWithStatus(
     response = await (config.fetch ?? fetch)(url, {
       method: "GET",
       redirect: "error",
-      signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ),
       headers: {
         accept: "application/json",
         authorization,

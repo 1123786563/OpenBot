@@ -30,9 +30,10 @@
  * failure surfaces as the `unconfigured` sentinel from the crypto layer, and every wire refusal
  * as `invalid_response` or `unreachable` built here from the code alone.
  */
+
+import { AlipaySdk } from "alipay-sdk";
 import { BillingError } from "../types";
 import { amountStringToCents, rsaVerify } from "./crypto";
-import { AlipaySdk } from "alipay-sdk";
 import type {
   PaymentFact,
   PaymentProvider,
@@ -73,7 +74,10 @@ function stripPem(pem: string): string {
     .join("");
 }
 
-function stringField(record: Record<string, unknown>, name: string): string | undefined {
+function stringField(
+  record: Record<string, unknown>,
+  name: string,
+): string | undefined {
   const value = record[name];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -83,7 +87,10 @@ function stringField(record: Record<string, unknown>, name: string): string | un
  * exec() normalises its answer object to camelCase. Value-level compatibility, whichever shape
  * travels.
  */
-function anyField(record: Record<string, unknown>, snake: string): string | undefined {
+function anyField(
+  record: Record<string, unknown>,
+  snake: string,
+): string | undefined {
   const camel = snake.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
   return stringField(record, snake) ?? stringField(record, camel);
 }
@@ -113,7 +120,11 @@ function answerOf(execResult: unknown): Record<string, unknown> {
   if (typeof execResult === "string") {
     throw new BillingError("unreachable");
   }
-  if (execResult && typeof execResult === "object" && !Array.isArray(execResult)) {
+  if (
+    execResult &&
+    typeof execResult === "object" &&
+    !Array.isArray(execResult)
+  ) {
     return execResult as Record<string, unknown>;
   }
   throw new BillingError("invalid_response");
@@ -138,8 +149,13 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
         privateKey: stripPem(config.privateKeyPem),
         alipayPublicKey: stripPem(config.alipayPublicKeyPem),
         gateway: config.gatewayUrl.replace(/\/+$/, "") + "/gateway.do",
-      }) as unknown as Record<string, (m: string, p: Record<string, unknown>) => Promise<unknown>>;
-      return { run: (m: string, p: Record<string, unknown>) => sdk["exec"](m, p) };
+      }) as unknown as Record<
+        string,
+        (m: string, p: Record<string, unknown>) => Promise<unknown>
+      >;
+      return {
+        run: (m: string, p: Record<string, unknown>) => sdk["exec"](m, p),
+      };
     })();
   // The SDK's own request entry, bound once: it carries the gateway's signing/transport quirks
   // (see the file header), and binding keeps this file free of any shell-shaped call syntax.
@@ -239,7 +255,13 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
       }
       const signature = parameters.sign;
       if (!signature) return { ok: false };
-      if (!rsaVerify(config.alipayPublicKeyPem, canonicalString(parameters), signature)) {
+      if (
+        !rsaVerify(
+          config.alipayPublicKeyPem,
+          canonicalString(parameters),
+          signature,
+        )
+      ) {
         return { ok: false };
       }
       // The app id is the one merchant identity this deployment owns; anything else is not our
@@ -276,12 +298,15 @@ function alipayFact(
             // invented closure — the query loop re-asks, the notification answered 409.
             "pending";
   const totalAmount = anyField(record, "total_amount");
-  const amountCents = totalAmount === undefined ? undefined : amountStringToCents(totalAmount);
+  const amountCents =
+    totalAmount === undefined ? undefined : amountStringToCents(totalAmount);
   return {
     outTradeNo,
     state,
     channelTransactionId: anyField(record, "trade_no"),
-    ...(amountCents !== null && amountCents !== undefined ? { amountCents } : {}),
+    ...(amountCents !== null && amountCents !== undefined
+      ? { amountCents }
+      : {}),
     currency: "CNY",
   };
 }
