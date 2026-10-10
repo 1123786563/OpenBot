@@ -2,8 +2,8 @@
 
 OpenBot logs one JSON line per record, so `docker logs`, `.logs/*.log` and a future log collector
 all read the same shape. This page is the team's convention for what those lines contain and how to
-read them; what it covers is the P1 logging and request tracking plus the P2 distributed tracing,
-and the later phases are listed at the end.
+read them; what it covers is the P1 logging and request tracking, the P2 distributed tracing and
+the P3 crash-reporting sink, and the later phases are listed at the end.
 
 ## Logging
 
@@ -114,11 +114,99 @@ In Grafana on port 3003: Explore → pick the Tempo data source → Search → s
 open a trace for its waterfall. Loki's log lines carry `trace_id` as a derived field, so a log
 line in Explore links straight to the same trace.
 
+## Crash reporting
+
+**GlitchTip is the sink, the profile is the switch.** The same `docker compose --profile
+observability up -d` that brings up the LGTM stack brings up GlitchTip (plus its own postgres and
+redis) at `http://127.0.0.1:8001` — a Sentry-protocol server the client SDKs point DSNs at.
+It is in the same profile because it is the same story: a deployment that sends no telemetry has
+no need of it, and a plain `docker compose up -d` never starts it. It is pinned to
+`glitchtip/glitchtip:6.2.6`, the release the protocol test below was verified against; unlike the
+LGTM five it owns its data (`glitchtip-db` volume) and wipes it on upgrade, which is why it runs
+beside, not on, the stack's shared postgres — `docker/observability/glitchtip-init-db.sql` has
+that argument.
+
+**One process, not three.** The v6 image runs web (granian) and the background worker as a single
+process when `GLITCHTIP_EMBED_WORKER=true` is set — compose sets it — and runs its own migrations
+at boot. What compose does force is `SECRET_KEY` (`GLITCHTIP_SECRET_KEY` in the root `.env`,
+generate once with `openssl rand -hex 32`): the stack refuses to start without it, because Django
+signs sessions and password resets with it and a placeholder would look healthy while not being
+one.
+
+### Initialization and the DSN
+
+The image has **no env-var bootstrap for an initial admin** (v6.2.6: verified — nothing like
+`GLITCHTIP_INITIAL_ADMIN_EMAIL` exists; there is a `bootstrap_dev` command but it requires
+`DEBUG=true` and mints hard-coded dev credentials, which is not a thing to leave enabled). The
+instance supports either of these, once, on a fresh volume:
+
+**By hand** — open `http://127.0.0.1:8001`, register the first user (registration is open for the
+first user by default), create organization `openbot`, create a project per client (`web`,
+`mobile`, `desktop`), copy each project's DSN.
+
+**By script** — the same objects through the image's own management commands, no browser needed
+(the password arrives through Django's standard `DJANGO_SUPERUSER_*` env contract):
+
+```sh
+docker compose --profile observability exec -T \
+  -e DJANGO_SUPERUSER_EMAIL=admin@openbot.local \
+  -e DJANGO_SUPERUSER_PASSWORD=<generated> \
+  glitchtip python manage.py createsuperuser --noinput
+```
+
+then a one-off `python manage.py shell` block (mirroring what the UI onboarding creates) for the
+verified-email flag, organization `openbot`, a project and an API token — `Project.save()`
+creates the DSN key itself, and `key.get_dsn()` prints it against `GLITCHTIP_DOMAIN`. Keep the
+admin email/password and the DSNs in the root `.env` (untracked): `SENTRY_DSN_WEB`,
+`SENTRY_DSN_MOBILE`, `SENTRY_DSN_DESKTOP` — one DSN per client against the same GlitchTip; the
+commented samples in `.env.example` name them.
+
+A DSN looks like `http://<key>@127.0.0.1:8001/<project-id>` — HTTP because the stack is
+loopback-only, which is also why it is not a production secret in local development: the port is
+published on loopback only, like every other port in docker-compose.yml.
+
+### Protocol test event
+
+The wire test that proves the sink accepts Sentry envelopes without any SDK involved. The
+brief's one-liner mangles the DSN parse (`sentry_key` would carry `key@host:port`), so this is
+the corrected form — split the DSN into key and project first:
+
+```sh
+DSN=$(grep '^SENTRY_DSN_WEB=' .env | cut -d= -f2)
+KEY="${DSN#http://}"; KEY="${KEY%%@*}"; PROJ="${DSN##*/}"
+EVENT_ID=$(python3 -c 'import uuid;print(uuid.uuid4())')
+
+printf '{"event_id":"%s","sent_at":"2026-10-10T00:00:00Z"}\n{"type":"event"}\n{"level":"error","platform":"other","logger":"smoke","message":"openbot P3 envelope smoke test"}' "$EVENT_ID" |
+curl -s -X POST "http://127.0.0.1:8001/api/$PROJ/envelope/" \
+  -H "Content-Type: application/x-sentry-envelope" \
+  -H "X-Sentry-Auth: Sentry sentry_key=$KEY, sentry_version=7, sentry_client=openbot-test/1.0" \
+  --data-binary @-
+# → 200 {"id": "<event_id without dashes>"}
+```
+
+Verify it landed (needs an API token — mint one in the UI under Profile → Auth Tokens, or in the
+shell block above). Note GlitchTip answers **`/issues/`, not Sentry's `/events/`** — the org
+events endpoint 404s here:
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8001/api/0/organizations/openbot/issues/
+# → issue shortId WEB-1, title "openbot P3 envelope smoke test"
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8001/api/0/organizations/openbot/issues/1/events/latest/
+# → the event itself, eventID matching the one sent
+```
+
+The embedded worker moves the envelope from redis into Postgres within a second or two of the
+200; an empty issues list right after a 200 means the worker is not up.
+
 ## Later phases
 
-What follows is sequenced and deliberately not started: a `/metrics` endpoint (P4) and client
-crash reporting (P5). The Grafana, Loki and Tempo stack that gives the traces above somewhere to
-land (P3) is in — see Local Tempo above.
+What remains is sequenced and deliberately not started: a `/metrics` endpoint (P4) and the real
+client SDK wiring for the crash reports above — web, mobile and desktop against the DSNs already
+minted (P5). The Grafana, Loki and Tempo stack that gives the traces above somewhere to land
+(P3) is in — see Local Tempo above — and so is the GlitchTip sink the crash reports land in, as
+of this section.
 
 One serialization note worth keeping for that work: pino serializes an `err` key by default,
 message and stack included, which is what error handlers rely on. Every other value belongs in a

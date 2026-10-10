@@ -793,6 +793,89 @@ services:
       retries: 12
       start_period: 30s
 
+  # GlitchTip, the crash-reporting sink: a Sentry-protocol server the client SDKs (P5) point
+  # their DSNs at. Behind the `observability` profile with the five above — a deployment that
+  # has configured no telemetry has no need of it, and a plain `docker compose up -d` never
+  # starts it.
+  #
+  # Own postgres and redis rather than sharing this stack's: GlitchTip's upgrade path is
+  # recreate-from-scratch (wipe the volume, re-register, re-issue DSNs), and neither its
+  # migration-owned schema nor its throwaway lifecycle belongs on the volume OpenBot's tables
+  # live on — docker/observability/glitchtip-init-db.sql has that argument.
+  #
+  # Tag pinned to the release verified below; `latest` moves without telling us. v6 runs web
+  # (granian) and worker (django-vtasks) as one process when GLITCHTIP_EMBED_WORKER is set, and
+  # runs its migrations itself at boot, so this is three containers and not five. The image
+  # ships neither curl nor wget, so the healthcheck is a python one-liner against `/_health/`.
+  glitchtip:
+    profiles: ["observability"]
+    image: glitchtip/glitchtip:6.2.6
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      # Forced, not defaulted: Django signs sessions and password resets with it, so a
+      # placeholder would look healthy and still not be one. Generated once per deployment:
+      #   openssl rand -hex 32
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?set GLITCHTIP_SECRET_KEY in .env}
+      # The host DSNs are minted against — also what the browser UI is served on, so the
+      # browser and the SDKs see the same DSN host.
+      GLITCHTIP_DOMAIN: http://127.0.0.1:${GLITCHTIP_PORT:-8001}
+      # One process for web and worker; see the block comment above.
+      GLITCHTIP_EMBED_WORKER: "true"
+    ports:
+      # Loopback, like every other port in this file: crash reports carry stack traces and
+      # environment details, and the DSN's key is the only credential on that path. 8001
+      # because 8000 is Casdoor's and 8080 is unassigned convention.
+      - "127.0.0.1:${GLITCHTIP_PORT:-8001}:8000"
+      - "[::1]:${GLITCHTIP_PORT:-8001}:8000"
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    healthcheck:
+      # `/_health/` answers 200 once migrations have run; the start_period below absorbs the
+      # first boot's migrate on a fresh volume.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/_health/').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  glitchtip-postgres:
+    profiles: ["observability"]
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    volumes:
+      - glitchtip-db:/var/lib/postgresql/data
+      # Belt and braces on the fresh-volume path: the POSTGRES_* env above already creates this
+      # role and database, and the script's guards make the second attempt a no-op. Mounted the
+      # same way casdoor's and lago's are so the ownership contract is written down, not implied.
+      - ./docker/observability/glitchtip-init-db.sql:/docker-entrypoint-initdb.d/10-glitchtip.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  glitchtip-redis:
+    profiles: ["observability"]
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --port 6379
+    volumes:
+      - glitchtip-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 networks:
   # The database and the services that reach it by name. Nothing a Bot can reach is on it.
   #
@@ -825,3 +908,5 @@ volumes:
   prometheus-data:
   grafana-data:
   alloy-data:
+  glitchtip-db:
+  glitchtip-redis-data:
