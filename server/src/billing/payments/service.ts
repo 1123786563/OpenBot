@@ -25,6 +25,7 @@ import type {
   PaymentStore,
 } from "./types";
 import type { NotificationRefusal, PaymentProvider } from "./provider";
+import { getLogger } from "../../../../shared/logger";
 
 /** What the payment service needs from the billing projection, and nothing more. */
 export type PaymentLagoFacade = {
@@ -130,7 +131,9 @@ export function createPaymentService(deps: {
   log?: { warn(message: string): void };
 }): PaymentService {
   const now = deps.now ?? (() => new Date());
-  const log = deps.log ?? { warn: (message: string) => console.warn(message) };
+  // The shared server logger satisfies the narrow `{ warn }` shape, so the fallback is a
+  // plain injection default — warnings route through the one logger, never bare stdout.
+  const log = deps.log ?? getLogger("server");
 
   function notifyUrlFor(provider: PaymentProviderId): string {
     return `${deps.notifyBaseUrl}/api/payments/callbacks/${provider}`;
