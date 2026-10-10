@@ -119,6 +119,25 @@ export type BillingUsage = {
   charges: readonly BillingUsageCharge[];
 };
 
+/** One server-local day of metered usage, aggregated from the provider's event log. */
+export type BillingUsageDailyBucket = {
+  /** Local `yyyy-mm-dd`. */
+  date: string;
+  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+};
+
+/** The billing period's usage, bucketed by day, for a chart. */
+export type BillingUsageDaily = {
+  fromDatetime?: string;
+  toDatetime?: string;
+  days: readonly BillingUsageDailyBucket[];
+  /** True when the page ceiling stopped the read before the provider ran out of events. */
+  truncated: boolean;
+};
+
 /** The four subscription states the sync reads. */
 export type BillingSubscriptionStatus =
   | "active"
@@ -229,6 +248,8 @@ export type BillingService = {
     page: number,
     externalCustomerId?: string,
   ): Promise<BillingUsageEventPage>;
+  /** The active subscription's current-period usage bucketed by day, 60s-cached. */
+  usageDaily(externalCustomerId?: string): Promise<BillingUsageDaily>;
   /**
    * Meter one consumption event against the active subscription. Fire-and-forget by design: the
    * caller is a model call's epilogue, and billing must never sit in front of a token stream.

@@ -104,6 +104,12 @@ export function createBillingRoutes(deps: {
       },
     });
   });
+  // The daily buckets are the provider's event log re-read and regrouped, so they answer from the
+  // service's short cache (see service.ts) rather than re-walking it per page load. `truncated`
+  // travels with the days so a chart can say honestly when the answer is a prefix of the truth.
+  routes.get("/usage/daily", async (context) => {
+    return context.json(await deps.service.usageDaily());
+  });
   return routes;
 }
 
