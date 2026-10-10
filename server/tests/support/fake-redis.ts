@@ -71,9 +71,12 @@ export function fakeRedisPort(): RedisPort & {
         const token = String(args[1]);
         void numKeys;
         if (script.includes("pexpire")) {
-          const entry = core.keys.get(key);
-          if (!entry || entry.value !== token) return 0;
-          entry.expiresAt = Date.now() + Number(args[2]);
+          // alive(), not a bare get: renewing an expired key must fail the way Redis would,
+          // or the lock tests cannot tell a held lock from one whose TTL has quietly lapsed.
+          const entry = alive(key);
+          if (entry === null || entry !== token) return 0;
+          const stored = core.keys.get(key)!;
+          stored.expiresAt = Date.now() + Number(args[2]);
           return 1;
         }
         if (script.includes("del")) {

@@ -61,7 +61,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await database
         .delete(sandboxInstances)
         .where(like(sandboxInstances.botId, `bot-${run}%`));
-      await database.delete(agents).where(eq(agents.id, botId));
+      await database.delete(agents).where(like(agents.id, `bot-${run}%`));
       await database.delete(users).where(eq(users.id, ownerUserId));
       await database.$client.close();
     });
