@@ -370,3 +370,31 @@ describe("code run gateway: startStreaming", () => {
     ).toBe(true);
   });
 });
+
+describe("code run gateway: the artifact hook's failure containment (B4 pin)", () => {
+  test("an onArtifacts throw must not rewrite a completed run's outcome", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient(),
+      },
+      store,
+      auditStore: audit.store,
+      onArtifacts: async () => {
+        throw new Error("gallery write exploded");
+      },
+    });
+    const outcome = await gateway.run("照常执行");
+    // The run completed; the hook's failure is the gallery's problem, not the run's.
+    expect(outcome.kind).toBe("completed");
+    if (outcome.kind === "completed") {
+      expect(outcome.runId.startsWith("cr-")).toBe(true);
+    }
+    expect(rows.get((outcome as { runId: string }).runId)).toMatchObject({
+      status: "completed",
+    });
+    expect(audit.events.some((e) => e.eventType === "code.run_completed")).toBe(true);
+  });
+});
