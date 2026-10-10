@@ -477,6 +477,13 @@
       "when": 1791670501247,
       "tag": "0067_workshop_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1791673125232,
+      "tag": "0068_workshop_rls_grant",
+      "breakpoints": true
     }
   ]
 }
