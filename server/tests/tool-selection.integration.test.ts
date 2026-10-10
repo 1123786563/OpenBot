@@ -1046,7 +1046,9 @@ describe("the discovery record", () => {
   });
 
   test("a successful record stays quiet", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     recorded.length = 0;
     answerWith(["drive-audit"]);
     try {
@@ -1071,7 +1073,9 @@ describe("the discovery record", () => {
   });
 
   test("an absent record stays quiet", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     answerWith(["drive-audit"]);
     try {
       const agents = await buildAgents(
