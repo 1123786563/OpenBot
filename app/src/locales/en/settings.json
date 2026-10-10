@@ -77,7 +77,16 @@
     "eventTokens": "tokens",
     "eventPagerStatus": "Page {{page}} of {{totalPages}} · {{total}} events",
     "eventPagerPrev": "Previous",
-    "eventPagerNext": "Next"
+    "eventPagerNext": "Next",
+    "kpiTotal": "Total this period",
+    "kpiTokens": "Total tokens",
+    "kpiEvents": "Metered events",
+    "trendTitle": "Daily usage",
+    "trendTruncated": "Chart covers the most recent {{total}} events only",
+    "chartEmpty": "No daily usage in this period yet.",
+    "columnTime": "Time",
+    "columnMetric": "Metric",
+    "columnAmount": "Amount"
   },
   "darkTheme": "Dark theme",
   "darkThemeDescription": "Use the dark appearance across OpenBot.",
