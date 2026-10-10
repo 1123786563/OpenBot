@@ -32,6 +32,7 @@ import (
 	aguiserver "trpc.group/trpc-go/trpc-agent-go/server/agui"
 	aguiadapter "trpc.group/trpc-go/trpc-agent-go/server/agui/adapter"
 	aguirunner "trpc.group/trpc-go/trpc-agent-go/server/agui/runner"
+	"trpc.group/trpc-go/trpc-agent-go/server/agui/translator"
 	"trpc.group/trpc-go/trpc-agent-go/tool"
 	"trpc.group/trpc-go/trpc-agent-go/tool/function"
 
@@ -130,6 +131,11 @@ func New(a agent.Agent, opts ...Option) (http.Handler, func() error, error) {
 			aguirunner.WithUserIDResolver(ResolveUser),
 			aguirunner.WithStateResolver(ResolveState),
 			aguirunner.WithRunAgentInputHook(validateAndStripInput),
+			// R4-A wait mapping: each run's translator reports a governed
+			// suspension (approval required / receipt pending) as the locked
+			// protocol's interrupt outcome on RUN_FINISHED, so no consumer
+			// can read a waiting run as a succeeded one (see waitmapping.go).
+			aguirunner.WithTranslatorFactory(waitMappingFactory(translator.NewFactory())),
 		),
 		// The runner factory is intercepted only to hand the host the cancel
 		// seam; the options the framework aggregated above (including this

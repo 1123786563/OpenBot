@@ -682,10 +682,12 @@ func TestGovernedToolCallCrossesThePlaneWithThePrivateAssertion(t *testing.T) {
 }
 
 // A receipt whose status is not final (submitted/unknown) is never a tool
-// failure the model may retry: the call fails with the suspension signal,
-// the run ends in RUN_ERROR, and the model is never asked again — one
-// provider call, no answer text anywhere in the events.
-func TestSubmittedReceiptSuspendsInsteadOfAnswering(t *testing.T) {
+// failure the model may retry: the run ends WAITING on the locked protocol's
+// interrupt outcome with reason operation_receipt_pending — the ledger's cue
+// to suspend for reconciliation, never to read the run as succeeded or to
+// hand the model a retryable failure. One provider call, no answer text
+// anywhere in the events.
+func TestSubmittedReceiptEndsWaitingOnAnInterruptOutcome(t *testing.T) {
 	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
 		switch {
 		case strings.HasSuffix(path, "/prepare"):
@@ -714,8 +716,12 @@ func TestSubmittedReceiptSuspendsInsteadOfAnswering(t *testing.T) {
 	}
 	events := parseSSE(t, body)
 	assertContract(t, events)
-	if last := events[len(events)-1]["type"]; last != "RUN_ERROR" {
-		t.Fatalf("terminal = %v, want RUN_ERROR (the run is suspended, not answered)", last)
+	interrupt := terminalInterruptOf(t, events)
+	if interrupt["id"] != "op_stuck" {
+		t.Fatalf("interrupt id = %#v, want the frozen operation op_stuck", interrupt["id"])
+	}
+	if interrupt["reason"] != WaitReasonReceiptPending {
+		t.Fatalf("interrupt reason = %#v, want %q", interrupt["reason"], WaitReasonReceiptPending)
 	}
 	// The model was asked exactly once and never saw the receipt's text:
 	// retrying the operation is not the model's move to make.
@@ -734,9 +740,9 @@ func TestSubmittedReceiptSuspendsInsteadOfAnswering(t *testing.T) {
 }
 
 // A proposal the plane answers "reconciliation required" on is the same
-// freeze by another door: the runtime must not execute anything and the run
-// must end without the model being handed a retryable failure.
-func TestReconciliationRefusalSuspendsWithoutExecuting(t *testing.T) {
+// freeze by another door: nothing is executed and the run ends waiting on the
+// same interrupt outcome, keyed to the operation the plane already holds.
+func TestReconciliationRefusalEndsWaitingOnAnInterruptOutcome(t *testing.T) {
 	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
 		if strings.HasSuffix(path, "/prepare") {
 			return http.StatusConflict, `{"error_code":"reconciliation_required","operation_id":"op_stuck"}`
@@ -761,8 +767,12 @@ func TestReconciliationRefusalSuspendsWithoutExecuting(t *testing.T) {
 	}
 	events := parseSSE(t, body)
 	assertContract(t, events)
-	if last := events[len(events)-1]["type"]; last != "RUN_ERROR" {
-		t.Fatalf("terminal = %v, want RUN_ERROR", last)
+	interrupt := terminalInterruptOf(t, events)
+	if interrupt["id"] != "op_stuck" {
+		t.Fatalf("interrupt id = %#v, want the operation the plane already holds", interrupt["id"])
+	}
+	if interrupt["reason"] != WaitReasonReceiptPending {
+		t.Fatalf("interrupt reason = %#v, want %q", interrupt["reason"], WaitReasonReceiptPending)
 	}
 	if calls := planeCalls(); len(calls) != 1 {
 		t.Fatalf("plane calls = %d, want exactly the refused prepare (no execute)", len(calls))
@@ -772,10 +782,67 @@ func TestReconciliationRefusalSuspendsWithoutExecuting(t *testing.T) {
 	}
 }
 
+// A plain successful run must NOT carry an interrupt outcome: an absent
+// outcome is the locked 1.0 protocol's success form, so a consumer that
+// consults the outcome before mapping RUN_FINISHED to Run.succeeded can tell
+// the two apart (R4-A: 不能把RUN_FINISHED直接映射Run.succeeded).
+func TestPlainSuccessCarriesNoInterruptOutcome(t *testing.T) {
+	provider, log := newProvider(t, func(call int, req providerRequest) modelReply {
+		return modelReply{body: fixedCompletion}
+	})
+	validation := newValidation(t)
+	c := newCandidate(t, newAgent(t, provider.URL, false), provider, log, validation)
+
+	res, body := c.postRun(t, nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("run status = %d, body = %s", res.StatusCode, body)
+	}
+	events := parseSSE(t, body)
+	assertContract(t, events)
+	if last := events[len(events)-1]["type"]; last != "RUN_FINISHED" {
+		t.Fatalf("terminal = %v, want RUN_FINISHED", last)
+	}
+	if outcome, present := events[len(events)-1]["outcome"]; present {
+		t.Fatalf("a plain success carries an outcome %#v; success must be outcome-absent so the interrupt form stays unambiguous", outcome)
+	}
+}
+
+// terminalInterruptOf asserts the stream closed on a RUN_FINISHED carrying the
+// locked protocol's interrupt outcome (R4-A 等待输入/审批 row: the wait state
+// must be machine-readable on the wire — RUN_FINISHED + outcome.type ==
+// "interrupt" — never a bare success and never a string-matched RUN_ERROR) and
+// returns that single interrupt.
+func terminalInterruptOf(t *testing.T, events []map[string]any) map[string]any {
+	t.Helper()
+	terminal := events[len(events)-1]
+	if terminal["type"] != "RUN_FINISHED" {
+		t.Fatalf("terminal = %v, want RUN_FINISHED with an interrupt outcome", terminal["type"])
+	}
+	outcome, ok := terminal["outcome"].(map[string]any)
+	if !ok || outcome["type"] != "interrupt" {
+		t.Fatalf("terminal outcome = %#v, want type=interrupt", terminal["outcome"])
+	}
+	interrupts, ok := outcome["interrupts"].([]any)
+	if !ok || len(interrupts) != 1 {
+		t.Fatalf("interrupt outcome carries %d interrupt(s), want exactly 1: %#v", len(interrupts), outcome["interrupts"])
+	}
+	interrupt, ok := interrupts[0].(map[string]any)
+	if !ok {
+		t.Fatalf("interrupt is not an object: %#v", interrupts[0])
+	}
+	if id, _ := interrupt["id"].(string); id == "" {
+		t.Fatalf("interrupt has no id (the resume-entry answer key): %#v", interrupt)
+	}
+	return interrupt
+}
+
 // A proposal that needs approval is not executed and not retried by the
-// model: approval is a platform state change this candidate has no channel
-// to supply, so the call fails rather than pretending.
-func TestApprovalRequiredStopsBeforeExecuting(t *testing.T) {	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
+// model: the run ends WAITING on the locked protocol's interrupt outcome —
+// RUN_FINISHED with one interrupt whose id is the frozen operation and whose
+// reason is the frozen "tool_approval" — so the platform ledger maps it to
+// waiting_approval, never to succeeded (master §4.3 running→waiting_approval).
+func TestApprovalRequiredEndsWaitingOnAnInterruptOutcome(t *testing.T) {
+	plane, planeCalls := newScriptedPlane(t, func(path string) (int, string) {
 		if strings.HasSuffix(path, "/prepare") {
 			return http.StatusOK, `{"operation_id":"op_approval","requires_approval":true,"safety_preview":"would delete something","deduplicated":false,"reconciliation_required":false}`
 		}
@@ -799,11 +866,24 @@ func TestApprovalRequiredStopsBeforeExecuting(t *testing.T) {	plane, planeCalls 
 	}
 	events := parseSSE(t, body)
 	assertContract(t, events)
-	if last := events[len(events)-1]["type"]; last != "RUN_ERROR" {
-		t.Fatalf("terminal = %v, want RUN_ERROR", last)
+	interrupt := terminalInterruptOf(t, events)
+	if interrupt["id"] != "op_approval" {
+		t.Fatalf("interrupt id = %#v, want the frozen operation op_approval", interrupt["id"])
+	}
+	if interrupt["reason"] != WaitReasonToolApproval {
+		t.Fatalf("interrupt reason = %#v, want %q", interrupt["reason"], WaitReasonToolApproval)
+	}
+	// The interrupt names the tool call it concerns: the SAME toolCallId the
+	// stream's TOOL_CALL_START carried, so the consumer can attach the wait to
+	// the call that caused it.
+	if interrupt["toolCallId"] != "call_fixture" {
+		t.Fatalf("interrupt toolCallId = %#v, want call_fixture (the wire tool call id)", interrupt["toolCallId"])
 	}
 	if calls := planeCalls(); len(calls) != 1 {
 		t.Fatalf("plane calls = %d, want exactly the prepare (approval must gate execute)", len(calls))
+	}
+	if calls := log.snapshot(); len(calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1 (the model is never re-asked)", len(calls))
 	}
 }
 
@@ -1072,5 +1152,45 @@ func TestSuspensionSignalsKeepTheirErrorChains(t *testing.T) {
 	}
 	if !errors.As(approval, &stop) {
 		t.Fatal("approval refusal is not a stop error")
+	}
+}
+
+// The wait mapping's parser, on the exact message shapes the frozen framework
+// puts on the wire: a status word can never masquerade as an operation id,
+// and an operation-less suspension still yields a stable interrupt id.
+func TestWaitInterruptParsingOfTheFrameworkMessageShapes(t *testing.T) {
+	// The shape the wire actually carries (observed against the frozen
+	// trpc-agent-go): the framework wraps the tool error in its own prefix.
+	withOperation, withOperationOk := interruptOf("Error: callable tool execution failed: " +
+		"OPERATION_PENDING_RECEIPT: op_stuck submitted")
+	if !withOperationOk {
+		t.Fatal("a pending-receipt message did not map to a wait")
+	}
+	if withOperation.id != "op_stuck" || withOperation.reason != WaitReasonReceiptPending {
+		t.Fatalf("parsed wait = %+v, want id op_stuck reason %s", withOperation, WaitReasonReceiptPending)
+	}
+
+	// An unknown PROPOSAL outcome carries no operation id: the lone status
+	// word must not become the resume key.
+	noOperation, noOperationOk := interruptOf("Error: callable tool execution failed: " +
+		"OPERATION_PENDING_RECEIPT:  unknown")
+	if !noOperationOk {
+		t.Fatal("an operation-less pending message did not map to a wait")
+	}
+	if noOperation.id != "" {
+		t.Fatalf("status word parsed as operation id: %q", noOperation.id)
+	}
+	outcome := noOperation.asOutcome()
+	if len(outcome.Interrupts) != 1 || outcome.Interrupts[0].ID == "" {
+		t.Fatalf("operation-less wait built an unusable interrupt: %+v", outcome)
+	}
+
+	approval, approvalOk := interruptOf("run agent: OPERATION_REQUIRES_APPROVAL: op_approval")
+	if !approvalOk || approval.id != "op_approval" || approval.reason != WaitReasonToolApproval {
+		t.Fatalf("approval message parsed as %+v (ok=%v)", approval, approvalOk)
+	}
+
+	if _, ordinaryOk := interruptOf("provider exploded: leak-bait-secret-detail"); ordinaryOk {
+		t.Fatal("an ordinary failure must stay a RUN_ERROR, not become a wait")
 	}
 }

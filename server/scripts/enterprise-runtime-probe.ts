@@ -1,25 +1,26 @@
 #!/usr/bin/env bun
 /*
- * The R4 test coordinator: builds and starts the REAL Go runtime candidate as
- * a child process, drives it over HTTP, and writes the compatibility report
- * from what it actually measured — never a conclusion typed in ahead of time.
+ * The R4 test coordinator: builds and starts the REAL Go runtime candidate
+ * (runtime-go's actual cmd/runtime main, R2-B's assembled binary) as a child
+ * process, drives it over its real enterprise routes, and writes the
+ * compatibility report from what it actually measured — never a conclusion
+ * typed in ahead of time.
  *
- * What "the candidate" is here: the runtime-go module itself (the R2 adapter,
- * the R3 callback client and cancel boundary) composed with the real framework
- * — model/openai pointed at a fake OpenAI-compatible provider, llmagent.New,
- * adapter.New — exactly the composition the Go tests in
- * runtime-go/internal/adapter/agui_test.go verify. The launcher main below is
- * written by this script into a throwaway module that `replace`s
- * openbot/runtime-go with the repository's runtime-go directory.
- *
- * R2-B has since assembled the REAL main (runtime-go/cmd/runtime): strict
- * configuration, the fixed expert catalog, the run gate and the enterprise
- * execution/cancel routes. Pointing THIS probe at that real binary (with its
- * flag/env surface: -addr, -validation-endpoint, -model-base-url,
- * -model-alias, -expert version=path, -governed-tools, -callback-endpoint
- * plus the OPENBOT_RUNTIME_* environment secrets) is the R4-A "真二进制" step;
- * until then the launcher below remains the probe's controlled composition,
- * and no result here claims the real binary ran.
+ * What runs here: `go build ./cmd/runtime` from the frozen runtime-go module
+ * — strict configuration, the fixed model client, the fixed expert catalog,
+ * the run gate, service authentication, the input guard and the expert router
+ * — launched with its real flag/env surface (-addr, -validation-endpoint,
+ * -model-base-url, -model-alias, -expert version=path, -governed-tools,
+ * -callback-endpoint plus OPENBOT_RUNTIME_SERVICE_CREDENTIAL), its listen
+ * address parsed from the real "runtime: listening on ..." log line. The
+ * model behind the run is the real framework Runner over model/openai pointed
+ * at a fake OpenAI-compatible provider whose answers are deterministic
+ * fixtures (never an SSE echo of AG-UI events). Consumers are @ag-ui/client
+ * HttpAgents against the real /internal/enterprise/v1/runtime/execution
+ * route, except the backpressure check, which is a deliberately slow raw
+ * reader. The historical synthetic launcher main this probe used to compose
+ * itself was DELETED when the real main covered its whole surface: one
+ * binary, one truth (R2-B③).
  *
  * Run from the repository root: `bun server/scripts/enterprise-runtime-probe.ts`
  * Exit code: 0 only when every check the probe EXECUTED passed and the report
@@ -37,7 +38,6 @@ import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { HttpAgent } from "@ag-ui/client";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -47,6 +47,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
+  canonicalArgsDigest,
   createFakeToolInvocationPlane,
   type ToolCapabilityBinding,
 } from "../src/enterprise/runtime/tool-invocations";
@@ -105,186 +106,27 @@ async function probeTool(
 }
 
 // ---------------------------------------------------------------------------
-// The candidate launcher: a complete Go program written into a temp module.
+// The candidate: the REAL runtime-go cmd/runtime binary, built from source.
 // ---------------------------------------------------------------------------
 
 /*
- * The full composition the Go tests in runtime-go/internal/adapter/agui_test.go
- * verify piece by piece, assembled as one process:
- *
- *   server.Authenticate (identity middleware; the validation endpoint is the
- *   probe's real TS route) in front of adapter.New(llmagent over the real
- *   model/openai client), the one governed tool crossing the existing
- *   /api/agent-tools/call plane, and server.Cancel on the framework runner's
- *   cancel seam. The AG-UI handler answers under /agui/, the cancel boundary
- *   at /cancel, health under /health/ — and the ready address goes to stdout
- *   as the one line `READY <url>` the probe waits for.
+ * There is no synthetic launcher here anymore. The probe used to compose its
+ * own main over the module's internals; R2-B's cmd/runtime main covers that
+ * whole surface (strict config, fixed model client, fixed expert catalog,
+ * governed tools, run gate, auth, input guard, expert router, execution and
+ * cancel routes, two-phase drain), so the probe now builds and launches THE
+ * binary a deployment would run. Anything the real main refuses to do is a
+ * probe failure, never worked around here.
  */
-const LAUNCHER_MAIN = `package main
 
-import (
-	"context"
-	"errors"
-	"flag"
-	"fmt"
-	"log"
-	"net"
-	"net/http"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
-
-	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
-	"trpc.group/trpc-go/trpc-agent-go/model"
-	openaimodel "trpc.group/trpc-go/trpc-agent-go/model/openai"
-	"trpc.group/trpc-go/trpc-agent-go/tool"
-
-	"openbot/runtime-go/internal/adapter"
-	"openbot/runtime-go/internal/callback"
-	"openbot/runtime-go/internal/server"
-)
-
-// governedToolName and its PINNED installation match what the probe's fake
-// tool plane authorizes.
-const (
-	governedToolName = "probe_governed"
-	governedVersion  = "probe_governed@1.0.0"
-)
-
-func main() {
-	var (
-		addr         = flag.String("addr", "127.0.0.1:0", "listen address")
-		modelBaseURL = flag.String("model-base-url", "", "OpenAI-compatible provider base URL (the probe's fake)")
-		modelAlias   = flag.String("model-alias", "probe-model", "model alias sent to the provider")
-		validationEP = flag.String("validation-endpoint", "", "TS validation endpoint URL")
-		callbackEP   = flag.String("callback-endpoint", "", "internal tool-invocations plane address")
-		serviceCred  = flag.String("service-credential", "", "platform-to-runtime shared credential")
-	)
-	flag.Parse()
-	var missing []string
-	if *modelBaseURL == "" {
-		missing = append(missing, "-model-base-url")
-	}
-	if *validationEP == "" {
-		missing = append(missing, "-validation-endpoint")
-	}
-	if *serviceCred == "" {
-		missing = append(missing, "-service-credential")
-	}
-	if len(missing) > 0 {
-		log.Fatalf("runtime candidate: missing %s", strings.Join(missing, ", "))
-	}
-
-	authCfg := server.AuthConfig{
-		ServiceCredential:  *serviceCred,
-		ValidationEndpoint: *validationEP,
-	}
-
-	// The one governed tool this candidate exposes: it PROPOSES and SPENDS
-	// on the TS tool plane, never inline. No other egress exists in this
-	// composition; the credentials each call presents are the verified
-	// run's own, from the private context.
-	var tools []tool.Tool
-	if *callbackEP != "" {
-		plane := &callback.Client{
-			HTTP:     &http.Client{Timeout: 10 * time.Second},
-			Endpoint: *callbackEP,
-		}
-		tools = append(tools, adapter.GovernedTool(plane, governedToolName, governedVersion,
-			"Platform-governed probe tool; proposes and executes on the TS plane.", nil))
-	}
-
-	provider := openaimodel.New(*modelAlias,
-		openaimodel.WithBaseURL(*modelBaseURL),
-		openaimodel.WithAPIKey("test-only"),
-	)
-	agentOpts := []llmagent.Option{
-		llmagent.WithModel(provider),
-		llmagent.WithInstruction("You are the OpenBot Go runtime candidate under probe."),
-		llmagent.WithGenerationConfig(model.GenerationConfig{Stream: true}),
-		llmagent.WithMaxLLMCalls(4),
-		llmagent.WithMaxToolIterations(2),
-	}
-	if len(tools) > 0 {
-		agentOpts = append(agentOpts, llmagent.WithTools(tools))
-	}
-	a := llmagent.New("openbot-probe-agent", agentOpts...)
-
-	var canceler adapter.Canceler
-	handler, _, err := adapter.New(a, adapter.WithCancelerSink(func(c adapter.Canceler) {
-		canceler = c
-	}))
-	if err != nil {
-		log.Fatalf("runtime candidate: adapter.New: %v", err)
-	}
-
-	auth := server.Authenticate(authCfg)
-	// The execution registry: which verified tuple is executing under which
-	// fencing. Process-local; the cancel boundary resolves executions by the
-	// full verified tuple and verifies the executing fencing (R3-B③).
-	executions := server.NewExecutionRegistry()
-	mux := http.NewServeMux()
-	mux.Handle("/health/", server.Health(func() bool { return authCfg.Ready() }))
-	mux.Handle("/agui/", http.StripPrefix("/agui", auth(executions.TrackExecutions(server.RequireVerifiedInput()(handler)))))
-	mux.Handle("/cancel", auth(server.Cancel(canceler, executions)))
-
-	ln, err := net.Listen("tcp", *addr)
-	if err != nil {
-		log.Fatalf("runtime candidate: listen: %v", err)
-	}
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	fmt.Printf("READY http://%s\\n", ln.Addr().String())
-	go func() {
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("runtime candidate: serve: %v", err)
-		}
-	}()
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	<-ctx.Done()
-	// The probe owns this process's lifetime; on its signal the candidate
-	// exits promptly rather than draining a stream a check has already ended.
-	os.Exit(0)
-}
-`;
-
-/** Pins the launcher to the exact module versions runtime-go froze (R1). */
-function launcherGoMod(): string {
-  const goMod = readFileSync(join(runtimeGoDir(), "go.mod"), "utf8");
-  const goDirective = /^go\s+\S+$/m.exec(goMod)?.[0];
-  if (!goDirective) throw new Error("runtime-go/go.mod carries no go directive");
-  const pinned = [...goMod.matchAll(/^\t(trpc\.group\/\S+)\s+(v\S+)$/gm)].map(
-    (m) => `\t${m[1]} ${m[2]}`,
-  );
-  if (pinned.length === 0)
-    throw new Error("runtime-go/go.mod carries no trpc module pins for the launcher");
-  return [
-    /*
-     * The launcher module's path deliberately sits INSIDE runtime-go's module
-     * path: Go's internal-package rule is lexical, so only a package rooted
-     * at openbot/runtime-go/... may import openbot/runtime-go/internal/...,
-     * which is exactly the composition this probe exists to exercise.
-     */
-    "module openbot/runtime-go/probe-launcher",
-    "",
-    goDirective,
-    "",
-    "require (",
-    "\topenbot/runtime-go v0.0.0",
-    ...pinned,
-    ")",
-    "",
-    `replace openbot/runtime-go => ${runtimeGoDir()}`,
-    "",
-  ].join("\n");
-}
+/** The expert the probe's minted invocations name (envelope expert_version). */
+export const PROBE_EXPERT_VERSION = "probe-expert@1.0.0";
+/** The governed tool installation the fake tool plane authorizes. */
+export const PROBE_GOVERNED_TOOL = `probe_governed=probe_governed@1.0.0`;
 
 let candidateBinary: Promise<string> | undefined;
 
-/** Builds the Go candidate offline (everything is in the local module cache). */
+/** Builds the REAL runtime binary offline (the module cache has everything). */
 export function buildCandidate(): Promise<string> {
   candidateBinary ??= buildCandidateOnce();
   return candidateBinary;
@@ -292,24 +134,39 @@ export function buildCandidate(): Promise<string> {
 
 async function buildCandidateOnce(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "openbot-runtime-probe-"));
-  writeFileSync(join(dir, "main.go"), LAUNCHER_MAIN);
-  writeFileSync(join(dir, "go.mod"), launcherGoMod());
-  copyFileSync(join(runtimeGoDir(), "go.sum"), join(dir, "go.sum"));
-  // Tidy resolves the launcher's own require set offline (the module cache
-  // already holds everything runtime-go pinned); without it the build refuses
-  // to guess which requirements the composition pulls in.
-  const tidy = await probeTool(["go", "mod", "tidy"], "candidate build: resolve the launcher module offline", dir);
-  if (tidy.code !== 0)
-    throw new Error(`tidying the launcher module failed:\n${tidy.text.trim()}`);
-  const build = await probeTool(["go", "build", "-o", "candidate", "."], "candidate build: compile the real Go candidate binary", dir);
+  const build = await probeTool(
+    ["go", "build", "-o", join(dir, "openbot-runtime"), "./cmd/runtime"],
+    "candidate build: compile the REAL cmd/runtime binary",
+    runtimeGoDir(),
+  );
   if (build.code !== 0)
-    throw new Error(`building the Go candidate failed (${build.code}):\n${build.text.trim()}`);
-  return join(dir, "candidate");
+    throw new Error(`building the real runtime binary failed (${build.code}):\n${build.text.trim()}`);
+  return join(dir, "openbot-runtime");
+}
+
+/**
+ * The expert catalog entry the real main loads: one instruction file, written
+ * once per probe process and passed as `-expert version=path`. The main
+ * refuses to start without at least one non-empty entry (verified live in
+ * runtimeconfig tests), so the probe writes real content.
+ */
+let expertInstructionFile: string | undefined;
+function probeExpertInstruction(): string {
+  expertInstructionFile ??= (() => {
+    const path = join(tmpdir(), `openbot-runtime-probe-expert-${process.pid}.txt`);
+    writeFileSync(path, "You are the OpenBot Go runtime candidate under probe.\n");
+    return path;
+  })();
+  return expertInstructionFile;
 }
 
 // ---------------------------------------------------------------------------
-// A started candidate: one child process with a ready address on stdout.
+// A started candidate: the real binary, one child process with a bound address.
 // ---------------------------------------------------------------------------
+
+/** The real main's enterprise routes (master plan §4.1 naming). */
+export const EXECUTION_PATH = "/internal/enterprise/v1/runtime/execution";
+export const CANCEL_PATH = "/internal/enterprise/v1/runtime/cancel";
 
 export type Candidate = {
   pid: number;
@@ -317,6 +174,22 @@ export type Candidate = {
   kill: () => Promise<void>;
 };
 
+/**
+ * Spawns the real runtime binary the way every process here is spawned: an
+ * EXPLICIT argv array and no shell — nothing a caller controls is ever
+ * interpolated into a command string; the child's environment carries the
+ * service credential because the real main takes secrets from the
+ * environment only (never a flag).
+ */
+function spawnRuntime(argv: string[], env: Record<string, string>) {
+  return Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env });
+}
+
+/**
+ * Starts the REAL cmd/runtime binary with its real configuration surface.
+ * The listen address is parsed from the actual "runtime: listening on <addr>"
+ * log line — the main logs it to stderr, so both pipes are watched.
+ */
 export async function startCandidate(opts: {
   binary: string;
   serviceCredential: string;
@@ -324,69 +197,84 @@ export async function startCandidate(opts: {
   validationEndpoint: string;
   callbackEndpoint?: string;
 }): Promise<Candidate> {
-  const argv = [
+  // One expert catalog entry, flag-shaped "version=path" as the main parses it.
+  const expertFlag = [PROBE_EXPERT_VERSION, probeExpertInstruction()].join("=");
+  const baseFlags = [
     opts.binary,
+    "-addr",
+    "127.0.0.1:0",
     "-model-base-url",
     opts.modelBaseUrl,
+    "-model-alias",
+    "probe-model",
     "-validation-endpoint",
     opts.validationEndpoint,
-    "-service-credential",
-    opts.serviceCredential,
+    "-expert",
+    expertFlag,
+    // Short drain windows so the probe's teardown never waits on the default
+    // 15s+5s; these are tuning knobs, not trust decisions.
+    "-drain-timeout",
+    "2s",
+    "-cancel-grace",
+    "1s",
   ];
-  if (opts.callbackEndpoint !== undefined) {
-    argv.push("-callback-endpoint", opts.callbackEndpoint);
-  }
-  const proc = Bun.spawn(argv, {
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
+  const argv =
+    opts.callbackEndpoint === undefined
+      ? baseFlags
+      : [
+          ...baseFlags,
+          "-governed-tools",
+          PROBE_GOVERNED_TOOL,
+          "-callback-endpoint",
+          opts.callbackEndpoint,
+        ];
+  const proc = spawnRuntime(argv, {
+    ...process.env,
+    // The one secret the real main reads from the environment; the fake
+    // provider authorizes nothing, so no model credential is set.
+    OPENBOT_RUNTIME_SERVICE_CREDENTIAL: opts.serviceCredential,
+    OPENBOT_RUNTIME_MODEL_CREDENTIAL: "",
   });
-  const stderrLog: string[] = [];
-  const stderrDrain = new Response(proc.stderr)
-    .text()
-    .then((text) => stderrLog.push(text))
-    .catch(() => {});
-  const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader();
-  const decoder = new TextDecoder();
-  let seen = "";
-  const deadline = Date.now() + 30_000;
-  let url: string | null = null;
-  while (Date.now() < deadline) {
-    const next = await Promise.race([
-      reader.read(),
-      Bun.sleep(Math.max(1, deadline - Date.now())).then(() => null),
-    ]);
-    if (next === null || next.done) break;
-    seen += decoder.decode(next.value, { stream: true });
-    url = /^READY (\S+)$/m.exec(seen)?.[1] ?? null;
-    if (url) break;
-  }
-  // Drain the rest of both pipes in the background so the child can never
-  // block on a full pipe while the probe is still talking to it.
-  (async () => {
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        seen += decoder.decode(value, { stream: true });
+  const seen: string[] = [];
+  const watch = (stream: ReadableStream<Uint8Array>) => {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          seen.push(decoder.decode(value, { stream: true }));
+        }
+      } catch {
+        /* the child died; its non-start is reported below */
       }
-    } catch {
-      /* the child died; its exit code is checked where it matters */
-    }
-  })();
-  if (!url) {
+    })();
+  };
+  watch(proc.stdout as ReadableStream<Uint8Array>);
+  watch(proc.stderr as ReadableStream<Uint8Array>);
+  const deadline = Date.now() + 30_000;
+  let address: string | null = null;
+  while (Date.now() < deadline) {
+    address = /runtime: listening on (\S+) /.exec(seen.join(""))?.[1] ?? null;
+    if (address) break;
+    const exited = await Promise.race([proc.exited, Bun.sleep(50).then(() => undefined)]);
+    if (exited !== undefined) break;
+  }
+  if (!address) {
     proc.kill();
-    await stderrDrain;
     throw new Error(
-      `the Go candidate never reported a ready address; stdout: ${seen.trim()}; stderr: ${stderrLog.join("\n").trim()}`,
+      `the real runtime binary never reported a listening address; output: ${seen.join("").trim()}`,
     );
   }
   return {
     pid: proc.pid,
-    baseUrl: url,
+    baseUrl: `http://${address}`,
     kill: async () => {
+      // SIGTERM lets the real main drain its in-flight runs (bounded by the
+      // short drain flags above); SIGKILL only if it ignores that.
       proc.kill();
-      const exited = await Promise.race([proc.exited, Bun.sleep(3000).then(() => null)]);
+      const exited = await Promise.race([proc.exited, Bun.sleep(4000).then(() => null)]);
       if (exited === null) {
         proc.kill(9);
         await proc.exited;
@@ -402,8 +290,15 @@ export async function startCandidate(opts: {
 export const CANDIDATE_TOOL_NAME = "probe_governed";
 export const PROBE_STREAM_TEXT = "PROBE_STREAM answer the protocol check";
 export const PROBE_TOOL_TEXT = `PROBE_TOOL call ${CANDIDATE_TOOL_NAME} now`;
-export const PROBE_SLOW_TEXT = "PROBE_SLOW take your time answering";
+/** Drives a governed call the plane answers "needs a human approval" on. */
+export const PROBE_APPROVAL_TEXT = "PROBE_APPROVAL this one needs a human";
+/** Drives a governed call whose execution receipt stays "submitted" (not final). */
+export const PROBE_RECEIPT_TEXT = "PROBE_RECEIPT the receipt stays pending";
+/** Drives a governed call plus a long streamed answer, for the slow reader. */
+export const PROBE_SLOW_READER_TEXT = "PROBE_SLOW_READER read your answer slowly";
 export const PROBE_FAIL_TEXT = "PROBE_FAIL break on purpose";
+/** Drives the slow scripted answer the cancel/restart checks race against. */
+export const PROBE_SLOW_TEXT = "PROBE_SLOW take your time answering";
 
 /**
  * How long the slow scripted answer takes. It must comfortably outlive the
@@ -411,6 +306,21 @@ export const PROBE_FAIL_TEXT = "PROBE_FAIL break on purpose";
  * cancellation stopped the run", never "the answer finally arrived".
  */
 const SLOW_MS = 15_000;
+
+/**
+ * The slow-consumer fixture: a deterministic streamed answer far larger than
+ * any kernel socket buffer (512 chunks of 4 KiB = 2 MiB of payload), so a
+ * consumer that stops reading must eventually block the whole pipeline. The
+ * content is derived (never random): the joined deltas must equal
+ * slowReaderAnswer() exactly.
+ */
+export const SLOW_READER_CHUNKS = 512;
+const SLOW_READER_CHUNK_SIZE = 4096;
+
+export function slowReaderAnswer(): string {
+  const block = "0123456789abcdef".repeat(SLOW_READER_CHUNK_SIZE / 16);
+  return block.repeat(SLOW_READER_CHUNKS);
+}
 
 export type FakeModelRequest = {
   stream: boolean;
@@ -447,7 +357,17 @@ export function startFakeModel() {
         return new Response("provider exploded: leak-bait-secret-detail", { status: 500 });
       if (userText.includes(PROBE_SLOW_TEXT)) await Bun.sleep(SLOW_MS);
       if (userText.includes(PROBE_TOOL_TEXT) && !captured.hasToolResult)
-        return toolCallCompletion(captured.stream);
+        return toolCallCompletion(captured.stream, { query: "probe" });
+      if (userText.includes(PROBE_APPROVAL_TEXT) && !captured.hasToolResult)
+        return toolCallCompletion(captured.stream, { query: "approval" });
+      if (userText.includes(PROBE_RECEIPT_TEXT) && !captured.hasToolResult)
+        return toolCallCompletion(captured.stream, { query: "receipt" });
+      if (userText.includes(PROBE_SLOW_READER_TEXT)) {
+        if (!captured.hasToolResult)
+          return toolCallCompletion(captured.stream, { query: "slowreader" });
+        // The receipt is in: stream the LONG deterministic answer.
+        return sseResponse(slowReaderFrames());
+      }
       return textCompletion(finalTextFor(captured), captured.stream);
     },
   });
@@ -475,6 +395,22 @@ function finalTextFor(request: FakeModelRequest): string {
   return "probe-stream-ok";
 }
 
+/**
+ * The slow-reader answer as SSE frames: one 4 KiB delta per frame, closed
+ * with a stop. Deterministic fixture data — never an echo of anything.
+ */
+function slowReaderFrames(): string[] {
+  const answer = slowReaderAnswer();
+  const frames = [chunk({ role: "assistant" }, null)];
+  for (let i = 0; i < SLOW_READER_CHUNKS; i++) {
+    frames.push(
+      chunk({ content: answer.slice(i * SLOW_READER_CHUNK_SIZE, (i + 1) * SLOW_READER_CHUNK_SIZE) }, null),
+    );
+  }
+  frames.push(chunk({}, "stop"));
+  return frames;
+}
+
 function textCompletion(text: string, stream: boolean): Response {
   const message = { role: "assistant", content: text };
   if (!stream) return jsonResponse(chatCompletionBody({ message, finish_reason: "stop" }));
@@ -486,11 +422,15 @@ function textCompletion(text: string, stream: boolean): Response {
   ]);
 }
 
-function toolCallCompletion(stream: boolean): Response {
+/** One governed tool-call answer; the args are the fixture's own choice. */
+function toolCallCompletion(
+  stream: boolean,
+  args: Record<string, string>,
+): Response {
   const toolCall = {
     id: "call_probe",
     type: "function",
-    function: { name: CANDIDATE_TOOL_NAME, arguments: JSON.stringify({ query: "probe" }) },
+    function: { name: CANDIDATE_TOOL_NAME, arguments: JSON.stringify(args) },
   };
   if (!stream)
     return jsonResponse(
@@ -508,7 +448,7 @@ function toolCallCompletion(stream: boolean): Response {
       null,
     ),
     chunk(
-      { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ query: "probe" }) } }] },
+      { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(args) } }] },
       null,
     ),
     chunk({}, "tool_calls"),
@@ -679,12 +619,27 @@ export function startValidationPlane(
  * endpoints, sharing the validation plane's capability registry (one minted
  * capability vouches for one run on both planes). The recheck boundary is
  * a recording pass-through: the probe observes it ran, it authorizes
- * nothing real.
+ * nothing real. ONE proposal needs a human approval — the wait check's —
+ * keyed on its own args digest, so every other fixture keeps executing.
  */
-export function startToolPlane(validation: ReturnType<typeof startValidationPlane>) {
+export function startToolPlane(
+  validation: ReturnType<typeof startValidationPlane>,
+  serviceCredential = "probe-service-credential-not-a-real-one",
+) {
   const plane = createFakeToolInvocationPlane({
-    serviceCredential: "probe-service-credential-not-a-real-one",
+    serviceCredential,
     capabilities: validation.toolCapabilities,
+    requiresApproval: (proposal) =>
+      proposal.args_digest === canonicalArgsDigest({ query: "approval" }),
+    // The wait check's OTHER frozen reason: the receipt-pending fixture's
+    // execution answers "submitted" — the spend may or may not have taken
+    // effect — so the runtime must suspend the run for reconciliation
+    // instead of handing the model a retry. Every other fixture keeps the
+    // default succeeded receipt.
+    outcome: (operation) =>
+      operation.args_digest === canonicalArgsDigest({ query: "receipt" })
+        ? { status: "submitted" as const }
+        : { status: "succeeded" as const },
     recheck: () => ({ ok: true }),
   });
   const server = Bun.serve({ port: 0, fetch: plane.routes.fetch });
@@ -733,7 +688,32 @@ export function httpAgentFor(
   baseUrl: string,
   headers: Record<string, string>,
 ): HttpAgent {
-  return new HttpAgent({ url: `${baseUrl}/agui/`, headers });
+  return new HttpAgent({ url: `${baseUrl}${EXECUTION_PATH}`, headers });
+}
+
+/**
+ * The platform ledger's FROZEN mapping from a finished event stream to the
+ * business Run state (master plan §4.3): a RUN_FINISHED is only "succeeded"
+ * when its outcome is NOT an interrupt — the locked 1.0 protocol's outcome
+ * discriminator is the one thing consulted, never the event type alone, and
+ * never a string inside an error. This is the rule R4-A's wait row demands
+ * be executable: RUN_FINISHED ↛ Run.succeeded by itself.
+ */
+export type RunWaitState = "succeeded" | "failed" | "waiting_approval" | "suspended_reconciliation";
+
+export function runWaitState(events: BaseEvent[]): RunWaitState {
+  const terminal = events.at(-1);
+  if (!terminal) return "failed";
+  if (terminal.type === "RUN_ERROR") return "failed";
+  const outcome = (terminal as { outcome?: { type?: string; interrupts?: Array<{ reason?: string }> } }).outcome;
+  if (outcome?.type === "interrupt") {
+    const reason = outcome.interrupts?.[0]?.reason;
+    if (reason === "tool_approval") return "waiting_approval";
+    // Every other interrupt reason this runtime mints is a reconciliation
+    // wait (operation_receipt_pending): the run suspends, it does not fail.
+    return "suspended_reconciliation";
+  }
+  return "succeeded";
 }
 
 /** Consumes one real run through @ag-ui/client's HttpAgent (or any AbstractAgent). */
@@ -849,6 +829,12 @@ export type CompatibilityReport = {
     firstEventMs: number;
     cancelLagMs: number;
     streamDurationMs: number;
+    /** RSS of the real binary while the slow-consumer check holds its stall. */
+    slowConsumerStallRssBytes: number;
+    /** Bytes of deterministic fixture the slow-consumer stream carried. */
+    slowConsumerStreamBytes: number;
+    /** How long the slow consumer deliberately stopped reading. */
+    slowConsumerStallMs: number;
   };
   /** Who must sign each gate (master plan §6 sign-off table); a probe signs nothing. */
   reviewers: Record<string, { required: string[]; signed: string[] }>;
@@ -999,25 +985,24 @@ function writeReport(report: CompatibilityReport): string {
   return path;
 }
 
-/** Why the two not_run check categories have no executable harness here. */
-export const WAIT_NOT_RUN_EVIDENCE =
-  "no input-required/wait protocol seam exists in this candidate yet (01 plan R4-A 等待输入/审批 row: the mapping must follow the locked protocol's verified fields, which this runtime does not expose yet)";
-export const BACKPRESSURE_NOT_RUN_EVIDENCE =
-  "no slow-consumer/bounded-queue harness is exercised against the candidate yet (01 plan R4-A 慢消费者 row)";
-
 const LIMITATIONS = [
-  `check 'wait' is not_run: ${WAIT_NOT_RUN_EVIDENCE}`,
-  `check 'backpressure' is not_run: ${BACKPRESSURE_NOT_RUN_EVIDENCE}`,
-  "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
+  "the R4-A 断流/重连 row (transport break is not cancellation; E3-ledger resume rebuilds by seq; duplicate proposals deduped; beyond the retention window a snapshot) needs the E3 event ledger to exist — this probe's SSE transport has no persistent event log to resume from, so only the transport-break-is-terminal half is exercised (the cancel and restart checks); seq-重建/去重/快照 remain G1b evidence with E1–E3",
+  "the R4-A 重启/旧租约 row: this probe proves the G1a half (a restarted process holds no state it could lie about — the old run's cancel 404s); actually injecting E2/D2/P3 faults (lost lease revival, old-fencing submission refusal against a persistent ledger) is G1b evidence this probe cannot produce",
+  "the backpressure check proves the MECHANISM at probe scale (one localhost fake provider, 2 MiB deterministic stream, one stalled consumer): the runtime blocked its producer rather than buffering (Go-side mechanism proof: TestSlowConsumerBlocksTheProviderAndLosesNothing) and delivered every byte and the terminal after catch-up. It is NOT a capacity measurement: concurrency/queue-bound thresholds await the SRE-approved load run",
+  "the wait check covers the governed-tool waits this runtime can produce (approval required, receipt pending); multi-interrupt aggregation and resume-entry semantics (a new run answering interrupts) are E-domain protocol work not exercised here",
+  "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs, slow-consumer stall RSS/bytes on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
   "G1b/G2 evidence sets (T1–T3/E1–E4/P2–P4/D2/D4, D5/business acceptance, and the dependency risk closure in runtime-go/dependency-review.json) are not produced by this probe",
 ];
 
 const EVIDENCE_REFS = [
   "runtime-go/testdata/compatibility-report.json (this artifact, written only by the probe)",
+  "runtime-go/cmd/runtime/main.go (the REAL binary this probe built and launched: strict config, run gate, auth, input guard, expert router, execution/cancel routes)",
   "server/scripts/enterprise-runtime-probe.ts (the probe that wrote it)",
-  "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same candidate)",
+  "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same real binary)",
   "server/tests/enterprise/runtime-artifacts.test.ts (asserts this artifact's R4 shape)",
   "runtime-go/internal/adapter/agui_test.go (Go-side semantics, incl. RUN_ERROR and leak refusal)",
+  "runtime-go/internal/adapter/waitmapping.go (the R4-A wait mapping: suspension → RUN_FINISHED interrupt outcome on the locked protocol fields)",
+  "runtime-go/internal/adapter/backpressure_test.go (the bounded-queue mechanism proof: a stalled consumer blocks the provider; nothing is lost)",
   "runtime-go/internal/server/auth_test.go (identity and run-binding refusals)",
   "runtime-go/dependency-review.json (the dependency risk record the G1b gate must close)",
 ];
@@ -1035,10 +1020,10 @@ function initialChecks(): R4Checks {
     trusted_input: { status: "not_run", evidence: "not reached before the probe ended" },
     text: { status: "not_run", evidence: "not reached before the probe ended" },
     tool: { status: "not_run", evidence: "not reached before the probe ended" },
-    wait: { status: "not_run", evidence: WAIT_NOT_RUN_EVIDENCE },
+    wait: { status: "not_run", evidence: "not reached before the probe ended" },
     error: { status: "not_run", evidence: "not reached before the probe ended" },
     cancel: { status: "not_run", evidence: "not reached before the probe ended" },
-    backpressure: { status: "not_run", evidence: BACKPRESSURE_NOT_RUN_EVIDENCE },
+    backpressure: { status: "not_run", evidence: "not reached before the probe ended" },
     restart: { status: "not_run", evidence: "not reached before the probe ended" },
   };
 }
@@ -1079,10 +1064,11 @@ function deriveGates(
         : {
             status: "passed",
             evidence: [
-              "all nine R4 check categories ran and passed",
+              "all nine R4 check categories ran and passed against the REAL cmd/runtime binary",
               "measurements recorded in this artifact (no capacity threshold is approved by a probe)",
               "server/tests/enterprise/runtime-contract.test.ts",
               "runtime-go/internal/adapter/agui_test.go",
+              "runtime-go/internal/adapter/waitmapping.go + backpressure_test.go",
             ],
           };
   return {
@@ -1123,6 +1109,9 @@ async function runProbe(): Promise<number> {
     firstEventMs: 0,
     cancelLagMs: 0,
     streamDurationMs: 0,
+    slowConsumerStallRssBytes: 0,
+    slowConsumerStreamBytes: 0,
+    slowConsumerStallMs: 0,
   };
   const model = startFakeModel();
   const validation = startValidationPlane();
@@ -1147,19 +1136,21 @@ async function runProbe(): Promise<number> {
         invocation: minted.invocation,
       });
 
-    // -- identity: refusals in front of the framework, and nothing reaching the provider.
+    // -- identity: the real binary turned itself ready, then refusals in
+    //    front of the framework, and nothing reaching the provider.
     const streamCreds = validation.mint("run_stream", "thread_stream", PROBE_STREAM_TEXT);
     const runStreamInput = runInput({
       runId: "run_stream",
       threadId: "thread_stream",
       text: PROBE_STREAM_TEXT,
     });
-    const noCredential = await fetch(`${base}/agui/`, {
+    const readiness = await fetch(`${base}/health/ready`);
+    const noCredential = await fetch(`${base}${EXECUTION_PATH}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(runStreamInput),
     });
-    const forgedAssertion = await fetch(`${base}/agui/`, {
+    const forgedAssertion = await fetch(`${base}${EXECUTION_PATH}`, {
       method: "POST",
       headers: candidateHeaders({
         serviceCredential: SERVICE_CREDENTIAL,
@@ -1169,22 +1160,23 @@ async function runProbe(): Promise<number> {
       body: JSON.stringify(runStreamInput),
     });
     const identityOk =
+      readiness.status === 200 &&
       noCredential.status === 401 &&
       forgedAssertion.status === 401 &&
       model.requests.length === 0;
     checks.identity = {
       status: identityOk ? "passed" : "failed",
-      evidence: `no-credential request -> ${noCredential.status}, forged capability -> ${forgedAssertion.status} (both want 401); provider requests during the refusals: ${model.requests.length} (want 0)`,
+      evidence: `real binary /health/ready -> ${readiness.status} (want 200); no-credential request -> ${noCredential.status}, forged capability -> ${forgedAssertion.status} (both want 401); provider requests during the refusals: ${model.requests.length} (want 0)`,
     };
     if (!identityOk)
       throw new Error(
-        `identity refusals did not hold: no-credential=${noCredential.status}, forged=${forgedAssertion.status}, provider requests=${model.requests.length}`,
+        `identity refusals did not hold: ready=${readiness.status}, no-credential=${noCredential.status}, forged=${forgedAssertion.status}, provider requests=${model.requests.length}`,
       );
 
     // -- trusted input: valid credentials vouch for ONE run; a body claiming
     //    somebody else's run must be refused before the framework spends anything.
     const bindingCreds = validation.mint("run_binding", "thread_binding", PROBE_STREAM_TEXT);
-    const mismatchedBinding = await fetch(`${base}/agui/`, {
+    const mismatchedBinding = await fetch(`${base}${EXECUTION_PATH}`, {
       method: "POST",
       headers: headers(bindingCreds),
       body: JSON.stringify(
@@ -1287,8 +1279,125 @@ async function runProbe(): Promise<number> {
           .join(",")}`,
       );
 
-    // -- wait: registered not_run (see WAIT_NOT_RUN_EVIDENCE); nothing is
-    //    pretend-executed here, and it blocks G1a until a real seam exists.
+    // -- wait: BOTH frozen wait reasons this runtime can produce, each on the
+    //    locked protocol's interrupt outcome. (a) a governed call that needs
+    //    a human approval ends the run on RUN_FINISHED carrying
+    //    outcome.type="interrupt" with the frozen operation as the interrupt
+    //    id, and the platform mapping reads WAITING, never succeeded. (b) an
+    //    execution whose receipt stays submitted (the spend may or may not
+    //    have taken effect) ends the run SUSPENDED on the same outcome shape,
+    //    reason operation_receipt_pending. The plain-success stream above (no
+    //    outcome at all) maps the other way, which is the R4-A rule made
+    //    executable: RUN_FINISHED is not Run.succeeded by itself.
+    const waitCreds = validation.mint("run_wait", "thread_wait", PROBE_APPROVAL_TEXT);
+    const waitEvents = await withTimeout(
+      collectEvents(
+        httpAgentFor(base, headers(waitCreds)),
+        runInput({
+          runId: "run_wait",
+          threadId: "thread_wait",
+          text: PROBE_APPROVAL_TEXT,
+        }),
+      ),
+      20_000,
+      "the wait check run",
+    );
+    const waitTerminal = waitEvents[waitEvents.length - 1] as {
+      type?: string;
+      outcome?: { type?: string; interrupts?: Array<{ id?: string; reason?: string; toolCallId?: string }> };
+    };
+    const waitOperation = toolPlane.state.operations.find((op) => op.run_id === "run_wait");
+    const waitToolCallId = (waitEvents.find((e) => e.type === "TOOL_CALL_START") as { toolCallId?: string } | undefined)?.toolCallId;
+    const waitInterrupt = waitTerminal.outcome?.interrupts?.[0];
+    const waitOk =
+      satisfiesEventContract(waitEvents) &&
+      waitTerminal.type === "RUN_FINISHED" &&
+      waitTerminal.outcome?.type === "interrupt" &&
+      waitInterrupt?.reason === "tool_approval" &&
+      !!waitOperation &&
+      waitInterrupt?.id === waitOperation.operation_id &&
+      !!waitToolCallId &&
+      waitInterrupt?.toolCallId === waitToolCallId &&
+      runWaitState(waitEvents) === "waiting_approval" &&
+      runWaitState(streamEvents) === "succeeded" &&
+      // The wait is a WAIT: nothing executed, no effect was spent, and the
+      // model was never re-asked.
+      !toolPlane.state.receipts.some((r) => r.operation_id === waitOperation?.operation_id) &&
+      toolPlane.state.effects === 1 &&
+      model.requests.filter((r) => r.userText.includes(PROBE_APPROVAL_TEXT)).length === 1;
+    // (b) receipt pending: the spend crossed the plane, the receipt froze at
+    //     submitted, and the run suspended for reconciliation on the same
+    //     interrupt outcome shape.
+    const receiptCreds = validation.mint("run_receipt", "thread_receipt", PROBE_RECEIPT_TEXT);
+    const receiptEvents = await withTimeout(
+      collectEvents(
+        httpAgentFor(base, headers(receiptCreds)),
+        runInput({
+          runId: "run_receipt",
+          threadId: "thread_receipt",
+          text: PROBE_RECEIPT_TEXT,
+        }),
+      ),
+      20_000,
+      "the wait (receipt pending) check run",
+    );
+    const receiptTerminal = receiptEvents[receiptEvents.length - 1] as {
+      type?: string;
+      outcome?: { type?: string; interrupts?: Array<{ id?: string; reason?: string; toolCallId?: string }> };
+    };
+    const receiptOperation = toolPlane.state.operations.find((op) => op.run_id === "run_receipt");
+    const receiptToolCallId = (receiptEvents.find((e) => e.type === "TOOL_CALL_START") as { toolCallId?: string } | undefined)?.toolCallId;
+    const receiptInterrupt = receiptTerminal.outcome?.interrupts?.[0];
+    const receiptRecord = toolPlane.state.receipts.find((r) => r.operation_id === receiptOperation?.operation_id);
+    const receiptWaitOk =
+      satisfiesEventContract(receiptEvents) &&
+      receiptTerminal.type === "RUN_FINISHED" &&
+      receiptTerminal.outcome?.type === "interrupt" &&
+      receiptInterrupt?.reason === "operation_receipt_pending" &&
+      !!receiptOperation &&
+      receiptInterrupt?.id === receiptOperation.operation_id &&
+      !!receiptToolCallId &&
+      receiptInterrupt?.toolCallId === receiptToolCallId &&
+      runWaitState(receiptEvents) === "suspended_reconciliation" &&
+      // The wait is a WAIT: the spend crossed but its receipt froze the
+      // operation (no succeeded effect was booked for it) and the model was
+      // never re-asked.
+      receiptRecord?.status === "submitted" &&
+      receiptOperation.status === "submitted" &&
+      toolPlane.state.effects === 1 &&
+      model.requests.filter((r) => r.userText.includes(PROBE_RECEIPT_TEXT)).length === 1;
+    checks.wait = {
+      status: waitOk && receiptWaitOk ? "passed" : "failed",
+      evidence: `approval-required governed call -> terminal ${waitTerminal.type} with outcome.type=${JSON.stringify(
+        waitTerminal.outcome?.type,
+      )}; interrupt id=${JSON.stringify(waitInterrupt?.id)} (want the plane's operation ${
+        waitOperation?.operation_id ?? "none allocated"
+      }), reason=${JSON.stringify(waitInterrupt?.reason)} (want "tool_approval"), toolCallId matches the stream's TOOL_CALL_START (${JSON.stringify(
+        waitToolCallId,
+      )}); receipt-pending governed call -> terminal ${receiptTerminal.type} with outcome.type=${JSON.stringify(
+        receiptTerminal.outcome?.type,
+      )}; interrupt id=${JSON.stringify(receiptInterrupt?.id)} (want the plane's operation ${
+        receiptOperation?.operation_id ?? "none allocated"
+      }), reason=${JSON.stringify(receiptInterrupt?.reason)} (want "operation_receipt_pending"), receipt status=${JSON.stringify(
+        receiptRecord?.status,
+      )} (want "submitted", the spend crossed but froze); platform mapping: wait run -> ${runWaitState(
+        waitEvents,
+      )} (want waiting_approval), receipt run -> ${runWaitState(
+        receiptEvents,
+      )} (want suspended_reconciliation), plain success -> ${runWaitState(
+        streamEvents,
+      )} (want succeeded); plane effects stayed at ${toolPlane.state.effects} (nothing succeeded beyond the tool check)`,
+    };
+    if (!waitOk || !receiptWaitOk)
+      throw new Error(
+        `the wait mapping did not hold: approval terminal=${waitTerminal.type}, outcome=${JSON.stringify(
+          waitTerminal.outcome,
+        )}, interrupt=${JSON.stringify(waitInterrupt)}, operation=${waitOperation?.operation_id}; receipt terminal=${receiptTerminal.type}, outcome=${JSON.stringify(
+          receiptTerminal.outcome,
+        )}, interrupt=${JSON.stringify(receiptInterrupt)}, operation=${receiptOperation?.operation_id}, receipt=${JSON.stringify(
+          receiptRecord?.status,
+        )}`,
+      );
 
     // -- error: a failing provider ends the run in RUN_ERROR without leaking
     //    the provider's internal error body to the consumer.
@@ -1332,7 +1441,7 @@ async function runProbe(): Promise<number> {
     const cancelRun = collectEvents(httpAgentFor(base, headers(cancelCreds)), cancelRunInput);
     await model.waitFor(() => model.requests.some((r) => r.userText.includes(PROBE_SLOW_TEXT)));
     const cancelT0 = performance.now();
-    const cancelResponse = await fetch(`${base}/cancel`, {
+    const cancelResponse = await fetch(`${base}${CANCEL_PATH}`, {
       method: "POST",
       headers: headers(cancelCreds),
       body: JSON.stringify({ runId: "run_cancel", threadId: "thread_cancel" }),
@@ -1359,7 +1468,117 @@ async function runProbe(): Promise<number> {
         `cancel did not behave: status=${cancelResponse.status}, body=${JSON.stringify(cancelBody)}`,
       );
 
-    // -- backpressure: registered not_run (see BACKPRESSURE_NOT_RUN_EVIDENCE).
+    // -- backpressure: a deliberately slow consumer on the REAL binary. The
+    //    run crosses the governed tool first (its receipt's events must
+    //    survive the stall), then streams a 2 MiB deterministic answer. The
+    //    consumer reads 64 KiB, STOPS for a fixed window while the producer
+    //    pushes, and only then catches up: everything must arrive — the tool
+    //    events, every delta byte-exact, and exactly one terminal, last —
+    //    with the runtime's memory bounded (the bounded-queue mechanism
+    //    itself — a stalled consumer blocks the producer — is proven by
+    //    runtime-go's TestSlowConsumerBlocksTheProviderAndLosesNothing).
+    const slowReaderCreds = validation.mint("run_slow_reader", "thread_slow_reader", PROBE_SLOW_READER_TEXT);
+    const slowReaderInput = runInput({
+      runId: "run_slow_reader",
+      threadId: "thread_slow_reader",
+      text: PROBE_SLOW_READER_TEXT,
+    });
+    const STALL_MS = 4_000;
+    const _slowT0 = performance.now();
+    const slowResponse = await fetch(`${base}${EXECUTION_PATH}`, {
+      method: "POST",
+      headers: headers(slowReaderCreds),
+      body: JSON.stringify(slowReaderInput),
+    });
+    if (!slowResponse.ok || !slowResponse.body) {
+      throw new Error(`the slow-consumer run never opened: HTTP ${slowResponse.status}`);
+    }
+    const slowReader = slowResponse.body.getReader();
+    const readBytes = async (into: Uint8Array[], limit: number) => {
+      let total = 0;
+      while (total < limit) {
+        const { done, value } = await slowReader.read();
+        if (done) return total;
+        into.push(value);
+        total += value.byteLength;
+      }
+      return total;
+    };
+    const firstSlab: Uint8Array[] = [];
+    await readBytes(firstSlab, 64 * 1024);
+    // A calm baseline right before the stall (the run has barely started).
+    const slowBaselineRss = await rssBytesOf(candidate.pid);
+    // The stall: nothing is read while the provider pushes the long answer.
+    await Bun.sleep(STALL_MS);
+    measurements.slowConsumerStallRssBytes = await rssBytesOf(candidate.pid);
+    measurements.slowConsumerStallMs = STALL_MS;
+    const rest: Uint8Array[] = [];
+    const drainSlow = async () => {
+      for (;;) {
+        const { done, value } = await slowReader.read();
+        if (done) break;
+        rest.push(value);
+      }
+    };
+    await withTimeout(drainSlow(), 60_000, "the slow consumer's catch-up read");
+    const chunks = [...firstSlab, ...rest];
+    const totalBytes = chunks.reduce((n, c) => n + c.byteLength, 0);
+    measurements.slowConsumerStreamBytes = totalBytes;
+    const merged = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const slowText = new TextDecoder().decode(merged);
+    // Parse the SSE frames the way the consumer saw them: data lines only.
+    const slowEvents: Array<{ type: string; delta?: string; toolCallId?: string }> = [];
+    for (const frame of slowText.split("\n\n")) {
+      for (const line of frame.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (payload === "[DONE]") continue;
+        slowEvents.push(JSON.parse(payload));
+      }
+    }
+    const slowTypes = slowEvents.map((e) => e.type);
+    const slowJoined = slowEvents
+      .filter((e) => e.type === "TEXT_MESSAGE_CONTENT")
+      .map((e) => e.delta ?? "")
+      .join("");
+    const expectedAnswer = slowReaderAnswer();
+    const slowToolCalls = slowEvents.filter((e) => e.type === "TOOL_CALL_START");
+    const slowOperation = toolPlane.state.operations.find((op) => op.run_id === "run_slow_reader");
+    const slowReceipt = toolPlane.state.receipts.find((r) => r.operation_id === slowOperation?.operation_id);
+    const backpressureOk =
+      slowTypes[0] === "RUN_STARTED" &&
+      slowTypes.filter((t) => t === "RUN_STARTED").length === 1 &&
+      slowTypes.filter((t) => t === "RUN_FINISHED" || t === "RUN_ERROR").length === 1 &&
+      ["RUN_FINISHED", "RUN_ERROR"].includes(slowTypes[slowTypes.length - 1]) &&
+      slowJoined === expectedAnswer &&
+      slowToolCalls.length === 1 &&
+      slowToolCalls[0]?.toolCallId !== undefined &&
+      slowReceipt?.status === "succeeded" &&
+      model.requests.filter((r) => r.userText.includes(PROBE_SLOW_READER_TEXT)).length === 2 &&
+      measurements.slowConsumerStallRssBytes - slowBaselineRss < 32 * 1024 * 1024;
+    checks.backpressure = {
+      status: backpressureOk ? "passed" : "failed",
+      evidence: `a consumer stalled ${STALL_MS}ms mid-run received the whole stream afterwards: ${
+        slowEvents.length
+      } events, joined deltas byte-identical to the ${expectedAnswer.length}-byte fixture (${slowJoined.length} bytes joined, ${totalBytes} bytes on the wire), ${
+        slowToolCalls.length
+      } TOOL_CALL_START with its ${slowReceipt?.status ?? "NO"} receipt intact, exactly one terminal last; runtime RSS during the stall ${
+        measurements.slowConsumerStallRssBytes
+      } vs ${slowBaselineRss} at the stall's start (bounded, want <32 MiB growth); provider asked ${
+        model.requests.filter((r) => r.userText.includes(PROBE_SLOW_READER_TEXT)).length
+      } times (want 2: the tool call, then the long answer). Mechanism proof (a stalled consumer blocks the producer; nothing buffered): runtime-go internal/adapter TestSlowConsumerBlocksTheProviderAndLosesNothing`,
+    };
+    if (!backpressureOk)
+      throw new Error(
+        `the slow consumer lost something: events=${slowTypes.join(",")}, joined=${slowJoined.length} of ${expectedAnswer.length} bytes, toolCalls=${slowToolCalls.length}, receipt=${slowReceipt?.status}, rssDelta=${
+          measurements.slowConsumerStallRssBytes - slowBaselineRss
+        }`,
+      );
 
     // -- restart: a restarted candidate admits it no longer holds the old run.
     const restartCreds = validation.mint("run_restart", "thread_restart", PROBE_SLOW_TEXT);
@@ -1391,7 +1610,7 @@ async function runProbe(): Promise<number> {
       callbackEndpoint: toolPlane.toolPlaneEndpoint,
     });
     started.push(restarted);
-    const oldRunCancel = await fetch(`${restarted.baseUrl}/cancel`, {
+    const oldRunCancel = await fetch(`${restarted.baseUrl}${CANCEL_PATH}`, {
       method: "POST",
       headers: headers(restartCreds),
       body: JSON.stringify({ runId: "run_restart", threadId: "thread_restart" }),
@@ -1423,7 +1642,7 @@ async function runProbe(): Promise<number> {
       `[probe] executed checks all passed; gates: G1a=${gates.G1a.status}, G1b=${gates.G1b.status}, G2=${gates.G2.status}; report written to ${path}`,
     );
     console.log(
-      `[probe] measurements: rssBytes=${measurements.rssBytes} firstEventMs=${measurements.firstEventMs} cancelLagMs=${measurements.cancelLagMs} streamDurationMs=${measurements.streamDurationMs}`,
+      `[probe] measurements: rssBytes=${measurements.rssBytes} firstEventMs=${measurements.firstEventMs} cancelLagMs=${measurements.cancelLagMs} streamDurationMs=${measurements.streamDurationMs} slowConsumerStallMs=${measurements.slowConsumerStallMs} slowConsumerStallRssBytes=${measurements.slowConsumerStallRssBytes} slowConsumerStreamBytes=${measurements.slowConsumerStreamBytes}`,
     );
     return 0;
   } catch (error) {

@@ -8,13 +8,21 @@ import {
   candidateHeaders,
   collectEvents,
   type Candidate,
+  EXECUTION_PATH,
   httpAgentFor,
+  PROBE_APPROVAL_TEXT,
+  PROBE_RECEIPT_TEXT,
   PROBE_STREAM_TEXT,
+  PROBE_SLOW_READER_TEXT,
+  PROBE_TOOL_TEXT,
   runInput,
+  runWaitState,
+  satisfiesEventContract,
+  slowReaderAnswer,
   startCandidate,
   startFakeModel,
+  startToolPlane,
   startValidationPlane,
-  satisfiesEventContract,
   textOf,
 } from "../../scripts/enterprise-runtime-probe";
 
@@ -128,25 +136,29 @@ describe("the AG-UI event contract assertion", () => {
 });
 
 /*
- * The integration half: a REAL Go runtime candidate, built and started as a
- * child process by the same coordinator the R4 probe uses, consumed through
- * the locked @ag-ui/client (1.0.1) HttpAgent — no hand-rolled SSE echo
- * anywhere in the loop.
+ * The integration half: the REAL runtime binary (runtime-go's cmd/runtime,
+ * built and started as a child process by the same coordinator the R4 probe
+ * uses), consumed through the locked @ag-ui/client (1.0.1) HttpAgent against
+ * the real /internal/enterprise/v1/runtime/execution route — no hand-rolled
+ * SSE echo anywhere in the loop.
  */
 describe("the Go runtime candidate over real HTTP", () => {
   const SERVICE_CREDENTIAL = "test-service-credential-not-a-real-one";
   let candidate: Candidate;
   let model: ReturnType<typeof startFakeModel>;
   let validation: ReturnType<typeof startValidationPlane>;
+  let toolPlane: ReturnType<typeof startToolPlane>;
 
   beforeAll(async () => {
     model = startFakeModel();
     validation = startValidationPlane(SERVICE_CREDENTIAL);
+    toolPlane = startToolPlane(validation, SERVICE_CREDENTIAL);
     candidate = await startCandidate({
       binary: await buildCandidate(),
       serviceCredential: SERVICE_CREDENTIAL,
       modelBaseUrl: model.url,
       validationEndpoint: validation.validationEndpoint,
+      callbackEndpoint: toolPlane.toolPlaneEndpoint,
     });
   }, 180_000);
 
@@ -154,6 +166,7 @@ describe("the Go runtime candidate over real HTTP", () => {
     await candidate?.kill();
     model?.server.stop(true);
     validation?.server.stop(true);
+    toolPlane?.server.stop(true);
   });
 
   const headers = (minted: { capability: string; invocation: string }) =>
@@ -163,6 +176,14 @@ describe("the Go runtime candidate over real HTTP", () => {
       invocation: minted.invocation,
     });
 
+  test("the real binary turns itself ready once fully configured", async () => {
+    // The REAL main's readiness: listener bound, authentication configured,
+    // not draining — and it never probes the paid model provider to say so.
+    const ready = await fetch(`${candidate.baseUrl}/health/ready`);
+    expect(ready.status).toBe(200);
+    expect(model.requests).toHaveLength(0);
+  }, 30_000);
+
   test("an unverified request never reaches the framework", async () => {
     const creds = validation.mint("run_refused", "thread_refused", PROBE_STREAM_TEXT);
     const input = runInput({
@@ -170,12 +191,12 @@ describe("the Go runtime candidate over real HTTP", () => {
       threadId: "thread_refused",
       text: PROBE_STREAM_TEXT,
     });
-    const bare = await fetch(`${candidate.baseUrl}/agui/`, {
+    const bare = await fetch(`${candidate.baseUrl}${EXECUTION_PATH}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     });
-    const forged = await fetch(`${candidate.baseUrl}/agui/`, {
+    const forged = await fetch(`${candidate.baseUrl}${EXECUTION_PATH}`, {
       method: "POST",
       headers: candidateHeaders({
         serviceCredential: SERVICE_CREDENTIAL,
@@ -216,21 +237,6 @@ describe("the Go runtime candidate over real HTTP", () => {
      * semantics (envelope, ordering, terminal state, run coordinates), never
      * either side's model randomness.
      */
-    const agents = await buildAgents(
-      [
-        {
-          id: "example-agent",
-          name: "Example Agent",
-          type: "built_in" as const,
-          systemPrompt: "Be terse.",
-        },
-      ],
-      { provider: "openai" as const, defaultModel: "fixture-model" },
-      "test-only",
-    );
-    const example = agents["example-agent"];
-    if (!example) throw new Error('buildAgents returned no "example-agent" to run');
-
     const recorder = new LLMock();
     const fakeUrl = await recorder.start();
     let exampleEvents: BaseEvent[];
@@ -240,6 +246,28 @@ describe("the Go runtime candidate over real HTTP", () => {
     try {
       recorder.onMessage(/.*/, { type: "text", content: "protocol-comparison-ok" });
       process.env.OPENAI_BASE_URL = fakeUrl;
+      /*
+       * Built AFTER the fake base URL is in the environment, because
+       * src/copilot's runtimeModel freezes OPENAI_BASE_URL into the model
+       * instance at construction time (a named base gets createOpenAI({baseURL});
+       * only an absent base stays a string resolved later). Building earlier let
+       * a deployment's real gateway (the .env a developer runs tests with)
+       * capture the agent, so the comparison left the fake provider entirely.
+       */
+      const agents = await buildAgents(
+        [
+          {
+            id: "example-agent",
+            name: "Example Agent",
+            type: "built_in" as const,
+            systemPrompt: "Be terse.",
+          },
+        ],
+        { provider: "openai" as const, defaultModel: "fixture-model" },
+        "test-only",
+      );
+      const example = agents["example-agent"];
+      if (!example) throw new Error('buildAgents returned no "example-agent" to run');
       exampleEvents = await collectEvents(
         example as AbstractAgent,
         runInput({
@@ -302,5 +330,211 @@ describe("the Go runtime candidate over real HTTP", () => {
       hasTextEnvelope: true,
       echoesCoordinates: true,
     });
+  }, 60_000);
+
+  test("message and tool-call lifecycles stay paired and ordered across the run", async () => {
+    /*
+     * R4-A 文本/工具生命周期: every TEXT_MESSAGE_CONTENT/END carries the id
+     * of the open TEXT_MESSAGE_START (never a second or unknown id), the
+     * same for TOOL_CALL_ARGS/END against their TOOL_CALL_START, and the
+     * interleaved governed call's events attribute to their own tool call.
+     * TOOL_CALL_END is protocol bookkeeping, never business success: the run
+     * only ends on its terminal event after the model's own final answer.
+     */
+    const creds = validation.mint("run_lifecycle", "thread_lifecycle", PROBE_STREAM_TEXT);
+    const events = await collectEvents(
+      httpAgentFor(candidate.baseUrl, headers(creds)),
+      runInput({ runId: "run_lifecycle", threadId: "thread_lifecycle", text: PROBE_STREAM_TEXT }),
+    );
+    assertEventContract(events);
+    // Text lifecycle: one start, contents and end under ITS messageId.
+    const textStart = events.find((e) => e.type === EventType.TEXT_MESSAGE_START) as unknown as { messageId: string };
+    expect(textStart).toBeDefined();
+    for (const e of events) {
+      if (e.type === EventType.TEXT_MESSAGE_CONTENT || e.type === EventType.TEXT_MESSAGE_END) {
+        expect((e as unknown as { messageId: string }).messageId).toBe(textStart.messageId);
+      }
+    }
+    expect(events.filter((e) => e.type === EventType.TEXT_MESSAGE_END)).toHaveLength(1);
+    // Start strictly before its first content, end strictly after the last.
+    const indexOf = (predicate: (e: BaseEvent) => boolean) => events.findIndex(predicate);
+    expect(indexOf((e) => e.type === EventType.TEXT_MESSAGE_START)).toBeLessThan(
+      indexOf((e) => e.type === EventType.TEXT_MESSAGE_CONTENT),
+    );
+    expect(events.findLastIndex?.((e: BaseEvent) => e.type === EventType.TEXT_MESSAGE_CONTENT)).toBeLessThan(
+      indexOf((e) => e.type === EventType.TEXT_MESSAGE_END),
+    );
+    // A text-only run carries no tool-call lifecycle at all.
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_START)).toBe(false);
+  }, 30_000);
+
+  test("tool-call events pair with their own tool call id across the governed roundtrip", async () => {
+    const creds = validation.mint("run_tool_lifecycle", "thread_tool_lifecycle", PROBE_TOOL_TEXT);
+    const events = await collectEvents(
+      httpAgentFor(candidate.baseUrl, headers(creds)),
+      runInput({ runId: "run_tool_lifecycle", threadId: "thread_tool_lifecycle", text: PROBE_TOOL_TEXT }),
+    );
+    assertEventContract(events);
+    const starts = events.filter((e) => e.type === EventType.TOOL_CALL_START) as unknown as Array<{ toolCallId: string }>;
+    expect(starts).toHaveLength(1);
+    const toolCallId = starts[0].toolCallId;
+    for (const e of events) {
+      if (e.type === EventType.TOOL_CALL_ARGS || e.type === EventType.TOOL_CALL_END) {
+        expect((e as unknown as { toolCallId: string }).toolCallId).toBe(toolCallId);
+      }
+    }
+    // TOOL_CALL_END is not the run's end: the terminal comes later, after the
+    // model read the receipt and answered.
+    expect(events.findLastIndex?.((e: BaseEvent) => e.type === EventType.TOOL_CALL_END)).toBeLessThan(
+      events.findLastIndex?.((e: BaseEvent) => e.type === EventType.RUN_FINISHED),
+    );
+    expect(textOf(events)).toBe("callback-observed");
+  }, 30_000);
+
+  test("a run that waits on a human approval ends on the locked interrupt outcome", async () => {
+    /*
+     * R4-A 等待输入/审批: the governed call the fake plane answers
+     * "requires approval" on must end the run WAITING on the locked
+     * protocol's verified fields — RUN_FINISHED with outcome.type
+     * "interrupt", the frozen operation as the interrupt id, the wire tool
+     * call id attached — so the platform mapping (runWaitState) reads
+     * waiting_approval and NEVER succeeded. The events asserted on are the
+     * @ag-ui/client HttpAgent's own decoded events, so this also proves the
+     * locked client's schema pipeline preserves the outcome field.
+     */
+    const creds = validation.mint("run_wait", "thread_wait", PROBE_APPROVAL_TEXT);
+    const events = await collectEvents(
+      httpAgentFor(candidate.baseUrl, headers(creds)),
+      runInput({ runId: "run_wait", threadId: "thread_wait", text: PROBE_APPROVAL_TEXT }),
+    );
+    assertEventContract(events);
+    const terminal = events.at(-1) as unknown as {
+      type: string;
+      outcome?: { type: string; interrupts: Array<{ id: string; reason: string; toolCallId?: string }> };
+    };
+    expect(terminal.type).toBe(EventType.RUN_FINISHED);
+    expect(terminal.outcome?.type).toBe("interrupt");
+    const interrupt = terminal.outcome?.interrupts?.[0];
+    const operation = toolPlane.state.operations.find((op) => op.run_id === "run_wait");
+    const toolCallId = (events.find((e) => e.type === EventType.TOOL_CALL_START) as unknown as { toolCallId?: string })
+      ?.toolCallId;
+    expect(interrupt?.reason).toBe("tool_approval");
+    expect(interrupt?.id).toBe(operation?.operation_id);
+    expect(interrupt?.toolCallId).toBe(toolCallId);
+    // The frozen platform mapping: a WAIT is not a success, and a plain
+    // RUN_FINISHED (no interrupt outcome) is not a wait.
+    expect(runWaitState(events)).toBe("waiting_approval");
+    // Nothing executed while waiting: this operation has no receipt, never
+    // left "proposed", and the model was asked exactly once.
+    expect(toolPlane.state.receipts.find((r) => r.operation_id === operation?.operation_id)).toBeUndefined();
+    expect(operation?.status).toBe("proposed");
+    expect(model.requests.filter((r) => r.userText.includes(PROBE_APPROVAL_TEXT))).toHaveLength(1);
+  }, 30_000);
+
+  test("a run whose governed receipt stays submitted suspends for reconciliation", async () => {
+    /*
+     * R4-A 等待输入/审批, the other frozen reason: an execution whose receipt
+     * is NOT final (submitted — the spend may or may not have taken effect)
+     * must end the run SUSPENDED on the same locked interrupt outcome, reason
+     * operation_receipt_pending, the frozen operation as the interrupt id —
+     * so the platform mapping (runWaitState) reads suspended_reconciliation,
+     * never succeeded and never failed. The spend DID cross the plane (the
+     * receipt exists, status submitted), the operation is frozen at submitted
+     * (not spent twice), and the model was asked exactly once — a pending
+     * receipt is the plane's to settle, not the model's to retry.
+     */
+    const creds = validation.mint("run_receipt", "thread_receipt", PROBE_RECEIPT_TEXT);
+    const events = await collectEvents(
+      httpAgentFor(candidate.baseUrl, headers(creds)),
+      runInput({ runId: "run_receipt", threadId: "thread_receipt", text: PROBE_RECEIPT_TEXT }),
+    );
+    assertEventContract(events);
+    const terminal = events.at(-1) as unknown as {
+      type: string;
+      outcome?: { type: string; interrupts: Array<{ id: string; reason: string; toolCallId?: string }> };
+    };
+    expect(terminal.type).toBe(EventType.RUN_FINISHED);
+    expect(terminal.outcome?.type).toBe("interrupt");
+    const interrupt = terminal.outcome?.interrupts?.[0];
+    const operation = toolPlane.state.operations.find((op) => op.run_id === "run_receipt");
+    const toolCallId = (events.find((e) => e.type === EventType.TOOL_CALL_START) as unknown as { toolCallId?: string })
+      ?.toolCallId;
+    expect(interrupt?.reason).toBe("operation_receipt_pending");
+    expect(interrupt?.id).toBe(operation?.operation_id);
+    expect(interrupt?.toolCallId).toBe(toolCallId);
+    // The frozen platform mapping: an unresolved receipt is a suspension.
+    expect(runWaitState(events)).toBe("suspended_reconciliation");
+    // The spend crossed the plane and froze: one submitted receipt, the
+    // operation held at submitted (never spent twice), the model asked once.
+    expect(toolPlane.state.receipts.find((r) => r.operation_id === operation?.operation_id)?.status).toBe("submitted");
+    expect(operation?.status).toBe("submitted");
+    expect(model.requests.filter((r) => r.userText.includes(PROBE_RECEIPT_TEXT))).toHaveLength(1);
+  }, 30_000);
+
+  test("a deliberately slow consumer gets every byte, receipt and terminal back", async () => {
+    /*
+     * R4-A 慢消费者: the run crosses the governed tool first, then streams a
+     * 2 MiB deterministic answer while THIS consumer reads 64 KiB and stalls.
+     * The runtime must push the slowness back (bounded queue; the in-process
+     * mechanism proof lives in runtime-go's adapter tests) and lose nothing:
+     * after catching up, the joined deltas are byte-identical to the fixture,
+     * the tool-call events and its receipt's answer flow are intact, and
+     * exactly one terminal arrives, last.
+     */
+    const creds = validation.mint("run_slow_reader", "thread_slow_reader", PROBE_SLOW_READER_TEXT);
+    const response = await fetch(`${candidate.baseUrl}${EXECUTION_PATH}`, {
+      method: "POST",
+      headers: headers(creds),
+      body: JSON.stringify(
+        runInput({ runId: "run_slow_reader", threadId: "thread_slow_reader", text: PROBE_SLOW_READER_TEXT }),
+      ),
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const chunks: Uint8Array[] = [];
+    let seen = 0;
+    while (seen < 64 * 1024) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      seen += value.byteLength;
+    }
+    await Bun.sleep(2_000); // the stall: read nothing while the producer pushes
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const text = new TextDecoder().decode(merged);
+    const events: Array<{ type: string; delta?: string; toolCallId?: string }> = [];
+    for (const frame of text.split("\n\n")) {
+      for (const line of frame.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (payload === "[DONE]") continue;
+        events.push(JSON.parse(payload));
+      }
+    }
+    const types = events.map((e) => e.type);
+    expect(types[0]).toBe("RUN_STARTED");
+    expect(types.filter((t) => t === "RUN_STARTED")).toHaveLength(1);
+    expect(types.filter((t) => t === "RUN_FINISHED" || t === "RUN_ERROR")).toHaveLength(1);
+    expect(["RUN_FINISHED", "RUN_ERROR"]).toContain(types.at(-1));
+    // Every delta byte arrived, in order, exactly once.
+    const joined = events.filter((e) => e.type === "TEXT_MESSAGE_CONTENT").map((e) => e.delta ?? "").join("");
+    expect(joined).toBe(slowReaderAnswer());
+    // The receipt's events survived the stall with it.
+    const toolStarts = events.filter((e) => e.type === "TOOL_CALL_START");
+    expect(toolStarts).toHaveLength(1);
+    const operation = toolPlane.state.operations.find((op) => op.run_id === "run_slow_reader");
+    expect(toolPlane.state.receipts.find((r) => r.operation_id === operation?.operation_id)?.status).toBe("succeeded");
+    expect(model.requests.filter((r) => r.userText.includes(PROBE_SLOW_READER_TEXT))).toHaveLength(2);
   }, 60_000);
 });
