@@ -11,7 +11,6 @@
       "usage": "用量"
     },
     "placeholder": {
-      "usage": "用量视图将在下一批就绪。",
       "process": "过程视图随 F5 就绪。"
     }
   },
@@ -61,5 +60,15 @@
       "file": "文件",
       "dataset": "数据集"
     }
+  },
+  "usage": {
+    "empty": "暂无用量。",
+    "inputTokens": "输入 tokens",
+    "outputTokens": "输出 tokens",
+    "turns": "轮次",
+    "succeeded": "成功",
+    "failed": "失败/取消",
+    "cost": "费用",
+    "note": "用量为展示汇总；计费以服务端 code_runs 记录为准。"
   }
 }

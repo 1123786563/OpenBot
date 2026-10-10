@@ -7,6 +7,7 @@ import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
 import { WorkshopTurnView } from "./workshop-turn";
 import { WorkshopFilesView } from "./workshop-files";
 import { WorkshopArtifactsView } from "./workshop-artifacts";
+import { WorkshopUsageView } from "./workshop-usage";
 
 /**
  * The workshop tab: one channel's working surface in four panes.
@@ -87,9 +88,7 @@ export function WorkshopPanel({
                 artifacts={snapshot.data.artifacts}
               />
             ) : (
-              <p className="p-4 text-sm text-muted-foreground">
-                {t("panel.placeholder.usage")}
-              </p>
+              <WorkshopUsageView snapshot={snapshot.data} />
             )}
           </div>
         </>

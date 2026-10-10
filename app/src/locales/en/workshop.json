@@ -11,7 +11,6 @@
       "usage": "Usage"
     },
     "placeholder": {
-      "usage": "The usage view arrives in the next batch.",
       "process": "The live turn view arrives with F5."
     }
   },
@@ -61,5 +60,15 @@
       "file": "File",
       "dataset": "Dataset"
     }
+  },
+  "usage": {
+    "empty": "No usage yet.",
+    "inputTokens": "Input tokens",
+    "outputTokens": "Output tokens",
+    "turns": "Turns",
+    "succeeded": "Succeeded",
+    "failed": "Failed/cancelled",
+    "cost": "Cost",
+    "note": "Usage here is a display copy; billing reads the server's code_runs rows."
   }
 }
