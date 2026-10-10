@@ -307,12 +307,9 @@ export function createTurnOrchestrator(
 
   return {
     async enqueue(input) {
-      // AUDIT FIRST, ROW FIRST — one layer up from the gateway's own discipline.
-      await audit(
-        "workshop.turn_started",
-        { sessionId: input.sessionId, bot: input.botId },
-        input,
-      );
+      // AUDIT FIRST, ROW FIRST — one layer up from the gateway's own discipline. The started
+      // row lands AFTER enqueueTurn (which mints the id) so it carries the turnId a reader —
+      // a smoke, a person's log — can key on; still before anything runs.
       const row = await store.enqueueTurn({
         sessionId: input.sessionId,
         prompt: input.prompt,
@@ -321,6 +318,11 @@ export function createTurnOrchestrator(
         initiator:
           input.initiator && input.initiator.kind !== "person" ? "headless" : "person",
       });
+      await audit(
+        "workshop.turn_started",
+        { turnId: row.id, sessionId: input.sessionId, bot: input.botId },
+        input,
+      );
       // Fire-and-forget: enqueue resolves on existence; the stream (B9) shows the rest.
       void runTurn({
         turnId: row.id,

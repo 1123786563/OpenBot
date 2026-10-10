@@ -426,8 +426,16 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
        */
       const drainTail = async (): Promise<void> => {
         await sendPromise;
-        for (let i = 0; i < 40 && queue.length === 0; i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
+        // Wait for the idle event itself (not just any traffic): a slow model's tail can sit
+        // quiet past a short window, and cutting before prompt_response reads, live, as
+        // "stream ended without completing". The ceiling keeps a truly dead stream bounded.
+        const ceiling = Date.now() + 15_000;
+        let sawIdle = queue.some(
+          (event) => event.family === "prompt_response",
+        );
+        while (!sawIdle && Date.now() < ceiling && !cancelled) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          sawIdle = queue.some((event) => event.family === "prompt_response");
         }
       };
 
