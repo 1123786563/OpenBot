@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { getTableName, like } from "drizzle-orm";
+import { and, eq, getTableName, like } from "drizzle-orm";
 import { createDatabase, type Database } from "../../src/db/client";
 import {
   enterpriseMemberships,
@@ -278,14 +278,58 @@ test("directory, data, and offline operator connections enforce tenant access", 
     "TENANT_FORBIDDEN",
   );
 
-  const aclRevocation = await revokeResourceRead(operator, {
+  const aclRevocationInput = {
     operationId: `${prefix}-revoke-resource-a`,
     operator: principalA,
     tenantId: tenantA,
     resourceId: resourceA,
     principalId: principalA,
-  });
+  };
+  const aclRevocation = await revokeResourceRead(operator, aclRevocationInput);
   expect(aclRevocation).toEqual({ changed: true, aclEpoch: 2 });
+  await setupDb()
+    .delete(enterpriseResources)
+    .where(
+      and(
+        eq(enterpriseResources.tenantId, tenantA),
+        eq(enterpriseResources.id, resourceA),
+      ),
+    );
+  const aclRevocationReplay = await revokeResourceRead(
+    operator,
+    aclRevocationInput,
+  );
+  expect(aclRevocationReplay).toEqual(aclRevocation);
+  const [aclRevocationEvent] = await setupDb()
+    .select({ details: enterpriseSecurityEvents.details })
+    .from(enterpriseSecurityEvents)
+    .where(
+      and(
+        eq(enterpriseSecurityEvents.tenantId, tenantA),
+        eq(enterpriseSecurityEvents.id, aclRevocationInput.operationId),
+      ),
+    )
+    .limit(1);
+  expect(aclRevocationEvent).toBeDefined();
+  if (!aclRevocationEvent)
+    throw new Error("ACL revocation event was not found");
+  const detailsWithoutAclEpoch = Object.fromEntries(
+    Object.entries(aclRevocationEvent.details).filter(
+      ([key]) => key !== "acl_epoch",
+    ),
+  );
+  await setupDb()
+    .update(enterpriseSecurityEvents)
+    .set({ details: detailsWithoutAclEpoch })
+    .where(
+      and(
+        eq(enterpriseSecurityEvents.tenantId, tenantA),
+        eq(enterpriseSecurityEvents.id, aclRevocationInput.operationId),
+      ),
+    );
+  await expect(
+    revokeResourceRead(operator, aclRevocationInput),
+  ).rejects.toThrow("IDEMPOTENCY_RESULT_INVALID");
   await expect(
     reader.readAuthorizedResource(scopeA, resourceA),
   ).rejects.toThrow("RESOURCE_NOT_FOUND");
@@ -295,13 +339,23 @@ test("directory, data, and offline operator connections enforce tenant access", 
     resourceId: revocationResource,
   });
 
-  const membershipRevocation = await suspendMembership(operator, {
+  const membershipRevocationInput = {
     operationId: `${prefix}-revoke-member-a`,
     operator: principalA,
     tenantId: tenantA,
     principalId: principalA,
-  });
+  };
+  const membershipRevocation = await suspendMembership(
+    operator,
+    membershipRevocationInput,
+  );
   expect(membershipRevocation).toEqual({ changed: true, epoch: 2 });
+  const membershipRevocationReplay = await suspendMembership(
+    operator,
+    membershipRevocationInput,
+  );
+  expect(membershipRevocationReplay).toEqual(membershipRevocation);
+  expect(membershipRevocationReplay.epoch).toBe(membershipRevocation.epoch);
   await expect(
     reader.readAuthorizedResource(scopeA, revocationResource),
   ).rejects.toThrow("SCOPE_REVOKED");

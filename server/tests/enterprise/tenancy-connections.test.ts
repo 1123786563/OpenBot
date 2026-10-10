@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Database } from "../../src/db/client";
 import {
   assertOperatorDatabase,
@@ -15,12 +17,19 @@ type CatalogRow = {
   login_has_expected_capability: boolean;
   capability_has_no_escalation_membership: boolean;
   login_has_no_other_memberships: boolean;
-  no_table_ownership: boolean;
+  no_protected_ownership: boolean;
+  login_has_no_enterprise_privileges: boolean;
 };
 
-function databaseWith(row: CatalogRow): Database {
+function databaseWith(
+  row: CatalogRow,
+  onQuery?: (query: SQL) => void,
+): Database {
   return {
-    execute: async () => [row],
+    execute: async (query: SQL) => {
+      onQuery?.(query);
+      return [row];
+    },
   } as unknown as Database;
 }
 
@@ -31,7 +40,8 @@ const safeCatalog = (): CatalogRow => ({
   login_has_expected_capability: true,
   capability_has_no_escalation_membership: true,
   login_has_no_other_memberships: true,
-  no_table_ownership: true,
+  no_protected_ownership: true,
+  login_has_no_enterprise_privileges: true,
 });
 
 test("brands only handles whose exact current_user is the required capability", async () => {
@@ -55,7 +65,7 @@ test("refuses superuser, BYPASSRLS, and owner-capable sessions", async () => {
   for (const field of [
     "capability_attributes_ok",
     "login_attributes_ok",
-    "no_table_ownership",
+    "no_protected_ownership",
   ] as const) {
     const row = safeCatalog();
     row[field] = false;
@@ -70,6 +80,7 @@ test("refuses missing capability membership and any capability escalation member
     "login_has_expected_capability",
     "capability_has_no_escalation_membership",
     "login_has_no_other_memberships",
+    "login_has_no_enterprise_privileges",
   ] as const) {
     const row = safeCatalog();
     row[field] = false;
@@ -77,6 +88,34 @@ test("refuses missing capability membership and any capability escalation member
       "DATABASE_CAPABILITY_MISMATCH",
     );
   }
+});
+
+test("capability SQL rejects direct LOGIN grants and ownership authority", async () => {
+  let queryText = "";
+  const dialect = new PgDialect();
+  const database = databaseWith(safeCatalog(), (query) => {
+    queryText = dialect.sqlToQuery(query).sql;
+  });
+
+  await verifyDataDatabase(database);
+
+  expect(queryText).toContain("aclexplode");
+  expect(queryText).toContain("relation.relacl");
+  expect(queryText).toContain("attribute.attacl");
+  expect(queryText).toContain("namespace.nspacl");
+  expect(queryText).toContain("pg_database target_database");
+  expect(queryText).toContain("relation_acl.grantee = login.oid");
+  expect(queryText).toContain("attribute_acl.grantee = login.oid");
+  expect(queryText).toContain("schema_acl.grantee = login.oid");
+  expect(queryText).toContain("relation.relowner = login.oid");
+  expect(queryText).toContain("namespace.nspowner = login.oid");
+  expect(queryText).toContain("target_database.datdba = login.oid");
+  expect(queryText).toContain(
+    "pg_has_role(session_user, target_database.datdba, 'MEMBER')",
+  );
+  expect(queryText).toContain("session_user");
+  expect(queryText).toContain("login_has_no_enterprise_privileges");
+  expect(queryText).toContain("no_protected_ownership");
 });
 
 test("login membership probe permits only its own role and expected capability", async () => {
