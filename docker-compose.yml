@@ -611,8 +611,18 @@ services:
       # Escape hatch for a proxy/VPN whose fake-IP DNS maps public domains into reserved ranges
       # (198.18.0.0/15, fc00::/7). Empty keeps OpenConnector's egress protection at full strength.
       OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS: ${OPENCONNECTOR_EGRESS_TRUSTED_HOSTS:-}
+      # Empty = SQLite in the volume below (zero-config default). Set to this deployment's own
+      # Postgres to share it; a distinct `search_path` keeps the broker's tables beside — not in —
+      # OpenBot's `public` schema. PostgreSQL mode needs an explicit migrate before first start:
+      # `docker compose run --rm open-connector npm run runtime:migrate`.
+      OOMOL_CONNECT_DATABASE_URL: ${OPENCONNECTOR_DATABASE_URL:-}
     volumes:
       - open-connector-data:/app/data
+    networks:
+      # The broker dials Postgres by service name, so it rides the same network migrate and
+      # agent-computer use to reach it. Nothing else needs it — the API server reaches this
+      # container over loopback, not over the compose network.
+      - data
     ports:
       # Loopback, like every other port in this file. The API server runs on the host and reaches
       # the broker at OPENCONNECTOR_URL, http://localhost:3100 by default; the two tokens are the
