@@ -885,13 +885,54 @@ async function runAdminFlow(browser: Browser) {
       timeout: SHORT_TIMEOUT_MS,
     });
     await gotoRetry(page, `${APP_URL}/settings/billing`);
-    // 页面在 entitlements 查询返回前渲染为空，轮询等待真实内容
-    const billingText = page
-      .getByText("Entitlements")
+    // 页面在 entitlements 查询返回前渲染为骨架，轮询等待真实内容：
+    // 有活跃订阅时是订阅 hero 卡 + 权益清单，没有则是空态，二者其一。
+    // （"Entitlements" 标题在骨架期就已渲染，等待它没有区分度。）
+    const billingContent = page
+      .getByText("Current subscription")
       .or(page.getByText("Included in your plan"))
       .or(page.getByText("This deployment has no active plan."));
-    await billingText.first().waitFor({ state: "visible", timeout: 20000 });
+    await billingContent.first().waitFor({ state: "visible", timeout: 20000 });
     return `账单页内容：${(await page.locator("main").innerText()).slice(0, 80).replace(/\s+/g, " ")}…`;
+  });
+
+  await step("使用记录页呈现 KPI 与趋势（或无订阅空态）", async () => {
+    await gotoRetry(page, `${APP_URL}/settings/usage`);
+    // 页面在用量查询返回前渲染为骨架，轮询等待真实内容：
+    // 有订阅时是 KPI 三卡（合计/总 tokens/计量事件）+ 按天趋势，
+    // 没有生效中的订阅时是空态，二者其一必须出现。
+    const usageContent = page
+      .getByText("Total tokens")
+      .or(page.getByText("Total this period"))
+      .or(page.getByText("Metered events"))
+      .or(
+        page.getByText(
+          "There is no active subscription to measure usage against.",
+        ),
+      );
+    await usageContent.first().waitFor({ state: "visible", timeout: 20000 });
+    return `使用记录页内容：${(await page.locator("main").innerText()).slice(0, 80).replace(/\s+/g, " ")}…`;
+  });
+
+  await step("订阅页呈现价格目录（或未配置/空目录/已有订阅的说明）", async () => {
+    await gotoRetry(page, `${APP_URL}/settings/billing/subscribe`);
+    // 页面在目录查询返回前不渲染任何内容，轮询等待真实内容：
+    // 目录区块（"Plans"）、未配置支付渠道、空目录或已有订阅状态卡，其一即可。
+    const subscribeContent = page
+      .getByText("Plans")
+      .or(
+        page.getByText(
+          "Purchases are not available on this deployment. No payment channel has been configured.",
+        ),
+      )
+      .or(
+        page.getByText(
+          "No plan is purchasable here yet. An administrator configures the plan catalog.",
+        ),
+      )
+      .or(page.getByText("Current subscription"));
+    await subscribeContent.first().waitFor({ state: "visible", timeout: 20000 });
+    return `订阅页内容：${(await page.locator("main").innerText()).slice(0, 80).replace(/\s+/g, " ")}…`;
   });
 
   await context.close();
