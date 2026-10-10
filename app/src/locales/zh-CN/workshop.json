@@ -9,7 +9,8 @@
       "files": "文件",
       "artifacts": "产物",
       "usage": "用量",
-      "share": "分享"
+      "share": "分享",
+      "schedules": "定时"
     },
     "placeholder": {
       "process": "过程视图随 F5 就绪。"
@@ -109,5 +110,61 @@
     "revokeButton": "撤销链接",
     "scopeLabel": "范围",
     "daysLabel": "有效期"
+  },
+  "schedules": {
+    "form": {
+      "aria": "新建定时任务",
+      "heading": "新建定时任务",
+      "prompt": "要执行的任务描述…",
+      "mode": {
+        "interval": "间隔",
+        "daily": "每天",
+        "advanced": "高级 cron"
+      },
+      "every": "间隔数值",
+      "unit": {
+        "minutes": "分钟",
+        "hours": "小时",
+        "days": "天"
+      },
+      "time": "时间",
+      "cron": "五字段 cron，如 */30 9 * * mon-fri",
+      "tools": "免审批工具（逗号分隔）",
+      "maxTurns": "每轮上限",
+      "clampHint": "每轮上限服务端会钳制到 1-20；预授权边界外的操作仍需审批。",
+      "submit": "创建",
+      "error": "创建失败，请检查任务与规则。",
+      "modeLabel": "模式",
+      "unitLabel": "单位"
+    },
+    "list": {
+      "aria": "定时任务列表",
+      "heading": "定时任务",
+      "loading": "加载中…",
+      "error": "加载失败。",
+      "empty": "还没有定时任务。"
+    },
+    "row": {
+      "nextRun": "下次 {{time}}",
+      "paused": "已暂停",
+      "preapproved": "免审工具 {{tools}} · 上限 {{max}} 轮",
+      "pause": "暂停",
+      "resume": "启用",
+      "delete": "删除"
+    },
+    "history": {
+      "aria": "运行历史",
+      "heading": "运行历史",
+      "empty": "还没有运行记录。"
+    },
+    "run": {
+      "status": {
+        "planned": "已计划",
+        "running": "运行中",
+        "succeeded": "成功",
+        "failed": "失败",
+        "skipped": "已跳过"
+      }
+    }
   }
 }

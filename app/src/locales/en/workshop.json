@@ -9,7 +9,8 @@
       "files": "Files",
       "artifacts": "Artifacts",
       "usage": "Usage",
-      "share": "Share"
+      "share": "Share",
+      "schedules": "Schedules"
     },
     "placeholder": {
       "process": "The live turn view arrives with F5."
@@ -109,5 +110,61 @@
     "revokeButton": "Revoke link",
     "scopeLabel": "Scope",
     "daysLabel": "Validity"
+  },
+  "schedules": {
+    "form": {
+      "aria": "New schedule",
+      "heading": "New schedule",
+      "prompt": "What should run…",
+      "mode": {
+        "interval": "Interval",
+        "daily": "Daily",
+        "advanced": "Advanced cron"
+      },
+      "every": "Every",
+      "unit": {
+        "minutes": "minutes",
+        "hours": "hours",
+        "days": "days"
+      },
+      "time": "Time",
+      "cron": "Five-field cron, e.g. */30 9 * * mon-fri",
+      "tools": "Preapproved tools (comma-separated)",
+      "maxTurns": "Max turns",
+      "clampHint": "The turn ceiling is clamped server-side to 1-20; operations outside the preapproval still need approval.",
+      "submit": "Create",
+      "error": "Could not create — check the prompt and the rule.",
+      "modeLabel": "Mode",
+      "unitLabel": "Unit"
+    },
+    "list": {
+      "aria": "Schedules list",
+      "heading": "Schedules",
+      "loading": "Loading…",
+      "error": "Could not load.",
+      "empty": "No schedules yet."
+    },
+    "row": {
+      "nextRun": "Next {{time}}",
+      "paused": "Paused",
+      "preapproved": "Tools {{tools}} · max {{max}} turns",
+      "pause": "Pause",
+      "resume": "Resume",
+      "delete": "Delete"
+    },
+    "history": {
+      "aria": "Run history",
+      "heading": "Run history",
+      "empty": "No runs yet."
+    },
+    "run": {
+      "status": {
+        "planned": "Planned",
+        "running": "Running",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "skipped": "Skipped"
+      }
+    }
   }
 }
