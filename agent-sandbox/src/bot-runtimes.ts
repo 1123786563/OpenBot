@@ -13,6 +13,7 @@
  */
 import { mkdir } from "node:fs/promises";
 import type { SandboxEnv } from "./env";
+import { createDevServers, type DevServers } from "./devserver";
 import { startOpencodeServe, type Upstream } from "./upstream";
 import { UnusableBotIdError, isPlainBotId } from "./bot-id";
 
@@ -22,6 +23,8 @@ export type BotRuntimesOptions = {
   env: SandboxEnv;
   workspaceRoot?: string;
   spawnFn?: typeof import("node:child_process").spawn;
+  /** The dev server subsystem; injectable for tests, built from env when absent. */
+  devservers?: DevServers;
   fetchImpl?: typeof fetch;
   nowMs?: () => number;
 };
@@ -96,10 +99,41 @@ export type BotRuntimes = {
     lastActivityAtMs: number;
     spawnAttempts: number;
   }>;
+  /** Start (or reuse) this Bot's dev server for a dir; the cap is a refusal, not a queue. */
+  startDevServer(input: {
+    botId: string;
+    dir: string;
+    command?: string;
+  }): Promise<
+    | { ok: true; port: number; command: string }
+    | { ok: false; reason: "capacity"; running: number; max: number }
+  >;
+  /** Stop this Bot's dev servers. Quiet when none. */
+  stopDevServer(botId: string): Promise<void>;
+  /** What dev servers run, for the status surface. */
+  listDevServers(): Array<{
+    botId: string;
+    dir: string;
+    port: number;
+    command: string;
+    startedAtMs: number;
+  }>;
 };
 
 export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
   const { env } = options;
+  /**
+   * The dev servers ride this runtime's lifecycle: stopBot cascades (a dev server without its
+   * Bot's runtime is a port held for nobody), and the runtime's own map never learns a thing
+   * about them — they are a sibling subsystem, not runtime state.
+   */
+  const devservers: DevServers =
+    options.devservers ??
+    createDevServers({
+      portBase: env.devserverPortBase,
+      max: env.devserverMax,
+      workspaceRoot: options.workspaceRoot ?? `${env.workspaceDir}/bots`,
+    });
   const workspaceRoot = options.workspaceRoot ?? `${env.workspaceDir}/bots`;
   const spawnFn = options.spawnFn;
   const fetchImpl = options.fetchImpl;
@@ -237,7 +271,13 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
       return { idle, stalled };
     },
 
+    startDevServer: (input) => devservers.start(input),
+    stopDevServer: (botId) => devservers.stop(botId),
+    listDevServers: () => devservers.list(),
+
     async stopBot(botId: string): Promise<void> {
+      // The dev servers die with their Bot's runtime: see the devservers field above.
+      await devservers.stop(botId);
       const entry = entries.get(botId);
       if (entry) stop(botId, entry);
     },

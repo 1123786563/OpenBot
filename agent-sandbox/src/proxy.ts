@@ -42,8 +42,8 @@ const ALLOWED = new Set([
   "POST /session/:id/abort",
   "POST /file",
   // Not yet implemented — allowed, and answered 501 until their tasks land:
-  "POST /webapp/start",
-  "POST /webapp/stop",
+  "POST /devserver/start",
+  "POST /devserver/stop",
   "GET /runtimes",
   "GET /workspace/snapshot",
   "POST /workspace/restore",
@@ -51,8 +51,6 @@ const ALLOWED = new Set([
 
 /** Paths that are allowed but not implemented yet, each awaiting its own task. */
 const NOT_YET_IMPLEMENTED = new Set([
-  "POST /webapp/start",
-  "POST /webapp/stop",
   "GET /workspace/snapshot",
   "POST /workspace/restore",
 ]);
@@ -133,6 +131,41 @@ export function createProxyHandler(
     // per-bot resolution, which it does not need.
     if (request.method === "GET" && url.pathname === "/runtimes") {
       return Response.json({ bots: runtimes.listRuntimes() });
+    }
+
+    // The dev server verbs (S8): a Bot's live webapp, started lazily in its workspace. The
+    // cap is a refusal with a reason, never a queue; the WS passthrough to the started port
+    // is B15's batch, so this batch answers the lifecycle over HTTP only.
+    if (url.pathname === "/devserver/start" && request.method === "POST") {
+      const body = (await request.json().catch(() => ({}))) as {
+        dir?: unknown;
+        command?: unknown;
+      };
+      const dir = typeof body.dir === "string" && body.dir.trim() ? body.dir.trim() : "";
+      if (!dir)
+        return Response.json({ error: "dir is a required string." }, { status: 400 });
+      if (typeof body.command === "string" && !body.command.trim() && body.command !== "")
+        return Response.json({ error: "command must be a non-empty string." }, { status: 400 });
+      const started = await runtimes.startDevServer({
+        botId,
+        dir,
+        ...(typeof body.command === "string" && body.command.trim()
+          ? { command: body.command }
+          : {}),
+      });
+      if (!started.ok)
+        return Response.json(
+          {
+            error: `The dev server cap is reached (${started.running}/${started.max}); stop one before starting another.`,
+            reason: started.reason,
+          },
+          { status: 503 },
+        );
+      return Response.json({ port: started.port, command: started.command });
+    }
+    if (url.pathname === "/devserver/stop" && request.method === "POST") {
+      await runtimes.stopDevServer(botId);
+      return Response.json({ ok: true, botId });
     }
 
     const runtime = await runtimes.getOrSpawn(botId);
