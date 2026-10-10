@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { cn } from "@/lib/utils";
 import type { InvoiceStatus } from "@/lib/billing/invoices";
+import { cn } from "@/lib/utils";
 
 /**
  * A bill's money state, as the same pill the subscription hero uses.
@@ -41,7 +41,11 @@ export function InvoiceStatusPill({
 }
 
 /** The channel that carried the money, in the deployment's configured words only. */
-export function InvoiceMethodLabel({ method }: { method: "alipay" | "wechat" }) {
+export function InvoiceMethodLabel({
+  method,
+}: {
+  method: "alipay" | "wechat";
+}) {
   const { t } = useTranslation("settings");
   return <span>{t(`invoicesPage.method.${method}`)}</span>;
 }

@@ -1,17 +1,17 @@
 import { useTranslation } from "react-i18next";
 import { money } from "@/lib/billing/format";
+import type { BillingQuotaEntry } from "@/lib/billing/plan-usage";
 import { useDateTime } from "@/lib/i18n/datetime";
 import { cn } from "@/lib/utils";
-import type { BillingQuotaEntry } from "@/lib/billing/plan-usage";
 
 /**
  * One resource's allowance: how much, out of how much, and when it comes back.
  *
  * WHY A `div` AND NOT A NEW UI PRIMITIVE. The design system has no progress bar, and it does not
- * need one for this: usage is seven rows on one screen, and a `<Progress>` in `components/ui`
- * would be a base component invented for a single caller. The project already draws its tables
- * from native `<table>` rather than a `<Table>`, so this is that same decision — ARIA is written
- * out by hand, once, and the tokens are the design system's own.
+ * need one for this: usage is a handful of rows on one screen, and a `<Progress>` in
+ * `components/ui` would be a base component invented for a single caller. The project already
+ * draws its tables from native `<table>` rather than a `<Table>`, so this is that same decision —
+ * ARIA is written out by hand, once, and the tokens are the design system's own.
  *
  * THE ONE THING THIS GETS RIGHT THAT A GENERIC BAR DOES NOT: `limit: null` is drawn as prose, not
  * as a bar. A deployment that measures a metric without capping it has no denominator, and a bar
@@ -51,7 +51,9 @@ export function QuotaBar({
           <p
             className={cn(
               "shrink-0 text-xs tabular-nums",
-              nearlyOut ? "font-medium text-destructive" : "text-muted-foreground",
+              nearlyOut
+                ? "font-medium text-destructive"
+                : "text-muted-foreground",
             )}
           >
             {t("usagePage.usedPercent", { percent })}

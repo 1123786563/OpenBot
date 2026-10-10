@@ -59,7 +59,13 @@ export type InvoiceWindow = { from?: string; to?: string };
 export const invoiceKeys = {
   all: ["billing", "invoices"] as const,
   list: (window: InvoiceWindow, page: number) =>
-    [...invoiceKeys.all, "list", window.from ?? "", window.to ?? "", page] as const,
+    [
+      ...invoiceKeys.all,
+      "list",
+      window.from ?? "",
+      window.to ?? "",
+      page,
+    ] as const,
   detail: (invoiceId: string) =>
     [...invoiceKeys.all, "detail", invoiceId] as const,
 };
@@ -110,11 +116,10 @@ export const invoiceDetailQueryOptions = (invoiceId: string | null) =>
     staleTime: 0,
     enabled: invoiceId !== null,
     queryFn: async (): Promise<BillingInvoiceDetail> => {
-      const response = await client(
+      return client(
         `/api/billing/invoices/${encodeURIComponent(invoiceId ?? "")}`,
         "invoice",
         { fallback: "That bill could not be loaded." },
       );
-      return response;
     },
   });
