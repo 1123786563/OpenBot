@@ -34,9 +34,6 @@ import { recordProvisioned, scimOptions } from "./scim";
 const log = getLogger("server");
 
 /** What a person sees when SSO is required and they tried another way in. */
-/** The native app's custom scheme (mobile/app.config.ts). */
-const NATIVE_APP_ORIGIN = "openbotmobile://";
-
 export const SSO_REQUIRED_MESSAGE =
   "This deployment requires signing in through your company's identity provider. Enter your work email to continue.";
 
@@ -271,7 +268,17 @@ export function createAuth(
    * to that redirect. Any Android app can register the same scheme, so the scheme is trusted only on
    * a deployment that runs the native app (EXPO_PROJECT_ID, as for push). Elsewhere a sign-in can
    * never be sent there.
+   *
+   * EXPO_APP_SCHEME names WHICH app that is. The built-in client uses openbotmobile://; the OpenMuse
+   * client (apps/openmuse-mobile) registers openmuse://, and its OAuth callback is refused as an
+   * untrusted origin unless the deployment says so. A custom scheme is deliberately not a URL the
+   * browser validates, so this accepts scheme:// only and rejects anything else loudly rather than
+   * silently widening the trust base to an arbitrary web origin.
    */
+  const nativeScheme = process.env.EXPO_APP_SCHEME?.trim();
+  if (nativeScheme && !/^[a-z][a-z0-9+.-]*$/i.test(nativeScheme))
+    throw new Error("EXPO_APP_SCHEME must be a bare URL scheme, e.g. openmuse.");
+  const nativeAppOrigin = `${nativeScheme ?? "openbotmobile"}://`;
   const nativeApp = Boolean(process.env.EXPO_PROJECT_ID?.trim());
   const plugins = [
     ...(nativeApp ? [expo()] : []),
@@ -369,7 +376,7 @@ export function createAuth(
     secret: authConfig.secret,
     trustedOrigins: [
       ...authConfig.trustedOrigins,
-      ...(nativeApp ? [NATIVE_APP_ORIGIN] : []),
+      ...(nativeApp ? [nativeAppOrigin] : []),
     ],
     /*
      * Wrapped, so a company's client secret is ciphertext in the column.
