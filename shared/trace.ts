@@ -12,7 +12,7 @@
  * or the generic `OTEL_EXPORTER_OTLP_ENDPOINT`) spans are still recorded, just never exported,
  * and `OPENBOT_TRACES=off` disables the whole thing with an endpoint still set.
  */
-import { type Context, context, propagation, trace } from "@opentelemetry/api";
+import { type Context, context, propagation, trace, SpanStatusCode } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
@@ -120,4 +120,49 @@ export async function shutdownTracing(): Promise<void> {
   } finally {
     trace.disable();
   }
+}
+
+/**
+ * Wrap a bare `Bun.serve` fetch handler so every request runs inside a span named
+ * `METHOD path`, parented by the request's W3C `traceparent` when one is present and
+ * self-rooted when not. The span records `http.response.status_code` and takes the
+ * ERROR status when the handler throws or answers 5xx; a thrown error still propagates,
+ * so Bun's own error handling sees exactly what it would have seen unwrapped. Bun's
+ * optional second `server` argument is forwarded untouched, which keeps websocket
+ * upgrade handlers working behind the wrapper — an upgraded request simply ends its
+ * span with no response status, and the socket's own callbacks stay outside.
+ */
+export function withTraceFetch(
+  handler: (request: Request, server?: unknown) => Response | Promise<Response>,
+): (request: Request, server?: unknown) => Promise<Response> {
+  const tracer = trace.getTracer("openbot.http");
+  return async (request, server) => {
+    const span = tracer.startSpan(
+      `${request.method} ${new URL(request.url).pathname}`,
+      {},
+      extractRequestContext(request),
+    );
+    try {
+      const response = await context.with(
+        trace.setSpan(context.active(), span),
+        () => handler(request, server),
+      );
+      if (response instanceof Response) {
+        span.setAttribute("http.response.status_code", response.status);
+        if (response.status >= 500)
+          span.setStatus({ code: SpanStatusCode.ERROR });
+      }
+      return response;
+    } catch (error) {
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      span.recordException(
+        error instanceof Error
+          ? error
+          : { name: "Error", message: String(error) },
+      );
+      throw error;
+    } finally {
+      span.end();
+    }
+  };
 }
