@@ -10,6 +10,7 @@ import {
   keyIsRequired,
   requiresResponsesApi,
 } from "../../shared/model-providers";
+import { initProcessTracing, withTraceFetch } from "../../shared/trace";
 import { toProviderMessages } from "./history";
 
 /**
@@ -241,10 +242,14 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
   });
 }
 
+// Trace context propagation and, when a collector is configured, trace export. Installed
+// before the listener so the first request already runs inside a span.
+initProcessTracing("agent-bot", process.env);
+
 serve({
   port: PORT,
   idleTimeout: 120,
-  async fetch(request) {
+  fetch: withTraceFetch(async (request) => {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
@@ -260,7 +265,7 @@ serve({
     }
 
     return Response.json({ error: "Not found." }, { status: 404 });
-  },
+  }),
 });
 
 console.info(`agent-bot listening on http://127.0.0.1:${PORT}/ag-ui`);

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { serve } from "bun";
 import type { Page } from "playwright";
 import { downloadHeaders } from "../../shared/file-download";
+import { initProcessTracing, withTraceFetch } from "../../shared/trace";
 import {
   cutAtCodeUnits,
   parseAriaSnapshot,
@@ -465,6 +466,10 @@ const FOLLOW_INTERVAL_MS = 1_000;
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
 type StreamData = { botId: string; recordingId?: string };
 
+// Trace context propagation and, when a collector is configured, trace export. Installed
+// before the listener so the first request already runs inside a span.
+initProcessTracing("agent-computer", process.env);
+
 serve<StreamData>({
   port: PORT,
   ...(RUNTIME.hostname ? { hostname: RUNTIME.hostname } : {}),
@@ -643,7 +648,7 @@ serve<StreamData>({
       await sessions.get(ws.data.botId)?.viewer.release(ws);
     },
   },
-  async fetch(request, server) {
+  fetch: withTraceFetch(async (request, server) => {
     const url = new URL(request.url);
 
     /*
@@ -712,8 +717,9 @@ serve<StreamData>({
         const recordingId = url.searchParams.get("recording")?.trim();
         if (recordingId && !/^[a-f0-9-]{36}$/.test(recordingId))
           return json({ error: "Invalid recording identity." }, 400);
+        // The wrapper hands the Bun server through untyped, so the upgrade narrows it back.
         if (
-          server.upgrade(request, {
+          (server as import("bun").Server<StreamData>).upgrade(request, {
             data: {
               botId: streamBotId,
               ...(recordingId ? { recordingId } : {}),
@@ -1332,7 +1338,7 @@ serve<StreamData>({
     } finally {
       releaseAction?.();
     }
-  },
+  }),
 });
 
 type ActionBody = {

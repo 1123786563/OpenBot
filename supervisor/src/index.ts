@@ -16,6 +16,7 @@ import { registerEntry } from "./identity";
 import { namesFor } from "./names";
 import { computerMemoryBytes } from "./computer-memory-bytes";
 import { listenPort } from "./listen-port";
+import { initProcessTracing, withTraceFetch } from "../../shared/trace";
 
 /**
  * The container supervisor: the only thing here that holds the Docker socket.
@@ -74,6 +75,20 @@ const spireSocketVolume =
   process.env.SPIRE_AGENT_SOCKET_VOLUME?.trim() || undefined;
 
 const app = new Hono();
+
+/*
+ * The trace span, before the Bearer check so a refused request is still traced: the
+ * caller's `traceparent` continues their trace here, and a request with none is traced
+ * from a fresh root. The span closes when the handler below answers, so every verb this
+ * process exposes is visible to the collector with its status.
+ */
+app.use("*", async (c, next) => {
+  const traced = withTraceFetch(async () => {
+    await next();
+    return c.res;
+  });
+  return traced(c.req.raw);
+});
 
 app.use("*", async (context, next) => {
   // Health is open so an orchestrator can check it without holding the token.
@@ -172,6 +187,10 @@ app.get("/computers", async (context) => {
     throw error;
   }
 });
+
+// Trace context propagation and, when a collector is configured, trace export. Installed
+// before the listener so the first request already runs inside a span.
+initProcessTracing("supervisor", process.env);
 
 serve({ port, fetch: app.fetch, idleTimeout: 120 });
 
