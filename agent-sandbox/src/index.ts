@@ -22,10 +22,16 @@ const handler = createProxyHandler(env, runtimes);
 const server = serve({ port: env.port, hostname: "0.0.0.0", fetch: handler });
 log("sandbox-listening", { port: env.port, mode: "per-bot", version: SANDBOX_VERSION, configPath });
 
-// 清扫循环：空闲回收 + 可选工作区 TTL
+// 清扫循环：空闲回收 + 可选工作区 TTL + 活动超时（静默流回收）
 const sweep = setInterval(() => {
-  const reaped = runtimes.reapIdle(Date.now());
-  if (reaped.length > 0) log("sandbox-runtimes-reaped", { bots: reaped });
+  const now = Date.now();
+  const { idle, stalled } = runtimes.reapIdle(now);
+  if (idle.length > 0) log("sandbox-runtimes-reaped", { bots: idle });
+  // A stalled stop is a failure to report, not housekeeping: each one names the Bot and how
+  // long its stream had been silent, so a deployment can tell a hung turn from a quiet one.
+  for (const botId of stalled) {
+    log("sandbox-runtime-stalled", { botId });
+  }
 }, env.sweepIntervalMs);
 sweep.unref?.();
 

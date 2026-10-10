@@ -26,6 +26,12 @@ export type SandboxEnv = {
   maxResponseBytes: number;
   /** Idle budget for a per-bot opencode serve before the sweep stops it. */
   upstreamIdleMs: number;
+  /**
+   * A runtime whose event stream stays silent this long is stalled, not idle: the sweep stops
+   * it too (with a `sandbox-runtime-stalled` row), because a stream that produces nothing is a
+   * turn that will never finish. Distinct from upstreamIdleMs, which is about no REQUESTS.
+   */
+  activityTimeoutMs: number;
   /** How often the sweep runs. */
   sweepIntervalMs: number;
   /** First port a per-bot opencode serve may take; ports increment per concurrently-live bot. */
@@ -79,6 +85,7 @@ export function sandboxEnvFrom(env: Record<string, string | undefined>): Sandbox
     model: required(env, "SANDBOX_MODEL"),
     maxResponseBytes: optionalNumber(env, "SANDBOX_MAX_RESPONSE_BYTES", 262_144),
     upstreamIdleMs: optionalNumber(env, "SANDBOX_UPSTREAM_IDLE_MS", 600_000),
+    activityTimeoutMs: optionalNumber(env, "SANDBOX_ACTIVITY_TIMEOUT_MS", 300_000),
     sweepIntervalMs: optionalNumber(env, "SANDBOX_SWEEP_INTERVAL_MS", 60_000),
     upstreamPortBase: optionalNumber(env, "SANDBOX_UPSTREAM_PORT_BASE", 4400),
     workspaceTtlMs: optionalNonNegativeNumber(env, "SANDBOX_WORKSPACE_TTL_MS", 0),

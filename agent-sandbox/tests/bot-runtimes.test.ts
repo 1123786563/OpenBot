@@ -15,6 +15,7 @@ const env = sandboxEnvFrom({
   SANDBOX_MODEL: "GLM-5.3",
   SANDBOX_WORKSPACE_DIR: workspaceDir,
   SANDBOX_UPSTREAM_IDLE_MS: "1000",
+  SANDBOX_ACTIVITY_TIMEOUT_MS: "1000",
   SANDBOX_SWEEP_INTERVAL_MS: "100",
   SANDBOX_UPSTREAM_PORT_BASE: "4500",
 });
@@ -89,14 +90,15 @@ describe("createBotRuntimes", () => {
     await runtimes.stopBot("alpha");
   });
 
-  test("空闲超过 idleMs 的 bot 在清扫时被回收并释放端口", async () => {
+  test("空闲且静默都超时的 bot 在清扫时被回收并释放端口", async () => {
     const { spawned, spawnFn } = fakeSpawnFactory();
     let now = 0;
     const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
     await runtimes.getOrSpawn("alpha");
-    now = 1500; // 超过 SANDBOX_UPSTREAM_IDLE_MS=1000
-    const reaped = runtimes.reapIdle(now);
-    expect(reaped).toEqual(["alpha"]);
+    now = 1500; // 超过 idleMs=1000 且超过 activityTimeoutMs=1000：双钟皆尽
+    const { idle, stalled } = runtimes.reapIdle(now);
+    expect(stalled).toEqual(["alpha"]);
+    expect(idle).toEqual([]);
     expect(runtimes.size()).toBe(0);
     // 再次访问重新拉起，端口复用（注册表按 botId 记忆端口）
     const again = await runtimes.getOrSpawn("alpha");
@@ -111,10 +113,34 @@ describe("createBotRuntimes", () => {
     const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
     await runtimes.getOrSpawn("alpha");
     now = 500;
-    await runtimes.getOrSpawn("alpha"); // 刷新 lastUsedAt
-    now = 1200; // 距上次使用 700ms < 1000ms
-    expect(runtimes.reapIdle(now)).toEqual([]);
+    await runtimes.getOrSpawn("alpha"); // 刷新 lastUsed 与 lastActivity
+    now = 1200; // 距上次使用/活动 700ms < 1000ms
+    expect(runtimes.reapIdle(1200)).toEqual({ idle: [], stalled: [] });
     await runtimes.stopBot("alpha");
+  });
+
+  test("流上持续有事件的 bot 即使请求空闲也不回收（S5 活动超时语义）", async () => {
+    let now = 0;
+    const { spawnFn } = fakeSpawnFactory();
+    const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
+    await runtimes.getOrSpawn("alpha");
+    now = 1200; // 请求已空闲 1200ms > idleMs=1000
+    runtimes.markActivity("alpha"); // 但流刚转发了事件块
+    now = 1400; // 距活动 200ms < activityTimeoutMs=1000
+    expect(runtimes.reapIdle(1400)).toEqual({ idle: [], stalled: [] });
+    await runtimes.stopBot("alpha");
+  });
+
+  test("流静默超过活动超时的 bot 被回收并报告为 stalled", async () => {
+    let now = 0;
+    const { spawnFn } = fakeSpawnFactory();
+    const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
+    await runtimes.getOrSpawn("alpha");
+    now = 2500; // 双钟皆尽（idle 2500ms、静默 2500ms 都 > 1000）
+    const { idle, stalled } = runtimes.reapIdle(2500);
+    expect(stalled).toEqual(["alpha"]);
+    expect(idle).toEqual([]);
+    expect(runtimes.size()).toBe(0);
   });
 
   test("stopAll 停掉全部 bot（SIGTERM 退出路径）", async () => {

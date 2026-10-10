@@ -32,6 +32,12 @@ type Entry = {
   upstream: Upstream | null;
   lastUsedAtMs: number;
   /**
+   * The last time this Bot's stream produced anything (an event block forwarded, a request
+   * answered). Distinct from lastUsedAtMs: a streaming turn keeps this fresh while holding no
+   * request at all, which is exactly the case plain idle-reaping used to kill mid-turn.
+   */
+  lastActivityAtMs: number;
+  /**
    * The mkdir+spawn in flight, if one is. Between the entry landing in the map and `upstream`
    * being set there is an `await`, so the same Bot's concurrent first requests used to each run
    * `build` — the second spawn overwrote the first into an orphaned child. Waiters hang off this
@@ -42,7 +48,22 @@ type Entry = {
 
 export type BotRuntimes = {
   getOrSpawn(botId: string): Promise<BotRuntime>;
-  reapIdle(nowMs: number): string[];
+  /**
+   * Note that a Bot's stream produced something. Called by the SSE forwarder for every block it
+   * forwards, so a Bot mid-turn — busy, chatty, working — is distinguishable from one merely
+   * not being asked anything. Reaping consults both clocks (see reapIdle).
+   */
+  markActivity(botId: string): void;
+  /**
+   * Stop runtimes that are idle AND quiet: no requests for `idleMs` is not enough once turns
+   * stream, because a turn in flight holds no request at all. Returns what was stopped, split
+   * by why — a stalled stop (silent stream past the activity budget) is a failure mode the
+   * caller logs (`sandbox-runtime-stalled`), an idle stop is Tuesday.
+   */
+  reapIdle(nowMs: number, options?: {
+    idleMs?: number;
+    activityTimeoutMs?: number;
+  }): { idle: string[]; stalled: string[] };
   stopBot(botId: string): Promise<void>;
   stopAll(): Promise<void>;
   size(): number;
@@ -71,6 +92,7 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
     });
     entry.upstream = upstream;
     entry.lastUsedAtMs = nowMs();
+    entry.lastActivityAtMs = nowMs();
     void upstream.ready.catch(() => {
       // 上线失败不在此处崩溃：探活由代理请求失败与下次清扫兜底。
       if (entry.upstream === upstream) entry.upstream = null;
@@ -122,6 +144,7 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
           workspaceDir: `${workspaceRoot}/${botId}`,
           upstream: null,
           lastUsedAtMs: nowMs(),
+          lastActivityAtMs: nowMs(),
           starting: null,
         };
         entries.set(botId, entry);
@@ -129,20 +152,40 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
       entry.lastUsedAtMs = nowMs();
       await ensureStarted(entry);
       entry.lastUsedAtMs = nowMs();
+      entry.lastActivityAtMs = nowMs();
       return { port: entry.port, workspaceDir: entry.workspaceDir };
     },
 
-    reapIdle(nowMs: number): string[] {
-      const reaped: string[] = [];
+    markActivity(botId: string): void {
+      const entry = entries.get(botId);
+      if (entry) entry.lastActivityAtMs = nowMs();
+    },
+
+    reapIdle(
+      now: number,
+      options?: { idleMs?: number; activityTimeoutMs?: number },
+    ): { idle: string[]; stalled: string[] } {
+      const idleMs = options?.idleMs ?? env.upstreamIdleMs;
+      const activityTimeoutMs =
+        options?.activityTimeoutMs ?? env.activityTimeoutMs;
+      const idle: string[] = [];
+      const stalled: string[] = [];
       for (const [botId, entry] of entries) {
-        if (entry.upstream && nowMs - entry.lastUsedAtMs > env.upstreamIdleMs) {
+        if (!entry.upstream) continue;
+        const quietFor = now - entry.lastActivityAtMs;
+        const unusedFor = now - entry.lastUsedAtMs;
+        // BOTH clocks must run out: a streaming turn holds no request at all, so requests-idle
+        // alone would kill a Bot mid-answer. Stalled names the stream that went silent past its
+        // activity budget — the caller logs `sandbox-runtime-stalled {botId, silentMs}` for it,
+        // because it is a failure to report, not housekeeping.
+        if (unusedFor > idleMs && quietFor > activityTimeoutMs) {
           entry.upstream.kill("SIGTERM");
           entry.upstream = null;
           entries.delete(botId);
-          reaped.push(botId);
+          stalled.push(botId);
         }
       }
-      return reaped;
+      return { idle, stalled };
     },
 
     async stopBot(botId: string): Promise<void> {
