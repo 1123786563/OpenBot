@@ -26,6 +26,7 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema";
+import { mastraMessageIntentAttachments } from "../db/schema/mastra-message-intents";
 import { sniffMimeType } from "./attachment-mime";
 import type { StoredAttachment } from "./attachment-parts";
 
@@ -1766,6 +1767,14 @@ export function createAttachmentRoutes(
           eq(attachments.id, id),
           eq(attachments.uploadedBy, actor.id),
           isNull(attachments.attachedAt),
+          notExists(
+            database
+              .select({ pending: sql`1` })
+              .from(mastraMessageIntentAttachments)
+              .where(
+                eq(mastraMessageIntentAttachments.attachmentId, attachments.id),
+              ),
+          ),
           exists(
             database
               .select({ member: sql`1` })
@@ -1836,7 +1845,17 @@ export function createAttachmentRoutes(
      * ever confirm what the pair of statements has already established.
      */
     const rows = await database
-      .select({ id: attachments.id })
+      .select({
+        id: attachments.id,
+        pending: exists(
+          database
+            .select({ pending: sql`1` })
+            .from(mastraMessageIntentAttachments)
+            .where(
+              eq(mastraMessageIntentAttachments.attachmentId, attachments.id),
+            ),
+        ),
+      })
       .from(attachments)
       .innerJoin(
         channels,
@@ -1875,12 +1894,14 @@ export function createAttachmentRoutes(
       return noSuchAttachment(context);
     }
 
-    // Once an attachment rides in a sent message, it is part of that message's record: pulling it
-    // out from under a message that already claims it would leave the message pointing at nothing.
-    // A staged attachment has made no such promise yet, so only that one may still be withdrawn —
-    // and the delete above is the only thing that decides whether it still is one.
+    // A sent attachment or one reserved by a pending durable intent is spoken for and cannot be
+    // withdrawn. The correlated check on the delete makes this safe against a concurrent prepare.
     return context.json(
-      { error: "This attachment is already part of a sent message." },
+      {
+        error: row.pending
+          ? "This attachment is reserved by a pending message."
+          : "This attachment is already part of a sent message.",
+      },
       409,
     );
   });

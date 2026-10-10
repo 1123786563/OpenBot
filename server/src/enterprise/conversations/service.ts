@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   authorizeAttachmentForSendInTransaction,
@@ -18,6 +19,16 @@ import {
   enterpriseResourceGrants,
   enterpriseResources,
 } from "../../db/schema/enterprise-tenancy";
+import {
+  mastraMessageIntentAttachments,
+  mastraMessageIntents,
+} from "../../db/schema/mastra-message-intents";
+import { tenantStorageKey } from "../../mastra/contracts";
+import {
+  messageDTO as mastraMessageDTO,
+  readMastraHistory,
+} from "../../mastra/conversations";
+import type { TenantMastraStorage } from "../../mastra/tenant-storage";
 import type {
   AppendMessageInput,
   ConversationDTO,
@@ -70,6 +81,16 @@ function messageDto(row: typeof enterpriseMessages.$inferSelect): MessageDTO {
     attachments: row.attachments,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+function mastraMessageId(tenantId: string, threadId: string, key: string) {
+  return createHash("sha256")
+    .update(`${tenantId}\0${threadId}\0${key}`)
+    .digest("hex");
+}
+
+function mastraPrivateResourceId(tenantId: string, principalId: string) {
+  return `private:${JSON.stringify([tenantId, principalId])}`;
 }
 
 async function currentLegacyMapping(
@@ -350,8 +371,10 @@ async function authorizedConversation(
 
 export function createConversationService({
   data,
+  mastraStorage,
 }: {
   data: DataDatabase;
+  mastraStorage?: TenantMastraStorage;
 }): ConversationService & {
   list(scope: PlatformScope): Promise<ConversationDTO[]>;
 } {
@@ -452,7 +475,7 @@ export function createConversationService({
             principalId: scope.principalId,
             threadId,
             title: input.title ?? null,
-            storageBackend: "platform",
+            storageBackend: mastraStorage ? "mastra" : "platform",
           })
           .onConflictDoNothing({
             target: [
@@ -500,6 +523,366 @@ export function createConversationService({
       );
       if (content.trim().length === 0 && input.attachments.length === 0)
         throw new Error("INVALID_MESSAGE");
+      const [persistedConversation] = await store.transaction(
+        scope,
+        async (tx) => {
+          const initialLegacy = await currentLegacyMapping(
+            tx,
+            scope,
+            input.threadId,
+          );
+          const legacy = await authorizedLegacyMapping(
+            tx,
+            scope,
+            input.threadId,
+            initialLegacy,
+          );
+          if (legacy) throw new Error("LEGACY_HISTORY_READ_ONLY");
+          return [await authorizedConversation(tx, scope, input.threadId)];
+        },
+      );
+      if (persistedConversation.storageBackend === "mastra") {
+        if (!mastraStorage) throw new Error("MASTRA_STORAGE_UNAVAILABLE");
+        const attachmentIds = [...input.attachments];
+        const messageId = mastraMessageId(
+          scope.tenantId,
+          input.threadId,
+          input.clientMessageKey,
+        );
+        const prepared = await store.transaction(scope, async (tx) => {
+          const conversation = await authorizedConversation(
+            tx,
+            scope,
+            input.threadId,
+          );
+          if (conversation.storageBackend !== "mastra")
+            throw new Error("CONVERSATION_BACKEND_CHANGED");
+          await lockAttachmentChannelsInTransaction(
+            tx,
+            scope.tenantId,
+            attachmentIds,
+          );
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["conversation", scope.tenantId, input.threadId])}, 0))`,
+          );
+          for (const id of attachmentIds) {
+            if (
+              !(await authorizeAttachmentForSendInTransaction(
+                tx,
+                { actorId: scope.actorId, threadId: input.threadId },
+                id,
+              ))
+            )
+              throw new Error("ATTACHMENT_FORBIDDEN");
+          }
+          const [prior] = await tx
+            .select()
+            .from(mastraMessageIntents)
+            .where(
+              and(
+                eq(mastraMessageIntents.tenantId, scope.tenantId),
+                eq(mastraMessageIntents.threadId, input.threadId),
+                eq(
+                  mastraMessageIntents.clientMessageKey,
+                  input.clientMessageKey,
+                ),
+              ),
+            )
+            .limit(1);
+          if (prior) {
+            if (prior.digest !== digest)
+              throw Object.assign(
+                new Error(
+                  "Message key was already used with different content.",
+                ),
+                { code: "message_conflict", status: 409 },
+              );
+            if (
+              prior.messageId !== messageId ||
+              prior.principalId !== scope.principalId ||
+              prior.actorId !== scope.actorId
+            )
+              throw new Error("MASTRA_INTENT_SCOPE_MISMATCH");
+            return prior;
+          }
+          const [reserved] = await tx
+            .update(enterpriseConversations)
+            .set({
+              lastSeq: sql`${enterpriseConversations.lastSeq} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(enterpriseConversations.tenantId, scope.tenantId),
+                eq(enterpriseConversations.threadId, input.threadId),
+                eq(enterpriseConversations.storageBackend, "mastra"),
+                eq(
+                  enterpriseConversations.backendVersion,
+                  conversation.backendVersion,
+                ),
+              ),
+            )
+            .returning({ seq: enterpriseConversations.lastSeq });
+          if (!reserved) throw new Error("CONVERSATION_BACKEND_CHANGED");
+          const [intent] = await tx
+            .insert(mastraMessageIntents)
+            .values({
+              tenantId: scope.tenantId,
+              threadId: input.threadId,
+              clientMessageKey: input.clientMessageKey,
+              messageId,
+              digest,
+              reservedSeq: reserved.seq,
+              actorId: scope.actorId,
+              principalId: scope.principalId,
+              backendVersion: conversation.backendVersion,
+              attachmentIds,
+              state: "pending",
+            })
+            .returning();
+          if (!intent) throw new Error("MASTRA_INTENT_PREPARE_FAILED");
+          if (attachmentIds.length) {
+            await tx.insert(mastraMessageIntentAttachments).values(
+              attachmentIds.map((attachmentId) => ({
+                tenantId: scope.tenantId,
+                threadId: input.threadId,
+                clientMessageKey: input.clientMessageKey,
+                attachmentId,
+              })),
+            );
+          }
+          return intent;
+        });
+
+        let writeConfirmed = false;
+        let writeAttempted = false;
+        try {
+          return await store.transaction(scope, async (tx) => {
+            const initialLegacy = await currentLegacyMapping(
+              tx,
+              scope,
+              input.threadId,
+            );
+            if (
+              await authorizedLegacyMapping(
+                tx,
+                scope,
+                input.threadId,
+                initialLegacy,
+              )
+            )
+              throw new Error("LEGACY_HISTORY_READ_ONLY");
+            const conversation = await authorizedConversation(
+              tx,
+              scope,
+              input.threadId,
+            );
+            if (
+              conversation.storageBackend !== "mastra" ||
+              conversation.backendVersion !== prepared.backendVersion
+            )
+              throw new Error("CONVERSATION_BACKEND_CHANGED");
+            await lockAttachmentChannelsInTransaction(
+              tx,
+              scope.tenantId,
+              attachmentIds,
+            );
+            await tx.execute(
+              sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["conversation", scope.tenantId, input.threadId])}, 0))`,
+            );
+            const [intent] = await tx
+              .select()
+              .from(mastraMessageIntents)
+              .where(
+                and(
+                  eq(mastraMessageIntents.tenantId, scope.tenantId),
+                  eq(mastraMessageIntents.threadId, input.threadId),
+                  eq(
+                    mastraMessageIntents.clientMessageKey,
+                    input.clientMessageKey,
+                  ),
+                ),
+              )
+              .limit(1);
+            if (
+              !intent ||
+              intent.digest !== digest ||
+              intent.messageId !== messageId
+            )
+              throw new Error("MASTRA_INTENT_NOT_FOUND");
+            if (intent.state === "finalized") {
+              const storeForRead = await mastraStorage.getStore(scope, {
+                tenantId: scope.tenantId,
+                conversationId: conversation.id,
+                threadId: conversation.threadId,
+                resourceId: mastraPrivateResourceId(
+                  scope.tenantId,
+                  scope.principalId,
+                ),
+                storageKey: tenantStorageKey(scope.tenantId),
+                backend: "mastra",
+              });
+              const memoryForRead = await storeForRead.getStore("memory");
+              const found = await memoryForRead?.listMessagesById({
+                messageIds: [messageId],
+              });
+              const priorMessage = found?.messages[0];
+              if (
+                !priorMessage ||
+                priorMessage.content.metadata?.openbotDigest !== digest ||
+                priorMessage.content.metadata?.openbotSeq !== intent.reservedSeq
+              )
+                throw new Error("MASTRA_MESSAGE_INTENT_MISMATCH");
+              return {
+                ...mastraMessageDTO(priorMessage),
+                seq: intent.reservedSeq,
+              };
+            }
+            for (const id of attachmentIds) {
+              if (
+                !(await authorizeAttachmentForSendInTransaction(
+                  tx,
+                  { actorId: scope.actorId, threadId: input.threadId },
+                  id,
+                ))
+              )
+                throw new Error("ATTACHMENT_FORBIDDEN");
+            }
+            const binding = {
+              tenantId: scope.tenantId,
+              conversationId: conversation.id,
+              threadId: conversation.threadId,
+              resourceId: mastraPrivateResourceId(
+                scope.tenantId,
+                scope.principalId,
+              ),
+              storageKey: tenantStorageKey(scope.tenantId),
+              backend: "mastra" as const,
+            };
+            const mastraStore = await mastraStorage.getStore(scope, binding);
+            const memory = await mastraStore.getStore("memory");
+            if (!memory) throw new Error("MASTRA_MEMORY_STORAGE_UNAVAILABLE");
+            const result = await mastraStorage.withConversationLock(
+              scope,
+              binding,
+              async () => {
+                const existing = await memory.listMessagesById({
+                  messageIds: [messageId],
+                });
+                let accepted = existing.messages[0];
+                if (accepted) {
+                  const metadata = accepted.content.metadata ?? {};
+                  if (
+                    accepted.threadId !== binding.threadId ||
+                    accepted.resourceId !== binding.resourceId ||
+                    metadata.openbotDigest !== digest ||
+                    metadata.openbotSeq !== intent.reservedSeq
+                  )
+                    throw new Error("MASTRA_MESSAGE_ID_CONFLICT");
+                } else {
+                  const thread = await memory.getThreadById({
+                    threadId: binding.threadId,
+                    resourceId: binding.resourceId,
+                  });
+                  if (!thread) {
+                    const now = new Date();
+                    await memory.saveThread({
+                      thread: {
+                        id: binding.threadId,
+                        resourceId: binding.resourceId,
+                        title: "Conversation",
+                        createdAt: now,
+                        updatedAt: now,
+                      },
+                    });
+                  }
+                  writeAttempted = true;
+                  const saved = await memory.saveMessages({
+                    messages: [
+                      {
+                        id: messageId,
+                        threadId: binding.threadId,
+                        resourceId: binding.resourceId,
+                        role: "user",
+                        type: "text",
+                        createdAt: new Date(),
+                        content: {
+                          format: 2,
+                          parts: content
+                            ? [{ type: "text", text: content }]
+                            : [],
+                          metadata: {
+                            openbotSeq: intent.reservedSeq,
+                            openbotDigest: digest,
+                            openbotClientMessageKey: input.clientMessageKey,
+                            openbotAttachments: attachmentIds,
+                          },
+                        },
+                      },
+                    ],
+                  });
+                  accepted = saved.messages[0];
+                  if (!accepted) throw new Error("MASTRA_MESSAGE_WRITE_FAILED");
+                  const metadata = accepted.content.metadata ?? {};
+                  if (
+                    metadata.openbotDigest !== digest ||
+                    metadata.openbotSeq !== intent.reservedSeq
+                  )
+                    throw new Error("MASTRA_MESSAGE_WRITE_UNCONFIRMED");
+                }
+                writeConfirmed = true;
+                return accepted;
+              },
+            );
+            await markAttachmentsSentInTransaction(
+              tx,
+              { actorId: scope.actorId, threadId: input.threadId },
+              attachmentIds,
+            );
+            const [finalized] = await tx
+              .update(mastraMessageIntents)
+              .set({ state: "finalized", updatedAt: new Date() })
+              .where(
+                and(
+                  eq(mastraMessageIntents.tenantId, scope.tenantId),
+                  eq(mastraMessageIntents.threadId, input.threadId),
+                  eq(
+                    mastraMessageIntents.clientMessageKey,
+                    input.clientMessageKey,
+                  ),
+                  eq(mastraMessageIntents.state, "pending"),
+                ),
+              )
+              .returning({
+                clientMessageKey: mastraMessageIntents.clientMessageKey,
+              });
+            if (!finalized) throw new Error("MASTRA_INTENT_FINALIZE_FAILED");
+            await tx
+              .delete(mastraMessageIntentAttachments)
+              .where(
+                and(
+                  eq(mastraMessageIntentAttachments.tenantId, scope.tenantId),
+                  eq(mastraMessageIntentAttachments.threadId, input.threadId),
+                  eq(
+                    mastraMessageIntentAttachments.clientMessageKey,
+                    input.clientMessageKey,
+                  ),
+                ),
+              );
+            return { ...mastraMessageDTO(result), seq: intent.reservedSeq };
+          });
+        } catch (error) {
+          if (writeConfirmed || writeAttempted) {
+            throw Object.assign(
+              new Error(
+                "Mastra accepted this message, but platform finalization is pending; retry the same key.",
+              ),
+              { code: "message_pending", status: 503, cause: error },
+            );
+          }
+          throw error;
+        }
+      }
       return store.transaction(scope, async (tx) => {
         const initialLegacy = await currentLegacyMapping(
           tx,
@@ -512,9 +895,7 @@ export function createConversationService({
           input.threadId,
           initialLegacy,
         );
-        if (legacy) {
-          throw new Error("LEGACY_HISTORY_READ_ONLY");
-        }
+        if (legacy) throw new Error("LEGACY_HISTORY_READ_ONLY");
         const conversation = await authorizedConversation(
           tx,
           scope,
@@ -641,15 +1022,73 @@ export function createConversationService({
           initialLegacy,
         );
         if (legacy) {
-          throw new Error("LEGACY_HISTORY_READ_ONLY");
+          if (!mastraStorage) throw new Error("LEGACY_HISTORY_READ_ONLY");
+          return readMastraHistory(
+            mastraStorage,
+            scope,
+            {
+              tenantId: scope.tenantId,
+              conversationId: `legacy:${input.threadId}`,
+              threadId: input.threadId,
+              resourceId: `channel:${legacy.channelId}`,
+              storageKey: tenantStorageKey(scope.tenantId),
+              backend: "intelligence",
+            },
+            input,
+          );
         }
         const conversation = await authorizedConversation(
           tx,
           scope,
           input.threadId,
         );
-        if (conversation.storageBackend !== "platform")
-          throw new Error("LEGACY_HISTORY_READ_ONLY");
+        if (
+          conversation.storageBackend === "intelligence" ||
+          conversation.storageBackend === "mastra"
+        ) {
+          if (!mastraStorage) throw new Error("LEGACY_HISTORY_READ_ONLY");
+          const backend = conversation.storageBackend;
+          const resourceId =
+            backend === "mastra"
+              ? mastraPrivateResourceId(scope.tenantId, scope.principalId)
+              : `private:${conversation.id}`;
+          return readMastraHistory(
+            mastraStorage,
+            scope,
+            {
+              tenantId: scope.tenantId,
+              conversationId: conversation.id,
+              threadId: conversation.threadId,
+              resourceId,
+              storageKey: tenantStorageKey(scope.tenantId),
+              backend,
+            },
+            input,
+            backend === "mastra"
+              ? async ({ beforeSeq, limit }) => {
+                  const rows = await tx
+                    .select({
+                      messageId: mastraMessageIntents.messageId,
+                      seq: mastraMessageIntents.reservedSeq,
+                    })
+                    .from(mastraMessageIntents)
+                    .where(
+                      and(
+                        eq(mastraMessageIntents.tenantId, scope.tenantId),
+                        eq(mastraMessageIntents.threadId, input.threadId),
+                        eq(mastraMessageIntents.state, "finalized"),
+                        beforeSeq === null
+                          ? sql`true`
+                          : lt(mastraMessageIntents.reservedSeq, beforeSeq),
+                      ),
+                    )
+                    .orderBy(desc(mastraMessageIntents.reservedSeq))
+                    .limit(limit + 1);
+                  return rows;
+                }
+              : undefined,
+          );
+        }
         const predicate = and(
           eq(enterpriseMessages.tenantId, scope.tenantId),
           eq(enterpriseMessages.threadId, input.threadId),
@@ -688,6 +1127,42 @@ export function createConversationService({
         }
         const conversation = await authorizedConversation(tx, scope, threadId);
         return conversation.storageBackend;
+      });
+    },
+
+    async resolveMastraBinding(scope, threadId) {
+      assertTrustedScope(scope);
+      assertInputString(threadId, "thread_id", 200);
+      return store.transaction(scope, async (tx) => {
+        const initialLegacy = await currentLegacyMapping(tx, scope, threadId);
+        const legacy = await authorizedLegacyMapping(
+          tx,
+          scope,
+          threadId,
+          initialLegacy,
+        );
+        if (legacy) {
+          return {
+            tenantId: scope.tenantId,
+            conversationId: `legacy:${threadId}`,
+            threadId,
+            resourceId: `channel:${legacy.channelId}`,
+            storageKey: tenantStorageKey(scope.tenantId),
+            backend: "intelligence" as const,
+          };
+        }
+        const conversation = await authorizedConversation(tx, scope, threadId);
+        return {
+          tenantId: scope.tenantId,
+          conversationId: conversation.id,
+          threadId: conversation.threadId,
+          resourceId:
+            conversation.storageBackend === "mastra"
+              ? mastraPrivateResourceId(scope.tenantId, scope.principalId)
+              : `private:${conversation.id}`,
+          storageKey: tenantStorageKey(scope.tenantId),
+          backend: conversation.storageBackend,
+        };
       });
     },
   };

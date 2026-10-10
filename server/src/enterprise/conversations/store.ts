@@ -109,7 +109,7 @@ export function conversationDto(row: {
   id: string;
   threadId: string;
   title: string | null;
-  storageBackend: "platform" | "intelligence";
+  storageBackend: "platform" | "intelligence" | "mastra";
   createdAt: Date;
   updatedAt: Date;
   lastSeq: number;

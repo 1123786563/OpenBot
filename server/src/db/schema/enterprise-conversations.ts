@@ -32,9 +32,10 @@ export const enterpriseConversations = pgTable(
     threadId: text("thread_id").notNull(),
     title: text("title"),
     storageBackend: text("storage_backend")
-      .$type<"platform" | "intelligence">()
+      .$type<"platform" | "intelligence" | "mastra">()
       .notNull()
       .default("platform"),
+    backendVersion: integer("backend_version").notNull().default(1),
     lastSeq: integer("last_seq").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -70,7 +71,11 @@ export const enterpriseConversations = pgTable(
     }).onDelete("cascade"),
     check(
       "enterprise_conversations_backend_check",
-      sql`${table.storageBackend} in ('platform', 'intelligence')`,
+      sql`${table.storageBackend} in ('platform', 'intelligence', 'mastra')`,
+    ),
+    check(
+      "enterprise_conversations_backend_version_check",
+      sql`${table.backendVersion} > 0`,
     ),
     check("enterprise_conversations_seq_check", sql`${table.lastSeq} >= 0`),
     pgPolicy("enterprise_conversations_data_scope", {

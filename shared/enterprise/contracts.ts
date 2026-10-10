@@ -14,7 +14,7 @@ export const WIRE_CONTRACT_NAMES = [
   "tool_receipt",
 ] as const;
 
-export type StorageBackend = "intelligence" | "platform";
+export type StorageBackend = "intelligence" | "mastra" | "platform";
 
 export interface PublicRunInput {
   thread_id: string;

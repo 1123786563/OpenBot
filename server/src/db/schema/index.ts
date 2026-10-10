@@ -15,6 +15,8 @@ export * from "./enterprise-tenancy";
 export * from "./group";
 export * from "./learning";
 export * from "./lifecycle";
+export * from "./mastra-message-intents";
+export * from "./mastra-tenant-storage";
 export * from "./memory";
 export * from "./passwords";
 export * from "./plugins";
