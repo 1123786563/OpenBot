@@ -8,7 +8,7 @@
  * whoever wrote last. `recoverStale` relies on the same guards to settle a dead runner's turn
  * exactly once even when two replicas notice the same heartbeat going quiet.
  */
-import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import type { Database } from "../db/client";
 import {
@@ -16,6 +16,8 @@ import {
   workshopSessions,
   workshopTurnEvents,
   workshopTurns,
+  workshopSchedules,
+  workshopScheduleRuns,
 } from "../db/schema/workshop";
 
 /** `ws-…`, distinguishable from the runs (`cr-…`) they may be joined to. */
@@ -29,6 +31,82 @@ export type WorkshopTurnEventRow = typeof workshopTurnEvents.$inferSelect;
 export type WorkshopArtifactRow = typeof workshopArtifacts.$inferSelect;
 
 export type WorkshopStore = {
+  // ── schedules (B16/B17) ─────────────────────────────────────────────────────
+  /** Every schedule for a session, newest first; the panel's list. */
+  listSchedules(
+    sessionId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      prompt: string;
+      rrule: string;
+      timezone: string | null;
+      status: string;
+      preapproved: unknown;
+      lastRunAt: Date | null;
+      nextRunAt: Date | null;
+      createdAt: Date;
+    }>
+  >;
+  /** Insert a compiled, validated schedule with its first due moment. */
+  createSchedule(input: {
+    id: string;
+    sessionId: string;
+    createdBy: string;
+    prompt: string;
+    rrule: string;
+    timezone: string;
+    preapproved: unknown;
+    nextRunAt: Date;
+  }): Promise<void>;
+  /** One schedule by id, scoped to its session (the routes' ownership check). */
+  scheduleById(
+    id: string,
+    sessionId: string,
+  ): Promise<
+    | {
+        id: string;
+        prompt: string;
+        rrule: string;
+        timezone: string | null;
+        status: string;
+        preapproved: unknown;
+        nextRunAt: Date | null;
+      }
+    | undefined
+  >;
+  /** Patch a schedule's editable fields (prompt/recurrence/status/preapproval/nextRunAt). */
+  updateSchedule(
+    id: string,
+    patch: {
+      prompt?: string;
+      rrule?: string;
+      timezone?: string;
+      status?: string;
+      preapproved?: unknown;
+      nextRunAt?: Date | null;
+      lastRunAt?: Date | null;
+    },
+  ): Promise<void>;
+  /** Delete a schedule and (by cascade) its runs. */
+  deleteSchedule(id: string): Promise<void>;
+  /** The recent runs across a session's schedules, newest first; the panel's history. */
+  listScheduleRuns(
+    sessionId: string,
+    limit?: number,
+  ): Promise<
+    Array<{
+      id: string;
+      scheduleId: string;
+      scheduledFor: Date;
+      turnId: string | null;
+      status: string;
+      note: string | null;
+      startedAt: Date | null;
+      finishedAt: Date | null;
+    }>
+  >;
+
   // ── sessions ────────────────────────────────────────────────────────────────
   /** The session for a channel, created on first use; idempotent for concurrent callers. */
   getOrCreateSession(input: {
@@ -308,6 +386,110 @@ export function createWorkshopStore(db: Database): WorkshopStore {
         .from(workshopTurnEvents)
         .where(and(eq(workshopTurnEvents.turnId, turnId), gt(workshopTurnEvents.seq, seq)))
         .orderBy(asc(workshopTurnEvents.seq))
+        .limit(limit);
+    },
+
+    // ── schedules (B16/B17): the store owns rows, the routes own invariants ─────
+    async listSchedules(sessionId) {
+      return db
+        .select({
+          id: workshopSchedules.id,
+          prompt: workshopSchedules.prompt,
+          rrule: workshopSchedules.rrule,
+          timezone: workshopSchedules.timezone,
+          status: workshopSchedules.status,
+          preapproved: workshopSchedules.preapproved,
+          lastRunAt: workshopSchedules.lastRunAt,
+          nextRunAt: workshopSchedules.nextRunAt,
+          createdAt: workshopSchedules.createdAt,
+        })
+        .from(workshopSchedules)
+        .where(
+          and(
+            eq(workshopSchedules.sessionId, sessionId),
+            ne(workshopSchedules.status, "deleted"),
+          ),
+        )
+        .orderBy(desc(workshopSchedules.createdAt));
+    },
+
+    async createSchedule(input) {
+      await db.insert(workshopSchedules).values({
+        id: input.id,
+        sessionId: input.sessionId,
+        createdBy: input.createdBy,
+        prompt: input.prompt,
+        rrule: input.rrule,
+        timezone: input.timezone,
+        status: "enabled",
+        // The jsonb column wants a shape, the route hands a validated one; the cast is the
+        // store's promise that the writer normalized before this call (B17's parsePreapproval).
+        preapproved: input.preapproved as { paths: string[]; tools: string[]; maxTurnsPerRun: number } | null,
+        nextRunAt: input.nextRunAt,
+      });
+    },
+
+    async scheduleById(id, sessionId) {
+      const rows = await db
+        .select({
+          id: workshopSchedules.id,
+          prompt: workshopSchedules.prompt,
+          rrule: workshopSchedules.rrule,
+          timezone: workshopSchedules.timezone,
+          status: workshopSchedules.status,
+          preapproved: workshopSchedules.preapproved,
+          nextRunAt: workshopSchedules.nextRunAt,
+        })
+        .from(workshopSchedules)
+        .where(
+          and(
+            eq(workshopSchedules.id, id),
+            eq(workshopSchedules.sessionId, sessionId),
+          ),
+        )
+        .limit(1);
+      return rows[0];
+    },
+
+    async updateSchedule(id, patch) {
+      await db
+        .update(workshopSchedules)
+        .set(
+          // The patch is route-validated (B17's compiler and clamps); the column's $type is
+          // the same shape spelled for drizzle, and this is the one place the two meet.
+          patch as Partial<typeof workshopSchedules.$inferInsert>,
+        )
+        .where(eq(workshopSchedules.id, id));
+    },
+
+    async deleteSchedule(id) {
+      // Soft: the row stays for audit under status=deleted; the cascade only ever takes the
+      // runs when the row itself goes (which this store never does).
+      await db
+        .update(workshopSchedules)
+        .set({ status: "deleted", nextRunAt: null, updatedAt: new Date() })
+        .where(eq(workshopSchedules.id, id));
+    },
+
+    async listScheduleRuns(sessionId, limit = 50) {
+      return db
+        .select({
+          id: workshopScheduleRuns.id,
+          scheduleId: workshopScheduleRuns.scheduleId,
+          scheduledFor: workshopScheduleRuns.scheduledFor,
+          turnId: workshopScheduleRuns.turnId,
+          status: workshopScheduleRuns.status,
+          note: workshopScheduleRuns.note,
+          startedAt: workshopScheduleRuns.startedAt,
+          finishedAt: workshopScheduleRuns.finishedAt,
+        })
+        .from(workshopScheduleRuns)
+        .innerJoin(
+          workshopSchedules,
+          eq(workshopScheduleRuns.scheduleId, workshopSchedules.id),
+        )
+        .where(eq(workshopSchedules.sessionId, sessionId))
+        .orderBy(desc(workshopScheduleRuns.scheduledFor))
         .limit(limit);
     },
   };

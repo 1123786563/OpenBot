@@ -16,6 +16,13 @@ import type { AppVariables } from "../auth/guards";
 import type { TurnEventBus } from "./bus";
 import { eventsStreamBody, SSE_HEADERS } from "./events";
 import type { WorkshopStore } from "./store";
+import {
+  draftForCreate,
+  nextRunAt,
+  parsePreapproval,
+  WorkshopScheduleRefusedError,
+} from "./schedule";
+import { recordAuditEvent } from "../audit";
 import type { TurnOrchestrator } from "./orchestrator";
 import { listTree, upload, UploadLimitError } from "./files";
 import type { SandboxClient } from "../codesandbox/client";
@@ -312,6 +319,207 @@ export function createWorkshopRoutes(input: {
   });
 
   // ── the stream (B9) ───────────────────────────────────────────────────────────
+  // ── schedules (B17b): CRUD behind the same gate every workshop route holds ─────
+  app.get("/:channelId/schedules", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const [schedules, runs] = await Promise.all([
+      store.listSchedules(gateResult.session.id),
+      store.listScheduleRuns(gateResult.session.id),
+    ]);
+    return context.json({
+      schedules: schedules.map((row) => ({
+        id: row.id,
+        prompt: row.prompt,
+        rrule: row.rrule,
+        timezone: row.timezone,
+        status: row.status,
+        preapproved: row.preapproved ?? null,
+        lastRunAt: row.lastRunAt?.toISOString() ?? null,
+        nextRunAt: row.nextRunAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      runs: runs.map((run) => ({
+        id: run.id,
+        scheduleId: run.scheduleId,
+        scheduledFor: run.scheduledFor.toISOString(),
+        turnId: run.turnId,
+        status: run.status,
+        note: run.note,
+        startedAt: run.startedAt?.toISOString() ?? null,
+        finishedAt: run.finishedAt?.toISOString() ?? null,
+      })),
+    });
+  });
+
+  app.post("/:channelId/schedules", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const body = (await context.req.json().catch(() => null)) as {
+      prompt?: unknown;
+      mode?: unknown;
+      timezone?: unknown;
+      preapproval?: unknown;
+    } | null;
+    const timezone =
+      typeof body?.timezone === "string" && body.timezone.trim()
+        ? body.timezone.trim()
+        : "UTC";
+    if (typeof body?.prompt !== "string" || !body?.prompt.trim()) {
+      return context.json({ error: "A schedule needs a prompt." }, 400);
+    }
+    const mode = body?.mode;
+    const shaped =
+      mode && typeof mode === "object" && "kind" in mode
+        ? (mode as { kind: string } & Record<string, unknown>)
+        : null;
+    if (!shaped) {
+      return context.json({ error: "A schedule needs a mode." }, 400);
+    }
+    try {
+      const draft = draftForCreate({
+        prompt: body.prompt,
+        mode: shaped as Parameters<typeof draftForCreate>[0]["mode"],
+        timezone,
+        preapproval: body?.preapproval,
+      });
+      const id = `sc-${crypto.randomUUID()}`;
+      await store.createSchedule({
+        id,
+        sessionId: gateResult.session.id,
+        createdBy: gateResult.actor.id,
+        prompt: draft.prompt,
+        rrule: draft.rrule,
+        timezone,
+        preapproved: draft.preapproval,
+        nextRunAt: nextRunAt(draft.rrule, timezone, Date.now()),
+      });
+      if (auditStore) {
+        await recordAuditEvent(auditStore, {
+          eventType: "workshop.schedule_created",
+          targetType: "workshop_schedule",
+          targetId: id,
+          actorUserId: gateResult.actor.id,
+          payload: { session: gateResult.session.id, rrule: draft.rrule },
+        });
+      }
+      return context.json({ id, rrule: draft.rrule, status: draft.status }, 201);
+    } catch (error) {
+      if (error instanceof WorkshopScheduleRefusedError) {
+        return context.json({ error: error.message }, 400);
+      }
+      throw error;
+    }
+  });
+
+  app.patch("/:channelId/schedules/:id", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const id = context.req.param("id");
+    const existing = await store.scheduleById(id, gateResult.session.id);
+    if (!existing) {
+      return context.json({ error: "No such schedule." }, 404);
+    }
+    const body = (await context.req.json().catch(() => null)) as {
+      prompt?: unknown;
+      mode?: unknown;
+      timezone?: unknown;
+      preapproval?: unknown;
+      enabled?: unknown;
+    } | null;
+
+    try {
+      // The toggle alone is its own route's worth of intent: no recurrence change, no
+      // preapproval change, just "stop firing" or "start again".
+      if (typeof body?.enabled === "boolean" && !body?.prompt && !body?.mode && !body?.preapproval) {
+        const status = body.enabled ? "enabled" : "paused";
+        await store.updateSchedule(id, {
+          status,
+          // Paused holds no due moment; re-enabling recomputes one from the rule.
+          nextRunAt: body.enabled
+            ? nextRunAt(existing.rrule, existing.timezone ?? "UTC", Date.now())
+            : null,
+        });
+        if (auditStore) {
+          await recordAuditEvent(auditStore, {
+            eventType: "workshop.schedule_enabled_toggled",
+            targetType: "workshop_schedule",
+            targetId: id,
+            actorUserId: gateResult.actor.id,
+            payload: { enabled: body.enabled },
+          });
+        }
+        return context.json({ id, status });
+      }
+
+      const timezone =
+        typeof body?.timezone === "string" && body.timezone.trim()
+          ? body.timezone.trim()
+          : existing.timezone ?? "UTC";
+      if (typeof body?.prompt !== "string" || !body.prompt.trim()) {
+        return context.json({ error: "A schedule needs a prompt." }, 400);
+      }
+      let rrule = existing.rrule;
+      if (body?.mode && typeof body.mode === "object" && "kind" in body.mode) {
+        const draft = draftForCreate({
+          prompt: body.prompt,
+          mode: body.mode as Parameters<typeof draftForCreate>[0]["mode"],
+          timezone,
+          preapproval: body?.preapproval ?? existing.preapproved,
+        });
+        rrule = draft.rrule;
+      }
+      // The updated rule is validated by deriving its next occurrence — a rule that
+      // cannot advance is a rule that will never fire.
+      const next = nextRunAt(rrule, timezone, Date.now());
+      await store.updateSchedule(id, {
+        prompt: body.prompt.trim(),
+        rrule,
+        timezone,
+        ...(body?.preapproval !== undefined
+          ? { preapproved: parsePreapproval(body.preapproval) }
+          : {}),
+        nextRunAt: next,
+      });
+      if (auditStore) {
+        await recordAuditEvent(auditStore, {
+          eventType: "workshop.schedule_updated",
+          targetType: "workshop_schedule",
+          targetId: id,
+          actorUserId: gateResult.actor.id,
+          payload: { rrule },
+        });
+      }
+      return context.json({ id, rrule, nextRunAt: next.toISOString() });
+    } catch (error) {
+      if (error instanceof WorkshopScheduleRefusedError) {
+        return context.json({ error: error.message }, 400);
+      }
+      throw error;
+    }
+  });
+
+  app.delete("/:channelId/schedules/:id", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const id = context.req.param("id");
+    const existing = await store.scheduleById(id, gateResult.session.id);
+    if (!existing) {
+      return context.json({ error: "No such schedule." }, 404);
+    }
+    await store.deleteSchedule(id);
+    if (auditStore) {
+      await recordAuditEvent(auditStore, {
+        eventType: "workshop.schedule_deleted",
+        targetType: "workshop_schedule",
+        targetId: id,
+        actorUserId: gateResult.actor.id,
+        payload: {},
+      });
+    }
+    return context.json({ ok: true, id });
+  });
+
   app.get("/:channelId/events", async (context) => {
     const gateResult = await gate(context);
     if (!gateResult.ok) return gateResult.response;
