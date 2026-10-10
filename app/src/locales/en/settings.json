@@ -37,7 +37,6 @@
     "noPlans": "No plan is purchasable here yet. An administrator configures the plan catalog.",
     "plansTitle": "Plans",
     "plansDescription": "One plan at a time: a new plan can only be bought while no subscription is active.",
-    "perMonth": "per month",
     "perMonthShort": "mo",
     "providerTitle": "Pay with",
     "providerDescription": "The channel to pay through. The order is created on that channel only.",
@@ -46,7 +45,6 @@
       "wechat": "WeChat Pay"
     },
     "buy": "Continue to payment",
-    "activeSubscriptionNotice": "This deployment is already on the “{{planCode}}” plan. Another plan can only be bought after it ends.",
     "statusCardTitle": "Current subscription",
     "viewEntitlements": "View entitlements",
     "checkoutTitle": "Scan to pay",

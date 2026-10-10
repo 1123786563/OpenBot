@@ -179,6 +179,7 @@ describe("billing configuration", () => {
       webhookKey: undefined,
       allowPrivateHosts: false,
       planEntitlements: new Map(),
+      planQuotas: new Map(),
     });
   });
 
@@ -299,5 +300,94 @@ describe("billing configuration", () => {
     });
     expect(config.billing?.requestTimeoutMs).toBe(25_000);
     expect(config.billing?.allowPrivateHosts).toBe(true);
+  });
+
+  test("LAGO_PLAN_QUOTAS resolves into plan code → ceilings", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      LAGO_PLAN_QUOTAS: JSON.stringify({
+        pro: [
+          {
+            metricCode: "llm_tokens",
+            metricName: "模型 tokens",
+            unit: "tokens",
+            limit: 2_000_000,
+          },
+        ],
+      }),
+    });
+    expect(config.billing?.planQuotas.get("pro")).toEqual([
+      {
+        metricCode: "llm_tokens",
+        metricName: "模型 tokens",
+        unit: "tokens",
+        used: 0,
+        limit: 2_000_000,
+        remaining: 2_000_000,
+        usedCents: 0,
+      },
+    ]);
+  });
+
+  test("a quota with no unit falls back to the metric code rather than a guess", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      LAGO_PLAN_QUOTAS: JSON.stringify({
+        pro: [{ metricCode: "llm_tokens", limit: 10 }],
+      }),
+    });
+    expect(config.billing?.planQuotas.get("pro")).toEqual([
+      {
+        metricCode: "llm_tokens",
+        metricName: "llm_tokens",
+        unit: "llm_tokens",
+        used: 0,
+        limit: 10,
+        remaining: 10,
+        usedCents: 0,
+      },
+    ]);
+  });
+
+  test("LAGO_PLAN_QUOTAS rejects a ceiling it cannot honour", () => {
+    const withQuotas = (value: unknown) =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_QUOTAS: JSON.stringify(value),
+      });
+    // Not JSON at all.
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_QUOTAS: "{",
+      }),
+    ).toThrow(/valid JSON/);
+    // A fraction of a token is not a thing.
+    expect(() => withQuotas({ pro: [{ metricCode: "m", limit: 1.5 }] })).toThrow(
+      /whole number/,
+    );
+    expect(() => withQuotas({ pro: [{ metricCode: "m", limit: -1 }] })).toThrow(
+      /negative/,
+    );
+    expect(() => withQuotas({ pro: [{ limit: 1 }] })).toThrow(/metricCode/);
+    expect(() => withQuotas({ pro: [{ metricCode: "m" }] })).toThrow(/limit/);
+    expect(() => withQuotas({ pro: "nope" })).toThrow(/list of quota objects/);
+  });
+
+  test("absent quotas are an empty map, which means metered and uncapped", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+    });
+    expect(config.billing?.planQuotas.size).toBe(0);
   });
 });

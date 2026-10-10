@@ -76,8 +76,7 @@ test("ProviderSegmented renders one option per configured channel", () => {
   const view = render(
     <ProviderSegmented providers={["alipay", "wechat"]} value="alipay" onChange={() => {}} />,
   );
-  // The segmented row speaks radio semantics (radiogroup + aria-checked), so the options are
-  // queried as radios, not as the buttons they are written with.
+  // The options have been native radios since 1eb2360, so they are queried as radios.
   expect(view.getByRole("radio", { name: "支付宝" })).toBeTruthy();
   expect(view.getByRole("radio", { name: "微信支付" })).toBeTruthy();
 });

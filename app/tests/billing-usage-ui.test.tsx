@@ -17,10 +17,16 @@ test("KpiCard renders label and value", () => {
 });
 
 describe("fillDays", () => {
+  // Stamp built from local-clock parts at local noon: fillDays keys each day by the cursor's local
+  // date, so a fixed UTC-midnight stamp reads as the previous local day west of UTC. Local noon
+  // cannot cross a day boundary under any ordinary UTC offset, DST shifts included.
+  const localIso = (year: number, month: number, day: number): string =>
+    new Date(year, month - 1, day, 12).toISOString();
+
   test("fills the missing days with zero buckets", () => {
     const filled = fillDays(
-      "2026-10-01T00:00:00Z",
-      "2026-10-04T00:00:00Z",
+      localIso(2026, 10, 1),
+      localIso(2026, 10, 4),
       [{ date: "2026-10-02", tokens: 5, inputTokens: 2, outputTokens: 3, calls: 1 }],
     );
     expect(filled.map((day) => day.date)).toEqual([
@@ -30,7 +36,7 @@ describe("fillDays", () => {
     expect(filled[0].tokens).toBe(0);
   });
   test("caps a pathological span at 62 days", () => {
-    const filled = fillDays("2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z", []);
+    const filled = fillDays(localIso(2026, 1, 1), localIso(2027, 1, 1), []);
     expect(filled.length).toBeLessThanOrEqual(62);
   });
 });
