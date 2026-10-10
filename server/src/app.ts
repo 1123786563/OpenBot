@@ -141,6 +141,7 @@ import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import { createRequestTracking } from "./telemetry/request-tracking";
+import { createTraceMiddleware } from "./telemetry/trace-middleware";
 import type { PackageStatusReader } from "./tenant-package";
 import {
   INSTRUCTIONS_LIMIT,
@@ -522,6 +523,7 @@ export function createApp(
   // mounted later inherit the ambient request id for their own logs.
   const tracking = createRequestTracking({ logger: getLogger("server") });
   app.use("*", tracking.requestId);
+  app.use("*", createTraceMiddleware());
   app.use("/api/*", tracking.accessLog);
   mountDesktopConnectionFailure(app, desktopHostToken);
   mountProviderOAuthProxy(app, modelProviderProxy);
