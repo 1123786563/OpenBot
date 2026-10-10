@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { BillingError } from "../src/billing/types";
+import { getLogger } from "../../shared/logger";
 import {
   createPaymentService,
   PurchaseError,
@@ -247,6 +248,8 @@ function buildService(
     latePaymentWindowHours?: number;
     activePlanCode?: () => Promise<string | null>;
     invalidateEntitlementCache?: () => void;
+    /** `false` injects no logger, exercising the service's shared-logger fallback. */
+    log?: { warn(message: string): void } | false;
   } = {},
 ) {
   const store = overrides.store ?? memoryStore();
@@ -267,7 +270,10 @@ function buildService(
     invalidateEntitlementCache:
       overrides.invalidateEntitlementCache ?? (() => undefined),
     now: tick,
-    log: { warn: () => undefined },
+    log:
+      overrides.log === false
+        ? undefined
+        : (overrides.log ?? { warn: () => undefined }),
   });
   return { service: s, store, providers, lago };
 }
@@ -890,6 +896,40 @@ describe("activation gate", () => {
     await service.handleCallback("alipay", new Headers(), "x");
     expect((await store.readOrder(order.id))?.status).toBe("paid");
     expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+  });
+
+  test("with no injected logger, warnings fall through to the shared server logger", async () => {
+    const store = memoryStore();
+    const { order, alipay } = await pendingWithPaidDelivery(store);
+    const lago = fakeLago({
+      getPlan: async () => ({ found: true, interval: "monthly", currency: "USD" }),
+    });
+    const warned: string[] = [];
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+      (...args: unknown[]) => {
+        warned.push(
+          args
+            .map((argument) =>
+              typeof argument === "string" ? argument : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
+    try {
+      const { service } = buildService({
+        store,
+        lago,
+        providers: [alipay],
+        acceptForeignCurrency: true,
+        log: false,
+      });
+      await service.handleCallback("alipay", new Headers(), "x");
+    } finally {
+      warn.mockRestore();
+    }
+    expect((await store.readOrder(order.id))?.activationState).toBe("applied");
+    expect(warned.join("")).toContain("PAYMENT_ACCEPT_FOREIGN_CURRENCY");
   });
 });
 
