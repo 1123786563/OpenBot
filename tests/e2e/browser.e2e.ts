@@ -630,7 +630,7 @@ async function runPluginFlow(browser: Browser) {
   });
 
   let granted = false;
-  await step("连接授权：内置插件无需 OAuth；打开 Explore 里的免费插件详情", async () => {
+  await step("连接授权：内置插件无需 OAuth；打开 Explore 里的免费插件详情并验证授权入口", async () => {
     await gotoRetry(page, `${APP_URL}/admin/plugins`);
     // Explore 区的 Parallel Search 是“免费匿名访问”，无需外部凭据即可添加
     await page.getByText("Parallel Search").first().waitFor({
@@ -638,8 +638,19 @@ async function runPluginFlow(browser: Browser) {
       timeout: SHORT_TIMEOUT_MS,
     });
     await page.getByText("Parallel Search").first().click();
-    await page.waitForTimeout(1500);
-    return "已打开未连接插件的详情页（授权入口按连接方式呈现）";
+    // 断言打开了正确的详情页：catalogue summary 的独特片段（server/src/plugins/catalogue.ts:168）
+    await page.getByText("Free anonymous access").first().waitFor({
+      state: "visible",
+      timeout: SHORT_TIMEOUT_MS,
+    });
+    // 断言授权入口真实存在：未启用插件的详情页提供“为此部署启用”开关——页面自身文案说明
+    // 开启它才能配置并授予工具（$key.tsx 的 enable Switch，取代了旧的 Add to deployment 按钮）。
+    const enableSwitch = page.locator('[role="switch"]').first();
+    await enableSwitch.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
+    if (!(await enableSwitch.isEnabled())) {
+      throw new Error("Parallel Search 详情页的启用开关不可用，授权入口形同虚设");
+    }
+    return "详情页含 Free anonymous access 文案，启用（授权入口）开关可见且可用";
   });
 
   await step("对某 Bot 授予（grant）Hacker News 工具", async () => {
@@ -703,14 +714,16 @@ async function runPluginFlow(browser: Browser) {
         reply = result.reply;
         await waitForTurnIdle(page);
       } catch {
-        // 模型回合不稳定时的兜底：以审计事件为凭（工具调用会记入审计）
+        // 模型回合不稳定时的兜底：以审计事件为凭。必须看到与 Hacker News 相关的审计条目——
+        // 页面 merely 加载（有任何表格）不算证据；模型没调用工具时这里必须 FAIL，不能转绿。
         await gotoRetry(page, `${APP_URL}/admin/audit`);
-        const toolEvent = page
-          .getByText(/hacker/i)
-          .or(page.getByText("called on behalf"))
-          .or(page.locator("main table, main [role='table']"));
+        await page.getByRole("heading", { name: "Audit" }).first().waitFor({
+          state: "visible",
+          timeout: SHORT_TIMEOUT_MS,
+        });
+        const toolEvent = page.getByText(/hacker/i);
         await toolEvent.first().waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
-        return "会话回复超时，但审计页可见该插件的工具调用记录";
+        return "会话回复超时，但审计页可见 Hacker News 工具调用记录";
       }
       return `收到回复（是否真实命中插件工具取决于模型决策，无法严格断言）：${reply
         .slice(0, 60)

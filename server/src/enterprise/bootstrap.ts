@@ -42,6 +42,15 @@ import { createEnterpriseApp } from "./app";
 import { createResourceReader } from "./authz/repository";
 import { createAuthz } from "./authz/service";
 import type { EnterpriseConfig, RedactedSecurityError } from "./config";
+import { budgetPort } from "./models/budget";
+import { createCapabilityLookup } from "./runtime/capability-store";
+import { createToolInvocationPlane, type ToolPlaneRoutes } from "./runtime/tool-plane";
+import { createRuntimeVerifier } from "./runtime/verifier";
+import { createRunService, } from "./runs/service";
+import type { GatewayDeps, } from "./runs/gateway";
+import { createRunPolicy } from "./runs/policy";
+import { createRunStore } from "./runs/store";
+import type { RunServices } from "./runs/contracts";
 import { createDirectory } from "./tenancy/directory";
 
 const log = getLogger("server");
@@ -69,9 +78,10 @@ export type EnterpriseProcess = {
 
 /**
  * Every enterprise table the entry's tenant boundary depends on, per plan 02 §5 T1-A and plan 03
- * §4.1 (the 22 runs/models tables the runs custom migration put under ENABLE + FORCE RLS). §9.3:
- * the boot verifies the whole role/RLS table SET instead of a hand-count of the old six — adding
- * a ledger table means adding its name here and nowhere else.
+ * §4.1 (the 22 runs/models tables the runs custom migration put under ENABLE + FORCE RLS) and the
+ * conversations subsystem (enterprise_channels, the 0058 migration's ENABLE + FORCE RLS table).
+ * §9.3: the boot verifies the whole role/RLS table SET instead of a hand-count of the old six —
+ * adding a ledger table means adding its name here and nowhere else.
  */
 export const ENTERPRISE_BOUNDARY_TABLES = [
   // Plan 02: tenancy and ACL.
@@ -104,6 +114,8 @@ export const ENTERPRISE_BOUNDARY_TABLES = [
   "enterprise_model_attempts",
   "enterprise_usage_entries",
   "enterprise_model_calls",
+  // Conversations subsystem: personal channels (C05).
+  "enterprise_channels",
 ] as const;
 
 /* Compile-time constant array folded into the statement text: no runtime value is interpolated. */
@@ -293,6 +305,12 @@ export async function bootstrapEnterprise(
     opened.push(directoryDb);
     const dataDb = factory(config.dataDatabaseUrl, { max: 4 });
     opened.push(dataDb);
+    /* The conversations domain's own data-plane pool: the same database and the same restricted
+     * data login the config already validated (the checks below cover it), dialed as a separate
+     * small pool so the conversations' single-writer transactions never queue behind resource
+     * reads — and closed by `closeOpened`/`close` with every other pool. */
+    const conversationsDb = factory(config.dataDatabaseUrl, { max: 2 });
+    opened.push(conversationsDb);
 
     /* Role and schema checks BEFORE anything listens (plan step 3). Failing here closes the
      * pools in the catch below; the entry never gets a port. */
@@ -325,6 +343,80 @@ export async function bootstrapEnterprise(
     const directory = createDirectory(directoryDb);
     const authz = createAuthz();
     const resources = createResourceReader(dataDb, authz);
+
+    /*
+     * The Go runtime candidate's two least-privilege pools (plan 03's role contract): the runs
+     * business writer (threads/runs/reservations, owner-pinned) and the runtime internal writer
+     * (attempts/capabilities/events, pinned to one bound run). They are opened ONLY when the
+     * runtime block is configured, held to the same live role/RLS checks as the other logins, and
+     * closed by the same `opened` ledger so a later failure never strands one.
+     */
+    let runtime:
+      | {
+          verify: ReturnType<typeof createRuntimeVerifier>;
+          toolPlaneRoutes?: ToolPlaneRoutes;
+          gateway?: GatewayDeps;
+        }
+      | undefined;
+    let runServicesRef: RunServices | undefined;
+    if (config.runtime) {
+      const runWriterDb = factory(config.runtime.runWriterDatabaseUrl, { max: 2 });
+      opened.push(runWriterDb);
+      const runtimeWriterDb = factory(
+        config.runtime.runtimeWriterDatabaseUrl,
+        { max: 2 },
+      );
+      opened.push(runtimeWriterDb);
+      await assertLoginHoldsNoPowers(runWriterDb);
+      await assertTenantBoundaryTables(runWriterDb);
+      await assertLoginHoldsNoPowers(runtimeWriterDb);
+      await assertTenantBoundaryTables(runtimeWriterDb);
+      const verify = createRuntimeVerifier({
+        serviceCredential: config.runtime.serviceCredential,
+        expectedServiceId: config.runtime.serviceId,
+        findCapability: createCapabilityLookup(runtimeWriterDb),
+      });
+      const service = createRunService({
+        runWriterDatabase: runWriterDb,
+        runtimeWriterDatabase: runtimeWriterDb,
+        runtime: config.runtime,
+        keyEncryptionKey: config.keyEncryptionKey,
+      });
+      /*
+       * The runs ledger's public creation service (plan 03 §9.3), assembled ONLY behind the
+       * explicit runtime block: the run-writer pool the ledger writes through, the run policy
+       * (real authorization over the same pools — never a stand-in) and the REAL budget port
+       * (E4-B's reserveInTx inside the creation transaction). Without the block, runServices
+       * stays undefined and the app keeps the 02 read-only route surface with POST /runs
+       * answering an explicit 503.
+       */
+      const runServices = {
+        runs: createRunStore({
+          db: runWriterDb,
+          policy: createRunPolicy({ authz }),
+          budget: budgetPort,
+          eventsDatabase: runtimeWriterDb,
+        }),
+      };
+      runtime = {
+        verify,
+        ...(config.runtime.governedTools.length > 0
+          ? {
+              toolPlaneRoutes: createToolInvocationPlane({
+                serviceCredential: config.runtime.serviceCredential,
+                verify,
+                governedTools: config.runtime.governedTools,
+              }).routes,
+            }
+          : {}),
+        gateway: {
+          service,
+          runtime: config.runtime,
+          keyEncryptionKey: config.keyEncryptionKey,
+        },
+      };
+      runServicesRef = runServices;
+    }
 
     /*
      * Draining and readiness, owned by this closure (plan step 4): the entry file never touches an
@@ -378,11 +470,14 @@ export async function bootstrapEnterprise(
       directory,
       resources,
       authz,
+      conversationsDatabase: conversationsDb,
       allowedOrigins: config.allowedOrigins,
       authRoutes: config.authRoutes,
       logRedactedSecurityError,
       ready: checkDependencies,
       isDraining: () => draining,
+      ...(runtime === undefined ? {} : { runtime }),
+      ...(runServicesRef === undefined ? {} : { runServices: runServicesRef }),
     });
     return { app, beginDrain, close: closeOpened };
   } catch (error) {

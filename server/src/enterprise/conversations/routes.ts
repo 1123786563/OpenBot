@@ -10,11 +10,11 @@
  * to C07's message submission.
  */
 import type { Context, Hono } from "hono";
-import { createDatabase } from "../../db/client";
 import type { EnterpriseDependencies, EnterpriseVariables } from "../app";
 import { EnterpriseError } from "../errors";
-import { createConversationsService } from "./service";
-import { conversationsDatabaseUrl } from "./store";
+import { createHistoryService } from "./history";
+import { createMessagesService } from "./messages";
+import { createConversationsService, PAGE_LIMIT } from "./service";
 
 /** Same shape the tenant selector and every enterprise id allows: URL-safe, non-empty, bounded. */
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -46,7 +46,10 @@ export function mountConversationsRoutes(
   deps: EnterpriseDependencies,
 ): void {
   const service = createConversationsService(
-    createDatabase(conversationsDatabaseUrl(process.env), { max: 2 }),
+    // The conversations' own data-plane pool, injected through the assembly deps: the bootstrap
+    // opened it from the EnterpriseConfig data URL and closes it on drain (app.ts docs). The
+    // mount never opens a pool or reads the environment itself.
+    deps.conversationsDatabase,
     // The one authorization engine the app shipped with (app.ts deps): the run decision goes
     // through it, governed by the tenant's policy revision (spec §2/§6.2).
     deps.authz,
@@ -73,4 +76,69 @@ export function mountConversationsRoutes(
   app.post("/channels/:id/archive", async (c) =>
     c.json(await service.archiveChannel(c.var.scope, channelIdParam(c))),
   );
+
+  /*
+   * The C07 message plane (plan §5.2): submit (202 = accepted), the offline
+   * reconciliation read and the authorized cursor-paginated history. Mounted
+   * only when the assembly injected the message pool and the Run seam — an
+   * assembly without them answers an explicit 503 so a deployment can never
+   * masquerade the message plane as an empty success (the RUNS_DISABLED
+   * pattern). Identity never crosses from the client: every handler takes the
+   * scope the middleware issued, and the body is the strict SubmitMessageSchema.
+   */
+  if (deps.messagesDatabase && deps.messageSeams) {
+    const messages = createMessagesService(
+      deps.messagesDatabase,
+      deps.authz,
+      deps.messageSeams,
+    );
+    const history = createHistoryService(
+      deps.messagesDatabase,
+      deps.authz,
+      PAGE_LIMIT,
+    );
+
+    app.post("/channels/:id/messages", async (c) => {
+      const submission = await messages.submit(
+        c.var.scope,
+        channelIdParam(c),
+        await jsonBody(c),
+      );
+      // 202 is ACCEPTED: the Submission names the persisted message and its
+      // business Run, and is never a completion claim (plan §5.2).
+      return c.json(submission, 202);
+    });
+
+    app.get("/channels/:id/submissions/:clientMessageId", async (c) => {
+      const clientMessageId = c.req.param("clientMessageId") ?? "";
+      if (!RESOURCE_ID_PATTERN.test(clientMessageId)) {
+        // An address that cannot be a clientMessageId is the same closed 404.
+        throw new EnterpriseError("RESOURCE_NOT_FOUND", 404);
+      }
+      return c.json(
+        await messages.findSubmission(
+          c.var.scope,
+          channelIdParam(c),
+          clientMessageId,
+        ),
+      );
+    });
+
+    app.get("/channels/:id/history", async (c) =>
+      c.json(
+        await history.list(
+          c.var.scope,
+          channelIdParam(c),
+          c.req.query("cursor") ?? null,
+        ),
+      ),
+    );
+  } else {
+    const messagesDisabled = (): never => {
+      throw new EnterpriseError("MESSAGES_DISABLED", 503);
+    };
+    app.post("/channels/:id/messages", messagesDisabled);
+    app.get("/channels/:id/submissions/:clientMessageId", messagesDisabled);
+    app.get("/channels/:id/history", messagesDisabled);
+  }
 }

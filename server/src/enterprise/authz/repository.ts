@@ -13,6 +13,7 @@
  * does not match the contract is a closed AUTHORIZATION_STATE_INVALID, not a best-effort answer.
  */
 import { z } from "zod";
+import type { ResourceView } from "../../../../shared/enterprise/contracts";
 import type { Database } from "../../db/client";
 import type {
   Authz,
@@ -89,28 +90,46 @@ function parseResource(row: Record<string, unknown> | undefined) {
   return parsed.data;
 }
 
+/*
+ * The private authorization algorithm of `createResourceReader`, extracted as a SERVER-INTERNAL
+ * export per plan 03 §4.3: the runs domain's RunPolicy must re-validate an expert resource read
+ * inside ITS OWN caller's transaction (a nested `withTenant` would deadlock on the shared tenant
+ * locks), so the algorithm — shared resource lock, live fact, local Authz, bare ResourceView —
+ * is callable on a passed-in `Tx`. It still never returns a ResourceSnapshot, and the public read
+ * path below keeps its exact signature and single-transaction behavior: `readAuthorizedResource`
+ * is this function inside its own `withTenant`, and every external consumer stays there.
+ */
+export async function assertResourceReadInTx(
+  tx: TxClient,
+  scope: Scope,
+  resourceId: string,
+  authz: Authz,
+): Promise<ResourceView> {
+  await lockShared(tx, lockKey("resource", scope.tenantId, resourceId));
+  const rows = await readResourceRows(tx, scope, resourceId);
+  const resource: ResourceSnapshot | null = parseResource(rows[0]);
+  if (!resource?.active || !resource.locallyAllowed) {
+    throw new EnterpriseError("RESOURCE_NOT_FOUND", 404);
+  }
+  if (!(await authz.check({ scope, resource, action: "read" }))) {
+    throw new EnterpriseError("RESOURCE_NOT_FOUND", 404);
+  }
+  return {
+    id: resource.id,
+    workspaceId: resource.workspaceId,
+    kind: resource.kind,
+    revision: resource.revision,
+  };
+}
+
 export function createResourceReader(
   database: Database,
   authz: Authz,
 ): ResourceReader {
   return {
     readAuthorizedResource: (scope: Scope, resourceId: string) =>
-      withTenant(database, scope, async (tx) => {
-        await lockShared(tx, lockKey("resource", scope.tenantId, resourceId));
-        const rows = await readResourceRows(tx, scope, resourceId);
-        const resource: ResourceSnapshot | null = parseResource(rows[0]);
-        if (!resource?.active || !resource.locallyAllowed) {
-          throw new EnterpriseError("RESOURCE_NOT_FOUND", 404);
-        }
-        if (!(await authz.check({ scope, resource, action: "read" }))) {
-          throw new EnterpriseError("RESOURCE_NOT_FOUND", 404);
-        }
-        return {
-          id: resource.id,
-          workspaceId: resource.workspaceId,
-          kind: resource.kind,
-          revision: resource.revision,
-        };
-      }),
+      withTenant(database, scope, (tx) =>
+        assertResourceReadInTx(tx, scope, resourceId, authz),
+      ),
   };
 }

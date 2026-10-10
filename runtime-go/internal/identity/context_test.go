@@ -94,8 +94,8 @@ func TestDelegationRefIsOptionalForUserRuns(t *testing.T) {
 	}
 }
 
-// The tool-plane credential pair is whole or absent: a half-empty pair is
-// refused rather than repaired, because the missing half is a credential
+// The tool-plane credential triple is whole or absent: a half-empty triple is
+// refused rather than repaired, because the missing part is a credential
 // the middleware never vouched for and no tool call may present.
 func TestToolCredentialsAreWholeOrAbsent(t *testing.T) {
 	if _, ok := ToolCredentialsFromContext(context.Background()); ok {
@@ -104,16 +104,18 @@ func TestToolCredentialsAreWholeOrAbsent(t *testing.T) {
 	full := WithToolCredentials(context.Background(), ToolCredentials{
 		ServiceCredential: "service-credential",
 		Capability:        "capability",
+		Invocation:        `{"schema_version":"1"}`,
 	})
 	if _, ok := ToolCredentialsFromContext(full); !ok {
-		t.Fatal("a stored pair was refused")
+		t.Fatal("a stored triple was refused")
 	}
-	for name, pair := range map[string]ToolCredentials{
-		"no service credential": {Capability: "capability"},
-		"no capability":         {ServiceCredential: "service-credential"},
+	for name, triple := range map[string]ToolCredentials{
+		"no service credential": {Capability: "capability", Invocation: `{"schema_version":"1"}`},
+		"no capability":         {ServiceCredential: "service-credential", Invocation: `{"schema_version":"1"}`},
+		"no invocation":         {ServiceCredential: "service-credential", Capability: "capability"},
 	} {
-		if _, ok := ToolCredentialsFromContext(WithToolCredentials(context.Background(), pair)); ok {
-			t.Fatalf("%s: a half-empty pair was accepted", name)
+		if _, ok := ToolCredentialsFromContext(WithToolCredentials(context.Background(), triple)); ok {
+			t.Fatalf("%s: a half-empty triple was accepted", name)
 		}
 	}
 }

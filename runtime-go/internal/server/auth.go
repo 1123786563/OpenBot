@@ -192,6 +192,7 @@ func Authenticate(cfg AuthConfig) func(http.Handler) http.Handler {
 			ctx = identity.WithToolCredentials(ctx, identity.ToolCredentials{
 				ServiceCredential: cfg.ServiceCredential,
 				Capability:        capability,
+				Invocation:        invocation,
 			})
 			ctx = withInboundInput(ctx, run0)
 			r = r.WithContext(ctx)

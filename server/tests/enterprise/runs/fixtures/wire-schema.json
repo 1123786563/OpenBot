@@ -20,7 +20,10 @@
     },
     "initiator_kind": {
       "type": "string",
-      "enum": ["user", "schedule"]
+      "enum": [
+        "user",
+        "schedule"
+      ]
     },
     "run_id": {
       "type": "string",

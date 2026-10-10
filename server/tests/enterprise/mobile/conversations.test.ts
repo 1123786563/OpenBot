@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { like } from "drizzle-orm";
-import { z } from "zod";
-import { EnterpriseApiErrorSchema } from "../../../../shared/enterprise/mobile-schemas";
+import {
+  EnterpriseApiErrorSchema,
+  type PersonalConversation,
+  PersonalConversationSchema,
+} from "../../../../shared/enterprise/mobile-schemas";
 import { createDatabase } from "../../../src/db/client";
 import {
   enterpriseIdentityEvents,
@@ -45,9 +48,8 @@ import { testDatabaseUrlFrom } from "../../support/database";
  * bump），run grant 无生产授予函数，由 owner 直插并在迁移未放宽 CHECK 时保持缺席
  * （绝不伪造第二行，也绝不让 fixture 抛错把红灯混成环境错误）。
  *
- * 红灯纪律：conversations 路由/服务尚未实现，全部失败必须表现为路由缺失（Hono 默认 404）
- * 或 enterprise_channels 约束缺失，而不是 fixture/环境错误。401/400/403 的边界用例落在
- * scope 中间件层、先于路由解析，它们现在就该绿，作为路由挂载后的回归保护。
+ * 现状口径：conversations 路由/服务已实现，本文件针对该已实现的企业会话域，断言其契约行为
+ * （§3.3 错误信封与状态码、§4.1 表约束与行级事实），fixture/环境失败按环境错误如实上报。
  */
 
 const PREFIX = "t5c-";
@@ -115,6 +117,7 @@ const liveApp = createEnterpriseApp({
   directory: createDirectory(directoryLoginDatabase),
   resources: createResourceReader(dataDatabase, createAuthz()),
   authz: createAuthz(),
+  conversationsDatabase: dataDatabase,
   allowedOrigins: new Set([ORIGIN]),
   authRoutes: new Set<string>(),
   logRedactedSecurityError: () => {},
@@ -168,19 +171,6 @@ async function post(
     body: JSON.stringify(body),
   });
 }
-
-/** The exact §3.2 PersonalConversation DTO, transcribed verbatim from the frozen spec. */
-const PersonalConversationShape = z
-  .object({
-    channelId: z.string().min(1),
-    botId: z.string().min(1),
-    threadId: z.string().min(1),
-    mode: z.literal("single"),
-    status: z.enum(["active", "archived"]),
-  })
-  .strict();
-
-type PersonalConversation = z.infer<typeof PersonalConversationShape>;
 
 /** Bun's PostgresError carries the SQLSTATE in `errno`; its `code` is the driver class. */
 function isSqlState(error: unknown, state: string): boolean {
@@ -560,7 +550,7 @@ describe("C05 conversations: create, idempotency, detail, archive (spec N4/N5/N6
       TENANT_A,
     );
     expect(response.status).toBe(200);
-    const parsed = PersonalConversationShape.safeParse(await response.json());
+    const parsed = PersonalConversationSchema.safeParse(await response.json());
     expect(parsed.success, JSON.stringify(parsed)).toBe(true);
     if (!parsed.success) {
       throw new Error("unreachable: the create answer must parse");
@@ -606,7 +596,7 @@ describe("C05 conversations: create, idempotency, detail, archive (spec N4/N5/N6
       TENANT_A,
     );
     expect(response.status).toBe(200);
-    const body = PersonalConversationShape.parse(await response.json());
+    const body = PersonalConversationSchema.parse(await response.json());
     expect(body.channelId).not.toBe(conversationOf().channelId);
     expect(body.threadId).not.toBe(conversationOf().threadId);
     const rows = await channelRows(TENANT_A);
@@ -623,7 +613,7 @@ describe("C05 conversations: create, idempotency, detail, archive (spec N4/N5/N6
     };
     expect(Object.keys(body).sort()).toEqual(["items", "nextCursor"]);
     for (const item of body.items) {
-      expect(PersonalConversationShape.safeParse(item).success).toBe(true);
+      expect(PersonalConversationSchema.safeParse(item).success).toBe(true);
     }
     const text = JSON.stringify(body.items);
     expect(text).toContain(conversationOf().channelId);
@@ -641,7 +631,7 @@ describe("C05 conversations: create, idempotency, detail, archive (spec N4/N5/N6
       TENANT_A,
     );
     expect(response.status).toBe(200);
-    const body = PersonalConversationShape.parse(await response.json());
+    const body = PersonalConversationSchema.parse(await response.json());
     expect(body).toEqual(conversationOf());
   });
 
@@ -653,13 +643,13 @@ describe("C05 conversations: create, idempotency, detail, archive (spec N4/N5/N6
       TENANT_A,
     );
     expect(response.status).toBe(200);
-    const body = PersonalConversationShape.parse(await response.json());
+    const body = PersonalConversationSchema.parse(await response.json());
     expect(body.status).toBe("archived");
     expect(body.channelId).toBe(conversationOf().channelId);
     expect(body.threadId).toBe(conversationOf().threadId);
     expect(body.botId).toBe(BOT_RW);
 
-    const detail = PersonalConversationShape.parse(
+    const detail = PersonalConversationSchema.parse(
       await (
         await get(
           `/api/enterprise/v1/channels/${conversationOf().channelId}`,
@@ -682,7 +672,7 @@ describe("C05 conversations: create, idempotency, detail, archive (spec N4/N5/N6
       TENANT_A,
     );
     expect(response.status).toBe(200);
-    const body = PersonalConversationShape.parse(await response.json());
+    const body = PersonalConversationSchema.parse(await response.json());
     expect(body.status).toBe("archived");
     const after = (await channelRows(TENANT_A)).find(
       (row) => row.id === conversationOf().channelId,

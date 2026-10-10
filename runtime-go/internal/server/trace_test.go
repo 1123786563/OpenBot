@@ -285,6 +285,7 @@ func TestCallbackClientInjectsTheActiveTrace(t *testing.T) {
 	ctx = identity.WithToolCredentials(ctx, identity.ToolCredentials{
 		ServiceCredential: "cred",
 		Capability:        "cap",
+		Invocation:        `{"schema_version":"1"}`,
 	})
 
 	client := callback.Client{HTTP: plane.Client(), Endpoint: plane.URL}
@@ -329,6 +330,7 @@ func TestCallbackClientWithoutATraceSendsNone(t *testing.T) {
 	ctx := identity.WithToolCredentials(context.Background(), identity.ToolCredentials{
 		ServiceCredential: "cred",
 		Capability:        "cap",
+		Invocation:        `{"schema_version":"1"}`,
 	})
 	client := callback.Client{HTTP: plane.Client(), Endpoint: plane.URL}
 	if _, err := client.Prepare(ctx, validPreparation()); err != nil {

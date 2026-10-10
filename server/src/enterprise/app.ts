@@ -15,10 +15,23 @@
 import { Hono } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { AuthService } from "../auth/guards";
-import { createRequestTracking, currentRequestId } from "../telemetry/request-tracking";
+import type { Database } from "../db/client";
+import {
+  createRequestTracking,
+  currentRequestId,
+} from "../telemetry/request-tracking";
 import type { Authz, Directory, ResourceReader, Scope } from "./contracts";
+import type { MessageSeams } from "./conversations/messages";
 import { mountConversationsRoutes } from "./conversations/routes";
 import { EnterpriseError } from "./errors";
+import type { RunServices } from "./runs/contracts";
+import { type GatewayDeps, mountRunGateway } from "./runs/gateway";
+import { mountRunRoutes } from "./runs/routes";
+import type { ToolPlaneRoutes } from "./runtime/tool-plane";
+import {
+  createRuntimeInvocationValidationRoutes,
+  type InvocationValidationDeps,
+} from "./runtime/validation-routes";
 import { mountTenantRoutes } from "./tenancy/routes";
 import { resolveScope } from "./tenancy/scope";
 
@@ -27,6 +40,27 @@ export type EnterpriseDependencies = {
   directory: Directory;
   resources: ResourceReader;
   authz: Authz;
+  /**
+   * The conversations domain's own data-plane pool, opened by the bootstrap (so drain closes it
+   * with every other pool) and validated through EnterpriseConfig's data URL — never a pool a
+   * route mount opens from `process.env` on its own.
+   */
+  conversationsDatabase: Database;
+  /**
+   * The C07 message domain's own single-writer pool (ob_ent_run_writer): the
+   * run/outbox/budget grants and RLS policies (0060 §5a) and the message table
+   * (0063) live on that role, so the message+Run+Outbox transaction commits on
+   * ONE connection. Absent → the message endpoints answer an explicit 503
+   * (MESSAGES_DISABLED), never a registered empty success.
+   */
+  messagesDatabase?: Database;
+  /**
+   * The C07 Run/budget in-transaction seam: the frozen `RunService.create`
+   * signature is scope-level and self-managed, so until the 03 volume ships an
+   * inTx variant the assembly injects this narrow port — the seam the message
+   * transaction calls to bind the business Run inside its own transaction.
+   */
+  messageSeams?: MessageSeams;
   allowedOrigins: ReadonlySet<string>;
   logRedactedSecurityError: (event: {
     requestId: string;
@@ -37,6 +71,26 @@ export type EnterpriseDependencies = {
   authRoutes: ReadonlySet<string>;
   isDraining: () => boolean;
   ready: () => Promise<boolean>;
+  /**
+   * The Go runtime candidate, present only when the runtime block is configured. Mounting the
+   * internal validation route is the first half; the tool plane and the run gateway join the same
+   * object so one flag keeps the whole candidate disableable.
+   */
+  runtime?: {
+    /** The real verify behind /internal/enterprise/v1/runtime/validate (runtime/verifier.ts). */
+    verify: InvocationValidationDeps["verify"];
+    /** The real tool plane's routes (runtime/tool-plane.ts), when governed tools are configured. */
+    toolPlaneRoutes?: ToolPlaneRoutes;
+    /** The run gateway's dependencies (runs/gateway.ts); mounted INSIDE the scoped api. */
+    gateway?: GatewayDeps;
+  };
+  /**
+   * The run ledger's public services (plan 03 §9.3), present only when the run feature is
+   * explicitly enabled by the bootstrap. Present → POST /runs + GET /runs/:id mount inside the
+   * scope middleware. Absent → the 02 read-only entry stays exactly as it was, and creation is
+   * an explicit 503 (RUNS_DISABLED) — never a registered empty success.
+   */
+  runServices?: RunServices;
 };
 
 export type EnterpriseVariables = { userId: string; scope: Scope };
@@ -112,6 +166,22 @@ export function createEnterpriseApp(deps: EnterpriseDependencies) {
     );
   });
 
+  /*
+   * The Go runtime's identity oracle: an internal service-to-service route under /internal — no
+   * session, no origin check, its own two-credential authentication inside the route factory.
+   * Mounted only when the runtime block is configured, so an unconfigured deployment keeps the
+   * exact route surface it had before the candidate existed.
+   */
+  if (deps.runtime) {
+    app.route(
+      "/",
+      createRuntimeInvocationValidationRoutes({ verify: deps.runtime.verify }),
+    );
+    if (deps.runtime.toolPlaneRoutes) {
+      app.route("/", deps.runtime.toolPlaneRoutes);
+    }
+  }
+
   app.all("/api/auth/*", async (c) => {
     const key = `${c.req.method} ${c.req.path}`;
     if (!deps.authRoutes.has(key)) {
@@ -175,6 +245,27 @@ export function createEnterpriseApp(deps: EnterpriseDependencies) {
 
   mountTenantRoutes(api, deps);
   mountConversationsRoutes(api, deps);
+  /*
+   * POST /runs and GET /runs/:id have EXACTLY ONE owner on this api (review fix: mounting
+   * both made the effective handler depend on Hono's registration order, silently
+   * dead-routing the other). Ownership, plan 03 §9.2/§9.3: the ledger's public routes mount
+   * when the run feature is explicitly enabled (runServices); the Go candidate gateway's
+   * create+execute entry is the FALLBACK owner for candidate deployments without the ledger
+   * service (its historical behavior preserved); with neither, both verbs answer an explicit
+   * 503 so a disabled deployment can never masquerade creation as an empty success. The
+   * gateway's internal validate/tool-plane routes above are unaffected either way.
+   */
+  if (deps.runServices) {
+    mountRunRoutes(api, deps.runServices.runs);
+  } else if (deps.runtime?.gateway) {
+    mountRunGateway(api, deps.runtime.gateway);
+  } else {
+    const runsDisabled = (): never => {
+      throw new EnterpriseError("RUNS_DISABLED", 503);
+    };
+    api.post("/runs", runsDisabled);
+    api.get("/runs/:id", runsDisabled);
+  }
   app.route("/api/enterprise/v1", api);
   return app;
 }

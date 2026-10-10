@@ -28,6 +28,12 @@ export const RUNTIME_WIRE_SCHEMA_VERSION = "1";
 export const RUNTIME_SERVICE_CREDENTIAL_HEADER =
   "x-openbot-runtime-service-credential";
 export const RUNTIME_CAPABILITY_HEADER = "x-openbot-runtime-capability";
+/**
+ * The envelope header the runtime forwards on its tool-plane callbacks (the validation route
+ * receives the same envelope as the request BODY; the tool plane receives it as this header,
+ * because those bodies are the prepare/execute proposals).
+ */
+export const RUNTIME_INVOCATION_HEADER = "x-openbot-runtime-invocation";
 
 /** RFC3339 with an offset — the one timestamp shape the wire freezes. */
 const RFC3339 =

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { like } from "drizzle-orm";
-import { createDatabase } from "../../../src/db/client";
+import { createDatabase, type Database } from "../../../src/db/client";
 import {
   enterpriseIdentityEvents,
   enterpriseMemberships,
@@ -73,6 +73,9 @@ function unitDeps(
       },
     },
     authz: { check: async () => false },
+    /* The unit block never reaches a conversations route (the directory answers empty), so the
+     * injected data-plane pool is a placeholder: the shape is the contract under test. */
+    conversationsDatabase: null as unknown as Database,
     allowedOrigins: new Set<string>(),
     authRoutes: new Set<string>(),
     logRedactedSecurityError: () => {},
@@ -465,6 +468,7 @@ const liveApp = createEnterpriseApp({
   directory: createDirectory(directoryLoginDatabase),
   resources: createResourceReader(dataDatabase, createAuthz()),
   authz: createAuthz(),
+  conversationsDatabase: dataDatabase,
   allowedOrigins: new Set<string>(),
   authRoutes: new Set<string>(),
   logRedactedSecurityError: () => {},
