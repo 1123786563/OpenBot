@@ -511,6 +511,58 @@ describe("createLagoClient subscription history folding", () => {
   });
 });
 
+describe("createLagoClient getSubscription", () => {
+  test("returns the neutralised subscription with the provider's billing period", async () => {
+    const { client, seen } = clientWith(() =>
+      jsonResponse({
+        subscription: {
+          lago_id: "lago-sub-1",
+          external_id: "sub-1",
+          external_customer_id: "deployment-1",
+          plan_code: "pro",
+          status: "active",
+          current_billing_period_started_at: "2026-10-01T00:00:00Z",
+          current_billing_period_ending_at: "2026-11-01T00:00:00Z",
+        },
+      }),
+    );
+    const result = await client.getSubscription("sub-1");
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      externalSubscriptionId: "sub-1",
+      planCode: "pro",
+      status: "active",
+      currentPeriodStart: "2026-10-01T00:00:00Z",
+      currentPeriodEnd: "2026-11-01T00:00:00Z",
+    });
+    expect(seen[0]?.url).toBe(`${BASE_URL}/api/v1/subscriptions/sub-1`);
+  });
+
+  test("tolerates a body without period fields", async () => {
+    const { client } = clientWith(() =>
+      jsonResponse({
+        subscription: {
+          lago_id: "lago-sub-2",
+          external_id: "sub-2",
+          external_customer_id: "deployment-1",
+          plan_code: "pro",
+          status: "active",
+        },
+      }),
+    );
+    const result = await client.getSubscription("sub-2");
+    expect(result.status).toBe(200);
+    expect(result.body?.currentPeriodStart).toBeUndefined();
+    expect(result.body?.currentPeriodEnd).toBeUndefined();
+  });
+
+  test("HTTP 404 answers as a null body: the subscription is gone", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 404));
+    const result = await client.getSubscription("missing");
+    expect(result).toEqual({ status: 404, body: null });
+  });
+});
+
 describe("createLagoClient postEvent", () => {
   const EVENT = {
     transactionId: "llm-deployment-1-1730000000000-100-20",

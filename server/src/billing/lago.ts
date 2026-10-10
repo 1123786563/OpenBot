@@ -50,6 +50,9 @@ export type LagoSubscriptionBody = {
   externalSubscriptionId: string;
   planCode: string;
   status: BillingSubscriptionStatus;
+  /** The billing period the provider currently runs, when its API spells one. */
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
 };
 
 export type LagoUsageChargeBody = {
@@ -120,6 +123,10 @@ export type LagoClient = {
   listSubscriptions(
     externalCustomerId: string,
   ): Promise<LagoResult<readonly LagoSubscriptionBody[]>>;
+  /** One subscription by its external id; 404 is "gone", answered as a null body. */
+  getSubscription(
+    externalSubscriptionId: string,
+  ): Promise<LagoResult<LagoSubscriptionBody | null>>;
   postSubscription(input: {
     externalCustomerId: string;
     externalSubscriptionId: string;
@@ -220,6 +227,11 @@ function subscriptionOf(item: unknown): LagoSubscriptionBody {
       optionalStringOf(item, "external_id") ?? stringOf(item, "lago_id"),
     planCode,
     status: status as BillingSubscriptionStatus,
+    // The wire's own spelling of the running billing period; an API that omits it leaves both unset.
+    currentPeriodStart:
+      optionalStringOf(item, "current_billing_period_started_at") ?? undefined,
+    currentPeriodEnd:
+      optionalStringOf(item, "current_billing_period_ending_at") ?? undefined,
   };
 }
 
@@ -442,6 +454,19 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
         status: 200,
         body: foldSubscriptionHistory(subscriptions.map(subscriptionOf)),
       };
+    },
+    async getSubscription(externalSubscriptionId) {
+      const result = await request(
+        `/api/v1/subscriptions/${encodeURIComponent(externalSubscriptionId)}`,
+      );
+      if (result.status === 200) {
+        return {
+          status: 200,
+          body: subscriptionOf(fieldOf(result.body, "subscription")),
+        };
+      }
+      if (result.status === 404) return { status: 404, body: null };
+      throw new BillingError("invalid_response");
     },
     async postSubscription(input) {
       const result = await request("/api/v1/subscriptions", {
