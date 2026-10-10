@@ -28,6 +28,12 @@ schema_config:
 limits_config:
   retention_period: 168h
   reject_old_samples: false
+# Retention only deletes anything when the compactor is told to: `retention_period` alone is
+# inert (the running /config shows retention_enabled: false without this block).
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
 ruler:
   storage:
     # `filesystem:` under ruler.storage was removed in Loki 3.x; the local backend is the

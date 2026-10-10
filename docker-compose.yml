@@ -729,6 +729,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./.logs:/hostlogs
       - ./docker/observability/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      # Positions/state for the log tails. A named volume so a container rebuild resumes where
+      # the last one stopped instead of re-reading the whole .logs history into Loki.
+      - alloy-data:/var/lib/alloy/data
     ports:
       # Loopback: Alloy's own UI/HTTP port, for debugging the pipeline only. Nothing depends on it.
       - "127.0.0.1:${ALLOY_PORT:-12345}:12345"
@@ -782,3 +785,4 @@ volumes:
   tempo-data:
   prometheus-data:
   grafana-data:
+  alloy-data:
