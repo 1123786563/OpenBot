@@ -11,6 +11,13 @@ import {
 } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import {
+  classifyAttachment,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_FILE_BYTES,
+  MAX_IMAGE_BYTES,
+  namesNoFormat,
+} from "../../../shared/attachments";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -19,15 +26,8 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema";
-import {
-  classifyAttachment,
-  MAX_ATTACHMENTS_PER_MESSAGE,
-  MAX_FILE_BYTES,
-  MAX_IMAGE_BYTES,
-  namesNoFormat,
-} from "../../../shared/attachments";
-import type { StoredAttachment } from "./attachment-parts";
 import { sniffMimeType } from "./attachment-mime";
+import type { StoredAttachment } from "./attachment-parts";
 
 function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
@@ -95,7 +95,41 @@ function isUuidShaped(value: string): boolean {
  * IS mapped, so the degrade branch does not apply, the subquery yields B, and A ≠ B refuses. The
  * branch only opens for a thread nobody is shown.
  */
-function inTheTurnsChannel(database: Database, threadId: string) {
+type AttachmentQueries = Pick<Database, "select" | "update">;
+type AttachmentLockQueries = Pick<Database, "select" | "execute">;
+
+/**
+ * Hold every attachment channel stable against legacy membership removal and channel soft-delete
+ * until the enclosing message transaction commits. The ids are read first only to discover the
+ * lock keys; callers repeat authorization after these shared locks have been acquired.
+ */
+export async function lockAttachmentChannelsInTransaction(
+  transaction: AttachmentLockQueries,
+  tenantId: string,
+  ids: readonly string[],
+): Promise<void> {
+  const known = [...new Set(ids.filter(isUuidShaped))];
+  if (known.length === 0) return;
+  const rows = await transaction
+    .select({ channelId: attachments.channelId })
+    .from(attachments)
+    .where(inArray(attachments.id, known));
+  const channelIds = [...new Set(rows.map((row) => row.channelId))].sort();
+  for (const channelId of channelIds) {
+    const key = JSON.stringify(["enterprise", "resource", tenantId, channelId]);
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
+    );
+  }
+  for (const channelId of channelIds) {
+    const key = JSON.stringify(["legacy", "channel", channelId]);
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
+    );
+  }
+}
+
+function inTheTurnsChannel(database: AttachmentQueries, threadId: string) {
   const channelOfThisThread = () =>
     database
       .select({ channelId: intelligenceChannelMappings.channelId })
@@ -161,6 +195,14 @@ export async function loadAttachmentForTurn(
   turn: { actorId: string; threadId: string },
   id: string,
 ): Promise<StoredAttachment | null> {
+  return loadAttachmentForTurnInTransaction(database, turn, id);
+}
+
+export async function loadAttachmentForTurnInTransaction(
+  transaction: AttachmentQueries,
+  turn: { actorId: string; threadId: string },
+  id: string,
+): Promise<StoredAttachment | null> {
   /*
    * The same uuid-shape guard as the two routes below, and it belongs here rather than at either
    * caller because this id is the one nothing shaped. A path param at least came off a route
@@ -184,7 +226,7 @@ export async function loadAttachmentForTurn(
    * without the channel term somebody in a deleted channel could name an id out of their own local
    * transcript on a message they compose themselves and have the file read back to them.
    */
-  const [row] = await database
+  const [row] = await transaction
     .select({
       mimeType: attachments.mimeType,
       name: attachments.name,
@@ -207,7 +249,7 @@ export async function loadAttachmentForTurn(
         eq(attachments.id, id),
         // The conversation this turn is running in, as a term in the same statement rather than as
         // a fact a caller looked up and passed. See {@link inTheTurnsChannel}.
-        inTheTurnsChannel(database, turn.threadId),
+        inTheTurnsChannel(transaction, turn.threadId),
         /*
          * Sent, or this actor's own. In the same statement as the membership join rather than read
          * and then decided on, so a send committing alongside cannot be missed by a check that
@@ -224,6 +266,41 @@ export async function loadAttachmentForTurn(
       ),
     );
   return row ?? null;
+}
+
+/** Check send eligibility without exposing attachment bytes to the enterprise data role. */
+export async function authorizeAttachmentForSendInTransaction(
+  transaction: AttachmentQueries,
+  turn: { actorId: string; threadId: string },
+  id: string,
+): Promise<boolean> {
+  if (!isUuidShaped(id)) return false;
+  const [row] = await transaction
+    .select({ id: attachments.id })
+    .from(attachments)
+    .innerJoin(
+      channels,
+      and(eq(channels.id, attachments.channelId), isNull(channels.deletedAt)),
+    )
+    .innerJoin(
+      channelMemberships,
+      and(
+        eq(channelMemberships.channelId, attachments.channelId),
+        eq(channelMemberships.userId, turn.actorId),
+      ),
+    )
+    .where(
+      and(
+        eq(attachments.id, id),
+        inTheTurnsChannel(transaction, turn.threadId),
+        or(
+          isNotNull(attachments.attachedAt),
+          eq(attachments.uploadedBy, turn.actorId),
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 
 /**
@@ -383,35 +460,7 @@ export async function markAttachmentsSent(
 
   const unrecorded = await database
     .transaction(async (transaction) => {
-      await transaction
-        .update(attachments)
-        .set({ attachedAt: new Date() })
-        .where(
-          and(
-            inArray(attachments.id, known),
-            eq(attachments.uploadedBy, turn.actorId),
-            // The channel this send actually happened in. See {@link inTheTurnsChannel}.
-            inTheTurnsChannel(database, turn.threadId),
-            isNull(attachments.attachedAt),
-          ),
-        );
-
-      const recorded = await transaction
-        .select({ id: attachments.id })
-        .from(attachments)
-        .where(
-          and(
-            inArray(attachments.id, known),
-            inTheTurnsChannel(database, turn.threadId),
-            isNotNull(attachments.attachedAt),
-          ),
-        );
-
-      const durable = new Set(recorded.map((row) => row.id));
-      const missing = known.filter((id) => !durable.has(id));
-      // Thrown rather than returned, because the rollback is the point: see the paragraph above on
-      // what keeping a partial set of stamps would leave behind.
-      if (missing.length > 0) throw new UnrecordedSend(missing);
+      await markAttachmentsSentInTransaction(transaction, turn, known);
       return [];
     })
     .catch((error: unknown) => {
@@ -439,6 +488,39 @@ export async function markAttachmentsSent(
     `This turn was not run, because ${unrecorded.length === 1 ? "an attachment on your message" : "attachments on your message"} could not be recorded as sent (${named}). ` +
       "A file withdrawn while the turn was being prepared is the usual cause. Nothing was sent to the Bot — attach the file again and resend.",
   );
+}
+
+export async function markAttachmentsSentInTransaction(
+  transaction: AttachmentQueries,
+  turn: { actorId: string; threadId: string },
+  ids: readonly string[],
+): Promise<void> {
+  const known = ids.filter(isUuidShaped);
+  if (known.length === 0) return;
+  await transaction
+    .update(attachments)
+    .set({ attachedAt: new Date() })
+    .where(
+      and(
+        inArray(attachments.id, known),
+        eq(attachments.uploadedBy, turn.actorId),
+        inTheTurnsChannel(transaction, turn.threadId),
+        isNull(attachments.attachedAt),
+      ),
+    );
+  const recorded = await transaction
+    .select({ id: attachments.id })
+    .from(attachments)
+    .where(
+      and(
+        inArray(attachments.id, known),
+        inTheTurnsChannel(transaction, turn.threadId),
+        isNotNull(attachments.attachedAt),
+      ),
+    );
+  const durable = new Set(recorded.map((row) => row.id));
+  const missing = known.filter((id) => !durable.has(id));
+  if (missing.length > 0) throw new UnrecordedSend(missing);
 }
 
 /** The columns `POST /:channelId/attachments` hands back on success. */

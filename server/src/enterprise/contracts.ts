@@ -84,6 +84,27 @@ export interface RunService {
     scope: PlatformScope,
     input: BudgetInput,
   ): Promise<BudgetReservation>;
+  issueModelInvocationCapability(
+    scope: PlatformScope,
+    input: ModelInvocationCapabilityInput,
+  ): Promise<ModelInvocationCapability>;
+  resolveModelInvocationCapability(
+    scope: PlatformScope,
+    capability: string,
+  ): Promise<ModelInvocationContext>;
+  confirmModelInvocationUsage(
+    scope: PlatformScope,
+    capability: string,
+    usedTokens: number,
+  ): Promise<void>;
+  markModelInvocationUnknown(
+    scope: PlatformScope,
+    capability: string,
+  ): Promise<void>;
+  releaseModelInvocation(
+    scope: PlatformScope,
+    capability: string,
+  ): Promise<void>;
 }
 
 export interface EventService {
@@ -176,6 +197,34 @@ export interface BudgetReservation {
   readonly reservationId: string;
   readonly runId: string;
   readonly tokenLimit: number;
+  readonly expiresAt: string;
+}
+
+export interface ModelInvocationCapabilityInput {
+  readonly runId: string;
+  readonly attemptId: string;
+  readonly generation: number;
+  readonly modelRequestId: string;
+  readonly maximumTokens: number;
+}
+
+export interface ModelInvocationCapability {
+  readonly capability: string;
+  readonly model_request_id: string;
+  readonly maximum_tokens: number;
+  readonly expires_at: string;
+}
+
+export interface ModelInvocationContext {
+  readonly tenantId: string;
+  readonly workspaceId: string;
+  readonly principalId: string;
+  readonly runId: string;
+  readonly attemptId: string;
+  readonly generation: number;
+  readonly modelRouteRef: string;
+  readonly modelRequestId: string;
+  readonly maximumTokens: number;
   readonly expiresAt: string;
 }
 

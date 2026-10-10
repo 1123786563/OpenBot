@@ -1,6 +1,29 @@
 import { expect, test } from "bun:test";
+import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
+function exposeServerDependenciesToExternalHarness() {
+  const rootNodeModules = resolve(import.meta.dir, "../../node_modules");
+  const serverNodeModules = resolve(import.meta.dir, "../node_modules");
+  const created: string[] = [];
+
+  for (const scope of ["@mastra", "@ai-sdk"]) {
+    const link = resolve(rootNodeModules, scope);
+    if (existsSync(link)) continue;
+    mkdirSync(dirname(link), { recursive: true });
+    symlinkSync(resolve(serverNodeModules, scope), link, "dir");
+    created.push(link);
+  }
+
+  return () => {
+    for (const link of created.reverse()) {
+      if (lstatSync(link).isSymbolicLink()) unlinkSync(link);
+    }
+  };
+}
 
 test("Mastra's maintained AG-UI bridge consumes the catalog and both learned tool results", async () => {
+  const cleanupDependencies = exposeServerDependenciesToExternalHarness();
   const seen: unknown[] = [];
   const provider = Bun.serve({
     hostname: "127.0.0.1",
@@ -114,5 +137,6 @@ test("Mastra's maintained AG-UI bridge consumes the catalog and both learned too
     clearTimeout(timeout);
     child.kill();
     await provider.stop(true);
+    cleanupDependencies();
   }
 }, 20_000);
