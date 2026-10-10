@@ -1,10 +1,11 @@
 /**
  * shared/trace helpers, self-contained against a local fake OTLP collector (the
- * observability P2 spike's pattern). Six cases: W3C inbound extraction, outbound
+ * observability P2 spike's pattern). Seven cases: W3C inbound extraction, outbound
  * injection, self-rooted traces, export through the batch processor, the
- * OPENBOT_TRACES=off switch, and endpoint-less operation. Every case gets its own
- * port and service.name, and shuts the provider down between cases, because the
- * API's global trace slot is process-wide and a shut-down provider records nothing.
+ * OPENBOT_TRACES=off switch, endpoint-less operation, and the signal-level traces
+ * endpoint used verbatim. Every case gets its own port and service.name, and shuts
+ * the provider down between cases, because the API's global trace slot is
+ * process-wide and a shut-down provider records nothing.
  */
 import { describe, expect, test } from "bun:test";
 import { context, trace } from "@opentelemetry/api";
@@ -22,20 +23,21 @@ const INBOUND_PARENT =
 
 type FakeCollector = {
   port: number;
+  path: string;
   posts: () => number;
   bytes: () => number;
   stop: () => void;
 };
 
-/** Counts POST /v1/traces, the only thing the OTLP exporter sends. */
-function startFakeCollector(port: number): FakeCollector {
+/** Counts POSTs to the given receive path, the only thing the OTLP exporter sends. */
+function startFakeCollector(port: number, path = "/v1/traces"): FakeCollector {
   let posts = 0;
   let bytes = 0;
   const server = Bun.serve({
     port,
     async fetch(req) {
       const url = new URL(req.url);
-      if (req.method === "POST" && url.pathname === "/v1/traces") {
+      if (req.method === "POST" && url.pathname === path) {
         posts += 1;
         bytes = (await req.arrayBuffer()).byteLength;
         return new Response(null, { status: 200 });
@@ -45,6 +47,7 @@ function startFakeCollector(port: number): FakeCollector {
   });
   return {
     port,
+    path,
     posts: () => posts,
     bytes: () => bytes,
     stop: () => server.stop(true),
@@ -192,6 +195,29 @@ describe("shared/trace", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(traceId).toMatch(/^[0-9a-f]{32}$/);
       expect(collector.posts()).toBe(0);
+    } finally {
+      await shutdownTracing();
+      collector.stop();
+    }
+  });
+
+  test("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is used verbatim, full path included", async () => {
+    // The collector listens on a non-default path, and the generic endpoint is set
+    // too: only a verbatim signal-level endpoint can land spans on /collector/traces,
+    // a path derived from the generic endpoint would POST /v1/traces and count zero.
+    const collector = startFakeCollector(14325, "/collector/traces");
+    initProcessTracing("trace-test-signal-endpoint", {
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: `http://localhost:${collector.port}/collector/traces`,
+      OTEL_EXPORTER_OTLP_ENDPOINT: `http://localhost:${collector.port}`,
+    });
+    try {
+      const span = trace.getTracer("trace-test").startSpan("signal-export");
+      span.setAttribute("test.suite", "shared-trace");
+      span.end();
+      await shutdownTracing();
+      const posts = await waitForPosts(collector);
+      expect(posts).toBeGreaterThanOrEqual(1);
+      expect(collector.bytes()).toBeGreaterThan(0);
     } finally {
       await shutdownTracing();
       collector.stop();
