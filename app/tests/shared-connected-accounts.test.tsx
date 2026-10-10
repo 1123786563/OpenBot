@@ -83,6 +83,7 @@ describe("Settings for a Shared app", () => {
         serverId: "s-shared",
         brokered: false,
         configured: true,
+        broker: { name: "Composio", env: "COMPOSIO_API_KEY" },
         recorded: false,
         verified: false,
         verifiedAt: null,

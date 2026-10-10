@@ -161,13 +161,18 @@ export type BrokeredAccount = {
    */
   checkable: boolean;
   /**
-   * Whether this deployment has a Composio key at all.
+   * Whether this deployment has the broker configured at all.
    *
    * Carried through the hook rather than passed to the row separately, so a caller wires the row up
    * once: with no key there is no broker to ask, nothing to confirm on arrival, and neither action
    * below can do anything but fail.
    */
   configured: boolean;
+  /**
+   * Which broker this row was enabled through, as the unconfigured sentence has to name it and its
+   * env vars. See the hook input of the same name.
+   */
+  broker: { name: string; env: string };
   /** See {@link BrokeredAccountKind}. Derived here so no branch below re-asks. */
   kind: BrokeredAccountKind;
   /** Leave for the vendor's consent screen. */
@@ -277,6 +282,14 @@ export function useBrokeredAccount(input: {
   /** Which screen the vendor's callback puts somebody down on. */
   returnTo: "settings" | "admin";
   /**
+   * Which broker this row was enabled through, as display copy has to name it.
+   *
+   * REQUIRED rather than defaulted because both callers read it off the recorded row's provenance
+   * and the sentences below would otherwise name Composio on an OpenConnector app — the exact
+   * drift {@link brokerDisplay} exists to end. See {@link brokerDisplay} for the shape.
+   */
+  broker: { name: string; env: string };
+  /**
    * Where this row's failures go: the screen's own banner.
    *
    * Called with null as an action starts, so the reason the last attempt failed is not left sitting
@@ -288,6 +301,7 @@ export function useBrokeredAccount(input: {
   const queryClient = useQueryClient();
   const {
     authScheme,
+    broker,
     brokered,
     checkable,
     configured,
@@ -613,6 +627,7 @@ export function useBrokeredAccount(input: {
      * offered or withheld for an instant, not a sentence anybody is told.
      */
     checkable,
+    broker,
     recheck: () => {
       report(null);
       recheck.mutate(serverId);
@@ -692,7 +707,8 @@ function accountSentence(input: {
   } = input;
 
   if (!account.configured) {
-    return t("brokered.keyMissing");
+    /* The env vars are the broker's own — one key for Composio, two for OpenConnector. */
+    return t("brokered.keyMissing", { env: account.broker.env });
   }
 
   if (account.kind === "no-auth") {
