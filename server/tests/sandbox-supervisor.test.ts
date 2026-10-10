@@ -99,13 +99,16 @@ const ADDRESS = (botId: string) => ({
   ports: { webapp: 4500, opencode: 4400 },
 });
 
-function build(initial: string[] = []) {
+function build(initial: string[] = [], clockMs = 0) {
   const state = fakeState();
   const memory = createInMemoryContainerRuntime(initial);
   const supervisor = createSandboxSupervisor({
     state: state.state,
     runtime: memory.runtime,
     addressFor: ADDRESS,
+    // A frozen clock: provision stamps its heartbeat at clockMs, so a sweep run at a later
+    // nowMs is genuinely later — the C4 cases' staleness is arithmetic, never wall time.
+    now: () => new Date(clockMs),
   });
   return { supervisor, state, memory };
 }
@@ -163,13 +166,19 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
 
   test("the type exposes exactly four verbs and no container surface (pinned)", async () => {
     const { supervisor } = build();
-    // The four verbs exist...
-    for (const verb of ["provision", "status", "reap", "stop"] as const) {
+    // The five verbs exist (C4 added the idle sweep to the original four)...
+    for (const verb of ["provision", "status", "reap", "stop", "reapIdleSupervision"] as const) {
       expect(typeof supervisor[verb]).toBe("function");
     }
     // ...and nothing else: no container ids, no image names, no runtime handles. The keys of
     // the object ARE the contract; a future field that leaks a container detail fails here.
-    expect(Object.keys(supervisor).sort()).toEqual(["provision", "reap", "status", "stop"]);
+    expect(Object.keys(supervisor).sort()).toEqual([
+      "provision",
+      "reap",
+      "reapIdleSupervision",
+      "status",
+      "stop",
+    ]);
     // The runtime type the supervisor consumes is the three-verb view, never more.
     const runtimeViewKeys: Array<keyof ContainerRuntimeView> = [
       "listBotIds",
@@ -177,6 +186,43 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
       "recreate",
     ];
     expect(runtimeViewKeys.sort()).toEqual(["listBotIds", "recreate", "remove"]);
+  });
+
+  test("the idle sweep sleeps a ready sandbox whose heartbeat is stale (C4)", async () => {
+    const { supervisor } = build();
+    await supervisor.provision({ botId: "stale", ownerUserId: "u1" });
+    // Time passes past the idle budget; the sweep runs.
+    const report = await supervisor.reapIdleSupervision({ nowMs: 10 * 60_000, idleMs: 60_000 });
+    expect(report.slept).toEqual(["stale"]);
+    expect(report.fresh).toBe(0);
+    expect(await supervisor.status("stale")).toEqual({ kind: "sleeping" });
+  });
+
+  test("a fresh heartbeat keeps its sandbox awake, and is counted not named (C4)", async () => {
+    const { supervisor, state } = build();
+    await supervisor.provision({ botId: "busy", ownerUserId: "u1" });
+    await supervisor.provision({ botId: "idle", ownerUserId: "u1" });
+    // Renew ONLY the busy one's heartbeat, right before the sweep.
+    const busyRow = state.liveOf("busy");
+    expect(busyRow).toBeDefined();
+    await state.state.heartbeat(busyRow!.id, new Date(9 * 60_000));
+    const report = await supervisor.reapIdleSupervision({ nowMs: 10 * 60_000, idleMs: 60_000 });
+    expect(report.slept).toEqual(["idle"]); // The stale one slept...
+    expect(report.fresh).toBe(1); // ...and the fresh one is a count, never a name.
+    expect(await supervisor.status("busy")).toMatchObject({ kind: "ready" });
+  });
+
+  test("after the sweep sleeps it, provision wakes the sandbox without a new row (C4)", async () => {
+    const { supervisor, state } = build();
+    await supervisor.provision({ botId: "wake", ownerUserId: "u1" });
+    await supervisor.reapIdleSupervision({ nowMs: 10 * 60_000, idleMs: 60_000 });
+    const woke = await supervisor.provision({ botId: "wake", ownerUserId: "u1" });
+    expect(woke.address).toBe(ADDRESS("wake").address);
+    // The wake moved the SAME row: no fresh attempt, the container never left.
+    const rows = [...state.rows.values()].filter((row) => row.botId === "wake");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.attemptNumber).toBe(1);
+    expect(await supervisor.status("wake")).toMatchObject({ kind: "ready" });
   });
 
   test("a racing loser reads the winner's ready row instead of double-provisioning", async () => {
