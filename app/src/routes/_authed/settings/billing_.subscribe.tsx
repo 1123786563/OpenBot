@@ -120,7 +120,17 @@ function PurchaseFlow({
   if (order.error && !view) {
     return (
       <PageSection title={t("subscribe.checkoutTitle")}>
-        <PageEmpty>{(order.error as Error).message}</PageEmpty>
+        <div className="mt-4">
+          <p className="text-destructive text-sm">{(order.error as Error).message}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => void order.refetch()}
+          >
+            {t("billing.retry")}
+          </Button>
+        </div>
       </PageSection>
     );
   }
@@ -182,7 +192,17 @@ function RouteComponent() {
         description={t("subscribe.description")}
         width="wide"
       >
-        <PageEmpty>{(catalog.error as Error).message}</PageEmpty>
+        <div className="mt-4">
+          <p className="text-destructive text-sm">{(catalog.error as Error).message}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => void catalog.refetch()}
+          >
+            {t("billing.retry")}
+          </Button>
+        </div>
       </PageShell>
     );
   }
