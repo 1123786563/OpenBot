@@ -138,6 +138,90 @@ export type BillingUsageDaily = {
   truncated: boolean;
 };
 
+/* -------------------------------------------------------------------------- */
+/*  Statements: what a person reads as "my plan" and "my bills".              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One metered resource's allowance for the current period.
+ *
+ * `limit: null` is a real answer, not a missing one: a deployment that configured no ceiling for
+ * a metric is measuring that metric, not capping it, and the page says so rather than drawing a
+ * bar against a number it invented.
+ */
+export type BillingQuotaEntry = {
+  metricCode: string;
+  metricName: string;
+  /** What one unit is, in the deployment's own word (`tokens`, `calls`). */
+  unit: string;
+  used: number;
+  /** The configured ceiling, or null when this deployment set none. */
+  limit: number | null;
+  /** `limit - used`, or null when there is no ceiling to subtract from. Never negative. */
+  remaining: number | null;
+  usedCents: number;
+};
+
+/** The plan, its period, and what has been used of it. The 套餐用量 page's whole answer. */
+export type BillingPlanUsage = {
+  active: boolean;
+  planCode?: string;
+  status?: BillingSubscriptionStatus;
+  currency?: string;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  /**
+   * When the allowances go back to full. The period's end, because that is when the provider
+   * starts a new one — not a countdown anybody has to keep.
+   */
+  resetsAt: string | null;
+  totalCents?: number;
+  quotas: readonly BillingQuotaEntry[];
+};
+
+/** One bill: a payment order as a person reads it, with the channel that settled it. */
+export type BillingInvoice = {
+  /** The local order id, and the bill's number: it is already unique and human-quotable. */
+  invoiceId: string;
+  planCode: string;
+  /** The period the paid order buys, or the order's own window when it never settled. */
+  periodStart: string | null;
+  periodEnd: string | null;
+  amountCents: number;
+  currency: "CNY";
+  status: "pending" | "paid" | "blocked" | "canceled" | "expired";
+  method: "alipay" | "wechat";
+  /** When the bill was raised: the order's creation. */
+  issuedAt: string;
+  /** When money landed, or when the bill reached a terminal state. Absent while pending. */
+  settledAt: string | null;
+  /** The channel's own transaction id, once seen — what a person quotes to the channel. */
+  channelTransactionId: string | null;
+};
+
+/** One line on a bill's detail. v1 raises one line per order: the plan it bought. */
+export type BillingInvoiceLine = {
+  label: string;
+  quantity: number;
+  amountCents: number;
+};
+
+/** One bill with its lines, for the detail view and the download. */
+export type BillingInvoiceDetail = BillingInvoice & {
+  lines: readonly BillingInvoiceLine[];
+};
+
+/** One page of bills, with what a pager needs to offer the next one. */
+export type BillingInvoicePage = {
+  invoices: readonly BillingInvoice[];
+  pagination: {
+    totalCount: number;
+    totalPages: number;
+    currentPage: number;
+    nextPage: number | null;
+  };
+};
+
 /** The four subscription states the sync reads. */
 export type BillingSubscriptionStatus =
   | "active"
