@@ -2,8 +2,8 @@
 
 OpenBot logs one JSON line per record, so `docker logs`, `.logs/*.log` and a future log collector
 all read the same shape. This page is the team's convention for what those lines contain and how to
-read them; what it covers shipped with the P1 observability work, and the later phases are listed at
-the end.
+read them; what it covers is the P1 logging and request tracking plus the P2 distributed tracing,
+and the later phases are listed at the end.
 
 ## Logging
 
@@ -60,10 +60,43 @@ screenshot of an error resolves to exactly one access-log line.
 plus the `request_id` above. The line is written even when the handler throws, so a 5xx keeps its
 access record instead of leaving the failure unmeasured.
 
+## Tracing
+
+**One span per request, named `METHOD path`.** The tracing helpers live in `shared/trace.ts` and
+wrap the OpenTelemetry API so call sites never touch propagation or a tracer directly. Every
+process that serves HTTP starts that span around its request handling — `server` through a Hono
+middleware, `agent-bot`, `agent-computer` and `supervisor` through a `Bun.serve` fetch wrapper,
+and the Go `runtime-go` through an outermost `TraceMiddleware` with the same env contract —
+parented by the inbound W3C `traceparent` when one arrived and self-rooted when not. The span
+records `http.response.status_code` and takes the ERROR status when the handler throws or
+answers 5xx. Outbound is propagation by header only: the server injects the active trace's
+`traceparent` into the headers of the calls it makes to the agent bot, the computer and the
+supervisor, deliberately without a span of its own, so a server→bot→computer chain arrives as
+one continuous trace rather than a span per hop.
+
+**`trace_id` reaches the server's log lines.** While a span is active above the request store,
+the request-scoped logger attaches its `trace_id` next to `request_id`, and the access line
+carries both. A bug report and a trace query therefore resolve to the same request. Services
+that do not scope their logs still span; only the stamping into lines is server-side.
+
+**Off switch and endpoints.** `OPENBOT_TRACES=off` leaves a process entirely unregistered — no
+tracer provider, no spans, no export, endpoints set or not. Otherwise spans are always recorded,
+and exported over OTLP/HTTP when an endpoint is configured: the signal-level
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used verbatim, full path included, while the generic
+`OTEL_EXPORTER_OTLP_ENDPOINT` gets `/v1/traces` appended. With neither set the provider is
+recording-only — spans exist in the process, nothing ships. Every exported span carries
+`service.name` set to the process name it came from.
+
+**No collector yet is a quiet state, by design.** The exporter batches in the background, and a
+failed export surfaces as an OpenTelemetry diagnostic error line and nothing else: no request
+fails or waits on its trace's delivery. That is the intended shape of a deployment until the
+Tempo stack ships (P3) and gives these spans somewhere to land.
+
 ## Later phases
 
-What follows is sequenced and deliberately not started: `trace_id` propagation into Tempo (P2), the
-Grafana and Loki stack (P3), a `/metrics` endpoint (P4), and client crash reporting (P5).
+What follows is sequenced and deliberately not started: the Grafana, Loki and Tempo stack that
+gives the traces above somewhere to land (P3), a `/metrics` endpoint (P4), and client crash
+reporting (P5).
 
 One serialization note worth keeping for that work: pino serializes an `err` key by default,
 message and stack included, which is what error handlers rely on. Every other value belongs in a
