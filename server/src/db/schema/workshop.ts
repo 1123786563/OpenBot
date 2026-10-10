@@ -260,3 +260,96 @@ export const workshopTurnEvents = pgTable(
     uniqueIndex("workshop_turn_events_turn_seq_idx").on(table.turnId, table.seq),
   ],
 );
+
+export type WorkshopScheduleStatus =
+  | "enabled"
+  | "paused"
+  | "deleted";
+
+/**
+ * A recurring ask against a workshop session (B16): a schedule fires the same prompt on a RRULE
+ * cadence, attributed to its creator's authority. The rule lives as text (RFC 5545); its
+ * interpretation belongs to the runner, not the schema — the row is the intent, the runs are
+ * the history, and neither pretends to be the other.
+ */
+export const workshopSchedules = pgTable(
+  "workshop_schedules",
+  {
+    id: text("id").primaryKey(),
+    /** The session this schedule fires against; deleting the session deletes the schedule. */
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => workshopSessions.id, { onDelete: "cascade" }),
+    /** Whose authority the fired turns run under (the audit's actor_user_id). */
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The prompt, verbatim; the same string every firing sends. */
+    prompt: text("prompt").notNull(),
+    /** RFC 5545 RRULE text, e.g. `FREQ=DAILY;BYHOUR=9;BYMINUTE=0`. */
+    rrule: text("rrule").notNull(),
+    /** The timezone the rule's wall clock reads; absent is the deployment's. */
+    timezone: text("timezone"),
+    status: text("status")
+      .$type<WorkshopScheduleStatus>()
+      .notNull()
+      .default("enabled"),
+    /** The last firing this schedule produced, for the overlap guard's next-run math. */
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    /** The runner's next planned firing, set when a run is planned. */
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    createdAt: stamp("created_at"),
+    updatedAt: stamp("updated_at"),
+  },
+  (table) => [
+    index("workshop_schedules_session_idx").on(table.sessionId),
+    index("workshop_schedules_due_idx")
+      .on(table.nextRunAt)
+      .where(sql`${table.status} = 'enabled' AND ${table.nextRunAt} IS NOT NULL`),
+  ],
+);
+
+export type WorkshopScheduleRunStatus =
+  | "planned"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped";
+
+/**
+ * One firing of one schedule (B16): planned before it runs, settled after, and never deleted —
+ * a schedule's history is the audit of what it did, including the firings it skipped (an
+ * overlap guard's answer) so a gap in history is a fact, not a mystery.
+ */
+export const workshopScheduleRuns = pgTable(
+  "workshop_schedule_runs",
+  {
+    id: text("id").primaryKey(),
+    scheduleId: text("schedule_id")
+      .notNull()
+      .references(() => workshopSchedules.id, { onDelete: "cascade" }),
+    /** The planned firing time; the row exists because of this moment. */
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    /** The turn the firing produced, when it produced one; null for skips. */
+    turnId: text("turn_id").references(() => workshopTurns.id, {
+      onDelete: "set null",
+    }),
+    status: text("status")
+      .$type<WorkshopScheduleRunStatus>()
+      .notNull()
+      .default("planned"),
+    /** Why a skip skipped, or a failure failed: the operator's sentence. */
+    note: text("note"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: stamp("created_at"),
+  },
+  (table) => [
+    // One row per (schedule, planned moment): a firing planned twice is the same firing.
+    uniqueIndex("workshop_schedule_runs_once_idx").on(
+      table.scheduleId,
+      table.scheduledFor,
+    ),
+    index("workshop_schedule_runs_schedule_idx").on(table.scheduleId),
+  ],
+);
