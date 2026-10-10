@@ -15,6 +15,7 @@ import { rm } from "node:fs/promises";
 import type { SandboxEnv } from "./env";
 import type { BotRuntimes } from "./bot-runtimes";
 import { isPlainBotId } from "./bot-id";
+import { forwardEvents } from "./sse";
 
 export function tokenMatches(presented: string | undefined, expected: string): boolean {
   if (!presented) return false;
@@ -23,7 +24,11 @@ export function tokenMatches(presented: string | undefined, expected: string): b
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-/** The paths a caller may reach. Anything else 404s without touching the upstream. */
+/**
+ * The paths a caller may reach, fixed once to the whole surface the workshop plan needs (§8 #8:
+ * one extension, not one per task). Endpoints whose implementation lands later answer 501 from
+ * the stub table below — present in the allow-list, honestly unimplemented on the wire.
+ */
 const ALLOWED = new Set([
   "POST /session",
   "GET /session/:id",
@@ -32,23 +37,50 @@ const ALLOWED = new Set([
   "GET /file",
   "GET /file/content",
   "POST /workspace/reset",
+  // The workshop plan's additions, frozen here in one change:
+  "GET /events",
+  "POST /session/:id/abort",
+  "POST /file",
+  // Not yet implemented — allowed, and answered 501 until their tasks land:
+  "POST /webapp/start",
+  "POST /webapp/stop",
+  "GET /runtimes",
+  "GET /workspace/snapshot",
+  "POST /workspace/restore",
+]);
+
+/** Paths that are allowed but not implemented yet, each awaiting its own task. */
+const NOT_YET_IMPLEMENTED = new Set([
+  "POST /webapp/start",
+  "POST /webapp/stop",
+  "GET /runtimes",
+  "GET /workspace/snapshot",
+  "POST /workspace/restore",
 ]);
 
 function allowedPath(method: string, pathname: string): boolean {
   if (ALLOWED.has(`${method} ${pathname}`)) return true;
-  // /session/:id and its message sub-path: one non-empty segment after /session, and at most one
-  // further segment, which must be exactly "message". (Equivalent to the anchored pattern
-  // ^/session/<id>(/message)?$ written as segment checks.)
+  // The shape-routed entries: /session/:id(/message|/abort) with one non-empty id segment.
   if (!pathname.startsWith("/session/")) return false;
   const segments = pathname.slice("/session/".length).split("/");
   if (segments.length === 1) return segments[0]?.length > 0 && method === "GET";
   if (segments.length === 2)
     return (
       segments[0]?.length > 0 &&
-      segments[1] === "message" &&
-      (method === "GET" || method === "POST")
+      ((segments[1] === "message" && (method === "GET" || method === "POST")) ||
+        (segments[1] === "abort" && method === "POST"))
     );
   return false;
+}
+
+/** The exact key a path would be allowed under, for the 501 stub lookup. */
+function allowedKey(method: string, pathname: string): string | null {
+  if (ALLOWED.has(`${method} ${pathname}`)) return `${method} ${pathname}`;
+  if (pathname.startsWith("/session/") && pathname.endsWith("/abort"))
+    return "POST /session/:id/abort";
+  if (pathname.startsWith("/session/") && pathname.endsWith("/message"))
+    return `${method} /session/:id/message`;
+  return null;
 }
 
 const upstreamBase = (port: number) => `http://127.0.0.1:${port}`;
@@ -87,7 +119,45 @@ export function createProxyHandler(
       return Response.json({ ok: true, botId });
     }
 
+    // Allowed but awaiting its task: honest 501, never a silent 404 that would read as a typo.
+    const stubKey = allowedKey(request.method, url.pathname);
+    if (stubKey && NOT_YET_IMPLEMENTED.has(stubKey)) {
+      return Response.json(
+        { error: `${stubKey} is not implemented yet.` },
+        { status: 501 },
+      );
+    }
+
     const runtime = await runtimes.getOrSpawn(botId);
+
+    // The event stream is forwarded, not relayed: keepalives and the family filter are the
+    // wrapper's own contribution (see ./sse.ts) — a plain byte-pipe would forward the noise
+    // the capture measured at 15% of a real turn. Every forwarded block also refreshes the
+    // Bot's activity clock, which is what keeps a mid-turn reap from killing a chatty stream.
+    if (url.pathname === "/events") {
+      if (request.method !== "GET")
+        return Response.json({ error: "Use GET." }, { status: 405 });
+      return forwardEvents({
+        upstreamPort: runtime.port,
+        onEvent: () => runtimes.markActivity(botId),
+      });
+    }
+
+    // Abort is forwarded verbatim: the upstream abort is opencode's own, and the wrapper adds
+    // no semantics of its own beyond the token and the bot routing it just performed.
+    if (url.pathname.endsWith("/abort")) {
+      const response = await fetch(`${upstreamBase(runtime.port)}${url.pathname}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }).catch(() => null);
+      if (!response)
+        return Response.json({ error: "The abort did not reach the runtime." }, { status: 503 });
+      return new Response(response.body, {
+        status: response.status,
+        headers: response.headers,
+      });
+    }
     const headers = new Headers(request.headers);
     headers.delete("x-sandbox-token");
     headers.delete("host");

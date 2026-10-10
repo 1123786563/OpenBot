@@ -1,0 +1,7 @@
+# Test files run isolated (`bun test --isolate`, wired into `npm test`): this suite's files
+# stand up real loopback servers (proxy.test's 4600 upstream, sse.test's throwaway ports), and
+# Bun's default in-process file scheduling let one file's live handles starve another's fetch
+# probes — two files green alone, the pair failing together, reproducibly. A fresh global per
+# file is a fraction slower and deterministic, which a gate cares about more.
+[test]
+isolate = true
