@@ -203,8 +203,8 @@ function UsageBody({
           <PageEmpty>{t("usagePage.noEvents")}</PageEmpty>
         ) : (
           <>
-            {/* The log is five columns of short values; it scrolls sideways rather than wrapping,
-                and the two token columns are the ones a phone gives up first. */}
+            {/* Five columns of short values: it scrolls sideways rather than wrapping, and the two
+                token columns are the ones a phone gives up first. */}
             <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full text-left text-sm">
                 <thead className="text-muted-foreground text-xs uppercase">
@@ -261,10 +261,7 @@ function UsageBody({
                 void navigate({ search: { eventsPage: page } });
               }}
               statusLabel={t("usagePage.eventPagerStatus", {
-                page: clampedPage(
-                  eventsPage,
-                  events.data.pagination.totalPages,
-                ),
+                page: clampedPage(eventsPage, events.data.pagination.totalPages),
                 totalPages: Math.max(events.data.pagination.totalPages, 1),
                 total: events.data.pagination.totalCount,
               })}

@@ -39,8 +39,8 @@ export const planUsageKeys = {
 };
 
 /**
- * The period's allowances. Always fresh: usage moves with every metered event, so a cached
- * number is a stale number, and this is the one screen whose whole job is to be right about it.
+ * The period's allowances. Always fresh: usage moves with every metered event, so a cached number
+ * is a stale number, and this is the one screen whose whole job is to be right about it.
  */
 export const planUsageQueryOptions = queryOptions({
   queryKey: planUsageKeys.all,

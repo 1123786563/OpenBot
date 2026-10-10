@@ -32,7 +32,12 @@ export function BillingPager({
 }) {
   const { t } = useTranslation("settings");
   return (
-    <div className={cn("flex flex-wrap items-center justify-between gap-2 pt-3", className)}>
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-2 pt-3",
+        className,
+      )}
+    >
       <span className="text-muted-foreground text-xs tabular-nums">
         {statusLabel}
       </span>
