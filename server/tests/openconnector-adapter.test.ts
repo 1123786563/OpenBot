@@ -14,13 +14,13 @@ function clientWith(dial: (path: string, init: { method: string; body?: unknown;
 }
 
 describe("the broker", () => {
-  test("maps auth types onto broker connections, oauth2 to unsupported", async () => {
+  test("maps the published authTypes array onto broker connections, oauth2-only to unsupported", async () => {
     const client = clientWith(async (path) => {
       if (path === "/v1/providers") {
         return { data: [
-          { service: "github", name: "GitHub", description: "", authType: "api_key" },
-          { service: "hackernews", name: "Hacker News", description: "", authType: "no_auth" },
-          { service: "example-oauth", name: "Example", description: "", authType: "oauth2" },
+          { service: "github", displayName: "GitHub", authTypes: ["api_key"] },
+          { service: "hackernews", displayName: "Hacker News", authTypes: ["no_auth"] },
+          { service: "example-oauth", displayName: "Example", authTypes: ["oauth2"] },
         ] };
       }
       if (path === "/v1/actions") return { data: [{ service: "github", id: "github.get_current_user" }, { service: "github", id: "github.create_issue" }] };
@@ -29,9 +29,31 @@ describe("the broker", () => {
     const apps = await client.broker.listApps();
     const bySlug = Object.fromEntries(apps.map((app) => [app.slug, app]));
     expect(bySlug.github.connection).toEqual({ kind: "fields", authScheme: "API_KEY" });
+    expect(bySlug.github.name).toBe("GitHub");
     expect(bySlug.github.actionCount).toBe(2);
     expect(bySlug.hackernews.connection).toEqual({ kind: "no-auth" });
     expect(bySlug["example-oauth"].connection.kind).toBe("unsupported");
+  });
+
+  test("a provider publishing several auth types is driven by a fixed priority, not array order", async () => {
+    const client = clientWith(async (path) => {
+      if (path === "/v1/providers") {
+        return { data: [
+          { service: "airtable", displayName: "Airtable", authTypes: ["oauth2", "api_key"] },
+          { service: "swapped", displayName: "Swapped", authTypes: ["api_key", "oauth2"] },
+          { service: "custom-first", displayName: "Custom", authTypes: ["custom_credential", "oauth2"] },
+          { service: "keyed-anon", displayName: "Keyed", authTypes: ["api_key", "no_auth"] },
+        ] };
+      }
+      if (path === "/v1/actions") return { data: [] };
+      throw new Error(`unexpected ${path}`);
+    });
+    const apps = await client.broker.listApps();
+    const bySlug = Object.fromEntries(apps.map((app) => [app.slug, app]));
+    expect(bySlug.airtable.connection).toEqual({ kind: "fields", authScheme: "API_KEY" });
+    expect(bySlug.swapped.connection).toEqual({ kind: "fields", authScheme: "API_KEY" });
+    expect(bySlug["custom-first"].connection).toEqual({ kind: "fields", authScheme: "CUSTOM_CREDENTIAL" });
+    expect(bySlug["keyed-anon"].connection).toEqual({ kind: "fields", authScheme: "API_KEY" });
   });
 
   test("connectWithFields sends the alias as connectionName and values verbatim", async () => {
