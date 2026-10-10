@@ -245,7 +245,16 @@ export function createBillingService(deps: {
 
     async ensureSubscription(input) {
       const existing = await readSubscriptions(input.externalCustomerId);
-      const onThisPlan = existing.find(
+      // Only a LIVE subscription counts anywhere below — active, or incomplete (created, not yet
+      // started). The provider keeps one record per subscription lifecycle, so after a terminate
+      // and re-buy the list answers with the terminated record AND its active replacement: a
+      // status-blind match here returns the dead record, reports success, and the payer's money
+      // buys nothing — the exact failure a live sandbox re-purchase exposed.
+      const live = existing.filter(
+        (subscription) =>
+          subscription.status === "active" || subscription.status === "incomplete",
+      );
+      const onThisPlan = live.find(
         (subscription) => subscription.planCode === input.planCode,
       );
       if (onThisPlan) {
@@ -256,9 +265,10 @@ export function createBillingService(deps: {
           planCode: input.planCode,
         };
       }
-      if (existing.length > 0) {
-        // Somebody's subscription on another plan. Overwriting it is not a decision this
-        // deployment gets to make from a sync call.
+      if (live.length > 0) {
+        // Somebody's LIVE subscription on another plan. Overwriting it is not a decision this
+        // deployment gets to make from a sync call. Terminal records bar nobody: a cancelled or
+        // expired plan is history, not an entitlement.
         throw new BillingError("invalid_response");
       }
 
@@ -266,7 +276,10 @@ export function createBillingService(deps: {
       if (created.status === 422) {
         const reread = await readSubscriptions(input.externalCustomerId);
         const again = reread.find(
-          (subscription) => subscription.planCode === input.planCode,
+          (subscription) =>
+            subscription.planCode === input.planCode &&
+            (subscription.status === "active" ||
+              subscription.status === "incomplete"),
         );
         if (again) {
           await writeSubscriptionProjections(reread);

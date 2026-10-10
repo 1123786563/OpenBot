@@ -153,7 +153,17 @@ function stubProvider() {
           error: "customer already has a subscription",
         });
       }
-      if (behaviour.refuseSubscriptionCreate || existing.length > 0) {
+      if (
+        behaviour.refuseSubscriptionCreate ||
+        // The provider refuses a create only while a LIVE subscription holds the customer: a
+        // terminated record is history, and the real gateway accepts a re-create under the same
+        // external id (verified against the live sandbox — POST after terminate answers 200).
+        existing.some(
+          (subscription) =>
+            subscription.status === "active" ||
+            subscription.status === "incomplete",
+        )
+      ) {
         return json(422, {
           status: 422,
           error: "customer already has a subscription",
@@ -332,6 +342,61 @@ describe("createBillingService.ensureSubscription", () => {
     expect(
       stub.requests.filter((request) => request.method === "POST"),
     ).toHaveLength(0);
+  });
+
+  test("a TERMINATED subscription on the asked plan is not idempotent: a new one is posted", async () => {
+    // The provider keeps one record per lifecycle, so a re-buy after a terminate answers the
+    // list with the dead record. Treating that as "already subscribed" reports success while the
+    // payer's money buys nothing — the exact failure a live sandbox re-purchase exposed. The
+    // dead record must not block: a new subscription is created under the same deterministic id.
+    const { stub, store, service } = syncFixture();
+    stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    stub.subscriptions.set("deployment-1-pro", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-pro",
+      planCode: "pro",
+      status: "terminated",
+    });
+    const receipt = await service.ensureSubscription({
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-pro",
+      planCode: "pro",
+    });
+    expect(receipt.externalSubscriptionId).toBe("deployment-1-pro");
+    const posts = stub.requests.filter(
+      (request) =>
+        request.method === "POST" && request.path === "/api/v1/subscriptions",
+    );
+    expect(posts).toHaveLength(1);
+    // The projection the caller reads afterwards is the NEW record's state, not the corpse's.
+    expect(
+      store.subscriptions.get("deployment-1-pro")?.status ?? "active",
+    ).toBe("active");
+  });
+
+  test("terminal subscriptions on OTHER plans bar nobody: a new one is posted", async () => {
+    // A cancelled or expired plan is history, not an entitlement — the one-plan-at-a-time guard
+    // counts only live subscriptions.
+    const { stub, store, service } = syncFixture();
+    stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    stub.subscriptions.set("deployment-1-base", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-base",
+      planCode: "base",
+      status: "terminated",
+    });
+    await service.ensureSubscription({
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-pro",
+      planCode: "pro",
+    });
+    const posts = stub.requests.filter(
+      (request) =>
+        request.method === "POST" && request.path === "/api/v1/subscriptions",
+    );
+    expect(posts).toHaveLength(1);
   });
 
   test("a different existing plan is a terminal conflict, not an overwrite", async () => {

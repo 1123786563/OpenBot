@@ -96,6 +96,7 @@ describe("createBillingEntitlementReader", () => {
     await expect(cached.active()).resolves.toEqual({
       active: false,
       codes: [],
+      subscription: null,
     });
     expect(logged).toHaveLength(1);
 
@@ -103,6 +104,7 @@ describe("createBillingEntitlementReader", () => {
     await expect(cached.active()).resolves.toEqual({
       active: false,
       codes: [],
+      subscription: null,
     });
     expect(reader.callCount).toBe(1);
   });
