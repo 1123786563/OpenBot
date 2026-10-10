@@ -8,8 +8,9 @@ import {
   test,
 } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { Writable } from "node:stream";
 import { and, eq, like } from "drizzle-orm";
-import { getLogger } from "../../shared/logger";
+import { createLogger, getLogger } from "../../shared/logger";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createChannelStore } from "../src/channels/routes";
@@ -1300,5 +1301,125 @@ describe("saying that a sweep happened at all", () => {
     const rows = await database.select().from(routineSweeps);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.owner).toBe("sweeper-two");
+  });
+});
+
+/**
+ * WHOM A PASS SPEAKS FOR.
+ *
+ * The sweep module is imported by two callers that are different processes: `worker/src/index.ts`,
+ * the loop that owns every runtime tick, and `server/scripts/fire-routines.ts`, the CronJob. Its
+ * default logger names "server" — right for the script, wrong for the worker — so a caller may
+ * inject its own, and every warning of the pass goes out under the calling process's name. Both
+ * halves are asserted on the injected instance and against the server's logger: before the injection
+ * existed these warnings left the worker labelled "server", and a filter on `service` filed a laptop
+ * worker's complaints under the API.
+ */
+describe("whose logger a pass speaks through", () => {
+  /** A pino instance writing nowhere, so the captured warnings are seen only through the spy. */
+  const silentLogger = () => {
+    const lines: string[] = [];
+    const logger = createLogger(
+      "test-sweep",
+      new Writable({
+        write(_chunk, _encoding, callback) {
+          callback();
+        },
+      }),
+    );
+    return { logger, lines };
+  };
+
+  test("the consuming half warns through the injected logger, and the server's stays silent", async () => {
+    const { routine } = await makeRoutine();
+    await offerFiring(
+      routine.id,
+      new Date("2001-01-01T09:25:00Z"),
+      new Date("2001-01-01T09:26:00Z"),
+    );
+
+    const injected = silentLogger();
+    const serverLines: string[] = [];
+    const onInjected = spyOn(injected.logger, "warn").mockImplementation(
+      (...args) => {
+        injected.lines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
+    const onServer = spyOn(getLogger("server"), "warn").mockImplementation(
+      (...args) => {
+        serverLines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
+    try {
+      await dispatchClaimedRoutines(
+        sweepOptions({
+          now: () => new Date("2001-01-01T09:26:00Z"),
+          // One go, so the first failure is also the last and the giving up is said.
+          maxAttempts: 1,
+          logger: injected.logger,
+          dispatch: async () => {
+            throw new Error("the server answered 503");
+          },
+        }),
+      );
+    } finally {
+      onInjected.mockRestore();
+      onServer.mockRestore();
+    }
+
+    const complaint = injected.lines.find((line) => line.includes(routine.id));
+    expect(complaint).toBeDefined();
+    expect(JSON.parse(complaint as string).type).toBe("routine-fire-gave-up");
+    expect(JSON.parse(complaint as string).attempts).toBe(1);
+    // Not a word of this pass on the default logger: it went out under the injected name.
+    expect(serverLines).toEqual([]);
+  });
+
+  test("the offering half warns through the injected logger too", async () => {
+    const { routine } = await makeRoutine("Unschedulable.");
+    await database
+      .update(routines)
+      .set({ cron: "not a cron" })
+      .where(eq(routines.id, routine.id));
+    await makeDueAt(routine.id, new Date("2001-01-01T09:25:00Z"));
+
+    const injected = silentLogger();
+    const serverLines: string[] = [];
+    const onInjected = spyOn(injected.logger, "warn").mockImplementation(
+      (...args) => {
+        injected.lines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
+    const onServer = spyOn(getLogger("server"), "warn").mockImplementation(
+      (...args) => {
+        serverLines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
+    try {
+      await offerDueRoutines(
+        sweepOptions({
+          now: () => new Date("2001-01-01T09:26:00Z"),
+          logger: injected.logger,
+        }),
+      );
+    } finally {
+      onInjected.mockRestore();
+      onServer.mockRestore();
+    }
+
+    const complaint = injected.lines.find((line) => line.includes(routine.id));
+    expect(complaint).toBeDefined();
+    expect(JSON.parse(complaint as string).type).toBe(
+      "routine-sweep-offer-failed",
+    );
+    expect(serverLines).toEqual([]);
   });
 });

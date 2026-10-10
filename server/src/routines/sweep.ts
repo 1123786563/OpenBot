@@ -21,10 +21,19 @@
  * A second half-right copy grown next to it is the duplicated firing mechanism #235 exists to
  * prevent.
  */
-import { getLogger } from "../../../shared/logger";
+import { getLogger, type Logger } from "../../../shared/logger";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { RoutineRefusedError, type RoutineStore } from "./store";
-const log = getLogger("server");
+
+/**
+ * The voice a pass speaks in when its caller names none.
+ *
+ * The default is "server" because this module's first caller was `scripts/fire-routines.ts`, the
+ * CronJob that belongs to the server deployment. The other caller is a different process —
+ * `worker/src/index.ts`, which owns every runtime tick — and it names its own logger in its options,
+ * so its warnings are not filed under a process that never ran them.
+ */
+const defaultLog = getLogger("server");
 
 export const ROUTINE_FIRE_KIND = "routine.fire";
 
@@ -87,6 +96,12 @@ export type RoutineSweepOptions = {
   limit?: number;
   /** How late a firing may be and still be offered. Default ten minutes; see the policy below. */
   graceMs?: number;
+  /**
+   * Where this pass's warnings go. Default the server's logger, which is right for
+   * `fire-routines.ts`; the worker, the only runtime caller, names its own so a filter on `service`
+   * files its sweep complaints under the process that ran them.
+   */
+  logger?: Logger;
   now?: () => Date;
 };
 
@@ -137,6 +152,7 @@ function minuteKey(due: Date): string {
 export async function offerDueRoutines(
   options: RoutineSweepOptions,
 ): Promise<{ offered: string[] }> {
+  const log = options.logger ?? defaultLog;
   const now = options.now?.() ?? new Date();
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
 
@@ -277,6 +293,7 @@ export async function offerDueRoutines(
 export async function dispatchClaimedRoutines(
   options: RoutineSweepOptions,
 ): Promise<RoutineSweepReport> {
+  const log = options.logger ?? defaultLog;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -546,6 +563,7 @@ async function finishOrSay(
   routineId: string,
   reason: string,
 ): Promise<void> {
+  const log = options.logger ?? defaultLog;
   const finished = await options.queue.finish({
     kind: ROUTINE_FIRE_KIND,
     key,

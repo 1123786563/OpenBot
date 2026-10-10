@@ -86,7 +86,16 @@ async function dispatch(routineRunId: string): Promise<void> {
   }
 }
 
-const options: RoutineSweepOptions = { routineStore, queue, dispatch, owner };
+const options: RoutineSweepOptions = {
+  routineStore,
+  queue,
+  dispatch,
+  owner,
+  // The sweep's own warnings (heartbeat, offer, reap, give-up) go out under this process's name,
+  // not the module default's "server": the worker is the only runtime caller of the sweep, and a
+  // filter on `service` should find its complaints here.
+  logger: log,
+};
 
 /** How often both sweep phases run. A laptop's clock, standing in for the CronJob's schedule. */
 const TICK_MS = 30_000;
