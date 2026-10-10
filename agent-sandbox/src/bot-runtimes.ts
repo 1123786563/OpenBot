@@ -31,6 +31,13 @@ type Entry = {
   workspaceDir: string;
   upstream: Upstream | null;
   lastUsedAtMs: number;
+  /**
+   * The mkdir+spawn in flight, if one is. Between the entry landing in the map and `upstream`
+   * being set there is an `await`, so the same Bot's concurrent first requests used to each run
+   * `build` — the second spawn overwrote the first into an orphaned child. Waiters hang off this
+   * promise instead of spawning their own.
+   */
+  starting: Promise<void> | null;
 };
 
 export type BotRuntimes = {
@@ -78,6 +85,29 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
     entries.delete(botId);
   };
 
+  /**
+   * Exactly one mkdir+spawn per entry at a time: the caller that starts the flight owns it, and any
+   * concurrent caller for the same Bot awaits the same promise instead of building a second
+   * upstream that would orphan the first.
+   */
+  const ensureStarted = async (entry: Entry): Promise<void> => {
+    if (entry.starting) {
+      await entry.starting;
+      return;
+    }
+    if (entry.upstream) return;
+    const starting = (async () => {
+      await mkdir(entry.workspaceDir, { recursive: true });
+      build(entry);
+    })();
+    entry.starting = starting;
+    try {
+      await starting;
+    } finally {
+      entry.starting = null;
+    }
+  };
+
   return {
     async getOrSpawn(botId: string): Promise<BotRuntime> {
       if (!isPlainBotId(botId)) throw new UnusableBotIdError(botId);
@@ -92,13 +122,12 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
           workspaceDir: `${workspaceRoot}/${botId}`,
           upstream: null,
           lastUsedAtMs: nowMs(),
+          starting: null,
         };
         entries.set(botId, entry);
-        await mkdir(entry.workspaceDir, { recursive: true });
-        build(entry);
-      } else if (!entry.upstream) {
-        build(entry);
       }
+      entry.lastUsedAtMs = nowMs();
+      await ensureStarted(entry);
       entry.lastUsedAtMs = nowMs();
       return { port: entry.port, workspaceDir: entry.workspaceDir };
     },
