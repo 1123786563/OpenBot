@@ -608,6 +608,9 @@ services:
       OOMOL_CONNECT_ADMIN_TOKEN: ${OPENCONNECTOR_ADMIN_TOKEN:-}
       OOMOL_CONNECT_RUNTIME_TOKEN: ${OPENCONNECTOR_RUNTIME_TOKEN:-}
       OOMOL_CONNECT_ENCRYPTION_KEY: ${OPENCONNECTOR_ENCRYPTION_KEY:-}
+      # Escape hatch for a proxy/VPN whose fake-IP DNS maps public domains into reserved ranges
+      # (198.18.0.0/15, fc00::/7). Empty keeps OpenConnector's egress protection at full strength.
+      OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS: ${OPENCONNECTOR_EGRESS_TRUSTED_HOSTS:-}
     volumes:
       - open-connector-data:/app/data
     ports:
