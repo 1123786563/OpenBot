@@ -90,8 +90,7 @@ type ProviderField = {
 type Vendor = {
   listProviders(): Promise<
     { service: string; name: string; description: string; authType: string | undefined }[]
-  >;
-  listAllActions(): Promise<(OpenConnectorAction & { service: string })[]>;
+  >;  listAllActions(): Promise<(OpenConnectorAction & { service: string })[]>;
   providerFields(service: string, authType: string): Promise<ProviderField[]>;
   putConnection(
     service: string,
@@ -148,22 +147,37 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
   };
 
   const vendor: Vendor = {
-    async listProviders() {
-      const body = await request("/v1/providers", { method: "GET" });
-      return rowsOf(body, "provider directory").flatMap((row) => {
-        if (row === null || typeof row !== "object") return [];
-        const record = row as Record<string, unknown>;
-        if (typeof record.service !== "string" || record.service === "") return [];
-        return [
-          {
-            service: record.service,
-            name: typeof record.name === "string" ? record.name : record.service,
-            description: typeof record.description === "string" ? record.description : "",
-            authType: typeof record.authType === "string" ? record.authType : undefined,
-          },
-        ];
-      });
-    },
+  async listProviders() {
+    const body = await request("/v1/providers", { method: "GET" });
+    return rowsOf(body, "provider directory").flatMap((row) => {
+      if (row === null || typeof row !== "object") return [];
+      const record = row as Record<string, unknown>;
+      if (typeof record.service !== "string" || record.service === "") return [];
+      /*
+       * THE CATALOGUE PUBLISHES AUTH TYPES AS AN ARRAY (`authTypes: ["api_key"]`), not a singular
+       * `authType` — read as the singular, every provider resolved to `undefined` and the whole
+       * 1568-provider directory classified `unsupported`, which the live E2E caught within one
+       * enable press. The display name is `displayName` on the wire (`name` does not exist), so
+       * the read falls through to the service id when even that is absent.
+       */
+      const authTypes = Array.isArray(record.authTypes)
+        ? record.authTypes.filter(
+            (candidate): candidate is string => typeof candidate === "string",
+          )
+        : [];
+      return [
+        {
+          service: record.service,
+          name:
+            typeof record.displayName === "string" && record.displayName !== ""
+              ? record.displayName
+              : record.service,
+          description: typeof record.description === "string" ? record.description : "",
+          authType: pickAuthType(authTypes),
+        },
+      ];
+    });
+  },
     async listAllActions() {
       const body = await request("/v1/actions", { method: "GET" });
       return rowsOf(body, "action directory").flatMap((row) => {
@@ -625,6 +639,21 @@ function rowsOf(body: unknown, noun: string): unknown[] {
  * is the closed direction: the picker hides it, the enable path refuses it, and nobody meets an
  * Add button that can only fail.
  */
+/**
+ * The one member of a provider's published `authTypes` this deployment will drive, by a fixed
+ * priority — a provider may publish several (Airtable lists `oauth2` beside `api_key`), and the
+ * choice must not depend on array order. `api_key` wins over `no_auth` because a keyless read of
+ * a provider that offers a keyed one runs under the vendor's anonymous limits nobody here can see;
+ * `oauth2`-only providers keep no member and land in {@link connectionFor}'s `unsupported`, which
+ * is the closed direction: the picker hides them, nobody meets an Add button that can only fail.
+ */
+function pickAuthType(authTypes: string[]): string | undefined {
+  if (authTypes.includes("api_key")) return "api_key";
+  if (authTypes.includes("custom_credential")) return "custom_credential";
+  if (authTypes.includes("no_auth")) return "no_auth";
+  return undefined;
+}
+
 function connectionFor(authType: string | undefined): BrokerConnection {
   if (authType === "no_auth") return { kind: "no-auth" };
   if (authType === "api_key") return { kind: "fields", authScheme: "API_KEY" };
