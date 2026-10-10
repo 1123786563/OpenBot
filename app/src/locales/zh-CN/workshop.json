@@ -11,7 +11,6 @@
       "usage": "用量"
     },
     "placeholder": {
-      "artifacts": "产物画廊将在下一批就绪。",
       "usage": "用量视图将在下一批就绪。",
       "process": "过程视图随 F5 就绪。"
     }
@@ -46,5 +45,21 @@
     "tooMany": "一次最多 20 个文件。",
     "tooLarge": "单个文件 {{name}} 不能超过 20MB。",
     "refresh": "刷新"
+  },
+  "artifacts": {
+    "empty": "这轮还没有产物。",
+    "download": "下载",
+    "preview": "预览",
+    "previewUnavailable": "文件较大，预览未生成。",
+    "webappPending": "应用预览随分享批次（B14）就绪。",
+    "fileCard": "{{path}}（{{size}}）",
+    "type": {
+      "csv": "表格",
+      "chart": "图表",
+      "report": "报告",
+      "webapp": "应用",
+      "file": "文件",
+      "dataset": "数据集"
+    }
   }
 }
