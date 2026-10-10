@@ -1,13 +1,17 @@
 import { expect, test } from "bun:test";
 import { probeMastraCompatibility } from "../../src/mastra/compatibility";
 
-test("locked Mastra packages stream Agent output through the native AG-UI bridge", async () => {
+test("locked Mastra bridge emits a non-empty native AG-UI text chunk and finishes cleanly", async () => {
   const report = await probeMastraCompatibility();
 
-  expect(report.agentStream.textMessageContent).toBe(true);
+  expect(report.agentStream.textMessageChunk).toBe(true);
   expect(report.agentStream.text).toContain("mastra-loopback-ok");
   expect(report.agentStream.runFinished).toBe(true);
   expect(report.agentStream.runError).toBe(false);
+  expect(report.agentStream.downstreamCanonicalEvent).toBe(
+    "TEXT_MESSAGE_CONTENT",
+  );
+  expect(report.agentStream.normalizationOwner).toBe("Task 6");
 });
 
 test("locked Mastra packages suspend and resume a native workflow", async () => {

@@ -1,5 +1,6 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createRequire } from "node:module";
 import { getLocalAgents } from "@ag-ui/mastra";
+import { createOpenAI } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { InMemoryStore } from "@mastra/core/storage";
@@ -8,7 +9,6 @@ import { MastraServer } from "@mastra/hono";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 import { Hono } from "hono";
-import { createRequire } from "node:module";
 import { lastValueFrom, toArray } from "rxjs";
 import { z } from "zod";
 
@@ -98,12 +98,18 @@ export async function probeMastraCompatibility(): Promise<MastraCompatibilityRep
       memory: new Memory(),
     });
     const agents: Record<string, Agent> = { compatibility: agent };
-    const mastra: Mastra = new Mastra({
+    const mastra = new Mastra({
       agents,
       storage: new InMemoryStore(),
     });
+    // Bun installs the bridge and server peer with separate copies of the same
+    // locked core package; its private class fields make those otherwise
+    // equivalent Mastra types nominally incompatible.
+    const bridgeMastra = mastra as unknown as Parameters<
+      typeof getLocalAgents
+    >[0]["mastra"];
     const aguiAgent = getLocalAgents({
-      mastra,
+      mastra: bridgeMastra,
       resourceId: "compatibility-resource",
     }).compatibility;
     const events = await lastValueFrom(
@@ -112,7 +118,11 @@ export async function probeMastraCompatibility(): Promise<MastraCompatibilityRep
           threadId: crypto.randomUUID(),
           runId: crypto.randomUUID(),
           messages: [
-            { id: crypto.randomUUID(), role: "user", content: "Say the test phrase." },
+            {
+              id: crypto.randomUUID(),
+              role: "user",
+              content: "Say the test phrase.",
+            },
           ],
           tools: [],
           context: [],
@@ -161,10 +171,7 @@ export async function probeMastraCompatibility(): Promise<MastraCompatibilityRep
     const honoMastra = new Mastra({ storage: new InMemoryStore() });
     const honoServer = new MastraServer({ app, mastra: honoMastra });
     await honoServer.init();
-    app.get("/health", (context) =>
-      context.json({ status: "ok", agents: Object.keys(honoMastra.listAgents()) }),
-    );
-    const health = await app.request("/health");
+    const agentsResponse = await app.request("/api/agents");
 
     const memory = new Memory();
     postgresStore = new PostgresStore({
@@ -195,10 +202,15 @@ export async function probeMastraCompatibility(): Promise<MastraCompatibilityRep
       },
       agentStream: {
         textMessageChunk: events.some(
-          (event) => event.type === "TEXT_MESSAGE_CHUNK" && "delta" in event && Boolean(event.delta),
+          (event) =>
+            event.type === "TEXT_MESSAGE_CHUNK" &&
+            "delta" in event &&
+            Boolean(event.delta),
         ),
         text: events
-          .filter((event) => "delta" in event && typeof event.delta === "string")
+          .filter(
+            (event) => "delta" in event && typeof event.delta === "string",
+          )
           .map((event) => event.delta)
           .join(""),
         runFinished: events.some((event) => event.type === "RUN_FINISHED"),
@@ -211,7 +223,7 @@ export async function probeMastraCompatibility(): Promise<MastraCompatibilityRep
         resumedOutput:
           resumedRun.status === "success" ? resumedRun.result.answer : null,
       },
-      honoMount: { status: health.status },
+      honoMount: { status: agentsResponse.status },
       storageConstructor: {
         memory: memory instanceof Memory,
         postgresStore: postgresStore instanceof PostgresStore,
