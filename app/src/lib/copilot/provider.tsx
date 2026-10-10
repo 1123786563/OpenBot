@@ -7,6 +7,7 @@ import { SignInTool } from "./sign-in-tool";
 import "./a2ui.css";
 import { ActiveBotProvider } from "./active-bot";
 import { BotTools } from "./bot-tools";
+import { CodeSandboxTools } from "./code-tools";
 import { ComputerTools } from "./computer-tools";
 import { EscalationTool } from "./escalation-tool";
 import { GalleryTools } from "./gallery-tools";
@@ -58,6 +59,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       {/* Computer tools target the Bot declared by the mounted surface. */}
       <ActiveBotProvider>
         <ComputerTools />
+        <CodeSandboxTools />
         {/* The private sign-in request: a card whose form posts to the server, never to the Bot. */}
         <SignInTool />
         {/*
