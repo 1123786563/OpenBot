@@ -136,13 +136,7 @@ export const usageDailyQueryOptions = queryOptions({
 });
 
 /**
- * Alias of `usageDailyQueryOptions` under the name the redesign spec gives this query, so either
- * import site resolves to the one definition.
- */
-export const billingUsageDailyQueryOptions = usageDailyQueryOptions;
-
-/**
- * The most recent metered events: the line items the aggregate is made of. Always fresh, one
+ * The most recent metered events: the line items behind the aggregate. Always fresh, one
  * fixed server-side page at a time; the page number lives in the route's search params.
  */
 export const usageEventsQueryOptions = (page: number) =>

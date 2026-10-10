@@ -77,7 +77,16 @@
     "eventTokens": "tokens",
     "eventPagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
     "eventPagerPrev": "上一页",
-    "eventPagerNext": "下一页"
+    "eventPagerNext": "下一页",
+    "kpiTotal": "本周期合计",
+    "kpiTokens": "总 tokens",
+    "kpiEvents": "计量事件",
+    "trendTitle": "用量趋势（按天）",
+    "trendTruncated": "图内仅含最近 {{total}} 条事件",
+    "chartEmpty": "本周期还没有按天用量。",
+    "columnTime": "时间",
+    "columnMetric": "指标",
+    "columnAmount": "金额"
   },
   "darkTheme": "深色主题",
   "darkThemeDescription": "在 OpenBot 中使用深色外观。",
