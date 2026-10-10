@@ -36,6 +36,8 @@ export type WorkshopStore = {
     botId: string;
     ownerUserId: string;
   }): Promise<WorkshopSessionRow>;
+  /** The session by its own id, for the paths that address sessions directly (files, uploads). */
+  sessionById(sessionId: string): Promise<WorkshopSessionRow | undefined>;
   /** Bump `last_activity_at`; the idle sweep reads it. */
   touchSession(sessionId: string, at?: Date): Promise<void>;
 
@@ -123,6 +125,15 @@ export function createWorkshopStore(db: Database): WorkshopStore {
           `workshop session for channel ${input.channelId} vanished between insert and read`,
         );
       }
+      return rows[0];
+    },
+
+    async sessionById(sessionId) {
+      const rows = await db
+        .select()
+        .from(workshopSessions)
+        .where(eq(workshopSessions.id, sessionId))
+        .limit(1);
       return rows[0];
     },
 
