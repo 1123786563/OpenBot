@@ -56,6 +56,38 @@ export type BillingEntitlementEntry = {
   description?: string;
 };
 
+/* -------------------------------------------------------------------------- */
+/*  Plan catalog: what the upgrade dialog shows, from deployment config.      */
+/* -------------------------------------------------------------------------- */
+
+/** One billing cycle a plan catalog offers, with the discount it is sold under. */
+export type PlanCatalogCycle = {
+  /** `recurring_monthly` / `monthly` / `recurring_yearly` / `yearly`. */
+  code: "recurring_monthly" | "monthly" | "recurring_yearly" | "yearly";
+  /** The display name: 连续包月 / 1个月 / 连续包年 / 1年. */
+  label: string;
+  /** The settled price, in cents. */
+  priceCents: number;
+  /** The pre-discount price, in cents; null when the cycle is sold at face value. */
+  originalCents: number | null;
+  /** The discount label ("7折"); null when there is no discount to name. */
+  discountLabel: string | null;
+  /** What one period is: a month or a year. */
+  unit: "month" | "year";
+};
+
+/** One plan in the catalog: what it costs and what it grants. */
+export type PlanCatalogEntry = {
+  /** The display name: 标准版 / 高级版 / 旗舰版. */
+  name: string;
+  /** The monthly base credit allowance. */
+  credits: number;
+  /** The plan's benefit list. */
+  features: readonly string[];
+  /** Its billing cycles. */
+  pricing: readonly PlanCatalogCycle[];
+};
+
 /** The subscription facts the entitlements read carries beside the plan. */
 export type BillingEntitlementSubscriptionContext = {
   status: BillingSubscriptionStatus;
@@ -219,6 +251,84 @@ export type BillingInvoicePage = {
     totalPages: number;
     currentPage: number;
     nextPage: number | null;
+  };
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Credits: the local credit ledger, what "套餐与积分" renders.              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Where a credit grant came from. `plan` is the plan's own monthly allowance, `promo` an operator's
+ * campaign, `signin` a recurring check-in reward.
+ */
+export type CreditGrantSource = "plan" | "promo" | "signin";
+
+/** A grant's own life: active until spent or expired. */
+export type CreditGrantStatus = "active" | "exhausted" | "expired";
+
+/**
+ * One credit grant as a person reads it. Credits are decimal numbers with two places; the ledger
+ * stores them as whole units scaled by `CREDIT_SCALE`, this type carries the already-scaled value.
+ */
+export type CreditGrantEntry = {
+  id: string;
+  source: CreditGrantSource;
+  /** The operator's own words for why this was granted ("官方活动发放"). */
+  reason: string | null;
+  /** The grant's total allowance, in credits. */
+  total: number;
+  /** What has been spent of it, in credits. */
+  used: number;
+  /** `total - used`, never negative. */
+  remaining: number;
+  grantedAt: string;
+  expiresAt: string;
+  status: CreditGrantStatus;
+  /** True when the grant has less than 24 hours to live — the red "24小时内过期" cue. */
+  expiringSoon: boolean;
+};
+
+/** One line of the consumption ledger, newest first. */
+export type CreditConsumptionEntry = {
+  id: string;
+  /** The request's business title (the "请求" column's main line). */
+  title: string;
+  /** The request id shown under the title, to be truncated by the client. */
+  requestId: string | null;
+  /** How many credits this call cost. */
+  credits: number;
+  model: string | null;
+  /** The surface that made the call (web/api/cli). */
+  client: string | null;
+  /** ISO-8601 of when it happened. */
+  timestamp: string;
+};
+
+/** One page of the consumption ledger, with what a pager needs to offer the next one. */
+export type CreditConsumptionPage = {
+  entries: readonly CreditConsumptionEntry[];
+  pagination: {
+    totalCount: number;
+    totalPages: number;
+    currentPage: number;
+    nextPage: number | null;
+  };
+};
+
+/**
+ * The whole "套餐与积分" answer, split the way the page splits it: the plan's own base allowance
+ * (the 套餐卡's "套餐基础积分") and the platform reward grants (the "平台奖励积分" block's summary
+ * line "可用 N 个 · 剩余 X 积分").
+ */
+export type CreditSummary = {
+  plan: { total: number; used: number; remaining: number };
+  rewards: {
+    total: number;
+    used: number;
+    remaining: number;
+    /** How many reward grants still have something to spend ("可用 N 个"). */
+    grantCount: number;
   };
 };
 

@@ -5,7 +5,7 @@ import {
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   InvoiceMethodLabel,
@@ -125,7 +125,14 @@ function RouteComponent() {
   const { range, page } = Route.useSearch();
   const navigate = Route.useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
-  const invoices = useQuery(invoicesQueryOptions(windowFor(range), page));
+  /*
+   * The window is memoized on `range` alone: `windowFor` reads the clock, and an unmemoized call
+   * puts a fresh millisecond timestamp in the query key every render — a new key per render is a
+   * new query per render, which is the refetch loop this page once had. The clock is read once per
+   * range change; the page, not the render, is the unit of time here.
+   */
+  const window = useMemo(() => windowFor(range), [range]);
+  const invoices = useQuery(invoicesQueryOptions(window, page));
 
   const setRange = (next: RangeKey) => {
     // A new window invalidates the page number: page 4 of a three-month window is not page 4 of

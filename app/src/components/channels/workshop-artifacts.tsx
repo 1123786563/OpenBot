@@ -64,7 +64,6 @@ function typeLabelKey(type: WorkshopArtifactType) {
       return "artifacts.type.webapp" as const;
     case "dataset":
       return "artifacts.type.dataset" as const;
-    case "file":
     default:
       return "artifacts.type.file" as const;
   }
@@ -157,7 +156,6 @@ function Preview({ artifact }: { artifact: WorkshopArtifact }) {
       return (
         <p className="mt-2 text-xs text-muted-foreground">{artifact.path}</p>
       );
-    case "file":
     default:
       return (
         <p className="mt-2 text-xs text-muted-foreground">{artifact.path}</p>

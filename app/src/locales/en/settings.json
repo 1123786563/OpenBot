@@ -10,7 +10,7 @@
     "componentsGallery": "Components gallery",
     "entitlements": "Entitlements",
     "subscribe": "Subscribe",
-    "plansUsage": "Plans & usage",
+    "plansUsage": "Plans & credits",
     "invoices": "Bills"
   },
   "billing": {
@@ -26,6 +26,7 @@
     "periodLabel": "Billing period",
     "goSubscribe": "Subscribe now",
     "retry": "Retry",
+    "cancel": "Cancel",
     "pagerPrev": "Previous",
     "pagerNext": "Next"
   },
@@ -232,5 +233,69 @@
     "showAll": "Show all",
     "unavailable": "Billing is not enabled here",
     "unavailableDescription": "No billing provider is configured on this deployment, so there are no bills to show."
+  },
+  "creditsPage": {
+    "title": "Plans & credits",
+    "description": "Your plan and credits: the plan's base allowance, the reward credits the platform granted, and every credit this deployment has spent.",
+    "creditUnit": "credits",
+    "remaining": "left",
+    "freePlan": "Trial",
+    "subscriptionTitle": "Subscription plan",
+    "rewardsTitle": "Platform reward credits",
+    "rewardsDescription": "Reward credits from campaigns and check-ins, soonest-to-lapse first.",
+    "consumptionTitle": "Credit usage",
+    "consumptionDescription": "Each credit this deployment spent, newest first.",
+    "unavailable": "Billing is not enabled here",
+    "unavailableDescription": "No billing provider is configured on this deployment, so there are no credits to show.",
+    "emptyGrants": "No reward credits yet.",
+    "emptyConsumption": "No credit usage in that period.",
+    "grantStatus": {
+      "active": "In use",
+      "exhausted": "Spent",
+      "expired": "Expired"
+    },
+    "expiringSoon": "Expires within 24h",
+    "expiresAt": "Expires: {{time}}",
+    "reason": "Granted for: {{reason}}",
+    "rewardsSummary": "{{count}} active · {{remaining}} credits left",
+    "viewAll": "View all",
+    "range": {
+      "today": "Today",
+      "7d": "7 days",
+      "30d": "30 days"
+    },
+    "export": "Export",
+    "columnTime": "Time",
+    "columnRequest": "Request",
+    "columnCredits": "Credits",
+    "columnModel": "Model",
+    "columnClient": "Client",
+    "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries"
+  },
+  "welcomeBanner": {
+    "badge": "Bonus until 10/31",
+    "message": "Welcome to OpenBot. Your first month includes the standard plan's base credits — claim them now!",
+    "claim": "Claim",
+    "claimed": "Claimed {{date}}"
+  },
+  "planCard": {
+    "redeem": "Redeem a code",
+    "upgrade": "Upgrade",
+    "usageTitle": "Plan usage",
+    "baseCredits": "base credits",
+    "resetsAt": "Next allowance reset: {{time}}"
+  },
+  "upgradeDialog": {
+    "title": "Buddy AI plans",
+    "subtitle": "Choose the plan and billing cycle that fits.",
+    "currentPlan": "Current plan: {{plan}}",
+    "unit": {
+      "month": "mo",
+      "year": "yr"
+    },
+    "qrPlaceholder": "Scan to pay",
+    "autoRenew": "Auto-renews the day before expiry; cancel anytime",
+    "agreement": "I have read and agree to the Terms of Service",
+    "pay": "Agree"
   }
 }

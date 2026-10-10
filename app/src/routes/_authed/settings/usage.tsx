@@ -1,100 +1,247 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BillingEmpty } from "@/components/billing/billing-empty";
-import { BillingPager } from "@/components/billing/pager";
-import { QuotaBar } from "@/components/billing/quota-bar";
-import { SubscriptionHero } from "@/components/billing/subscription-hero";
-import { UsageChart } from "@/components/billing/usage-chart";
+import {
+  type ConsumptionRange,
+  ConsumptionTable,
+} from "@/components/billing/consumption-table";
+import { CreditGrantList } from "@/components/billing/credit-grant-list";
+import { PlanCard } from "@/components/billing/plan-card";
+import { UpgradeDialog } from "@/components/billing/upgrade-dialog";
+import { WelcomeBanner } from "@/components/billing/welcome-banner";
 import {
   PageEmpty,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { period } from "@/lib/billing/format";
 import {
-  type BillingPlanUsage,
-  planUsageQueryOptions,
-} from "@/lib/billing/plan-usage";
-import {
-  usageDailyQueryOptions,
-  usageEventsQueryOptions,
-} from "@/lib/billing/queries";
+  type ConsumptionWindow,
+  catalogQueryOptions,
+  creditsConsumptionQueryOptions,
+  creditsGrantsQueryOptions,
+  creditsSummaryQueryOptions,
+  type PlanCatalogEntry,
+} from "@/lib/billing/credits";
+import { BillingUnavailableError } from "@/lib/billing/invoices";
+import { entitlementsQueryOptions } from "@/lib/billing/queries";
 
 export const Route = createFileRoute("/_authed/settings/usage")({
   component: RouteComponent,
   /*
-   * `?eventsPage=` is which page of the metered-event log the reader is on. In the URL rather
-   * than component state, so a reader mid-review can hand someone the exact page they were on.
-   * Absent means the first page.
+   * `?range=` and `?page=` are the consumption window and the page the reader is on, in the URL
+   * rather than component state — the same reason the bill list keeps them there: a reader who
+   * wants to quote "the last 30 days of spending" sends a link, and a filter that reset itself on
+   * reload would make that link useless.
    */
-  validateSearch: (search: Record<string, unknown>): { eventsPage: number } => {
-    const parsed = Number.parseInt(String(search.eventsPage ?? "1"), 10);
-    return Number.isInteger(parsed) && parsed >= 1
-      ? { eventsPage: parsed }
-      : { eventsPage: 1 };
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    range: ConsumptionRange;
+    page: number;
+  } => {
+    const range = String(search.range ?? "7d");
+    const parsed = Number.parseInt(String(search.page ?? "1"), 10);
+    return {
+      range: isRangeKey(range) ? range : "7d",
+      page: Number.isInteger(parsed) && parsed >= 1 ? parsed : 1,
+    };
   },
 });
 
+/** The three quick windows, the same three the consumption table offers. */
+const RANGES: readonly ConsumptionRange[] = ["today", "7d", "30d"];
+
+function isRangeKey(value: string): value is ConsumptionRange {
+  return (RANGES as readonly string[]).includes(value);
+}
+
+/** The window a saved range means, as the two ISO ends the API takes. */
+function windowFor(range: ConsumptionRange): ConsumptionWindow {
+  const to = new Date();
+  const from = new Date();
+  if (range === "today") {
+    from.setHours(0, 0, 0, 0);
+  } else {
+    from.setDate(from.getDate() - (range === "7d" ? 7 : 30));
+  }
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+/** The plan's display name: the catalog's own word, else the code, else nothing. */
+function planNameFor(
+  planCode: string | undefined,
+  catalog: Record<string, PlanCatalogEntry> | undefined,
+): string | undefined {
+  if (!planCode) return undefined;
+  return catalog?.[planCode]?.name ?? planCode;
+}
+
 /**
- * 套餐用量: what this deployment is on, and how much of it is left.
+ * 套餐与积分: what this deployment's plan allows, what the local credit ledger holds, and where
+ * every credit went.
  *
- * The page reads top-down the way the question does: what plan and when does it roll over (one
- * card), what has been used of each resource (one row per resource, with a bar), how the spending
- * was shaped (one bar per day), then the line items that make both up (the raw event log).
+ * The page reads top-down the way the question does: a welcome offer (one banner), the plan and its
+ * base allowance (one card, with the upgrade dialog behind it), the reward grants the platform gave
+ * away (one row per grant), then the line items that spent them (the consumption ledger).
  *
- * Every answer is uncached by design — usage moves with every event the provider accepts, so each
- * query fetches fresh rather than showing a stale number.
+ * Credits are the deployment's own currency, kept in a local ledger; every read is uncached by
+ * design because a balance moves with every accepted call. The plan's own facts (name, period,
+ * reset) come from the entitlements read, the ledger's from the credits reads.
  */
 function RouteComponent() {
   const { t } = useTranslation("settings");
-  const { eventsPage } = Route.useSearch();
-  const plan = useQuery(planUsageQueryOptions);
+  const { range, page } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+
+  const entitlements = useQuery(entitlementsQueryOptions);
+  const summary = useQuery(creditsSummaryQueryOptions);
+  const grants = useQuery(creditsGrantsQueryOptions);
+  const catalog = useQuery(catalogQueryOptions);
+  /*
+   * Same discipline as the bill list's window: `windowFor` reads the clock, and an unmemoized
+   * call changes the query key every render — the refetch loop this ledger once had. One clock
+   * read per range change is one query per range change.
+   */
+  const window = useMemo(() => windowFor(range), [range]);
+  const consumption = useQuery(creditsConsumptionQueryOptions(window, page));
+
+  // A deployment with no billing provider has no credit surface at all, which is a fact about the
+  // deployment and not a failure — said as one, with no retry, because retrying a route that is not
+  // mounted will never work.
+  if (summary.error instanceof BillingUnavailableError) {
+    return (
+      <PageShell
+        title={t("creditsPage.title")}
+        description={t("creditsPage.description")}
+        width="wide"
+      >
+        <Empty className="mt-8 border-border">
+          <EmptyHeader>
+            <EmptyTitle>{t("creditsPage.unavailable")}</EmptyTitle>
+            <EmptyDescription>
+              {t("creditsPage.unavailableDescription")}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </PageShell>
+    );
+  }
+
+  const hasCatalog = !!catalog.data && Object.keys(catalog.data).length > 0;
+  const planName = planNameFor(entitlements.data?.planCode, catalog.data);
 
   return (
     <PageShell
-      title={t("usagePage.title")}
-      description={t("usagePage.description")}
+      title={t("creditsPage.title")}
+      description={t("creditsPage.description")}
       width="wide"
     >
-      {plan.isPending ? (
-        <div className="mt-8 space-y-6">
-          <Skeleton className="h-28 w-full rounded-xl" />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Skeleton className="h-32 rounded-xl" />
-            <Skeleton className="h-32 rounded-xl" />
+      <div className="mt-8">
+        {/* The welcome offer is a one-time grant the deployment remembers; its claim is the write
+            phase three adds, so until then the button is present but does nothing. */}
+        <WelcomeBanner claimed={false} />
+      </div>
+
+      <PageSection title={t("creditsPage.subscriptionTitle")}>
+        {summary.isPending || entitlements.isPending || catalog.isPending ? (
+          <Skeleton className="mt-4 h-40 w-full rounded-xl" />
+        ) : summary.error ? (
+          <LoadError
+            message={(summary.error as Error).message}
+            onRetry={() => void summary.refetch()}
+          />
+        ) : entitlements.error ? (
+          <LoadError
+            message={(entitlements.error as Error).message}
+            onRetry={() => void entitlements.refetch()}
+          />
+        ) : (
+          <PlanCard
+            planName={planName ?? t("creditsPage.freePlan")}
+            planCredits={summary.data.plan}
+            resetsAt={entitlements.data.subscription?.currentPeriodEnd ?? null}
+            onUpgrade={hasCatalog ? () => setUpgradeOpen(true) : undefined}
+          />
+        )}
+      </PageSection>
+
+      <PageSection
+        title={t("creditsPage.rewardsTitle")}
+        description={t("creditsPage.rewardsDescription")}
+      >
+        {grants.isPending ? (
+          <Skeleton className="mt-4 h-32 w-full rounded-xl" />
+        ) : grants.error ? (
+          <LoadError
+            message={(grants.error as Error).message}
+            onRetry={() => void grants.refetch()}
+          />
+        ) : grants.data.grants.length === 0 ? (
+          <PageEmpty>{t("creditsPage.emptyGrants")}</PageEmpty>
+        ) : (
+          <div className="mt-4">
+            <CreditGrantList
+              grants={grants.data.grants}
+              grantCount={summary.data?.rewards.grantCount ?? 0}
+              remaining={summary.data?.rewards.remaining ?? 0}
+            />
           </div>
-          <Skeleton className="h-60 w-full rounded-xl" />
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        </div>
-      ) : plan.error ? (
-        <LoadError
-          message={(plan.error as Error).message}
-          onRetry={() => void plan.refetch()}
-        />
-      ) : !plan.data.active ? (
-        <div className="mt-4">
-          <BillingEmpty message={t("usagePage.noSubscription")} />
-        </div>
-      ) : (
-        <UsageBody plan={plan.data} eventsPage={eventsPage} />
-      )}
+        )}
+      </PageSection>
+
+      <PageSection
+        title={t("creditsPage.consumptionTitle")}
+        description={t("creditsPage.consumptionDescription")}
+      >
+        {consumption.isPending ? (
+          <Skeleton className="mt-4 h-60 w-full rounded-xl" />
+        ) : consumption.error ? (
+          <LoadError
+            message={(consumption.error as Error).message}
+            onRetry={() => void consumption.refetch()}
+          />
+        ) : consumption.data.entries.length === 0 ? (
+          <PageEmpty>{t("creditsPage.emptyConsumption")}</PageEmpty>
+        ) : (
+          <ConsumptionTable
+            entries={consumption.data.entries}
+            pagination={consumption.data.pagination}
+            range={range}
+            onRangeChange={(next) =>
+              void navigate({ search: { range: next, page: 1 } })
+            }
+            onPage={(next) => void navigate({ search: { range, page: next } })}
+            statusTemplate={t("creditsPage.pagerStatus")}
+          />
+        )}
+      </PageSection>
+
+      <UpgradeDialog
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        catalog={catalog.data ?? {}}
+        currentPlanName={planName}
+      />
     </PageShell>
   );
 }
 
 /**
- * What a failed read looks like on this page.
+ * What a failed read looks like on this page: the server's sentence, then one way back in.
  *
- * The server's sentence, then one way back in. Written once because three queries on this screen
- * can each fail, and a reader who has to work out whether the thing that broke is the plan, the
- * trend or the log has been given a puzzle instead of an error.
+ * Written once because three queries on this screen can each fail, and a reader who has to work out
+ * whether the thing that broke is the plan, the grants or the ledger has been given a puzzle
+ * instead of an error.
  */
 function LoadError({
   message,
@@ -114,165 +261,4 @@ function LoadError({
       </Button>
     </div>
   );
-}
-
-/**
- * The period's numbers, once the page knows there is a plan to measure.
- *
- * The daily and event queries live here rather than in the route component, because that is what
- * keeps "no plan" meaning "no requests": they only mount when this component does.
- */
-function UsageBody({
-  plan,
-  eventsPage,
-}: {
-  plan: BillingPlanUsage;
-  eventsPage: number;
-}) {
-  const { t } = useTranslation("settings");
-  const navigate = Route.useNavigate();
-  const daily = useQuery(usageDailyQueryOptions);
-  const events = useQuery(usageEventsQueryOptions(eventsPage));
-
-  return (
-    <>
-      <SubscriptionHero
-        planCode={plan.planCode ?? ""}
-        status={plan.status ?? "active"}
-        currentPeriodStart={plan.currentPeriodStart}
-        currentPeriodEnd={plan.currentPeriodEnd}
-      />
-
-      <PageSection
-        title={t("usagePage.overviewTitle")}
-        description={t("usagePage.overviewDescription")}
-      >
-        {plan.quotas.length === 0 ? (
-          <PageEmpty>{t("usagePage.noQuotas")}</PageEmpty>
-        ) : (
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            {plan.quotas.map((quota) => (
-              <QuotaBar
-                key={quota.metricCode}
-                quota={quota}
-                currency={plan.currency}
-                resetsAt={plan.resetsAt}
-              />
-            ))}
-          </div>
-        )}
-      </PageSection>
-
-      <PageSection
-        title={t("usagePage.trendTitle")}
-        description={period(
-          plan.currentPeriodStart ?? undefined,
-          plan.currentPeriodEnd ?? undefined,
-        )}
-      >
-        {daily.isPending ? (
-          <Skeleton className="mt-4 h-60 w-full rounded-xl" />
-        ) : daily.error ? (
-          <LoadError
-            message={(daily.error as Error).message}
-            onRetry={() => void daily.refetch()}
-          />
-        ) : (
-          <UsageChart daily={daily.data} />
-        )}
-      </PageSection>
-
-      <PageSection
-        title={t("usagePage.eventLog")}
-        description={t("usagePage.eventLogDescription")}
-      >
-        {events.isPending ? (
-          <div className="mt-4 space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : events.error ? (
-          <LoadError
-            message={(events.error as Error).message}
-            onRetry={() => void events.refetch()}
-          />
-        ) : events.data.events.length === 0 ? (
-          <PageEmpty>{t("usagePage.noEvents")}</PageEmpty>
-        ) : (
-          <>
-            {/* Five columns of short values: it scrolls sideways rather than wrapping, and the two
-                token columns are the ones a phone gives up first. */}
-            <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
-              <table className="w-full text-left text-sm">
-                <thead className="text-muted-foreground text-xs uppercase">
-                  <tr className="border-border border-b">
-                    <th className="px-4 py-2 font-medium">
-                      {t("usagePage.columnTime")}
-                    </th>
-                    <th className="px-4 py-2 font-medium">
-                      {t("usagePage.columnMetric")}
-                    </th>
-                    <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">
-                      {t("usagePage.eventIn")}
-                    </th>
-                    <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">
-                      {t("usagePage.eventOut")}
-                    </th>
-                    <th className="px-4 py-2 text-right font-medium">
-                      {t("usagePage.eventTokens")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {events.data.events.map((event) => (
-                    <tr
-                      key={`${event.timestamp}-${event.metricCode}`}
-                      className="border-border border-t"
-                    >
-                      <td className="px-4 py-2 whitespace-nowrap tabular-nums">
-                        {formatEventTime(event.timestamp)}
-                      </td>
-                      <td className="text-muted-foreground px-4 py-2 font-mono text-xs">
-                        {event.metricCode}
-                      </td>
-                      <td className="hidden px-4 py-2 text-right tabular-nums sm:table-cell">
-                        {event.inputTokens ?? "–"}
-                      </td>
-                      <td className="hidden px-4 py-2 text-right tabular-nums sm:table-cell">
-                        {event.outputTokens ?? "–"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {event.tokens ?? "–"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <BillingPager
-              page={eventsPage}
-              totalPages={events.data.pagination.totalPages}
-              totalCount={events.data.pagination.totalCount}
-              hasNext={events.data.pagination.nextPage !== null}
-              onPage={(page) => {
-                void navigate({ search: { eventsPage: page } });
-              }}
-              statusTemplate={t("usagePage.eventPagerStatus")}
-            />
-          </>
-        )}
-      </PageSection>
-    </>
-  );
-}
-
-/** The event row's timestamp: the reader's own short date and time. */
-function formatEventTime(timestamp: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(timestamp));
 }

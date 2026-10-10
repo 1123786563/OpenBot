@@ -10,7 +10,7 @@
     "componentsGallery": "组件库",
     "entitlements": "权益",
     "subscribe": "订阅",
-    "plansUsage": "套餐用量",
+    "plansUsage": "套餐与积分",
     "invoices": "账单管理"
   },
   "billing": {
@@ -26,6 +26,7 @@
     "periodLabel": "本周期",
     "goSubscribe": "去订阅",
     "retry": "重试",
+    "cancel": "取消",
     "pagerPrev": "上一页",
     "pagerNext": "下一页"
   },
@@ -232,5 +233,69 @@
     "showAll": "查看全部",
     "unavailable": "此部署未启用计费",
     "unavailableDescription": "未配置计费服务，因此没有账单记录。"
+  },
+  "creditsPage": {
+    "title": "套餐与积分",
+    "description": "查看您的订阅套餐与积分信息：当前套餐与基础积分、平台奖励积分，以及每一笔积分消耗的明细。",
+    "creditUnit": "积分",
+    "remaining": "剩余",
+    "freePlan": "体验版",
+    "subscriptionTitle": "订阅计划",
+    "rewardsTitle": "平台奖励积分",
+    "rewardsDescription": "平台活动与签到发放的奖励积分，按到期时间先后排列。",
+    "consumptionTitle": "积分消耗明细",
+    "consumptionDescription": "每一笔积分消耗的明细，按时间倒序。",
+    "unavailable": "此部署未启用计费",
+    "unavailableDescription": "未配置计费服务，因此没有积分记录。",
+    "emptyGrants": "暂无奖励积分。",
+    "emptyConsumption": "该时间范围内还没有积分消耗记录。",
+    "grantStatus": {
+      "active": "使用中",
+      "exhausted": "已用完",
+      "expired": "已过期"
+    },
+    "expiringSoon": "24小时内过期",
+    "expiresAt": "到期时间: {{time}}",
+    "reason": "下发原因：{{reason}}",
+    "rewardsSummary": "可用{{count}}个·剩余{{remaining}}积分",
+    "viewAll": "查看全部",
+    "range": {
+      "today": "今天",
+      "7d": "7天",
+      "30d": "30天"
+    },
+    "export": "导出",
+    "columnTime": "时间",
+    "columnRequest": "请求",
+    "columnCredits": "积分消耗",
+    "columnModel": "模型",
+    "columnClient": "使用端",
+    "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条"
+  },
+  "welcomeBanner": {
+    "badge": "限时加赠 10/31截止",
+    "message": "欢迎体验 OpenBot，首月赠送个人标准版基础积分权益，快点击领取吧！",
+    "claim": "领取",
+    "claimed": "{{date}}已领取"
+  },
+  "planCard": {
+    "redeem": "使用兑换卡",
+    "upgrade": "升级套餐",
+    "usageTitle": "套餐用量",
+    "baseCredits": "套餐基础积分",
+    "resetsAt": "下次权益周期更新时间：{{time}}"
+  },
+  "upgradeDialog": {
+    "title": "Buddy AI 套餐",
+    "subtitle": "选择适合你的套餐与计费周期。",
+    "currentPlan": "当前套餐：{{plan}}",
+    "unit": {
+      "month": "月",
+      "year": "年"
+    },
+    "qrPlaceholder": "扫码支付",
+    "autoRenew": "到期前一天自动续费，随时可取消",
+    "agreement": "我已阅读并同意《服务协议》",
+    "pay": "同意协议"
   }
 }
