@@ -13,6 +13,7 @@ import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
 import nav from "../../locales/en/nav.json";
+import tenant from "../../locales/en/tenant.json";
 import zhApprovals from "../../locales/zh-CN/approvals.json";
 import zhAdmin from "../../locales/zh-CN/admin.json";
 import zhAgents from "../../locales/zh-CN/agents.json";
@@ -25,6 +26,7 @@ import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
 import zhNav from "../../locales/zh-CN/nav.json";
+import zhTenant from "../../locales/zh-CN/tenant.json";
 
 /**
  * Translation namespaces, split by feature area so a namespace stays reviewable and can be
@@ -45,6 +47,7 @@ export const NAMESPACES = [
   "skills",
   "market",
   "errors",
+  "tenant",
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -103,6 +106,7 @@ void i18next
         skills,
         market,
         errors,
+        tenant,
       },
       "zh-CN": {
         common: zhCommon,
@@ -117,6 +121,7 @@ void i18next
         skills: zhSkills,
         market: zhMarket,
         errors: zhErrors,
+        tenant: zhTenant,
       },
     },
     fallbackLng: FALLBACK_LANGUAGE,

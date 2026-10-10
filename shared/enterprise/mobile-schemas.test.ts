@@ -120,26 +120,42 @@ describe("PublicRunEventSchema", () => {
 describe("SubmitMessageSchema and SubmissionSchema", () => {
   test("accepts a submit and its receipted submission", () => {
     expect(
-      SubmitMessageSchema.safeParse({ threadId: "th1", content: "hi" }).success,
+      SubmitMessageSchema.safeParse({
+        clientMessageId: "m1",
+        text: "hi",
+        attachmentIds: [],
+      }).success,
     ).toBe(true);
     expect(
       SubmissionSchema.safeParse({
-        id: "s1",
-        threadId: "th1",
-        status: "queued",
+        messageId: "s1",
+        runId: "r1",
+        accepted: true,
       }).success,
     ).toBe(true);
   });
 
   test("rejects empty content and extras", () => {
     expect(
-      SubmitMessageSchema.safeParse({ threadId: "th1", content: "" }).success,
+      SubmitMessageSchema.safeParse({
+        clientMessageId: "m1",
+        text: "",
+        attachmentIds: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      SubmitMessageSchema.safeParse({
+        clientMessageId: "m1",
+        text: "hi",
+        attachmentIds: [],
+        principalId: "forged",
+      }).success,
     ).toBe(false);
     expect(
       SubmissionSchema.safeParse({
-        id: "s1",
-        threadId: "th1",
-        status: "queued",
+        messageId: "s1",
+        runId: "r1",
+        accepted: true,
         epoch: 1,
       }).success,
     ).toBe(false);

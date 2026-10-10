@@ -9,6 +9,7 @@
     "passwords": "Passwords",
     "componentsGallery": "Components gallery",
     "entitlements": "Entitlements",
+    "subscribe": "Subscribe",
     "usage": "Usage"
   },
   "billing": {
@@ -18,6 +19,38 @@
     "includedDescription": "The capabilities this deployment is entitled to.",
     "noCodes": "This plan grants no extra capabilities.",
     "inactive": "This deployment has no active plan."
+  },
+  "subscribe": {
+    "title": "Subscribe",
+    "description": "Buy this deployment's plan with Alipay or WeChat Pay. An administrator starts a purchase; everybody reads the result here.",
+    "notEnabled": "Purchases are not available on this deployment. No payment channel has been configured.",
+    "notAdmin": "Only an administrator can start a purchase. The catalog is shown read-only.",
+    "noPlans": "No plan is purchasable here yet. An administrator configures the plan catalog.",
+    "plansTitle": "Plans",
+    "plansDescription": "One plan at a time: a new plan can only be bought while no subscription is active.",
+    "perMonth": "per month",
+    "providerTitle": "Pay with",
+    "providerDescription": "The channel to pay through. The order is created on that channel only.",
+    "provider": {
+      "alipay": "Alipay",
+      "wechat": "WeChat Pay"
+    },
+    "buy": "Continue to payment",
+    "activeSubscriptionNotice": "This deployment is already on the “{{planCode}}” plan. Another plan can only be bought after it ends.",
+    "checkoutTitle": "Scan to pay",
+    "checkoutDescription": "The order for “{{planCode}}” is waiting for payment.",
+    "qrAlt": "Payment QR code",
+    "qrFailed": "The QR code could not be drawn. Cancel the order and start again.",
+    "expiresIn": "Code expires in {{time}}",
+    "cancel": "Cancel this order",
+    "statusPending": "Waiting for your payment…",
+    "statusPaid": "Payment received. Your plan is active.",
+    "statusPaidActivating": "Payment received. Your plan is being set up — this finishes on its own.",
+    "statusPaidFailed": "Payment was received, but the plan could not be set up. Ask an administrator to check the payment records.",
+    "statusCanceled": "This order was cancelled. Nothing was charged.",
+    "statusExpired": "This order expired before payment arrived. Start again for a new code.",
+    "statusBlocked": "This payment could not be verified and the order was stopped. Ask an administrator to check the payment records.",
+    "backToPlans": "Back to plans"
   },
   "usagePage": {
     "title": "Usage",

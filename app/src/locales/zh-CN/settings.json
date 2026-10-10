@@ -9,6 +9,7 @@
     "passwords": "密码",
     "componentsGallery": "组件库",
     "entitlements": "权益",
+    "subscribe": "订阅",
     "usage": "使用记录"
   },
   "billing": {
@@ -18,6 +19,38 @@
     "includedDescription": "这个部署被授权使用的能力。",
     "noCodes": "当前套餐没有附带额外能力。",
     "inactive": "这个部署没有生效中的套餐。"
+  },
+  "subscribe": {
+    "title": "订阅",
+    "description": "用支付宝或微信支付为本部署购买套餐。购买由管理员发起，所有人都可以在这里查看结果。",
+    "notEnabled": "此部署暂不支持购买。支付渠道尚未配置。",
+    "notAdmin": "只有管理员可以发起购买。套餐目录以只读方式展示。",
+    "noPlans": "目前没有可购买的套餐。套餐目录由管理员配置。",
+    "plansTitle": "套餐",
+    "plansDescription": "一次一个套餐：只有当前没有生效中的订阅时，才能购买新套餐。",
+    "perMonth": "按月计费",
+    "providerTitle": "支付方式",
+    "providerDescription": "选择支付渠道。订单只会在该渠道上创建。",
+    "provider": {
+      "alipay": "支付宝",
+      "wechat": "微信支付"
+    },
+    "buy": "继续支付",
+    "activeSubscriptionNotice": "此部署已在“{{planCode}}”套餐上。需等当前套餐结束后才能购买新套餐。",
+    "checkoutTitle": "扫码支付",
+    "checkoutDescription": "“{{planCode}}”的订单正在等待支付。",
+    "qrAlt": "支付二维码",
+    "qrFailed": "二维码无法生成。请取消订单后重新发起。",
+    "expiresIn": "二维码 {{time}} 后过期",
+    "cancel": "取消此订单",
+    "statusPending": "等待支付中……",
+    "statusPaid": "已收到付款，套餐已生效。",
+    "statusPaidActivating": "已收到付款，正在开通套餐——无需操作，会自动完成。",
+    "statusPaidFailed": "已收到付款，但套餐未能开通。请管理员检查支付记录。",
+    "statusCanceled": "订单已取消，未产生扣款。",
+    "statusExpired": "订单在支付前已过期。重新发起即可获得新二维码。",
+    "statusBlocked": "该笔支付无法核实，订单已终止。请管理员检查支付记录。",
+    "backToPlans": "返回套餐"
   },
   "usagePage": {
     "title": "使用记录",

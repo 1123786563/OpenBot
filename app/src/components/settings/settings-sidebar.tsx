@@ -6,6 +6,7 @@ import {
   IconPlug,
   IconSettings,
   IconShieldCheck,
+  IconShoppingCart,
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
@@ -56,11 +57,22 @@ const ITEMS = [
     linkOptions: { to: "/settings/components-gallery" },
   },
   {
-    /* What the deployment's plan unlocks. The plan's own name is the provider's word, not this UI's. */
+    /*
+     * What the deployment's plan unlocks. The plan's own name is the provider's word, not this UI's.
+     * Now `exact`: `/settings/billing` prefixes the subscribe page beneath it, and a non-exact entry
+     * would stay lit there — the same reason General above is exact.
+     */
     title: "sidebar.entitlements",
     icon: IconShieldCheck,
-    exact: false,
+    exact: true,
     linkOptions: { to: "/settings/billing" },
+  },
+  {
+    /* Buying the plan itself: catalog, QR payment, and the order until it settles. */
+    title: "sidebar.subscribe",
+    icon: IconShoppingCart,
+    exact: false,
+    linkOptions: { to: "/settings/billing/subscribe" },
   },
   {
     /* What has been used of that plan in the current billing period. */

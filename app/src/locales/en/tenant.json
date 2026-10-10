@@ -1,0 +1,28 @@
+{
+  "channels": {
+    "title": "Tenant channels",
+    "description": "Your personal conversations inside one tenant, read under the tenant you select.",
+    "tenant": {
+      "label": "Tenant",
+      "aria": "Select a tenant",
+      "placeholder": "Pick a tenant",
+      "empty": "You are not a member of any active tenant yet."
+    },
+    "list": {
+      "title": "Your channels",
+      "description": "The channels you own in this tenant, newest first. Select one to see its record.",
+      "empty": "No channels in this tenant yet.",
+      "more": "Next page"
+    },
+    "detail": {
+      "title": "Channel record",
+      "description": "What this deployment holds for the selected channel. Runs are read by run id under /runs/:id, and a channel record carries none, so this record is the whole state this page can honestly show.",
+      "bot": "Bot",
+      "thread": "Thread",
+      "mode": "Mode",
+      "status": "Status",
+      "statusActive": "active",
+      "statusArchived": "archived"
+    }
+  }
+}

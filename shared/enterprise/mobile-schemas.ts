@@ -57,22 +57,27 @@ export const PublicRunEventSchema = z
 
 export type PublicRunEvent = z.infer<typeof PublicRunEventSchema>;
 
-/** 客户端向会话提交一条消息 */
+/**
+ * 客户端向会话提交一条消息（conversations-subsystem §3.2 冻结给 C07）：
+ * threadId/channelId 走请求路径不入 body，幂等键 clientMessageId 必填，
+ * .strict() 让 principalId/tenantId/token 等身份与凭证字段天然被拒。
+ */
 export const SubmitMessageSchema = z
   .object({
-    threadId: z.string().min(1),
-    content: z.string().min(1),
+    clientMessageId: z.string().min(1).max(128),
+    text: z.string().min(1).max(16000),
+    attachmentIds: z.array(z.string().min(1)).max(8),
   })
   .strict();
 
 export type SubmitMessage = z.infer<typeof SubmitMessageSchema>;
 
-/** 已受理的提交（服务端视角的排队结果） */
+/** 已受理的提交（202 语义：accepted 为字面 true，受理 ≠ 执行完成） */
 export const SubmissionSchema = z
   .object({
-    id: z.string().min(1),
-    threadId: z.string().min(1),
-    status: z.string().min(1),
+    messageId: z.string().min(1),
+    runId: z.string().min(1),
+    accepted: z.literal(true),
   })
   .strict();
 
