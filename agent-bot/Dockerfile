@@ -8,7 +8,7 @@ USER bun
 # The lockfile as well as the manifest: `--frozen-lockfile` with no lockfile present resolves afresh
 # and exits 0, so the file has to be here for the flag to mean anything.
 COPY --chown=bun:bun agent-bot/package.json agent-bot/bun.lock ./agent-bot/
-RUN cd agent-bot && bun install --frozen-lockfile
+RUN cd agent-bot && bun install --frozen-lockfile --network-concurrency=8
 
 # Preserve the repo layout so `../../shared/bot-prompt` resolves the same in the image and locally.
 COPY --chown=bun:bun shared ./shared

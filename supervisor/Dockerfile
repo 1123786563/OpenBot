@@ -14,7 +14,7 @@ WORKDIR /app
 # and exits 0. This is the process whose compromise costs the host, so what it runs is the tree that
 # was reviewed, not whatever the registry had this morning.
 COPY supervisor/package.json supervisor/bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --network-concurrency=8
 
 COPY --from=spire /opt/spire/bin/spire-server /usr/local/bin/spire-server
 

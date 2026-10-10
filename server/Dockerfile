@@ -19,7 +19,7 @@ COPY bunfig.toml bunfig.toml
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
 COPY worker/package.json worker/package.json
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --network-concurrency=8
 
 
 FROM deps AS app-build
