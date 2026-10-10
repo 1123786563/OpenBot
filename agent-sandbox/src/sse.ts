@@ -29,6 +29,8 @@ export type SseForwardOptions = {
   upstreamPath?: string;
   /** Called for every forwarded block — the proxy's activity clock for this Bot. */
   onEvent?: () => void;
+  /** Called exactly once when the forwarded stream ends, however it ends. */
+  onClose?: () => void;
 };
 
 /**
@@ -43,9 +45,19 @@ export async function forwardEvents(
 ): Promise<Response> {
   const doFetch = options.fetchImpl ?? fetch;
   const keepaliveMs = options.keepaliveMs ?? KEEPALIVE_INTERVAL_MS;
-  const upstream = await doFetch(
-    `http://127.0.0.1:${options.upstreamPort}${options.upstreamPath ?? "/event"}`,
-  );
+  let upstream: Response;
+  try {
+    upstream = await doFetch(
+      `http://127.0.0.1:${options.upstreamPort}${options.upstreamPath ?? "/event"}`,
+    );
+  } catch {
+    // A refused connection is an answer, not an exception the caller has to catch: the same
+    // 503 shape as a non-ok upstream, so the server side has one refusal path to handle.
+    return Response.json(
+      { error: "The bot's event stream is not available." },
+      { status: 503 },
+    );
+  }
   if (!upstream.ok || !upstream.body) {
     return Response.json(
       { error: "The bot's event stream is not available." },
@@ -58,47 +70,88 @@ export async function forwardEvents(
   const encoder = new TextEncoder();
 
   let buffer = "";
-  let carry: string[] = [];
-  let finished = false;
+  let closed = false;
+  /** onClose fires exactly once, whichever of the endings gets there first. */
+  let closeNotified = false;
+  const notifyClose = () => {
+    if (closeNotified) return;
+    closeNotified = true;
+    options.onClose?.();
+  };
 
   const stream = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      // Loop until there is something to enqueue (or the stream ends): a pull that completes
-      // without enqueuing is legal per spec, but runtimes differ on whether they call pull
-      // again — a dropped-noise block landed here exactly once and Bun sat waiting forever.
-      while (carry.length === 0 && !finished) {
-        const read = await Promise.race([
-          reader.read().then((chunk) => ({ kind: "chunk" as const, chunk })),
-          sleep(keepaliveMs).then(() => ({ kind: "quiet" as const })),
-        ]);
-        if (read.kind === "quiet") {
-          controller.enqueue(encoder.encode(": keepalive\n\n"));
-          return;
+    start(controller) {
+      const guard = (action: () => void) => {
+        if (closed) return;
+        try {
+          action();
+        } catch {
+          // The client detached mid-write: the cancel handler closes us out.
         }
-        if (read.chunk.done) {
-          finished = true;
-          controller.enqueue(encoder.encode(": upstream closed\n\n"));
-          return;
-        }
-        buffer += decoder.decode(read.chunk.value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() ?? "";
-        for (const block of blocks) {
-          const forwarded = forwardBlock(block);
-          if (forwarded) {
-            carry.push(forwarded);
-            options.onEvent?.();
+      };
+
+      // PUSH, NOT PULL: Bun's serve only demands stream data on its own schedule, and a
+      // pull-driven stream went wholly silent in the deployed container (unit tests passed
+      // because the reader demanded every byte). The pump pushes whatever arrives the moment
+      // it arrives, and the keepalive timer pushes the quiet-signal itself.
+      const pump = async (): Promise<void> => {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            guard(() => controller.enqueue(encoder.encode(": upstream closed\n\n")));
+            closed = true;
+            try {
+              controller.close();
+            } catch {
+              // Already closed by cancel: fine.
+            }
+            notifyClose();
+            return;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+          for (const block of blocks) {
+            const forwarded = forwardBlock(block);
+            if (forwarded) {
+              guard(() => controller.enqueue(encoder.encode(forwarded)));
+              options.onEvent?.();
+            }
           }
         }
-      }
-      if (finished && carry.length === 0) {
-        controller.close();
-        return;
-      }
-      controller.enqueue(encoder.encode(carry.shift()!));
+      };
+
+      const keepalive = setInterval(() => {
+        guard(() => controller.enqueue(encoder.encode(": keepalive\n\n")));
+      }, keepaliveMs);
+
+      const finish = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(keepalive);
+        void reader.cancel().catch(() => undefined);
+        try {
+          controller.close();
+        } catch {
+          // Already closed: fine.
+        }
+        notifyClose();
+      };
+
+      void pump().catch(() => finish());
+
+      // When the client detaches, cancel fires: stop the pump and the timer, one onClose.
+      // The reader.cancel() the pump awaits makes its next read resolve done on its own, but
+      // the timer needs the explicit stop either way.
+      return () => {
+        clearInterval(keepalive);
+        void reader.cancel().catch(() => undefined);
+      };
     },
     cancel() {
-      void reader.cancel();
+      closed = true;
+      void reader.cancel().catch(() => undefined);
+      notifyClose();
     },
   });
 
@@ -131,6 +184,3 @@ export function forwardBlock(block: string): string | null {
   if (family === "other") return null;
   return `event: ${family}\ndata: ${payload}\n\n`;
 }
-
-const sleep = (ms: number) =>
-  new Promise<"quiet">((resolve) => setTimeout(() => resolve("quiet"), ms));

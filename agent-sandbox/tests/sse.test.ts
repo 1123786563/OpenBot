@@ -111,4 +111,50 @@ describe("forwardEvents (the stream)", () => {
     const response = await forwardEvents({ upstreamPort: 1 });
     expect(response.status).toBe(503);
   });
+
+  test("a refused connection (fetch rejects) answers the same 503 JSON", async () => {
+    // The connect itself throwing — port closed, socket refused — is an answer, not an
+    // exception the proxy has to catch: one refusal shape for every way upstream is absent.
+    const response = await forwardEvents({
+      upstreamPort: 4400,
+      fetchImpl: (() =>
+        Promise.reject(new Error("connect ECONNREFUSED"))) as never,
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toContain("not available");
+  });
+
+  test("onClose fires exactly once when the stream tears down", async () => {
+    const upstream = serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: {"type":"message.part.delta","properties":{"field":"text","delta":"a"}}\n\n`,
+              ),
+            );
+            // Then nothing: the test cancels the downstream and expects onClose.
+          },
+        });
+        return new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+    const port = (upstream as unknown as { port: number }).port;
+    let closed = 0;
+    const response = await forwardEvents({
+      upstreamPort: port,
+      onClose: () => {
+        closed += 1;
+      },
+    });
+    await response.body!.cancel();
+    expect(closed).toBe(1);
+    upstream.stop(true);
+  });
 });

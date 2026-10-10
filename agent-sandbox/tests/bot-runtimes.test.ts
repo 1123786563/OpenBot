@@ -90,33 +90,28 @@ describe("createBotRuntimes", () => {
     await runtimes.stopBot("alpha");
   });
 
-  test("空闲且静默都超时的 bot 在清扫时被回收并释放端口", async () => {
-    const { spawned, spawnFn } = fakeSpawnFactory();
-    let now = 0;
-    const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
-    await runtimes.getOrSpawn("alpha");
-    now = 1500; // 超过 idleMs=1000 且超过 activityTimeoutMs=1000：双钟皆尽
-    const { idle, stalled } = runtimes.reapIdle(now);
-    expect(stalled).toEqual(["alpha"]);
-    expect(idle).toEqual([]);
-    expect(runtimes.size()).toBe(0);
-    // 再次访问重新拉起，端口复用（注册表按 botId 记忆端口）
-    const again = await runtimes.getOrSpawn("alpha");
-    expect(again.port).toBe(4500);
-    expect(spawned.length).toBe(2);
-    await runtimes.stopBot("alpha");
-  });
-
-  test("刚使用过的 bot 不会被误回收", async () => {
+  test("无监听者的空闲 bot 走 idle 回收（原始行为保留）", async () => {
     let now = 0;
     const { spawnFn } = fakeSpawnFactory();
     const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
     await runtimes.getOrSpawn("alpha");
-    now = 500;
-    await runtimes.getOrSpawn("alpha"); // 刷新 lastUsed 与 lastActivity
-    now = 1200; // 距上次使用/活动 700ms < 1000ms
-    expect(runtimes.reapIdle(1200)).toEqual({ idle: [], stalled: [] });
-    await runtimes.stopBot("alpha");
+    now = 1500; // idleMs=1000 已过；无 /events 监听者 → 普通 idle
+    const { idle, stalled } = runtimes.reapIdle(1500);
+    expect(idle).toEqual(["alpha"]);
+    expect(stalled).toEqual([]);
+    expect(runtimes.size()).toBe(0);
+  });
+
+  test("有流监听者但静默超时 → stalled 而非 idle", async () => {
+    let now = 0;
+    const { spawnFn } = fakeSpawnFactory();
+    const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
+    await runtimes.getOrSpawn("alpha");
+    runtimes.noteStreamOpen("alpha"); // 一个 /events 监听者在场
+    now = 2500; // 双钟皆尽（idle 2500 > 1000、静默 2500 > 1000）
+    const { idle, stalled } = runtimes.reapIdle(2500);
+    expect(stalled).toEqual(["alpha"]);
+    expect(idle).toEqual([]);
   });
 
   test("流上持续有事件的 bot 即使请求空闲也不回收（S5 活动超时语义）", async () => {
@@ -124,6 +119,7 @@ describe("createBotRuntimes", () => {
     const { spawnFn } = fakeSpawnFactory();
     const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
     await runtimes.getOrSpawn("alpha");
+    runtimes.noteStreamOpen("alpha");
     now = 1200; // 请求已空闲 1200ms > idleMs=1000
     runtimes.markActivity("alpha"); // 但流刚转发了事件块
     now = 1400; // 距活动 200ms < activityTimeoutMs=1000
@@ -131,16 +127,17 @@ describe("createBotRuntimes", () => {
     await runtimes.stopBot("alpha");
   });
 
-  test("流静默超过活动超时的 bot 被回收并报告为 stalled", async () => {
+  test("监听者全部退出后回到 idle 判定（计数不泄漏）", async () => {
     let now = 0;
     const { spawnFn } = fakeSpawnFactory();
     const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => now });
     await runtimes.getOrSpawn("alpha");
-    now = 2500; // 双钟皆尽（idle 2500ms、静默 2500ms 都 > 1000）
-    const { idle, stalled } = runtimes.reapIdle(2500);
-    expect(stalled).toEqual(["alpha"]);
-    expect(idle).toEqual([]);
-    expect(runtimes.size()).toBe(0);
+    runtimes.noteStreamOpen("alpha");
+    runtimes.noteStreamClose("alpha"); // 监听者退出
+    now = 1500; // 无监听者 → idle 而非 stalled
+    const { idle, stalled } = runtimes.reapIdle(1500);
+    expect(idle).toEqual(["alpha"]);
+    expect(stalled).toEqual([]);
   });
 
   test("stopAll 停掉全部 bot（SIGTERM 退出路径）", async () => {

@@ -137,10 +137,28 @@ export function createProxyHandler(
     if (url.pathname === "/events") {
       if (request.method !== "GET")
         return Response.json({ error: "Use GET." }, { status: 405 });
-      return forwardEvents({
-        upstreamPort: runtime.port,
-        onEvent: () => runtimes.markActivity(botId),
-      });
+      // The listener count is what splits the reaper's two endings: a quiet stream WITH this
+      // listener is a stall; a quiet runtime WITHOUT any is just idle. Open before the stream
+      // exists, close when it tears down — the count must not leak on either path.
+      runtimes.noteStreamOpen(botId);
+      try {
+        const response = await forwardEvents({
+          upstreamPort: runtime.port,
+          onEvent: () => runtimes.markActivity(botId),
+          onClose: () => runtimes.noteStreamClose(botId),
+        });
+        if (response.status !== 200) {
+          runtimes.noteStreamClose(botId);
+          return response;
+        }
+        return response;
+      } catch {
+        runtimes.noteStreamClose(botId);
+        return Response.json(
+          { error: "The bot's event stream is not available." },
+          { status: 503 },
+        );
+      }
     }
 
     // Abort is forwarded verbatim: the upstream abort is opencode's own, and the wrapper adds
