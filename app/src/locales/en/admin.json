@@ -790,13 +790,12 @@
       "title": "Connection",
       "descriptionOauth": "This vendor answers as whoever is asking. The deployment registers an OAuth client, and each person connects their own account, so a Bot only ever sees what that person can see.",
       "descriptionBuiltin": "Built into this deployment. There is no vendor to reach and no credential to hold — a call runs as whoever asked.",
-      "descriptionBrokered": "Reached through Composio, which holds each person's own account.",
+      "descriptionBrokered": "Reached through {{broker}}, which holds each person's own account.",
       "descriptionBearer": "What this deployment presents to the vendor. One credential, used for everybody.",
       "builtinRow": "Nothing to configure. These tools run inside this deployment, on the tables it already owns.",
       "builtInBadge": "Built in",
       "howReached": "How this is reached",
-      "howReachedDescription": "This app is reached through Composio, which holds the account. This deployment sends one key and the name of whoever is asking, so each person connects their own and a Bot sees only what that person can see. There is no token to paste.",
-      "throughComposio": "Through Composio",
+      "howReachedDescription": "This app is reached through {{broker}}, which holds the account. This deployment sends one key and the name of whoever is asking, so each person connects their own and a Bot sees only what that person can see. There is no token to paste.",
       "accessToken": "Access token",
       "accessTokenDescription": "Sent as a bearer token on every call to this vendor.",
       "held": "Held",
@@ -811,7 +810,8 @@
       "documentation": "Documentation",
       "vendorDocumentation": "Vendor documentation",
       "builtinDocs": "What these tools offer, from the people who maintain them.",
-      "vendorDocs": "What this server offers, from the people who maintain it."
+      "vendorDocs": "What this server offers, from the people who maintain it.",
+      "throughBroker": "Through {{broker}}"
     },
     "redirect": {
       "dynamic": "The deployment registers its redirect URI itself, so there is nothing to add at the vendor.",
@@ -960,7 +960,7 @@
   },
   "brokered": {
     "noConsentPage": "This app is connected with a key you hold rather than through a consent screen, so there was no page to send you to and nothing was connected. Reload this page and press Connect again.",
-    "keyMissing": "Set COMPOSIO_API_KEY on this deployment. Without it there is no broker to reach, so this account can be neither connected nor ended from here. The app stays enabled and every grant on its tools still stands.",
+    "keyMissing": "Set {{env}} on this deployment. Without it there is no broker to reach, so this account can be neither connected nor ended from here.",
     "needsNoAccount": "{{title}} needs no account. A Bot granted these tools can use it as it is.",
     "lastCheckedOn": "Connected with a key you provided, last checked {{date}}.",
     "checkUnclean": "A check against {{title}} was made with your key and did not come back clean — that may be the key, and it may be {{title}} itself. The account still stands at Composio, so press Re-check to try again, or disconnect it here and connect again with a fresh key.",

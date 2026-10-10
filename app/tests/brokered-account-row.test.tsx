@@ -1198,6 +1198,8 @@ function accountState(overrides: Partial<BrokeredAccount>): BrokeredAccount {
      * check a key against today — and not the record `probe` above carries.
      */
     checkable: false,
+    /* Composio's own shape: these cases are about sentences, and every {{broker}}/{{env}} case overrides it. */
+    broker: { name: "Composio", env: "COMPOSIO_API_KEY" },
     recheck: () => {},
     rechecking: false,
     requestFields: () => {},
@@ -1258,6 +1260,26 @@ test("an app needing no account offers nothing to press", () => {
   // account here to make, so there is no control.
   expect(view.queryByRole("button")).toBeNull();
   expect(view.getByText(/Gmail needs no account/)).toBeTruthy();
+});
+
+test("an unconfigured OpenConnector row names its own env vars, not Composio's", () => {
+  const view = renderRow(
+    accountState({
+      kind: "fields",
+      configured: false,
+      broker: {
+        name: "OpenConnector",
+        env: "OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN",
+      },
+    }),
+  );
+
+  // The whole point of the sentence in this state is naming the setting to set — and naming the
+  // WRONG broker's setting is what the live browser test caught an OpenConnector app saying.
+  expect(
+    view.getByText(/Set OPENCONNECTOR_ADMIN_TOKEN and OPENCONNECTOR_RUNTIME_TOKEN/),
+  ).toBeTruthy();
+  expect(view.queryByText(NAMES_THE_SETTING)).toBeNull();
 });
 
 test("Re-check appears only where a check is possible, and asks when pressed", async () => {
@@ -2492,6 +2514,7 @@ function AccountProbe() {
     serverId: APP_KEY,
     brokered: true,
     configured: true,
+    broker: { name: "Composio", env: "COMPOSIO_API_KEY" },
     // Recorded connected, unverified, and with nothing ever spent on the key — the row a press of
     // Re-check below is made against, and the row it must fall back to once that press is undone.
     recorded: true,

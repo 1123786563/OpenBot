@@ -790,13 +790,12 @@
       "title": "连接",
       "descriptionOauth": "此服务提供方以发起请求者的身份应答。部署注册一个 OAuth 客户端，每个人连接自己的账户，因此 Bot 只能看到该人能看到的内容。",
       "descriptionBuiltin": "内置于本部署。没有要连接的服务提供方，也没有要保存的凭据——调用以发起请求者的身份运行。",
-      "descriptionBrokered": "通过 Composio 访问，它持有每个人自己的账户。",
+      "descriptionBrokered": "通过 {{broker}} 访问，它持有每个人自己的账户。",
       "descriptionBearer": "本部署呈现给服务提供方的内容。一个凭据，供所有人使用。",
       "builtinRow": "无需配置。这些工具运行在本部署内部，使用它已拥有的表。",
       "builtInBadge": "内置",
       "howReached": "访问方式",
-      "howReachedDescription": "此应用通过 Composio 访问，由它持有账户。本部署发送一个密钥和发起请求者的名称，因此每个人连接自己的账户，Bot 只能看到该人能看到的内容。没有要粘贴的令牌。",
-      "throughComposio": "通过 Composio",
+      "howReachedDescription": "此应用通过 {{broker}} 访问，由它持有账户。本部署只发送一个密钥和提问者的名字，因此每个人连接自己的账户，Bot 只能看到该人能看到的内容。无需粘贴任何令牌。",
       "accessToken": "访问令牌",
       "accessTokenDescription": "在此服务提供方的每次调用中作为令牌发送。",
       "held": "已持有",
@@ -811,7 +810,8 @@
       "documentation": "文档",
       "vendorDocumentation": "服务提供方文档",
       "builtinDocs": "这些工具提供的功能，来自维护它们的人。",
-      "vendorDocs": "此服务器提供的功能，来自维护它的人。"
+      "vendorDocs": "此服务器提供的功能，来自维护它的人。",
+      "throughBroker": "通过 {{broker}}"
     },
     "redirect": {
       "dynamic": "部署会自行注册其重定向 URI，因此无需在服务提供方添加任何内容。",
@@ -960,7 +960,7 @@
   },
   "brokered": {
     "noConsentPage": "此应用是使用你持有的密钥连接的，而不是通过授权页面，因此没有页面可去，也没有连接任何内容。请重新加载此页面并再次按“连接”。",
-    "keyMissing": "请在此部署上设置 COMPOSIO_API_KEY。没有它就无法连接代理，因此此账户既无法从这里连接也无法从这里终止。应用保持启用，其工具上的所有授权仍然有效。",
+    "keyMissing": "请在此部署上设置 {{env}}。没有它就无法连接代理，因此此账户既无法从这里连接也无法从这里终止。",
     "needsNoAccount": "{{title}}无需账户。被授予这些工具的 Bot 可以直接使用它。",
     "lastCheckedOn": "已使用你提供的密钥连接，上次检查于 {{date}}。",
     "checkUnclean": "曾用你的密钥对 {{title}} 进行过一次检查且未正常返回——可能是密钥的问题，也可能是 {{title}} 本身的问题。账户仍保留在 Composio，请按“重新检查”再试一次，或在此断开并用新密钥重新连接。",

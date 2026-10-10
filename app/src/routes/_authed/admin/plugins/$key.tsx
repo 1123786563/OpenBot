@@ -44,7 +44,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { isBrokeredProvenance } from "@/lib/brokered-provenance";
+import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import {
   addCuratedServerMutationOptions,
@@ -396,10 +396,22 @@ function RouteComponent() {
    * `connectSelf` above stays: it is the `user-oauth` row's Connect, which is a different row with
    * no Disconnect beside it and nothing brokered to confirm.
    */
+  /*
+   * THE BROKER THIS ROW WAS ENABLED THROUGH, as the Connection card names it three times and the
+   * unconfigured sentence names its env vars. Reading the flag beside it: an OpenConnector app
+   * with Composio's flag said "Key missing" while its own broker stood configured — the state the
+   * live browser test caught.
+   */
+  const broker = brokerDisplay(server?.provenance);
+  const brokerConfigured =
+    server?.provenance === "open-connector"
+      ? (plugins.data?.openConnectorConfigured ?? false)
+      : (plugins.data?.composioConfigured ?? false);
   const brokeredAccount = useBrokeredAccount({
     authScheme: server?.authScheme ?? null,
     brokered: auth === "brokered",
-    configured: plugins.data?.composioConfigured ?? false,
+    configured: brokerConfigured,
+    broker,
     recorded: shared ? (sharedConnection?.connected ?? false) : youConnected,
     report: setError,
     // Back to this page afterwards, not to the personal settings screen.
@@ -660,7 +672,9 @@ function RouteComponent() {
                 ? t("pluginDetail.connection.descriptionBuiltin")
                 : auth === "brokered"
                   ? /* The row below says how, at length. This says whose account it is, which is the part that decides what an administrator has to do here — which is nothing. */
-                    t("pluginDetail.connection.descriptionBrokered")
+                    t("pluginDetail.connection.descriptionBrokered", {
+                      broker: broker.name,
+                    })
                   : t("pluginDetail.connection.descriptionBearer")
           }
           title={t("pluginDetail.connection.title")}
@@ -721,12 +735,16 @@ function RouteComponent() {
                     {t("pluginDetail.connection.howReached")}
                   </ItemTitle>
                   <ItemDescription>
-                    {t("pluginDetail.connection.howReachedDescription")}
+                    {t("pluginDetail.connection.howReachedDescription", {
+                      broker: broker.name,
+                    })}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <span className="text-muted-foreground text-xs">
-                    {t("pluginDetail.connection.throughComposio")}
+                    {t("pluginDetail.connection.throughBroker", {
+                      broker: broker.name,
+                    })}
                   </span>
                 </ItemActions>
               </Item>

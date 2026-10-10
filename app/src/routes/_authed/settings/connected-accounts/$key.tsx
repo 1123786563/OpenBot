@@ -36,7 +36,7 @@ import {
   personalConnections,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
-import { isBrokeredProvenance } from "@/lib/brokered-provenance";
+import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
@@ -146,6 +146,7 @@ function RouteComponent() {
     authScheme: server?.authScheme ?? null,
     brokered,
     configured: brokerConfigured(server, plugins.data),
+    broker: brokerDisplay(server?.provenance),
     recorded: connection !== undefined,
     report: setNotice,
     returnTo: "settings",
