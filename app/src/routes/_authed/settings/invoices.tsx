@@ -99,6 +99,19 @@ const RANGE_MONTHS: Record<RangeKey, number | null> = {
   all: null,
 };
 
+/*
+ * The label keys, spelled out rather than built with a template literal: i18next's `t` is typed
+ * over the keys it can actually find, and a `invoicesPage.ranges.${RangeKey}` string is not one of
+ * them. Spelling four of them out is also what makes a missing translation a build error rather
+ * than a chip reading "invoicesPage.ranges.3m".
+ */
+const RANGE_LABELS = {
+  "3m": "invoicesPage.ranges.3m",
+  "6m": "invoicesPage.ranges.6m",
+  "12m": "invoicesPage.ranges.12m",
+  all: "invoicesPage.ranges.all",
+} as const satisfies Record<RangeKey, string>;
+
 /** The window a saved range means, as the two ISO ends the API takes. */
 function windowFor(range: RangeKey): InvoiceWindow {
   const months = RANGE_MONTHS[range];
@@ -147,12 +160,12 @@ function RouteComponent() {
             }}
           >
             <SelectTrigger aria-label={t("invoicesPage.rangeLabel")}>
-              <SelectValue>{t(`invoicesPage.ranges.${range}`)}</SelectValue>
+              <SelectValue>{t(RANGE_LABELS[range])}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {RANGES.map((key) => (
                 <SelectItem key={key} value={key}>
-                  {t(`invoicesPage.ranges.${key}`)}
+                  {t(RANGE_LABELS[key])}
                 </SelectItem>
               ))}
             </SelectContent>

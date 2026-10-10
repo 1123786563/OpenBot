@@ -38,6 +38,7 @@ import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admi
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsBillingRouteImport } from './routes/_authed/settings/billing'
+import { Route as AuthedSettingsInvoicesRouteImport } from './routes/_authed/settings/invoices'
 import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/settings/passwords'
 import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
 import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
@@ -208,6 +209,11 @@ const AuthedSettingsBillingRoute = AuthedSettingsBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
+const AuthedSettingsInvoicesRoute = AuthedSettingsInvoicesRouteImport.update({
+  id: '/invoices',
+  path: '/invoices',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsPasswordsRoute = AuthedSettingsPasswordsRouteImport.update({
   id: '/passwords',
   path: '/passwords',
@@ -367,6 +373,7 @@ export interface FileRoutesByFullPath {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/billing': typeof AuthedSettingsBillingRoute
+  '/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/billing': typeof AuthedSettingsBillingRoute
+  '/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
@@ -473,6 +481,7 @@ export interface FileRoutesById {
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
   '/_authed/settings/billing': typeof AuthedSettingsBillingRoute
+  '/_authed/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/_authed/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
@@ -529,6 +538,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/billing'
+    | '/settings/invoices'
     | '/settings/passwords'
     | '/settings/usage'
     | '/sign-in/$requestId'
@@ -580,6 +590,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/billing'
+    | '/settings/invoices'
     | '/settings/passwords'
     | '/settings/usage'
     | '/sign-in/$requestId'
@@ -634,6 +645,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
     | '/_authed/settings/billing'
+    | '/_authed/settings/invoices'
     | '/_authed/settings/passwords'
     | '/_authed/settings/usage'
     | '/_authed/sign-in/$requestId'
@@ -873,6 +885,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsBillingRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/invoices': {
+      id: '/_authed/settings/invoices'
+      path: '/invoices'
+      fullPath: '/settings/invoices'
+      preLoaderRoute: typeof AuthedSettingsInvoicesRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/settings/passwords': {
       id: '/_authed/settings/passwords'
       path: '/passwords'
@@ -1093,6 +1112,7 @@ const AuthedAdminRouteRouteWithChildren =
 
 interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsBillingRoute: typeof AuthedSettingsBillingRoute
+  AuthedSettingsInvoicesRoute: typeof AuthedSettingsInvoicesRoute
   AuthedSettingsPasswordsRoute: typeof AuthedSettingsPasswordsRoute
   AuthedSettingsUsageRoute: typeof AuthedSettingsUsageRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
@@ -1105,6 +1125,7 @@ interface AuthedSettingsRouteRouteChildren {
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsBillingRoute: AuthedSettingsBillingRoute,
+  AuthedSettingsInvoicesRoute: AuthedSettingsInvoicesRoute,
   AuthedSettingsPasswordsRoute: AuthedSettingsPasswordsRoute,
   AuthedSettingsUsageRoute: AuthedSettingsUsageRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
