@@ -12,6 +12,7 @@ import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
 import { DICTATION_HTTP_IDLE_SECONDS } from "../../shared/dictation";
 import { getLogger } from "../../shared/logger";
 import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
+import { initProcessTracing } from "../../shared/trace";
 import { workOwner } from "../../shared/work-owner";
 import { createActivityStore } from "./activity/activity";
 import {
@@ -2890,6 +2891,12 @@ repeatAfterEach(async () => {
     log.warn({ err: error }, "[channels] conversations could not be named");
   }
 }, 10_000);
+
+/*
+ * Trace context propagation and, when a collector is configured, trace export. Installed
+ * beside the audit exporter below so the first request already runs inside a trace.
+ */
+initProcessTracing("server", process.env);
 
 /*
  * Enterprise controls (server/src/admin): capability switches, SSO-required, SCIM offboarding,
