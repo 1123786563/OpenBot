@@ -446,6 +446,341 @@ test("reconciler advances past multiple unresolved batches and finalizes a later
   }
 });
 
+test("malformed intent reconciliation orders both worker retries behind conversation lock", async () => {
+  const token = randomUUID().replaceAll("-", "").slice(0, 20);
+  const threadId = `${prefix}-malformed-race-${token}`;
+  const clientMessageKey = `${prefix}-malformed-key-${token}`;
+  const exactClientMessageKey = `${prefix}-exact-after-malformed-${token}`;
+  const malformedMessageId = randomUUID();
+  const exactMessageId = randomUUID();
+  const heldAttachmentId = randomUUID();
+  const tag = `m2r1_${token}`;
+  const logTable = `${tag}_updates`;
+  const triggerName = `${tag}_trigger`;
+  const functionName = `${tag}_fn`;
+  const quoteIdentifier = (value: string) => {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/.test(value))
+      throw new Error("invalid test identifier");
+    return `"${value}"`;
+  };
+  const literal = (value: string) => `'${value.replaceAll("'", "''")}'`;
+  const qualifiedLogTable = `public.${quoteIdentifier(logTable)}`;
+  const blockerKey = JSON.stringify(["conversation", tenantId, threadId]);
+  const initialUpdatedAt = new Date(Date.now() - 60_000);
+  const inspected: string[] = [];
+  let saveMessageCalls = 0;
+  let releaseBlocker!: () => void;
+  let blockerLocked!: () => void;
+  let reportBlockerPid!: (pid: number) => void;
+  const release = new Promise<void>((resolve) => (releaseBlocker = resolve));
+  const locked = new Promise<void>((resolve) => (blockerLocked = resolve));
+  const blockerPidReady = new Promise<number>((resolve) => {
+    reportBlockerPid = resolve;
+  });
+  let blocker: Promise<unknown> | undefined;
+  let workers: Promise<unknown>[] = [];
+  let testFailure: unknown;
+  const cleanupFailures: unknown[] = [];
+  const reconciler = createMastraMessageIntentReconciler({
+    data: dataDatabase!,
+    mastraStorage: {
+      async getStore() {
+        return {
+          async getStore() {
+            return {
+              async saveMessages() {
+                saveMessageCalls += 1;
+              },
+            };
+          },
+        };
+      },
+      async withConversationLock(_scope, _binding, operation) {
+        return operation();
+      },
+      async inspectIntentMessage(_binding, expected) {
+        inspected.push(expected.messageId);
+        return expected.messageId === exactMessageId ? "exact" : "absent";
+      },
+    } as never,
+  });
+
+  try {
+    await setupDb()
+      .insert(attachments)
+      .values({
+        id: heldAttachmentId,
+        channelId,
+        uploadedBy: reconcileActorId,
+        name: "malformed-intent-held-attachment.txt",
+        mimeType: "text/plain",
+        sizeBytes: 5,
+        bytes: Buffer.from("held!"),
+      });
+    await setupDb().insert(enterpriseConversations).values({
+      tenantId,
+      workspaceId,
+      principalId: reconcilePrincipalId,
+      threadId,
+      storageBackend: "mastra",
+      backendVersion: 1,
+    });
+    await setupDb()
+      .insert(mastraMessageIntents)
+      .values([
+        {
+          tenantId,
+          threadId,
+          clientMessageKey,
+          messageId: malformedMessageId,
+          digest: `malformed-${token}`,
+          reservedSeq: 1,
+          actorId: reconcileActorId,
+          principalId: reconcilePrincipalId,
+          backendVersion: 1,
+          attachmentIds: [heldAttachmentId, "invalid-attachment-id"],
+          state: "pending",
+          createdAt: initialUpdatedAt,
+          updatedAt: initialUpdatedAt,
+        },
+        {
+          tenantId,
+          threadId,
+          clientMessageKey: exactClientMessageKey,
+          messageId: exactMessageId,
+          digest: `exact-${token}`,
+          reservedSeq: 2,
+          actorId: reconcileActorId,
+          principalId: reconcilePrincipalId,
+          backendVersion: 1,
+          attachmentIds: [],
+          state: "pending",
+          createdAt: new Date(initialUpdatedAt.getTime() + 1),
+          updatedAt: new Date(initialUpdatedAt.getTime() + 1),
+        },
+      ]);
+    await setupDb().insert(mastraMessageIntentAttachments).values({
+      tenantId,
+      threadId,
+      clientMessageKey,
+      attachmentId: heldAttachmentId,
+    });
+    await setupDb().execute(
+      sql.raw(
+        `CREATE TABLE ${qualifiedLogTable} (observation_seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, updated_at timestamptz NOT NULL)`,
+      ),
+    );
+    await setupDb().execute(
+      sql.raw(`CREATE FUNCTION public.${quoteIdentifier(functionName)}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+        BEGIN
+          IF NEW.tenant_id = ${literal(tenantId)}
+            AND NEW.thread_id = ${literal(threadId)}
+            AND NEW.client_message_key = ${literal(clientMessageKey)}
+            AND NEW.updated_at IS DISTINCT FROM OLD.updated_at THEN
+            INSERT INTO ${qualifiedLogTable} (updated_at) VALUES (NEW.updated_at);
+          END IF;
+          RETURN NEW;
+        END
+      $$`),
+    );
+    await setupDb().execute(
+      sql.raw(
+        `CREATE TRIGGER ${quoteIdentifier(triggerName)} BEFORE UPDATE ON public.mastra_message_intents FOR EACH ROW EXECUTE FUNCTION public.${quoteIdentifier(functionName)}()`,
+      ),
+    );
+
+    blocker = setupDb().transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${blockerKey}, 0))`,
+      );
+      const pidResult = await tx.execute(sql`SELECT pg_backend_pid() AS pid`);
+      reportBlockerPid(Number(firstQueryRow(pidResult)?.pid));
+      blockerLocked();
+      await release;
+    });
+    await locked;
+    const blockerPid = await blockerPidReady;
+    let firstSettled = false;
+    let secondSettled = false;
+    const firstWorker = reconciler
+      .reconcilePendingForTenant(tenantId, 1)
+      .then((result) => {
+        firstSettled = true;
+        return result;
+      });
+    const secondWorker = reconciler
+      .reconcilePendingForTenant(tenantId, 1)
+      .then((result) => {
+        secondSettled = true;
+        return result;
+      });
+    workers = [firstWorker, secondWorker];
+    const bothWaiting = await waitForAdvisoryLockWaiters(blockerPid, 2);
+    expect(bothWaiting).toBe(true);
+    expect(firstSettled).toBe(false);
+    expect(secondSettled).toBe(false);
+
+    releaseBlocker();
+    await blocker;
+    const workerOutcomes = await Promise.all(workers);
+    expect(workerOutcomes).toHaveLength(2);
+    for (const outcome of workerOutcomes) {
+      expect(outcome).toMatchObject({
+        scanned: 1,
+        finalized: 0,
+        pending: 1,
+        mismatch: 1,
+      });
+    }
+    const updateResult = await setupDb().execute(
+      sql.raw(
+        `SELECT observation_seq, updated_at FROM ${qualifiedLogTable} ORDER BY observation_seq`,
+      ),
+    );
+    const updateRows = Array.isArray(updateResult)
+      ? updateResult
+      : ((
+          updateResult as {
+            rows?: Array<{
+              observation_seq: number | bigint;
+              updated_at: Date;
+            }>;
+          }
+        ).rows ?? []);
+    expect(updateRows).toHaveLength(2);
+    expect(Number(updateRows[1]!.observation_seq)).toBeGreaterThan(
+      Number(updateRows[0]!.observation_seq),
+    );
+    expect(updateRows[0]!.updated_at.getTime()).toBeGreaterThan(
+      initialUpdatedAt.getTime(),
+    );
+    expect(updateRows[1]!.updated_at.getTime()).toBeGreaterThan(
+      updateRows[0]!.updated_at.getTime(),
+    );
+    const hasStrictTimestampProgression = (rows: typeof updateRows): boolean =>
+      rows.every(
+        (row, index) =>
+          index === 0 ||
+          row.updated_at.getTime() > rows[index - 1]!.updated_at.getTime(),
+      );
+    expect(hasStrictTimestampProgression(updateRows)).toBe(true);
+    expect(hasStrictTimestampProgression([...updateRows].reverse())).toBe(
+      false,
+    );
+    const [malformed] = await setupDb()
+      .select({
+        state: mastraMessageIntents.state,
+        attachmentIds: mastraMessageIntents.attachmentIds,
+      })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+    expect(malformed).toEqual({
+      state: "pending",
+      attachmentIds: [heldAttachmentId, "invalid-attachment-id"],
+    });
+    const [heldAttachment] = await setupDb()
+      .select({ attachedAt: attachments.attachedAt })
+      .from(attachments)
+      .where(eq(attachments.id, heldAttachmentId));
+    expect(heldAttachment?.attachedAt).toBeNull();
+    const pendingReference = await setupDb()
+      .select({ attachmentId: mastraMessageIntentAttachments.attachmentId })
+      .from(mastraMessageIntentAttachments)
+      .where(
+        eq(mastraMessageIntentAttachments.clientMessageKey, clientMessageKey),
+      );
+    expect(pendingReference).toEqual([{ attachmentId: heldAttachmentId }]);
+    expect(inspected).toEqual([]);
+
+    const later = await reconciler.reconcilePendingForTenant(tenantId, 1);
+    expect(later).toEqual({
+      scanned: 1,
+      finalized: 1,
+      pending: 0,
+      absent: 0,
+      mismatch: 0,
+    });
+    expect(inspected).toEqual([exactMessageId]);
+    expect(saveMessageCalls).toBe(0);
+  } catch (error) {
+    testFailure = error;
+  } finally {
+    releaseBlocker();
+    await Promise.allSettled([...(blocker ? [blocker] : []), ...workers]);
+    const clean = async (operation: () => Promise<unknown>) => {
+      try {
+        await operation();
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    };
+    await clean(() =>
+      setupDb().execute(
+        sql.raw(
+          `DROP TRIGGER IF EXISTS ${quoteIdentifier(triggerName)} ON public.mastra_message_intents`,
+        ),
+      ),
+    );
+    await clean(() =>
+      setupDb().execute(
+        sql.raw(
+          `DROP FUNCTION IF EXISTS public.${quoteIdentifier(functionName)}()`,
+        ),
+      ),
+    );
+    await clean(() =>
+      setupDb().execute(sql.raw(`DROP TABLE IF EXISTS ${qualifiedLogTable}`)),
+    );
+    await clean(() =>
+      setupDb()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, threadId)),
+    );
+    await clean(() =>
+      setupDb()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, threadId)),
+    );
+    await clean(() =>
+      setupDb()
+        .delete(enterpriseConversations)
+        .where(
+          and(
+            eq(enterpriseConversations.tenantId, tenantId),
+            eq(enterpriseConversations.threadId, threadId),
+          ),
+        ),
+    );
+    await clean(() =>
+      setupDb().delete(attachments).where(eq(attachments.id, heldAttachmentId)),
+    );
+    await clean(async () => {
+      const remaining = await setupDb().execute(sql`
+        SELECT
+          EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = ${triggerName} AND NOT tgisinternal) AS trigger_exists,
+          EXISTS (SELECT 1 FROM pg_proc AS procedure JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace WHERE namespace.nspname = 'public' AND procedure.proname = ${functionName}) AS function_exists,
+          EXISTS (SELECT 1 FROM pg_class AS relation JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace WHERE namespace.nspname = 'public' AND relation.relname = ${logTable}) AS table_exists,
+          EXISTS (SELECT 1 FROM enterprise_conversations WHERE tenant_id = ${tenantId} AND thread_id = ${threadId}) AS conversation_exists,
+          EXISTS (SELECT 1 FROM mastra_message_intents WHERE tenant_id = ${tenantId} AND thread_id = ${threadId}) AS intent_exists,
+          EXISTS (SELECT 1 FROM attachments WHERE id = ${heldAttachmentId}) AS attachment_exists
+      `);
+      expect(firstQueryRow(remaining)).toEqual({
+        trigger_exists: false,
+        function_exists: false,
+        table_exists: false,
+        conversation_exists: false,
+        intent_exists: false,
+        attachment_exists: false,
+      });
+    });
+  }
+  if (cleanupFailures.length || testFailure !== undefined)
+    throw new AggregateError(
+      [...(testFailure === undefined ? [] : [testFailure]), ...cleanupFailures],
+      `malformed reconciliation fixture cleanup failed: trigger=${triggerName} function=${functionName} table=${logTable} thread=${threadId} attachment=${heldAttachmentId} key=${clientMessageKey}`,
+    );
+});
+
 const legacyChannelLockKey = (id: string) =>
   JSON.stringify(["legacy", "channel", id]);
 
@@ -495,6 +830,28 @@ async function waitForAnyAdvisoryLockWaiter(): Promise<boolean> {
       ) as waiting
     `);
     if (firstQueryRow(result)?.waiting === true) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return false;
+}
+
+async function waitForAdvisoryLockWaiters(
+  blockerPid: number,
+  expectedCount: number,
+): Promise<boolean> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const result = await setupDb().execute(sql`
+      SELECT count(DISTINCT activity.pid)::int AS waiter_count
+      FROM pg_locks AS locks
+      JOIN pg_stat_activity AS activity USING (pid)
+      WHERE locks.locktype = 'advisory'
+        AND NOT locks.granted
+        AND ${blockerPid} = ANY(pg_blocking_pids(activity.pid))
+        AND activity.query LIKE '%pg_advisory_xact_lock%'
+    `);
+    if (Number(firstQueryRow(result)?.waiter_count ?? 0) >= expectedCount)
+      return true;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   return false;
