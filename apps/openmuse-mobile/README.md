@@ -4,20 +4,20 @@ A shared React Native workspace for iOS, Android, and the web preview. The clien
 
 ## Demos
 
-[![OpenMuse on iPhone — watch the 38-second demo](../../assets/demos/2026-09-16/mobile.png)](../../assets/demos/2026-09-16/mobile.mp4)
+[![OpenMuse on iPhone — watch the 38-second demo](https://raw.githubusercontent.com/CopilotKit/openmuse/1ac68f3/assets/demos/2026-09-16/mobile.png)](https://raw.githubusercontent.com/CopilotKit/openmuse/1ac68f3/assets/demos/2026-09-16/mobile.mp4)
 
-[iPhone · 38 seconds](../../assets/demos/2026-09-16/mobile.mp4) · [Desktop web · 42 seconds](../../assets/demos/2026-09-16/web.mp4) · [Recording setup](../../docs/DEMO.md)
+[iPhone · 38 seconds](https://raw.githubusercontent.com/CopilotKit/openmuse/1ac68f3/assets/demos/2026-09-16/mobile.mp4) · [Desktop web · 42 seconds](https://raw.githubusercontent.com/CopilotKit/openmuse/1ac68f3/assets/demos/2026-09-16/web.mp4) · [Recording setup](https://github.com/CopilotKit/openmuse/blob/1ac68f3/docs/DEMO.md)
 
 Meet OpenMuse's capybara in two different journeys: Hacker News and CopilotKit on iPhone; reading a school-trip email and researching aquarium exhibits on desktop. Results appear inline in chat, with **Take control** opening the same browser session. Send and Stop share the input pill's primary control.
 
 ## Run
 
-Start the API from the repository root, then:
+Start the API server first (in OpenBot: the `server` workspace; in upstream OpenMuse: the repo root), then run from this directory:
 
 ```sh
-pnpm --dir apps/mobile web
-pnpm --dir apps/mobile ios
-pnpm --dir apps/mobile android
+pnpm web
+pnpm ios
+pnpm android
 ```
 
 The default API is `http://localhost:8787`, or `http://10.0.2.2:8787` on the Android emulator. Set `EXPO_PUBLIC_API_URL` to your reachable server URL for a physical device or deployment. Live mode asks for the server access key; local mode opens the fictional workspace automatically. Tokens stay in memory.
@@ -27,11 +27,11 @@ PDFs use `react-native-pdf` and `react-native-blob-util` in an Expo **developmen
 ## Checks
 
 ```sh
-pnpm --dir apps/mobile typecheck
-node --experimental-strip-types --test apps/mobile/test/date-time.test.ts
-pnpm --dir apps/mobile build:web
-pnpm --dir apps/mobile build:ios
-pnpm --dir apps/mobile build:android
+pnpm typecheck
+node --experimental-strip-types --test test/date-time.test.ts
+pnpm build:web
+pnpm build:ios
+pnpm build:android
 ```
 
 The `build:ios` and `build:android` commands validate and export platform JavaScript/Hermes bundles. They do not create signed installable apps. `ios` and `android` run Expo’s native development-build workflows and need the platform toolchains.

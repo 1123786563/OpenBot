@@ -1,4 +1,4 @@
-import { localDateTime } from "../../../packages/domain/src/date-time.ts";
+import { localDateTime } from "../packages/domain/src/date-time.ts";
 
 export { localDateTime };
 

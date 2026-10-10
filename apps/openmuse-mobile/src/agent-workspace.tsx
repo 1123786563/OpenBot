@@ -12,7 +12,7 @@ import type {
   AgentTask,
   AgentWorkspace,
   CreateTaskInput,
-} from "../../../packages/domain/src/agent";
+} from "../packages/domain/src/agent";
 import { useWorkspace } from "./workspace";
 
 interface AgentContextValue {

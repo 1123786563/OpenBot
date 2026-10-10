@@ -9,8 +9,8 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Image, Pressable, Text, View } from "react-native";
-import type { BrowserSession } from "../../../packages/domain/src";
-import type { ComputerSnapshot } from "../../../packages/domain/src/computer";
+import type { BrowserSession } from "../packages/domain/src";
+import type { ComputerSnapshot } from "../packages/domain/src/computer";
 import { browserAddress } from "./browser-address";
 import { useComputerDraft } from "./computer-drafts";
 import { computerStatus } from "./computer-status";

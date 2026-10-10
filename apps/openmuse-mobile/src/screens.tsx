@@ -37,7 +37,7 @@ import type {
   BrowserSession,
   CalendarEvent,
   EmailDraft,
-} from "../../../packages/domain/src";
+} from "../packages/domain/src";
 import { API_URL } from "./api";
 import { browserAddress } from "./browser-address";
 import { localDateTime, startOfZonedDay, zonedInstant } from "./date-time";
