@@ -26,6 +26,17 @@ type SandboxStatus =
   | { kind: "not_configured"; reason: string }
   | { kind: "busy" };
 
+/**
+ * What app.ts mounts: the routes factory closes over the wiring (store, lock, bus,
+ * orchestrator, sandbox clients) at the boot file, and receives the auth pair here. canUseBot
+ * stays a required parameter of THIS factory — the deployment must answer "who may act as
+ * this Bot" in the same breath as it mounts the workshop.
+ */
+export type WorkshopRoutesFactory = (input: {
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+  canUseBot: BotAccessCheck;
+}) => Hono<{ Variables: AppVariables }>;
+
 export type WorkshopRoutesDeps = {
   store: WorkshopStore;
   bus: TurnEventBus;

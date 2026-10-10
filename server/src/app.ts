@@ -51,10 +51,12 @@ import {
 import type { PaymentService } from "./billing/payments/service";
 import {
   createBillingAdminRoutes,
+  createBillingCreditRoutes,
   createBillingRoutes,
   createBillingStatementRoutes,
   createBillingWebhookRoutes,
 } from "./billing/routes";
+import type { Credits } from "./billing/credits";
 import type { BillingStatements } from "./billing/statements";
 import type { BillingService } from "./billing/types";
 import {
@@ -68,6 +70,7 @@ import type { ThreadIdentity } from "./channels/thread-identity";
 import { createThreadRoutes } from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
 import { type CodeRunGatewayFactory, createCodeSandboxRoutes } from "./codesandbox/routes";
+import { type WorkshopRoutesFactory } from "./workshop/routes";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -106,6 +109,9 @@ import type { MarketplaceStore } from "./marketplace/store";
 import type { MemoryIngestion } from "./memory/ingestion";
 import { createMemoryRoutes } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
+import { createMobileBffActivity } from "./mobile-bff/activity";
+import { createMobileBffRoutes } from "./mobile-bff/routes";
+import { createMobileBffWorkspace } from "./mobile-bff/workspace";
 import { parsePageLimit } from "./paging";
 import { createPasswordRoutes, createSignInRoutes } from "./passwords/routes";
 import type { SignInService } from "./passwords/service";
@@ -527,6 +533,21 @@ export function createApp(
    * Absent mounts neither path, which is what a free deployment should look like from outside.
    */
   statements?: BillingStatements,
+  /**
+   * The credit-ledger reads: 套餐与积分 (`/api/billing/credits/*`). APPENDED LAST for the same
+   * reason `statements` is: positional. Local only — the credit ledger lives in this deployment's
+   * own database, so it has no provider dependency; absent mounts no credit path.
+   */
+  credits?: Credits,
+  /**
+   * The workshop: a Bot's working surface — turns, files, artifacts, the SSE stream — behind
+   * canUseBot like every other Bot-scoped route. APPENDED LAST, same reason as `credits`.
+   *
+   * A factory rather than a router so the assembly decides the wiring (store, lock, bus,
+   * orchestrator) in one place; the factory itself is built by the index assembly where the
+   * Redis/no-Redis branch lives.
+   */
+  workshopRoutes?: WorkshopRoutesFactory,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
@@ -1433,6 +1454,18 @@ export function createApp(
       createCodeSandboxRoutes(requireUser, canUseBot, codeRunGatewayFactory),
     );
 
+  /*
+   * The workshop, beside the code interpreter it extends: same canUseBot gate, same
+   * requireUser shell, mounted after its short-form sibling so the two surfaces read as a
+   * pair. A factory (not a router) because the wiring — store, lock, bus, orchestrator — is
+   * one assembly decision with a Redis branch that belongs to the boot file, not here.
+   */
+  if (workshopRoutes)
+    app.route(
+      "/api/workshop",
+      workshopRoutes({ requireUser, canUseBot }),
+    );
+
   if (hostAccessBroker) {
     app.route(
       "/api/host-access",
@@ -1553,6 +1586,29 @@ export function createApp(
     app.route(
       "/api/channels",
       createChannelRoutes(channelStore, requireUser, channelEvents, auditStore),
+    );
+    /*
+     * The mobile client's aggregation seam, mounted only where its two stores
+     * already exist: it reads the same roster and the same conversations the
+     * routes above answer, under the same guard, and a deployment without
+     * channels has nothing for a mobile roster to list.
+     */
+    app.route(
+      "/api/mobile",
+      createMobileBffRoutes({
+        requireUser,
+        agentProfileStore,
+        channelStore,
+        workspace: createMobileBffWorkspace({ agentProfileStore, channelStore }),
+        ...(coworker
+          ? {
+              activity: createMobileBffActivity({
+                approvals: coworker.approvals,
+                routines: routineStore,
+              }),
+            }
+          : {}),
+      }),
     );
   }
 
@@ -2022,6 +2078,16 @@ export function createApp(
     app.route(
       "/api/billing",
       createBillingStatementRoutes({ statements, requireUser }),
+    );
+  }
+  /*
+   * The credit-ledger reads, on the same prefix and behind the same session, from the local
+   * ledger rather than the provider's reader or the payment table.
+   */
+  if (credits) {
+    app.route(
+      "/api/billing",
+      createBillingCreditRoutes({ credits, requireUser }),
     );
   }
 
