@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
 import { WorkshopTurnView } from "./workshop-turn";
+import { WorkshopFilesView } from "./workshop-files";
 
 /**
  * The workshop tab: one channel's working surface in four panes.
@@ -78,9 +79,7 @@ export function WorkshopPanel({
             {tab === "process" ? (
               <WorkshopTurnView channelId={channelId} botId={botId} />
             ) : tab === "files" ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                {t("panel.placeholder.files")}
-              </p>
+              <WorkshopFilesView channelId={channelId} />
             ) : tab === "artifacts" ? (
               <p className="p-4 text-sm text-muted-foreground">
                 {t("panel.placeholder.artifacts")}
