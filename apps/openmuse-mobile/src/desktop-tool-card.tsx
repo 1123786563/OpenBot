@@ -102,8 +102,8 @@ export function DesktopToolCard({
             {loading
               ? "Using the desktop…"
               : value?.error
-                ? "The desktop step failed"
-                : (value?.action ?? "Desktop step")}
+                ? "桌面操作步骤失败"
+                : (value?.action ?? "桌面操作步骤")}
           </Text>
         </View>
         {loading && <ActivityIndicator size="small" color={colors.blueDark} />}
@@ -115,7 +115,7 @@ export function DesktopToolCard({
             The computer is offline. Start it to see the desktop; apps that were open are closed.
           </Text>
           <Button small icon={Play} disabled={starting} onPress={() => void start()}>
-            {starting ? "Starting…" : "Start computer"}
+            {starting ? "正在启动…" : "启动计算机"}
           </Button>
         </View>
       ) : latest && running ? (
@@ -125,7 +125,7 @@ export function DesktopToolCard({
           <>
             {!!value?.receiptId && (
               <Image
-                accessibilityLabel="Latest desktop screenshot"
+                accessibilityLabel="最新桌面截图"
                 source={{
                   uri: api.url(`/api/computer/desktop/screenshot?receipt=${value.receiptId}`),
                   headers: { Authorization: `Bearer ${api.token}` },

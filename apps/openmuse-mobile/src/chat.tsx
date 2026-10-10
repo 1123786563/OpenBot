@@ -176,14 +176,22 @@ function ServerToolCard({
     ? data?.tasks.find((item) => item.id === parsed.data.id || item.id === parsed.data.taskId)
     : undefined;
   if (task) return <TaskThreadCard task={task} />;
+  const nameLabels: Record<string, string> = {
+    Task: "任务",
+    "Agent progress": "助手进展",
+    Goal: "目标",
+    Tracking: "追踪",
+    Memory: "记忆",
+  };
+  const label = nameLabels[name] || name;
   return (
     <Card style={{ padding: 16, gap: 10 }}>
-      <Text style={s.heading}>{loading ? `Saving ${name.toLowerCase()}…` : name}</Text>
+      <Text style={s.heading}>{loading ? `正在保存${label}…` : label}</Text>
       {parsed.success && parsed.data.error ? (
         <ErrorNotice error={parsed.data.error} />
       ) : (
         <Text style={s.muted}>
-          {loading ? "Waiting for the server." : "Open the workspace to see the saved result."}
+          {loading ? "等待服务器处理。" : "打开工作区查看已保存的结果。"}
         </Text>
       )}
       <Button
@@ -198,7 +206,7 @@ function ServerToolCard({
           )
         }
       >
-        View {name.toLowerCase()}
+        查看{label}
       </Button>
     </Card>
   );
@@ -325,7 +333,7 @@ export function ChatScreen({
   const run = useCallback(
     async (message?: QueuedMessage): Promise<"held" | undefined> => {
       if (runLock.current || agent.isRunning || !isReady || !loaded || syncing)
-        throw new Error("The conversation is not ready yet.");
+        throw new Error("会话尚未就绪。");
       runLock.current = true;
       queuedTurn.current = Boolean(message);
       setBusy(true);
@@ -409,10 +417,10 @@ export function ChatScreen({
     (text: string, retry = false): Promise<void> => {
       const snapshot = queue.getSnapshot();
       if (!loaded || !isReady || saveError || (!retry && snapshot.paused))
-        return Promise.reject(new Error("The conversation is not ready for a choice yet."));
+        return Promise.reject(new Error("会话尚未就绪，暂时无法选择。"));
       if (retry) {
         if (runLock.current || agent.isRunning || snapshot.running || snapshot.pending.length)
-          return Promise.reject(new Error("Wait for the current response before retrying."));
+          return Promise.reject(new Error("请等待当前回复完成后再重试。"));
         if (snapshot.paused) queue.resume();
       }
       const id = `choice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -535,23 +543,22 @@ export function ChatScreen({
                 maxWidth: 350,
               }}
             >
-              A little help. A lot more room for life.
+              一点小帮助，为生活腾出更多空间。
             </Text>
             <Text style={[s.muted, { maxWidth: 320, textAlign: "center", lineHeight: 23 }]}>
-              Tell me what’s on your mind. I can make a plan, work with your apps, and use my
-              computer to help.
+              告诉我你在想什么。我可以制定计划、协同你的应用，并用我的计算机来帮忙。
             </Text>
             <View style={{ width: "100%", maxWidth: 360, marginTop: 14, gap: 8 }}>
               {[
                 {
-                  text: "Find cool things on Hacker News",
+                  text: "去 Hacker News 找些有趣的内容",
                   action: () => enqueue("Check out Hacker News for cool stuff"),
                 },
                 {
-                  text: "Summarize copilotkit.ai",
+                  text: "总结 copilotkit.ai",
                   action: () => enqueue("Summarize copilotkit.ai"),
                 },
-                { text: "Keep an eye on a website", action: () => navigate("goals") },
+                { text: "关注一个网站的变化", action: () => navigate("goals") },
               ].map((item) => (
                 <Button key={item.text} onPress={item.action}>
                   {item.text}
@@ -672,7 +679,7 @@ export function ChatScreen({
                 style={{ alignSelf: "flex-start", marginTop: 6 }}
                 onPress={() => setShowResults(!showResults)}
               >
-                {showResults ? "Hide recent results" : "Recent results"}
+                {showResults ? "收起最近结果" : "最近结果"}
               </Button>
             )}
             {showResults && (
@@ -709,7 +716,7 @@ export function ChatScreen({
         {(!richThreads || selection.id === mainId) && <BackgroundUpdates />}
         {(busy || agent.isRunning) && (
           <View
-            accessibilityLabel="Agent is working"
+            accessibilityLabel="助手工作中"
             style={[
               s.row,
               {
@@ -750,7 +757,7 @@ export function ChatScreen({
                 .catch((e) => setError(e instanceof Error ? e.message : String(e)));
             }}
           >
-            Retry response
+            重试回复
           </Button>
         )}
       </ScrollView>
@@ -765,7 +772,7 @@ export function ChatScreen({
             list.current?.scrollToEnd({ animated: true });
           }}
         >
-          Latest messages
+          回到最新消息
         </Button>
       )}
       <KeyboardAvoidingView
@@ -781,13 +788,13 @@ export function ChatScreen({
               void saveHistory().catch((e) => setSaveError(String(e)));
             }}
           >
-            Retry saving conversation
+            重试保存会话
           </Button>
         )}
         {!!outbox.pending.length && (
           <View style={{ padding: 12, gap: 6 }}>
             <Text style={s.small}>
-              {outbox.paused ? "Messages on hold" : "Up next"} · Keep the app open until sent
+              {outbox.paused ? "消息已暂缓" : "待发送"} · 请保持应用开启直至发送完成
             </Text>
             {outbox.pending.map((message) => (
               <View key={message.id} style={[s.row, { gap: 8 }]}>
@@ -796,13 +803,13 @@ export function ChatScreen({
                 </Text>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Remove queued message: ${displayJevUserMessage(message.text, messages)}`}
+                  accessibilityLabel={`移除排队消息：${displayJevUserMessage(message.text, messages)}`}
                   hitSlop={10}
                   onPress={() => {
                     queue.remove(message.id);
                     choiceCompletions.current
                       .get(message.id)
-                      ?.reject(new Error("Choice removed from queue."));
+                      ?.reject(new Error("该选项已从队列中移除。"));
                     choiceCompletions.current.delete(message.id);
                   }}
                   style={{ padding: 8 }}
@@ -820,14 +827,14 @@ export function ChatScreen({
                   flush();
                 }}
               >
-                Send queued messages
+                发送排队消息
               </Button>
             )}
           </View>
         )}
         {picking && (
           <Card style={{ marginBottom: 12, padding: 15 }}>
-            <Text style={s.heading}>Add a document</Text>
+            <Text style={s.heading}>添加文档</Text>
             <ScrollView style={{ maxHeight: 230 }} keyboardShouldPersistTaps="handled">
               {w.files.length ? (
                 w.files.map((f) => (
@@ -845,7 +852,7 @@ export function ChatScreen({
                   />
                 ))
               ) : (
-                <Text style={s.muted}>Import a PDF in Files to use it in a conversation.</Text>
+                <Text style={s.muted}>请先在“文件”中导入 PDF，才能在对话中使用。</Text>
               )}
             </ScrollView>
             <Button
@@ -853,7 +860,7 @@ export function ChatScreen({
               onPress={() => setPicking(false)}
               style={{ alignSelf: "flex-end", marginTop: 8 }}
             >
-              Done
+              完成
             </Button>
           </Card>
         )}
@@ -879,7 +886,7 @@ export function ChatScreen({
                   <Pressable
                     key={f.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`Remove attachment: ${f.name}`}
+                    accessibilityLabel={`移除附件：${f.name}`}
                     onPress={() => setAttachments((ids) => ids.filter((id) => id !== f.id))}
                     style={[
                       s.row,
@@ -908,7 +915,7 @@ export function ChatScreen({
           <View style={[s.row, { gap: 7, alignItems: "flex-end" }]}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Attach a document"
+              accessibilityLabel="附加文档"
               accessibilityState={{ expanded: picking }}
               onPress={() => setPicking(!picking)}
               style={({ pressed }) => ({
@@ -925,7 +932,7 @@ export function ChatScreen({
               </Text>
             </Pressable>
             <TextInput
-              accessibilityLabel="Message OpenMuse"
+              accessibilityLabel="给 OpenMuse 发消息"
               value={draft}
               onChangeText={setDraft}
               onContentSizeChange={(event) =>
@@ -933,12 +940,12 @@ export function ChatScreen({
               }
               placeholder={
                 !isReady
-                  ? "Connecting…"
+                  ? "正在连接…"
                   : !loaded
                     ? historyError
-                      ? "Conversation unavailable"
-                      : "Loading conversation…"
-                    : "Message…"
+                      ? "会话不可用"
+                      : "正在加载会话…"
+                    : "输入消息…"
               }
               placeholderTextColor="#949B9F"
               selectionColor={colors.blueDark}
@@ -975,7 +982,7 @@ export function ChatScreen({
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={replying ? "Stop reply" : "Send message"}
+              accessibilityLabel={replying ? "停止回复" : "发送消息"}
               disabled={!replying && (!draft.trim() || !loaded || !isReady)}
               onPress={replying ? () => void stop() : send}
               style={({ pressed }) => ({

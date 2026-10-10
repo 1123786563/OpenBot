@@ -103,7 +103,7 @@ export const DesktopStream = memo(function DesktopStream({
           disabled={opening}
           onPress={() => void open()}
         >
-          {opening ? "Opening…" : "Open desktop"}
+          {opening ? "正在打开…" : "打开桌面"}
         </Button>
       )}
     </View>

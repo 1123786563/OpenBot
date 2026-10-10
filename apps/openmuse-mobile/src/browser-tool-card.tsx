@@ -24,11 +24,11 @@ function resultValue(result: unknown) {
 }
 
 function siteLabel(url: unknown) {
-  if (typeof url !== "string") return "Opening a page";
+  if (typeof url !== "string") return "正在打开页面";
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
-    return "Opening a page";
+    return "正在打开页面";
   }
 }
 
@@ -89,7 +89,7 @@ export function BrowserToolCard({
   const failure = toolError.success
     ? toolError.data.error
     : !loading && !visited
-      ? "The browser did not return a page. Try your request again."
+      ? "浏览器未返回页面。请重试你的请求。"
       : "";
   return (
     <Card
@@ -103,18 +103,18 @@ export function BrowserToolCard({
           <Text style={[s.text, { fontWeight: "600" }]}>Browser</Text>
           <Text numberOfLines={1} style={[s.small, { fontSize: 12 }]}>
             {working
-              ? "Reading the page…"
+              ? "正在读取页面…"
               : loading
-                ? "Browsing paused"
+                ? "浏览已暂停"
                 : failure
-                  ? "Couldn’t read the page"
+                  ? "无法读取该页面"
                   : siteLabel(visited?.url)}
           </Text>
         </View>
         {working ? (
           <ActivityIndicator size="small" color={colors.blueDark} />
         ) : visited ? (
-          <Check size={17} color="#47896C" accessibilityLabel="Page read" />
+          <Check size={17} color="#47896C" accessibilityLabel="页面已读取" />
         ) : null}
       </View>
       {preview ? (
@@ -142,14 +142,14 @@ export function BrowserToolCard({
           ) : visited ? (
             <Text style={s.small}>
               {browser && browser.url !== visited.url
-                ? "Page visited. The browser has moved on."
+                ? "页面已访问。浏览器已继续后续操作。"
                 : browser?.status === "closed"
-                  ? "Session saved. Take control to reopen it."
+                  ? "会话已保存。可接管控制以重新打开。"
                   : browser?.status === "error"
-                    ? "Session needs attention. Take control to reconnect."
+                    ? "会话需要处理。可接管控制以重新连接。"
                     : previewFailed
-                      ? "Preview unavailable. You can still take control."
-                      : "Connecting to the saved session…"}
+                      ? "预览不可用。你仍可接管控制。"
+                      : "正在连接已保存的会话…"}
             </Text>
           ) : null}
         </View>
