@@ -25,7 +25,7 @@ WORKDIR /app
 # The lockfile as well as the manifest: `--frozen-lockfile` with no lockfile present resolves afresh
 # and exits 0, so the file has to be here for the flag to mean anything.
 COPY agent-computer/package.json agent-computer/bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --network-concurrency=8
 
 COPY agent-computer/src ./src
 # index.ts imports ../../shared/file-download and ../../shared/trace at runtime (the other shared
