@@ -20,6 +20,13 @@ export type AuthenticatedUser = {
   role: "admin" | "user";
   /** Null means this deployment does not track onboarding, which reads as nothing to finish. */
   onboarding: OnboardingStatus | null;
+  /**
+   * True when this deployment has no sign-in at all: every visitor is the one administrator and
+   * there is no session to end, so UI that presumes one (a Log-out button) stays hidden. Always
+   * present after {@link currentUser} parses the response, optional in the type so tests and
+   * callers may build a bare user.
+   */
+  singleUser?: boolean;
 };
 
 /** Whether the gate holds: there is an onboarding to do and this person has not finished it. */
@@ -101,8 +108,11 @@ async function currentUser(): Promise<AuthenticatedUser | null> {
     throw new Error(`Could not load the current user (${response.status})`);
   }
 
-  const body = (await response.json()) as { user: AuthenticatedUser };
-  return body.user;
+  const body = (await response.json()) as {
+    user: AuthenticatedUser;
+    singleUser?: boolean;
+  };
+  return { ...body.user, singleUser: body.singleUser === true };
 }
 
 export function currentUserQueryOptions() {

@@ -27,10 +27,11 @@
  *
  * Every failure is a stable EnterpriseError code; message text is the code.
  */
+
+import { assertResourceReadInTx } from "../authz/repository";
 import type { Authz, Scope, Tx } from "../contracts";
 import { EnterpriseError } from "../errors";
 import { firstRow } from "../tenancy/transaction";
-import { assertResourceReadInTx } from "../authz/repository";
 
 /** The run facts the CALLER already read in the same transaction; the policy re-checks them. */
 export type RunAccess = {
@@ -41,7 +42,12 @@ export type RunAccess = {
 };
 
 export interface RunPolicy {
-  assertStart(tx: Tx, scope: Scope, releaseId: string, routeId: string): Promise<void>;
+  assertStart(
+    tx: Tx,
+    scope: Scope,
+    releaseId: string,
+    routeId: string,
+  ): Promise<void>;
   assertOwn(
     tx: Tx,
     scope: Scope,
@@ -59,10 +65,19 @@ const ALLOWED_ROUTE_PROFILES: ReadonlySet<string> = new Set(["openai-chat"]);
 
 const RUN_RELEASE_NOT_FOUND = new EnterpriseError("RUN_RELEASE_NOT_FOUND", 404);
 const RUN_RELEASE_DISABLED = new EnterpriseError("RUN_RELEASE_DISABLED", 403);
-const RUN_MODEL_ROUTE_MISSING = new EnterpriseError("RUN_MODEL_ROUTE_MISSING", 404);
-const RUN_MODEL_GRANT_MISSING = new EnterpriseError("RUN_MODEL_GRANT_MISSING", 403);
+const RUN_MODEL_ROUTE_MISSING = new EnterpriseError(
+  "RUN_MODEL_ROUTE_MISSING",
+  404,
+);
+const RUN_MODEL_GRANT_MISSING = new EnterpriseError(
+  "RUN_MODEL_GRANT_MISSING",
+  403,
+);
 const RUN_START_NOT_GRANTED = new EnterpriseError("RUN_START_NOT_GRANTED", 403);
-const RUN_RESUME_NOT_GRANTED = new EnterpriseError("RUN_RESUME_NOT_GRANTED", 403);
+const RUN_RESUME_NOT_GRANTED = new EnterpriseError(
+  "RUN_RESUME_NOT_GRANTED",
+  403,
+);
 const RUN_NOT_FOUND = new EnterpriseError("RUN_NOT_FOUND", 404);
 const RESOURCE_NOT_FOUND = new EnterpriseError("RESOURCE_NOT_FOUND", 404);
 const ROUTE_PROFILE_UNSUPPORTED = new EnterpriseError(
@@ -239,7 +254,11 @@ export function createRunPolicy(deps: { authz: Authz }): RunPolicy {
     async assertStart(tx, scope, releaseId, routeId) {
       await requireMembershipRow(tx, scope);
       const release = await requirePublishedRelease(tx, scope, releaseId);
-      await requireActiveResource(tx, scope.tenantId, text(release.resource_id));
+      await requireActiveResource(
+        tx,
+        scope.tenantId,
+        text(release.resource_id),
+      );
       await requireRunGrant(tx, scope, releaseId, "start");
 
       /* The route's verdict — profile, its resource, the current model grant — on the SAME

@@ -24,7 +24,9 @@ const ESCAPE_U2028 = /\u2028/g;
 const ESCAPE_U2029 = /\u2029/g;
 
 function escapeFrozen(value: string): string {
-  return value.replace(ESCAPE_U2028, "\\u2028").replace(ESCAPE_U2029, "\\u2029");
+  return value
+    .replace(ESCAPE_U2028, "\\u2028")
+    .replace(ESCAPE_U2029, "\\u2029");
 }
 
 export type CanonicalInputMessage = { content: string; role: "user" };

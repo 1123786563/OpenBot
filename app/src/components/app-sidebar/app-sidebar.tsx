@@ -601,15 +601,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <IconSettings />
                   {t("settings")}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className={userMenuItemClassName}
-                  disabled={signOut.isPending}
-                  onClick={handleSignOut}
-                  variant="destructive"
-                >
-                  <IconLogout />
-                  {t("logOut")}
-                </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={userMenuItemClassName}
+                    disabled={signOut.isPending}
+                    onClick={handleSignOut}
+                    variant="destructive"
+                  >
+                    <IconLogout />
+                    {t("logOut")}
+                  </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

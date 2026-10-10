@@ -10,13 +10,13 @@
  * no input digest, no internal address, no capability.
  */
 import type { Context } from "hono";
-import type { EnterpriseVariables } from "../app";
-import { EnterpriseError } from "../errors";
 import {
   CreateRunSchema,
-  IdempotencyKeySchema,
   ID,
+  IdempotencyKeySchema,
 } from "../../../../shared/enterprise/run-contracts";
+import type { EnterpriseVariables } from "../app";
+import { EnterpriseError } from "../errors";
 import type { RunService } from "./contracts";
 
 /** The plan's suggested test default; an operator tightens it via the route config, not by editing this file per deployment. */
@@ -35,7 +35,9 @@ const RUN_NOT_FOUND = new EnterpriseError("RUN_NOT_FOUND", 404);
  * limit is crossed — an oversized body is never buffered whole. Anything at or under the limit
  * is decoded and JSON-parsed; a syntax error is a 400, not a 500.
  */
-async function readJsonWithinLimit(c: Context<{ Variables: EnterpriseVariables }>): Promise<unknown> {
+async function readJsonWithinLimit(
+  c: Context<{ Variables: EnterpriseVariables }>,
+): Promise<unknown> {
   const body = c.req.raw.body;
   if (body === null) {
     throw INVALID_RUN_INPUT;

@@ -9,8 +9,7 @@
     "db:generate": "bun --env-file=../.env drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "bun --env-file=../.env drizzle-kit migrate --config=drizzle.config.ts",
     "dev": "bun --env-file=../.env --watch src/index.ts",
-    "dev:enterprise": "bun --no-env-file --watch src/enterprise/index.ts",
-    "start:enterprise": "bun --no-env-file src/enterprise/index.ts",
+    "start": "bun --no-env-file src/index.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:enterprise": "tsc --noEmit -p tsconfig.enterprise-tests.json"
   },
@@ -28,8 +27,6 @@
     "@copilotkit/runtime": "1.77.0",
     "@mastra/client-js": "^1.43.0",
     "@mastra/core": "^1.64.0",
-    "@mastra/hono": "1.5.0",
-    "@mastra/memory": "1.20.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "0.221.0",

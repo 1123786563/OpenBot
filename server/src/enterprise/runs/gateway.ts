@@ -1,19 +1,22 @@
 import { createHash } from "node:crypto";
-import { Hono } from "hono";
+import type { Hono } from "hono";
 
-import { CreateRunSchema, IdempotencyKeySchema } from "../../../../shared/enterprise/run-contracts";
+import {
+  CreateRunSchema,
+  IdempotencyKeySchema,
+} from "../../../../shared/enterprise/run-contracts";
 import type { EnterpriseVariables } from "../app";
+import type { Scope } from "../contracts";
 import { EnterpriseError } from "../errors";
 import type { EnterpriseRuntimeConfig } from "../runtime/config";
-import { deriveCapabilitySecret, type CreatedRun } from "./service";
 import type { RuntimeInvocation } from "../runtime/wire";
 import {
   RUNTIME_CAPABILITY_HEADER,
   RUNTIME_INVOCATION_HEADER,
   RUNTIME_SERVICE_CREDENTIAL_HEADER,
 } from "../runtime/wire";
-import type { Scope } from "../contracts";
 import type { RunServiceE1 } from "./service";
+import { type CreatedRun, deriveCapabilitySecret } from "./service";
 
 /*
  * ---------------------------------------------------------------------------
@@ -72,7 +75,9 @@ function executionHeaders(
 }
 
 /** One AG-UI SSE frame from the byte stream: `data: {…}` lines, blank-line separated. */
-async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+async function* sseEvents(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -100,9 +105,11 @@ async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<stri
 }
 
 /** Maps one AG-UI event to the ledger's event type and, at terminals, the run status. */
-function ledgerMapping(
-  event: Record<string, unknown>,
-): { eventType: string; status?: "succeeded" | "failed" | "waiting_approval" | "waiting_input"; reasonCode?: string } {
+function ledgerMapping(event: Record<string, unknown>): {
+  eventType: string;
+  status?: "succeeded" | "failed" | "waiting_approval" | "waiting_input";
+  reasonCode?: string;
+} {
   const type = event.type;
   if (type === "RUN_STARTED") return { eventType: "run.started" };
   if (type === "TEXT_MESSAGE_START") return { eventType: "message.start" };
@@ -117,7 +124,10 @@ function ledgerMapping(
       const reason = (event.reason as string | undefined) ?? "tool_approval";
       return {
         eventType: "run.waiting",
-        status: reason === "operation_receipt_pending" ? "waiting_input" : "waiting_approval",
+        status:
+          reason === "operation_receipt_pending"
+            ? "waiting_input"
+            : "waiting_approval",
         reasonCode: reason,
       };
     }
@@ -127,13 +137,19 @@ function ledgerMapping(
     return {
       eventType: "run.failed",
       status: "failed",
-      reasonCode: typeof event.message === "string" ? event.message.slice(0, 200) : "RUN_ERROR",
+      reasonCode:
+        typeof event.message === "string"
+          ? event.message.slice(0, 200)
+          : "RUN_ERROR",
     };
   }
   return { eventType: `raw.${typeof type === "string" ? type : "unknown"}` };
 }
 
-export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, deps: GatewayDeps): void {
+export function mountRunGateway(
+  api: Hono<{ Variables: EnterpriseVariables }>,
+  deps: GatewayDeps,
+): void {
   const fetchGo = deps.fetchGo ?? fetch;
   /** The minted envelope per tenant|run; cancel re-presents it verbatim. */
   const minted = new Map<string, RuntimeInvocation>();
@@ -198,11 +214,12 @@ export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, d
     const runId = created.run.run_id;
     const tenantId = scope.tenantId;
     const attemptId = invocation.attempt_id;
+    const upstreamBody = upstream.body;
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const encoder = new TextEncoder();
         try {
-          for await (const data of sseEvents(upstream.body!)) {
+          for await (const data of sseEvents(upstreamBody)) {
             let event: Record<string, unknown> = {};
             try {
               event = JSON.parse(data) as Record<string, unknown>;
@@ -215,8 +232,11 @@ export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, d
               runId,
               attemptId,
               turnId,
-              sourceEventId: typeof event.id === "string" ? event.id : crypto.randomUUID(),
-              sourceDigest: createHash("sha256").update(data, "utf8").digest("hex"),
+              sourceEventId:
+                typeof event.id === "string" ? event.id : crypto.randomUUID(),
+              sourceDigest: createHash("sha256")
+                .update(data, "utf8")
+                .digest("hex"),
               eventType: mapped.eventType,
               payload: event,
             });
@@ -229,7 +249,8 @@ export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, d
               });
             }
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-            if (mapped.status === "succeeded" || mapped.status === "failed") break;
+            if (mapped.status === "succeeded" || mapped.status === "failed")
+              break;
           }
         } catch {
           await deps.service
@@ -280,9 +301,13 @@ export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, d
     // passed TTL is refused by Go, and either way the run stays
     // cancel_requested with an honest unknown — reconciliation, not a fake
     // success (recovery belongs to E2).
-    const cancelled = await cancelAtRuntime(deps, scope, runId, minted, fetchGo).catch(
-      () => "unknown" as const,
-    );
+    const cancelled = await cancelAtRuntime(
+      deps,
+      scope,
+      runId,
+      minted,
+      fetchGo,
+    ).catch(() => "unknown" as const);
     if (cancelled === "not_found") {
       // Go forgot the run (restart): the ledger says so instead of pretending.
       await deps.service.markTerminal({
@@ -291,7 +316,14 @@ export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, d
         status: "cancelled",
         reasonCode: "RUNTIME_FORGOT_RUN",
       });
-      return c.json({ ...(await deps.service.get(scope, runId)), cancel_requested: true, runtime: "not_found" }, 200);
+      return c.json(
+        {
+          ...(await deps.service.get(scope, runId)),
+          cancel_requested: true,
+          runtime: "not_found",
+        },
+        200,
+      );
     }
     return c.json({ ...view, cancel_requested: true }, 200);
   });
@@ -306,7 +338,10 @@ export function mountRunGateway(api: Hono<{ Variables: EnterpriseVariables }>, d
     const runId = c.req.param("id");
     await deps.service.get(scope, runId); // 404 through the owner-pinned read first
     const after = Number(c.req.query("after") ?? "0");
-    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? "100"), 1), 500);
+    const limit = Math.min(
+      Math.max(Number(c.req.query("limit") ?? "100"), 1),
+      500,
+    );
     const events = await deps.service.readEventsPinned({
       tenantId: scope.tenantId,
       runId,
@@ -326,7 +361,12 @@ async function cancelAtRuntime(
 ): Promise<"requested" | "not_found" | "unknown"> {
   const envelope = minted.get(`${scope.tenantId}|${runId}`);
   if (envelope === undefined) return "unknown";
-  const secret = deriveCapabilitySecret(deps.keyEncryptionKey, "control", scope.tenantId, runId);
+  const secret = deriveCapabilitySecret(
+    deps.keyEncryptionKey,
+    "control",
+    scope.tenantId,
+    runId,
+  );
   try {
     const response = await fetchGo(deps.runtime.cancelUrl, {
       method: "POST",

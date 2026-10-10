@@ -1,17 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import type { EnterpriseDependencies } from "../../../src/enterprise/app";
-import { createEnterpriseApp } from "../../../src/enterprise/app";
-import type { Database, } from "../../../src/db/client";
-import type { Membership, Scope } from "../../../src/enterprise/contracts";
-import type { EnterpriseRuntimeConfig } from "../../../src/enterprise/runtime/config";
-import type { GatewayDeps } from "../../../src/enterprise/runs/gateway";
-import type { RunServiceE1 } from "../../../src/enterprise/runs/service";
-import type { RunCommand, RunService } from "../../../src/enterprise/runs/contracts";
 import type {
   CreateRun,
   RunEventView,
   RunView,
 } from "../../../../shared/enterprise/run-contracts";
+import type { Database } from "../../../src/db/client";
+import type { EnterpriseDependencies } from "../../../src/enterprise/app";
+import { createEnterpriseApp } from "../../../src/enterprise/app";
+import type { Membership, Scope } from "../../../src/enterprise/contracts";
+import type {
+  RunCommand,
+  RunService,
+} from "../../../src/enterprise/runs/contracts";
+import type { GatewayDeps } from "../../../src/enterprise/runs/gateway";
+import type { RunServiceE1 } from "../../../src/enterprise/runs/service";
+import type { EnterpriseRuntimeConfig } from "../../../src/enterprise/runtime/config";
 
 /*
  * E1-C 公共路由装配（03 分册 §9.2/§9.3）。
@@ -54,7 +57,10 @@ function scriptedRunService(
     get?: (scope: Scope, id: string) => Promise<RunView>;
   } = {},
 ): RunService {
-  const calls: { creates: CreateCall[]; gets: Array<{ scope: Scope; id: string }> } = {
+  const calls: {
+    creates: CreateCall[];
+    gets: Array<{ scope: Scope; id: string }>;
+  } = {
     creates: [],
     gets: [],
   };
@@ -69,7 +75,11 @@ function scriptedRunService(
       calls.gets.push({ scope, id });
       return handlers.get ? handlers.get(scope, id) : RUN_VIEW;
     },
-    async command(_scope: Scope, _id: string, _command: RunCommand): Promise<RunView> {
+    async command(
+      _scope: Scope,
+      _id: string,
+      _command: RunCommand,
+    ): Promise<RunView> {
       throw new Error("not reached in the HTTP contract test");
     },
     async readEvents(
@@ -136,7 +146,10 @@ const POST = {
   },
 };
 
-function postBody(body: unknown, headers: Record<string, string> = POST.headers) {
+function postBody(
+  body: unknown,
+  headers: Record<string, string> = POST.headers,
+) {
   return {
     method: "POST" as const,
     headers,
@@ -154,7 +167,10 @@ const VALID_BODY = {
 describe("POST /runs is 503 when run services are disabled", () => {
   test("creating a run is an explicit refusal, never an empty success", async () => {
     const app = appWithRuns();
-    const response = await app.request("/api/enterprise/v1/runs", postBody(VALID_BODY));
+    const response = await app.request(
+      "/api/enterprise/v1/runs",
+      postBody(VALID_BODY),
+    );
     expect(response.status).toBe(503);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("RUNS_DISABLED");
@@ -252,11 +268,20 @@ describe("the mounted run routes", () => {
       },
     });
     const app = appWithRuns({}, runs);
-    const response = await app.request("/api/enterprise/v1/runs", postBody(VALID_BODY));
+    const response = await app.request(
+      "/api/enterprise/v1/runs",
+      postBody(VALID_BODY),
+    );
     expect(response.status).toBe(202);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body).toEqual({ ...RUN_VIEW });
-    for (const forbidden of ["input_digest", "service", "capability", "input", "tenant_id"]) {
+    for (const forbidden of [
+      "input_digest",
+      "service",
+      "capability",
+      "input",
+      "tenant_id",
+    ]) {
       expect(Object.keys(body), forbidden).not.toContain(forbidden);
     }
     expect(seen?.key).toBe("key-1");
@@ -269,7 +294,10 @@ describe("the mounted run routes", () => {
     const app = appWithRuns({}, scriptedRunService());
     const missing = { ...POST.headers };
     delete (missing as Record<string, unknown>)["idempotency-key"];
-    const noKey = await app.request("/api/enterprise/v1/runs", postBody(VALID_BODY, missing));
+    const noKey = await app.request(
+      "/api/enterprise/v1/runs",
+      postBody(VALID_BODY, missing),
+    );
     expect(noKey.status).toBe(400);
     const badKey = await app.request(
       "/api/enterprise/v1/runs",
@@ -293,7 +321,10 @@ describe("the mounted run routes", () => {
       ...VALID_BODY,
       input: { text: "x".repeat(70_000) },
     });
-    const response = await app.request("/api/enterprise/v1/runs", postBody(big));
+    const response = await app.request(
+      "/api/enterprise/v1/runs",
+      postBody(big),
+    );
     expect(response.status).toBe(413);
   });
 
@@ -322,9 +353,12 @@ describe("the mounted run routes", () => {
     expect(seenId).toBe("run_http_contract");
     expect(await ok.json()).toEqual({ ...RUN_VIEW });
 
-    const bad = await app.request("/api/enterprise/v1/runs/not%20a%20run%20id", {
-      headers: { "x-openbot-tenant": "http-tenant" },
-    });
+    const bad = await app.request(
+      "/api/enterprise/v1/runs/not%20a%20run%20id",
+      {
+        headers: { "x-openbot-tenant": "http-tenant" },
+      },
+    );
     expect(bad.status).toBe(404);
   });
 });

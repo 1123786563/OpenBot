@@ -21,6 +21,13 @@ export type ChannelHttpConfig = {
   requestTimeoutMs?: number;
   /** The SSRF gate, run against every request URL immediately before it is opened. Required. */
   assertTarget: (url: URL) => Promise<void>;
+  /**
+   * Treat a 2xx/4xx answer whose body starts with HTML as load-shedding (retryable unreachable)
+   * instead of the terminal invalid_response. Set by the Alipay transport, whose sandbox gateway
+   * randomly sheds load as HTML pages; WeChat's non-JSON answers are deterministic refusals and
+   * leave this off.
+   */
+  treatHtmlAsUnreachable?: boolean;
 };
 
 /**
@@ -48,7 +55,15 @@ export async function postForm(
   } catch {
     throw new BillingError("unreachable");
   }
-  return (await readVerifiedResponse(response)).text;
+  const { status, text } = await readVerifiedResponse(response);
+  // Alipay's sandbox gateway randomly sheds load as 404/302 HTML pages (observed ~40% of
+  // requests in a bad window): every business answer is JSON, so an HTML body is the platform
+  // shedding, not an answer — retryable, like a timeout. Gated on the flag because WeChat's
+  // non-JSON answers are deterministic refusals.
+  if (config.treatHtmlAsUnreachable && text.trimStart().startsWith("<")) {
+    throw new BillingError("unreachable");
+  }
+  return text;
 }
 
 /**

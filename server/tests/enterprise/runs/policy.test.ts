@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createRunHarness, probeRunsDatabase, type RunHarness } from "./support";
+import {
+  createRunHarness,
+  probeRunsDatabase,
+  type RunHarness,
+} from "./support";
 
 /*
  * E1-C RunPolicy（03 分册 §4.3，316-332 行）。
@@ -13,7 +17,9 @@ import { createRunHarness, probeRunsDatabase, type RunHarness } from "./support"
 const probe = await probeRunsDatabase();
 const describeDb = probe.ready ? describe : describe.skip;
 if (!probe.ready) {
-  console.warn(`[policy.test.ts] real-database assertions skipped: ${probe.reason}`);
+  console.warn(
+    `[policy.test.ts] real-database assertions skipped: ${probe.reason}`,
+  );
 }
 
 let h: RunHarness;
@@ -58,7 +64,9 @@ describeDb("E1-C RunPolicy", () => {
     try {
       expect(
         await h.inTenantTx(async (tx) =>
-          codeOf(() => h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId)),
+          codeOf(() =>
+            h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId),
+          ),
         ),
       ).toBe("RUN_START_NOT_GRANTED");
     } finally {
@@ -71,7 +79,9 @@ describeDb("E1-C RunPolicy", () => {
     try {
       expect(
         await h.inTenantTx(async (tx) =>
-          codeOf(() => h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId)),
+          codeOf(() =>
+            h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId),
+          ),
         ),
       ).toBe("RUN_RELEASE_DISABLED");
     } finally {
@@ -79,7 +89,9 @@ describeDb("E1-C RunPolicy", () => {
     }
     expect(
       await h.inTenantTx(async (tx) =>
-        codeOf(() => h.policy.assertStart(tx, h.scope, "r1c-no-release", h.routeId)),
+        codeOf(() =>
+          h.policy.assertStart(tx, h.scope, "r1c-no-release", h.routeId),
+        ),
       ),
     ).toBe("RUN_RELEASE_NOT_FOUND");
   });
@@ -89,7 +101,9 @@ describeDb("E1-C RunPolicy", () => {
     try {
       expect(
         await h.inTenantTx(async (tx) =>
-          codeOf(() => h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId)),
+          codeOf(() =>
+            h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId),
+          ),
         ),
       ).toBe("RUN_MODEL_GRANT_MISSING");
     } finally {
@@ -99,7 +113,9 @@ describeDb("E1-C RunPolicy", () => {
     try {
       expect(
         await h.inTenantTx(async (tx) =>
-          codeOf(() => h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId)),
+          codeOf(() =>
+            h.policy.assertStart(tx, h.scope, h.releaseId, h.routeId),
+          ),
         ),
       ).toBe("RUN_MODEL_ROUTE_MISSING");
     } finally {

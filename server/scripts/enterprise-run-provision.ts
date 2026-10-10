@@ -31,8 +31,8 @@ import { createDatabase } from "../src/db/client";
 import { EnterpriseError } from "../src/enterprise/errors";
 import {
   applyRunProvision,
-  RunProvisionCommandSchema,
   type RunProvisionCommand,
+  RunProvisionCommandSchema,
 } from "../src/enterprise/runs/provision";
 
 const MODES = [
@@ -137,7 +137,9 @@ function parseCommand(): RunProvisionCommand {
     operation_id: operationId,
   });
   if (!parsed.success) {
-    console.error(JSON.stringify({ error: "INVALID_PROVISION_INPUT", status: 400 }));
+    console.error(
+      JSON.stringify({ error: "INVALID_PROVISION_INPUT", status: 400 }),
+    );
     process.exit(1);
   }
   return parsed.data;
@@ -147,7 +149,9 @@ const command = parseCommand();
 
 if (!apply) {
   /* Dry run: the plan only — no URL is read, no connection is opened. */
-  console.info(JSON.stringify({ command: mode, mode: "dry-run", plan: command }));
+  console.info(
+    JSON.stringify({ command: mode, mode: "dry-run", plan: command }),
+  );
   process.exit(0);
 }
 
@@ -168,7 +172,12 @@ try {
     await applyRunProvision(tx, command);
   });
   console.info(
-    JSON.stringify({ command: mode, mode: "applied", operationId, plan: command }),
+    JSON.stringify({
+      command: mode,
+      mode: "applied",
+      operationId,
+      plan: command,
+    }),
   );
 } catch (error) {
   if (error instanceof EnterpriseError) {

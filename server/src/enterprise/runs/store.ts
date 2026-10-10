@@ -12,6 +12,14 @@
  * ENTIRE transaction back and re-opens a fresh read-only authorization transaction to name the
  * winner — it never keeps using the aborted transaction.
  *
+ * RESOLUTION AND RE-READ (plan §8.1 + §4.3): the alias resolves through the models domain's
+ * ONE resolver — `resolveRouteInTx` (active default version only, target known to the
+ * deployment registry) — never through a local fallback that could retarget a new run onto a
+ * non-default revision after the operator disabled the default. The reads that name the
+ * resource-lock keys are the plan's untrusted hints; the release and route bindings are
+ * RE-READ under those locks and the freeze copies the re-read values, so a disable that
+ * commits between the hint and the lock is seen before anything is frozen.
+ *
  * Lock-order note (plan §4.3): the run row is INSERTED before `reserveInTx` because the
  * reservation's RLS policy requires the run to exist (migration 0060's
  * `run_reservation_write` WITH CHECK) and the deferred composite FK settles at commit. A fresh
@@ -45,29 +53,31 @@
  * Statement texts are module constants with `$n` placeholders; values travel only as
  * parameters. Every row read back is shape-checked — never `as`-cast into the contract.
  */
-import type { Database } from "../../db/client";
-import { getLogger } from "../../../../shared/logger";
-import type { Scope } from "../contracts";
-import { EnterpriseError } from "../errors";
-import type { BudgetPort } from "./contracts";
-import { runRequestDigest, sha256 } from "./digest";
-import type { RunPolicy } from "./policy";
+
 import {
+  type CreateRun,
   CreateRunSchema,
   Decimal,
   ID,
-  RunViewSchema,
-  type CreateRun,
   type RunEventView,
   type RunView,
+  RunViewSchema,
 } from "../../../../shared/enterprise/run-contracts";
-import type { RunCommand, RunService } from "./contracts";
+import { getLogger } from "../../../../shared/logger";
+import type { Database } from "../../db/client";
+import type { Scope } from "../contracts";
+import { EnterpriseError } from "../errors";
+import { resolveRouteInTx } from "../models/catalog";
+import type { TargetRegistry } from "../models/contracts";
 import {
   firstRow,
   lockExclusive,
   lockKey,
   withTenant,
 } from "../tenancy/transaction";
+import type { BudgetPort, RunCommand, RunService } from "./contracts";
+import { runRequestDigest, sha256 } from "./digest";
+import type { RunPolicy } from "./policy";
 
 /** Fault-injection points for the §4.3 rollback tests; production callers never pass them. */
 export type CreateFaultHooks = {
@@ -80,6 +90,13 @@ export type RunStoreDeps = {
   db: Database;
   policy: RunPolicy;
   budget: BudgetPort;
+  /**
+   * The deployment's approved target registry (plan §8.1): the alias resolution refuses a
+   * route whose target reference the registry does not know, so an admission can never pin a
+   * run to a target this deployment cannot dial. The composition root names the registry
+   * explicitly — the same discipline the offline provision CLI applies to its own writes.
+   */
+  targets: TargetRegistry;
   /**
    * The runtime-writer pool (ob_ent_runtime_writer), when the deployment provides it: the
    * ONLY role the ledger's role contract allows to write `enterprise_run_events` (migration
@@ -101,8 +118,15 @@ const IDEMPOTENCY_KEY_REQUIRED = new EnterpriseError(
 );
 const IDEMPOTENCY_CONFLICT = new EnterpriseError("IDEMPOTENCY_CONFLICT", 409);
 const RUN_NOT_FOUND = new EnterpriseError("RUN_NOT_FOUND", 404);
-const RUN_MODEL_ROUTE_MISSING = new EnterpriseError("RUN_MODEL_ROUTE_MISSING", 404);
-const RUN_MODEL_GRANT_MISSING = new EnterpriseError("RUN_MODEL_GRANT_MISSING", 403);
+const RUN_MODEL_ROUTE_MISSING = new EnterpriseError(
+  "RUN_MODEL_ROUTE_MISSING",
+  404,
+);
+const RUN_RELEASE_DISABLED = new EnterpriseError("RUN_RELEASE_DISABLED", 403);
+const RUN_MODEL_GRANT_MISSING = new EnterpriseError(
+  "RUN_MODEL_GRANT_MISSING",
+  403,
+);
 const RUN_THREAD_NOT_FOUND = new EnterpriseError("RUN_THREAD_NOT_FOUND", 404);
 const RUN_THREAD_ARCHIVED = new EnterpriseError("RUN_THREAD_ARCHIVED", 409);
 const RUN_THREAD_BUSY = new EnterpriseError("RUN_THREAD_BUSY", 409);
@@ -135,22 +159,30 @@ const SELECT_RUN_BY_KEY_TEXT = `
   where tenant_id = $1 and owner_principal_id = $2 and request_key = $3
   limit 1`;
 
+/**
+ * The pre-lock hint (§4.3: "先读不可信 hint，再按顺序上锁并复读绑定"): only names the
+ * resource whose advisory lock the freeze must serialize on. The frozen facts are re-read
+ * under the locks by SELECT_RELEASE_TEXT.
+ */
+const SELECT_RELEASE_RESOURCE_TEXT = `
+  select resource_id
+  from enterprise_run_releases
+  where tenant_id = $1 and id = $2`;
+
+/** The binding re-read UNDER the resource locks, and the row the freeze actually copies. */
 const SELECT_RELEASE_TEXT = `
-  select id, resource_id, version_digest, max_run_micros, currency
+  select id, resource_id, version_digest, max_run_micros, currency, status
   from enterprise_run_releases
   where tenant_id = $1 and id = $2`;
 
 /**
- * The alias resolves to one active approved route revision inside the caller's transaction:
- * the deployment's default version first, then the latest revision (plan §4.1 — the run pins
- * the resolved route id; a later default switch never retargets existing runs).
+ * The route re-read UNDER the resource locks: a route disabled between the alias resolution
+ * and the locks must not be frozen into a new run (E4-A: a disabled route refuses new calls).
  */
-const SELECT_ROUTE_BY_ALIAS_TEXT = `
-  select id, resource_id
+const SELECT_ROUTE_STATUS_TEXT = `
+  select status
   from enterprise_model_routes
-  where tenant_id = $1 and alias = $2 and status = 'active'
-  order by is_default_for_alias desc, revision desc
-  limit 1`;
+  where tenant_id = $1 and id = $2`;
 
 /** The frozen model-grant revision: the ACTIVE grant's revision, read under the locks. */
 const SELECT_MODEL_GRANT_REVISION_TEXT = `
@@ -274,7 +306,10 @@ function toRunView(row: Row): RunView {
 }
 
 /** The redacted dispatch payload: IDs only — never the input, never a secret. */
-function outboxPayload(runId: string, threadId: string): {
+function outboxPayload(
+  runId: string,
+  threadId: string,
+): {
   payload: string;
   digest: string;
 } {
@@ -289,8 +324,10 @@ function outboxPayload(runId: string, threadId: string): {
  */
 function uniqueViolation(error: unknown, constraint: string): boolean {
   for (
-    let candidate: Record<string, unknown> | undefined | null =
-      error as Record<string, unknown>;
+    let candidate: Record<string, unknown> | undefined | null = error as Record<
+      string,
+      unknown
+    >;
     candidate !== undefined && candidate !== null;
     candidate = candidate.cause as Record<string, unknown> | undefined
   ) {
@@ -313,7 +350,7 @@ function mintId(prefix: string): string {
 }
 
 export function createRunStore(deps: RunStoreDeps): RunService {
-  const { db, policy, budget, hooks } = deps;
+  const { db, policy, budget, targets, hooks } = deps;
 
   /**
    * The step-6 RUN_QUEUED append, on the runtime-writer pool AFTER the create transaction
@@ -355,7 +392,7 @@ export function createRunStore(deps: RunStoreDeps): RunService {
         ]);
         return seq;
       });
-    } catch (error) {
+    } catch (_error) {
       getLogger("enterprise").error(
         {
           run_id: run.runId,
@@ -403,35 +440,67 @@ export function createRunStore(deps: RunStoreDeps): RunService {
         return { view: toRunView(existing), fresh: false };
       }
 
-      /* The alias resolves to one approved route revision INSIDE this transaction (migration
-       * 0064's read catalog); assertStart below re-makes the full verdict on the same tx. */
-      const route = await firstRow(tx, SELECT_ROUTE_BY_ALIAS_TEXT, [
-        scope.tenantId,
+      /* The alias resolves through the plan's ONE resolver (§8.1: models/catalog.ts's
+       * resolveRouteInTx — the active default version only, target known to the deployment
+       * registry), inside this transaction (migration 0064's read catalog); assertStart below
+       * re-makes the full verdict on the same tx. A disabled default never falls back to a
+       * non-default revision: that would silently retarget a new run onto another
+       * target/price after the operator disabled the default. */
+      const route = await resolveRouteInTx(
+        tx,
+        scope,
         request.model_alias,
-      ]);
-      if (route === undefined) {
-        throw RUN_MODEL_ROUTE_MISSING;
-      }
-      const routeId = text(route.id);
-      const routeResourceId = text(route.resource_id);
+        targets,
+      );
+      const routeId = route.id;
+      const routeResourceId = route.resource_id;
 
       /* Step 3: authorization inside the same transaction, then the release/route resource
-       * locks (ascending resource id — the plan's resource order). */
+       * locks (ascending resource id — the plan's resource order). The reads that name the
+       * lock keys are the plan's untrusted hints; the bindings themselves are re-read under
+       * the locks below, before anything is frozen. */
       await policy.assertStart(tx, scope, request.expert_release_id, routeId);
+      const releaseHint = await firstRow(tx, SELECT_RELEASE_RESOURCE_TEXT, [
+        scope.tenantId,
+        request.expert_release_id,
+      ]);
+      if (releaseHint === undefined) {
+        /* assertStart just verified it; a vanished row is corrupted state, not a refusal. */
+        throw RUN_STATE_INVALID;
+      }
+      const releaseResourceId = text(releaseHint.resource_id);
+      const resourceLockIds = [releaseResourceId, routeResourceId].sort();
+      for (const resourceId of resourceLockIds) {
+        /* The SAME advisory key family 02's revoke path locks — the create's freeze and a
+         * concurrent grant change serialize on one key. Exclusive: create is a write. */
+        await lockExclusive(
+          tx,
+          lockKey("resource", scope.tenantId, resourceId),
+        );
+      }
+
+      /* The freeze happens on the re-read bindings (§4.3: 先读不可信 hint、上锁后复读绑定).
+       * A release disabled — or a route disabled — in the window between the pre-lock reads
+       * and these locks commits BEFORE create acquires them; freezing the stale hint would
+       * admit a run into a revoked release/target. */
       const release = await firstRow(tx, SELECT_RELEASE_TEXT, [
         scope.tenantId,
         request.expert_release_id,
       ]);
       if (release === undefined) {
-        /* assertStart just verified it; a vanished row is corrupted state, not a refusal. */
+        /* The locks just serialized against the disable path; a vanished row is corrupted
+         * state, not a refusal. */
         throw RUN_STATE_INVALID;
       }
-      const releaseResourceId = text(release.resource_id);
-      const resourceLockIds = [releaseResourceId, routeResourceId].sort();
-      for (const resourceId of resourceLockIds) {
-        /* The SAME advisory key family 02's revoke path locks — the create's freeze and a
-         * concurrent grant change serialize on one key. Exclusive: create is a write. */
-        await lockExclusive(tx, lockKey("resource", scope.tenantId, resourceId));
+      if (release.status !== "published") {
+        throw RUN_RELEASE_DISABLED;
+      }
+      const routeStatus = await firstRow(tx, SELECT_ROUTE_STATUS_TEXT, [
+        scope.tenantId,
+        routeId,
+      ]);
+      if (routeStatus === undefined || routeStatus.status !== "active") {
+        throw RUN_MODEL_ROUTE_MISSING;
       }
 
       /* Step 3 (thread): an existing thread must be active and owned by the caller; a new one
@@ -475,11 +544,11 @@ export function createRunStore(deps: RunStoreDeps): RunService {
        * revision is re-read UNDER the resource locks, in this transaction: a grant that
        * vanished between assertStart and the freeze fails closed instead of freezing a stale
        * admission. */
-      const admittedGrant = await firstRow(tx, SELECT_MODEL_GRANT_REVISION_TEXT, [
-        scope.tenantId,
-        routeId,
-        scope.principalId,
-      ]);
+      const admittedGrant = await firstRow(
+        tx,
+        SELECT_MODEL_GRANT_REVISION_TEXT,
+        [scope.tenantId, routeId, scope.principalId],
+      );
       if (admittedGrant === undefined) {
         throw RUN_MODEL_GRANT_MISSING;
       }
@@ -638,16 +707,24 @@ export function createRunStore(deps: RunStoreDeps): RunService {
           scope.tenantId,
           id,
         ]);
-        if (row === undefined || text(row.owner_principal_id) !== scope.principalId) {
+        if (
+          row === undefined ||
+          text(row.owner_principal_id) !== scope.principalId
+        ) {
           throw RUN_NOT_FOUND;
         }
         /* read: the owner's own run AND the expert resource read still valid. */
-        await policy.assertOwn(tx, scope, {
-          ownerPrincipalId: text(row.owner_principal_id),
-          releaseId: text(row.release_id),
-          workspaceId: text(row.workspace_id),
-          threadId: text(row.thread_id),
-        }, "read");
+        await policy.assertOwn(
+          tx,
+          scope,
+          {
+            ownerPrincipalId: text(row.owner_principal_id),
+            releaseId: text(row.release_id),
+            workspaceId: text(row.workspace_id),
+            threadId: text(row.thread_id),
+          },
+          "read",
+        );
         return toRunView(row);
       });
     },

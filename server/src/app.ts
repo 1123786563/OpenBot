@@ -761,6 +761,12 @@ export function createApp(
           ? await onboardingStore.status(context.var.actor.id)
           : null,
       },
+      /*
+       * True when this deployment admits everybody as one administrator and has no sign-in at
+       * all. The app reads it to drop UI that presumes a session — a Log-out the server has no
+       * route to serve answers its click with the 503 above.
+       */
+      singleUser: config.singleUser,
     }),
   );
   app.post("/api/me/onboarding", requireUser, async (context) => {

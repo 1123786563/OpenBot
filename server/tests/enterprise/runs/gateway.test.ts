@@ -1,14 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-
+import type {
+  CreateRun,
+  RunEventView,
+  RunView,
+} from "../../../../shared/enterprise/run-contracts";
 import type { EnterpriseVariables } from "../../../src/enterprise/app";
-import { mountRunGateway, type GatewayDeps } from "../../../src/enterprise/runs/gateway";
-import type { CreatedRun, RunServiceE1 } from "../../../src/enterprise/runs/service";
-import { deriveCapabilitySecret } from "../../../src/enterprise/runs/service";
-import type { RuntimeInvocation } from "../../../src/enterprise/runtime/wire";
-import type { EnterpriseRuntimeConfig } from "../../../src/enterprise/runtime/config";
 import type { Scope } from "../../../src/enterprise/contracts";
-import type { CreateRun, RunEventView, RunView } from "../../../../shared/enterprise/run-contracts";
+import {
+  type GatewayDeps,
+  mountRunGateway,
+} from "../../../src/enterprise/runs/gateway";
+import type {
+  CreatedRun,
+  RunServiceE1,
+} from "../../../src/enterprise/runs/service";
+import { deriveCapabilitySecret } from "../../../src/enterprise/runs/service";
+import type { EnterpriseRuntimeConfig } from "../../../src/enterprise/runtime/config";
+import type { RuntimeInvocation } from "../../../src/enterprise/runtime/wire";
 
 /*
  * Gateway unit plane: a fake service + a scripted fake Go endpoint, the same
@@ -101,8 +110,14 @@ function harness(): Harness {
   // The real enterprise app maps EnterpriseError to its status in onError;
   // the bare test app needs the same mapping for refusal assertions.
   app.onError((error, c) => {
-    const status = error instanceof Error && "status" in error ? (error as { status: number }).status : 500;
-    return c.json({ error: String(error) }, status as 400 | 401 | 403 | 404 | 409 | 500 | 503);
+    const status =
+      error instanceof Error && "status" in error
+        ? (error as { status: number }).status
+        : 500;
+    return c.json(
+      { error: String(error) },
+      status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
+    );
   });
 
   const events: Array<Record<string, unknown>> = [];
@@ -113,7 +128,10 @@ function harness(): Harness {
 
   const service = {
     async createE1() {
-      const created = createdRun({ replayed: replay, ...(replay ? { invocation: undefined } : {}) });
+      const created = createdRun({
+        replayed: replay,
+        ...(replay ? { invocation: undefined } : {}),
+      });
       return created;
     },
     async appendEvent(input: { eventType: string; payload: unknown }) {
@@ -188,10 +206,19 @@ function harness(): Harness {
   };
 }
 
-function post(h: Harness, path: string, body?: unknown, headers: Record<string, string> = {}) {
+function post(
+  h: Harness,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+) {
   return h.app.request(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": "key-1", ...headers },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "key-1",
+      ...headers,
+    },
     body: JSON.stringify(
       body ?? {
         workspace_id: "ws-1",
@@ -227,7 +254,9 @@ describe("the run gateway", () => {
 
   test("the execution body is exactly the frozen AG-UI shape the digest vouches for", async () => {
     const h = harness();
-    let captured: { url: string; headers: Record<string, string>; body: string } | undefined;
+    let captured:
+      | { url: string; headers: Record<string, string>; body: string }
+      | undefined;
     const app = new Hono<{ Variables: EnterpriseVariables }>();
     app.use("*", async (c, next) => {
       c.set("userId", SCOPE.userId);
@@ -253,10 +282,13 @@ describe("the run gateway", () => {
           headers: Object.fromEntries(new Headers(init?.headers).entries()),
           body: String(init?.body),
         };
-        return new Response("data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n", {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        });
+        return new Response(
+          "data: " + JSON.stringify({ type: "RUN_FINISHED" }) + "\n\n",
+          {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        );
       }) as typeof fetch,
     });
     const response = await app.request("/runs", {
@@ -283,9 +315,15 @@ describe("the run gateway", () => {
     expect(parsedBody.messages).toEqual([{ role: "user", content: "hello" }]);
     expect(parsedBody.forwardedProps).toEqual({});
     // The service credential rides its own header; the capability rides its own.
-    expect(captured?.headers["x-openbot-runtime-service-credential"]).toBe("shared-secret");
-    expect(captured?.headers["x-openbot-runtime-capability"]).toBe("cap-runtime");
-    const forwarded = JSON.parse(captured?.headers["x-openbot-runtime-invocation"] ?? "{}");
+    expect(captured?.headers["x-openbot-runtime-service-credential"]).toBe(
+      "shared-secret",
+    );
+    expect(captured?.headers["x-openbot-runtime-capability"]).toBe(
+      "cap-runtime",
+    );
+    const forwarded = JSON.parse(
+      captured?.headers["x-openbot-runtime-invocation"] ?? "{}",
+    );
     expect(forwarded.run_id).toBe("run-1");
   });
 
@@ -320,7 +358,10 @@ describe("the run gateway", () => {
     const response = await post(h, "/runs");
     expect(response.status).toBe(200);
     await response.text(); // the pump runs as the body is consumed
-    expect(h.events.map((event) => event.eventType)).toEqual(["run.started", "run.waiting"]);
+    expect(h.events.map((event) => event.eventType)).toEqual([
+      "run.started",
+      "run.waiting",
+    ]);
   });
 
   test("cancel dials Go with the control capability and the same envelope", async () => {
@@ -339,13 +380,17 @@ describe("the run gateway", () => {
     expect(h.cancelled[0]?.headers["x-openbot-runtime-capability"]).toBe(
       deriveCapabilitySecret("k", "control", "tenant-1", "run-1"),
     );
-    const envelope = JSON.parse(h.cancelled[0]?.headers["x-openbot-runtime-invocation"] ?? "{}");
+    const envelope = JSON.parse(
+      h.cancelled[0]?.headers["x-openbot-runtime-invocation"] ?? "{}",
+    );
     expect(envelope.run_id).toBe("run-1");
   });
 
   test("cancel without a live envelope answers cancel_requested without dialing", async () => {
     const h = harness();
-    const response = await post(h, "/runs/run-unknown/commands", { kind: "cancel" });
+    const response = await post(h, "/runs/run-unknown/commands", {
+      kind: "cancel",
+    });
     expect(response.status).toBe(200);
     expect(h.cancelled).toHaveLength(0);
   });
