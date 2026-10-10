@@ -13,6 +13,7 @@
  * honest about being one shared computer.
  */
 
+import { injectTraceHeaders } from "../../../shared/trace";
 import type { ComputerLocation, ComputerProvider } from "./provider";
 import type { ComputerStatus } from "./schema";
 
@@ -80,9 +81,11 @@ export function createDockerSupervisorProvider(
     try {
       response = await doFetch(`${base}${path}`, {
         method,
-        headers: options.token
-          ? { authorization: `Bearer ${options.token}` }
-          : {},
+        // Built fresh each call, so the injection merges into it without ever touching
+        // the options the provider was constructed with. No active trace, no header.
+        headers: injectTraceHeaders(
+          options.token ? { authorization: `Bearer ${options.token}` } : {},
+        ),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {

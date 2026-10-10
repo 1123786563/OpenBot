@@ -42,9 +42,15 @@ function startRecordingAgent(): RecordingServer {
       if (req.method === "POST") {
         posts += 1;
         received = Object.fromEntries(req.headers.entries());
-        return new Response('event: RUN_STARTED\ndata: {"type":"RUN_STARTED"}\n\n', {
-          headers: { "content-type": "text/event-stream" },
-        });
+        // An agent asks for SSE; the computer's JSON calls do not. Answer each in
+        // the shape its caller can read.
+        if (req.headers.get("accept")?.includes("text/event-stream")) {
+          return new Response(
+            'event: RUN_STARTED\ndata: {"type":"RUN_STARTED"}\n\n',
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return Response.json({ ok: true });
       }
       received = Object.fromEntries(req.headers.entries());
       return Response.json({ ok: true });
@@ -117,10 +123,11 @@ describe("outbound traceparent injection", () => {
         "computer call",
         async (span) => {
           spanTraceId = span.spanContext().traceId;
-          const answer = await transport.call(
+          const answer = await transport.post(
             `http://127.0.0.1:${computer.port}`,
             "bot-1",
             "/snapshot",
+            {},
           );
           expect(answer).toEqual({ ok: true });
           span.end();

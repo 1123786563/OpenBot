@@ -1,4 +1,5 @@
 import { checkNavigationTarget } from "../computer/target";
+import { injectTraceHeaders } from "../../../shared/trace";
 
 /**
  * Where an external agent lives, and whether we are willing to talk to it.
@@ -288,7 +289,24 @@ export function createAgentFetch(
 
     const origin = stored.url;
     let target = stored.url;
-    let carried = init;
+    /*
+     * The trace context rides the first hop's headers, and it is merged here rather than left to the
+     * caller, because every caller of this fetch — the AG-UI run, the connection test — is an outbound
+     * dial this deployment should be able to follow. Normalised to a plain record first, so an init
+     * carrying `Headers` (or none at all) still merges, and so the caller's own headers object is
+     * never mutated as a side effect of dialling.
+     *
+     * Injected once, ahead of the loop, not per hop: a redirect that leaves the credential scope is
+     * stripped of everything but the protocol headers by `withoutCredentials`, and the traceparent is
+     * stripped with them. The W3C context is not a secret, but it is this deployment's correlation,
+     * and it follows the same lifetime as the credentials the hop was authorised for.
+     */
+    let carried: RequestInit = {
+      ...init,
+      headers: injectTraceHeaders(
+        Object.fromEntries(new Headers(init?.headers)),
+      ),
+    };
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       // `manual` is what makes this a check rather than a comment: the caller sees the redirect, and
