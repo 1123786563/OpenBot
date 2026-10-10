@@ -14,10 +14,21 @@ import {
   type BillingSnapshot,
   type BillingStore,
   type BillingSubscriptionRow,
+  type BillingUsageDaily,
+  type BillingUsageDailyBucket,
   type BillingUsageEventPage,
   type VerifiedWebhook,
   type WebhookVerifier,
 } from "./types";
+
+/** The daily aggregation's read window: per page, the ceiling, and how long an answer is reused. */
+const DAILY_PAGE_SIZE = 100;
+const DAILY_MAX_PAGES = 50;
+const DAILY_TTL_MS = 60_000;
+
+/** The server-local `yyyy-mm-dd` an event's stamp lands on, which is how days are bucketed. */
+const dayKey = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 /** Read one property as a finite number; absent or non-numeric stays undefined. */
 function numberOf(
@@ -202,6 +213,14 @@ export function createBillingService(deps: {
       headers: { "content-type": "application/json" },
     });
   }
+
+  // One aggregation is up to fifty paged provider reads, so it answers from this cache for a
+  // short window instead of paying that on every page load. Keyed by customer like the
+  // entitlement reader, and small by construction: a deployment serves one customer key.
+  const dailyCache = new Map<
+    string,
+    { value: BillingUsageDaily; expiresAt: number }
+  >();
 
   return {
     async ensureCustomer(input) {
@@ -446,6 +465,71 @@ export function createBillingService(deps: {
         currentPage: body.currentPage,
         nextPage: body.nextPage,
       };
+    },
+
+    /**
+     * The current period's usage bucketed by server-local day, for a chart.
+     *
+     * The provider exposes no day axis of its own, so the buckets are built here: the
+     * subscription's whole event log is paged through (a page at a time, at most
+     * DAILY_MAX_PAGES pages — a log longer than that answers truncated, an honest boundary
+     * rather than an unbounded loop), every event lands in its local-day bucket, and the answer
+     * is reused for DAILY_TTL_MS because re-walking fifty pages on every page load is the kind
+     * of bill a chart should not write. A failed page read is not swallowed — an aggregation
+     * built over a half-read log would be quietly wrong, so it fails whole and the route answers
+     * the error, the same contract as the reads above.
+     */
+    async usageDaily(externalCustomerId): Promise<BillingUsageDaily> {
+      const key = externalCustomerId ?? config.externalCustomerKey;
+      const cached = dailyCache.get(key);
+      if (cached && Date.now() < cached.expiresAt) return cached.value;
+      const value = await (async (): Promise<BillingUsageDaily> => {
+        const rows = await store.readSubscriptions(key);
+        const active = rows.find((row) => row.status === "active");
+        if (!active) return { days: [], truncated: false };
+        const usage = await client.getUsage(key, active.externalSubscriptionId);
+        const buckets = new Map<string, BillingUsageDailyBucket>();
+        let truncated = false;
+        for (let page = 1; page <= DAILY_MAX_PAGES; page += 1) {
+          const result = await client.listEvents(
+            active.externalSubscriptionId,
+            DAILY_PAGE_SIZE,
+            page,
+          );
+          const body = result.body;
+          if (!body) break;
+          for (const event of body.events) {
+            const date = dayKey(new Date(event.timestamp));
+            const bucket =
+              buckets.get(date) ??
+              { date, tokens: 0, inputTokens: 0, outputTokens: 0, calls: 0 };
+            bucket.tokens += numberOf(event.properties, "tokens") ?? 0;
+            bucket.inputTokens +=
+              numberOf(event.properties, "input_tokens") ?? 0;
+            bucket.outputTokens +=
+              numberOf(event.properties, "output_tokens") ?? 0;
+            bucket.calls += 1;
+            buckets.set(date, bucket);
+          }
+          if (body.nextPage === null) break;
+          if (page === DAILY_MAX_PAGES) truncated = true;
+        }
+        const days = [...buckets.values()].sort((a, b) =>
+          a.date.localeCompare(b.date),
+        );
+        return {
+          ...(usage.body?.fromDatetime !== undefined
+            ? { fromDatetime: usage.body.fromDatetime }
+            : {}),
+          ...(usage.body?.toDatetime !== undefined
+            ? { toDatetime: usage.body.toDatetime }
+            : {}),
+          days,
+          truncated,
+        };
+      })();
+      dailyCache.set(key, { value, expiresAt: Date.now() + DAILY_TTL_MS });
+      return value;
     },
 
     async snapshot(): Promise<BillingSnapshot> {
