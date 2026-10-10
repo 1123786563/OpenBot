@@ -30,9 +30,9 @@ import {
   mastraMessageIntents,
 } from "../../src/db/schema/mastra-message-intents";
 import type { PlatformScope } from "../../src/enterprise/contracts";
+import { createMastraMessageIntentReconciler } from "../../src/enterprise/conversations/mastra-intent-reconciler";
 import { createConversationService } from "../../src/enterprise/conversations/service";
 import { createConversationStore } from "../../src/enterprise/conversations/store";
-import { createMastraMessageIntentReconciler } from "../../src/enterprise/conversations/mastra-intent-reconciler";
 import type {
   DataDatabase,
   DirectoryDatabase,
@@ -48,12 +48,13 @@ import {
   suspendMembership,
 } from "../../src/enterprise/tenancy/provision";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
+import { tenantStorageKey } from "../../src/mastra/contracts";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
   enterpriseTestDatabaseUrlFrom,
 } from "../support/enterprise-database";
 
-const prefix = `conversation-t03-${randomUUID()}`;
+const prefix = `m02r1br1-${randomUUID()}`;
 const channelId = `${prefix}-channel`;
 const raceChannelId = `${prefix}-race-channel`;
 const tenantId = `${prefix}-tenant`;
@@ -119,16 +120,16 @@ beforeAll(async () => {
       email: `${foreignActorId}@example.invalid`,
       name: "Synthetic foreign actor",
     },
-      {
-        id: raceActorId,
-        email: `${raceActorId}@example.invalid`,
-        name: "Synthetic race actor",
-      },
-      {
-        id: reconcileActorId,
-        email: `${reconcileActorId}@example.invalid`,
-        name: "Synthetic reconcile actor",
-      },
+    {
+      id: raceActorId,
+      email: `${raceActorId}@example.invalid`,
+      name: "Synthetic race actor",
+    },
+    {
+      id: reconcileActorId,
+      email: `${reconcileActorId}@example.invalid`,
+      name: "Synthetic reconcile actor",
+    },
   ]);
   await setup.insert(enterprisePrincipals).values([
     { id: principalId, userId: actorId },
@@ -307,6 +308,142 @@ test("new conversation fails closed without Mastra storage", async () => {
       ),
     );
   expect(rows).toEqual(before);
+});
+
+test("trusted reconciler validates bounded batch limits before database access", async () => {
+  const reconciler = createMastraMessageIntentReconciler({
+    data: dataDatabase!,
+    mastraStorage: {} as never,
+  });
+  for (const limit of [0, -1, 1.5, 101, Number.NaN]) {
+    await expect(
+      reconciler.reconcilePendingForTenant(tenantId, limit),
+    ).rejects.toThrow("INVALID_RECONCILIATION_LIMIT");
+  }
+  await expect(
+    reconciler.reconcilePendingForTenant(tenantId, 1),
+  ).resolves.toEqual({
+    scanned: 0,
+    finalized: 0,
+    pending: 0,
+    absent: 0,
+    mismatch: 0,
+  });
+});
+
+test("reconciler advances past multiple unresolved batches and finalizes a later exact intent", async () => {
+  const fairnessThreadId = `${prefix}-fairness-${randomUUID()}`;
+  const clientMessageKeys = Array.from(
+    { length: 5 },
+    (_, index) => `${prefix}-fairness-${index}`,
+  );
+  const messageIds = clientMessageKeys.map(() => randomUUID());
+  const start = Date.now() - 60_000;
+  await setupDb().insert(enterpriseConversations).values({
+    tenantId,
+    workspaceId,
+    principalId: reconcilePrincipalId,
+    threadId: fairnessThreadId,
+    storageBackend: "mastra",
+    backendVersion: 1,
+  });
+  await setupDb()
+    .insert(mastraMessageIntents)
+    .values(
+      clientMessageKeys.map((clientMessageKey, index) => ({
+        tenantId,
+        threadId: fairnessThreadId,
+        clientMessageKey,
+        messageId: messageIds[index]!,
+        digest: `digest-${index}`,
+        reservedSeq: index + 1,
+        actorId: reconcileActorId,
+        principalId: reconcilePrincipalId,
+        backendVersion: 1,
+        attachmentIds: [],
+        state: "pending" as const,
+        createdAt: new Date(start + index),
+        updatedAt: new Date(start + index),
+      })),
+    );
+  const inspected: string[] = [];
+  let storageGetStoreCalls = 0;
+  let saveMessageCalls = 0;
+  const reconciler = createMastraMessageIntentReconciler({
+    data: dataDatabase!,
+    mastraStorage: {
+      async getStore() {
+        storageGetStoreCalls += 1;
+        return {
+          async getStore() {
+            return {
+              async saveMessages() {
+                saveMessageCalls += 1;
+              },
+            };
+          },
+        };
+      },
+      async withConversationLock(_scope, _binding, operation) {
+        return operation();
+      },
+      async inspectIntentMessage(_binding, expected) {
+        inspected.push(expected.messageId);
+        return expected.messageId === messageIds[4]
+          ? "exact"
+          : inspected.length % 2 === 0
+            ? "mismatch"
+            : "absent";
+      },
+    } as never,
+  });
+
+  try {
+    const outcomes = [];
+    for (let scan = 0; scan < 3; scan += 1) {
+      outcomes.push(await reconciler.reconcilePendingForTenant(tenantId, 2));
+    }
+
+    expect(inspected).toContain(messageIds[4]);
+    expect(storageGetStoreCalls).toBe(0);
+    expect(saveMessageCalls).toBe(0);
+    expect(outcomes.reduce((sum, outcome) => sum + outcome.finalized, 0)).toBe(
+      1,
+    );
+    const rows = await setupDb()
+      .select({
+        clientMessageKey: mastraMessageIntents.clientMessageKey,
+        state: mastraMessageIntents.state,
+      })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, fairnessThreadId));
+    expect(rows.filter(({ state }) => state === "pending")).toHaveLength(4);
+    expect(
+      rows.find(
+        ({ clientMessageKey }) => clientMessageKey === clientMessageKeys[4],
+      )?.state,
+    ).toBe("finalized");
+  } finally {
+    await setupDb()
+      .delete(mastraMessageIntentAttachments)
+      .where(eq(mastraMessageIntentAttachments.threadId, fairnessThreadId));
+    await setupDb()
+      .delete(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, fairnessThreadId));
+    await setupDb()
+      .delete(enterpriseConversations)
+      .where(
+        and(
+          eq(enterpriseConversations.tenantId, tenantId),
+          eq(enterpriseConversations.threadId, fairnessThreadId),
+        ),
+      );
+    const remaining = await setupDb()
+      .select({ threadId: enterpriseConversations.threadId })
+      .from(enterpriseConversations)
+      .where(eq(enterpriseConversations.threadId, fairnessThreadId));
+    expect(remaining).toEqual([]);
+  }
 });
 
 const legacyChannelLockKey = (id: string) =>
@@ -1559,6 +1696,502 @@ test("a Mastra-backed public conversation writes and reads only through Mastra",
           eq(enterpriseConversations.tenantId, tenantId),
           eq(enterpriseConversations.threadId, threadId ?? ""),
         ),
+      );
+  }
+});
+
+test("trusted reconciler finalizes an accepted write after revocation without writing Mastra", async () => {
+  const attachmentId = randomUUID();
+  const blockerToken = randomUUID().replaceAll("-", "");
+  const triggerName = `m02r1br1_${blockerToken}_fail_finalize`;
+  const functionName = `${triggerName}_fn`;
+  let threadId: string | undefined;
+  const persisted: Array<{
+    id: string;
+    threadId: string;
+    resourceId: string;
+    role: "user";
+    type: "text";
+    createdAt: Date;
+    content: {
+      format: 2;
+      parts: Array<{ type: "text"; text: string }>;
+      metadata: Record<string, unknown>;
+    };
+  }> = [];
+  const observations: Array<{ binding: unknown; expected: unknown }> = [];
+  let saveCount = 0;
+  let threadSaveCount = 0;
+  const memory = {
+    async listMessagesById({ messageIds }: { messageIds: string[] }) {
+      return {
+        messages: persisted.filter(({ id }) => messageIds.includes(id)),
+      };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {
+      threadSaveCount += 1;
+    },
+    async saveMessages({
+      messages,
+    }: {
+      messages: (typeof persisted)[number][];
+    }) {
+      saveCount += 1;
+      persisted.push(...messages);
+      return { messages };
+    },
+  };
+  const mastraStorage = {
+    getStore: async () => ({ getStore: async () => memory }),
+    withConversationLock: async <T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) => run(),
+    async inspectIntentMessage(
+      binding: {
+        threadId: string;
+        resourceId: string;
+      },
+      expected: {
+        messageId: string;
+        digest: string;
+        seq: number;
+        clientMessageKey: string;
+        attachmentIds: string[];
+      },
+    ) {
+      observations.push({ binding, expected });
+      const found = persisted.find(({ id }) => id === expected.messageId);
+      if (!found) return "absent" as const;
+      const metadata = found.content.metadata;
+      return found.threadId === binding.threadId &&
+        found.resourceId === binding.resourceId &&
+        metadata.openbotDigest === expected.digest &&
+        metadata.openbotSeq === expected.seq &&
+        metadata.openbotClientMessageKey === expected.clientMessageKey &&
+        JSON.stringify(metadata.openbotAttachments) ===
+          JSON.stringify(expected.attachmentIds)
+        ? ("exact" as const)
+        : ("mismatch" as const);
+    },
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  const clientMessageKey = `${prefix}-accepted-write-reconcile`;
+  const content = "accepted before the membership was revoked";
+  let testFailure: unknown;
+  const cleanupFailures: unknown[] = [];
+
+  async function removeBlocker() {
+    await setupDb().execute(
+      sql.raw(
+        `DROP TRIGGER IF EXISTS "${triggerName}" ON public.mastra_message_intents`,
+      ),
+    );
+    await setupDb().execute(
+      sql.raw(`DROP FUNCTION IF EXISTS public."${functionName}"()`),
+    );
+    const result = await setupDb().execute(sql`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM pg_trigger
+          WHERE tgname = ${triggerName} AND NOT tgisinternal
+        ) AS trigger_exists,
+        EXISTS (
+          SELECT 1 FROM pg_proc procedure
+          JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+          WHERE namespace.nspname = 'public' AND procedure.proname = ${functionName}
+        ) AS function_exists
+    `);
+    expect(firstQueryRow(result)).toMatchObject({
+      trigger_exists: false,
+      function_exists: false,
+    });
+  }
+
+  try {
+    await setupDb()
+      .insert(attachments)
+      .values({
+        id: attachmentId,
+        channelId,
+        uploadedBy: reconcileActorId,
+        name: "r1-reconcile.txt",
+        mimeType: "text/plain",
+        sizeBytes: 5,
+        bytes: Buffer.from("exact"),
+      });
+    const conversation = await service.getOrCreate(reconcileScope, {});
+    threadId = conversation.thread_id;
+    await setupDb().execute(
+      sql.raw(`
+        CREATE FUNCTION public."${functionName}"()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.thread_id = '${threadId}' AND NEW.state = 'finalized' THEN
+            RAISE EXCEPTION 'synthetic task finalization fault';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+      `),
+    );
+    await setupDb().execute(
+      sql.raw(`
+        CREATE TRIGGER "${triggerName}"
+        BEFORE UPDATE ON public.mastra_message_intents
+        FOR EACH ROW EXECUTE FUNCTION public."${functionName}"()
+      `),
+    );
+
+    const input = {
+      threadId,
+      clientMessageKey,
+      content,
+      attachments: [attachmentId],
+    };
+    await expect(service.append(reconcileScope, input)).rejects.toMatchObject({
+      code: "message_pending",
+      status: 503,
+    });
+    expect(saveCount).toBe(1);
+    const [pending] = await setupDb()
+      .select()
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+    expect(pending?.state).toBe("pending");
+    const [unstamped] = await setupDb()
+      .select({ attachedAt: attachments.attachedAt })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId));
+    expect(unstamped?.attachedAt).toBeNull();
+    const writesBeforeReconcile = { saveCount, threadSaveCount };
+
+    await removeBlocker();
+    const revoked = await suspendMembership(operatorDatabase!, {
+      operationId: `${prefix}-reconcile-revoke`,
+      operator: principalId,
+      tenantId,
+      principalId: reconcilePrincipalId,
+    });
+    expect(revoked.changed).toBe(true);
+    await expect(
+      service.history(reconcileScope, {
+        threadId,
+        beforeSeq: null,
+        limit: 20,
+      }),
+    ).rejects.toThrow("SCOPE_REVOKED");
+    await expect(service.append(reconcileScope, input)).rejects.toThrow(
+      "SCOPE_REVOKED",
+    );
+
+    const reconciler = createMastraMessageIntentReconciler({
+      data: dataDatabase!,
+      mastraStorage,
+    });
+    const outcome = await reconciler.reconcilePendingForTenant(tenantId, 10);
+    expect(outcome).toEqual({
+      scanned: 1,
+      finalized: 1,
+      pending: 0,
+      absent: 0,
+      mismatch: 0,
+    });
+    expect(saveCount).toBe(1);
+    expect({ saveCount, threadSaveCount }).toEqual(writesBeforeReconcile);
+    const [finalized] = await setupDb()
+      .select()
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+    expect(finalized?.state).toBe("finalized");
+    expect(finalized?.attachmentIds).toEqual([attachmentId]);
+    const [stamped] = await setupDb()
+      .select({ attachedAt: attachments.attachedAt })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId));
+    expect(stamped?.attachedAt).toBeInstanceOf(Date);
+    const pendingRefs = await setupDb()
+      .select()
+      .from(mastraMessageIntentAttachments)
+      .where(
+        eq(mastraMessageIntentAttachments.clientMessageKey, clientMessageKey),
+      );
+    expect(pendingRefs).toEqual([]);
+    expect(observations).toHaveLength(1);
+    expect(observations[0]?.binding).toMatchObject({
+      tenantId,
+      threadId,
+      resourceId: `private:${JSON.stringify([tenantId, reconcilePrincipalId])}`,
+      storageKey: tenantStorageKey(tenantId),
+      backend: "mastra",
+    });
+    expect(observations[0]?.expected).toMatchObject({
+      messageId: pending?.messageId,
+      digest: pending?.digest,
+      seq: pending?.reservedSeq,
+      clientMessageKey,
+      attachmentIds: [attachmentId],
+    });
+    expect(Object.keys(outcome)).not.toContain("content");
+  } catch (error) {
+    testFailure = error;
+  } finally {
+    const clean = async (operation: () => Promise<unknown>) => {
+      try {
+        await operation();
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    };
+    await clean(removeBlocker);
+    if (threadId) {
+      await clean(() =>
+        setupDb()
+          .delete(mastraMessageIntentAttachments)
+          .where(eq(mastraMessageIntentAttachments.threadId, threadId!)),
+      );
+      await clean(() =>
+        setupDb()
+          .delete(mastraMessageIntents)
+          .where(eq(mastraMessageIntents.threadId, threadId!)),
+      );
+      await clean(() =>
+        setupDb()
+          .delete(enterpriseMessages)
+          .where(eq(enterpriseMessages.threadId, threadId!)),
+      );
+      await clean(() =>
+        setupDb()
+          .delete(enterpriseConversations)
+          .where(
+            and(
+              eq(enterpriseConversations.tenantId, tenantId),
+              eq(enterpriseConversations.threadId, threadId!),
+            ),
+          ),
+      );
+    }
+    await clean(() =>
+      setupDb().delete(attachments).where(eq(attachments.id, attachmentId)),
+    );
+  }
+  if (cleanupFailures.length || testFailure !== undefined)
+    throw new AggregateError(
+      [...(testFailure === undefined ? [] : [testFailure]), ...cleanupFailures],
+      `R1B-R1 reconciliation fixture cleanup failed: trigger=${triggerName} function=${functionName} thread=${threadId ?? "<not-created>"} attachment=${attachmentId}`,
+    );
+});
+
+test("trusted reconciler leaves absent and mismatched Mastra writes pending", async () => {
+  for (const inspection of ["absent", "mismatch"] as const) {
+    const attachmentId = randomUUID();
+    const clientMessageKey = `${prefix}-reconcile-${inspection}`;
+    let threadId: string | undefined;
+    let saveCount = 0;
+    let testFailure: unknown;
+    const cleanupFailures: unknown[] = [];
+    const persisted: Array<{
+      id: string;
+      threadId: string;
+      resourceId: string;
+      role: "user";
+      type: "text";
+      createdAt: Date;
+      content: {
+        format: 2;
+        parts: Array<{ type: "text"; text: string }>;
+        metadata: Record<string, unknown>;
+      };
+    }> = [];
+    const memory = {
+      async listMessagesById({ messageIds }: { messageIds: string[] }) {
+        return {
+          messages: persisted.filter(({ id }) => messageIds.includes(id)),
+        };
+      },
+      async getThreadById() {
+        return null;
+      },
+      async saveThread() {},
+      async saveMessages({
+        messages,
+      }: {
+        messages: (typeof persisted)[number][];
+      }) {
+        saveCount += 1;
+        if (inspection === "absent")
+          throw new Error("synthetic unconfirmed Mastra write");
+        const [message] = messages;
+        if (!message) throw new Error("synthetic message missing");
+        const mismatched = {
+          ...message,
+          content: {
+            ...message.content,
+            metadata: {
+              ...message.content.metadata,
+              openbotDigest: "wrong-digest",
+            },
+          },
+        };
+        persisted.push(mismatched);
+        return { messages: [mismatched] };
+      },
+    };
+    const mastraStorage = {
+      getStore: async () => ({ getStore: async () => memory }),
+      withConversationLock: async <T>(
+        _scope: unknown,
+        _binding: unknown,
+        run: () => Promise<T>,
+      ) => run(),
+      async inspectIntentMessage(
+        binding: { threadId: string; resourceId: string },
+        expected: {
+          messageId: string;
+          digest: string;
+          seq: number;
+          clientMessageKey: string;
+          attachmentIds: string[];
+        },
+      ) {
+        const found = persisted.find(({ id }) => id === expected.messageId);
+        if (!found) return "absent" as const;
+        const metadata = found.content.metadata;
+        return found.threadId === binding.threadId &&
+          found.resourceId === binding.resourceId &&
+          metadata.openbotDigest === expected.digest &&
+          metadata.openbotSeq === expected.seq &&
+          metadata.openbotClientMessageKey === expected.clientMessageKey &&
+          JSON.stringify(metadata.openbotAttachments) ===
+            JSON.stringify(expected.attachmentIds)
+          ? ("exact" as const)
+          : ("mismatch" as const);
+      },
+    } as never;
+    try {
+      await setupDb()
+        .insert(attachments)
+        .values({
+          id: attachmentId,
+          channelId,
+          uploadedBy: actorId,
+          name: `${inspection}-reconcile.txt`,
+          mimeType: "text/plain",
+          sizeBytes: 5,
+          bytes: Buffer.from("hold!"),
+        });
+      const service = createConversationService({
+        data: dataDatabase!,
+        mastraStorage,
+      });
+      const conversation = await service.getOrCreate(scope, {});
+      threadId = conversation.thread_id;
+      await expect(
+        service.append(scope, {
+          threadId,
+          clientMessageKey,
+          content: `recover ${inspection}`,
+          attachments: [attachmentId],
+        }),
+      ).rejects.toMatchObject({ code: "message_pending", status: 503 });
+      expect(saveCount).toBe(1);
+      const [beforeIntent] = await setupDb()
+        .select({ updatedAt: mastraMessageIntents.updatedAt })
+        .from(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+      expect(beforeIntent?.updatedAt).toBeInstanceOf(Date);
+
+      const reconciler = createMastraMessageIntentReconciler({
+        data: dataDatabase!,
+        mastraStorage,
+      });
+      const outcome = await reconciler.reconcilePendingForTenant(tenantId, 10);
+      expect(outcome).toMatchObject({
+        scanned: 1,
+        finalized: 0,
+        pending: 1,
+        absent: inspection === "absent" ? 1 : 0,
+        mismatch: inspection === "mismatch" ? 1 : 0,
+      });
+      expect(saveCount).toBe(1);
+      const [intent] = await setupDb()
+        .select({
+          state: mastraMessageIntents.state,
+          updatedAt: mastraMessageIntents.updatedAt,
+        })
+        .from(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+      expect(intent?.state).toBe("pending");
+      expect(intent?.updatedAt.getTime()).toBeGreaterThan(
+        beforeIntent!.updatedAt.getTime(),
+      );
+      const [attachment] = await setupDb()
+        .select({ attachedAt: attachments.attachedAt })
+        .from(attachments)
+        .where(eq(attachments.id, attachmentId));
+      expect(attachment?.attachedAt).toBeNull();
+      const references = await setupDb()
+        .select({ attachmentId: mastraMessageIntentAttachments.attachmentId })
+        .from(mastraMessageIntentAttachments)
+        .where(
+          eq(mastraMessageIntentAttachments.clientMessageKey, clientMessageKey),
+        );
+      expect(references).toEqual([{ attachmentId }]);
+    } catch (error) {
+      testFailure = error;
+    } finally {
+      const clean = async (operation: () => Promise<unknown>) => {
+        try {
+          await operation();
+        } catch (error) {
+          cleanupFailures.push(error);
+        }
+      };
+      if (threadId) {
+        await clean(() =>
+          setupDb()
+            .delete(mastraMessageIntentAttachments)
+            .where(eq(mastraMessageIntentAttachments.threadId, threadId!)),
+        );
+        await clean(() =>
+          setupDb()
+            .delete(mastraMessageIntents)
+            .where(eq(mastraMessageIntents.threadId, threadId!)),
+        );
+        await clean(() =>
+          setupDb()
+            .delete(enterpriseMessages)
+            .where(eq(enterpriseMessages.threadId, threadId!)),
+        );
+        await clean(() =>
+          setupDb()
+            .delete(enterpriseConversations)
+            .where(
+              and(
+                eq(enterpriseConversations.tenantId, tenantId),
+                eq(enterpriseConversations.threadId, threadId!),
+              ),
+            ),
+        );
+      }
+      await clean(() =>
+        setupDb().delete(attachments).where(eq(attachments.id, attachmentId)),
+      );
+    }
+    if (cleanupFailures.length || testFailure !== undefined)
+      throw new AggregateError(
+        [
+          ...(testFailure === undefined ? [] : [testFailure]),
+          ...cleanupFailures,
+        ],
+        `R1B-R1 exactness fixture cleanup failed: thread=${threadId ?? "<not-created>"} attachment=${attachmentId} clientMessageKey=${clientMessageKey}`,
       );
   }
 });
