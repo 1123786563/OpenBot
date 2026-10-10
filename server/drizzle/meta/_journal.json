@@ -470,6 +470,13 @@
       "when": 1791655364334,
       "tag": "0066_misty_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1791670501247,
+      "tag": "0067_workshop_rls",
+      "breakpoints": true
     }
   ]
 }
