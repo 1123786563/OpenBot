@@ -23,6 +23,7 @@ import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, isNull, min, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import type { HandoffCaps } from "../agents/handoff";
 import type { ApprovalContinuation } from "../approvals/types";
 import {
@@ -46,6 +47,7 @@ import { workItems } from "../db/schema/work";
 import type { CheckPrivateShare } from "../proactive/private-share";
 import type { TurnRunner } from "../routines/runner";
 import type { WorkQueue } from "../work/queue";
+const log = getLogger("server");
 
 export const GROUP_TURN_KIND = "group.turn";
 
@@ -886,20 +888,21 @@ export function createGroupConversations(deps: {
       // The reply is already saved: a fault handing it on is not this Bot's answer failing, and
       // writing it over the row would replace a good reply with an error that no retry repairs.
       if (saved) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "group-turn-after-reply-error",
             error: error instanceof Error ? error.message : String(error),
             context: { channelId: turn.channelId, agentId, rowId: id },
             timestamp: new Date().toISOString(),
-          }),
+          },
+          "group-turn-after-reply-error",
         );
         const unfinished = async (step: string, run: () => Promise<void>) => {
           try {
             await run();
           } catch (stepError) {
-            console.error(
-              JSON.stringify({
+            log.error(
+              {
                 type: "group-turn-after-reply-error",
                 step,
                 error:
@@ -908,7 +911,8 @@ export function createGroupConversations(deps: {
                     : String(stepError),
                 context: { channelId: turn.channelId, agentId, rowId: id },
                 timestamp: new Date().toISOString(),
-              }),
+              },
+              "group-turn-after-reply-error",
             );
           }
         };

@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import {
   AgentNotFoundError,
   type AgentProfileStore,
@@ -37,6 +38,7 @@ import {
 import { upgradeWebSocket } from "./socket";
 import { oneLine } from "./text";
 import type { ThreadIdentity } from "./thread-identity";
+const log = getLogger("server");
 
 export type AgentChannel = {
   id: string;
@@ -1058,13 +1060,14 @@ export function createChannelRoutes(
         payload: { mechanism: "soft" },
       });
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "channel-audit-write-failed",
           eventType: "channel.deleted",
           channelId,
           error: String(error),
-        }),
+        },
+        "channel-audit-write-failed",
       );
     }
   };

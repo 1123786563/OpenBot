@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import {
   type CredentialExecutor,
   type CredentialSecretReader,
@@ -5,6 +6,7 @@ import {
   decryptSecret,
   encryptSecret,
 } from "../credentials";
+const log = getLogger("server");
 
 /**
  * The key a customer's agent sits behind.
@@ -143,13 +145,14 @@ export async function retireReplacedKey(
   try {
     await store.revoke(before, executor);
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "agent-key-revoke-failed",
         credentialId: before,
         note: "A Bot's key was replaced and the one it replaced is still live in the vault. Revoke it by hand.",
         error: String(error),
-      }),
+      },
+      "agent-key-revoke-failed",
     );
   }
 }

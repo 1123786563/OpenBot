@@ -22,9 +22,11 @@
  * Postgres.
  */
 import { eq, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { actionPolicy } from "../db/schema";
 import type { ActionPolicy } from "./policy";
+const log = getLogger("server");
 
 /** There is one boundary per deployment, so there is one row. */
 const CURRENT = "current";
@@ -189,12 +191,13 @@ async function announce(database: Pick<Database, "execute">): Promise<void> {
   try {
     await database.execute(sql`select pg_notify(${ACTION_POLICY_TOPIC}, '')`);
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "action-policy-notify-failed",
         note: "The boundary was saved but other servers were not told. They keep enforcing the previous rules until they restart.",
         error: String(error),
-      }),
+      },
+      "action-policy-notify-failed",
     );
   }
 }

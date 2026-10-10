@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
+import { getLogger } from "../../../shared/logger";
 import { seal, unseal } from "../auth/signed-value";
 import type { CatalogueAuth } from "./catalogue";
+const log = getLogger("server");
 
 /**
  * The connect flow: sending a person to a vendor to consent, and believing what comes back.
@@ -337,12 +339,13 @@ export async function redeemAuthorizationCode(input: {
    * quietly standing in for a mistake in a frozen literal.
    */
   if (!URL.canParse(input.tokenUrl)) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "oauth-token-endpoint-unusable",
         tokenUrl: input.tokenUrl,
         note: "This vendor's token endpoint is not a usable address, so nobody can connect it until the catalogue is fixed.",
-      }),
+      },
+      "oauth-token-endpoint-unusable",
     );
     return null;
   }
@@ -388,13 +391,14 @@ export async function redeemAuthorizationCode(input: {
      * says which vendor and why. Neither the code nor the client secret is in a transport error:
      * they are in the request body, which never got sent.
      */
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "oauth-token-endpoint-unreachable",
         tokenUrl: input.tokenUrl,
         note: "A person's consent could not be redeemed. They were sent back to Settings with a failure.",
         error: String(error),
-      }),
+      },
+      "oauth-token-endpoint-unreachable",
     );
     return null;
   }
@@ -453,12 +457,13 @@ export async function registerDynamicClient(input: {
   // that is not an address is this deployment's mistake, not the vendor's outage, and only the log
   // can tell them apart.
   if (!URL.canParse(input.registrationUrl)) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "oauth-registration-endpoint-unusable",
         registrationUrl: input.registrationUrl,
         note: "This vendor's registration endpoint is not a usable address, so this deployment can never introduce itself.",
-      }),
+      },
+      "oauth-registration-endpoint-unusable",
     );
     return null;
   }
@@ -488,13 +493,14 @@ export async function registerDynamicClient(input: {
     // Logged for the same reason the redemption above is: the caller's 502 tells an administrator
     // to check the vendor's status, and this is the line that says the vendor could not be reached
     // at all rather than that it turned us down.
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "oauth-registration-endpoint-unreachable",
         registrationUrl: input.registrationUrl,
         note: "This deployment could not introduce itself to the vendor. Connect answered 502.",
         error: String(error),
-      }),
+      },
+      "oauth-registration-endpoint-unreachable",
     );
     return null;
   }

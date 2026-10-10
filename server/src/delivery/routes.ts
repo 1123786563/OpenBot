@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { createOpenTagTransport, type OpenTagTransport } from "./opentag";
 import {
@@ -23,6 +24,8 @@ import {
   DeliveryRefusedError,
   type DeliveryScope,
 } from "./types";
+
+const log = getLogger("server");
 export type DeliveryScopeResolver = (
   owner: string,
   channelId: string,
@@ -67,8 +70,9 @@ function errorRoutes<E extends { Variables: AppVariables }>(routes: Hono<E>) {
         },
         400,
       );
-    console.error(
-      JSON.stringify({ type: "delivery-route-error", errorType: error.name }),
+    log.error(
+      { type: "delivery-route-error", errorType: error.name },
+      "delivery-route-error",
     );
     return context.json({ error: "Delivery is unavailable. Try again." }, 503);
   });

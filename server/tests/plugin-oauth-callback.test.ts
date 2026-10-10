@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../shared/logger";
 import type { AppVariables } from "../src/auth/guards";
 import {
   challengeFor,
@@ -354,10 +355,19 @@ describe("a vendor that could not be reached for the redemption", () => {
     const hono = app({ recorded });
     const state = await sealed();
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       await withUnreachableVendor(
@@ -371,7 +381,7 @@ describe("a vendor that could not be reached for the redemption", () => {
         },
       );
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     const line = said.find((said) =>
@@ -407,10 +417,19 @@ describe("a grant the vault would not take", () => {
       KEY,
     );
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       await withWillingVendor(async () => {
@@ -419,7 +438,7 @@ describe("a grant the vault would not take", () => {
         expect(response.headers.get("location")).toBe(FAILED);
       });
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     expect(recorded).toEqual([]);
@@ -443,10 +462,19 @@ describe("a grant the vault would not take", () => {
 describe("a token endpoint that is not a usable address", () => {
   test("is refused like any other, and named as ours in the log", async () => {
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       expect(
@@ -460,7 +488,7 @@ describe("a token endpoint that is not a usable address", () => {
         }),
       ).toBeNull();
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     expect(
@@ -501,10 +529,19 @@ describe("a callback whose own checks failed", () => {
       KEY,
     );
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       await withWillingVendor(async (asked) => {
@@ -516,7 +553,7 @@ describe("a callback whose own checks failed", () => {
         expect(asked).toEqual([]);
       });
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     expect(recorded).toEqual([]);
@@ -539,8 +576,9 @@ describe("a callback whose own checks failed", () => {
       { userId: "user-1", serverId: "notion", verifier: "v-1" },
       KEY,
     );
-    const realError = console.error;
-    console.error = () => {};
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
 
     try {
       await withWillingVendor(async () => {
@@ -549,7 +587,7 @@ describe("a callback whose own checks failed", () => {
         expect(response.headers.get("location")).toBe(FAILED);
       });
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     expect(recorded).toEqual([]);

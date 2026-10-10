@@ -9,6 +9,7 @@ import {
 } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import { getLogger } from "../../shared/logger";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createChannelStore } from "../src/channels/routes";
@@ -494,9 +495,13 @@ describe("surviving a routine that cannot be scheduled", () => {
     // Captured as it is written rather than read off the spy afterwards, so restoring the real
     // `console.warn` cannot take the evidence with it.
     const lines: string[] = [];
-    const warn = spyOn(console, "warn").mockImplementation((...args) => {
-      lines.push(String(args[0]));
-    });
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+      (...args) => {
+        lines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
     let offered: string[] = [];
     try {
       ({ offered } = await offerDueRoutines(
@@ -864,9 +869,13 @@ describe("consuming a claimed firing", () => {
     );
 
     const lines: string[] = [];
-    const warn = spyOn(console, "warn").mockImplementation((...args) => {
-      lines.push(String(args[0]));
-    });
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+      (...args) => {
+        lines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
     try {
       await dispatchClaimedRoutines(
         sweepOptions({
@@ -1231,9 +1240,13 @@ describe("consuming a claimed firing", () => {
     });
 
     const lines: string[] = [];
-    const warn = spyOn(console, "warn").mockImplementation((...args) => {
-      lines.push(String(args[0]));
-    });
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+      (...args) => {
+        lines.push(
+          typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]),
+        );
+      },
+    );
     try {
       await dispatchClaimedRoutines(
         sweepOptions({

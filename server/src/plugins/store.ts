@@ -2498,7 +2498,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         actor: input.by,
         server: input.serverId,
         // The id, never the secret. It identifies the client that was registered, which is what
-        // somebody reading the trail needs in order to check it against the vendor's console.
+        // somebody reading the trail needs in order to check it against the vendor's dashboard.
         clientId: input.client.clientId,
         replaced,
       },

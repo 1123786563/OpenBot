@@ -21,8 +21,10 @@ import {
   egressDecision,
   parseEgressRules,
 } from "../../../agent-computer/src/egress";
+import { getLogger } from "../../../shared/logger";
 import type { NetworkPolicyRow } from "../admin/settings-store";
 import type { ComputerProvider } from "./provider";
+const log = getLogger("server");
 
 export type { EgressPolicy, EgressRule };
 export { DEFAULT_EGRESS_DESTINATIONS, egressDecision, parseEgressRules };
@@ -174,13 +176,14 @@ export function withPolicyPushOnWake(
       });
       pushed.set(botId, { run, at: Date.now() });
     } catch (error) {
-      console.warn(
-        JSON.stringify({
+      log.warn(
+        {
           type: "egress-policy-push-on-wake-failed",
           botId,
           note: "The computer refuses its network connections until a policy reaches it.",
           error: error instanceof Error ? error.message : String(error),
-        }),
+        },
+        "egress-policy-push-on-wake-failed",
       );
     }
   };

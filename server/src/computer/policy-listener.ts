@@ -15,7 +15,9 @@
  * reason, as the channel activity listener.
  */
 import postgres from "postgres";
+import { getLogger } from "../../../shared/logger";
 import { ACTION_POLICY_TOPIC, type PolicyStore } from "./policy-store";
+const log = getLogger("server");
 
 export type PolicyListener = { stop: () => Promise<void> };
 
@@ -32,12 +34,13 @@ export async function startPolicyListener(
    */
   const reread = () => {
     void store.refresh().catch((error) => {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "action-policy-refresh-failed",
           note: "This server was told the boundary changed and could not re-read it, so it is still enforcing the previous rules.",
           error: String(error),
-        }),
+        },
+        "action-policy-refresh-failed",
       );
     });
   };

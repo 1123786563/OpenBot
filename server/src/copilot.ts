@@ -12,6 +12,7 @@ import type { Observable } from "rxjs";
 import { defer, finalize, from, fromEvent, switchMap, takeUntil } from "rxjs";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
+import { getLogger } from "../../shared/logger";
 import {
   type ActorAgentResolver,
   CoworkerUnavailableError,
@@ -63,6 +64,7 @@ import {
 import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance, parametersFor } from "./plugins/tools";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
+const log = getLogger("server");
 
 /**
  * The CopilotKit runtime, always in Intelligence mode.
@@ -651,11 +653,10 @@ export async function buildAgents(
     // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
     // Report once per build here, including failures from the production plugin-store loader.
     // Never log the thrown value: database errors can contain connection details or row contents.
-    console.error({
-      error: "connected_vendor_lookup_failed",
-      context: { operation: "loadVendors", agentCount: agents.length },
-      timestamp: new Date().toISOString(),
-    });
+    log.error(
+      { operation: "loadVendors", agentCount: agents.length },
+      "connected_vendor_lookup_failed",
+    );
   }
   /*
    * Read once per build and only when somebody will be told it, like the vendors above and the model
@@ -672,11 +673,10 @@ export async function buildAgents(
       instructions = (await loadInstructions?.()) ?? null;
     } catch {
       // Never log the thrown value: database errors can expose instructions or credentials.
-      console.error({
-        error: "standing_instruction_read_failed",
-        context: { operation: "loadInstructions", agentCount: agents.length },
-        timestamp: new Date().toISOString(),
-      });
+      log.error(
+        { operation: "loadInstructions", agentCount: agents.length },
+        "standing_instruction_read_failed",
+      );
     }
   }
   return Object.fromEntries(
@@ -982,11 +982,10 @@ async function buildAgent(
       skills = await selection.loadSkills(agent.id);
     } catch {
       // Never log the thrown value: database errors can contain connection details or row contents.
-      console.error({
-        error: "tool_selection_skill_read_failed",
-        context: { operation: "loadSkills", agentId: agent.id },
-        timestamp: new Date().toISOString(),
-      });
+      log.error(
+        { operation: "loadSkills", agentId: agent.id },
+        "tool_selection_skill_read_failed",
+      );
     }
   }
   const narrowing =
@@ -997,9 +996,8 @@ async function buildAgent(
       : undefined;
 
   const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
-    console.error({
-      error: "tool_selection_record_failed",
-      context: {
+    log.error(
+      {
         operation: "record",
         agentId: agent.id,
         reason: chosen.reason,
@@ -1007,8 +1005,8 @@ async function buildAgent(
         offered: chosen.offered.length,
         skills: chosen.skills,
       },
-      timestamp: new Date().toISOString(),
-    });
+      "tool_selection_record_failed",
+    );
   };
 
   /** Pass one and pass two, for one run. Shared by both agent kinds; each applies it differently. */

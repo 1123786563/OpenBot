@@ -15,12 +15,14 @@
  * in-cluster service account gives a token and a CA, which is what `inClusterConfig` reads.
  */
 import { readFile } from "node:fs/promises";
+import { getLogger } from "../../../shared/logger";
 import type {
   ComputerLocation,
   ComputerProvider,
   ComputerUpdate,
 } from "./provider";
 import type { ComputerStatus } from "./schema";
+const log = getLogger("server");
 
 const SERVICE_ACCOUNT = "/var/run/secrets/kubernetes.io/serviceaccount";
 const GROUP = "agents.x-k8s.io";
@@ -437,15 +439,16 @@ export function createSandboxComputerProvider(
          */
         if (isOutOfDate(existing)) {
           await replaceTemplate(botId, "Running");
-          console.info(
-            JSON.stringify({
+          log.info(
+            {
               type: "computer-sandbox-updated",
               botId,
               reason:
                 "it was woken, and its image differed from the current one",
               from: imagesOf(existing.spec?.podTemplate),
               to: imagesOf(options.template.podTemplate),
-            }),
+            },
+            "computer-sandbox-updated",
           );
         } else {
           await call(`/${sandboxNameFor(botId)}`, {
@@ -554,13 +557,14 @@ export function createSandboxComputerProvider(
       lastRestart.set(botId, restarted);
       restarted
         .catch((error: unknown) => {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "computer-sandbox-update-resume-failed",
               botId,
               reason: error instanceof Error ? error.message : String(error),
               note: "The computer is on its new image and suspended; the next action wakes it.",
-            }),
+            },
+            "computer-sandbox-update-resume-failed",
           );
         })
         .finally(() => {

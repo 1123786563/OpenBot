@@ -15,8 +15,10 @@
  * from the deployment environment — an operator's injected secret store, or an explicit
  * `--env-file` for local runs — never from a file that happens to sit in the working directory.
  */
+import { getLogger } from "../../../shared/logger";
 import { bootstrapEnterprise } from "./bootstrap";
 import { loadEnterpriseConfig } from "./config";
+const log = getLogger("server");
 
 const config = loadEnterpriseConfig(process.env);
 const { app, beginDrain, close } = await bootstrapEnterprise(config);
@@ -25,8 +27,9 @@ const server = Bun.serve({
   port: config.port,
   fetch: app.fetch,
 });
-console.info(
-  `OpenBot enterprise API listening on http://${config.hostname}:${config.port}`,
+log.info(
+  { hostname: config.hostname, port: config.port },
+  "OpenBot enterprise API listening",
 );
 
 let closing = false;
@@ -46,7 +49,7 @@ async function shutdown(): Promise<void> {
 }
 function requestShutdown(): void {
   void shutdown().catch(() => {
-    console.error("ENTERPRISE_SHUTDOWN_FAILED");
+    log.error("ENTERPRISE_SHUTDOWN_FAILED");
     process.exitCode = 1;
   });
 }

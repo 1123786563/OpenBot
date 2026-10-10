@@ -13,10 +13,12 @@
  * put to the thing that did it.
  */
 import { and, inArray, like, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { ComputerProvider } from "../computer/provider";
 import type { Database } from "../db/client";
 import { auditEvents } from "../db/schema";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "./queue";
+const log = getLogger("server");
 
 export const CULL_KIND = "computer.suspend";
 
@@ -212,13 +214,14 @@ export async function suspendClaimedComputers(
        * count and the reason for anybody who queries it; this is for the person reading the logs.
        */
       if (item.attempts >= (options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "computer-cull-gave-up",
             botId,
             attempts: item.attempts,
             reason,
-          }),
+          },
+          "computer-cull-gave-up",
         );
       }
       report.skipped.push({ botId, reason });

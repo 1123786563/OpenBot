@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { getLogger } from "../../shared/logger";
 import * as network from "../src/computer/policy-network";
 import type {
   ComputerLocation,
@@ -136,13 +137,22 @@ test("a policy that cannot be read is logged, and the action still gets its comp
     },
     fetchImpl: (async () => new Response("{}")) as unknown as typeof fetch,
   });
-  const warn = console.warn;
   const warned: string[] = [];
-  console.warn = (line: string) => void warned.push(line);
+  const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+    (...args: unknown[]) => {
+      warned.push(
+        args
+          .map((argument) =>
+            typeof argument === "string" ? argument : JSON.stringify(argument),
+          )
+          .join(" "),
+      );
+    },
+  );
   try {
     expect(await provider.locate("sales")).toBe("http://computer.test:4100");
   } finally {
-    console.warn = warn;
+    warn.mockRestore();
   }
   expect(warned.join("")).toContain("egress-policy-push-on-wake-failed");
 });

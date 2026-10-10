@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { VoiceSessionRecord } from "../../../shared/voice-session";
+import { getLogger } from "../../../shared/logger";
 import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
 import type { ChannelStore } from "../channels/routes";
@@ -10,6 +11,7 @@ import {
   type VoiceSessionStore,
 } from "./sessions";
 import type { VoiceSummarizer } from "./summary";
+const log = getLogger("server");
 
 export type VoiceSessionServices = {
   store: VoiceSessionStore;
@@ -110,8 +112,9 @@ async function finish(
       summary = await services.summarize(session.transcript);
     } catch {
       // The transcript is already durable. The explicit status makes this recoverable by retry.
-      console.warn(
-        JSON.stringify({ type: "voice-summary-failed", sessionId: session.id }),
+      log.warn(
+        { type: "voice-summary-failed", sessionId: session.id },
+        "voice-summary-failed",
       );
     }
     if (summary)
@@ -139,7 +142,7 @@ function respondError(
 ) {
   if (error instanceof VoiceSessionError)
     return context.json({ error: error.message }, error.status);
-  console.error(JSON.stringify({ type: "voice-history-failed" }));
+  log.error({ type: "voice-history-failed" }, "voice-history-failed");
   return context.json(
     { error: "Voice history could not be saved or loaded. Please retry." },
     503,

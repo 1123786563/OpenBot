@@ -1,10 +1,12 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { PluginRefusedError } from "../plugins/store";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
 import { MemoryNotFoundError, MemoryRefusedError } from "./types";
+const log = getLogger("server");
 
 export function createMemoryRoutes(
   store: MemoryStore,
@@ -23,13 +25,14 @@ export function createMemoryRoutes(
       error instanceof PluginRefusedError
     )
       return context.json({ error: error.message }, 400);
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "memory-route-error",
         error: error.name,
         context: { route: context.req.path },
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "memory-route-error",
     );
     return context.json({ error: "Memory is unavailable. Try again." }, 503);
   });

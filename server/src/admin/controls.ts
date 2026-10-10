@@ -20,6 +20,7 @@
 
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import postgres from "postgres";
+import { getLogger } from "../../../shared/logger";
 import {
   type AuditStore,
   addAuditTap,
@@ -58,6 +59,7 @@ import {
   type EnterpriseStore,
   type NetworkPolicyRow,
 } from "./settings-store";
+const log = getLogger("server");
 
 /** Action Recording keeps 90 days, as Grok Bot's does. */
 export const ACTION_RECORD_RETENTION_DAYS = 90;
@@ -264,8 +266,8 @@ export async function installEnterpriseControls(
     try {
       snapshot = await loadSnapshot(store);
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "enterprise-controls-refresh-failed",
           note: snapshot
             ? "Still enforcing the last settings this server read."
@@ -275,7 +277,8 @@ export async function installEnterpriseControls(
             error instanceof Error && error.cause
               ? String(error.cause)
               : undefined,
-        }),
+        },
+        "enterprise-controls-refresh-failed",
       );
     }
   };
@@ -318,11 +321,12 @@ export async function installEnterpriseControls(
           outcome,
         })
         .catch((error) =>
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "action-record-failed",
               error: String(error),
-            }),
+            },
+            "action-record-failed",
           ),
         );
       exporter?.emit({
@@ -340,12 +344,13 @@ export async function installEnterpriseControls(
 
   const audit = (input: Parameters<typeof recordAuditEvent>[1]) =>
     recordAuditEvent(deps.auditStore, input).catch((error) =>
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "enterprise-audit-failed",
           eventType: input.eventType,
           error: String(error),
-        }),
+        },
+        "enterprise-audit-failed",
       ),
     );
 
@@ -385,19 +390,21 @@ export async function installEnterpriseControls(
           policyForBot,
         });
         if (report.failed.length > 0) {
-          console.warn(
-            JSON.stringify({
+          log.warn(
+            {
               type: "egress-policy-push-incomplete",
               ...report,
-            }),
+            },
+            "egress-policy-push-incomplete",
           );
         }
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "egress-policy-push-failed",
             error: String(error),
-          }),
+          },
+          "egress-policy-push-failed",
         );
       } finally {
         pushing = undefined;
@@ -513,12 +520,13 @@ export async function installEnterpriseControls(
             },
           });
         } catch (error) {
-          console.warn(
-            JSON.stringify({
+          log.warn(
+            {
               type: "inactive-computer-stop-failed",
               botId: computer.botId,
               error: String(error),
-            }),
+            },
+            "inactive-computer-stop-failed",
           );
         }
       }
@@ -531,21 +539,23 @@ export async function installEnterpriseControls(
 
   const offboard = async (userId: string, by: string) => {
     await deps.people?.retireOwned(userId, by).catch((error) =>
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "offboard-retire-failed",
           userId,
           error: String(error),
-        }),
+        },
+        "offboard-retire-failed",
       ),
     );
     await terminateMemberComputers(userId, { email: by }).catch((error) =>
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "offboard-computers-failed",
           userId,
           error: String(error),
-        }),
+        },
+        "offboard-computers-failed",
       ),
     );
   };
@@ -558,12 +568,13 @@ export async function installEnterpriseControls(
   await connection
     .listen(ENTERPRISE_TOPIC, onChange, onChange)
     .catch((error) => {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "enterprise-listen-failed",
           note: "Changes made on another server reach this one within a minute instead of at once.",
           error: String(error),
-        }),
+        },
+        "enterprise-listen-failed",
       );
     });
 
@@ -572,11 +583,12 @@ export async function installEnterpriseControls(
     setInterval(() => void pushNetworkPolicies(), 30_000),
     setInterval(() => {
       void terminateInactiveComputers().catch((error) =>
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "inactive-computer-sweep-failed",
             error: String(error),
-          }),
+          },
+          "inactive-computer-sweep-failed",
         ),
       );
       void store
@@ -586,11 +598,12 @@ export async function installEnterpriseControls(
           ),
         )
         .catch((error) =>
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "action-record-purge-failed",
               error: String(error),
-            }),
+            },
+            "action-record-purge-failed",
           ),
         );
     }, 60 * 60_000),
@@ -918,12 +931,13 @@ export async function headlessTurnRefusal(input: {
     }).catch(() => undefined);
     return `This Bot runs on ${model}, which is not on this deployment's model allowlist. An administrator can add it.`;
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "headless-capability-check-failed",
         agentId: input.agentId,
         error: String(error),
-      }),
+      },
+      "headless-capability-check-failed",
     );
     return "This deployment's enterprise controls could not be checked, so the Bot did not run.";
   }

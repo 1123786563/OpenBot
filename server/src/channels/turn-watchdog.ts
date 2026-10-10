@@ -1,3 +1,7 @@
+import { getLogger } from "../../../shared/logger";
+
+const log = getLogger("server");
+
 /**
  * Whether a turn has gone quiet, which is not the same question as whether it has taken a long time.
  *
@@ -224,13 +228,14 @@ export class TurnWatchdog {
         // argument the process-level rejection handler in index.ts makes: a wedged Bot is somebody
         // else's infrastructure, and the sweep it happens to be in is holding every other person's
         // stuck turn. Logged loudly, because a watchdog that fails silently is worse than none.
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "turn-watchdog-callback-error",
             stream: id,
             bot: stream.botId,
             error: String(error),
-          }),
+          },
+          "turn-watchdog-callback-error",
         );
       }
     }

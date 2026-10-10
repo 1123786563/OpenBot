@@ -41,12 +41,14 @@
  * RUN_ERROR at any point in a stream, including as the very first event, which is what a Bot that
  * never spoke produces.
  */
+import { getLogger } from "../../../shared/logger";
 import {
   type AuditInitiator,
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
 import { type StalledStream, TurnWatchdog } from "./turn-watchdog";
+const log = getLogger("server");
 
 /** The fetch an `HttpAgent` uses, as @ag-ui/client 0.0.57 declares it. */
 export type AgentFetch = (
@@ -207,15 +209,16 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
     if (!stream) return;
 
     const turn = turnOf(stream.requestBody);
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "agent-stream-stalled",
         bot: stream.bot.id,
         silentForMs: stalled.silentForMs,
         chunks: stalled.chunks,
         ...(turn ? { thread: turn.threadId, run: turn.runId } : {}),
         note: "The Bot's stream produced nothing for the configured timeout, so the turn was ended.",
-      }),
+      },
+      "agent-stream-stalled",
     );
 
     // The Bot's side goes first, so a socket into an endpoint that will never answer is released

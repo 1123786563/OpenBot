@@ -2,7 +2,9 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import type { ResponsibilityEvent, ResponsibilityEventResult } from "./types";
+const log = getLogger("server");
 
 export type GithubResponsibilityBinding = {
   ownerUserId: string;
@@ -26,12 +28,13 @@ export function createGithubResponsibilityRoutes(options: {
   const routes = new Hono();
   routes.use("*", bodyLimit({ maxSize: 32 * 1024 }));
   routes.onError((error, context) => {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "github-responsibility-event-error",
         errorType: error.name,
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "github-responsibility-event-error",
     );
     return context.json({ error: "GitHub event could not be accepted." }, 503);
   });

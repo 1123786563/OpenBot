@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { downloadHeaders } from "../../../shared/file-download";
+import { getLogger } from "../../../shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AuditReader } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -24,6 +25,7 @@ import {
 import type { PageFrameStore } from "./page-frames";
 import { dryRunAgainstHistory, REPLAYABLE_EVENT_TYPES } from "./policy-dry-run";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
+const log = getLogger("server");
 
 /**
  * The Bot computer's surface, behind the same session guard as every other API route.
@@ -190,8 +192,9 @@ export function createComputerRoutes(
   ) {
     if (!pageFrames) return;
     if (!toolCallId) {
-      console.warn(
-        `[computer] not keeping a frame of ${url}: the caller did not say which turn it was for.`,
+      log.warn(
+        { url },
+        "[computer] not keeping a frame: the caller did not say which turn it was for",
       );
       return;
     }
@@ -203,16 +206,18 @@ export function createComputerRoutes(
        */
       const status = await gateway.status(botId);
       if (status.state !== "ready") {
-        console.warn(
-          `[computer] not keeping a frame for ${toolCallId}: the computer is ${status.state}, and photographing it would wake it.`,
+        log.warn(
+          { toolCallId, state: status.state },
+          "[computer] not keeping a frame: the computer is not ready, and photographing it would wake it",
         );
         return;
       }
       const shot = await gateway.screenshot(botId);
       const verdict = frameIsOfThisPage(shot.url, url);
       if (!verdict.ok) {
-        console.warn(
-          `[computer] not keeping a frame for ${toolCallId}: ${verdict.why} rather than ${url}.`,
+        log.warn(
+          { toolCallId, why: verdict.why, url },
+          "[computer] not keeping a frame: the screenshot is of another page",
         );
         return;
       }
@@ -224,10 +229,7 @@ export function createComputerRoutes(
         frame: shot.base64,
       });
     } catch (error) {
-      console.warn(
-        `[computer] could not keep a frame of ${url}:`,
-        error instanceof Error ? error.message : error,
-      );
+      log.warn({ err: error, url }, "[computer] could not keep a frame");
     }
   }
 

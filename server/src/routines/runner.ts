@@ -23,6 +23,7 @@
  */
 
 import type { Message } from "@ag-ui/client";
+import { getLogger } from "../../../shared/logger";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
 import type { AgentActor } from "../agents/profile-types";
 import type { ApprovalContinuation } from "../approvals/types";
@@ -30,6 +31,7 @@ import type { AuditInitiator } from "../audit";
 import type { ChannelStore } from "../channels/routes";
 import { HeadlessToolSuspension } from "../computer/headless-tools";
 import type { RoutineStore } from "./store";
+const log = getLogger("server");
 
 /** Everything a headless turn needs, injectable so tests never dial a model. */
 export type TurnRunner = (input: {
@@ -133,13 +135,14 @@ export function createRoutineRunner(options: {
          * one. The run row is the ledger; this call is the courtesy of saying so where a person
          * will see it, and losing the courtesy is not worth losing the ledger.
          */
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "routine-activity-unrecorded",
             routineId,
             routineRunId,
             reason: reasonOf(error),
-          }),
+          },
+          "routine-activity-unrecorded",
         );
       }
     }
@@ -214,13 +217,14 @@ export function createRoutineRunner(options: {
         }
         // In between, nothing is said. The run rows carry it, and the routines page reads them.
       } catch (fatigueError) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "routine-fatigue-rule-failed",
             routineId,
             routineRunId,
             reason: reasonOf(fatigueError),
-          }),
+          },
+          "routine-fatigue-rule-failed",
         );
       }
       return;
@@ -247,12 +251,13 @@ export function createRoutineRunner(options: {
       try {
         await runOnce(routineRunId);
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "routine-run-crashed",
             routineRunId,
             reason: reasonOf(error),
-          }),
+          },
+          "routine-run-crashed",
         );
       }
     },

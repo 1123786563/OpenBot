@@ -8,6 +8,7 @@ import { BuiltInAgent } from "@copilotkit/runtime/v2";
 import { EMPTY, lastValueFrom } from "rxjs";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
+import { getLogger } from "../../shared/logger";
 import { createActorAgentResolver } from "../src/agents/agent-resolver";
 import { MAX_INLINED_BYTES_PER_RUN } from "../src/channels/attachment-parts";
 import { loadConfig } from "../src/config";
@@ -918,7 +919,9 @@ describe("connected-vendor lookup diagnostics", () => {
   }
 
   test("reports a failed lookup once for the roster and still completes the run", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     try {
       await runWithVendors(async () => {
         throw new Error(
@@ -926,11 +929,10 @@ describe("connected-vendor lookup diagnostics", () => {
         );
       });
       expect(diagnostic).toHaveBeenCalledTimes(1);
-      expect(diagnostic).toHaveBeenCalledWith({
-        error: "connected_vendor_lookup_failed",
-        context: { operation: "loadVendors", agentCount: 2 },
-        timestamp: expect.any(String),
-      });
+      expect(diagnostic).toHaveBeenCalledWith(
+        { operation: "loadVendors", agentCount: 2 },
+        "connected_vendor_lookup_failed",
+      );
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(
         "private prompt",
@@ -1391,7 +1393,9 @@ describe("a person's standing instructions", () => {
   }
 
   test("reports a failed instruction read once and still completes a built-in run", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     let reads = 0;
     try {
       const sent = await runWithInstructions(async () => {
@@ -1403,11 +1407,10 @@ describe("a person's standing instructions", () => {
       expect(reads).toBe(1);
       expect(sent.modelRequest).not.toContain("standing instructions");
       expect(diagnostic).toHaveBeenCalledTimes(1);
-      expect(diagnostic).toHaveBeenCalledWith({
-        error: "standing_instruction_read_failed",
-        context: { operation: "loadInstructions", agentCount: 3 },
-        timestamp: expect.any(String),
-      });
+      expect(diagnostic).toHaveBeenCalledWith(
+        { operation: "loadInstructions", agentCount: 3 },
+        "standing_instruction_read_failed",
+      );
       const logs = JSON.stringify(diagnostic.mock.calls);
       for (const sensitive of [
         "postgres://",

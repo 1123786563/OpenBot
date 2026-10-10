@@ -9,6 +9,7 @@
  */
 import { and, asc, eq, isNull, notExists, sql } from "drizzle-orm";
 import { readFiring } from "../../../shared/routine-firing";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import {
   channelMemberships,
@@ -19,6 +20,7 @@ import {
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { CHANNEL_ACTIVITY_TOPIC, type ChannelActivityEvent } from "./events";
 import { oneLine } from "./text";
+const log = getLogger("server");
 
 export const CHANNEL_SUMMARY_KIND = "channel.summary";
 
@@ -182,13 +184,14 @@ export async function summariseClaimedChannels(
       // Said out loud when it gives up, because at the cap this loop simply never sees the channel
       // again and every pass afterwards looks clean.
       if (item.attempts >= (options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "channel-summary-gave-up",
             channelId,
             attempts: item.attempts,
             reason,
-          }),
+          },
+          "channel-summary-gave-up",
         );
       }
       report.skipped.push({ channelId, reason });

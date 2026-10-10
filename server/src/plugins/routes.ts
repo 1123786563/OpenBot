@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { PERSON_INITIATOR } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -56,6 +57,7 @@ import {
   PluginRefusedError,
   type PluginStore,
 } from "./store";
+const log = getLogger("server");
 
 /**
  * Whether the person a consent was started for still has access to this deployment.
@@ -75,7 +77,7 @@ export type ConnectingPersonCheck = (userId: string) => Promise<boolean>;
  *
  * EVERY BROKERED ROUTE NEEDS THIS AND NONE OF THEM USED TO HAVE IT. A listing, a connect, a confirm
  * and a disconnect all end in a call to another company's API, and an unhandled rejection out of any
- * of them is a bare 500 with the vendor's thrown object on this deployment's console. That object is
+ * of them is a bare 500 with the vendor's thrown object on this deployment's logs. That object is
  * the whole HTTP response — headers, trace ids, rate-limit counters — and the person reading the 500
  * gets none of it and no sentence either. A wrong `COMPOSIO_API_KEY` is the first failure a new
  * operator meets, and it is the one this used to answer worst.
@@ -636,13 +638,14 @@ export function createPluginRoutes(
        * mid-way — and its own message is the statement plus every value bound to it.
        */
       if (brokerSentence(error) === null && vendorSentence(error) === null) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "mcp-server-not-removed",
             server: serverId,
             note: "Removing a server failed for a reason neither this deployment nor Composio put a sentence to. The administrator was answered 502 with the generic sentence, and the server row is still there.",
             error: reasonWithoutStatement(error),
-          }),
+          },
+          "mcp-server-not-removed",
         );
       }
 
@@ -1081,13 +1084,14 @@ export function createPluginRoutes(
        * `ensureAuthConfig`, which is a call to the vendor.
        */
       if (brokerSentence(error) === null && vendorSentence(error) === null) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "composio-app-not-enabled",
             slug: app.slug,
             note: "Enabling a brokered app failed for a reason neither this deployment nor Composio put a sentence to. The administrator was answered 502 with the generic sentence.",
             error: reasonWithoutStatement(error),
-          }),
+          },
+          "composio-app-not-enabled",
         );
       }
 
@@ -1274,13 +1278,14 @@ export function createPluginRoutes(
        * the sentence tests do not exclude a query failure, they are the branch one arrives in.
        */
       if (brokerSentence(error) === null && vendorSentence(error) === null) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "openconnector-app-not-enabled",
             slug: app.slug,
             note: "Enabling a brokered app failed for a reason neither this deployment nor OpenConnector put a sentence to. The administrator was answered 502 with the generic sentence.",
             error: reasonWithoutStatement(error),
-          }),
+          },
+          "openconnector-app-not-enabled",
         );
       }
 
@@ -2594,8 +2599,8 @@ export function createPluginRoutes(
           scope: grant.scope,
         });
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "oauth-connection-not-recorded",
             serverId: state.serverId,
             note: "A person consented and the grant could not be stored. They were sent back to Settings with a failure and will have to connect again.",
@@ -2617,7 +2622,8 @@ export function createPluginRoutes(
              * useful half and names nothing anybody sent.
              */
             error: reasonWithoutStatement(error),
-          }),
+          },
+          "oauth-connection-not-recorded",
         );
         return context.redirect(failed);
       }
@@ -2631,14 +2637,15 @@ export function createPluginRoutes(
         ),
       );
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "oauth-callback-failed",
           note: "A person came back from a consent screen and a check on this route raised instead of answering. They were sent back to Settings with a failure, nothing was written, and they will have to connect again.",
           // The outer catch of the branch above, so it stands over the same write and needs the
           // same door. See the note on `oauth-connection-not-recorded`.
           error: reasonWithoutStatement(error),
-        }),
+        },
+        "oauth-callback-failed",
       );
       return context.redirect(failed);
     }

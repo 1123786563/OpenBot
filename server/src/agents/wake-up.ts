@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import type { AuditInitiator, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
 import type { AgentChannel } from "../channels/routes";
@@ -28,6 +29,7 @@ import { REFUSAL_MARKER } from "../plugins/tools";
 import type { WorkQueue } from "../work/queue";
 import { BotPausedError } from "./lifecycle";
 import type { AgentActor } from "./profile-types";
+const log = getLogger("server");
 
 export const WAKE_UP_KIND = "bot.wakeup";
 export const WAKE_UP_MIN_DELAY_MS = 60_000;
@@ -136,12 +138,13 @@ export function createWakeUpStore(
         },
       });
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "follow-up-audit-write-failed",
           eventType,
           error: String(error),
-        }),
+        },
+        "follow-up-audit-write-failed",
       );
     }
   }
@@ -499,7 +502,7 @@ export function createWakeUpRunner(options: {
               },
               { id: `follow-up:${item.key}`, text: replyText, kind: "reply" },
             ).catch((error: unknown) =>
-              console.warn("Could not notify about a follow-up.", error),
+              log.warn({ err: error }, "Could not notify about a follow-up."),
             );
           } catch (error) {
             if (error instanceof BotPausedError) {

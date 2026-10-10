@@ -5,11 +5,13 @@ import {
   beforeEach,
   describe,
   expect,
+  spyOn,
   test,
 } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getLogger } from "../../shared/logger";
 import { MCPMock, type MCPToolDefinition } from "@copilotkit/aimock/mcp";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -2902,11 +2904,18 @@ describe("a dynamic client the vendor has evicted", () => {
     await clearClient();
     const registeredBefore = await registeredRows();
     const said: string[] = [];
-    const realError = console.error;
     const realFetch = globalThis.fetch;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string" ? argument : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
     globalThis.fetch = (async () => {
       throw new TypeError("Unable to connect.");
     }) as unknown as typeof fetch;
@@ -2920,7 +2929,7 @@ describe("a dynamic client the vendor has evicted", () => {
       ).toBeNull();
     } finally {
       globalThis.fetch = realFetch;
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     // Nothing kept, and nothing claimed. A trail row here would say this deployment registered

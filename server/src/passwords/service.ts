@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { ActionActor, ComputerGateway } from "../computer/gateway";
 import type { SignInFillResult } from "../computer/schema";
@@ -13,6 +14,7 @@ import {
   type SignInRequestView,
   type SignInStatus,
 } from "./types";
+const log = getLogger("server");
 
 /**
  * The private sign-in request and the Passwords vault.
@@ -183,12 +185,13 @@ export function createSignInService(deps: SignInServiceDependencies) {
       await deps.onResolved(request);
     } catch (error) {
       // The outcome is recorded either way; a turn that could not be resumed is reported, not hidden.
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "sign-in-resume-failed",
           request: request.id,
           error: error instanceof Error ? error.message : String(error),
-        }),
+        },
+        "sign-in-resume-failed",
       );
     }
   }
@@ -339,12 +342,13 @@ export function createSignInService(deps: SignInServiceDependencies) {
           login: saved.id,
         });
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "password-save-failed",
             request: id,
             error: error instanceof Error ? error.name : "UnknownError",
-          }),
+          },
+          "password-save-failed",
         );
         throw new SignInRefusedError(
           "You are signed in, but the login could not be saved. Save it again from Passwords.",
@@ -398,12 +402,13 @@ export function createSignInService(deps: SignInServiceDependencies) {
         try {
           await deps.notify(request);
         } catch (error) {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "sign-in-notify-failed",
               request: request.id,
               error: error instanceof Error ? error.message : String(error),
-            }),
+            },
+            "sign-in-notify-failed",
           );
         }
       }

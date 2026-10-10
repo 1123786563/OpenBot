@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { AuditEventType, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -21,6 +22,7 @@ import type {
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
+const log = getLogger("server");
 
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
@@ -467,13 +469,14 @@ export function createAgentRoutes(
         payload: { bot: agentId, actor: actor?.email ?? "unknown", ...payload },
       });
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "bot-audit-write-failed",
           eventType,
           agentId,
           error: String(error),
-        }),
+        },
+        "bot-audit-write-failed",
       );
     }
   };

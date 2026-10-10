@@ -19,7 +19,9 @@
  * plaintext in the column, and refusing to read it would lock that company out of their own sign-in
  * at the moment they upgraded. The value is re-encrypted the next time it is written.
  */
+import { getLogger } from "../../../shared/logger";
 import { decryptSecret, encryptSecret } from "../credentials";
+const log = getLogger("server");
 
 /** The model and fields this touches. Named once so nothing drifts. */
 const SSO_MODEL = "ssoProvider";
@@ -87,13 +89,14 @@ async function decryptFields<T>(key: string, row: T): Promise<T> {
          * through that provider then fails with the plugin's own "not configured" error, which is
          * true, and this line says why.
          */
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "sso-config-decrypt-failed",
             field,
             note: "The stored identity provider config cannot be read with this KEY_ENCRYPTION_KEY. Sign-in through that provider will fail until it is re-registered.",
             error: String(error),
-          }),
+          },
+          "sso-config-decrypt-failed",
         );
         next[field] = null;
       }

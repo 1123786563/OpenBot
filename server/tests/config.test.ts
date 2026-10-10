@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { getLogger } from "../../shared/logger";
 import { configuredAuthProviders, loadConfig } from "../src/config";
 
 // Intelligence is part of the MINIMUM contract, so it belongs in the base environment every other
@@ -258,7 +259,9 @@ describe("deployment configuration", () => {
   test.each(["development", undefined])(
     "warns about the example key and still starts under NODE_ENV=%p",
     (nodeEnv) => {
-      const consoleWarn = spyOn(console, "warn").mockImplementation(() => {});
+      const warnSpy = spyOn(getLogger("server"), "warn").mockImplementation(
+        () => {},
+      );
 
       try {
         expect(() =>
@@ -268,14 +271,14 @@ describe("deployment configuration", () => {
           }),
         ).not.toThrow();
 
-        const warning = consoleWarn.mock.calls
+        const warning = warnSpy.mock.calls
           .map(([first]) => String(first))
           .find((line) => line.includes("KEY_ENCRYPTION_KEY"));
 
         expect(warning).toBeDefined();
         expect(warning).toContain("which is public");
       } finally {
-        consoleWarn.mockRestore();
+        warnSpy.mockRestore();
       }
     },
   );
@@ -875,7 +878,9 @@ describe("deployment configuration", () => {
   test.each(["development", undefined])(
     "warns and still allows private hosts under NODE_ENV=%p",
     (nodeEnv) => {
-      const consoleWarn = spyOn(console, "warn").mockImplementation(() => {});
+      const warnSpy = spyOn(getLogger("server"), "warn").mockImplementation(
+        () => {},
+      );
 
       try {
         const config = loadConfig({
@@ -888,7 +893,7 @@ describe("deployment configuration", () => {
         expect(config.computer?.allowPrivateHosts).toBe(true);
         // Searched rather than indexed: `baseEnvironment` carries the example encryption key, which
         // warns on its own account first.
-        const warning = consoleWarn.mock.calls
+        const warning = warnSpy.mock.calls
           .map(([first]) => String(first))
           .find((line) => line.includes("AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS"));
 
@@ -896,7 +901,7 @@ describe("deployment configuration", () => {
         expect(warning).toContain("local development only");
         expect(warning).toContain("Remove it before deploying");
       } finally {
-        consoleWarn.mockRestore();
+        warnSpy.mockRestore();
       }
     },
   );

@@ -11,11 +11,13 @@
  */
 import { eq } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { agents } from "../db/schema";
 import { type Capability, capabilityRefusal } from "./capabilities";
 import { enterpriseControls } from "./controls";
+const log = getLogger("server");
 
 type Ctx = Context<{ Variables: AppVariables }>;
 
@@ -174,12 +176,13 @@ export function createEnterpriseGate(
           }
         }
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "capability-check-failed",
             path,
             error: String(error),
-          }),
+          },
+          "capability-check-failed",
         );
         refused = context.json(
           {
@@ -256,11 +259,12 @@ async function governRun(
         allowed,
       })
       .catch((error) =>
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "model-usage-write-failed",
             error: String(error),
-          }),
+          },
+          "model-usage-write-failed",
         ),
       );
 
