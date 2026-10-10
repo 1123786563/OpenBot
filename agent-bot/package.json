@@ -10,6 +10,10 @@
   "dependencies": {
     "@ag-ui/core": "0.0.57",
     "@ag-ui/encoder": "0.0.57",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-trace-node": "^2.12.0",
     "openai": "^4.104.0"
   }
 }
