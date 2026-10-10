@@ -165,3 +165,51 @@ func TestCanonicalDigestEncodesWithoutHTMLEscaping(t *testing.T) {
 		t.Fatalf("digest = %s, want the unescaped serialization's digest %s", run.Digest, want)
 	}
 }
+
+// 跨语言行分隔符钉子 (03 §3.3): Go's encoder always escapes U+2028/U+2029 —
+// even with HTML escaping off — while TS JSON.stringify leaves them raw, so
+// the TS digest layer (server/src/enterprise/runs/digest.ts goInputDigest)
+// replaces them explicitly. The expected digests below are the SAME frozen
+// constants the TS suite asserts (server/tests/enterprise/runs/contracts.test.ts,
+// "the Go input digest"): either side drifting from these bytes fails both
+// languages' tests instead of silently mismatching input_digest at run time.
+func TestDigestEscapesLineSeparatorsLikeTheTSSide(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "U+2028",
+			content: "a\u2028b",
+			want:    "1d4f05e3190680b0cf439a3afe5ecb28317d3863f646c46c21dbcfb39a6131e2",
+		},
+		{
+			name:    "U+2029",
+			content: "a\u2029b",
+			want:    "dea9f1abba0be4bffb9aac054d06346d48ec5040bf7aff11326a256a324a5d63",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DigestMessages([]CanonicalMessage{{Content: tc.content, Role: "user"}})
+			if got != tc.want {
+				t.Fatalf("digest = %s, want the cross-language frozen %s", got, tc.want)
+			}
+			// The canonical byte shape itself: the escaped six-character
+			// sequence inside the compact JSON, exactly what TS hashes after
+			// its replace step.
+			if canonical := expectedDigestOf(`[{"content":"a` + `\u2028` + `b","role":"user"}]`); tc.name == "U+2028" && canonical != tc.want {
+				t.Fatalf("canonical shape digest = %s, no longer the frozen bytes %s", canonical, tc.want)
+			}
+		})
+	}
+
+	// Multiple messages keep the same rule per element, in order.
+	got := DigestMessages([]CanonicalMessage{
+		{Content: "a\u2028b", Role: "user"},
+		{Content: "c\u2029d", Role: "user"},
+	})
+	if want := "3d24e293f141c238991318302f822dee3fc94a0569da508ddad6c6cce3b90e87"; got != want {
+		t.Fatalf("two-message digest = %s, want the cross-language frozen %s", got, want)
+	}
+}

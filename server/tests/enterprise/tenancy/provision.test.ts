@@ -105,18 +105,50 @@ async function runScript(
   args: ReadonlyArray<string>,
   environment: Record<string, string | undefined> = {},
 ): Promise<CliRun> {
-  const child = Bun.spawn(["bun", "--no-env-file", script, ...args], {
-    cwd: REPO_ROOT,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, ...environment },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [out, err, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { code, out, err };
+  /*
+   * A CLI run ALWAYS writes at least one stream: success prints its dry-run plan or applied
+   * outcome to stdout, and every refusal path — usage, a bad --input, a missing URL,
+   * an EnterpriseError, an uncaught throw — writes stderr before exiting. A run with EMPTY
+   * stdout AND empty stderr is therefore not behaviour either CLI can produce; it is the child's
+   * output failing to be captured at all, a spawn-layer fault observed under full-suite parallel
+   * load. Such a result is infrastructure noise, not the thing under test, so it is retried; a
+   * genuine failure still fails the assertions because its stderr reaches them.
+   *
+   * A spawn-layer exception is folded into `err` as a visible `[spawn]` line, so a fault of this
+   * kind can never again present as a silent empty stderr. The arguments are passed as one exact
+   * element per argument (never a shell string), and every literal below is fixed.
+   */
+  for (let attempt = 1; ; attempt += 1) {
+    let code: number;
+    let out = "";
+    let err = "";
+    try {
+      const { stdout, stderr, exitCode } = Bun.spawnSync(
+        ["bun", "--no-env-file", script, ...args],
+        {
+          cwd: REPO_ROOT,
+          env: {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            ...environment,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      code = exitCode;
+      out = stdout.toString();
+      err = stderr.toString();
+    } catch (spawnError) {
+      code = -1;
+      err = `[spawn] ${
+        spawnError instanceof Error ? spawnError.message : String(spawnError)
+      }`;
+    }
+    if (out.length > 0 || err.length > 0 || attempt >= 3) {
+      return { code, out, err };
+    }
+  }
 }
 
 function identityCli(

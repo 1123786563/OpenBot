@@ -154,6 +154,7 @@ import {
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
+  setModelUsageMeter,
   type ToolSelection,
 } from "./copilot";
 import {
@@ -203,10 +204,10 @@ import { createAccountModeSwitch } from "./plugins/account-mode";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
 import { createComposioClient } from "./plugins/composio-adapter";
-import { useOpenConnectorClient } from "./plugins/openconnector";
-import { createOpenConnectorClient } from "./plugins/openconnector-adapter";
 import { backfillComposioLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
+import { useOpenConnectorClient } from "./plugins/openconnector";
+import { createOpenConnectorClient } from "./plugins/openconnector-adapter";
 import {
   createSharedUseGate,
   createSharedUseStore,
@@ -2972,6 +2973,31 @@ const billing =
           customerName: `OpenBot deployment ${externalCustomerKey}`,
         };
       })();
+
+// The billing seam meters what the built-in Bots consume, once it exists: every model call's
+// finish lands here and becomes one provider event, keyed on a transaction id derived from the
+// deployment key and the millisecond — stable enough to deduplicate a retry, unique enough to
+// never merge two real calls. A usage miss is a billing miss, never a product error, which is
+// why the meter never awaits and the service never throws.
+if (billing !== undefined) {
+  const billingService = billing.service;
+  setModelUsageMeter((usage) => {
+    const input = usage.inputTokens ?? 0;
+    const output = usage.outputTokens ?? 0;
+    if (input === 0 && output === 0) return;
+    void billingService
+      .recordUsage({
+        metricCode: "llm_tokens",
+        transactionId: `llm-${billing.externalCustomerKey}-${Date.now()}-${input}-${output}`,
+        properties: {
+          input_tokens: input,
+          output_tokens: output,
+          tokens: input + output,
+        },
+      })
+      .catch(() => {});
+  });
+}
 
 const app = createApp(
   config,

@@ -69,6 +69,22 @@ export type LagoUsageBody = {
   charges: readonly LagoUsageChargeBody[];
 };
 
+/** One metered usage event, in the provider's own wire words. */
+export type LagoEventBody = {
+  /** Idempotency: the same transaction id twice is stored once. Derived, never random. */
+  transactionId: string;
+  /** The billable metric's code as the provider knows it. */
+  code: string;
+  /**
+   * When the usage happened, as Unix seconds. The provider's v1.53 validator documents ISO-8601
+   * but answers invalid_format to every ISO spelling we tried (millisecond and whole-second);
+   * integer seconds are the shape its own frontend sends and the only one it accepts.
+   */
+  timestamp: number;
+  externalSubscriptionId: string;
+  properties: Record<string, number | string>;
+};
+
 export type LagoResult<T> = { status: number; body: T | null };
 
 export type LagoClient = {
@@ -95,6 +111,11 @@ export type LagoClient = {
     externalCustomerId: string,
     externalSubscriptionId: string,
   ): Promise<LagoResult<LagoUsageBody>>;
+  /**
+   * 200 or 202 is accepted. A rejected create is the deployment's mistake (a metric or
+   * subscription it cannot name), so the sentinel is terminal; the caller logs and moves on.
+   */
+  postEvent(event: LagoEventBody): Promise<LagoResult<null>>;
 };
 
 const SUBSCRIPTION_STATUSES: readonly BillingSubscriptionStatus[] = [
@@ -187,7 +208,8 @@ function foldSubscriptionHistory(
     const existing = folded.get(subscription.externalSubscriptionId);
     if (
       existing === undefined ||
-      STATUS_LIVELINESS[subscription.status] < STATUS_LIVELINESS[existing.status]
+      STATUS_LIVELINESS[subscription.status] <
+        STATUS_LIVELINESS[existing.status]
     ) {
       folded.set(subscription.externalSubscriptionId, subscription);
     }
@@ -400,6 +422,29 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
       // 404 is an unknown customer and 405 the provider's own "no active subscription": both are
       // answers the service reports as no usage, not failures worth a retry.
       if (result.status === 404 || result.status === 405) {
+        return { status: result.status, body: null };
+      }
+      throw new BillingError("invalid_response");
+    },
+    async postEvent(event) {
+      const result = await request("/api/v1/events", {
+        method: "POST",
+        body: {
+          event: {
+            transaction_id: event.transactionId,
+            code: event.code,
+            timestamp: event.timestamp,
+            external_subscription_id: event.externalSubscriptionId,
+            properties: event.properties,
+          },
+        },
+      });
+      // 200 and 202 are both acceptances in the provider's own API; 404/422 name something this
+      // deployment sent wrongly (an unknown metric or subscription), which retrying cannot fix.
+      if (result.status === 200 || result.status === 202) {
+        return { status: result.status, body: null };
+      }
+      if (result.status === 404 || result.status === 422) {
         return { status: result.status, body: null };
       }
       throw new BillingError("invalid_response");

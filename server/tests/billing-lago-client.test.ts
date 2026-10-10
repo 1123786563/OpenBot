@@ -510,3 +510,48 @@ describe("createLagoClient subscription history folding", () => {
     expect(result.body).toHaveLength(2);
   });
 });
+
+describe("createLagoClient postEvent", () => {
+  const EVENT = {
+    transactionId: "llm-deployment-1-1730000000000-100-20",
+    code: "llm_tokens",
+    timestamp: 1730000000,
+    externalSubscriptionId: "deployment-1-pro",
+    properties: { input_tokens: 100, output_tokens: 20, tokens: 120 },
+  };
+
+  test.each([200, 202])("HTTP %d is an accepted event", async (status) => {
+    const { client, seen } = clientWith(() => jsonResponse({}, status));
+    const result = await client.postEvent(EVENT);
+    expect(result).toEqual({ status, body: null });
+    const init = seen[0]?.init;
+    expect(init?.method).toBe("POST");
+    const sent = JSON.parse(String(init?.body)) as {
+      event: Record<string, unknown>;
+    };
+    expect(sent.event).toEqual({
+      transaction_id: EVENT.transactionId,
+      code: EVENT.code,
+      timestamp: EVENT.timestamp,
+      external_subscription_id: EVENT.externalSubscriptionId,
+      properties: EVENT.properties,
+    });
+  });
+
+  test.each([404, 422])(
+    "HTTP %d is this deployment's mistake, answered without a throw",
+    async (status) => {
+      const { client } = clientWith(() =>
+        jsonResponse({ status, error: "no such metric" }, status),
+      );
+      const result = await client.postEvent(EVENT);
+      expect(result).toEqual({ status, body: null });
+    },
+  );
+
+  test("a 500 is the retryable unreachable sentinel", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 500));
+    const error = await expectCleanError(client.postEvent(EVENT));
+    expect(error.code).toBe("unreachable");
+  });
+});

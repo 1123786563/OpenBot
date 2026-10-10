@@ -42,6 +42,10 @@ export default defineConfig({
     "./src/db/schema/billing.ts",
     "./src/db/schema/enterprise-tenancy.ts",
     "./src/db/schema/enterprise-authz.ts",
+    "./src/db/schema/enterprise-conversations.ts",
+    "./src/db/schema/enterprise-runs.ts",
+    "./src/db/schema/enterprise-run-events.ts",
+    "./src/db/schema/enterprise-models.ts",
   ],
   out: "./drizzle",
   dbCredentials: {

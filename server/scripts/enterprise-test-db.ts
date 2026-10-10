@@ -47,6 +47,12 @@ const CAPABILITY_ROLES = [
   "ob_ent_operator",
   "ob_ent_identity_operator",
   "ob_ent_identity",
+  // Plan 03 §4.2 runs-ledger roles.
+  "ob_ent_run_writer",
+  "ob_ent_runtime_writer",
+  "ob_ent_dispatcher",
+  "ob_ent_run_operator",
+  "ob_ent_run_maintenance",
 ] as const;
 
 const ROLE_ATTRIBUTES =
@@ -69,6 +75,27 @@ const RESTRICTED_LOGINS = [
   {
     variable: "ENTERPRISE_TEST_AUTH_DATABASE_URL",
     memberOf: "ob_ent_identity",
+  },
+  // Plan 03 §4.2 restricted test logins.
+  {
+    variable: "ENTERPRISE_TEST_RUN_WRITER_DATABASE_URL",
+    memberOf: "ob_ent_run_writer",
+  },
+  {
+    variable: "ENTERPRISE_TEST_RUNTIME_WRITER_DATABASE_URL",
+    memberOf: "ob_ent_runtime_writer",
+  },
+  {
+    variable: "ENTERPRISE_TEST_DISPATCHER_DATABASE_URL",
+    memberOf: "ob_ent_dispatcher",
+  },
+  {
+    variable: "ENTERPRISE_TEST_RUN_OPERATOR_DATABASE_URL",
+    memberOf: "ob_ent_run_operator",
+  },
+  {
+    variable: "ENTERPRISE_TEST_RUN_MAINTENANCE_DATABASE_URL",
+    memberOf: "ob_ent_run_maintenance",
   },
 ] as const;
 
@@ -181,6 +208,13 @@ if (process.argv[2] === "roles") {
           "generate",
           "--custom",
           "--name=enterprise_identity_grants",
+          "--config=drizzle.config.ts",
+        ]);
+      } else if (process.argv[3] === "enterprise_runs_rls") {
+        child = spawnDrizzleKit([
+          "generate",
+          "--custom",
+          "--name=enterprise_runs_rls",
           "--config=drizzle.config.ts",
         ]);
       } else {

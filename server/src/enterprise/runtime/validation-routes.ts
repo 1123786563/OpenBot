@@ -1,5 +1,12 @@
 import { Hono } from "hono";
 
+import {
+  parseRuntimeInvocation,
+  RUNTIME_CAPABILITY_HEADER,
+  RUNTIME_SERVICE_CREDENTIAL_HEADER,
+  type RuntimeInvocation,
+} from "./wire";
+
 /*
  * ---------------------------------------------------------------------------
  * The v0.2 enterprise wire (master plan §4.2 + 01 plan R2): the internal
@@ -7,65 +14,17 @@ import { Hono } from "hono";
  * the LEGACY assertion-format route, kept verbatim as its own regression
  * suite; it is not the enterprise contract and must never be mounted where
  * the envelope route below serves.
+ *
+ * The strict RuntimeInvocation itself — fields, value rules, schema_version,
+ * and the single parse with the legacy refusal codes — lives in `./wire.ts`,
+ * the one wire contract this route and the golden fixtures derive from.
  * ---------------------------------------------------------------------------
  */
 
 /** The full internal path the enterprise route serves (master §4.1). */
 export const RUNTIME_VALIDATE_PATH = "/internal/enterprise/v1/runtime/validate";
 
-/** The initiator kinds the wire contract freezes. */
-const INITIATOR_KINDS = ["user", "schedule"] as const;
-
-/**
- * The strict RuntimeInvocation (master plan §4.2, wire schema v1):
- * snake_case, every field required except delegation_ref, which a scheduled
- * initiation must carry. This is the ONLY identity-carrying body shape the
- * enterprise validation endpoint accepts.
- */
-export type RuntimeInvocation = {
-  schema_version: string;
-  tenant_id: string;
-  principal_id: string;
-  actor_id: string;
-  initiator_kind: (typeof INITIATOR_KINDS)[number];
-  run_id: string;
-  attempt_id: string;
-  turn_id: string;
-  thread_id: string;
-  expert_version: string;
-  input_digest: string;
-  model_route_ref: string;
-  budget_reservation_id: string;
-  lease_id: string;
-  fencing_token: string;
-  expires_at: string;
-  delegation_ref?: string;
-};
-
-/** The fields a RuntimeInvocation must carry, and the one it may. */
-const REQUIRED_INVOCATION_FIELDS = [
-  "schema_version",
-  "tenant_id",
-  "principal_id",
-  "actor_id",
-  "initiator_kind",
-  "run_id",
-  "attempt_id",
-  "turn_id",
-  "thread_id",
-  "expert_version",
-  "input_digest",
-  "model_route_ref",
-  "budget_reservation_id",
-  "lease_id",
-  "fencing_token",
-  "expires_at",
-] as const satisfies Array<Exclude<keyof RuntimeInvocation, "delegation_ref">>;
-
-const OPTIONAL_INVOCATION_FIELDS = ["delegation_ref"] as const;
-
-/** RFC3339 with an offset — the one timestamp shape the wire freezes. */
-const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+export type { RuntimeInvocation };
 
 /**
  * What the host's verify decided. The route maps each verdict to exactly one
@@ -115,8 +74,8 @@ export function createRuntimeInvocationValidationRoutes(
     // Service authentication first: no header is not a shape question, it
     // is an unauthenticated caller.
     const serviceCredential =
-      c.req.header("x-openbot-runtime-service-credential") ?? "";
-    const capability = c.req.header("x-openbot-runtime-capability") ?? "";
+      c.req.header(RUNTIME_SERVICE_CREDENTIAL_HEADER) ?? "";
+    const capability = c.req.header(RUNTIME_CAPABILITY_HEADER) ?? "";
     if (!serviceCredential || !capability) {
       return c.json({ error: "missing_service_auth" }, 401);
     }
@@ -133,51 +92,21 @@ export function createRuntimeInvocationValidationRoutes(
     } catch {
       return c.json({ error: "invalid_body" }, 400);
     }
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return c.json({ error: "invalid_body" }, 400);
-    }
-    const body = raw as Record<string, unknown>;
 
-    // Strict schema: unknown fields are refused, not ignored — a caller
-    // smuggling extra keys into an identity body is probing, not configuring.
-    const known = new Set<string>([
-      ...REQUIRED_INVOCATION_FIELDS,
-      ...OPTIONAL_INVOCATION_FIELDS,
-    ]);
-    const unknownField = Object.keys(body).find((key) => !known.has(key));
-    if (unknownField !== undefined) {
-      return c.json({ error: "unknown_field" }, 400);
+    // The single strict parse from ./wire: unknown fields, missing fields,
+    // schema_version, timestamp and initiator kind all classified there —
+    // this route adds no second field list to drift from.
+    const parsed = parseRuntimeInvocation(raw);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error }, 400);
     }
+    const invocation = parsed.invocation;
 
-    const missing = REQUIRED_INVOCATION_FIELDS.filter(
-      (field) => typeof body[field] !== "string" || (body[field] as string) === "",
-    );
-    if (missing.length > 0) {
-      return c.json({ error: "missing_fields" }, 400);
-    }
-    if (
-      body.delegation_ref !== undefined &&
-      (typeof body.delegation_ref !== "string" || body.delegation_ref === "")
-    ) {
-      return c.json({ error: "missing_fields" }, 400);
-    }
-
-    const invocation = body as unknown as RuntimeInvocation;
-
-    if (!RFC3339.test(invocation.expires_at) || Number.isNaN(Date.parse(invocation.expires_at))) {
-      return c.json({ error: "invalid_expires_at" }, 400);
-    }
-    if (!INITIATOR_KINDS.includes(invocation.initiator_kind)) {
-      return c.json({ error: "invalid_initiator_kind" }, 400);
-    }
-    if (
-      invocation.initiator_kind === "schedule" &&
-      (invocation.delegation_ref === undefined || invocation.delegation_ref === "")
-    ) {
-      return c.json({ error: "schedule_requires_delegation" }, 400);
-    }
-
-    const verdict = await deps.verify({ serviceCredential, capability, invocation });
+    const verdict = await deps.verify({
+      serviceCredential,
+      capability,
+      invocation,
+    });
     switch (verdict.status) {
       case "ok":
         return c.json(invocation);

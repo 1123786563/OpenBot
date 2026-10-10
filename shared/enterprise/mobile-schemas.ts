@@ -88,3 +88,32 @@ export const OperationReceiptSchema = z
   .strict();
 
 export type OperationReceipt = z.infer<typeof OperationReceiptSchema>;
+
+/*
+ * 企业 Bot/Channel/Thread 会话子系统的两个冻结 DTO（C05），依据
+ * docs/superpowers/specs/enterprise-conversations-subsystem.md §3.2。
+ * 与登录会话视图 PersonalSession 不同名不同义：PersonalConversation 是个人
+ * Channel 会话（服务端权威；threadId 由服务端生成，客户端不提交任何身份字段，
+ * .strict() 让 principalId/scope/token 等身份与凭证字段天然被拒）。
+ */
+export const PersonalConversationSchema = z
+  .object({
+    channelId: z.string().min(1),
+    botId: z.string().min(1),
+    threadId: z.string().min(1),
+    mode: z.literal("single"),
+    status: z.enum(["active", "archived"]),
+  })
+  .strict();
+
+export type PersonalConversation = z.infer<typeof PersonalConversationSchema>;
+
+/** Channel 创建请求（幂等键由客户端提供，身份由 Scope 决定） */
+export const CreateChannelSchema = z
+  .object({
+    botId: z.string().min(1),
+    clientRequestId: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type CreateChannel = z.infer<typeof CreateChannelSchema>;
