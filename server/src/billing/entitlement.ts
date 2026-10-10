@@ -1,5 +1,5 @@
-import type { BillingEntitlements } from "./types";
 import { getLogger } from "../../../shared/logger";
+import type { BillingEntitlements } from "./types";
 
 const logger = getLogger("server");
 
@@ -19,8 +19,12 @@ const logger = getLogger("server");
 const ANSWER_TTL_MS = 10 * 60_000;
 const FAILURE_TTL_MS = 60_000;
 
-/** Fail-closed: a customer we cannot read about has no entitlements. */
-const FALLBACK: BillingEntitlements = { active: false, codes: [] };
+/** Fail-closed: a customer we cannot read about has no entitlements, and no subscription facts. */
+const FALLBACK: BillingEntitlements = {
+  active: false,
+  codes: [],
+  subscription: null,
+};
 
 type Bucket = {
   answer?: { value: BillingEntitlements; expiresAt: number };
