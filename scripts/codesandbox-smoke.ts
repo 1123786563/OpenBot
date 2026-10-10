@@ -17,7 +17,7 @@ if (!token) {
 }
 
 const { createSandboxClient } = await import("../server/src/codesandbox/client");
-const client = createSandboxClient({ baseUrl, token });
+const client = createSandboxClient({ baseUrl, token, botId: "smoke-bot" });
 
 const sessionId = await client.createSession("smoke");
 const run = await client.sendMessage(

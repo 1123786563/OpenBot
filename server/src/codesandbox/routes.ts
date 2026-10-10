@@ -38,8 +38,27 @@ export function createCodeSandboxRoutes(
     if (!(await canUseBot(actor, botId)))
       return context.json({ error: "You may not run code as this Bot." }, 403);
 
-    const outcome = await factory({ botId, ownerUserId: actor.id }).run(task);
+    const outcome = await factory({ botId, ownerUserId: actor.id }).run(task, {
+      timeoutSeconds,
+      toolCallId: undefined,
+    });
     return context.json(outcome, outcome.kind === "refused" ? 409 : 200);
+  });
+
+  // Reset is a governance action, not a run: the gateway audits the ask before the workspace is
+  // touched, and a workspace that is not configured answers refused rather than 404.
+  app.post("/reset", async (context) => {
+    const actor = context.var.actor;
+    const body = (await context.req.json().catch(() => undefined)) as
+      | { botId?: unknown }
+      | undefined;
+    const botId = typeof body?.botId === "string" ? body.botId : "";
+    if (!botId) return context.json({ error: "botId is a required string." }, 400);
+    if (!(await canUseBot(actor, botId)))
+      return context.json({ error: "You may not reset this Bot's workspace." }, 403);
+
+    const outcome = await factory({ botId, ownerUserId: actor.id }).resetWorkspace();
+    return context.json(outcome, outcome.ok ? 200 : 409);
   });
 
   return app;

@@ -21,6 +21,8 @@ export class CodeSandboxTimeoutError extends Error {
 export type SandboxClientOptions = {
   baseUrl: string;
   token: string;
+  /** Which Bot's workspace every request targets; the proxy routes on `x-openbot-bot-id`. */
+  botId: string;
   fetchImpl?: typeof fetch;
 };
 
@@ -33,6 +35,8 @@ export type SandboxClient = {
   ): Promise<SandboxRunResult>;
   listFiles(): Promise<string[]>;
   readFile(path: string, maxBytes: number): Promise<{ path: string; size: number; content: string; truncated: boolean }>;
+  /** Wipes this Bot's workspace through the governed reset endpoint. */
+  resetWorkspace(): Promise<void>;
 };
 
 export function parseUsage(message: unknown): SandboxUsage | undefined {
@@ -62,6 +66,7 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
       headers[key] = value;
     });
     headers["x-sandbox-token"] = options.token;
+    headers["x-openbot-bot-id"] = options.botId;
     const budgetMs = timeoutMs ?? 0;
     const signal = budgetMs > 0 ? AbortSignal.timeout(budgetMs) : undefined;
     let response: Response;
@@ -171,6 +176,10 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
         content: bytes > maxBytes ? text.slice(0, maxBytes) : text,
         truncated: bytes > maxBytes,
       };
+    },
+
+    async resetWorkspace() {
+      await request("/workspace/reset", { method: "POST" });
     },
   };
 }

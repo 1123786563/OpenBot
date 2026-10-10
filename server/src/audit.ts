@@ -369,6 +369,12 @@ export const auditEventTypes = [
   "code.run_refused",
   "code.run_failed",
   /*
+   * A Bot's workspace wiped on purpose. The row is written before the deletion, not after: a
+   * workspace that vanished always has a trail saying who asked, even when the sandbox is the
+   * one that then fails to answer.
+   */
+  "code.workspace_reset",
+  /*
    * Who may use this deployment, and at what level.
    *
    * On the trail rather than only in the table, because the table holds the current answer and this

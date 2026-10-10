@@ -24,6 +24,14 @@ export type SandboxEnv = {
   model: string;
   /** The largest upstream body the proxy will relay, in bytes. */
   maxResponseBytes: number;
+  /** Idle budget for a per-bot opencode serve before the sweep stops it. */
+  upstreamIdleMs: number;
+  /** How often the sweep runs. */
+  sweepIntervalMs: number;
+  /** First port a per-bot opencode serve may take; ports increment per concurrently-live bot. */
+  upstreamPortBase: number;
+  /** Bot workspace dirs untouched for longer than this are swept. 0 disables (default). */
+  workspaceTtlMs: number;
 };
 
 const required = (env: Record<string, string | undefined>, name: string) => {
@@ -45,6 +53,20 @@ const optionalNumber = (
   return parsed;
 };
 
+/** Like optionalNumber, but zero is a legal explicit value (it means "off"). */
+const optionalNonNegativeNumber = (
+  env: Record<string, string | undefined>,
+  name: string,
+  fallback: number,
+) => {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0)
+    throw new Error(`${name} must be zero or a positive number.`);
+  return parsed;
+};
+
 export function sandboxEnvFrom(env: Record<string, string | undefined>): SandboxEnv {
   return {
     token: required(env, "SANDBOX_TOKEN"),
@@ -56,5 +78,9 @@ export function sandboxEnvFrom(env: Record<string, string | undefined>): Sandbox
     providerApiKey: required(env, "SANDBOX_PROVIDER_API_KEY"),
     model: required(env, "SANDBOX_MODEL"),
     maxResponseBytes: optionalNumber(env, "SANDBOX_MAX_RESPONSE_BYTES", 262_144),
+    upstreamIdleMs: optionalNumber(env, "SANDBOX_UPSTREAM_IDLE_MS", 600_000),
+    sweepIntervalMs: optionalNumber(env, "SANDBOX_SWEEP_INTERVAL_MS", 60_000),
+    upstreamPortBase: optionalNumber(env, "SANDBOX_UPSTREAM_PORT_BASE", 4400),
+    workspaceTtlMs: optionalNonNegativeNumber(env, "SANDBOX_WORKSPACE_TTL_MS", 0),
   };
 }
