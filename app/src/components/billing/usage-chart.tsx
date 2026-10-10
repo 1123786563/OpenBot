@@ -61,19 +61,23 @@ export function UsageChart({ daily }: { daily: BillingUsageDaily }) {
             <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={48} />
             <Tooltip
               cursor={{ fill: "var(--muted)", opacity: 0.4 }}
-              content={({ active, payload, label }) =>
-                active && payload?.length ? (
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                const point = payload[0]?.payload as
+                  | { inputTokens: number; outputTokens: number }
+                  | undefined;
+                return (
                   <div className="rounded-lg border bg-card px-3 py-2 text-xs">
                     <p className="font-medium tabular-nums">{String(label)}</p>
                     <p className="text-muted-foreground mt-1 tabular-nums">
                       {t("usagePage.eventTokens")}: {payload[0]?.value as number}
                     </p>
                     <p className="text-muted-foreground tabular-nums">
-                      {t("usagePage.eventIn")}: {(payload[0]?.payload as { inputTokens: number }).inputTokens} · {t("usagePage.eventOut")}: {(payload[0]?.payload as { outputTokens: number }).outputTokens}
+                      {t("usagePage.eventIn")}: {point?.inputTokens} · {t("usagePage.eventOut")}: {point?.outputTokens}
                     </p>
                   </div>
-                ) : null
-              }
+                );
+              }}
             />
             <Bar dataKey="tokens" fill="var(--chart-2)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
           </BarChart>
