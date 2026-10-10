@@ -20,4 +20,17 @@ describe("what the supervisor tells a computer about its browser", () => {
       environmentFor("invoice-collector", { COMPUTER_TOKEN: "secret" }),
     ).toEqual(["COMPUTER_BOT_ID=invoice-collector", "COMPUTER_TOKEN=secret"]);
   });
+
+  test("forwards the trace export endpoint so a computer's spans join the deployment's traces", () => {
+    expect(
+      environmentFor("knowledge", {
+        COMPUTER_TOKEN: "secret",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo:4318",
+      }),
+    ).toEqual([
+      "COMPUTER_BOT_ID=knowledge",
+      "COMPUTER_TOKEN=secret",
+      "OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318",
+    ]);
+  });
 });

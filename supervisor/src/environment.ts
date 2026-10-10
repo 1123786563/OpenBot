@@ -13,6 +13,9 @@ export function environmentFor(
     key.startsWith("EGRESS_PROXY"),
   );
   const computerToken = env.COMPUTER_TOKEN?.trim() || undefined;
+  // A computer that exports spans has to know where Tempo is; without it the computer's side of
+  // a traced request never reaches the deployment's traces (its own code runs either way).
+  const otelEndpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim() || undefined;
   const spireSocketVolume = env.SPIRE_AGENT_SOCKET_VOLUME;
   // Fail fast here rather than forwarding an invalid mode that crashes the child at
   // `browserModeFromEnv`: whitespace-only is falsy after trim, anything else must be headless
@@ -31,6 +34,7 @@ export function environmentFor(
   return [
     `COMPUTER_BOT_ID=${botId}`,
     ...(computerToken ? [`COMPUTER_TOKEN=${computerToken}`] : []),
+    ...(otelEndpoint ? [`OTEL_EXPORTER_OTLP_ENDPOINT=${otelEndpoint}`] : []),
     ...(spireSocketVolume
       ? ["SPIFFE_ENDPOINT_SOCKET=/tmp/spire-agent/public/api.sock"]
       : []),
