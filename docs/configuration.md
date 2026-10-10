@@ -794,6 +794,39 @@ useful answer is that the image could not be fetched. Somewhere that must never 
 
 `docs/releasing.md` shows reading the digests straight out of a release's `container-images.json`.
 
+## Workshop
+
+The workshop is a Bot's working surface: long turns with a live event stream, a file tree, an
+artifact gallery, and per-session usage. It hangs off a channel (one workshop session per
+channel) and rides the same sandbox the `run_code` tool uses.
+
+| Variable | Meaning |
+| --- | --- |
+| `OPENBOT_REDIS_URL` | Redis for the workshop's turn lock and event fan-out. This name, not `REDIS_URL` — that one belongs to Lago inside Compose, and Bun's built-in client connects to whatever it says the moment it is imported. Leave it empty for single-replica: an in-process lock and database polling, deliberately and loudly (see the degradation note below). Point it at the `openbot-redis` service (`127.0.0.1:6379` from the host) in any multi-replica deployment. |
+| `WORKSHOP_REQUIRE_REDIS` | Fail startup when Redis is expected but unreachable. Set `1` in any multi-replica deployment: the in-process lock would let two replicas run the same turn, and refusing to boot is the only safe answer there. Default `0`. |
+| `WORKSHOP_LOCK_TTL_MS` | Turn lock TTL and renewal cadence. Renewal is TTL/3, so three missed renewments is one lost lock. Default `30000`. |
+| `WORKSHOP_FANOUT` | Turn event fan-out. `auto` (default) picks Redis when `OPENBOT_REDIS_URL` is set, else database polling; the two can also be pinned explicitly. |
+| `WORKSHOP_ENABLED` | The workshop feature switch. `false` hides the workshop tab and 404s its routes without touching anything else. Default `true`. |
+| `WORKSHOP_PREVIEW_MODE` | Webapp artifact previews: `auto` (dev server when per-bot containers are ready, static otherwise — the default), `static` (static build only), `devserver` (dev server only), or `off` (no previews). |
+| `PREVIEW_ALLOWED_DEV_ORIGINS` | Explicit allow-list of `scheme://host:port` origins that may reach a dev-server preview (Vite's `allowedDevOrigins`, enforced server-side). Anything not listed is refused; empty means no dev origin is trusted. |
+| `SANDBOX_WEBAPP_PORT_BASE` | First port of the sandbox's per-bot webapp (static build) pool; 100 ports from here. Default `4500`. |
+| `SANDBOX_ACTIVITY_TIMEOUT_MS` | A run whose event stream stays silent longer than this is ended with a timeout. Default `300000` (5 minutes). |
+| `AGENT_SANDBOX_URL` / `SANDBOX_TOKEN` / `SANDBOX_PORT` | The sandbox the workshop (and `run_code`) executes in. Unset URL or token leaves the client null: the workshop still mounts, and a turn lands a refused row rather than a 404 the caller cannot tell apart from a missing deployment. |
+| `SANDBOX_UPSTREAM_IDLE_MS` / `SANDBOX_SWEEP_INTERVAL_MS` | Sandbox housekeeping: how long an unused per-bot runtime is kept, and how often the sweep runs. |
+
+**Redis degradation (the in-process fallback, §3.5.6).** With `OPENBOT_REDIS_URL` empty the
+workshop runs single-replica on an in-process lock and database polling for event fan-out —
+slower (poll cadence, not push), never lossy (the database is the truth either way), and never
+silent (start-up says which mode it chose). What the fallback is *not* is multi-replica safe:
+two replicas each hold their own in-process lock and will run the same turn twice. That is
+exactly what `WORKSHOP_REQUIRE_REDIS=1` exists to prevent — it turns "expected but missing"
+into a refusal to start rather than a duplicated bill.
+
+**Event schema.** The turn stream's translated event families (message_chunk, thought,
+tool_call, progress, prompt_response, subagent, unknown) and their wire shapes are indexed in
+[agent-sandbox/docs/sse-samples.md](../agent-sandbox/docs/sse-samples.md); that file is the
+contract's sample corpus, not this one.
+
 ## Ports
 
 | Service           | Default port               | Setting           |
