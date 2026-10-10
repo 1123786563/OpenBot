@@ -68,6 +68,13 @@ long-lived local deployment can reach a state where attaching anything is refuse
 in the composer deletes it outright, so it takes abandoned drafts rather than ordinary use.
 [deployment.md](deployment.md) says the same for a real deployment.
 
+## Logs and troubleshooting
+
+Server logs are one JSON line per record, with the level controlled by `LOG_LEVEL`; the field
+conventions and how to read the lines are in [observability](observability.md). On the host, every
+process `start.sh` starts appends to a file under `.logs/` — `server.log`, `worker.log`, `app.log`,
+`migrate.log` — and nothing truncates them. In a container, `docker logs` shows the same lines.
+
 ## Migrations
 
 After changing the Drizzle schema:
