@@ -1,0 +1,14 @@
+-- The GRANT 0067 owed: agent_profiles read for the workshop RLS role.
+--
+-- 0067's sandbox_instances policy resolves the owner through agent_profiles (the instance has
+-- no owner column of its own; the Bot's profile carries it), and a policy's EXISTS subquery
+-- runs with the CALLER's privileges: a role holding no SELECT on agent_profiles fails the
+-- policy with permission denied — not a wrong answer, a refusal, which reads as the role being
+-- broken rather than the grant being missing.
+--
+-- This is a separate migration rather than an edit to 0067 because 0067 is applied: its hash
+-- is registered in journals (I3's reconciliation keyed on the file's sha256), and rewriting an
+-- applied migration breaks every checksum audit after it. The fix rides forward, as 0060's own
+-- precedent puts it: one executable source, amended by the next migration, never rewritten.
+--> statement-breakpoint
+GRANT SELECT ON agent_profiles TO ob_workshop_writer;
