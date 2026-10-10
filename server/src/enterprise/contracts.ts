@@ -77,3 +77,25 @@ export interface ResourceReader {
     resourceId: string,
   ): Promise<ResourceView>;
 }
+
+/*
+ * The run-ledger contracts (plan 03 §3.2), re-exported as TYPES only: the
+ * implementations and their module state stay inside `runs/`, and none of
+ * these shapes may leak into `shared/` — they are server-internal seams
+ * (RunService for the public routes, BudgetPort for E4, AttemptBinding and
+ * RuntimeControl for the internal planes), not client DTOs.
+ */
+export type {
+  AttemptBinding,
+  BudgetPort,
+  DispatchJob,
+  EffectSummary,
+  EffectsReader,
+  RecoveryContext,
+  ReserveInput,
+  RunCommand,
+  RunService,
+  RuntimeControl,
+  RuntimeControlReceipt,
+  WorkflowStarter,
+} from "./runs/contracts";

@@ -11,6 +11,13 @@ import {
 } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import {
+  classifyAttachment,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_FILE_BYTES,
+  MAX_IMAGE_BYTES,
+  namesNoFormat,
+} from "../../../shared/attachments";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -19,15 +26,8 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema";
-import {
-  classifyAttachment,
-  MAX_ATTACHMENTS_PER_MESSAGE,
-  MAX_FILE_BYTES,
-  MAX_IMAGE_BYTES,
-  namesNoFormat,
-} from "../../../shared/attachments";
-import type { StoredAttachment } from "./attachment-parts";
 import { sniffMimeType } from "./attachment-mime";
+import type { StoredAttachment } from "./attachment-parts";
 
 function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
@@ -220,7 +220,7 @@ export async function loadAttachmentForTurnInTransaction(
         eq(attachments.id, id),
         // The conversation this turn is running in, as a term in the same statement rather than as
         // a fact a caller looked up and passed. See {@link inTheTurnsChannel}.
-        inTheTurnsChannel(database, turn.threadId),
+        inTheTurnsChannel(transaction, turn.threadId),
         /*
          * Sent, or this actor's own. In the same statement as the membership join rather than read
          * and then decided on, so a send committing alongside cannot be missed by a check that
@@ -395,8 +395,11 @@ export async function markAttachmentsSent(
   if (known.length === 0) return;
 
   const unrecorded = await database
-    .transaction(async (transaction) => {
-      return markAttachmentsSentInTransaction(transaction, turn, known);
+    .transaction(async (transaction): Promise<readonly string[]> => {
+      // Success means every id was verified durably recorded as sent, so nothing is unrecorded.
+      // The empty list keeps the happy path the same type as what the .catch below returns.
+      await markAttachmentsSentInTransaction(transaction, turn, known);
+      return [];
     })
     .catch((error: unknown) => {
       /*

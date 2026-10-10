@@ -15,6 +15,7 @@
 import { Hono } from "hono";
 import type { AuthService } from "../auth/guards";
 import type { Authz, Directory, ResourceReader, Scope } from "./contracts";
+import { mountConversationsRoutes } from "./conversations/routes";
 import { EnterpriseError } from "./errors";
 import { mountTenantRoutes } from "./tenancy/routes";
 import { resolveScope } from "./tenancy/scope";
@@ -165,6 +166,7 @@ export function createEnterpriseApp(deps: EnterpriseDependencies) {
   });
 
   mountTenantRoutes(api, deps);
+  mountConversationsRoutes(api, deps);
   app.route("/api/enterprise/v1", api);
   return app;
 }

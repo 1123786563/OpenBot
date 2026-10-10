@@ -69,6 +69,7 @@ function countingClient() {
     listSubscriptions: 0,
     postSubscription: 0,
     getUsage: 0,
+    postEvent: 0,
   };
   const customers = new Map<string, string>();
   const subscriptions: {
@@ -79,6 +80,8 @@ function countingClient() {
   }[] = [];
   /** What the provider's current_usage endpoint answers; null stands in for its "no active" 405. */
   let usage: LagoUsageBody | null = null;
+  /** Every metered event the service sent, for asserting the metering chain end to end. */
+  const postedEvents: unknown[] = [];
   const client: LagoClient = {
     async getCustomer(externalId) {
       calls.getCustomer += 1;
@@ -119,11 +122,17 @@ function countingClient() {
         ? { status: 405, body: null }
         : { status: 200, body: usage };
     },
+    async postEvent(event) {
+      calls.postEvent += 1;
+      postedEvents.push(event);
+      return { status: 200, body: null };
+    },
   };
   return {
     calls,
     client,
     subscriptions,
+    postedEvents,
     setUsage: (value: LagoUsageBody | null) => {
       usage = value;
     },
@@ -510,5 +519,77 @@ describe("the admin routes", () => {
     const text = JSON.stringify(await response.json());
     expect(text).not.toContain(PROVIDER_API_KEY);
     expect(text).not.toContain("lago.unreachable.test");
+  });
+});
+
+describe("the usage meter (recordUsage)", () => {
+  test("meters against the active subscription's external id, verbatim", async () => {
+    const stub = countingClient();
+    const { service } = serviceFixture(stub.client);
+    // The projection recordUsage reads: a sync puts the customer and the active subscription in
+    // the store, in that order — the store's FK asks for exactly this.
+    await service.ensureCustomer({
+      externalId: DEPLOYMENT_KEY,
+      name: "Deployment 1",
+    });
+    await service.ensureSubscription({
+      externalCustomerId: DEPLOYMENT_KEY,
+      externalSubscriptionId: `${DEPLOYMENT_KEY}-pro`,
+      planCode: "pro",
+    });
+
+    await service.recordUsage({
+      metricCode: "llm_tokens",
+      transactionId: "llm-test-1",
+      properties: { input_tokens: 100, output_tokens: 20, tokens: 120 },
+    });
+
+    expect(stub.calls.postEvent).toBe(1);
+    expect(stub.postedEvents).toEqual([
+      {
+        transactionId: "llm-test-1",
+        code: "llm_tokens",
+        // Unix seconds, generated when the caller omits one; its presence is the assertion.
+        timestamp: expect.any(Number),
+        externalSubscriptionId: `${DEPLOYMENT_KEY}-pro`,
+        properties: { input_tokens: 100, output_tokens: 20, tokens: 120 },
+      },
+    ]);
+  });
+
+  test("with no active subscription the event is dropped, not thrown", async () => {
+    const stub = countingClient();
+    const { service } = serviceFixture(stub.client);
+    await service.recordUsage({
+      metricCode: "llm_tokens",
+      transactionId: "llm-test-2",
+      properties: { tokens: 1 },
+    });
+    expect(stub.calls.postEvent).toBe(0);
+  });
+
+  test("a provider refusal is logged, never thrown — metering must not fail the run", async () => {
+    const refusing: LagoClient = {
+      ...countingClient().client,
+      async postEvent() {
+        return { status: 422, body: null };
+      },
+    };
+    const { service } = serviceFixture(refusing);
+    await service.ensureCustomer({
+      externalId: DEPLOYMENT_KEY,
+      name: "Deployment 1",
+    });
+    await service.ensureSubscription({
+      externalCustomerId: DEPLOYMENT_KEY,
+      externalSubscriptionId: `${DEPLOYMENT_KEY}-pro`,
+      planCode: "pro",
+    });
+    // The absence of a throw is the assertion: the caller is a model call's epilogue.
+    await service.recordUsage({
+      metricCode: "llm_tokens",
+      transactionId: "llm-test-3",
+      properties: { tokens: 1 },
+    });
   });
 });

@@ -38,7 +38,29 @@ CREATE ROLE ob_ent_identity_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB 
 -- enterprise business tables.
 CREATE ROLE ob_ent_identity NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
 
-GRANT USAGE ON SCHEMA public TO ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator, ob_ent_identity;
+-- Runs ledger capability roles, per plan 03 §4.2. Same NOLOGIN/non-owner/no-BYPASSRLS contract
+-- as above; per-table GRANTs and RLS policies live exclusively in the runs custom migration
+-- (server/drizzle/*_enterprise_runs_rls.sql):
+--   ob_ent_run_writer       business create/command path: own threads, runs, commands, outbox;
+--                           binds its own budget. Read-only on members/resources/grants.
+--   ob_ent_runtime_writer   internal callbacks: events, checkpoints, attempts, steps, model
+--                           metering; authenticated per service + capability, scoped to the run.
+--   ob_ent_dispatcher       the redacted outbox ONLY: polls and claims across tenants by explicit
+--                           limited system grant; no resource, run body, message or capability
+--                           access whatsoever.
+--   ob_ent_run_operator     offline approved provisioning: releases, run grants, routes/grants,
+--                           budget accounts. Never issues a model request.
+--   ob_ent_run_maintenance  liveness convergence and settlement: fence invalidation, lost marking,
+--                           cancel confirmation, money reconciliation, audit. Column-limited on
+--                           enterprise_runs so the input body is unreadable by construction.
+CREATE ROLE ob_ent_run_writer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+CREATE ROLE ob_ent_runtime_writer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+CREATE ROLE ob_ent_dispatcher NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+CREATE ROLE ob_ent_run_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+CREATE ROLE ob_ent_run_maintenance NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+
+GRANT USAGE ON SCHEMA public TO ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator, ob_ent_identity,
+  ob_ent_run_writer, ob_ent_runtime_writer, ob_ent_dispatcher, ob_ent_run_operator, ob_ent_run_maintenance;
 
 -- Post-migration spot checks the DBA runs on the migrated database (informational; the same checks
 -- are asserted against a live restricted login by server/tests/enterprise/tenancy/rls.test.ts):

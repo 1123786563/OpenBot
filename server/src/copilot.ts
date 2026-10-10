@@ -362,6 +362,100 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
   }).chat(model.defaultModel);
 }
 
+/**
+ * Where every built-in Bot's token consumption lands, once this deployment has billing.
+ *
+ * A module-level setter rather than an import: the billing seam is optional — a deployment without
+ * a provider mounts none of it — and `copilot.ts` must not grow a dependency on a module that is
+ * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
+ * usage on the floor, which is exactly right for a deployment that meters nowhere.
+ */
+let usageMeter:
+  | ((usage: {
+      inputTokens: number | undefined;
+      outputTokens: number | undefined;
+    }) => void)
+  | undefined;
+
+export function setModelUsageMeter(
+  meter:
+    | ((usage: {
+        inputTokens: number | undefined;
+        outputTokens: number | undefined;
+      }) => void)
+    | undefined,
+) {
+  usageMeter = meter;
+}
+
+/**
+ * A model instance carrying the usage meter, hand-rolled to the same shape AI SDK's own
+ * `wrapLanguageModel` produces: `doStream` delegates to the wrapped model, the result's
+ * ReadableStream is piped through a transform so the `finish` part's token counts reach the meter,
+ * and every other property (provider, modelId, supportedUrls) passes through untouched.
+ * Structural on purpose — the middleware types live in `@ai-sdk/provider`, which this workspace
+ * does not depend on directly; the runtime carries them transitively, and pinning that into
+ * `package.json` to record two field names is not the trade.
+ */
+function meteredModel<T>(model: T): T {
+  const inner = model as {
+    doStream: (params: unknown) => Promise<{
+      stream: ReadableStream<Record<string, unknown>>;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  };
+  return {
+    ...inner,
+    async doStream(params: unknown) {
+      const result = await inner.doStream(params);
+      const report = new TransformStream<
+        Record<string, unknown>,
+        Record<string, unknown>
+      >({
+        transform(part, controller) {
+          if (part.type === "finish") {
+            const usage = part.usage as
+              | {
+                  inputTokens?: { total?: number };
+                  outputTokens?: { total?: number };
+                }
+              | undefined;
+            try {
+              usageMeter?.({
+                inputTokens: usage?.inputTokens?.total,
+                outputTokens: usage?.outputTokens?.total,
+              });
+            } catch {
+              // A meter that throws must not take the run's last chunk down with it.
+            }
+          }
+          controller.enqueue(part);
+        },
+      });
+      return { ...result, stream: result.stream.pipeThrough(report) };
+    },
+  } as T;
+}
+
+/**
+ * Wrap the model instance in the usage meter when one is wired and the model is an instance (the
+ * string form is resolved by the runtime itself, where this file cannot reach).
+ */
+function withUsageMeter<T>(model: T): T {
+  if (usageMeter === undefined) return model;
+  const candidate = model as
+    | (Record<string, unknown> & { doStream?: unknown })
+    | string;
+  if (
+    typeof candidate === "string" ||
+    typeof candidate.doStream !== "function"
+  ) {
+    return model;
+  }
+  return meteredModel(model);
+}
+
 export function builtInAgentConfiguration(
   agent: RegisteredBuiltInAgent,
   model: RuntimeModel,
@@ -423,7 +517,7 @@ export function builtInAgentConfiguration(
   ];
 
   return {
-    model: planModel ?? runtimeModel(model, apiKey),
+    model: withUsageMeter(planModel ?? runtimeModel(model, apiKey)),
     /*
      * The package's role, then the person's own standing instructions, then what this Bot actually
      * holds, then the computer.

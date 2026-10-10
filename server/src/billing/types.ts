@@ -179,6 +179,20 @@ export type BillingService = {
   entitlements(externalCustomerId?: string): Promise<BillingEntitlements>;
   /** The active subscription's current-period usage, or null when there is no active one. */
   usage(externalCustomerId?: string): Promise<BillingUsage | null>;
+  /**
+   * Meter one consumption event against the active subscription. Fire-and-forget by design: the
+   * caller is a model call's epilogue, and billing must never sit in front of a token stream.
+   * The transaction id makes a retried report free — the provider stores it once.
+   */
+  recordUsage(input: {
+    metricCode: string;
+    properties: Record<string, number | string>;
+    /** Stable per-occurrence id; the same value twice is one event at the provider. */
+    transactionId: string;
+    timestamp?: Date;
+    /** Absent means this deployment's own customer key. */
+    externalCustomerId?: string;
+  }): Promise<void>;
   snapshot(): Promise<BillingSnapshot>;
   /** Not built yet, and refusing rather than half-working. */
   reconcile(): Promise<never>;
