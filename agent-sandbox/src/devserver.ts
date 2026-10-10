@@ -50,6 +50,7 @@ export type DevServers = {
   start(input: { botId: string; dir: string; command?: string }): Promise<
     | { ok: true; port: number; command: string }
     | { ok: false; reason: "capacity"; running: number; max: number }
+    | { ok: false; reason: "outside-workspace"; dir: string }
   >;
   /** Stop one Bot's dev servers (a Bot may hold several, one per dir). Quiet when none. */
   stop(botId: string): Promise<void>;
@@ -105,9 +106,46 @@ export function createDevServers(options: DevServersOptions): DevServers {
         return { ok: false, reason: "capacity", running: entries.size, max };
       }
 
+      // CONTAINMENT BEFORE SPAWN: the child's cwd must resolve INSIDE this Bot's workspace.
+      // A dir like `../../../etc` (or an absolute path smuggled past the leading-slash strip)
+      // would otherwise hand a caller's command a working directory the sandbox never meant
+      // to share. Resolved lexically — the workspace root is the module's own configured
+      // base, not caller input, so segment arithmetic is exact here.
+      const botWorkspace = `${workspaceRoot}/${input.botId}`;
+      // An ABSOLUTE dir is a different escape entirely: joining it under the workspace makes
+      // it relative by accident (`/workspace/bots/a//etc/...` reads fine), so the leading
+      // slash itself is the refusal — a dev server dir is a subdirectory, spelled relatively.
+      if (input.dir.startsWith("/")) {
+        return { ok: false, reason: "outside-workspace", dir: input.dir };
+      }
+      const resolvedDir = input.dir.replace(/^\/+/, "");
+      const segments: string[] = [];
+      for (const part of resolvedDir.split("/")) {
+        if (part === "" || part === ".") continue;
+        if (part === "..") {
+          segments.pop(); // Climbing is legal only as far as it stays inside; checked below.
+          continue;
+        }
+        segments.push(part);
+      }
+      // The witness is arithmetic, not string comparison: a climb that pops past the root
+      // (`a/../../..`) escapes, and so does any input whose RESOLVED path fails to sit under
+      // the workspace (which also catches smuggled absolute dirs, whose segments are joined
+      // as relative parts and land somewhere unrelated). Both statements below must hold.
+      const climbCount = resolvedDir.split("/").filter((part) => part === "..").length;
+      const segmentCount = resolvedDir
+        .split("/")
+        .filter((part) => part && part !== "." && part !== "..").length;
+      const cwd = `${botWorkspace}/${segments.join("/")}`;
+      const inside =
+        climbCount <= segmentCount + 1 &&
+        (cwd === botWorkspace || cwd.startsWith(`${botWorkspace}/`));
+      if (!inside) {
+        return { ok: false, reason: "outside-workspace", dir: input.dir };
+      }
+
       const command = input.command?.trim() || "vite --host 127.0.0.1";
       const [binary, ...args] = command.split(/\s+/);
-      const cwd = `${workspaceRoot}/${input.botId}/${input.dir.replace(/^\/+/, "")}`;
       const offset = takeOffset();
       if (offset >= 100) {
         // Pool exhausted (100 ports): the same refusal shape, a different reason word.

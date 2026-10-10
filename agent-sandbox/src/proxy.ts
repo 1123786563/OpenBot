@@ -153,7 +153,16 @@ export function createProxyHandler(
           ? { command: body.command }
           : {}),
       });
-      if (!started.ok)
+      if (!started.ok) {
+        if (started.reason === "outside-workspace") {
+          return Response.json(
+            {
+              error: `The dev server directory must stay inside the Bot's workspace (got ${started.dir}).`,
+              reason: started.reason,
+            },
+            { status: 400 },
+          );
+        }
         return Response.json(
           {
             error: `The dev server cap is reached (${started.running}/${started.max}); stop one before starting another.`,
@@ -161,6 +170,7 @@ export function createProxyHandler(
           },
           { status: 503 },
         );
+      }
       return Response.json({ port: started.port, command: started.command });
     }
     if (url.pathname === "/devserver/stop" && request.method === "POST") {
