@@ -1,22 +1,17 @@
-import * as QRCode from "qrcode";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { CheckoutCard } from "@/components/billing/checkout-card";
+import { PriceCard } from "@/components/billing/price-card";
+import { ProviderSegmented } from "@/components/billing/provider-segmented";
 import {
   PageEmpty,
-  PageRows,
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@/components/ui/item";
+import { money } from "@/lib/billing/format";
 import {
   cancelPurchase,
   createPurchase,
@@ -54,153 +49,6 @@ const POLL_INTERVAL_MS = 5_000;
  * for a deployment configured with a longer one.
  */
 const MAX_POLL_ATTEMPTS = 180;
-
-/** Whole currency units from cents, in the reader's own locale and the plan's own currency. */
-function money(cents: number, currency: string): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-  }).format(cents / 100);
-}
-
-/** The countdown, mm:ss, against the QR code's own expiry. */
-function remaining(expiresAt: string, now: number): string {
-  const seconds = Math.max(0, Math.floor((Date.parse(expiresAt) - now) / 1000));
-  const minutes = Math.floor(seconds / 60);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-/** One plan row: the price, the period it buys, and whether it is the one being bought now. */
-function PlanRow({
-  entry,
-  selected,
-  onSelect,
-  disabled,
-}: {
-  entry: PurchasePlanEntry;
-  selected: boolean;
-  onSelect: () => void;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation("settings");
-  return (
-    <Item
-      size="sm"
-      render={
-        <button
-          type="button"
-          className="cursor-pointer text-left"
-          onClick={onSelect}
-          disabled={disabled}
-        />
-      }
-    >
-      <ItemContent>
-        <ItemTitle className="font-mono">{entry.planCode}</ItemTitle>
-        <ItemDescription>{t("subscribe.perMonth")}</ItemDescription>
-      </ItemContent>
-      <ItemActions>
-        <span className="tabular-nums">
-          {money(entry.amountCents, entry.currency)}
-        </span>
-        <span
-          aria-hidden
-          className={
-            selected
-              ? "size-3 rounded-full border-4 border-primary"
-              : "size-3 rounded-full border"
-          }
-        />
-      </ItemActions>
-    </Item>
-  );
-}
-
-/** One channel row, same shape as a plan row so the two read as one decision. */
-function ProviderRow({
-  provider,
-  selected,
-  onSelect,
-}: {
-  provider: PurchaseProvider;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const { t } = useTranslation("settings");
-  return (
-    <Item
-      size="sm"
-      render={
-        <button
-          type="button"
-          className="cursor-pointer text-left"
-          onClick={onSelect}
-        />
-      }
-    >
-      <ItemContent>
-        <ItemTitle>{t(`subscribe.provider.${provider}`)}</ItemTitle>
-      </ItemContent>
-      <ItemActions>
-        <span
-          aria-hidden
-          className={
-            selected
-              ? "size-3 rounded-full border-4 border-primary"
-              : "size-3 rounded-full border"
-          }
-        />
-      </ItemActions>
-    </Item>
-  );
-}
-
-/** The QR code itself, rendered locally from the payload the order carries. */
-function QrCode({ payload }: { payload: string }) {
-  const { t } = useTranslation("settings");
-  const [dataUrl, setDataUrl] = React.useState<string | null>(null);
-  const [failed, setFailed] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setDataUrl(null);
-    setFailed(false);
-    QRCode.toDataURL(payload, { margin: 1, width: 224 })
-      .then((url) => {
-        if (!cancelled) setDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [payload]);
-
-  if (failed) {
-    return (
-      <p className="mt-4 text-muted-foreground text-sm">
-        {t("subscribe.qrFailed")}
-      </p>
-    );
-  }
-  if (dataUrl === null) {
-    // Same footprint as the code, so the layout does not jump when it arrives.
-    return (
-      <div className="mt-4 size-56 animate-pulse self-start rounded-lg border bg-muted" />
-    );
-  }
-  return (
-    <img
-      src={dataUrl}
-      alt={t("subscribe.qrAlt")}
-      className="size-56 self-start rounded-lg border bg-white p-2"
-      // The payload is the one thing on this page that must not lag its caption: rendering the
-      // previous order's code under this order's countdown would invite paying a dead order.
-      key={payload}
-    />
-  );
-}
 
 /**
  * The order in flight, from QR code to outcome.
@@ -278,16 +126,6 @@ function PurchaseFlow({
   }
   if (!view) return null;
 
-  const expiredLocally = Date.parse(view.expiresAt) <= now;
-  // The QR exists to be paid once: shown only while the order is pending and carries a payload,
-  // and never after the local countdown has run out.
-  const qr =
-    view.status === "pending" &&
-    view.checkout?.kind === "qrcode" &&
-    !expiredLocally
-      ? view.checkout
-      : null;
-
   return (
     <PageSection
       title={t("subscribe.checkoutTitle")}
@@ -295,83 +133,15 @@ function PurchaseFlow({
         planCode: view.planCode,
       })}
     >
-      {qr ? (
-        <>
-          <QrCode payload={qr.payload} />
-          <p className="mt-3 text-sm tabular-nums">
-            {t("subscribe.expiresIn", { time: remaining(view.expiresAt, now) })}
-          </p>
-          <p className="mt-1 text-muted-foreground text-sm">
-            {t("subscribe.statusPending")}
-          </p>
-          <div className="mt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={cancel.isPending}
-              onClick={() => cancel.mutate()}
-            >
-              {t("subscribe.cancel")}
-            </Button>
-            {cancel.error ? (
-              <p className="mt-2 text-destructive text-sm">
-                {(cancel.error as Error).message}
-              </p>
-            ) : null}
-          </div>
-        </>
-      ) : view.status === "pending" ? (
-        // The countdown ran out before the server recorded the outcome. The expiry is the
-        // order's own timestamp, so the page says expired now; the polling above keeps going
-        // until the server's word arrives, in case a payment landed in the last seconds.
-        <div className="mt-4">
-          <p className="text-sm">{t("subscribe.statusExpired")}</p>
-          <div className="mt-4">
-            <Button size="sm" onClick={dismiss}>
-              {t("subscribe.backToPlans")}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <OutcomeCard view={view} onDone={dismiss} />
-      )}
+      <CheckoutCard
+        view={view}
+        now={now}
+        onCancel={() => cancel.mutate()}
+        cancelPending={cancel.isPending}
+        cancelError={cancel.error ? (cancel.error as Error).message : null}
+        onDismiss={dismiss}
+      />
     </PageSection>
-  );
-}
-
-/** An order that has settled: what happened, and the one verb out of the view. */
-function OutcomeCard({
-  view,
-  onDone,
-}: {
-  view: PurchaseOrderView;
-  onDone: () => void;
-}) {
-  const { t } = useTranslation("settings");
-  const outcome = (() => {
-    if (view.status === "paid") {
-      if (view.activationState === "applied")
-        return { text: t("subscribe.statusPaid") };
-      if (view.activationState === "pending")
-        return { text: t("subscribe.statusPaidActivating") };
-      return { text: t("subscribe.statusPaidFailed") };
-    }
-    if (view.status === "canceled")
-      return { text: t("subscribe.statusCanceled") };
-    if (view.status === "expired")
-      return { text: t("subscribe.statusExpired") };
-    return { text: t("subscribe.statusBlocked") };
-  })();
-
-  return (
-    <div className="mt-4">
-      <p className="text-sm">{outcome.text}</p>
-      <div className="mt-4">
-        <Button size="sm" onClick={onDone}>
-          {t("subscribe.backToPlans")}
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -399,6 +169,7 @@ function RouteComponent() {
       <PageShell
         title={t("subscribe.title")}
         description={t("subscribe.description")}
+        width="wide"
       >
         <PageEmpty>{t("subscribe.notEnabled")}</PageEmpty>
       </PageShell>
@@ -409,6 +180,7 @@ function RouteComponent() {
       <PageShell
         title={t("subscribe.title")}
         description={t("subscribe.description")}
+        width="wide"
       >
         <PageEmpty>{(catalog.error as Error).message}</PageEmpty>
       </PageShell>
@@ -423,6 +195,7 @@ function RouteComponent() {
     <PageShell
       title={t("subscribe.title")}
       description={t("subscribe.description")}
+      width="wide"
     >
       {flowOrderId ? (
         <PurchaseFlow
@@ -432,22 +205,34 @@ function RouteComponent() {
       ) : (
         <>
           {data.activePlanCode !== null ? (
-            <p className="mt-4 rounded-lg border bg-card px-4 py-3 text-sm">
-              {t("subscribe.activeSubscriptionNotice", {
-                planCode: data.activePlanCode,
-              })}
-            </p>
+            <div className="rounded-xl border bg-card p-5">
+              <p className="text-muted-foreground text-sm">
+                {t("subscribe.statusCardTitle")}
+              </p>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="font-mono text-lg font-semibold">
+                  {data.activePlanCode}
+                </span>
+                <Link
+                  to="/settings/billing"
+                  className="text-primary text-sm hover:underline"
+                >
+                  {t("subscribe.viewEntitlements")}
+                </Link>
+              </div>
+            </div>
           ) : null}
           {!data.canPurchase ? (
-            <PageEmpty>{t("subscribe.notAdmin")}</PageEmpty>
-          ) : (
-            <PlanChooser
-              plans={data.plans}
-              providers={data.providers}
-              canBuy={canBuy}
-              onStarted={(order) => setFlowOrderId(order.orderId)}
-            />
-          )}
+            <p className="text-muted-foreground text-sm">
+              {t("subscribe.notAdmin")}
+            </p>
+          ) : null}
+          <PlanChooser
+            plans={data.plans}
+            providers={data.providers}
+            canBuy={canBuy}
+            onStarted={(order) => setFlowOrderId(order.orderId)}
+          />
         </>
       )}
     </PageShell>
@@ -457,9 +242,10 @@ function RouteComponent() {
 /**
  * Picking the plan and the channel, then starting the order.
  *
- * With one plan in the catalog the choice collapses to nothing and the plan row is pre-selected —
+ * With one plan in the catalog the choice collapses to nothing and the plan card is pre-selected —
  * the common deployment has one price, and making its administrator pick from a list of one is
- * ceremony, not clarity.
+ * ceremony, not clarity. A read-only caller still sees the catalog: the cards render disabled
+ * rather than the page going empty.
  */
 function PlanChooser({
   plans,
@@ -509,58 +295,59 @@ function PlanChooser({
     },
   });
 
+  const selected = plans.find((entry) => entry.planCode === planCode);
+
   return (
     <>
       <PageSection
         title={t("subscribe.plansTitle")}
         description={t("subscribe.plansDescription")}
       >
-        {plans.length === 0 ? (
-          <PageEmpty>{t("subscribe.noPlans")}</PageEmpty>
-        ) : (
-          <PageRows>
-            {plans.map((entry) => (
-              <PlanRow
-                key={entry.planCode}
-                entry={entry}
-                selected={planCode === entry.planCode}
-                onSelect={() => setPlanCode(entry.planCode)}
-                disabled={!canBuy}
-              />
-            ))}
-          </PageRows>
-        )}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {plans.map((entry) => (
+            <PriceCard
+              key={entry.planCode}
+              entry={entry}
+              selected={planCode === entry.planCode}
+              onSelect={() => setPlanCode(entry.planCode)}
+              disabled={!canBuy}
+            />
+          ))}
+        </div>
       </PageSection>
       {plans.length > 0 && providers.length > 0 ? (
         <PageSection
           title={t("subscribe.providerTitle")}
           description={t("subscribe.providerDescription")}
         >
-          <PageRows>
-            {providers.map((id) => (
-              <ProviderRow
-                key={id}
-                provider={id}
-                selected={provider === id}
-                onSelect={() => setProvider(id)}
-              />
-            ))}
-          </PageRows>
-          <div className="mt-4 flex items-center gap-3">
-            <Button
-              disabled={!canBuy || planCode === null || create.isPending}
-              onClick={() => create.mutate()}
-            >
-              {t("subscribe.buy")}
-            </Button>
-            {create.error ? (
-              <p className="text-destructive text-sm">
-                {(create.error as Error).message}
-              </p>
-            ) : null}
-          </div>
+          <ProviderSegmented
+            providers={providers}
+            value={provider}
+            onChange={setProvider}
+          />
         </PageSection>
       ) : null}
+      <hr className="my-6" />
+      <div className="flex items-center justify-between">
+        <p className="text-sm tabular-nums">
+          {selected
+            ? `${selected.planCode} · ${money(selected.amountCents, selected.currency)}`
+            : t("subscribe.noPlans")}
+        </p>
+        <div className="flex items-center gap-3">
+          <Button
+            disabled={!canBuy || planCode === null || create.isPending}
+            onClick={() => create.mutate()}
+          >
+            {t("subscribe.buy")}
+          </Button>
+          {create.error ? (
+            <p className="text-destructive text-sm">
+              {(create.error as Error).message}
+            </p>
+          ) : null}
+        </div>
+      </div>
     </>
   );
 }
