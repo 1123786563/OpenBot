@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { and, eq, getTableName, getTableColumns, inArray, like, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  getTableColumns,
+  getTableName,
+  inArray,
+  like,
+  or,
+  sql,
+} from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { createDatabase } from "../../../src/db/client";
 import {
@@ -140,7 +149,7 @@ function foreignKeysOf(table: PgTable): Array<{
 }
 
 function uniqueIndexOf(table: PgTable): Array<{
-  name: string;
+  name: string | undefined;
   columns: string[];
   unique: boolean;
 }> {
@@ -155,7 +164,7 @@ function uniqueIndexOf(table: PgTable): Array<{
 
 describe("the runs ledger schema registers every table", () => {
   test("all 22 tables export under their contract names", () => {
-    expect(ALL_TABLES.map(getTableName)).toEqual(EXPECTED_TABLE_NAMES);
+    expect(ALL_TABLES.map(getTableName)).toEqual([...EXPECTED_TABLE_NAMES]);
   });
 
   test("the schema barrel and the drizzle config both register the three files", () => {
@@ -755,6 +764,16 @@ describe("the plan's schema supplement columns exist", () => {
     expect(columnNames(enterpriseCapabilities)).toContain("logical_call_id");
   });
 
+  test("the approved release pins route ref and tool manifest digest as non-null", () => {
+    /* §4.1 合同无 "?"（可空只用 ? 显式标注）；§4.4 CLI union 两者必填。 */
+    const columns = getTableConfig(enterpriseRunReleases).columns;
+    for (const name of ["model_route_ref", "tool_manifest_digest"]) {
+      const column = columns.find((c) => c.name === name);
+      expect(column, name).toBeDefined();
+      expect(column?.notNull, name).toBe(true);
+    }
+  });
+
   test("the run state set, initiator kinds and attempt lifecycle are check-pinned", () => {
     expect(getTableConfig(enterpriseRuns).checks.map((c) => c.name)).toEqual(
       expect.arrayContaining([
@@ -775,12 +794,15 @@ describe("the plan's schema supplement columns exist", () => {
 type JournalEntry = { idx: number; tag: string };
 
 function readJournal(): JournalEntry[] {
-  return JSON.parse(
-    readFileSync(
-      new URL("../../../drizzle/meta/_journal.json", import.meta.url),
-      "utf8",
-    ),
-  ) as JournalEntry[];
+  /* _journal.json 的顶层是 { version, dialect, entries }，条目数组在 entries 下。 */
+  return (
+    JSON.parse(
+      readFileSync(
+        new URL("../../../drizzle/meta/_journal.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { entries: JournalEntry[] }
+  ).entries;
 }
 
 function migrationSql(tag: string): string {
@@ -809,9 +831,11 @@ describe("the migration journal stays generated and drop-free", () => {
     const entries = readJournal();
     expect(entries.length).toBeGreaterThanOrEqual(58);
     const tail = entries.slice(-2);
-    expect(tail.map((entry) => entry.tag).some((tag) => tag.endsWith("_enterprise_runs_rls"))).toBe(
-      true,
-    );
+    expect(
+      tail
+        .map((entry) => entry.tag)
+        .some((tag) => tag.endsWith("_enterprise_runs_rls")),
+    ).toBe(true);
     for (const entry of tail) {
       const migration = migrationSql(entry.tag);
       expect(migration, entry.tag).not.toMatch(/drop\s+table/i);
@@ -821,7 +845,9 @@ describe("the migration journal stays generated and drop-free", () => {
 
   test("the custom runs RLS migration is the journal's last entry", () => {
     const entries = readJournal();
-    const custom = entries.find((entry) => entry.tag.endsWith("_enterprise_runs_rls"));
+    const custom = entries.find((entry) =>
+      entry.tag.endsWith("_enterprise_runs_rls"),
+    );
     expect(custom).toBeDefined();
     expect(custom?.idx).toBe(Math.max(...entries.map((entry) => entry.idx)));
   });
@@ -833,7 +859,9 @@ describe("the custom RLS migration is the single executable policy source", () =
       candidate.tag.endsWith("_enterprise_runs_rls"),
     );
     if (!entry) {
-      throw new Error("enterprise_runs_rls migration has not been generated yet");
+      throw new Error(
+        "enterprise_runs_rls migration has not been generated yet",
+      );
     }
     return migrationSql(entry.tag).toLowerCase();
   }
@@ -880,15 +908,32 @@ describe("the custom RLS migration is the single executable policy source", () =
     expect(migration).toContain("allocated_micros <= held_micros");
   });
 
+  /** 迁移是按 `--> statement-breakpoint` 分隔的语句序列；把每条语句折成一行再判断，
+   *  使跨物理行的 REVOKE/GRANT 不会被行级过滤误判（行级检查反而会漏掉续行上的违规授权）。 */
+  function statementsForRole(migration: string, role: string): string[] {
+    return migration
+      .split("--> statement-breakpoint")
+      .map((statement) =>
+        statement
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("--"))
+          .join(" "),
+      )
+      .filter((statement) => statement.length > 0 && statement.includes(role));
+  }
+
   test("the dispatcher's statements touch nothing but the outbox", () => {
-    const dispatcherLines = rlsMigrationSql()
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith("--"))
-      .filter((line) => line.includes("ob_ent_dispatcher"));
-    expect(dispatcherLines.length).toBeGreaterThan(0);
-    for (const line of dispatcherLines) {
-      expect(line, line).toContain("enterprise_run_outbox");
+    const dispatcherStatements = statementsForRole(
+      rlsMigrationSql(),
+      "ob_ent_dispatcher",
+    );
+    expect(dispatcherStatements.length).toBeGreaterThan(0);
+    for (const statement of dispatcherStatements) {
+      /* REVOKE 只收回权限、不可能扩大 dispatcher 的可见面（迁移 §6 的纵深防御），豁免；
+       * 其余每条 dispatcher 语句都必须只落在 outbox 上。 */
+      if (statement.startsWith("revoke ")) continue;
+      expect(statement, statement).toContain("enterprise_run_outbox");
       for (const forbidden of [
         "enterprise_run_messages",
         "enterprise_run_events",
@@ -896,27 +941,50 @@ describe("the custom RLS migration is the single executable policy source", () =
         "enterprise_capabilities",
         "input_text",
       ]) {
-        expect(line, line).not.toContain(forbidden);
+        expect(statement, statement).not.toContain(forbidden);
       }
     }
   });
 
   test("the maintenance role never selects the input body column", () => {
-    const maintenanceLines = rlsMigrationSql()
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith("--"))
-      .filter((line) => line.includes("ob_ent_run_maintenance"));
-    expect(maintenanceLines.length).toBeGreaterThan(0);
-    for (const line of maintenanceLines) {
-      expect(line, line).not.toContain("input_text");
+    const maintenanceStatements = statementsForRole(
+      rlsMigrationSql(),
+      "ob_ent_run_maintenance",
+    );
+    expect(maintenanceStatements.length).toBeGreaterThan(0);
+    for (const statement of maintenanceStatements) {
+      expect(statement, statement).not.toContain("input_text");
     }
-    /* enterprise_runs 的 SELECT 必须是列级清单（清单里没有 input_text）。 */
-    const runsColumnGrant = maintenanceLines.find((line) =>
-      line.includes("on enterprise_runs"),
+    /* enterprise_runs 的 SELECT 必须是列级清单（清单里没有 input_text）；
+     * 按语句匹配 GRANT，避免把 CREATE POLICY ... ON enterprise_runs 误认作授权行。 */
+    const runsColumnGrant = maintenanceStatements.find(
+      (statement) =>
+        /grant select \(/.test(statement) &&
+        statement.includes("on enterprise_runs"),
     );
     expect(runsColumnGrant).toBeDefined();
-    expect(runsColumnGrant).toMatch(/grant select \(/);
+  });
+
+  test("the run writer may hold budget on accounts inside its own transaction", () => {
+    /* §4.3 创建算法第 5 步与 §8.2 reserveInTx：run_writer 用户事务内
+     * UPDATE enterprise_budget_accounts SET held_micros=..., revision=revision+1。
+     * 若缺 UPDATE 授权，Run+预留原子提交事务在此角色下必然 42501。 */
+    const accountStatements = statementsForRole(
+      rlsMigrationSql(),
+      "ob_ent_run_writer",
+    ).filter((statement) => statement.includes("enterprise_budget_accounts"));
+    expect(accountStatements.length).toBeGreaterThan(0);
+    expect(
+      accountStatements.some((statement) =>
+        /grant select,update on enterprise_budget_accounts/.test(statement),
+      ),
+    ).toBe(true);
+    /* 策略必须覆盖写（FOR ALL），不能只有 SELECT。 */
+    const policy = rlsMigrationSql().match(
+      /create policy run_writer_accounts on enterprise_budget_accounts for (\w+) to ob_ent_run_writer/,
+    );
+    expect(policy).toBeDefined();
+    expect(policy?.[1]).toBe("all");
   });
 });
 
@@ -960,7 +1028,7 @@ async function probeRunsDatabase(): Promise<Probe> {
     const url = testDatabaseUrlFrom({
       TEST_DATABASE_URL: process.env.TEST_DATABASE_URL,
     });
-    const opened = new SQL(url, { max: 1, timeout: 5 });
+    const opened = new SQL(url, { max: 1, connectionTimeout: 5 });
     client = opened;
     const tables = await opened.unsafe(
       "select 1 from pg_tables where schemaname = 'public' and tablename = 'enterprise_runs'",
@@ -1156,6 +1224,7 @@ if (dbProbe.ready) {
     id: string;
     resourceId: string;
     versionDigest: string;
+    modelRouteRef: string;
   }) => ({
     tenantId: overrides.tenantId,
     id: overrides.id,
@@ -1163,12 +1232,13 @@ if (dbProbe.ready) {
     versionDigest: overrides.versionDigest,
     runtimeCompatibility: "go-v1",
     expertVersion: "1.0.0",
-    modelRouteRef: null,
+    modelRouteRef: overrides.modelRouteRef,
     inputLimitBytes: BigInt(32768),
     maxModelCalls: BigInt(8),
     maxRunMicros: BigInt(1000000),
     currency: "USD",
-    toolManifestDigest: null,
+    /* 零工具版本带空 manifest 的摘要，不为 NULL（§4.1 无 "?"，§4.4 CLI 必填）。 */
+    toolManifestDigest: "7".repeat(64),
     toolCount: BigInt(0),
     status: "published",
   });
@@ -1260,7 +1330,9 @@ if (dbProbe.ready) {
         .where(inArray(enterpriseRuns.tenantId, [TENANT_A, TENANT_B]));
       await tx
         .delete(enterpriseBudgetReservations)
-        .where(inArray(enterpriseBudgetReservations.tenantId, [TENANT_A, TENANT_B]));
+        .where(
+          inArray(enterpriseBudgetReservations.tenantId, [TENANT_A, TENANT_B]),
+        );
     });
     /* runs/reservations 落库之后才能删它们的父表：releases、threads 与 tenancy 链。 */
     for (const table of [
@@ -1375,12 +1447,14 @@ if (dbProbe.ready) {
         id: RELEASE_A,
         resourceId: RESOURCE_A,
         versionDigest: "f".repeat(64),
+        modelRouteRef: ROUTE_A,
       }),
       releaseRow({
         tenantId: TENANT_B,
         id: RELEASE_B,
         resourceId: RESOURCE_B,
         versionDigest: "a".repeat(64),
+        modelRouteRef: "chat",
       }),
     ]);
     await ownerDatabase.insert(enterpriseBudgetAccounts).values({
@@ -1657,6 +1731,47 @@ if (dbProbe.ready) {
         expect(error.message).toContain("role");
       }
     });
+
+    test("every bootstrap boundary table exists with force rls on the live database", async () => {
+      /* §9.3：启动验证整个角色/RLS 表集合，不只硬编码旧 6 表数。这里用与
+       * bootstrap 同形的 catalog 查询，钉住 02 的 6 张 + 03 的 22 张共 28 张
+       * 在真实测试库上 ENABLE+FORCE RLS 全开——boot 门禁在此库上可整体通过。 */
+      const names = [
+        "enterprise_principals",
+        "enterprise_memberships",
+        "enterprise_tenants",
+        "enterprise_workspaces",
+        "enterprise_resources",
+        "enterprise_resource_grants",
+        ...EXPECTED_TABLE_NAMES,
+      ];
+      expect(names).toHaveLength(28);
+      const flags =
+        await ownerDatabase.execute(sql`select c.relname as table_name,
+            c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'public' and c.relname in
+            ('enterprise_principals','enterprise_memberships','enterprise_tenants',
+             'enterprise_workspaces','enterprise_resources','enterprise_resource_grants',
+             'enterprise_threads','enterprise_run_releases','enterprise_run_grants',
+             'enterprise_runs','enterprise_run_attempts','enterprise_run_commands',
+             'enterprise_run_messages','enterprise_run_steps','enterprise_run_checkpoints',
+             'enterprise_run_events','enterprise_run_snapshots','enterprise_run_outbox',
+             'enterprise_capabilities','enterprise_run_delegations','enterprise_model_routes',
+             'enterprise_model_grants','enterprise_budget_accounts',
+             'enterprise_budget_reservations','enterprise_budget_bindings',
+             'enterprise_model_attempts','enterprise_usage_entries','enterprise_model_calls')`);
+      expect(flags).toHaveLength(28);
+      for (const raw of flags) {
+        const row = raw as {
+          table_name: string;
+          rls_enabled: unknown;
+          rls_forced: unknown;
+        };
+        expect(row.rls_enabled, row.table_name).toBe(true);
+        expect(row.rls_forced, row.table_name).toBe(true);
+      }
+    });
   });
 
   describeDb("the run-writer scope", () => {
@@ -1682,15 +1797,23 @@ if (dbProbe.ready) {
     });
 
     test("the public pool cannot read capability hashes (plan §E1-B)", async () => {
-      await expect(
+      /* Bun SQL 的 unsafe 返回自定义 thenable，expect().rejects 对它的驱动不可靠；
+       * rejectionOf 直接 await 取证，并顺带钉住 42501 与表名。 */
+      const error = await rejectionOf(() =>
         db.$client.unsafe("select token_hash from enterprise_capabilities"),
-      ).rejects.toThrow();
+      );
+      expect(error.code).toBe("42501");
+      expect(error.message).toContain("permission denied for table");
+      expect(error.message).toContain("enterprise_capabilities");
     });
 
     test("the public pool cannot truncate the ledger (plan §E1-B)", async () => {
-      await expect(
+      const error = await rejectionOf(() =>
         db.$client.unsafe("truncate enterprise_runs"),
-      ).rejects.toThrow();
+      );
+      expect(error.code).toBe("42501");
+      expect(error.message).toContain("permission denied for table");
+      expect(error.message).toContain("enterprise_runs");
     });
 
     test("a thread pointing at another tenant's workspace is refused by the composite FK", async () => {
@@ -1710,8 +1833,8 @@ if (dbProbe.ready) {
     });
 
     test("a reservation referencing another tenant's run is refused at commit", async () => {
-      /* 延迟复合 FK：语句期通过，提交时 (tenant A, run B) 不存在才暴露 23503。 */
-      const error = await rejectionOf(() =>
+      /* 第一层防御：writer 的 RLS 在语句期就拒绝指向他租户 run 的预留（owner 谓词不满足）。 */
+      const rlsError = await rejectionOf(() =>
         db.transaction(async (tx) => {
           await tx.execute(writerContextA);
           await tx.insert(enterpriseBudgetReservations).values(
@@ -1723,8 +1846,22 @@ if (dbProbe.ready) {
           );
         }),
       );
-      expect(error.code).toBe("23503");
-      expect(error.message).toContain("enterprise_budget_reservations");
+      expect(rlsError.code).toBe("42501");
+      expect(rlsError.message).toContain("row-level security");
+      /* 数据库契约本身：延迟复合 FK 在提交时结算——由不受 RLS 约束的迁移 owner 验证。 */
+      const fkError = await rejectionOf(() =>
+        ownerDatabase.transaction(async (tx) => {
+          await tx.insert(enterpriseBudgetReservations).values(
+            reservationRow({
+              tenantId: TENANT_A,
+              id: "r1b-res-cross-owner",
+              runId: RUN_B,
+            }),
+          );
+        }),
+      );
+      expect(fkError.code).toBe("23503");
+      expect(fkError.message).toContain("enterprise_budget_reservations");
     });
 
     test("a run and its reservation can commit together in one transaction", async () => {
@@ -1811,6 +1948,31 @@ if (dbProbe.ready) {
       expect(overAllocated.code).toBe("23514");
       expect(overAllocated.message).toContain("budget_reservation_nonnegative");
     });
+
+    test("the writer's own transaction can hold budget on the account (reserveInTx shape)", async () => {
+      /* §8.2 reserveInTx 固定 SQL 的写法：run_writer 用户事务内对同租户账户挂账并推进 revision。
+       * 若缺 UPDATE 授权，Run+预留原子提交事务在此角色下必然 42501。 */
+      const held = await db.transaction(async (tx) => {
+        await tx.execute(writerContextA);
+        await tx.execute(sql`update enterprise_budget_accounts
+          set held_micros = held_micros + 1000, revision = revision + 1
+          where tenant_id = 'r1b-tenant-a' and id = 'r1b-account-a'`);
+        return tx
+          .select({
+            held: enterpriseBudgetAccounts.heldMicros,
+            revision: enterpriseBudgetAccounts.revision,
+          })
+          .from(enterpriseBudgetAccounts)
+          .where(eq(enterpriseBudgetAccounts.id, ACCOUNT_A));
+      });
+      expect(held).toHaveLength(1);
+      expect(held[0]?.held.toString()).toBe("1000");
+      expect(held[0]?.revision.toString()).toBe("2");
+      /* 归还挂账，保持 fixture 对后续运行幂等。 */
+      await ownerDatabase.execute(sql`update enterprise_budget_accounts
+        set held_micros = held_micros - 1000, revision = revision + 1
+        where tenant_id = 'r1b-tenant-a' and id = 'r1b-account-a'`);
+    });
   });
 
   describeDb("the offline operator scope", () => {
@@ -1844,6 +2006,7 @@ if (dbProbe.ready) {
               id: "r1b-release-cross",
               resourceId: RESOURCE_B,
               versionDigest: "c2".repeat(32),
+              modelRouteRef: "chat",
             }),
           ),
         );
@@ -2061,12 +2224,15 @@ if (dbProbe.ready) {
     });
 
     test("the maintenance role cannot read the input column but can converge state", async () => {
-      /* 列级 SELECT 清单里没有 input_text：整行与单列两种读法都拒绝。 */
+      /* 列级 SELECT 清单里没有 input_text：PostgreSQL 对引用无权列的查询统一报表级 42501
+       * （实测形态），而白名单列可以读——构造性隐藏由 custom 迁移的列清单钉住。 */
       const starError = await rejectionOf(() =>
         maintenanceDatabase.$client.unsafe("select * from enterprise_runs"),
       );
       expect(starError.code).toBe("42501");
-      expect(starError.message).toContain("input_text");
+      expect(starError.message).toContain(
+        "permission denied for table enterprise_runs",
+      );
 
       const inputError = await rejectionOf(() =>
         maintenanceDatabase.$client.unsafe(
@@ -2074,7 +2240,9 @@ if (dbProbe.ready) {
         ),
       );
       expect(inputError.code).toBe("42501");
-      expect(inputError.message).toContain("input_text");
+      expect(inputError.message).toContain(
+        "permission denied for table enterprise_runs",
+      );
 
       const ids = await maintenanceDatabase.transaction(async (tx) => {
         await tx.execute(maintenanceContextA);
@@ -2110,7 +2278,8 @@ if (dbProbe.ready) {
             eq(enterpriseRunEvents.tenantId, enterpriseRuns.tenantId),
             eq(enterpriseRunEvents.runId, enterpriseRuns.id),
           ),
-        );
+        )
+        .where(eq(enterpriseRunEvents.eventId, "r1b-event-a"));
       expect(rows).toHaveLength(1);
       expect(typeof rows[0]?.revision).toBe("bigint");
       expect(typeof rows[0]?.seq).toBe("bigint");

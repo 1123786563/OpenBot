@@ -69,6 +69,25 @@ export type LagoUsageBody = {
   charges: readonly LagoUsageChargeBody[];
 };
 
+/** One metered usage event as the provider's list endpoint returns it, neutralised. */
+export type LagoEventRecord = {
+  transactionId: string;
+  code: string;
+  /** ISO-8601 as the list endpoint spells it (its write path wanted Unix seconds; read is ISO). */
+  timestamp: string;
+  externalSubscriptionId: string;
+  properties: Record<string, number | string>;
+};
+
+export type LagoEventPage = {
+  events: readonly LagoEventRecord[];
+  totalCount: number;
+  totalPages: number;
+  currentPage: number;
+  /** The page to ask for next, or null when this was the last one. */
+  nextPage: number | null;
+};
+
 /** One metered usage event, in the provider's own wire words. */
 export type LagoEventBody = {
   /** Idempotency: the same transaction id twice is stored once. Derived, never random. */
@@ -116,6 +135,12 @@ export type LagoClient = {
    * subscription it cannot name), so the sentinel is terminal; the caller logs and moves on.
    */
   postEvent(event: LagoEventBody): Promise<LagoResult<null>>;
+  /** 200 is one page of the subscription's metered events; 404 is an unknown customer. */
+  listEvents(
+    externalSubscriptionId: string,
+    perPage: number,
+    page: number,
+  ): Promise<LagoResult<LagoEventPage>>;
 };
 
 const SUBSCRIPTION_STATUSES: readonly BillingSubscriptionStatus[] = [
@@ -243,6 +268,24 @@ function usageChargeOf(item: unknown): LagoUsageChargeBody {
     metricName: stringOf(metric, "name"),
     units: stringOf(item, "units"),
     amountCents: intOf(item, "amount_cents"),
+  };
+}
+
+function eventRecordOf(item: unknown): LagoEventRecord {
+  const properties = fieldOf(item, "properties");
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  ) {
+    throw new BillingError("invalid_response");
+  }
+  return {
+    transactionId: stringOf(item, "transaction_id"),
+    code: stringOf(item, "code"),
+    timestamp: stringOf(item, "timestamp"),
+    externalSubscriptionId: stringOf(item, "external_subscription_id"),
+    properties: properties as Record<string, number | string>,
   };
 }
 
@@ -448,6 +491,39 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
         return { status: result.status, body: null };
       }
       throw new BillingError("invalid_response");
+    },
+    async listEvents(externalSubscriptionId, perPage, page) {
+      const params = new URLSearchParams();
+      params.set("external_subscription_id", externalSubscriptionId);
+      params.set("per_page", String(perPage));
+      params.set("page", String(page));
+      const result = await request(`/api/v1/events?${params.toString()}`);
+      if (result.status === 404) return { status: 404, body: null };
+      if (result.status !== 200) throw new BillingError("invalid_response");
+      const events = fieldOf(result.body, "events");
+      if (!Array.isArray(events)) throw new BillingError("invalid_response");
+      const meta = asObject(fieldOf(result.body, "meta"));
+      const totalCount = meta.total_count;
+      const totalPages = meta.total_pages;
+      const currentPage = meta.current_page;
+      if (
+        typeof totalCount !== "number" ||
+        typeof totalPages !== "number" ||
+        typeof currentPage !== "number"
+      ) {
+        throw new BillingError("invalid_response");
+      }
+      const nextPage = meta.next_page;
+      return {
+        status: 200,
+        body: {
+          events: events.map(eventRecordOf),
+          totalCount,
+          totalPages,
+          currentPage,
+          nextPage: typeof nextPage === "number" ? nextPage : null,
+        },
+      };
     },
   };
 }

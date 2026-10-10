@@ -48,6 +48,11 @@ export function createBillingWebhookRoutes(deps: { service: BillingService }) {
  * for the sync and for a log line, but it is not this deployment's own word for anything and
  * does not belong on the HTTP surface a client codes against.
  */
+/** Which page of the metered-event log to read. One bounded integer, defaulting to the first. */
+const eventsPageInput = z.object({
+  page: z.coerce.number().int().min(1).max(10_000),
+});
+
 export function createBillingRoutes(deps: {
   service: BillingService;
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
@@ -67,6 +72,32 @@ export function createBillingRoutes(deps: {
       return context.json({ active: false, charges: [] });
     }
     return context.json({ active: true, ...usage });
+  });
+  routes.get("/usage/events", async (context) => {
+    const parsed = eventsPageInput.safeParse({
+      page: context.req.query("page") ?? "1",
+    });
+    if (!parsed.success) {
+      return context.json({ error: "Supply a valid page." }, 400);
+    }
+    // Page size is ours, not the caller's: one fixed window keeps the answer bounded and the
+    // pager simple. The page number is the caller's.
+    const eventsPage = await deps.service.usageEvents(50, parsed.data.page);
+    return context.json({
+      events: eventsPage.events.map((event) => ({
+        timestamp: event.timestamp,
+        metricCode: event.metricCode,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        tokens: event.tokens,
+      })),
+      pagination: {
+        totalCount: eventsPage.totalCount,
+        totalPages: eventsPage.totalPages,
+        currentPage: eventsPage.currentPage,
+        nextPage: eventsPage.nextPage,
+      },
+    });
   });
   return routes;
 }

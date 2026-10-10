@@ -153,7 +153,10 @@ describe("plan 02 §6 T2-C step 4: strict booleans, no JavaScript truthiness", (
 
 describe("plan 02 §6 T2-C step 3: the shipped policy surface is frozen and derived", () => {
   test("supported policy revisions are a read-only derivation of the rules", () => {
-    expect(SUPPORTED_POLICY_REVISIONS).toEqual(["tenancy-v1"]);
+    expect(SUPPORTED_POLICY_REVISIONS).toEqual([
+      "tenancy-v1",
+      "conversations-v1",
+    ]);
     expect(Object.isFrozen(SUPPORTED_POLICY_REVISIONS)).toBe(true);
     expect(() =>
       (SUPPORTED_POLICY_REVISIONS as string[]).push("tenancy-v2"),

@@ -4,8 +4,9 @@
  * §5 T1-A.
  *
  * PostgreSQL is the single writer-owned authority for resource ACLs: the local authorization
- * service reads these rows as its snapshot and holds no second copy. `read` is the only action
- * the MVP grants; widening it means a new model and new tests, not a relaxed check.
+ * service reads these rows as its snapshot and holds no second copy. `read` and `run` are the
+ * grantable actions (spec §6.2's conversations widening); further widening means a new model and
+ * new tests, not a relaxed check.
  */
 import { sql } from "drizzle-orm";
 import {
@@ -80,7 +81,9 @@ export const enterpriseResourceGrants = pgTable(
         enterpriseMemberships.principalId,
       ],
     }),
-    check("enterprise_grant_action", sql`${t.action}='read'`),
+    // Aligned with the migrated database constraint (0058): `read` stops being the only
+    // grantable action, `run` is admitted for the conversations domain (spec §6.2).
+    check("enterprise_grant_action", sql`${t.action} in ('read','run')`),
   ],
 );
 

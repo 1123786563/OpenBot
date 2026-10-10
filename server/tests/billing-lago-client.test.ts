@@ -555,3 +555,70 @@ describe("createLagoClient postEvent", () => {
     expect(error.code).toBe("unreachable");
   });
 });
+
+describe("createLagoClient listEvents", () => {
+  test("reads the event page and neutralises the wire shape", async () => {
+    const { client, seen } = clientWith(() =>
+      jsonResponse({
+        events: [
+          {
+            lago_id: "lago-evt-1",
+            transaction_id: "llm-deployment-1-1-2-3",
+            code: "llm_tokens",
+            timestamp: "2026-10-10T04:32:50.000Z",
+            external_subscription_id: "deployment-1-pro",
+            properties: { tokens: 120, input_tokens: 100, output_tokens: 20 },
+          },
+        ],
+        meta: {
+          current_page: 2,
+          next_page: 3,
+          total_pages: 3,
+          total_count: 61,
+        },
+      }),
+    );
+    const result = await client.listEvents("deployment-1-pro", 50, 2);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      events: [
+        {
+          transactionId: "llm-deployment-1-1-2-3",
+          code: "llm_tokens",
+          timestamp: "2026-10-10T04:32:50.000Z",
+          externalSubscriptionId: "deployment-1-pro",
+          properties: { tokens: 120, input_tokens: 100, output_tokens: 20 },
+        },
+      ],
+      totalCount: 61,
+      totalPages: 3,
+      currentPage: 2,
+      nextPage: 3,
+    });
+    expect(seen[0]?.url).toBe(
+      `${BASE_URL}/api/v1/events?external_subscription_id=deployment-1-pro&per_page=50&page=2`,
+    );
+  });
+
+  test("a null next_page is the last page, not a malformed answer", async () => {
+    const { client } = clientWith(() =>
+      jsonResponse({
+        events: [],
+        meta: {
+          current_page: 3,
+          next_page: null,
+          total_pages: 3,
+          total_count: 61,
+        },
+      }),
+    );
+    const result = await client.listEvents("deployment-1-pro", 50, 3);
+    expect(result.body?.nextPage).toBeNull();
+  });
+
+  test("HTTP 404 is an unknown subscription, answered with no page", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 404));
+    const result = await client.listEvents("deployment-1-pro", 50, 1);
+    expect(result).toEqual({ status: 404, body: null });
+  });
+});

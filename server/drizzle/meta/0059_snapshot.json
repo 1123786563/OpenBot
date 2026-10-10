@@ -10950,7 +10950,7 @@
           "name": "model_route_ref",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "input_limit_bytes": {
           "name": "input_limit_bytes",
@@ -10980,7 +10980,7 @@
           "name": "tool_manifest_digest",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "tool_count": {
           "name": "tool_count",

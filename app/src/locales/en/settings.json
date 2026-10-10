@@ -25,7 +25,16 @@
     "currentPeriod": "Current period",
     "totalThisPeriod": "Total this period:",
     "noCharges": "Nothing has been used against this plan yet.",
-    "noSubscription": "There is no active subscription to measure usage against."
+    "noSubscription": "There is no active subscription to measure usage against.",
+    "eventLog": "Recent events",
+    "eventLogDescription": "Each metered model call, newest first. The line items behind the total above.",
+    "noEvents": "No metered events yet.",
+    "eventIn": "in",
+    "eventOut": "out",
+    "eventTokens": "tokens",
+    "eventPagerStatus": "Page {{page}} of {{totalPages}} · {{total}} events",
+    "eventPagerPrev": "Previous",
+    "eventPagerNext": "Next"
   },
   "darkTheme": "Dark theme",
   "darkThemeDescription": "Use the dark appearance across OpenBot.",

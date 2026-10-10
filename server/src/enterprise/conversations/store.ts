@@ -4,12 +4,16 @@
  * transaction (epoch/role re-check included) on the data-plane pool; no bare pool query exists in
  * this domain.
  *
- * Authorization is decided by the same-transaction grant reads, on the §6.3 single-statement
- * pattern: a bot is visible with an explicit 'read' grant and runnable with an explicit 'run'
- * grant — a tenant_admin or a deployment admin never skips the grant, and the two grants never
- * imply each other. Revocation therefore lands on the next transaction: no positive decision is
- * ever cached (the scope middleware rebuilds the scope per request, `withTenant` re-checks the
- * epoch, and the grant rows are read live in the same statement).
+ * Authorization is decided by the Authz engine on same-transaction grant reads (spec §2/§6.2): a
+ * bot is visible with an explicit 'read' grant and runnable with an explicit 'run' grant — a
+ * tenant_admin or a deployment admin never skips the grant, and the two grants never imply each
+ * other. The bot list keeps the §6.3 single-statement batch join; the creation path reads the
+ * bot's live facts (grant matches per action, revision, ACL epoch, tenant policy revision) in one
+ * statement and hands them to `authz.check`, so the run decision is governed by the tenant's
+ * policy revision exactly like every other enterprise decision. Revocation therefore lands on the
+ * next transaction: no positive decision is ever cached (the scope middleware rebuilds the scope
+ * per request, `withTenant` re-checks the epoch, and the grant rows are read live in the same
+ * statement).
  *
  * The pool this module opens is the conversations' own data-plane connection: the deployment
  * config names it with ENTERPRISE_DATA_DATABASE_URL (validated by the enterprise config before
@@ -24,7 +28,7 @@
 import { z } from "zod";
 import type { PersonalConversation } from "../../../../shared/enterprise/mobile-schemas";
 import type { Database } from "../../db/client";
-import type { Scope } from "../contracts";
+import type { Authz, ResourceSnapshot, Scope } from "../contracts";
 import { EnterpriseError } from "../errors";
 import {
   lockExclusive,
@@ -76,13 +80,19 @@ const BotRowSchema = z
 export type AuthorizedBot = z.infer<typeof BotRowSchema>;
 
 /*
- * The bot facts creation needs: the row itself (same tenant, kind bot) plus both grant facts in
- * the same statement. No read grant is the same closed 404 as a missing or deleted resource; a
- * read grant without a run grant is a visible bot that refuses creation (spec §6.2).
+ * The bot facts creation needs: the row itself (same tenant, kind bot) plus the per-action grant
+ * facts and the engine's snapshot fields — revision, ACL epoch and the tenant's policy revision —
+ * in the same statement, on the readAuthorizedResource pattern (authz/repository.ts:31-45). No
+ * read grant is the same closed 404 as a missing or deleted resource; a read grant without a run
+ * grant is a visible bot that refuses creation (spec §6.2).
  */
 const SELECT_CHANNEL_BOT = `
   select r.id as id,
+         r.workspace_id as "workspaceId",
          r.status as status,
+         r.revision as revision,
+         r.acl_epoch as "aclEpoch",
+         t.policy_revision as "policyRevision",
          exists(select 1 from enterprise_resource_grants g
                 where g.tenant_id = r.tenant_id and g.resource_id = r.id
                   and g.principal_id = $3 and g.action = 'read') as "readAllowed",
@@ -90,12 +100,17 @@ const SELECT_CHANNEL_BOT = `
                 where g.tenant_id = r.tenant_id and g.resource_id = r.id
                   and g.principal_id = $3 and g.action = 'run') as "runAllowed"
   from enterprise_resources r
+  join enterprise_tenants t on t.id = r.tenant_id
   where r.tenant_id = $1 and r.id = $2 and r.kind = 'bot'`;
 
 const BotFactsSchema = z
   .object({
     id: z.string(),
+    workspaceId: z.string(),
     status: z.enum(["active", "deleted"]),
+    revision: z.number().int().positive(),
+    aclEpoch: z.number().int().positive(),
+    policyRevision: z.string(),
     readAllowed: z.boolean(),
     runAllowed: z.boolean(),
   })
@@ -218,6 +233,7 @@ export type ConversationsStore = {
 
 export function createConversationsStore(
   database: Database,
+  authz: Authz,
 ): ConversationsStore {
   return {
     listAuthorizedBots: (scope, cursor, limit) =>
@@ -279,11 +295,40 @@ export function createConversationsStore(
         if (!fact.success) {
           throw new EnterpriseError("AUTHORIZATION_STATE_INVALID", 503);
         }
-        if (!fact.data.readAllowed || fact.data.status !== "active") {
+        /*
+         * The engine decides, on these live facts (spec §2/§6.2): `locallyAllowed` is the
+         * per-action grant match, so read and run are judged as the two independent grants they
+         * are, under the tenant's own policy revision — tenancy-v1 keeps refusing run, and the
+         * conversations-v1 switch is the tenant's explicit, lock-guarded decision.
+         */
+        const snapshot = (locallyAllowed: boolean): ResourceSnapshot => ({
+          id: fact.data.id,
+          tenantId: scope.tenantId,
+          workspaceId: fact.data.workspaceId,
+          kind: "bot",
+          revision: fact.data.revision,
+          aclEpoch: fact.data.aclEpoch,
+          policyRevision: fact.data.policyRevision,
+          active: fact.data.status === "active",
+          locallyAllowed,
+        });
+        if (
+          !(await authz.check({
+            scope,
+            resource: snapshot(fact.data.readAllowed),
+            action: "read",
+          }))
+        ) {
           // No read grant, a deleted row or a non-bot id: the same closed 404 (spec §3.3).
           throw new EnterpriseError("RESOURCE_NOT_FOUND", 404);
         }
-        if (!fact.data.runAllowed) {
+        if (
+          !(await authz.check({
+            scope,
+            resource: snapshot(fact.data.runAllowed),
+            action: "run",
+          }))
+        ) {
           // Visible but not runnable: §6.2's recommended refusal (TENANT_FORBIDDEN, no new code).
           throw new EnterpriseError("TENANT_FORBIDDEN", 403);
         }

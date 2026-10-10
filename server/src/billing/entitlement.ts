@@ -33,7 +33,11 @@ export function createBillingEntitlementReader(options: {
   failureTtlMs?: number;
   now?: () => number;
   log?: (message: string) => void;
-}): { active(externalCustomerId?: string): Promise<BillingEntitlements> } {
+}): {
+  active(externalCustomerId?: string): Promise<BillingEntitlements>;
+  /** Drop one customer's cached answer (all buckets when no key is named). */
+  invalidate(externalCustomerId?: string): void;
+} {
   const now = options.now ?? Date.now;
   const ttlMs = options.ttlMs ?? ANSWER_TTL_MS;
   const failureTtlMs = options.failureTtlMs ?? FAILURE_TTL_MS;
@@ -88,6 +92,14 @@ export function createBillingEntitlementReader(options: {
         return Promise.resolve(bucket.answer.value);
       }
       return refresh(bucket, externalCustomerId);
+    },
+
+    invalidate(externalCustomerId) {
+      if (externalCustomerId === undefined) {
+        buckets.clear();
+        return;
+      }
+      buckets.delete(externalCustomerId ?? "");
     },
   };
 }

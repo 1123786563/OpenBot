@@ -7,6 +7,7 @@ import { requireAdmin } from "../src/auth/guards";
 import {
   createLagoClient,
   type LagoClient,
+  type LagoEventPage,
   type LagoUsageBody,
 } from "../src/billing/lago";
 import {
@@ -70,6 +71,7 @@ function countingClient() {
     postSubscription: 0,
     getUsage: 0,
     postEvent: 0,
+    listEvents: 0,
   };
   const customers = new Map<string, string>();
   const subscriptions: {
@@ -82,6 +84,8 @@ function countingClient() {
   let usage: LagoUsageBody | null = null;
   /** Every metered event the service sent, for asserting the metering chain end to end. */
   const postedEvents: unknown[] = [];
+  /** What the provider's events list answers; null stands in for its unknown-subscription 404. */
+  let eventPage: LagoEventPage | null = null;
   const client: LagoClient = {
     async getCustomer(externalId) {
       calls.getCustomer += 1;
@@ -127,6 +131,22 @@ function countingClient() {
       postedEvents.push(event);
       return { status: 200, body: null };
     },
+    async listEvents(externalSubscriptionId, perPage, page) {
+      calls.listEvents += 1;
+      if (eventPage === null) return { status: 404, body: null };
+      return {
+        status: 200,
+        body: {
+          events: eventPage.events.filter(
+            (event) => event.externalSubscriptionId === externalSubscriptionId,
+          ),
+          totalCount: eventPage.totalCount,
+          totalPages: eventPage.totalPages,
+          currentPage: eventPage.currentPage,
+          nextPage: eventPage.nextPage,
+        },
+      };
+    },
   };
   return {
     calls,
@@ -135,6 +155,9 @@ function countingClient() {
     postedEvents,
     setUsage: (value: LagoUsageBody | null) => {
       usage = value;
+    },
+    setEventPage: (value: LagoEventPage | null) => {
+      eventPage = value;
     },
   };
 }
@@ -409,6 +432,96 @@ describe("the usage route", () => {
       },
     ]);
     expect(stub.calls.getUsage).toBe(1);
+  });
+
+  test("the events route lists the active subscription's line items with pagination facts", async () => {
+    const stub = countingClient();
+    stub.setEventPage({
+      events: [
+        {
+          transactionId: "llm-2",
+          code: "llm_tokens",
+          timestamp: "2026-10-10T05:00:00.000Z",
+          externalSubscriptionId: `${DEPLOYMENT_KEY}-pro`,
+          properties: { tokens: 30, input_tokens: 25, output_tokens: 5 },
+        },
+        {
+          transactionId: "llm-1",
+          code: "llm_tokens",
+          timestamp: "2026-10-10T04:00:00.000Z",
+          externalSubscriptionId: `${DEPLOYMENT_KEY}-pro`,
+          properties: { tokens: 10, input_tokens: 8, output_tokens: 2 },
+        },
+      ],
+      totalCount: 52,
+      totalPages: 2,
+      currentPage: 1,
+      nextPage: 2,
+    });
+    const { app } = billingApp(ADMIN, stub.client);
+    await app.request("/api/admin/billing/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "pro" }),
+    });
+    const response = await app.request("/api/billing/usage/events");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      events: Record<string, unknown>[];
+      pagination: Record<string, unknown>;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.events[0]).toEqual({
+      timestamp: "2026-10-10T05:00:00.000Z",
+      metricCode: "llm_tokens",
+      inputTokens: 25,
+      outputTokens: 5,
+      tokens: 30,
+    });
+    expect(body.pagination).toEqual({
+      totalCount: 52,
+      totalPages: 2,
+      currentPage: 1,
+      nextPage: 2,
+    });
+    expect(stub.calls.listEvents).toBe(1);
+  });
+
+  test("the events route forwards the page parameter, and refuses a bad one with 400", async () => {
+    const stub = countingClient();
+    stub.setEventPage({
+      events: [],
+      totalCount: 52,
+      totalPages: 2,
+      currentPage: 2,
+      nextPage: null,
+    });
+    const { app } = billingApp(ADMIN, stub.client);
+    await app.request("/api/admin/billing/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "pro" }),
+    });
+    const paged = await app.request("/api/billing/usage/events?page=2");
+    expect(paged.status).toBe(200);
+    const body = (await paged.json()) as {
+      pagination: { currentPage: number };
+    };
+    expect(body.pagination.currentPage).toBe(2);
+    const bad = await app.request("/api/billing/usage/events?page=zero");
+    expect(bad.status).toBe(400);
+    const zero = await app.request("/api/billing/usage/events?page=0");
+    expect(zero.status).toBe(400);
+  });
+
+  test("with no active subscription the events route answers an empty list", async () => {
+    const stub = countingClient();
+    const { app } = billingApp(ADMIN, stub.client);
+    const response = await app.request("/api/billing/usage/events");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { events: unknown[] };
+    expect(body.events).toEqual([]);
+    expect(stub.calls.listEvents).toBe(0);
   });
 });
 

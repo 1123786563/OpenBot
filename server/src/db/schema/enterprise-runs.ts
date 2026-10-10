@@ -79,12 +79,15 @@ export const enterpriseRunReleases = pgTable(
     versionDigest: text("version_digest").notNull(),
     runtimeCompatibility: text("runtime_compatibility").notNull(),
     expertVersion: text("expert_version").notNull(),
-    modelRouteRef: text("model_route_ref"),
+    /* Non-null per the §4.1 contract (no "?" marker) and the §4.4 CLI union: an approved release
+     * always names its resolved route reference and its tool manifest digest (a zero-tool release
+     * carries the empty manifest's digest, never NULL). */
+    modelRouteRef: text("model_route_ref").notNull(),
     inputLimitBytes: counter("input_limit_bytes").notNull(),
     maxModelCalls: counter("max_model_calls").notNull(),
     maxRunMicros: counter("max_run_micros").notNull(),
     currency: text("currency").notNull(),
-    toolManifestDigest: text("tool_manifest_digest"),
+    toolManifestDigest: text("tool_manifest_digest").notNull(),
     toolCount: counter("tool_count").notNull(),
     status: text("status").notNull().default("published"),
     createdAt: stamp(),

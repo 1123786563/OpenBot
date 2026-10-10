@@ -149,15 +149,19 @@ BEGIN
   END LOOP;
 END
 $rw_read$;
-CREATE POLICY run_writer_accounts ON enterprise_budget_accounts FOR SELECT TO ob_ent_run_writer
-USING (enterprise_budget_accounts.tenant_id=nullif(current_setting('app.tenant_id',true),''));
+-- FOR ALL, not SELECT: budget.reserveInTx (§4.3 create step 5, §8.2) runs INSIDE the run
+-- writer's own transaction and must hold budget on enterprise_budget_accounts
+-- (UPDATE held_micros/revision); the run+reservation atomic commit cannot complete otherwise.
+CREATE POLICY run_writer_accounts ON enterprise_budget_accounts FOR ALL TO ob_ent_run_writer
+USING (enterprise_budget_accounts.tenant_id=nullif(current_setting('app.tenant_id',true),''))
+WITH CHECK (enterprise_budget_accounts.tenant_id=nullif(current_setting('app.tenant_id',true),''));
 GRANT SELECT,INSERT,UPDATE ON enterprise_threads, enterprise_runs TO ob_ent_run_writer;
 GRANT SELECT,INSERT ON enterprise_run_commands, enterprise_run_messages,
  enterprise_run_outbox TO ob_ent_run_writer;
 GRANT SELECT ON enterprise_memberships, enterprise_workspaces, enterprise_resources,
  enterprise_run_releases, enterprise_run_grants TO ob_ent_run_writer;
 GRANT SELECT,INSERT ON enterprise_budget_reservations, enterprise_budget_bindings TO ob_ent_run_writer;
-GRANT SELECT ON enterprise_budget_accounts TO ob_ent_run_writer;
+GRANT SELECT,UPDATE ON enterprise_budget_accounts TO ob_ent_run_writer;
 --> statement-breakpoint
 -- 5b. ob_ent_runtime_writer: internal callbacks, events and model metering. Every statement is
 -- pinned to one bound run (tenant + run_id context); it can never accept a body-provided tenant,

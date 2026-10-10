@@ -43,10 +43,13 @@ function channelIdParam(
 
 export function mountConversationsRoutes(
   app: Hono<{ Variables: EnterpriseVariables }>,
-  _deps: EnterpriseDependencies,
+  deps: EnterpriseDependencies,
 ): void {
   const service = createConversationsService(
     createDatabase(conversationsDatabaseUrl(process.env), { max: 2 }),
+    // The one authorization engine the app shipped with (app.ts deps): the run decision goes
+    // through it, governed by the tenant's policy revision (spec §2/§6.2).
+    deps.authz,
   );
 
   app.get("/bots", async (c) =>
