@@ -1,8 +1,8 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
+import { cors } from "hono/cors";
 import { MAX_IMAGE_BYTES } from "../../shared/attachments";
 import { getLogger } from "../../shared/logger";
 import { enterpriseControls } from "./admin/controls";
@@ -22,8 +22,6 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
-import { createMarketplaceRoutes } from "./marketplace/routes";
-import type { MarketplaceStore } from "./marketplace/store";
 import { createApprovalRoutes } from "./approvals/routes";
 import type { ApprovalService } from "./approvals/service";
 import {
@@ -47,18 +45,18 @@ import {
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import {
+  createPaymentCallbackRoutes,
+  createPaymentRoutes,
+} from "./billing/payments/routes";
+import type { PaymentService } from "./billing/payments/service";
+import {
   createBillingAdminRoutes,
   createBillingRoutes,
   createBillingStatementRoutes,
   createBillingWebhookRoutes,
 } from "./billing/routes";
-import type { BillingService } from "./billing/types";
 import type { BillingStatements } from "./billing/statements";
-import {
-  createPaymentCallbackRoutes,
-  createPaymentRoutes,
-} from "./billing/payments/routes";
-import type { PaymentService } from "./billing/payments/service";
+import type { BillingService } from "./billing/types";
 import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
@@ -69,6 +67,7 @@ import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
 import { createThreadRoutes } from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
+import { type CodeRunGatewayFactory, createCodeSandboxRoutes } from "./codesandbox/routes";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -77,7 +76,6 @@ import type { ComputerGateway } from "./computer/gateway";
 import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
-import { createCodeSandboxRoutes, type CodeRunGatewayFactory } from "./codesandbox/routes";
 import { configuredAuthProviders, type DeploymentConfig } from "./config";
 import {
   type CredentialAdminService,
@@ -103,6 +101,8 @@ import {
   createLearningRoutes,
   type LearningAdminDependencies,
 } from "./learning/routes";
+import { createMarketplaceRoutes } from "./marketplace/routes";
+import type { MarketplaceStore } from "./marketplace/store";
 import type { MemoryIngestion } from "./memory/ingestion";
 import { createMemoryRoutes } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";

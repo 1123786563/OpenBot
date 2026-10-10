@@ -22,6 +22,7 @@ import {
   transcriptionConfig,
 } from "./dictation/config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
+
 const log = getLogger("server");
 
 export type RuntimeCapabilities = {

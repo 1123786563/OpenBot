@@ -50,7 +50,6 @@ import {
 } from "./agents/lifecycle";
 import { createBotReset } from "./agents/lifecycle-reset";
 import { createAgentProfileStore } from "./agents/profile-store";
-import { createMarketplaceStore } from "./marketplace/store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import {
@@ -102,15 +101,15 @@ import type { OpenBotRole } from "./auth/roles";
 import { createLagoClient } from "./billing/lago";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
-import { createWechatProvider } from "./billing/payments/wechat";
+import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
-import { createBillingStatements } from "./billing/statements";
-import { startPaymentSweeps } from "./billing/payments/maintenance";
+import { createWechatProvider } from "./billing/payments/wechat";
 import {
   createBillingService,
   deploymentExternalCustomerId,
 } from "./billing/service";
+import { createBillingStatements } from "./billing/statements";
 import { createBillingStore } from "./billing/store";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
@@ -205,6 +204,7 @@ import {
 } from "./intelligence-client";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
+import { createMarketplaceStore } from "./marketplace/store";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
@@ -292,6 +292,7 @@ import {
   startWorkOfferedListener,
   type WorkOfferedListener,
 } from "./work/queue";
+
 const log = getLogger("server");
 
 /**

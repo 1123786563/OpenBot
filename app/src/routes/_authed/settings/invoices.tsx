@@ -1,21 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
 import {
   IconAlertTriangle,
   IconDownload,
   IconRefresh,
 } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BillingPager, clampedPage } from "@/components/billing/pager";
 import {
   InvoiceMethodLabel,
   InvoiceStatusPill,
 } from "@/components/billing/invoice-status";
-import {
-  PageSection,
-  PageShell,
-} from "@/components/layout/page-shell";
+import { BillingPager } from "@/components/billing/pager";
+import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,8 +40,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { money } from "@/lib/billing/format";
 import {
-  BillingUnavailableError,
   type BillingInvoice,
+  BillingUnavailableError,
   type InvoiceWindow,
   invoiceDetailQueryOptions,
   invoicesQueryOptions,
@@ -58,7 +55,9 @@ export const Route = createFileRoute("/_authed/settings/invoices")({
    * component state: a bill somebody wants to query is a bill they will send a link to, and a
    * filter that reset itself on reload would make that link useless.
    */
-  validateSearch: (search: Record<string, unknown>): {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
     range: RangeKey;
     page: number;
   } => {
@@ -156,7 +155,8 @@ function RouteComponent() {
           <Select
             value={range}
             onValueChange={(value) => {
-              if (typeof value === "string" && isRangeKey(value)) setRange(value);
+              if (typeof value === "string" && isRangeKey(value))
+                setRange(value);
             }}
           >
             <SelectTrigger aria-label={t("invoicesPage.rangeLabel")}>
@@ -224,7 +224,11 @@ function RouteComponent() {
             </EmptyHeader>
             {range === "all" ? null : (
               <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => setRange("all")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRange("all")}
+                >
                   {t("invoicesPage.showAll")}
                 </Button>
               </EmptyContent>
@@ -272,21 +276,16 @@ function RouteComponent() {
               totalPages={invoices.data.pagination.totalPages}
               totalCount={invoices.data.pagination.totalCount}
               hasNext={invoices.data.pagination.nextPage !== null}
-              onPage={(next) => void navigate({ search: { range, page: next } })}
-              statusLabel={t("invoicesPage.pagerStatus", {
-                page: clampedPage(page, invoices.data.pagination.totalPages),
-                totalPages: Math.max(invoices.data.pagination.totalPages, 1),
-                total: invoices.data.pagination.totalCount,
-              })}
+              onPage={(next) =>
+                void navigate({ search: { range, page: next } })
+              }
+              statusTemplate={t("invoicesPage.pagerStatus")}
             />
           </>
         )}
       </PageSection>
 
-      <InvoiceDialog
-        invoiceId={openId}
-        onClose={() => setOpenId(null)}
-      />
+      <InvoiceDialog invoiceId={openId} onClose={() => setOpenId(null)} />
     </PageShell>
   );
 }
@@ -387,7 +386,10 @@ function InvoiceDialog({
               <Skeleton className="h-4 w-1/3" />
             </div>
           ) : detail.error ? (
-            <p className="text-destructive flex items-start gap-2 text-sm" role="alert">
+            <p
+              className="text-destructive flex items-start gap-2 text-sm"
+              role="alert"
+            >
               <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
               {(detail.error as Error).message}
             </p>
@@ -482,13 +484,7 @@ function InvoiceDialog({
   );
 }
 
-function Row({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-muted-foreground shrink-0 text-xs">{label}</dt>

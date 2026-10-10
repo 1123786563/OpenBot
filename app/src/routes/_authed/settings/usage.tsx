@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { BillingEmpty } from "@/components/billing/billing-empty";
-import { BillingPager, clampedPage } from "@/components/billing/pager";
+import { BillingPager } from "@/components/billing/pager";
 import { QuotaBar } from "@/components/billing/quota-bar";
 import { SubscriptionHero } from "@/components/billing/subscription-hero";
 import { UsageChart } from "@/components/billing/usage-chart";
@@ -260,11 +260,7 @@ function UsageBody({
               onPage={(page) => {
                 void navigate({ search: { eventsPage: page } });
               }}
-              statusLabel={t("usagePage.eventPagerStatus", {
-                page: clampedPage(eventsPage, events.data.pagination.totalPages),
-                totalPages: Math.max(events.data.pagination.totalPages, 1),
-                total: events.data.pagination.totalCount,
-              })}
+              statusTemplate={t("usagePage.eventPagerStatus")}
             />
           </>
         )}

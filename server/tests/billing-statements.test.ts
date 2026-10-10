@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import type { PaymentOrderRecord, PaymentStore } from "../src/billing/payments/types";
 import {
   createBillingStatementRoutes,
   statementQueryInput,
@@ -8,11 +9,10 @@ import {
 import { createBillingStatements } from "../src/billing/statements";
 import type {
   BillingEntitlements,
+  BillingQuotaEntry,
   BillingService,
   BillingUsage,
-  BillingQuotaEntry,
 } from "../src/billing/types";
-import type { PaymentOrderRecord, PaymentStore } from "../src/billing/payments/types";
 
 const MEMBER: AuthenticatedActor = {
   id: "user-member",
