@@ -26,8 +26,8 @@ import { SidebarToggle, useSidebarToggleVisible } from "./sidebar-toggle";
  * is where prose stays comfortable, and a row of label-and-control has no business being wider than
  * the sentence explaining it.
  *
- * `wide` exists for one page. An audit log is a table you scan, and forcing it into the prose column
- * would wrap every row. It is not a licence for anything else to be wide.
+ * `wide` is for pages whose content is a table or a card grid — the audit log, team bots and the
+ * billing and usage screens all scan wider than the prose column.
  */
 type ShellWidth = "prose" | "wide";
 

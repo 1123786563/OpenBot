@@ -73,6 +73,22 @@ describe("createBotRuntimes", () => {
     await runtimes.stopBot("gamma");
   });
 
+  test("同一 bot 的并发首次请求只拉起一个 upstream（mkdir 的 await 不再放行双重 spawn）", async () => {
+    const { spawned, spawnFn } = fakeSpawnFactory();
+    const runtimes = createBotRuntimes({ env, spawnFn, nowMs: () => 0 });
+    // 两个并发 getOrSpawn：第一个在 entries.set 之后、upstream 就位之前让出（mkdir 的 await），
+    // 第二个此时命中注册表。修复前第二个会在 upstream 仍为 null 时再 build 一次，把前一个
+    // 子进程覆盖成孤儿；修复后它等待同一次启动，spawn 只发生一次。
+    const [first, second] = await Promise.all([
+      runtimes.getOrSpawn("alpha"),
+      runtimes.getOrSpawn("alpha"),
+    ]);
+    expect(first.port).toBe(second.port);
+    expect(first.workspaceDir).toBe(second.workspaceDir);
+    expect(spawned).toHaveLength(1);
+    await runtimes.stopBot("alpha");
+  });
+
   test("空闲超过 idleMs 的 bot 在清扫时被回收并释放端口", async () => {
     const { spawned, spawnFn } = fakeSpawnFactory();
     let now = 0;

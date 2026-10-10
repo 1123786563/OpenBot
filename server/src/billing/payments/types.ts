@@ -227,6 +227,26 @@ export type PaymentStore = {
     limit: number,
   ): Promise<readonly PaymentOrderRecord[]>;
   /**
+   * One window of orders, newest first, for the statement read.
+   *
+   * Every order is a bill whether or not money moved: a person looking at their billing history
+   * needs the one that expired as much as the one that paid, because "I was billed" and "I tried
+   * to pay" are the same question when you are looking at a list. The window is on `created_at`,
+   * which is the only timestamp every order has — a pending one has no period and no terminal
+   * moment to filter on.
+   */
+  listOrdersInWindow(input: {
+    from: Date | null;
+    to: Date | null;
+    limit: number;
+    offset: number;
+  }): Promise<readonly PaymentOrderRecord[]>;
+  /** How many orders the same window holds, for the pager. */
+  countOrdersInWindow(input: {
+    from: Date | null;
+    to: Date | null;
+  }): Promise<number>;
+  /**
    * Paid orders whose activation has not landed yet, for the sweeper's activation-retry pass —
    * a paid order must never depend on somebody re-opening its page to become a subscription.
    */
