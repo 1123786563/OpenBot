@@ -85,6 +85,16 @@ const serving = {
   port: appPort.port,
   strictPort: true,
   proxy: {
+    // The standalone enterprise entry (server/src/enterprise/index.ts, local smoke:
+    // ENTERPRISE_PORT=3101) serves its own API version and the forwarded auth routes; both must
+    // reach it same-origin or the tenant selector and the enterprise session never leave the app
+    // origin. Specific prefixes first so they win over the catch-all legacy /api proxy.
+    "/api/enterprise": {
+      target: "http://localhost:3101",
+    },
+    "/api/auth": {
+      target: "http://localhost:3101",
+    },
     "/api": {
       target: `http://localhost:${apiPort.port}`,
     },

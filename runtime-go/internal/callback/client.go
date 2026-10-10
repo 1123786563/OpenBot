@@ -482,6 +482,11 @@ func (c Client) post(ctx context.Context, suffix string, payload any) (int, []by
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-openbot-runtime-service-credential", creds.ServiceCredential)
 	req.Header.Set("x-openbot-runtime-capability", creds.Capability)
+	// The envelope the capability was validated against: the real tool plane
+	// re-validates the pair against the ledger, and its capability rows are
+	// pinned to the envelope's tenant+run — without the envelope the plane
+	// has no trusted locator and must refuse.
+	req.Header.Set("x-openbot-runtime-invocation", creds.Invocation)
 	// The active trace rides along: the run's spans stitch across this
 	// boundary. A throwaway when nothing is active — with tracing off the
 	// global propagator is the noop default and injects nothing.

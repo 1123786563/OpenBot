@@ -25,12 +25,14 @@ import (
 const (
 	testServiceCredential = "test-service-credential-not-a-real-one"
 	testCapability        = "test-capability-not-a-real-one"
+	testInvocation        = `{"schema_version":"1","tenant_id":"tenant-1","principal_id":"principal-1","actor_id":"actor-1","initiator_kind":"user","run_id":"run-1","attempt_id":"attempt-1","turn_id":"turn-1","thread_id":"thread-1","expert_version":"assistant-v1","input_digest":"d","model_route_ref":"route-1","budget_reservation_id":"res-1","lease_id":"lease-1","fencing_token":"1","expires_at":"2099-01-01T00:00:00Z"}`
 )
 
 func toolCtx() context.Context {
 	return identity.WithToolCredentials(context.Background(), identity.ToolCredentials{
 		ServiceCredential: testServiceCredential,
 		Capability:        testCapability,
+		Invocation:        testInvocation,
 	})
 }
 
@@ -49,6 +51,7 @@ type planeRequest struct {
 	Path              string
 	ServiceCredential string
 	Capability        string
+	Invocation        string
 	ContentType       string
 	Body              map[string]any
 	RawBody           string
@@ -66,6 +69,7 @@ func (s *planeStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Path:              r.URL.Path,
 		ServiceCredential: r.Header.Get("x-openbot-runtime-service-credential"),
 		Capability:        r.Header.Get("x-openbot-runtime-capability"),
+		Invocation:        r.Header.Get("x-openbot-runtime-invocation"),
 		ContentType:       r.Header.Get("Content-Type"),
 	}
 	raw, _ := io.ReadAll(r.Body)
@@ -222,6 +226,9 @@ func TestPrepareSendsStrictWireRequest(t *testing.T) {
 	}
 	if got.ServiceCredential != testServiceCredential || got.Capability != testCapability {
 		t.Fatalf("credentials = %q/%q, want the private-context pair in headers", got.ServiceCredential, got.Capability)
+	}
+	if got.Invocation != testInvocation {
+		t.Fatalf("invocation header = %q, want the verbatim envelope the run was validated with", got.Invocation)
 	}
 	if got.ContentType != "application/json" {
 		t.Fatalf("Content-Type = %q", got.ContentType)

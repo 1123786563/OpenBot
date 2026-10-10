@@ -100,16 +100,20 @@ func RunAssertion(ctx context.Context) (string, bool) {
 	return v, ok && v != ""
 }
 
-// ToolCredentials is the pair the runtime presents to the TS tool plane for
+// ToolCredentials is what the runtime presents to the TS tool plane for
 // governed tool operations (master plan §4.1: the tool-invocation endpoints
 // answer an AUTHENTICATED Runtime): the platform-to-runtime service
-// credential and the short-term invocation capability this run was
-// validated with. The plane re-validates the capability against the
-// operation's run/attempt/fencing, so a capability minted for one run
-// cannot spend another run's operations.
+// credential, the short-term invocation capability this run was validated
+// with, and the verbatim RuntimeInvocation envelope the capability was
+// validated against — the real plane re-validates the capability by looking
+// it up under the envelope's tenant+run pin, so the envelope rides along as
+// the trusted locator exactly as it did on the execution request. The plane
+// re-validates the capability against the operation's run/attempt/fencing,
+// so a capability minted for one run cannot spend another run's operations.
 type ToolCredentials struct {
 	ServiceCredential string
 	Capability        string
+	Invocation        string
 }
 
 type toolCredentialKey struct{}
@@ -132,5 +136,5 @@ func WithToolCredentials(ctx context.Context, c ToolCredentials) context.Context
 // middleware did not store is a credential no tool call may present.
 func ToolCredentialsFromContext(ctx context.Context) (ToolCredentials, bool) {
 	c, ok := ctx.Value(toolCredentialKey{}).(ToolCredentials)
-	return c, ok && c.ServiceCredential != "" && c.Capability != ""
+	return c, ok && c.ServiceCredential != "" && c.Capability != "" && c.Invocation != ""
 }

@@ -15,11 +15,10 @@
  * per request, `withTenant` re-checks the epoch, and the grant rows are read live in the same
  * statement).
  *
- * The pool this module opens is the conversations' own data-plane connection: the deployment
- * config names it with ENTERPRISE_DATA_DATABASE_URL (validated by the enterprise config before
- * boot); the isolated enterprise test environment never carries deployment names, so there the
- * sibling TEST variable — the same one bootstrap.test.ts already requires — names the restricted
- * data login. The URL is read once per mount; the pool itself connects lazily.
+ * The pool this module runs on is the conversations' own data-plane connection, injected through
+ * the assembly (EnterpriseDependencies.conversationsDatabase): the bootstrap opened it from the
+ * EnterpriseConfig-validated data URL and closes it on drain, so no pool is opened or environment
+ * read here. The pool itself connects lazily.
  *
  * Statement texts are module constants; values travel only as `$n` parameters. Rows are parsed
  * with strict Zod schemas inside the transaction — never `as`-cast; a shape that does not match is
@@ -36,21 +35,6 @@ import {
   lockShared,
   withTenant,
 } from "../tenancy/transaction";
-
-/** The data-plane URL for the conversations pool, per the module header. */
-export function conversationsDatabaseUrl(
-  env: Record<string, string | undefined>,
-): string {
-  const url =
-    env.ENTERPRISE_DATA_DATABASE_URL?.trim() ||
-    env.ENTERPRISE_TEST_DATA_DATABASE_URL?.trim();
-  if (!url) {
-    throw new Error(
-      "the conversations store needs ENTERPRISE_DATA_DATABASE_URL (deployment) or ENTERPRISE_TEST_DATA_DATABASE_URL (isolated test environment)",
-    );
-  }
-  return url;
-}
 
 /*
  * A read-granted active bot, for the list: the grant existence is part of the same statement, so
@@ -133,12 +117,13 @@ const INSERT_CHANNEL = `
   returning id, bot_resource_id as "botId", thread_id as "threadId", status`;
 
 const SELECT_CHANNELS_PAGE = `
-  select id, bot_resource_id as "botId", thread_id as "threadId", status
+  select id, bot_resource_id as "botId", thread_id as "threadId", status,
+         created_at as "createdAt"
   from enterprise_channels
   where tenant_id = $1 and owner_principal_id = $2
-    and ($3::text is null or id < $3)
-  order by id desc
-  limit $4`;
+    and ($3::timestamptz is null or (created_at, id) < ($3::timestamptz, $4::text))
+  order by created_at desc, id desc
+  limit $5`;
 
 const SELECT_CHANNEL_BY_ID = `
   select id, bot_resource_id as "botId", thread_id as "threadId", status
@@ -165,6 +150,40 @@ const ChannelRowSchema = z
   .strict();
 
 type ChannelRow = z.infer<typeof ChannelRowSchema>;
+
+/*
+ * The list order is creation order (newest first): the channel id is a random
+ * UUID that carries NO time information, so the sort key is created_at with the
+ * id as the deterministic tiebreak — a repeated page is byte-stable.
+ */
+const ChannelPageRowSchema = ChannelRowSchema.extend({
+  createdAt: z.date(),
+}).strict();
+
+type ChannelPageRow = z.infer<typeof ChannelPageRowSchema>;
+
+/** Cursor binding: (created_at, id) of the last item on the previous page. */
+const CURSOR_SEPARATOR = "|";
+
+function encodeChannelCursor(row: ChannelPageRow): string {
+  return `${row.createdAt.toISOString()}${CURSOR_SEPARATOR}${row.id}`;
+}
+
+function parseChannelCursor(cursor: string): {
+  createdAt: string;
+  channelId: string;
+} {
+  const separator = cursor.lastIndexOf(CURSOR_SEPARATOR);
+  if (separator <= 0) {
+    throw new EnterpriseError("REQUEST_BODY_INVALID", 400);
+  }
+  const createdAt = cursor.slice(0, separator);
+  const channelId = cursor.slice(separator + CURSOR_SEPARATOR.length);
+  if (!channelId || Number.isNaN(Date.parse(createdAt))) {
+    throw new EnterpriseError("REQUEST_BODY_INVALID", 400);
+  }
+  return { createdAt, channelId };
+}
 
 function conversationOf(row: ChannelRow): PersonalConversation {
   return {
@@ -355,16 +374,25 @@ export function createConversationsStore(
 
     listOwnerChannels: (scope, cursor, limit) =>
       withTenant(database, scope, async (tx) => {
+        const binding = cursor === null ? null : parseChannelCursor(cursor);
         const rows = await tx.unsafe<Record<string, unknown>[]>(
           SELECT_CHANNELS_PAGE,
-          [scope.tenantId, scope.principalId, cursor, limit + 1],
+          [
+            scope.tenantId,
+            scope.principalId,
+            binding?.createdAt ?? null,
+            binding?.channelId ?? null,
+            limit + 1,
+          ],
         );
-        const channels = z.array(ChannelRowSchema).parse(rows);
+        const channels = z.array(ChannelPageRowSchema).parse(rows);
         const hasMore = channels.length > limit;
         const page = hasMore ? channels.slice(0, limit) : channels;
         return {
           items: page.map(conversationOf),
-          nextCursor: hasMore ? page[page.length - 1].id : null,
+          nextCursor: hasMore
+            ? encodeChannelCursor(page[page.length - 1])
+            : null,
         };
       }),
 

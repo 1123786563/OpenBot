@@ -35,6 +35,10 @@ import {
   canonicalAuthRoute,
   REQUIRED_AUTH_ROUTES,
 } from "./auth-route-profile";
+import {
+  enterpriseRuntimeConfig,
+  type EnterpriseRuntimeConfig,
+} from "./runtime/config";
 
 /** What a redacted security log line carries; assembled by the bootstrap, never from a request. */
 export type RedactedSecurityError = {
@@ -117,6 +121,11 @@ export type EnterpriseConfig = {
   authRoutes: ReadonlySet<string>;
   /** How long shutdown waits for in-flight requests before the hard stop. */
   shutdownGraceMs: number;
+  /**
+   * The Go runtime candidate block; `undefined` = disabled, nothing mounted, no pool opened.
+   * Parsed by ./runtime/config.ts and held to the same one-database boundary as the logins above.
+   */
+  runtime?: EnterpriseRuntimeConfig;
 };
 
 function required(env: EnterpriseEnvironment, name: string): string {
@@ -189,7 +198,10 @@ function parseDatabaseUrl(name: string, raw: string): ParsedDatabaseUrl {
   };
 }
 
-function databaseUrls(env: EnterpriseEnvironment): {
+function databaseUrls(
+  env: EnterpriseEnvironment,
+  extra: Array<{ name: string; url: string }> = [],
+): {
   authDatabaseUrl: string;
   directoryDatabaseUrl: string;
   dataDatabaseUrl: string;
@@ -220,6 +232,25 @@ function databaseUrls(env: EnterpriseEnvironment): {
     throw new Error(
       "the three enterprise database URLs must use distinct login roles (auth, directory, data)",
     );
+  }
+
+  /*
+   * The runtime candidate's two logins join the same deployment boundary: they must name the one
+   * approved database too (their own loader already parsed them; only the boundary is re-stated
+   * here, so the message the operator reads names the rule, not a URL).
+   */
+  for (const entry of extra) {
+    const parsed = parseDatabaseUrl(entry.name, entry.url);
+    if (!databases.has(parsed.database)) {
+      throw new Error(
+        `${entry.name} must point at the same approved database as the enterprise login URLs`,
+      );
+    }
+    if (roles.has(parsed.username)) {
+      throw new Error(
+        `${entry.name} must use its own login role, not one of the auth/directory/data roles`,
+      );
+    }
   }
 
   return {
@@ -317,12 +348,29 @@ export function loadEnterpriseConfig(
     );
   }
 
+  const runtime = enterpriseRuntimeConfig(env);
+  const urls = databaseUrls(
+    env,
+    runtime === undefined
+      ? []
+      : [
+          {
+            name: "ENTERPRISE_RUNTIME_RUN_WRITER_DATABASE_URL",
+            url: runtime.runWriterDatabaseUrl,
+          },
+          {
+            name: "ENTERPRISE_RUNTIME_RUNTIME_WRITER_DATABASE_URL",
+            url: runtime.runtimeWriterDatabaseUrl,
+          },
+        ],
+  );
+
   return {
     port: boundedInteger(env, "ENTERPRISE_PORT", 3101, 1, 65535),
     hostname: optional(env, "ENTERPRISE_HOSTNAME") ?? "127.0.0.1",
     auth,
     keyEncryptionKey: readKeyEncryptionKey(env),
-    ...databaseUrls(env),
+    ...urls,
     allowedOrigins: allowedOrigins(env),
     authRoutes: authRoutes(env),
     shutdownGraceMs: boundedInteger(
@@ -332,5 +380,6 @@ export function loadEnterpriseConfig(
       1000,
       300000,
     ),
+    ...(runtime === undefined ? {} : { runtime }),
   };
 }

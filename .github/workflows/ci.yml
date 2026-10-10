@@ -281,15 +281,24 @@ jobs:
     env:
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
-      # The enterprise tenancy suite dials one database through five restricted logins (never the
-      # migration owner): the same names the local workflow env file uses, pointed at this job's
-      # throwaway container. Passwords are for a database that exists only for this job; the roles
-      # themselves are provisioned by the step below.
+      # The enterprise suites dial one database through restricted logins (never the migration
+      # owner): the same names the local workflow env file uses, pointed at this job's throwaway
+      # container. Passwords are for a database that exists only for this job; the roles themselves
+      # are provisioned by the step below. The five runs-ledger logins (plan 03 §4.2) are REQUIRED,
+      # not optional: scripts/enterprise-test-db.ts refuses to provision when any one of the ten
+      # login URLs is missing, so leaving them out turns the runs-ledger role step red and silences
+      # every real-database assertion in server/tests/enterprise/runs and
+      # server/tests/enterprise/models behind its fail-closed probe.
       ENTERPRISE_TEST_DATA_DATABASE_URL: postgres://ent_data:ci-ent-data@localhost:5432/openbot_test
       ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://ent_operator:ci-ent-operator@localhost:5432/openbot_test
       ENTERPRISE_TEST_IDENTITY_OPERATOR_DATABASE_URL: postgres://ent_identity_operator:ci-ent-identity-operator@localhost:5432/openbot_test
       ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: postgres://ent_directory:ci-ent-directory@localhost:5432/openbot_test
       ENTERPRISE_TEST_AUTH_DATABASE_URL: postgres://ent_identity:ci-ent-identity@localhost:5432/openbot_test
+      ENTERPRISE_TEST_RUN_WRITER_DATABASE_URL: postgres://ent_run_writer:ci-ent-run-writer@localhost:5432/openbot_test
+      ENTERPRISE_TEST_RUNTIME_WRITER_DATABASE_URL: postgres://ent_runtime_writer:ci-ent-runtime-writer@localhost:5432/openbot_test
+      ENTERPRISE_TEST_DISPATCHER_DATABASE_URL: postgres://ent_dispatcher:ci-ent-dispatcher@localhost:5432/openbot_test
+      ENTERPRISE_TEST_RUN_OPERATOR_DATABASE_URL: postgres://ent_run_operator:ci-ent-run-operator@localhost:5432/openbot_test
+      ENTERPRISE_TEST_RUN_MAINTENANCE_DATABASE_URL: postgres://ent_run_maintenance:ci-ent-run-maintenance@localhost:5432/openbot_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

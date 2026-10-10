@@ -19,6 +19,8 @@ RUN bun install --frozen-lockfile
 COPY --from=spire /opt/spire/bin/spire-server /usr/local/bin/spire-server
 
 COPY supervisor/src ./src
+# index.ts imports ../../shared/trace at runtime; from /app/src that path resolves to /shared.
+COPY shared/trace.ts /shared/trace.ts
 
 EXPOSE 4300
 CMD ["bun", "src/index.ts"]

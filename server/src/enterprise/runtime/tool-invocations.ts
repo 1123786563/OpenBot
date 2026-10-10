@@ -87,7 +87,7 @@ export type ToolCapabilityBinding = {
 };
 
 /** The operation record the fake ledger holds. */
-export type FakeOperationRecord = {
+export type ToolOperationRecord = {
   operation_id: string;
   tenant_id: string;
   principal_id: string;
@@ -108,7 +108,7 @@ export type FakeOperationRecord = {
 /** What the re-check boundary observes on execute. */
 export type RecheckInput = {
   principal_id: string;
-  operation: FakeOperationRecord;
+  operation: ToolOperationRecord;
   execution: ToolExecutionRequest;
 };
 
@@ -143,7 +143,7 @@ export type FakeToolPlaneDeps = {
    */
   recheck?: (input: RecheckInput) => { ok: true } | { ok: false; error_code: string };
   /** Scripts the receipt a scripted execution answers. Default: succeeded. */
-  outcome?: (operation: FakeOperationRecord) => {
+  outcome?: (operation: ToolOperationRecord) => {
     status: ReceiptStatus;
     result_text?: string;
     error_code?: string;
@@ -154,7 +154,7 @@ export type FakeToolPlaneDeps = {
 export type FakeToolPlane = {
   routes: Hono;
   state: {
-    operations: FakeOperationRecord[];
+    operations: ToolOperationRecord[];
     receipts: Receipt[];
     /** External effects actually performed (a succeeded execution each). */
     effects: number;
@@ -187,7 +187,7 @@ const EXECUTION_FIELDS = [
 /** How large a tool-invocation body may be: args are bounded proposals. */
 const MAX_BODY_BYTES = 256 * 1024;
 
-function canonicalize(value: unknown): unknown {
+export function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value !== null && typeof value === "object") {
     const record = value as Record<string, unknown>;
@@ -230,7 +230,7 @@ async function readCappedBody(body: ReadableStream<Uint8Array> | null): Promise<
 }
 
 /** Parses a strict object body; returns null with the reason it was refused. */
-async function readStrictBody(
+export async function readStrictBody(
   raw: ReadableStream<Uint8Array> | null,
   knownFields: readonly string[],
   requiredFields: readonly string[],
@@ -387,7 +387,7 @@ export function createFakeToolInvocationPlane(deps: FakeToolPlaneDeps): FakeTool
 
     // Allocate. Prepare only PROPOSES: no effect is performed or recorded.
     const requiresApproval = deps.requiresApproval?.(proposal) ?? false;
-    const record: FakeOperationRecord = {
+    const record: ToolOperationRecord = {
       operation_id: `op_${randomUUID()}`,
       tenant_id: binding.tenant_id,
       principal_id: binding.principal_id,
@@ -545,7 +545,7 @@ export function createFakeToolInvocationPlane(deps: FakeToolPlaneDeps): FakeTool
 }
 
 function previewOf(
-  operation: Pick<FakeOperationRecord, "tool_name" | "installation_version" | "target">,
+  operation: Pick<ToolOperationRecord, "tool_name" | "installation_version" | "target">,
   deps: FakeToolPlaneDeps,
 ): string {
   const proposal = {

@@ -827,29 +827,31 @@ describe("the migration journal stays generated and drop-free", () => {
     }
   });
 
-  test("the two new runs migrations drop no table and no column", () => {
+  test("the two runs migrations drop no table and no column", () => {
     const entries = readJournal();
     expect(entries.length).toBeGreaterThanOrEqual(58);
-    const tail = entries.slice(-2);
-    expect(
-      tail
-        .map((entry) => entry.tag)
-        .some((tag) => tag.endsWith("_enterprise_runs_rls")),
-    ).toBe(true);
-    for (const entry of tail) {
+    /*
+     * 本册的两个 runs 迁移按 tag 定位（0059：22 张账本表的生成迁移；0060：custom RLS）。
+     * 共享 journal 会被其他分册继续追加（0061/0062 已是先例），“最后一项/位置窗口”的
+     * 假设会被合法合入打破，因此不再断言位置；原意完整保留：两个迁移都必须登记在
+     * journal 中，且都不得 DROP 任何表或列。
+     */
+    const runsTags = ["0059_outgoing_lilandra", "0060_enterprise_runs_rls"];
+    const runsEntries = entries.filter((entry) => runsTags.includes(entry.tag));
+    expect(runsEntries.map((entry) => entry.tag)).toEqual(runsTags);
+    for (const entry of runsEntries) {
       const migration = migrationSql(entry.tag);
       expect(migration, entry.tag).not.toMatch(/drop\s+table/i);
       expect(migration, entry.tag).not.toMatch(/drop\s+column/i);
     }
   });
 
-  test("the custom runs RLS migration is the journal's last entry", () => {
+  test("the custom runs RLS migration is registered in the journal", () => {
     const entries = readJournal();
     const custom = entries.find((entry) =>
       entry.tag.endsWith("_enterprise_runs_rls"),
     );
     expect(custom).toBeDefined();
-    expect(custom?.idx).toBe(Math.max(...entries.map((entry) => entry.idx)));
   });
 });
 
@@ -2166,9 +2168,13 @@ if (dbProbe.ready) {
     });
 
     test("the dispatcher reads only the redacted outbox, never inputs, events or hashes", async () => {
+      /* 本 suite 的租户圈定：dispatcher 的 RLS 是 USING(true) 的跨租户队列视图，
+       * 并行 fixture（如 E1-C 的 r1c- 创建流）会在同库写入自己的 outbox 行——
+       * 断言限定在本 suite 租户内，不弱化“恰好一行”的强度。 */
       const outbox = await dispatcherDatabase
         .select({ id: enterpriseRunOutbox.id })
-        .from(enterpriseRunOutbox);
+        .from(enterpriseRunOutbox)
+        .where(eq(enterpriseRunOutbox.tenantId, TENANT_A));
       expect(outbox.map((row) => row.id)).toEqual(["r1b-outbox-a"]);
 
       /* 固定字面量探针（计划 306 行：dispatcher 不能读输入），每个都是独立常量。 */

@@ -197,6 +197,9 @@ const healthyUnitPools = () => [
   fakePool({ userName: "ent_identity" }),
   fakePool({ userName: "ent_directory" }),
   fakePool({ userName: "ent_data" }),
+  /* The conversations pool: the same restricted data login, dialed fourth. The boot checks and
+   * probes the data login's shared database once, so this pool is only opened and closed. */
+  fakePool({ userName: "ent_data" }),
 ];
 
 /* ---------------------------------------------------------------------------
@@ -216,11 +219,13 @@ describe("a failed boot closes the connections it already opened", () => {
 
     expect(pools[0]?.closeCount).toBe(1);
     expect(pools[1]?.closeCount).toBe(1);
-    /* The third pool never existed; nothing to close. */
+    /* The third pool never existed; nothing to close — and the conversations pool dials the same
+     * URL, so the factory never reached it either. */
     expect(pools[2]?.closeCount).toBe(0);
+    expect(pools[3]?.closeCount).toBe(0);
   });
 
-  test("a role-check failure closes all three pools before the stable error is raised", async () => {
+  test("a role-check failure closes all four pools before the stable error is raised", async () => {
     const pools = healthyUnitPools();
     pools[2] = fakePool({
       userName: "ent_data",
@@ -434,9 +439,9 @@ describe("readiness probes only the three databases and caches the health answer
 
     expect((await enterprise.app.request("/health/ready")).status).toBe(200);
     expect((await enterprise.app.request("/health/ready")).status).toBe(200);
-    for (const pool of pools) {
-      expect(pool.probeCount).toBe(1);
-    }
+    /* Three probes for the three dependency databases; the conversations pool shares the data
+     * database, so the boot opens and closes it without probing it again. */
+    expect(pools.map((pool) => pool.probeCount)).toEqual([1, 1, 1, 0]);
     await enterprise.close();
   });
 
@@ -477,7 +482,7 @@ describe("readiness probes only the three databases and caches the health answer
 });
 
 describe("close shuts every pool, and a failed close is a stable error", () => {
-  test("close settles all three pools", async () => {
+  test("close settles all four pools", async () => {
     const pools = healthyUnitPools();
     const { factory } = fakeFactory(pools);
     const enterprise = await bootstrapEnterprise(enterpriseConfig(UNIT_URLS), {

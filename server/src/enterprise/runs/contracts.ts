@@ -156,3 +156,11 @@ export type ReserveInput = {
   currency: string;
   periodId: string;
 };
+
+/**
+ * The run-domain services the PUBLIC entry mounts, per plan 03 §9.3's optional `runServices`
+ * dependency object: present only when the run feature is explicitly enabled. Without it the
+ * app registers no run implementation at all — POST /runs answers an explicit 503 instead of
+ * an empty success.
+ */
+export type RunServices = { runs: RunService };

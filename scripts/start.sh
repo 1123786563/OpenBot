@@ -250,6 +250,13 @@ else
   SERVICES+=(agent-bot)
 fi
 SERVICES+=(agent-langgraph)
+# The Go runtime candidate starts only when the enterprise runtime block is configured.
+# The enterprise entry itself always runs on the host (bun run dev:enterprise), never here.
+if [ -n "$ENTERPRISE_RUNTIME_SERVICE_CREDENTIAL" ]; then
+  SERVICES+=(go-runtime)
+else
+  info "  go-runtime: skipped (ENTERPRISE_RUNTIME_SERVICE_CREDENTIAL not set)"
+fi
 
 export SUPERVISOR_TOKEN COMPUTER_TOKEN WORKER_SHARED_SECRET
 export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT
