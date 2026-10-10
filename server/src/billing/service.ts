@@ -332,6 +332,27 @@ export function createBillingService(deps: {
       return reader.active(externalCustomerId);
     },
 
+    /**
+     * Uncached on purpose: the entitlements reader answers a stable fact through a TTL, while
+     * usage moves with every event the provider accepts, so a settings page wants it fresh.
+     * No plan vocabulary either, for the same reason as the entitlements answer.
+     */
+    async usage(externalCustomerId) {
+      const key = externalCustomerId ?? config.externalCustomerKey;
+      const rows = await store.readSubscriptions(key);
+      const active = rows.find((row) => row.status === "active");
+      if (!active) return null;
+      const usage = await client.getUsage(key, active.externalSubscriptionId);
+      return {
+        fromDatetime: usage.body?.fromDatetime,
+        toDatetime: usage.body?.toDatetime,
+        currency: usage.body?.currency,
+        amountCents: usage.body?.amountCents,
+        totalAmountCents: usage.body?.totalAmountCents,
+        charges: usage.body?.charges ?? [],
+      };
+    },
+
     async snapshot(): Promise<BillingSnapshot> {
       const { customers, subscriptions, lastSyncedAt } = await store.snapshot();
       return {

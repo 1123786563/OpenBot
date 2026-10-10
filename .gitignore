@@ -53,3 +53,5 @@ venv/
 .mimosa/
 .trae/
 .playwright-mcp/
+.zcode/
+.serena/

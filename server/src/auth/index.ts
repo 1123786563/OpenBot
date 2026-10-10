@@ -184,8 +184,25 @@ function casdoor(options: {
   };
 }
 
+/**
+ * The whole of what the auth factory reads from configuration, per plan 02 §7 T3-B.
+ *
+ * The factory used to take a full DeploymentConfig but consults exactly two fields: `auth` (every
+ * provider, secret and rule below) and `keyEncryptionKey` (SSO config encryption). Narrowing the
+ * parameter to those two is what lets the standalone enterprise entry authenticate people without
+ * fabricating an Intelligence runtime it does not have — and it is enforced by structure, not by a
+ * cast: a caller passing only these fields compiles, and nothing can smuggle a half DeploymentConfig
+ * through `as`. The database/SSO dependencies inside the factory are unchanged by this type; the
+ * identity connection's per-table privileges are enumerated in
+ * server/drizzle/0057_enterprise_identity_grants.sql (granted to the NOLOGIN role ob_ent_identity).
+ */
+export type AuthBootstrapConfig = Pick<
+  DeploymentConfig,
+  "auth" | "keyEncryptionKey"
+>;
+
 export function createAuth(
-  config: DeploymentConfig,
+  config: AuthBootstrapConfig,
   database: Database,
   /**
    * Whether an administrator has removed this address.

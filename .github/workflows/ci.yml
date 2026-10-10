@@ -35,6 +35,11 @@ jobs:
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck
+      # The enterprise tenancy domain (src/enterprise, its tests and scripts) under its own tsconfig,
+      # per plan 02 §7 T3-C step 5. Separate from `typecheck` so the legacy entry and the standalone
+      # enterprise entry each report their own result.
+      - run: bun run typecheck:enterprise
+        working-directory: server
       - name: Desktop version tracks the release version
         run: bun desktop/scripts/desktop-version.ts check
       # The chart's default image tag is its appVersion, and a release must move both together. They
@@ -276,6 +281,15 @@ jobs:
     env:
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
+      # The enterprise tenancy suite dials one database through five restricted logins (never the
+      # migration owner): the same names the local workflow env file uses, pointed at this job's
+      # throwaway container. Passwords are for a database that exists only for this job; the roles
+      # themselves are provisioned by the step below.
+      ENTERPRISE_TEST_DATA_DATABASE_URL: postgres://ent_data:ci-ent-data@localhost:5432/openbot_test
+      ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://ent_operator:ci-ent-operator@localhost:5432/openbot_test
+      ENTERPRISE_TEST_IDENTITY_OPERATOR_DATABASE_URL: postgres://ent_identity_operator:ci-ent-identity-operator@localhost:5432/openbot_test
+      ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: postgres://ent_directory:ci-ent-directory@localhost:5432/openbot_test
+      ENTERPRISE_TEST_AUTH_DATABASE_URL: postgres://ent_identity:ci-ent-identity@localhost:5432/openbot_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -300,6 +314,13 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
+      # The enterprise capability roles must exist BEFORE the migrations: the tenancy RLS custom
+      # migration GRANTs to ob_ent_* and fails outright when they are absent (plan 02 §5 T1-B's
+      # role contract; roles.sql is the DBA's production file, this is the throwaway-database
+      # equivalent). Idempotent, so a locally re-used test database runs it just as safely.
+      - name: Provision the enterprise test roles
+        working-directory: server
+        run: bun scripts/enterprise-test-db.ts roles
       # Not the db:migrate script: that one loads ../.env, which does not exist in CI. DATABASE_URL
       # comes from the job env instead, which drizzle.config.ts already reads.
       - run: bunx drizzle-kit migrate --config=drizzle.config.ts

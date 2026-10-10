@@ -1,9 +1,11 @@
 import {
   IconArrowLeft,
+  IconChartBar,
   IconKey,
   IconLayoutGrid,
   IconPlug,
   IconSettings,
+  IconShieldCheck,
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
@@ -52,6 +54,20 @@ const ITEMS = [
     icon: IconLayoutGrid,
     exact: false,
     linkOptions: { to: "/settings/components-gallery" },
+  },
+  {
+    /* What the deployment's plan unlocks. The plan's own name is the provider's word, not this UI's. */
+    title: "sidebar.entitlements",
+    icon: IconShieldCheck,
+    exact: false,
+    linkOptions: { to: "/settings/billing" },
+  },
+  {
+    /* What has been used of that plan in the current billing period. */
+    title: "sidebar.usage",
+    icon: IconChartBar,
+    exact: false,
+    linkOptions: { to: "/settings/usage" },
   },
 ] as const satisfies readonly {
   /**

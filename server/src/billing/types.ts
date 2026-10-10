@@ -65,6 +65,25 @@ export type BillingSnapshot = {
   webhookMode: "jwt" | "hmac" | "off";
 };
 
+/** One charge's usage in the current billing period, in neutral words. */
+export type BillingUsageCharge = {
+  metricCode: string;
+  metricName: string;
+  /** The provider sends units as a string decimal; it stays a string so precision survives. */
+  units: string;
+  amountCents: number;
+};
+
+/** The current billing period's usage for one subscription, straight from the provider. */
+export type BillingUsage = {
+  fromDatetime?: string;
+  toDatetime?: string;
+  currency?: string;
+  amountCents?: number;
+  totalAmountCents?: number;
+  charges: readonly BillingUsageCharge[];
+};
+
 /** The four subscription states the sync reads. */
 export type BillingSubscriptionStatus =
   | "active"
@@ -158,6 +177,8 @@ export type BillingService = {
   handleWebhook(request: Request): Promise<Response>;
   /** Cached entitlements read, per customer key. */
   entitlements(externalCustomerId?: string): Promise<BillingEntitlements>;
+  /** The active subscription's current-period usage, or null when there is no active one. */
+  usage(externalCustomerId?: string): Promise<BillingUsage | null>;
   snapshot(): Promise<BillingSnapshot>;
   /** Not built yet, and refusing rather than half-working. */
   reconcile(): Promise<never>;

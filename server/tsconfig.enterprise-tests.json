@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  "include": [
+    "src/enterprise/**/*.ts",
+    "tests/enterprise/**/*.ts",
+    "scripts/enterprise-*.ts",
+    "../shared/enterprise/**/*.ts"
+  ],
+  "exclude": [
+    /* Pre-existing type debt in files owned by other tasks, deliberately not typed here (plan 02
+     * §7 T3-C step 5: "不把全部旧测试的历史类型错误纳入本次重构"): the completed runtime task's
+     * tests (runtime-contract / runtime-invocation pass negative-case literals that predate this
+     * tsconfig and are off-limits to this task) and T1-C's provision.test.ts (same negative-case
+     * literal pattern). Every enterprise file this workflow may touch stays type-checked; removing
+     * an entry here requires that file to be clean first. */
+    "tests/enterprise/runtime-contract.test.ts",
+    "tests/enterprise/runtime-invocation.test.ts",
+    "tests/enterprise/tenancy/provision.test.ts"
+  ]
+}

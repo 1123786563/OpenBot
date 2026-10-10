@@ -19,6 +19,7 @@ import {
   type LoadInstructions,
   registeredAgentFromRow,
   resolveRuntimeAgents,
+  retryIntelligenceReads,
   runtimeModelForEnvironment,
   standingRoleMessage,
 } from "../src/copilot";
@@ -278,24 +279,60 @@ describe("registered Copilot agents", () => {
   });
 
   test("configures an OpenAI built-in agent", () => {
-    expect(
-      builtInAgentConfiguration(
+    // Official OpenAI (no base URL): the runtime's own string form, which calls the Responses API.
+    const originalBase = process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_BASE_URL;
+    try {
+      expect(
+        builtInAgentConfiguration(
+          {
+            id: "general-assistant",
+            name: "General Assistant",
+            type: "built_in",
+            systemPrompt: "Be helpful.",
+          },
+          { provider: "openai", defaultModel: "gpt-5.6-terra" },
+          "openai-secret",
+        ),
+      ).toEqual({
+        model: "openai/gpt-5.6-terra",
+        // The provenance rule is unconditional, so even a Bot with no tools and no computer carries
+        // it. That Bot needs it most: nothing it says was read anywhere.
+        prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}\n\n${UNTRUSTED_GUIDANCE}`,
+        apiKey: "openai-secret",
+      });
+    } finally {
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+    }
+  });
+
+  test("configures an OpenAI built-in agent against a base URL with chat completions", () => {
+    // OPENAI_BASE_URL is documented as an endpoint speaking /v1/chat/completions; the runtime's
+    // string form would call the Responses API there, which such endpoints do not implement.
+    const originalBase = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = "https://gateway.internal/v1";
+    try {
+      const configuration = builtInAgentConfiguration(
         {
           id: "general-assistant",
           name: "General Assistant",
           type: "built_in",
           systemPrompt: "Be helpful.",
         },
-        { provider: "openai", defaultModel: "gpt-5.6-terra" },
-        "openai-secret",
-      ),
-    ).toEqual({
-      model: "openai/gpt-5.6-terra",
-      // The provenance rule is unconditional, so even a Bot with no tools and no computer carries
-      // it. That Bot needs it most: nothing it says was read anywhere.
-      prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}\n\n${UNTRUSTED_GUIDANCE}`,
-      apiKey: "openai-secret",
-    });
+        { provider: "openai", defaultModel: "GLM-5.3" },
+        // Not a credential: this argument only flows into the SDK client the assertion inspects.
+        "unit-test-value",
+      ) as { model: unknown };
+      expect(configuration.model).toMatchObject({
+        specificationVersion: "v3",
+        modelId: "GLM-5.3",
+        config: { provider: "openai.chat" },
+      });
+    } finally {
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+    }
   });
 
   test("fails an unavailable built-in agent through the AG-UI lifecycle", async () => {
@@ -2504,5 +2541,82 @@ describe("where an attachment reaches the model, and where it deliberately does 
       (messages[4] as { content?: { source?: unknown }[] }).content?.[0]
         ?.source,
     ).toMatchObject({ type: "data" });
+  });
+});
+
+describe("the Intelligence read retry", () => {
+  const originalFetch = globalThis.fetch;
+
+  /** A fetch stub whose first answer to the platform is a dead socket, per scenario state. */
+  function installStub() {
+    const state = { platformGets: 0, otherHostGets: 0, posts: 0 };
+    const dead = () =>
+      new TypeError(
+        "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()",
+        {
+          cause: Object.assign(new Error("connect ECONNRESET 34.1.1.1:443"), {
+            code: "ECONNRESET",
+          }),
+        },
+      );
+    const response = () => new Response("{}", { status: 200 });
+    const stub: typeof fetch = Object.assign(
+      (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1],
+      ) => {
+        const url = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url.startsWith("https://platform.test")) {
+          if (method !== "GET") {
+            state.posts += 1;
+            return Promise.resolve(response());
+          }
+          state.platformGets += 1;
+          // Every GET until the retry lands on a dead socket, then a clean answer.
+          return state.platformGets === 1
+            ? Promise.reject(dead())
+            : Promise.resolve(response());
+        }
+        state.otherHostGets += 1;
+        return Promise.resolve(response());
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    globalThis.fetch = stub;
+    return state;
+  }
+
+  test("replays a platform GET whose socket died, once, and answers on the retry", async () => {
+    globalThis.fetch = originalFetch;
+    const state = installStub();
+    retryIntelligenceReads("https://platform.test");
+    try {
+      const response = await fetch(
+        "https://platform.test/api/threads/t1?userId=u1",
+      );
+      expect(response.status).toBe(200);
+      expect(state.platformGets).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("leaves a platform POST and another host's GET single-shot", async () => {
+    globalThis.fetch = originalFetch;
+    const state = installStub();
+    retryIntelligenceReads("https://platform.test");
+    try {
+      await fetch("https://platform.test/api/threads", {
+        method: "POST",
+        body: "{}",
+      });
+      await fetch("https://elsewhere.test/api/threads/t2");
+      expect(state.posts).toBe(1);
+      expect(state.otherHostGets).toBe(1);
+      expect(state.platformGets).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

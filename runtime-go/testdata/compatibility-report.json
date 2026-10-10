@@ -1,11 +1,11 @@
 {
-  "commit": "9f407f839687f19bcbe7948ad396e5caf21148c2",
+  "commit": "dd9ae0b3a7ff0d8e521575b46713c9b529746073",
   "go_version": "go version go1.26.3 darwin/arm64",
   "workspace_digest": {
     "dirty": true,
     "summary": [
-      "M .env.example",
-      " M .github/workflows/ci.yml",
+      "M .github/workflows/ci.yml",
+      " M .gitignore",
       " M .zcode/lago-e2e/openbot.env",
       " M .zcode/lago-e2e/server.log",
       " M app/src/components/settings/settings-sidebar.tsx",
@@ -15,46 +15,33 @@
       " M bun.lock",
       " M docker-compose.yml",
       " M package.json",
-      " M runtime-go/dependency-review.json",
-      " M runtime-go/internal/adapter/agui.go",
-      " M runtime-go/internal/adapter/agui_test.go",
-      " M runtime-go/internal/callback/client.go",
-      " M runtime-go/internal/callback/client_test.go",
-      " M runtime-go/internal/server/auth_test.go",
-      " M runtime-go/testdata/compatibility-report.json",
       " M server/drizzle/meta/_journal.json",
       " M server/package.json",
-      " M server/scripts/enterprise-runtime-probe.ts",
       " M server/scripts/enterprise-test-db.ts",
       " M server/src/auth/index.ts",
       " M server/src/billing/lago.ts",
       " M server/src/billing/routes.ts",
       " M server/src/billing/service.ts",
       " M server/src/billing/types.ts",
+      " M server/src/channels/attachments.ts",
       " M server/src/config.ts",
       " M server/src/copilot.ts",
-      " M server/src/enterprise/runtime/tool-invocations.ts",
+      " M server/src/plugins/openconnector-adapter.ts",
       " M server/tests/auth-mobile-scheme.integration.test.ts",
       " M server/tests/billing-lago-client.test.ts",
       " M server/tests/billing-routes.test.ts",
       " M server/tests/copilot.test.ts",
       " M server/tests/enterprise-controls.integration.test.ts",
-      " M server/tests/enterprise/runtime-callback.test.ts",
-      " M server/tests/enterprise/runtime-contract.test.ts",
+      " M server/tests/openconnector-adapter.test.ts",
       " M server/tests/tool-selection.integration.test.ts",
       " M shared/enterprise/contracts.ts",
-      "?? .zcode/gate-lint.log",
-      "?? .zcode/gate-test.log",
-      "?? .zcode/lago-e2e/app-dev.log",
-      "?? .zcode/lago-e2e/server-3001.log",
       "?? app/src/lib/billing/",
       "?? app/src/routes/_authed/settings/billing.tsx",
       "?? app/src/routes/_authed/settings/usage.tsx",
       "?? docker/lago/",
       "?? docker/pgvector-partman.Dockerfile",
+      "?? docs/.DS_Store",
       "?? gui-test-screenshots/",
-      "?? runtime-go/internal/adapter/backpressure_test.go",
-      "?? runtime-go/internal/adapter/waitmapping.go",
       "?? server/drizzle/0057_enterprise_identity_grants.sql",
       "?? server/drizzle/meta/0057_snapshot.json",
       "?? server/src/enterprise/app.ts",
@@ -77,9 +64,9 @@
   "document_baseline": {
     "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
     "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "805ca0d150b22d31a7ba63672951d770981006cde9afc095507e66348cd93d2e",
-    "server/scripts/enterprise-runtime-probe.ts": "0731caab352d564b41cae72e105abd469ec5af48617e0422b3fbe69ddaa9667a",
-    "runtime-go/cmd/runtime/main.go": "ff1f5c43b2a37cce0acd4262a68580808d07d81a1b0943de3e9436c13ce3b13e",
-    "runtime-go/internal/adapter/agui_test.go": "60b8610a29c54d956fb84da0bc6f4f329b13748770a4d63c81680d4931cba088",
+    "server/scripts/enterprise-runtime-probe.ts": "505da46557b58433f2eca68398a7ce48d273ac6a3f0c459ba72a213790dd7936",
+    "runtime-go/cmd/runtime/main.go": "ac325430fd49869df3d958e46ea740c8347b8d20149558684f356c02c624e941",
+    "runtime-go/internal/adapter/agui_test.go": "550271dc6f56d5ffbb7274057f232dc1997b397ea4b136847f76734b6e681df7",
     "runtime-go/internal/adapter/agui.go": "3048e7b089444220c90f14c8f62b01dacfd31a2ed2f1a4b78d60d423da7565af",
     "runtime-go/internal/adapter/backpressure_test.go": "544af6ce63ee1a0cafc26b7f22769bc711918b7e816520a014b69b0392f6026b",
     "runtime-go/internal/adapter/waitmapping.go": "26b5bf1fb6eda66980287de53d084f84edb06a494f6bf5c6fdf15fe81ad704e1",
@@ -87,17 +74,17 @@
     "runtime-go/internal/callback/client.go": "44e3d8b3b998dcf60ae9539ed966ca2683030885bd600c635aed6ad5c78eebcd",
     "runtime-go/internal/identity/context_test.go": "c9cd3b801ab07c84257cc2a32170c4e8a6c836dd34a3dc41c9cf07acfe81fce9",
     "runtime-go/internal/identity/context.go": "9fc0a382ffbb13832998aafdecc5609edf531a2a16b7778f285347e7c288ca4f",
-    "runtime-go/internal/runtimeconfig/config_test.go": "ae370c24c2a3a895b781dc2526094535596d4ec57cf3bf054415bed0b3f375f3",
-    "runtime-go/internal/runtimeconfig/config.go": "0d2781e19619b89fe4301fc3a18a35fc217dfebaa92e7a92724bc6fb95a3f8db",
-    "runtime-go/internal/server/auth_test.go": "2dcb2582f360da4f7be4f242b815a46afd7040720f589273e9e03b997f233a3a",
-    "runtime-go/internal/server/auth.go": "92f24a191e43f6cc6b70f903f7af0c150e4bc2b2cf88480a6ac804ad312139a8",
+    "runtime-go/internal/runtimeconfig/config_test.go": "5b90c8e81d2fbda90ad5a3cf1030a1fa74238ae5938314549446d870670069a7",
+    "runtime-go/internal/runtimeconfig/config.go": "164958cf7b9054550d18134be657b5244a81769508345437bb234f9ba6a83ed4",
+    "runtime-go/internal/server/auth_test.go": "30faaf75c2468bc80ea635e4de39ea556c95370dbaccf0d189d658b6c96b8c33",
+    "runtime-go/internal/server/auth.go": "808d8d97744b6f9bf7fdb6b4fd17efe5bba50e863bd2733f725f2377f96d087f",
     "runtime-go/internal/server/cancel_test.go": "07f10446b55088fd09979818f3e650c7c3476b393a52d9030982a92302a6894f",
     "runtime-go/internal/server/cancel.go": "3070f7dffcdadfe982c26972ff9e38914f081a75ba4a8b5d8d820acd27640960",
     "runtime-go/internal/server/executions_test.go": "2c8b2086e37d761b5e5a8e6650cb64c50a2c243812ed1c5cbb9f1951624d95c2",
     "runtime-go/internal/server/executions.go": "0fef8ed169a98a8eee316bffa29d4fd3626e741c5b483bec1dd27cc26cfdc743",
     "runtime-go/internal/server/health_test.go": "ad1f04c3cc1d68f251f383bdd392d90dee198429e72001f70c47a021d9e4c040",
     "runtime-go/internal/server/health.go": "abf1deee86dcec5c3624cfaf4d2f6f04b36a2e98961f86e37c56cc0e08980f1e",
-    "runtime-go/internal/server/inputguard_test.go": "444347329c6ee998adcae7bea6797a97f6b43d4ad4eb069f484cd394b11632ed",
+    "runtime-go/internal/server/inputguard_test.go": "76c4f2e56eb79bc177caf80fa8fe0fd2db0585ed65094f07eb7ee3a677394989",
     "runtime-go/internal/server/inputguard.go": "e6635b1eb642e58258e1ac9a6e80868656700905a0547649eeb53b0ad90596ed",
     "runtime-go/internal/server/runs_test.go": "b22cf35b59b9b235db09afe6364c7d0879ac9e25b616eb9d9b1de59dac14df59",
     "runtime-go/internal/server/runs.go": "a2dba8a6991310a1a7b1979fafdca8c3d9ca9d222522aca2b552641b288ed8df",
@@ -763,7 +750,7 @@
         "go",
         "build",
         "-o",
-        "/var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/openbot-runtime-probe-HQkZU8/openbot-runtime",
+        "/var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/openbot-runtime-probe-PSmvd6/openbot-runtime",
         "./cmd/runtime"
       ],
       "exitCode": 0,
@@ -775,7 +762,7 @@
         "-o",
         "rss=",
         "-p",
-        "97215"
+        "67937"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -786,7 +773,7 @@
         "-o",
         "rss=",
         "-p",
-        "97215"
+        "67937"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -797,7 +784,7 @@
         "-o",
         "rss=",
         "-p",
-        "97215"
+        "67937"
       ],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
@@ -845,7 +832,7 @@
     },
     "wait": {
       "status": "passed",
-      "evidence": "approval-required governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_56f36c11-2793-46cf-86a7-6cd1264151e9\" (want the plane's operation op_56f36c11-2793-46cf-86a7-6cd1264151e9), reason=\"tool_approval\" (want \"tool_approval\"), toolCallId matches the stream's TOOL_CALL_START (\"call_probe\"); receipt-pending governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_ab3224de-af05-46a6-b7ed-d5ff88bedf47\" (want the plane's operation op_ab3224de-af05-46a6-b7ed-d5ff88bedf47), reason=\"operation_receipt_pending\" (want \"operation_receipt_pending\"), receipt status=\"submitted\" (want \"submitted\", the spend crossed but froze); platform mapping: wait run -> waiting_approval (want waiting_approval), receipt run -> suspended_reconciliation (want suspended_reconciliation), plain success -> succeeded (want succeeded); plane effects stayed at 1 (nothing succeeded beyond the tool check)"
+      "evidence": "approval-required governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_d31ddfba-a4bf-4e30-a1a8-78abeda0ce69\" (want the plane's operation op_d31ddfba-a4bf-4e30-a1a8-78abeda0ce69), reason=\"tool_approval\" (want \"tool_approval\"), toolCallId matches the stream's TOOL_CALL_START (\"call_probe\"); receipt-pending governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_af610219-94f2-4369-951b-785ae0f2c6ad\" (want the plane's operation op_af610219-94f2-4369-951b-785ae0f2c6ad), reason=\"operation_receipt_pending\" (want \"operation_receipt_pending\"), receipt status=\"submitted\" (want \"submitted\", the spend crossed but froze); platform mapping: wait run -> waiting_approval (want waiting_approval), receipt run -> suspended_reconciliation (want suspended_reconciliation), plain success -> succeeded (want succeeded); plane effects stayed at 1 (nothing succeeded beyond the tool check)"
     },
     "error": {
       "status": "passed",
@@ -853,11 +840,11 @@
     },
     "cancel": {
       "status": "passed",
-      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 3ms after the cancel"
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 1ms after the cancel"
     },
     "backpressure": {
       "status": "passed",
-      "evidence": "a consumer stalled 4000ms mid-run received the whole stream afterwards: 520 events, joined deltas byte-identical to the 2097152-byte fixture (2097152 bytes joined, 2170587 bytes on the wire), 1 TOOL_CALL_START with its succeeded receipt intact, exactly one terminal last; runtime RSS during the stall 38453248 vs 31801344 at the stall's start (bounded, want <32 MiB growth); provider asked 2 times (want 2: the tool call, then the long answer). Mechanism proof (a stalled consumer blocks the producer; nothing buffered): runtime-go internal/adapter TestSlowConsumerBlocksTheProviderAndLosesNothing"
+      "evidence": "a consumer stalled 4000ms mid-run received the whole stream afterwards: 520 events, joined deltas byte-identical to the 2097152-byte fixture (2097152 bytes joined, 2170587 bytes on the wire), 1 TOOL_CALL_START with its succeeded receipt intact, exactly one terminal last; runtime RSS during the stall 28966912 vs 31883264 at the stall's start (bounded, want <32 MiB growth); provider asked 2 times (want 2: the tool call, then the long answer). Mechanism proof (a stalled consumer blocks the producer; nothing buffered): runtime-go internal/adapter TestSlowConsumerBlocksTheProviderAndLosesNothing"
     },
     "restart": {
       "status": "passed",
@@ -890,11 +877,11 @@
     }
   },
   "measurements": {
-    "rssBytes": 25149440,
-    "firstEventMs": 3,
-    "cancelLagMs": 3,
-    "streamDurationMs": 4,
-    "slowConsumerStallRssBytes": 38453248,
+    "rssBytes": 25477120,
+    "firstEventMs": 7,
+    "cancelLagMs": 1,
+    "streamDurationMs": 10,
+    "slowConsumerStallRssBytes": 28966912,
     "slowConsumerStreamBytes": 2170587,
     "slowConsumerStallMs": 4000
   },

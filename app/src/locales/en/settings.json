@@ -7,7 +7,25 @@
     "general": "General",
     "connectedAccounts": "Connected accounts",
     "passwords": "Passwords",
-    "componentsGallery": "Components gallery"
+    "componentsGallery": "Components gallery",
+    "entitlements": "Entitlements",
+    "usage": "Usage"
+  },
+  "billing": {
+    "title": "Entitlements",
+    "description": "What this deployment's plan unlocks. An administrator changes the plan; everybody reads the result here.",
+    "includedTitle": "Included in your plan",
+    "includedDescription": "The capabilities this deployment is entitled to.",
+    "noCodes": "This plan grants no extra capabilities.",
+    "inactive": "This deployment has no active plan."
+  },
+  "usagePage": {
+    "title": "Usage",
+    "description": "What this deployment has used in the current billing period.",
+    "currentPeriod": "Current period",
+    "totalThisPeriod": "Total this period:",
+    "noCharges": "Nothing has been used against this plan yet.",
+    "noSubscription": "There is no active subscription to measure usage against."
   },
   "darkTheme": "Dark theme",
   "darkThemeDescription": "Use the dark appearance across OpenBot.",

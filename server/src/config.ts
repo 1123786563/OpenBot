@@ -381,7 +381,7 @@ export type DeploymentConfig = {
   workerSharedSecret?: string;
 };
 
-type Environment = Record<string, string | undefined>;
+export type Environment = Record<string, string | undefined>;
 
 /**
  * The caps, read from the environment, refusing anything that is not a whole number at least zero.
@@ -449,7 +449,7 @@ function isProduction(environment: Environment): boolean {
  */
 const PLACEHOLDER_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
-function keyEncryptionKey(environment: Environment): string {
+export function keyEncryptionKey(environment: Environment): string {
   const value = required(environment, "KEY_ENCRYPTION_KEY");
   const decoded = Buffer.from(value, "base64");
 
@@ -941,6 +941,24 @@ function casdoorAuth(
     );
   }
   return { ...client, issuer };
+}
+
+/**
+ * Sign-in configuration on its own, for entries that authenticate people but run none of the rest.
+ *
+ * The enterprise API (plan 02 §7 T3-B) proves somebody is a person and then asks the tenancy
+ * directory which enterprises that person belongs to — it has no Intelligence runtime, no
+ * transcription, no managed agent, and must not be forced to configure any of them just to check a
+ * session cookie. This is the same `authConfig` `loadConfig` resolves — the same Google client
+ * argument, and Microsoft/Okta/Casdoor resolved inside it — so the enterprise entry and the legacy
+ * deployment admit exactly the same people with exactly the same rules. A thin wrapper on purpose:
+ * the parsing, the refusal of half-configured providers and the INITIAL_ADMIN_EMAILS floor live in
+ * ONE place, not in a second copy an entry could drift from.
+ */
+export function loadIdentityConfig(
+  environment: Environment,
+): AuthConfig | undefined {
+  return authConfig(environment, oauthClient(environment, "GOOGLE"));
 }
 
 /**
@@ -1527,7 +1545,10 @@ export function loadConfig(
     openConnectorUrl:
       optional(environment, "OPENCONNECTOR_URL") ?? "http://localhost:3100",
     openConnectorAdminToken: optional(environment, "OPENCONNECTOR_ADMIN_TOKEN"),
-    openConnectorRuntimeToken: optional(environment, "OPENCONNECTOR_RUNTIME_TOKEN"),
+    openConnectorRuntimeToken: optional(
+      environment,
+      "OPENCONNECTOR_RUNTIME_TOKEN",
+    ),
     publicUrl: (
       optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
     )?.replace(/\/+$/, ""),

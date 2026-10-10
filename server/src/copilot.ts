@@ -1,5 +1,6 @@
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { BuiltInAgentConfiguration } from "@copilotkit/runtime/v2";
 import {
   BuiltInAgent,
@@ -340,6 +341,27 @@ export function standingInstructionsGuidance(
   ].join("\n\n");
 }
 
+/**
+ * The model a built-in Bot runs on, as the runtime's agent config takes it.
+ *
+ * `OPENAI_BASE_URL` is documented as an endpoint speaking `/v1/chat/completions`, but the runtime's
+ * own `openai/...` string resolution calls the Responses API on whatever base it was given, which
+ * such endpoints do not implement — a gateway deployment fails every run with a 404 from
+ * `/responses`. So a named base URL gets the chat-completions model instance built here (pinned to
+ * the SDK version the runtime itself ships, so there is never a second AI SDK in the process);
+ * official OpenAI, which has the Responses API, and Anthropic keep the runtime's string form.
+ */
+function runtimeModel(model: RuntimeModel, apiKey: string | null) {
+  if (model.provider !== "openai")
+    return `${model.provider}/${model.defaultModel}`;
+  const baseURL = process.env.OPENAI_BASE_URL?.trim();
+  if (!baseURL) return `openai/${model.defaultModel}`;
+  return createOpenAI({
+    apiKey: apiKey ?? undefined,
+    baseURL,
+  }).chat(model.defaultModel);
+}
+
 export function builtInAgentConfiguration(
   agent: RegisteredBuiltInAgent,
   model: RuntimeModel,
@@ -401,7 +423,7 @@ export function builtInAgentConfiguration(
   ];
 
   return {
-    model: planModel ?? `${model.provider}/${model.defaultModel}`,
+    model: planModel ?? runtimeModel(model, apiKey),
     /*
      * The package's role, then the person's own standing instructions, then what this Bot actually
      * holds, then the computer.
@@ -2035,6 +2057,48 @@ class IntelligenceKnowingANewThread extends CopilotKitIntelligence {
  */
 const THREAD_LOCK_TTL_SECONDS = 120;
 
+/**
+ * One retry for the Intelligence platform's reads on a connection-level failure.
+ *
+ * The platform is an ocean away from many deployments, and one reset socket on a thread read kills
+ * the whole run: the runtime's client makes a single attempt and the run handler surfaces the error
+ * as "Failed to initialize thread", which a person experiences as a message that never gets a
+ * reply. A GET can always be replayed, so the platform's host gets exactly one retry, and only for
+ * a connection that died — a clean HTTP answer, any status, is the platform's decision and stands.
+ * Everything else keeps the single-shot fetch it had: writes are not ours to make safe to replay,
+ * and other hosts are none of this deployment's business.
+ */
+export function retryIntelligenceReads(apiUrl: string) {
+  const host = apiUrl.replace(/\/+$/, "");
+  const single = globalThis.fetch;
+  const retrying: typeof fetch = Object.assign(
+    (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      const method = (
+        init?.method ?? (input instanceof Request ? input.method : "GET")
+      ).toUpperCase();
+      if (method !== "GET" || !url.startsWith(host)) return single(input, init);
+      // The retry goes to `single`, not to this wrapper, so it cannot recurse into a second retry.
+      return single(input, init).catch((error: unknown) => {
+        const cause = (error as { cause?: unknown })?.cause ?? error;
+        const message = String(
+          (cause as { message?: unknown })?.message ?? cause ?? error,
+        );
+        if (!/ECONNRESET|EPIPE|socket connection was closed/i.test(message))
+          throw error;
+        return single(input, init);
+      });
+    },
+    { preconnect: single.preconnect },
+  );
+  globalThis.fetch = retrying;
+}
+
 export function mountCopilotRuntime(
   config: DeploymentConfig,
   resolver: ActorAgentResolver,
@@ -2048,6 +2112,8 @@ export function mountCopilotRuntime(
 ) {
   const { intelligence } = config.runtime;
   const { basePath = "/api/copilotkit", onRunBusy, learningSettings } = options;
+  // Installed once, at the one place the platform's client is wired into this deployment.
+  retryIntelligenceReads(intelligence.apiUrl);
 
   /**
    * The same Bot a person's run would get, built without a request.
