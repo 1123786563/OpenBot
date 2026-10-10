@@ -146,6 +146,8 @@ import { createVoiceProvider } from "./voice/provider";
 import { createVoiceRoutes } from "./voice/routes";
 import type { VoiceSessionServices } from "./voice/session-routes";
 
+const log = getLogger("server");
+
 /**
  * How much of a multipart body is boundary, headers and other fields rather than file.
  *
@@ -1292,11 +1294,12 @@ export function createApp(
           } catch (error) {
             // Never fatal: the 401 above is already decided and sent. A trail that is briefly
             // unavailable is not a reason to turn a refusal into a 500.
-            console.error(
-              JSON.stringify({
+            log.error(
+              {
                 type: "routine-dispatch-audit-write-failed",
                 error: String(error),
-              }),
+              },
+              "routine-dispatch-audit-write-failed",
             );
           }
         }

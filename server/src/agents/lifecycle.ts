@@ -15,8 +15,10 @@
  * there is nobody who could have paused anything.
  */
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { botLifecycle, updateRoutingPreferences } from "../db/schema/lifecycle";
+const log = getLogger("server");
 
 /** The sentence every skipped dispatch records, so the trail and the run rows say the same thing. */
 export const BOT_PAUSED_REASON = "The Bot is paused, so it did not run.";
@@ -109,12 +111,13 @@ async function readPause(
       .limit(1);
     return Boolean(row?.pausedAt);
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "bot-pause-check-failed",
         agentId,
         error: error instanceof Error ? error.message : String(error),
-      }),
+      },
+      "bot-pause-check-failed",
     );
     return undefined;
   }
@@ -416,11 +419,12 @@ export async function resolveUpdateRoute(input: {
         notify && (transports === "all" || transports.includes(transport)),
     };
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "update-route-lookup-failed",
         error: error instanceof Error ? error.message : String(error),
-      }),
+      },
+      "update-route-lookup-failed",
     );
     return everything;
   }

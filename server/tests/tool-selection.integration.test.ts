@@ -13,6 +13,7 @@ import { buildAGUITextResponse, LLMock } from "@copilotkit/aimock";
 import { AGUIMock } from "@copilotkit/aimock/agui";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
+import { getLogger } from "../../shared/logger";
 import { z } from "zod";
 import {
   buildAgents,
@@ -932,7 +933,9 @@ describe("when selection cannot help", () => {
   });
 
   test("skills that cannot be read are diagnosed and leave the Bot with all of its tools", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     llm.onMessage(/.*/, { type: "text", content: "Here is what I found." });
     try {
       const agents = await buildAgents(
@@ -956,11 +959,10 @@ describe("when selection cannot help", () => {
       expect(offered).toHaveLength(granted.length);
       expect(offered).not.toContain("mcp__github__tool_0");
       expect(diagnostic).toHaveBeenCalledTimes(1);
-      expect(diagnostic).toHaveBeenCalledWith({
-        error: "tool_selection_skill_read_failed",
-        context: { operation: "loadSkills", agentId: "analyst" },
-        timestamp: expect.any(String),
-      });
+      expect(diagnostic).toHaveBeenCalledWith(
+        { operation: "loadSkills", agentId: "analyst" },
+        "tool_selection_skill_read_failed",
+      );
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
     } finally {
@@ -995,7 +997,9 @@ describe("the discovery record", () => {
   });
 
   test("a record that throws does not cost the run and is diagnosed", async () => {
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     answerWith(["drive-audit"]);
     try {
       const agents = await buildAgents(
@@ -1023,9 +1027,8 @@ describe("the discovery record", () => {
       await ask(agents.analyst as never, "read the Drive doc");
       expect(toolsOfferedToModel()).toHaveLength(8);
       expect(diagnostic).toHaveBeenCalledTimes(1);
-      expect(diagnostic).toHaveBeenCalledWith({
-        error: "tool_selection_record_failed",
-        context: {
+      expect(diagnostic).toHaveBeenCalledWith(
+        {
           operation: "record",
           agentId: "analyst",
           reason: "selected",
@@ -1033,8 +1036,8 @@ describe("the discovery record", () => {
           offered: 8,
           skills: ["drive-audit"],
         },
-        timestamp: expect.any(String),
-      });
+        "tool_selection_record_failed",
+      );
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
     } finally {

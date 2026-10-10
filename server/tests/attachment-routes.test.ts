@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../shared/logger";
 import {
   attachmentUrl,
   MAX_ATTACHMENTS_PER_MESSAGE,
@@ -277,9 +278,15 @@ async function withCapturedErrorLog<T>(
   work: () => Promise<T>,
 ): Promise<{ result: T; logged: string[] }> {
   const logged: string[] = [];
-  const spy = spyOn(console, "error").mockImplementation(
+  const spy = spyOn(getLogger("server"), "error").mockImplementation(
     (...args: unknown[]) => {
-      logged.push(args.map((argument) => String(argument)).join(" "));
+      logged.push(
+        args
+          .map((argument) =>
+            typeof argument === "string" ? argument : JSON.stringify(argument),
+          )
+          .join(" "),
+      );
     },
   );
   try {
@@ -1173,7 +1180,7 @@ describe("POST /:channelId/attachments", () => {
     // The sniffed type and the size are in the line because "the disk is full" and "one 8 MiB
     // upload is being retried in a loop" look identical without them.
     expect(logged.some((line) => line.includes("text/plain"))).toBe(true);
-    expect(logged.some((line) => line.includes("5 bytes"))).toBe(true);
+    expect(logged.some((line) => line.includes('"bytes":5'))).toBe(true);
   });
   /*
    * A REFUSAL THAT NAMES A NUMBER BELOW THE LIMIT IS A REFUSAL THAT CONTRADICTS ITSELF.
@@ -3175,9 +3182,17 @@ describe("markAttachmentsSent", () => {
     // Collected into a local rather than read off the spy, because `mockRestore` clears the recorded
     // calls and the assertion below would then be made against an empty log whatever happened.
     const logged: string[] = [];
-    const consoleError = spyOn(console, "error").mockImplementation(
+    const consoleError = spyOn(getLogger("server"), "error").mockImplementation(
       (...args: unknown[]) => {
-        logged.push(args.map(String).join(" "));
+        logged.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
       },
     );
     let raised: unknown;

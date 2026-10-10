@@ -21,8 +21,10 @@
  * A second half-right copy grown next to it is the duplicated firing mechanism #235 exists to
  * prevent.
  */
+import { getLogger } from "../../../shared/logger";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { RoutineRefusedError, type RoutineStore } from "./store";
+const log = getLogger("server");
 
 export const ROUTINE_FIRE_KIND = "routine.fire";
 
@@ -141,11 +143,12 @@ export async function offerDueRoutines(
   try {
     await options.routineStore.recordSweep(options.owner);
   } catch (error) {
-    console.warn(
-      JSON.stringify({
+    log.warn(
+      {
         type: "routine-sweep-heartbeat-failed",
         reason: error instanceof Error ? error.message : String(error),
-      }),
+      },
+      "routine-sweep-heartbeat-failed",
     );
   }
 
@@ -229,25 +232,27 @@ export async function offerDueRoutines(
         } catch (markError) {
           // Best-effort: a switch-off that failed leaves the loud warning below, and the next pass
           // will be back here to try the switch-off again.
-          console.warn(
-            JSON.stringify({
+          log.warn(
+            {
               type: "routine-sweep-disable-failed",
               routineId: routine.id,
               reason: String(markError),
-            }),
+            },
+            "routine-sweep-disable-failed",
           );
         }
       }
       // Said out loud, with the routine in it: a pass that swallowed this would look clean while
       // one routine was switched off, or failed to be.
-      console.warn(
-        JSON.stringify({
+      log.warn(
+        {
           type: "routine-sweep-offer-failed",
           routineId: routine.id,
           scheduledFor: routine.nextRunAt.toISOString(),
           reason:
             error instanceof Error ? error.message : "could not be offered",
-        }),
+        },
+        "routine-sweep-offer-failed",
       );
     }
   }
@@ -309,14 +314,15 @@ export async function dispatchClaimedRoutines(
       "the server never finished this run; it may have restarted mid-turn, or the run may never have been dispatched",
     );
     if (reaped > 0) {
-      console.warn(JSON.stringify({ type: "routine-runs-reaped", reaped }));
+      log.warn({ type: "routine-runs-reaped", reaped }, "routine-runs-reaped");
     }
   } catch (error) {
-    console.warn(
-      JSON.stringify({
+    log.warn(
+      {
         type: "routine-run-reap-failed",
         reason: String(error),
-      }),
+      },
+      "routine-run-reap-failed",
     );
   }
 
@@ -441,14 +447,15 @@ export async function dispatchClaimedRoutines(
          * minute and dispatch it again. Said out loud, because it is the shape of a duplicate run and
          * nothing else in the system will mention it.
          */
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "routine-fire-redelivery-possible",
             routineId,
             runId,
             reason:
               "the lease had gone by the time the dispatch came back, so the firing may be redelivered",
-          }),
+          },
+          "routine-fire-redelivery-possible",
         );
       }
       report.fired.push(routineId);
@@ -476,12 +483,13 @@ export async function dispatchClaimedRoutines(
       } catch (releaseError) {
         // Best-effort: an item that could not even be released has a lease that will lapse on its
         // own, and the pass still has other firings to get through.
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "routine-fire-release-failed",
             routineId,
             reason: String(releaseError),
-          }),
+          },
+          "routine-fire-release-failed",
         );
       }
       /*
@@ -495,25 +503,27 @@ export async function dispatchClaimedRoutines(
         // The run rows the attempts opened are NOT closed here: one of them may be a turn a wedged
         // server accepted after the dispatch timed out, and only age can tell (see the comment at
         // the dispatch). The reaper closes them on a later pass; this branch only has to say so.
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "routine-fire-gave-up",
             routineId,
             key: item.key,
             attempts: item.attempts,
             reason,
-          }),
+          },
+          "routine-fire-gave-up",
         );
       } else if (!released) {
         // Not ours any more, which means somebody else holds it: worth a line, because a release that
         // did nothing leaves this pass's failure recorded nowhere on the row.
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "routine-fire-release-lost",
             routineId,
             key: item.key,
             reason,
-          }),
+          },
+          "routine-fire-release-lost",
         );
       }
       report.skipped.push({ routineId, reason });
@@ -542,13 +552,14 @@ async function finishOrSay(
     owner: options.owner,
   });
   if (!finished) {
-    console.warn(
-      JSON.stringify({
+    log.warn(
+      {
         type: "routine-fire-finish-lost",
         routineId,
         key,
         reason,
-      }),
+      },
+      "routine-fire-finish-lost",
     );
   }
 }

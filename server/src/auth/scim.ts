@@ -18,11 +18,13 @@
  */
 import type { SCIMOptions } from "@better-auth/scim";
 import { eq } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { revokedAccess, userRoles, users } from "../db/schema";
 import { enterpriseControls } from "../admin/controls";
 import { roleForEmail } from "./roles";
+const log = getLogger("server");
 
 export const SCIM_REVOKED_BY_PREFIX = "scim:";
 
@@ -91,11 +93,12 @@ export async function reconcileDirectoryState(
           });
         }
       })().catch((error) =>
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "scim-offboard-failed",
             error: String(error),
-          }),
+          },
+          "scim-offboard-failed",
         ),
       );
     }, 0);

@@ -20,8 +20,10 @@
 import { createVerify, X509Certificate } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import { deliverToTrigger, type TriggerIngressDeps } from "./trigger-routes";
 import { matchesFilter } from "./triggers";
+const log = getLogger("server");
 
 export type InboundEmailConfig = { domain: string; topicArns: string[] };
 
@@ -264,12 +266,13 @@ export function createEmailTriggerRoutes(
     }),
   );
   routes.onError((error, context) => {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "email-trigger-error",
         errorType: error.name,
         error: error.message,
-      }),
+      },
+      "email-trigger-error",
     );
     return context.json(
       { error: "The email could not be accepted. Try again." },

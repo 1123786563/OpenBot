@@ -18,6 +18,7 @@ import {
   MAX_IMAGE_BYTES,
   namesNoFormat,
 } from "../../../shared/attachments";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -28,6 +29,7 @@ import {
 } from "../db/schema";
 import { sniffMimeType } from "./attachment-mime";
 import type { StoredAttachment } from "./attachment-parts";
+const log = getLogger("server");
 
 function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
@@ -412,9 +414,14 @@ export async function markAttachmentsSent(
       // The ids that are actually unaccounted for, not the whole list that was asked about: a
       // message may name four files and have one of them go missing, and it is the one that has to
       // be findable from a log line.
-      console.error(
-        `Could not record attachments as sent for ${turn.actorId} in ${turn.threadId}: ${unrecorded.join(", ")}.`,
-        error,
+      log.error(
+        {
+          err: error,
+          actorId: turn.actorId,
+          threadId: turn.threadId,
+          unrecorded: unrecorded.join(", "),
+        },
+        "Could not record attachments as sent",
       );
       return unrecorded;
     });
@@ -784,9 +791,13 @@ export function createChannelAttachmentRoutes(
       // FIRST: without it a database that cannot answer takes the door out before the body is even
       // read, as a plain-text 500 the composer can only report as "could not upload".
       .catch((error: unknown) => {
-        console.error(
-          `Could not check ${actor.id}'s membership of ${channelId} for an upload.`,
-          error,
+        log.error(
+          {
+            err: error,
+            actorId: actor.id,
+            channelId,
+          },
+          "Could not check the actor's membership of the channel for an upload",
         );
         return null;
       });
@@ -1055,9 +1066,15 @@ export function createChannelAttachmentRoutes(
        * right now" and is worth retrying, which is what the sentence tells the person to do.
        */
       .catch((error: unknown) => {
-        console.error(
-          `Could not store an attachment for ${actor.id} in ${channelId} (${mimeType}, ${bytes.byteLength} bytes).`,
-          error,
+        log.error(
+          {
+            err: error,
+            actorId: actor.id,
+            channelId,
+            mimeType,
+            bytes: bytes.byteLength,
+          },
+          "Could not store an attachment",
         );
         return { unavailable: true } as const;
       });
@@ -1446,7 +1463,10 @@ async function readOrNull<TRows>(
   try {
     return await query;
   } catch (error) {
-    console.error(`Could not read attachment ${id} for ${actorId}.`, error);
+    log.error(
+      { err: error, attachmentId: id, actorId },
+      "Could not read an attachment",
+    );
     return null;
   }
 }
@@ -1730,9 +1750,9 @@ export function createAttachmentRoutes(
       // an unguarded throw is a plain-text 500, and the composer's only other reading of a failed
       // withdrawal is that the file is still staged. Say that the store could not be reached.
       .catch((error: unknown) => {
-        console.error(
-          `Could not withdraw attachment ${id} for ${actor.id}.`,
-          error,
+        log.error(
+          { err: error, attachmentId: id, actorId: actor.id },
+          "Could not withdraw an attachment",
         );
         return null;
       });
@@ -1795,9 +1815,9 @@ export function createAttachmentRoutes(
       // delete above already declined to withdraw anything, and answering "no such attachment"
       // because the second query failed would tell the composer to drop a row that is still there.
       .catch((error: unknown) => {
-        console.error(
-          `Could not explain a refused withdrawal of ${id} for ${actor.id}.`,
-          error,
+        log.error(
+          { err: error, attachmentId: id, actorId: actor.id },
+          "Could not explain a refused withdrawal",
         );
         return null;
       });

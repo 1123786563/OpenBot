@@ -10,6 +10,7 @@
  * renewed for as long as the run takes, because a run is minutes and a lease that lapses mid-answer
  * hands the same hop to a second replica and bills for it twice.
  */
+import { getLogger } from "../../../shared/logger";
 import {
   type AuditInitiator,
   type AuditStore,
@@ -20,6 +21,7 @@ import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { HANDOFF_KIND } from "./handoff";
 import { ThreadBusyError } from "./handoff-delivery";
 import { BOT_PAUSED_REASON, isBotPaused } from "./lifecycle";
+const log = getLogger("server");
 
 /** What a hop carries, as `handoff.ts` wrote it. */
 export type HandoffWork = {
@@ -419,9 +421,9 @@ export function createHandoffRunner(options: {
               await relay(work, item.key, answer).catch((failure) => {
                 // The turn happened and is on record; a relay that cannot be queued must not undo
                 // that by failing the hop into a retry and a second turn.
-                console.warn(
+                log.warn(
+                  { err: failure },
                   "Could not queue the relay for a delivered hop.",
-                  failure,
                 );
               });
             }
@@ -461,9 +463,9 @@ export function createHandoffRunner(options: {
               await tell(work, item.key, reason).catch((failure) => {
                 // A notice that cannot be queued must not take the release with it: leaving the row
                 // claimed would be worse than a hop nobody was told about.
-                console.warn(
+                log.warn(
+                  { err: failure },
                   "Could not queue the notice for a hop that failed for good.",
-                  failure,
                 );
               });
             }

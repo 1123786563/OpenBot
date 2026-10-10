@@ -10,9 +10,11 @@ import {
   sql,
 } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import { getLogger } from "../../shared/logger";
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
 import { parsePageLimit } from "./paging";
+const log = getLogger("server");
 
 const sensitiveKeys = new Set([
   "access_token",
@@ -734,12 +736,13 @@ export function createAuditStore(database: Database): AuditStore {
         try {
           tap(row);
         } catch (error) {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "audit-tap-failed",
               eventType: row.eventType,
               error: String(error),
-            }),
+            },
+            "audit-tap-failed",
           );
         }
       }

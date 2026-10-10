@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getLogger } from "../../../shared/logger";
 import { accessFor } from "../plugins/access";
 import type { Decides } from "../plugins/broker";
 import { catalogueEntry } from "../plugins/catalogue";
@@ -11,6 +12,7 @@ import {
   type MemorySource,
   parseMemorySourceInput,
 } from "./types";
+const log = getLogger("server");
 
 const TEXT_FIELDS = ["content", "text", "body", "markdown", "result"] as const;
 const IDENTITY_FIELDS = new Set(["id", "title", "name", "url", "webViewLink"]);
@@ -281,13 +283,14 @@ export function createMemoryIngestion(options: {
         try {
           await sync(source.ownerUserId, source.id);
         } catch (error) {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "memory-sync-error",
               error: error instanceof Error ? error.name : "UnknownError",
               context: { sourceId: source.id },
               timestamp: new Date().toISOString(),
-            }),
+            },
+            "memory-sync-error",
           );
         }
       }

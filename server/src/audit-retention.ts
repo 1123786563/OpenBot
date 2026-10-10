@@ -21,10 +21,12 @@
  * every action writes to.
  */
 import postgres from "postgres";
+import { getLogger } from "../../shared/logger";
 import {
   FRAME_RETENTION_MS,
   type PageFrameStore,
 } from "./computer/page-frames";
+const log = getLogger("server");
 
 /**
  * The advisory lock this takes, as an arbitrary but fixed number.
@@ -141,15 +143,16 @@ export function startRetentionSweeps(
         .purge(FRAME_RETENTION_MS)
         .then((removed) => {
           if (removed === 0) return;
-          console.info(JSON.stringify({ type: "page-frames-swept", removed }));
+          log.info({ type: "page-frames-swept", removed }, "page-frames-swept");
         })
         .catch((error) => {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "page-frames-sweep-failed",
               note: "Old turn screenshots were not removed. Nothing is broken; the table is larger than it should be.",
               error: String(error),
-            }),
+            },
+            "page-frames-sweep-failed",
           );
         });
     }
@@ -157,21 +160,23 @@ export function startRetentionSweeps(
     void sweepAuditTrail(databaseUrl, retentionDays)
       .then(({ deleted }) => {
         if (deleted === null || deleted === 0) return;
-        console.info(
-          JSON.stringify({
+        log.info(
+          {
             type: "audit-retention-swept",
             deleted,
             retentionDays,
-          }),
+          },
+          "audit-retention-swept",
         );
       })
       .catch((error) => {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "audit-retention-failed",
             note: "Old audit rows were not removed. The trail is intact; it is only larger than the policy asks for.",
             error: String(error),
-          }),
+          },
+          "audit-retention-failed",
         );
       });
   };

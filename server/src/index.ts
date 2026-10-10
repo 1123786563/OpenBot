@@ -280,6 +280,7 @@ import {
   startWorkOfferedListener,
   type WorkOfferedListener,
 } from "./work/queue";
+const log = getLogger("server");
 
 /**
  * Who is asking, for a CopilotKit request.
@@ -828,7 +829,7 @@ const accountModes = createAccountModeSwitch({
 // Logo metadata is optional; a vendor outage must not prevent the API from starting.
 if (composio) {
   void backfillComposioLogos(database, composio.broker).catch(() => {
-    console.warn(
+    log.warn(
       "Composio app logos could not be updated. Existing icons remain available; missing logos will be retried on the next restart.",
     );
   });
@@ -996,13 +997,14 @@ void recordAuditEvent(bootAuditStore, {
   },
 }).catch(() => undefined);
 
-console.info(
-  JSON.stringify({
+log.info(
+  {
     type: "computer-isolation",
     provider: computerProvider ? computerProvider.name : "none",
     isolation: isolation.isolation,
     ...(isolation.warning ? { warning: isolation.warning } : {}),
-  }),
+  },
+  "computer-isolation",
 );
 /**
  * One Bot's endpoint must not take down the platform.
@@ -1133,13 +1135,14 @@ const memorySweep = repeatAfterEach(async () => {
   try {
     await memoryIngestion.syncDue();
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "memory-sweep-error",
         error: error instanceof Error ? error.name : "UnknownError",
         context: { operation: "syncDue" },
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "memory-sweep-error",
     );
   }
 }, 60_000);
@@ -1376,7 +1379,7 @@ const agentFetch = createAgentFetch({
       // A trail that cannot be written must not take a refusal down with it: the request is
       // already refused by the time this runs, and the alternative to a logged failure here is
       // an unhandled rejection.
-      console.error("Could not record a refused agent dial.", error);
+      log.error({ err: error }, "Could not record a refused agent dial.");
     });
   },
 });
@@ -1974,16 +1977,18 @@ const responsibilitySweep = repeatAfterEach(async () => {
       report.failed.length ||
       report.waiting.length
     )
-      console.info(
-        JSON.stringify({ type: "responsibility-dispatch", ...report }),
+      log.info(
+        { type: "responsibility-dispatch", ...report },
+        "responsibility-dispatch",
       );
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "responsibility-dispatch-error",
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "responsibility-dispatch-error",
     );
   }
 }, 2_000);
@@ -2197,13 +2202,14 @@ const approvalSweep = repeatAfterEach(async () => {
           });
           return;
         } catch (failure) {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "approval-abandon-error",
               error:
                 failure instanceof Error ? failure.message : String(failure),
               timestamp: new Date().toISOString(),
-            }),
+            },
+            "approval-abandon-error",
           );
         }
       }
@@ -2217,12 +2223,13 @@ const approvalSweep = repeatAfterEach(async () => {
       throw error;
     }
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "approval-resume-error",
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "approval-resume-error",
     );
   }
 }, 2_000);
@@ -2386,12 +2393,13 @@ const proactiveSweep = repeatAfterEach(async () => {
   try {
     await proactiveEngine.sweep();
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "proactive-sweep-error",
         error: error instanceof Error ? error.name : "UnknownError",
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "proactive-sweep-error",
     );
   }
 }, 60_000);
@@ -2436,14 +2444,15 @@ const wakeUpSweep = repeatAfterEach(async () => {
   try {
     const report = await wakeUpRunner.sweep();
     if (report.ran.length || report.skipped.length)
-      console.info(JSON.stringify({ type: "bot-follow-up", ...report }));
+      log.info({ type: "bot-follow-up", ...report }, "bot-follow-up");
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "bot-follow-up-error",
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "bot-follow-up-error",
     );
   }
 }, 5_000);
@@ -2455,12 +2464,13 @@ const deliverySweeps = DELIVERY_WORK_KINDS.map((kind) =>
     try {
       await deliveryRouter.sweep(kind);
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "delivery-worker-error",
           kind,
           errorType: error instanceof Error ? error.name : "UnknownError",
-        }),
+        },
+        "delivery-worker-error",
       );
     }
   }, 2_000),
@@ -2543,12 +2553,13 @@ const groupSweep = repeatAfterEach(async () => {
   try {
     while (await groupConversations.sweep()) {}
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "group-sweep-error",
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "group-sweep-error",
     );
   }
 }, 1_000);
@@ -2637,12 +2648,13 @@ const personResponseSweep = repeatAfterEach(async () => {
       throw error;
     }
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "person-response-error",
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "person-response-error",
     );
   }
 }, 2_000);
@@ -2756,14 +2768,11 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
     try {
       const report = await runner.sweep();
       if (report.delivered.length > 0 || report.skipped.length > 0) {
-        console.info(JSON.stringify({ type: "bot-handoff", ...report }));
+        log.info({ type: "bot-handoff", ...report }, "bot-handoff");
       }
     } catch (error) {
       // A sweep that failed must not take the loop with it: the next one may find the database back.
-      console.warn(
-        "[handoff] a sweep could not run:",
-        error instanceof Error ? error.message : error,
-      );
+      log.warn({ err: error }, "[handoff] a sweep could not run");
     }
   };
 
@@ -2837,12 +2846,12 @@ repeatAfterEach(
     try {
       const purged = await reaper.reap();
       if (purged > 0) {
-        console.info(JSON.stringify({ type: "bot-handoff-reaped", purged }));
+        log.info({ type: "bot-handoff-reaped", purged }, "bot-handoff-reaped");
       }
     } catch (error) {
-      console.warn(
-        "[handoff] hops that are over could not be dropped:",
-        error instanceof Error ? error.message : error,
+      log.warn(
+        { err: error },
+        "[handoff] hops that are over could not be dropped",
       );
     }
   },
@@ -2868,8 +2877,9 @@ repeatAfterEach(async () => {
     await offerChannelsAwaitingSummary(channelSummaries);
     const report = await summariseClaimedChannels(channelSummaries);
     if (report.written.length > 0) {
-      console.info(
-        JSON.stringify({ type: "channel-summaries", written: report.written }),
+      log.info(
+        { type: "channel-summaries", written: report.written },
+        "channel-summaries",
       );
     }
     // Same pass: one statement, deletes by age, and two replicas running it changes nothing.
@@ -2877,10 +2887,7 @@ repeatAfterEach(async () => {
   } catch (error) {
     // Never fatal, and never loud enough to drown the log: a deployment with no model configured
     // reaches this on every pass, and it has not gone wrong, it simply has no titles.
-    console.warn(
-      "[channels] conversations could not be named:",
-      error instanceof Error ? error.message : error,
-    );
+    log.warn({ err: error }, "[channels] conversations could not be named");
   }
 }, 10_000);
 
@@ -3369,13 +3376,14 @@ serve<SocketData>({
                 message.action,
               )
               .catch((error) => {
-                console.error(
-                  JSON.stringify({
+                log.error(
+                  {
                     type: "demonstration-capture-error",
                     error: error instanceof Error ? error.name : "UnknownError",
                     context: { recordingId: data.recordingId },
                     timestamp: new Date().toISOString(),
-                  }),
+                  },
+                  "demonstration-capture-error",
                 );
                 try {
                   ws.send(
@@ -3420,10 +3428,11 @@ serve<SocketData>({
 
 if (config.singleUser) {
   // Loud, every boot. A server that is not checking who is asking should never be a quiet default.
-  console.warn(
-    "No identity provider is configured, so every request is treated as " +
-      `${DEV_ACTOR.email} (administrator). Configure GOOGLE_OAUTH_*, ` +
-      "MICROSOFT_OAUTH_*, OKTA_OAUTH_* or CASDOOR_OAUTH_* before anybody else can reach this.",
+  log.warn(
+    { actor: DEV_ACTOR.email },
+    "No identity provider is configured, so every request is treated as the development actor " +
+      "(administrator). Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*, OKTA_OAUTH_* or " +
+      "CASDOOR_OAUTH_* before anybody else can reach this.",
   );
 }
 
@@ -3450,4 +3459,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.info(`OpenBot server listening on http://127.0.0.1:${port}`);
+log.info({ port }, "OpenBot server listening on http://127.0.0.1");

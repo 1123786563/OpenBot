@@ -15,7 +15,9 @@
  * defeated by a broader rule that grants it, or a company cannot reason about what it has forbidden.
  */
 import { evaluate } from "cel-js";
+import { getLogger } from "../../../shared/logger";
 import type { AuditInitiator, AuditInitiatorKind } from "../audit";
+const log = getLogger("server");
 
 export type PolicyMode = "dry-run" | "enforce";
 
@@ -261,23 +263,25 @@ function matches(
     );
     if (typeof result === "boolean") return result;
 
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "computer-policy-expression-error",
         expression,
         error: `expected a true or false answer, got ${result === null ? "null" : typeof result}`,
         treatedAs: onError,
-      }),
+      },
+      "computer-policy-expression-error",
     );
     return onError;
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "computer-policy-expression-error",
         expression,
         error: String(error),
         treatedAs: onError,
-      }),
+      },
+      "computer-policy-expression-error",
     );
     return onError;
   }
@@ -316,11 +320,12 @@ function enterpriseDecision(context: PolicyContext): PolicyDecision | null {
   try {
     return overlay(context);
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "enterprise-policy-overlay-error",
         error: String(error),
-      }),
+      },
+      "enterprise-policy-overlay-error",
     );
     return {
       allowed: false,

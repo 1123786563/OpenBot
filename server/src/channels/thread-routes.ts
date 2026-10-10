@@ -1,7 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import type { ThreadIdentity } from "./thread-identity";
+const log = getLogger("server");
 
 /**
  * A thread id for a conversation this deployment keeps no channel for.
@@ -81,11 +83,12 @@ export function createThreadRoutes(
         // logged, not its content. The browser gets "the check failed", which is exactly as much as
         // it is owed: enough to know not to trust `known: false`, nothing that was not already true
         // before this request.
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "thread-status-check-failed",
             note: "Could not determine whether Intelligence still has this thread.",
-          }),
+          },
+          "thread-status-check-failed",
         );
         return context.json({ error: "Could not check thread status." }, 502);
       }

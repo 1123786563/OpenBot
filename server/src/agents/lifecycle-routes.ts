@@ -9,6 +9,7 @@
  */
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { ActivityStore } from "../activity/activity";
 import type { AuditEventType, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
@@ -24,6 +25,7 @@ import {
 import type { BotReset } from "./lifecycle-reset";
 import type { AgentActor, AgentProfile } from "./profile-types";
 import type { WakeUpStore } from "./wake-up";
+const log = getLogger("server");
 
 /** The single-user developer's placeholder account, which has no users row to reference. */
 const DEV_ACTOR_EMAIL = "dev@openbot.local";
@@ -69,13 +71,14 @@ export function createBotLifecycleRoutes(
         payload: { bot: agentId, actor: actor?.email ?? "unknown", ...payload },
       });
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "bot-audit-write-failed",
           eventType,
           agentId,
           error: String(error),
-        }),
+        },
+        "bot-audit-write-failed",
       );
     }
   };

@@ -33,6 +33,7 @@
  */
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import { createAuth } from "../auth";
 import type { AuthService } from "../auth/guards";
 import { createDatabase, type Database } from "../db/client";
@@ -42,6 +43,7 @@ import { createResourceReader } from "./authz/repository";
 import { createAuthz } from "./authz/service";
 import type { EnterpriseConfig, RedactedSecurityError } from "./config";
 import { createDirectory } from "./tenancy/directory";
+const log = getLogger("server");
 
 /**
  * The pool seam, per plan T3-C step 1: tests inject a factory whose third call fails, so a boot
@@ -294,12 +296,13 @@ export async function bootstrapEnterprise(
       draining = true;
     };
     const logRedactedSecurityError = (event: RedactedSecurityError): void => {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           request_id: event.requestId,
           status: event.status,
           code: event.code,
-        }),
+        },
+        "redacted-security-error",
       );
     };
     let checkedAt = 0;

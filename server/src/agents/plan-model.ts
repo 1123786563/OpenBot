@@ -3,10 +3,12 @@ import { HttpAgent, type Message, type RunAgentInput } from "@ag-ui/client";
 import { EventSchemas } from "@ag-ui/core/schemas";
 import type { BuiltInAgentClassicConfig } from "@copilotkit/runtime/v2";
 import type { Subscription } from "rxjs";
+import { getLogger } from "../../../shared/logger";
 import {
   clearDesktopConnectionFailure,
   recordDesktopConnectionFailure,
 } from "../desktop-connection-failure";
+const log = getLogger("server");
 
 // Use the model contract of the runtime we actually ship, without a second AI SDK version.
 export type PlanLanguageModel = Extract<
@@ -213,7 +215,7 @@ export class PlanModel implements PlanLanguageModel {
         } catch {
           // No request details: the URL and token belong to the deployment. The
           // harness's finite query timeout remains its final cleanup boundary.
-          console.error("The owned Claude model query could not be cancelled.");
+          log.error("The owned Claude model query could not be cancelled.");
         }
       },
       { once: true },

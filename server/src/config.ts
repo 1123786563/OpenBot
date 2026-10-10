@@ -7,6 +7,7 @@ import {
   isLearningContainerId,
   type LearningTarget,
 } from "../../shared/learning";
+import { getLogger } from "../../shared/logger";
 import { singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
@@ -17,6 +18,7 @@ import {
   transcriptionConfig,
 } from "./dictation/config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
+const log = getLogger("server");
 
 export type RuntimeCapabilities = {
   mode: "intelligence";
@@ -467,7 +469,7 @@ export function keyEncryptionKey(environment: Environment): string {
         "KEY_ENCRYPTION_KEY is still the example key from .env.example, which is public. Generate one with: openssl rand -base64 32",
       );
     }
-    console.warn(
+    log.warn(
       "KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32",
     );
   }
@@ -526,8 +528,11 @@ function singleUserAllowed(
    */
   const shared = reachable.filter((value) => reachOf(value) === "private");
   if (shared.length > 0) {
-    console.warn(
-      `OPENBOT_SINGLE_USER admits every request as one administrator with no sign-in, and this deployment answers on an address beyond this machine: ${shared.join(", ")}. Anybody on that network is that administrator. Configure a sign-in provider before anybody else is on it.`,
+    log.warn(
+      { addresses: shared.join(", ") },
+      "OPENBOT_SINGLE_USER admits every request as one administrator with no sign-in, and this " +
+        "deployment answers on an address beyond this machine. Anybody on that network is that " +
+        "administrator. Configure a sign-in provider before anybody else is on it.",
     );
   }
 
@@ -845,7 +850,7 @@ function authConfig(
     allowedEmailDomains.length === 0 &&
     namesNoDirectory(microsoft?.tenantId)
   ) {
-    console.warn(
+    log.warn(
       "MICROSOFT_OAUTH_TENANT_ID is unset, so it is `common` and any Microsoft account may sign in, including personal ones, and SIGNIN_ALLOWED_EMAIL_DOMAINS names no domain either. Set your directory GUID, or name the domains you admit.",
     );
   }
@@ -1096,7 +1101,7 @@ function privateHostsAllowed(environment: Environment): boolean {
       "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true is for local development only: it lets a Bot reach this deployment's own network. Remove it from this deployment's environment.",
     );
   }
-  console.warn(
+  log.warn(
     "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true lets a Bot reach this machine's own services. Fine locally, and for local development only. Remove it before deploying.",
   );
 
@@ -1368,7 +1373,7 @@ function billingPrivateHostsAllowed(environment: Environment): boolean {
   const raw = optional(environment, "LAGO_ALLOW_PRIVATE_HOSTS");
   const allowed = raw === "true" || raw === "1";
   if (allowed) {
-    console.warn(
+    log.warn(
       "LAGO_ALLOW_PRIVATE_HOSTS=true lets the billing provider sit on this deployment's own network. Fine against a local Lago stack; check that this is deliberate before deploying.",
     );
   }

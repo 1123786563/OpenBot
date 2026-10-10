@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { afterExposureChange } from "../plugins/exposure-change";
 import type { SharedUseStore } from "../plugins/shared-use-store";
@@ -13,6 +14,7 @@ import {
   ResponsibilityRefusedError,
   type ResponsibilityStore,
 } from "./types";
+const log = getLogger("server");
 
 /** User-owned goals. Provider events have separately authenticated ingress. */
 export function createResponsibilityRoutes(
@@ -30,12 +32,13 @@ export function createResponsibilityRoutes(
       return context.json({ error: error.message }, 404);
     if (error instanceof ResponsibilityRefusedError)
       return context.json({ error: error.message }, 400);
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "responsibility-route-error",
         errorType: error.name,
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "responsibility-route-error",
     );
     return context.json(
       { error: "Responsibilities are unavailable. Try again." },

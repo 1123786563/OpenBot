@@ -5,8 +5,10 @@
  * page that was asked for, and read back when somebody reopens the conversation that asked for it.
  */
 import { and, eq, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { computerPageFrame } from "../db/schema";
+const log = getLogger("server");
 
 /**
  * A screenshot, and the ceiling on one.
@@ -84,8 +86,13 @@ export function createPageFrameStore(database: Database): PageFrameStore {
          * its page, which looks exactly like a turn nobody photographed, so without this line a
          * deployment whose pages are all too big has no way to find that out.
          */
-        console.warn(
-          `[computer] a frame of ${input.url} was ${byteLength(input.frame)} bytes and was not kept; the limit is ${MAX_FRAME_BYTES}.`,
+        log.warn(
+          {
+            url: input.url,
+            bytes: byteLength(input.frame),
+            limit: MAX_FRAME_BYTES,
+          },
+          "[computer] a frame was too large and was not kept",
         );
         return;
       }

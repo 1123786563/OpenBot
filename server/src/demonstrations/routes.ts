@@ -1,10 +1,13 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import type { DemonstrationRecorder } from "./recording";
 import { parseDemonstrationSchedule } from "./schedule";
 import type { DemonstrationStore } from "./store";
 import { DemonstrationNotFoundError, DemonstrationRefusedError } from "./types";
+
+const log = getLogger("server");
 export function createDemonstrationRoutes(
   store: DemonstrationStore,
   recorder: DemonstrationRecorder,
@@ -17,13 +20,14 @@ export function createDemonstrationRoutes(
       return context.json({ error: error.message }, 404);
     if (error instanceof DemonstrationRefusedError)
       return context.json({ error: error.message }, 400);
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "demonstration-route-error",
         error: error.name,
         context: { path: context.req.path },
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "demonstration-route-error",
     );
     return context.json(
       { error: "The demonstration could not be saved. Try again." },

@@ -26,7 +26,9 @@ import {
   BatchLogRecordProcessor,
   LoggerProvider,
 } from "@opentelemetry/sdk-logs";
+import { getLogger } from "../../../shared/logger";
 import { scrubCommand } from "./scrub";
+const log = getLogger("server");
 
 export type ExportedEvent = {
   eventType: string;
@@ -193,12 +195,13 @@ export function createOtelEventExporter(
           },
         });
       } catch (error) {
-        console.error(
-          JSON.stringify({
+        log.error(
+          {
             type: "otel-export-failed",
             eventType: event.eventType,
             error: String(error),
-          }),
+          },
+          "otel-export-failed",
         );
       }
     },

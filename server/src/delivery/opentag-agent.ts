@@ -8,6 +8,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import { type ApprovalDecision, approvalPreview } from "../approvals/types";
 import {
   ingestSlackEvent,
@@ -40,6 +41,7 @@ import {
   DeliveryRefusedError,
   type DeliveryScope,
 } from "./types";
+const log = getLogger("server");
 
 /** The approvals service, named by what a paired chat surface may do with it. */
 export type PairedApprovals = {
@@ -117,8 +119,8 @@ export async function handleOpenTagRun(
     input = parseOpenTagRunInput(await request.json());
   } catch (error) {
     // Where the run failed to parse, never what it said: paths and codes only.
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "opentag-run-invalid",
         issues:
           error instanceof z.ZodError
@@ -132,7 +134,8 @@ export async function handleOpenTagRun(
                   code: error instanceof Error ? error.name : "unknown",
                 },
               ],
-      }),
+      },
+      "opentag-run-invalid",
     );
     return Response.json(
       { error: "Supply a valid AG-UI run." },
@@ -169,11 +172,12 @@ export async function handleOpenTagRun(
         });
       emit({ type: "RUN_FINISHED", threadId, runId });
     } catch (error) {
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "opentag-run-error",
           errorType: error instanceof Error ? error.name : "UnknownError",
-        }),
+        },
+        "opentag-run-error",
       );
       emit({
         type: "RUN_ERROR",
@@ -513,13 +517,14 @@ async function feedSlackTriggers(
         : {}),
     });
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "opentag-slack-trigger-error",
         errorType: error instanceof Error ? error.name : "UnknownError",
         message:
           error instanceof Error ? error.message.slice(0, 200) : undefined,
-      }),
+      },
+      "opentag-slack-trigger-error",
     );
   }
 }

@@ -1,9 +1,11 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AppVariables } from "../auth/guards";
 import type { ActionActor } from "../computer/gateway";
 import type { SignInService } from "./service";
 import { SignInRefusedError } from "./types";
+const log = getLogger("server");
 
 /** Same rule as the computer routes: the local development actor is not a users row. */
 const DEV_ACTOR_EMAIL = "dev@openbot.local";
@@ -64,8 +66,9 @@ export function createSignInRoutes(
   routes.onError((error, context) => {
     if (error instanceof SignInRefusedError)
       return context.json({ error: error.message }, error.status);
-    console.error(
-      JSON.stringify({ type: "sign-in-route-error", name: error.name }),
+    log.error(
+      { type: "sign-in-route-error", name: error.name },
+      "sign-in-route-error",
     );
     return context.json({ error: "The sign-in could not be completed." }, 500);
   });
@@ -178,8 +181,9 @@ export function createPasswordRoutes(
   routes.onError((error, context) => {
     if (error instanceof SignInRefusedError)
       return context.json({ error: error.message }, error.status);
-    console.error(
-      JSON.stringify({ type: "passwords-route-error", name: error.name }),
+    log.error(
+      { type: "passwords-route-error", name: error.name },
+      "passwords-route-error",
     );
     return context.json({ error: "Your passwords could not be read." }, 500);
   });

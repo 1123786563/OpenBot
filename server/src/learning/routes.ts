@@ -5,9 +5,11 @@ import type {
   LearningDeliveryStatus,
   LearningOverview,
 } from "../../../shared/learning";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import { type LearningSettingsStore, parseLearningSettings } from "./settings";
+const log = getLogger("server");
 
 type InspectorSnapshot = Awaited<
   ReturnType<CopilotKitIntelligence["getInspectorLearning"]>
@@ -50,8 +52,9 @@ export function createLearningRoutes(
     await next();
   });
   routes.onError((error) => {
-    console.error(
-      JSON.stringify({ type: "learning-admin-error", errorType: error.name }),
+    log.error(
+      { type: "learning-admin-error", errorType: error.name },
+      "learning-admin-error",
     );
     return new Response(
       JSON.stringify({

@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import { resolveUpdateRoute, type UpdateRoute } from "../agents/lifecycle";
 import type { DrawnComponent } from "../routines/runner";
 import type { WorkItem, WorkQueue } from "../work/queue";
@@ -11,6 +12,8 @@ import {
   type DeliveryScope,
   type TextTransport,
 } from "./types";
+
+const log = getLogger("server");
 /** What a paired chat turn produced besides its reply, surfaced in that same turn. */
 export type InlineTurnExtras = {
   approvals: string[];
@@ -644,12 +647,13 @@ export function createDeliveryRouter(deps: {
               try {
                 if ((await owns()) && !stopped) schedule();
               } catch {
-                console.error(
-                  JSON.stringify({
+                log.error(
+                  {
                     type: "delivery-lease-renewal-failed",
                     kind,
                     id: item.key,
-                  }),
+                  },
+                  "delivery-lease-renewal-failed",
                 );
                 lost = true;
                 controller.abort();

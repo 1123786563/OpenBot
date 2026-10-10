@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { getLogger } from "../../shared/logger";
 import { createApp } from "../src/app";
 import { DEV_ACTOR } from "../src/auth/dev-actor";
 import { loadConfig } from "../src/config";
@@ -1172,10 +1173,19 @@ describe("the Composio directory", () => {
     });
 
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       const response = await app.request(
@@ -1192,7 +1202,7 @@ describe("the Composio directory", () => {
         "no managed credentials for this toolkit",
       );
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     // AND NOTHING ON THE CONSOLE. The log below this branch is for the failure whose explanation
@@ -1266,10 +1276,19 @@ describe("the Composio directory", () => {
       );
     });
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       const response = await app.request(
@@ -1288,7 +1307,7 @@ describe("the Composio directory", () => {
       // sentence, and it is the console line that carries it to an operator.
       expect(refusal).not.toContain("Cannot read properties");
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     const line = said.find((said) => said.includes("composio-app-not-enabled"));
@@ -3559,10 +3578,19 @@ describe("removing a server that could not be fully withdrawn", () => {
      * writes and half the broker's, and which half failed is precisely what nobody said.
      */
     const said: string[] = [];
-    const realError = console.error;
-    console.error = (...args: unknown[]) => {
-      said.push(args.map(String).join(" "));
-    };
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      (...args: unknown[]) => {
+        said.push(
+          args
+            .map((argument) =>
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
+            )
+            .join(" "),
+        );
+      },
+    );
 
     try {
       const response = await removalApp(async () => {
@@ -3578,7 +3606,7 @@ describe("removing a server that could not be fully withdrawn", () => {
       // sentence, and the console line is what carries it to an operator.
       expect(refusal).not.toContain("fetch failed");
     } finally {
-      console.error = realError;
+      errorSpy.mockRestore();
     }
 
     const line = said.find((said) => said.includes("mcp-server-not-removed"));

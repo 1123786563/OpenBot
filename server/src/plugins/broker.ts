@@ -473,7 +473,7 @@ export type ConnectedAppBroker = {
    * and wrong quietly — the person fills in what they were shown, a connection is created without
    * the value nobody asked them for, and the first tool call is what discovers it. The `help` on
    * {@link BrokerField} is the vendor's own sentence written for the person filling the box in, and
-   * it is worth more than anything this deployment could invent about somebody else's console.
+   * it is worth more than anything this deployment could invent about somebody else's console output.
    *
    * THE SCHEME IS PASSED IN RATHER THAN RESOLVED HERE, for the reason {@link
    * ConnectedAppBroker.ensureAuthConfig} takes a connection rather than deriving one: the caller

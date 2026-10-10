@@ -1,9 +1,11 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import type { ProactiveEngine } from "./engine";
 import type { ProactiveStore } from "./store";
 import { ProactiveNotFoundError, ProactiveRefusedError } from "./types";
+const log = getLogger("server");
 
 /** `/api/proactive`: a person's background-research settings and the suggestions they produced. */
 export function createProactiveRoutes(
@@ -18,13 +20,14 @@ export function createProactiveRoutes(
       return context.json({ error: error.message }, 404);
     if (error instanceof ProactiveRefusedError)
       return context.json({ error: error.message }, 400);
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "proactive-route-error",
         error: error.name,
         context: { route: context.req.path },
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "proactive-route-error",
     );
     return context.json(
       { error: "Background research is unavailable. Try again." },

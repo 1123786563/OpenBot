@@ -1,4 +1,7 @@
 import type { BillingEntitlements } from "./types";
+import { getLogger } from "../../../shared/logger";
+
+const logger = getLogger("server");
 
 /**
  * The cached entitlement read, one bucket per customer key.
@@ -34,7 +37,7 @@ export function createBillingEntitlementReader(options: {
   const now = options.now ?? Date.now;
   const ttlMs = options.ttlMs ?? ANSWER_TTL_MS;
   const failureTtlMs = options.failureTtlMs ?? FAILURE_TTL_MS;
-  const log = options.log ?? ((message: string) => console.warn(message));
+  const log = options.log ?? ((message: string) => logger.warn(message));
 
   const buckets = new Map<string, Bucket>();
   // Logged once per run of failures, not once per bucket: many customers against one broken

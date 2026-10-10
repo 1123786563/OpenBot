@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { parse } from "yaml";
+import { getLogger } from "../../shared/logger";
 import { DEPLOYMENT_ROUTES } from "./computer/deployment-routes";
 import type { Database } from "./db/client";
 import {
@@ -15,6 +16,7 @@ import {
   skills as skillTable,
   skillTools,
 } from "./db/schema";
+const log = getLogger("server");
 
 const approvedThemeVariables = new Set([
   "--background",
@@ -1049,13 +1051,14 @@ export async function synchronizeTenantPackage(
         .returning({ id: skillTable.id });
 
       if (!seeded) {
-        console.warn(
-          JSON.stringify({
+        log.warn(
+          {
             type: "package-skill-skipped",
             slug: skill.slug,
             reason:
               "a skill written in this deployment already answers to that name, and it keeps it",
-          }),
+          },
+          "package-skill-skipped",
         );
         continue;
       }

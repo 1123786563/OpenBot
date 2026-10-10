@@ -14,6 +14,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import {
   linearTimestampFresh,
@@ -31,6 +32,7 @@ import {
   type TriggerDirectory,
 } from "./triggers";
 import type { ResponsibilityEvent, ResponsibilityEventResult } from "./types";
+const log = getLogger("server");
 
 export const TRIGGER_BODY_LIMIT = 256 * 1024;
 
@@ -96,12 +98,13 @@ export async function deliverToTrigger(
         runIds: result.runIds,
       },
     }).catch((error) =>
-      console.error(
-        JSON.stringify({
+      log.error(
+        {
           type: "responsibility-trigger-audit-failed",
           triggerId: trigger.id,
           error: error instanceof Error ? error.message : String(error),
-        }),
+        },
+        "responsibility-trigger-audit-failed",
       ),
     );
   return { status: "queued", ...result };
@@ -151,13 +154,14 @@ export function createTriggerIngressRoutes(deps: TriggerIngressDeps) {
     }),
   );
   routes.onError((error, context) => {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "responsibility-trigger-error",
         errorType: error.name,
         error: error.message,
         timestamp: new Date().toISOString(),
-      }),
+      },
+      "responsibility-trigger-error",
     );
     return context.json(
       { error: "The event could not be accepted. Try again." },

@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import {
   type DemonstrationRoutineCreator,
   type DemonstrationScheduleInput,
@@ -8,6 +9,8 @@ import {
   DEMONSTRATION_MAX_DURATION_MS,
   DemonstrationRefusedError,
 } from "./types";
+
+const log = getLogger("server");
 /** Only trusted computer output calls this; there is no public action-upload endpoint. */
 export function createDemonstrationRecorder(options: {
   store: Pick<
@@ -48,13 +51,14 @@ export function createDemonstrationRecorder(options: {
       const timer = setTimeout(() => {
         timers.delete(recording.id);
         stop(ownerUserId, recording.id).catch((error) => {
-          console.error(
-            JSON.stringify({
+          log.error(
+            {
               type: "demonstration-time-limit-stop-failed",
               error: error instanceof Error ? error.name : "UnknownError",
               context: { recordingId: recording.id },
               timestamp: new Date().toISOString(),
-            }),
+            },
+            "demonstration-time-limit-stop-failed",
           );
         });
       }, maxDurationMs);

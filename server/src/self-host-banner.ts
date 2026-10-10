@@ -1,4 +1,7 @@
 import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
+import { getLogger } from "../../shared/logger";
+
+const logger = getLogger("server");
 
 /** What Intelligence says this deployment is entitled to. Typed from the client OpenBot already uses. */
 export type RuntimeEntitlementResponse = Awaited<
@@ -78,7 +81,7 @@ export function createSelfHostBanner(options: {
   const ttlMs = options.ttlMs ?? ANSWER_TTL_MS;
   const failureTtlMs = options.failureTtlMs ?? FAILURE_TTL_MS;
   const waitMs = options.waitMs ?? COLD_WAIT_MS;
-  const log = options.log ?? ((message: string) => console.warn(message));
+  const log = options.log ?? ((message: string) => logger.warn(message));
 
   let answer: { shown: boolean; expiresAt: number } | undefined;
   let inFlight: Promise<boolean> | undefined;

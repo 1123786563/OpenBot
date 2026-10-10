@@ -7,6 +7,7 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { genericOAuth, okta } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import { createEnterpriseStore } from "../admin/settings-store";
 import type { AuditEventInput, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
@@ -30,6 +31,7 @@ import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
 import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
 import { recordProvisioned, scimOptions } from "./scim";
+const log = getLogger("server");
 
 /** What a person sees when SSO is required and they tried another way in. */
 /** The native app's custom scheme (mobile/app.config.ts). */
@@ -84,12 +86,13 @@ async function record(
   try {
     await recordAuditEvent(auditStore, event);
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "sign-in-audit-write-failed",
         eventType: event.eventType,
         error: String(error),
-      }),
+      },
+      "sign-in-audit-write-failed",
     );
   }
 }
@@ -108,12 +111,13 @@ export async function stampSignIn(
       })
       .where(eq(users.id, userId));
   } catch (error) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "sign-in-stamp-write-failed",
         userId,
         error: String(error),
-      }),
+      },
+      "sign-in-stamp-write-failed",
     );
   }
 }
@@ -147,12 +151,13 @@ export function mapEntraProfile(profile: Record<string, unknown>) {
 
   const email = claim("email") ?? claim("upn") ?? claim("preferred_username");
   if (!email) {
-    console.error(
-      JSON.stringify({
+    log.error(
+      {
         type: "entra-profile-missing-email",
         note: "Entra returned no email, upn or preferred_username claim, so this person cannot be identified. Add `email` as an optional claim on the app registration, or use a single-tenant MICROSOFT_OAUTH_TENANT_ID.",
         claims: Object.keys(profile),
-      }),
+      },
+      "entra-profile-missing-email",
     );
     return {};
   }
