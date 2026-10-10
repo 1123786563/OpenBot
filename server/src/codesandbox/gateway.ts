@@ -62,6 +62,23 @@ export type CodeRunGatewayOptions = {
     sessionId: string;
     artifacts: SandboxArtifact[];
   }) => Promise<void>;
+  /**
+   * The metering hook, fired once when a run settles WITH usage — the billing pipeline's one
+   * door into this gateway. The row in `code_runs` is the single source of truth for what a
+   * run cost; this hook carries that row's dimensions (bot, owner, session, model, tokens) to
+   * the caller, which reports to the provider with the run id as the idempotency key. Absent
+   * (a deployment without billing) nothing runs, and the row itself is still written.
+   */
+  onUsage?: (input: {
+    runId: string;
+    status: string;
+    sessionId: string | null;
+    botId: string;
+    ownerUserId: string;
+    modelId: string;
+    inputTokens: number;
+    outputTokens: number;
+  }) => Promise<void>;
 };
 
 export type CodeRunRunOptions = {
@@ -221,6 +238,23 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
           outputTokens: result.usage?.outputTokens,
           artifactPaths: JSON.stringify(created),
         });
+        // Metering after the row is durable: the hook is fire-and-contained, keyed by runId.
+        if (options.onUsage && result.usage) {
+          try {
+            await options.onUsage({
+              runId,
+              status: "completed",
+              sessionId,
+              botId: options.botId,
+              ownerUserId: options.ownerUserId,
+              modelId: options.modelId,
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+            });
+          } catch {
+            // Contained like onArtifacts: a metering miss is a billing miss, never a run error.
+          }
+        }
         // The workshop gallery hook, after the run's own row is durable. Contained: a hook
         // failure must not rewrite a completed run's outcome (see CodeRunGatewayOptions).
         if (options.onArtifacts && artifacts.length > 0) {
@@ -353,6 +387,24 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
             inputTokens: result.usage?.inputTokens,
             outputTokens: result.usage?.outputTokens,
           });
+          // The streaming path's metering, at the same settle point the tool path uses: the
+          // row just written is the fact, and the run id is the idempotency key.
+          if (options.onUsage && result.usage) {
+            try {
+              await options.onUsage({
+                runId,
+                status: "completed",
+                sessionId,
+                botId: options.botId,
+                ownerUserId: options.ownerUserId,
+                modelId: options.modelId,
+                inputTokens: result.usage.inputTokens,
+                outputTokens: result.usage.outputTokens,
+              });
+            } catch {
+              // Contained: see the run path's identical block.
+            }
+          }
           streamDone?.();
         })
         .catch(async (error: unknown) => {

@@ -145,6 +145,7 @@ import { createTurnEventBus } from "./workshop/bus";
 import { createWorkshopStore } from "./workshop/store";
 import { createTurnOrchestrator } from "./workshop/orchestrator";
 import { createWorkshopRoutes, type WorkshopRoutesFactory } from "./workshop/routes";
+import { reportCodeRunUsage } from "./workshop/metering";
 import { indexArtifacts } from "./workshop/artifacts";
 import { createCodeRunStore } from "./codesandbox/store";
 import { createSandboxedStore } from "./components/sandboxed";
@@ -3205,6 +3206,18 @@ const credits =
 const sandboxUrl = process.env.AGENT_SANDBOX_URL?.trim();
 const sandboxToken = process.env.SANDBOX_TOKEN?.trim();
 const codeRunStore = createCodeRunStore(database);
+/*
+ * Metering's one door (I4): every gateway finish that carries usage reports to Lago through
+ * this hook. The run id is the transaction id — the provider deduplicates on it, so a replayed
+ * settle is one event, and `code_runs` stays the single source of truth (the workshop's usage
+ * column is a display copy and is never read here). A deployment without billing passes
+ * `billing === undefined` straight through: silent, and the run row still stands.
+ */
+const codeRunUsageReporter = billing
+  ? async (input: Parameters<typeof reportCodeRunUsage>[1]): Promise<void> => {
+      await reportCodeRunUsage(billing.service, input);
+    }
+  : undefined;
 const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
   createCodeRunGateway({
     client:
@@ -3217,6 +3230,7 @@ const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
     initiator: PERSON_INITIATOR,
     store: codeRunStore,
     auditStore: bootAuditStore,
+    ...(codeRunUsageReporter ? { onUsage: codeRunUsageReporter } : {}),
   });
 
 /*
@@ -3258,6 +3272,7 @@ const workshopOrchestrator = createTurnOrchestrator({
       initiator: PERSON_INITIATOR,
       store: codeRunStore,
       auditStore: bootAuditStore,
+      ...(codeRunUsageReporter ? { onUsage: codeRunUsageReporter } : {}),
     }),
   auditStore: bootAuditStore,
   // The Bot's sandbox client for the before/after workspace diff that feeds the gallery.
