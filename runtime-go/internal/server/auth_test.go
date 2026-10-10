@@ -217,6 +217,7 @@ func authed(t *testing.T, stub *validationStub, next http.Handler) http.Handler 
 	return Authenticate(AuthConfig{
 		ServiceCredential:  testCredential,
 		ValidationEndpoint: srv.URL + "/internal/enterprise/v1/runtime/validate",
+		ModelRouteRef:      "route@1",
 	})(next)
 }
 
@@ -236,6 +237,10 @@ func TestAuthDeniesWhenNotConfigured(t *testing.T) {
 	for name, cfg := range map[string]AuthConfig{
 		"no credential": {ValidationEndpoint: "http://127.0.0.1:1/validate"},
 		"no endpoint":   {ServiceCredential: testCredential},
+		"no model route declaration": {
+			ServiceCredential:  testCredential,
+			ValidationEndpoint: "http://127.0.0.1:1/validate",
+		},
 	} {
 		next := &guardedNext{}
 		w := httptest.NewRecorder()
@@ -246,6 +251,46 @@ func TestAuthDeniesWhenNotConfigured(t *testing.T) {
 		if next.invoked() {
 			t.Fatalf("%s: unconfigured runtime let a request through", name)
 		}
+	}
+}
+
+// The route correspondence check (review finding on R2-B③): the envelope's
+// model_route_ref names the route TS approved, and the process was assembled
+// with exactly one fixed model client behind a declarative route ref. A run
+// the plane approved for a DIFFERENT route is a binding refusal here, before
+// WithVerified — TS approving route@2 for a process serving route@1 must not
+// be silently served by route@1's client.
+func TestAuthReadyRequiresTheModelRouteBinding(t *testing.T) {
+	if (AuthConfig{ServiceCredential: "c", ValidationEndpoint: "http://127.0.0.1:1/validate"}).Ready() {
+		t.Fatal("an assembly with no declared model route reported ready")
+	}
+	if !(AuthConfig{
+		ServiceCredential:  "c",
+		ValidationEndpoint: "http://127.0.0.1:1/validate",
+		ModelRouteRef:      "route@1",
+	}).Ready() {
+		t.Fatal("a fully configured assembly refused to report ready")
+	}
+}
+
+func TestAuthDeniesARouteTheAssemblyDoesNotServe(t *testing.T) {
+	stub := newValidationStub(http.StatusOK, envelopeJSON(nil)) // the stub's verified run names route@1
+	srv := httptest.NewServer(stub)
+	t.Cleanup(srv.Close)
+
+	next := &guardedNext{}
+	w := httptest.NewRecorder()
+	Authenticate(AuthConfig{
+		ServiceCredential:  testCredential,
+		ValidationEndpoint: srv.URL + "/internal/enterprise/v1/runtime/validate",
+		ModelRouteRef:      "route@2",
+	})(next.handler()).ServeHTTP(w, validRequest(testRunBody, envelopeJSON(nil)))
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for a route this assembly does not serve", w.Code)
+	}
+	if next.invoked() {
+		t.Fatal("a foreign-route run reached the runner")
 	}
 }
 
@@ -436,6 +481,7 @@ func TestAuthRefusesRedirectedValidation(t *testing.T) {
 	Authenticate(AuthConfig{
 		ServiceCredential:  testCredential,
 		ValidationEndpoint: srv.URL + "/internal/enterprise/v1/runtime/validate",
+		ModelRouteRef:      "route@1",
 	})(next.handler()).ServeHTTP(w, validRequest(testRunBody, envelopeJSON(nil)))
 
 	if w.Code != http.StatusBadGateway {
@@ -473,6 +519,7 @@ func TestAuthRejectsOversizedInboundBody(t *testing.T) {
 	Authenticate(AuthConfig{
 		ServiceCredential:  testCredential,
 		ValidationEndpoint: "http://127.0.0.1:1/internal/enterprise/v1/runtime/validate",
+		ModelRouteRef:      "route@1",
 		MaxInboundBytes:    1 << 20,
 	})(next.handler()).ServeHTTP(w, r)
 
@@ -506,6 +553,7 @@ func TestAuthTimesOutSlowValidationWithoutRetry(t *testing.T) {
 	handler := Authenticate(AuthConfig{
 		ServiceCredential:  testCredential,
 		ValidationEndpoint: srv.URL + "/internal/enterprise/v1/runtime/validate",
+		ModelRouteRef:      "route@1",
 		Timeout:            20 * time.Millisecond,
 	})(next.handler())
 	done := make(chan struct{})

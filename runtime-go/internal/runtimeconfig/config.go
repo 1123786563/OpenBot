@@ -57,6 +57,12 @@ type Config struct {
 	// ModelBaseURL and ModelAlias build the fixed model client; required.
 	ModelBaseURL string
 	ModelAlias   string
+	// ModelRouteRef is the ONE model route this process serves — the
+	// declarative name the TS plane must approve for every run handed to
+	// this assembly. The auth middleware refuses a verified run naming any
+	// other route (403), so a TS approval for a different assembly can never
+	// be silently served by this one's fixed model client; required.
+	ModelRouteRef string
 	// ServiceCredential (platform→runtime) from the environment; required.
 	ServiceCredential string
 	// ModelProviderCredential from the environment; optional (an isolated
@@ -103,6 +109,7 @@ func Load(args []string, env func(string) string) (Config, error) {
 		validationEP  string
 		modelBaseURL  string
 		modelAlias    string
+		modelRouteRef string
 		experts       expertList
 		governedTools string
 		callbackEP    string
@@ -117,6 +124,7 @@ func Load(args []string, env func(string) string) (Config, error) {
 	fs.StringVar(&validationEP, "validation-endpoint", "", "full TS validation URL (/internal/enterprise/v1/runtime/validate); required")
 	fs.StringVar(&modelBaseURL, "model-base-url", "", "OpenAI-compatible provider base URL; required")
 	fs.StringVar(&modelAlias, "model-alias", "", "model alias the fixed client sends; required")
+	fs.StringVar(&modelRouteRef, "model-route-ref", "", "the one model route ref this assembly serves (TS must approve exactly this ref); required")
 	fs.Var(&experts, "expert", "expert catalog entry version=path/to/instruction.txt; repeatable; at least one required")
 	fs.StringVar(&governedTools, "governed-tools", "", "comma-separated platform-governed tool entries name=installation_version; optional")
 	fs.StringVar(&callbackEP, "callback-endpoint", "", "internal tool-invocations plane address (.../internal/enterprise/v1/tool-invocations); required with -governed-tools")
@@ -140,6 +148,9 @@ func Load(args []string, env func(string) string) (Config, error) {
 	}
 	if modelAlias == "" {
 		problems = append(problems, "-model-alias is required")
+	}
+	if strings.TrimSpace(modelRouteRef) == "" {
+		problems = append(problems, "-model-route-ref (the one model route this assembly serves) is required")
 	}
 
 	// OPENBOT_RUNTIME_SERVICE_CREDENTIAL: the platform→runtime shared
@@ -199,6 +210,7 @@ func Load(args []string, env func(string) string) (Config, error) {
 		ValidationEndpoint:      validationEP,
 		ModelBaseURL:            modelBaseURL,
 		ModelAlias:              modelAlias,
+		ModelRouteRef:           strings.TrimSpace(modelRouteRef),
 		ServiceCredential:       serviceCredential,
 		ModelProviderCredential: strings.TrimSpace(env("OPENBOT_RUNTIME_MODEL_CREDENTIAL")),
 		Experts:                 catalog,

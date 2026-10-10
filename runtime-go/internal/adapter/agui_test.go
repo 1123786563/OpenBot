@@ -364,6 +364,7 @@ func newCandidate(t *testing.T, a agent.Agent, provider *httptest.Server, provid
 	authed := server.Authenticate(server.AuthConfig{
 		ServiceCredential:  testServiceCredential,
 		ValidationEndpoint: validation.URL,
+		ModelRouteRef:      "route@1",
 	})(server.RequireVerifiedInput()(handler))
 	ts := httptest.NewServer(authed)
 	t.Cleanup(ts.Close)
