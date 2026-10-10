@@ -20,21 +20,26 @@ export function ProviderSegmented({
       className="border-input inline-flex rounded-lg border p-0.5"
     >
       {providers.map((provider) => (
-        <button
+        // 原生 radio（视觉上 sr-only）而非 button+role：语义即样式所写，
+        // 屏幕阅读器与键盘行为无需手工模拟，name 来自包裹的 label 文本。
+        <label
           key={provider}
-          type="button"
-          role="radio"
-          aria-checked={value === provider}
-          onClick={() => onChange(provider)}
           className={cn(
-            "rounded-md px-3 py-1.5 text-sm transition-colors",
+            "cursor-pointer rounded-md px-3 py-1.5 text-sm transition-colors",
             value === provider
               ? "bg-foreground/5 font-medium"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
+          <input
+            type="radio"
+            name="subscribe-provider"
+            className="sr-only"
+            checked={value === provider}
+            onChange={() => onChange(provider)}
+          />
           {t(`subscribe.provider.${provider}`)}
-        </button>
+        </label>
       ))}
     </div>
   );
