@@ -18,7 +18,8 @@
     "includedTitle": "套餐包含",
     "includedDescription": "这个部署被授权使用的能力。",
     "noCodes": "当前套餐没有附带额外能力。",
-    "inactive": "这个部署没有生效中的套餐。"
+    "inactive": "这个部署没有生效中的套餐。",
+    "goSubscribe": "去订阅"
   },
   "subscribe": {
     "title": "订阅",

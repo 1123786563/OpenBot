@@ -4,15 +4,32 @@ import { client } from "@/lib/client";
 /**
  * The billing seam as the browser sees it.
  *
- * The server keeps the provider's plan vocabulary to itself on both endpoints: entitlements are
- * `{active, codes}` and usage is period, amounts and charges. These types mirror exactly that, so
- * a field added server-side shows up here as a typecheck question rather than a runtime surprise.
+ * The server keeps the provider's plan vocabulary to itself: entitlements are
+ * `{active, planCode?, codes, subscription?}` and the usage answers are period, amounts, charges
+ * and date buckets. These types mirror exactly that, so a field added server-side shows up here
+ * as a typecheck question rather than a runtime surprise.
  */
+
+/** One capability the plan unlocks, with the provider's optional reader-facing wording. */
+export type BillingEntitlementEntry = {
+  code: string;
+  label?: string;
+  description?: string;
+};
+
+/** The subscription behind the entitlements, when the deployment has one. */
+export type BillingEntitlementSubscription = {
+  status: string;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+};
 
 /** What this deployment is entitled to. */
 export type BillingEntitlements = {
   active: boolean;
-  codes: string[];
+  planCode?: string;
+  codes: BillingEntitlementEntry[];
+  subscription?: BillingEntitlementSubscription | null;
 };
 
 /** One charge's usage in the current billing period. */
@@ -33,6 +50,23 @@ export type BillingUsage = {
   amountCents?: number;
   totalAmountCents?: number;
   charges: BillingUsageCharge[];
+};
+
+/** One day of the period's usage, bucketed on the server's clock. */
+export type BillingUsageDailyBucket = {
+  date: string;
+  tokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+};
+
+/** The period's daily buckets, with `truncated` marking a window the provider capped. */
+export type BillingUsageDaily = {
+  fromDatetime?: string;
+  toDatetime?: string;
+  days: BillingUsageDailyBucket[];
+  truncated: boolean;
 };
 
 /** One metered event: the line item behind the aggregate. */
@@ -58,6 +92,7 @@ export type BillingUsageEventPageResponse = {
 export const billingKeys = {
   entitlements: ["billing", "entitlements"] as const,
   usage: ["billing", "usage"] as const,
+  usageDaily: ["billing", "usage-daily"] as const,
   usageEvents: ["billing", "usage-events"] as const,
 };
 
@@ -87,6 +122,24 @@ export const usageQueryOptions = queryOptions({
     return response.json();
   },
 });
+
+/** The period's daily buckets. Always fresh, like every usage answer. */
+export const usageDailyQueryOptions = queryOptions({
+  queryKey: billingKeys.usageDaily,
+  staleTime: 0,
+  queryFn: async (): Promise<BillingUsageDaily> => {
+    const response = await client("/api/billing/usage/daily", {
+      fallback: "Your daily usage could not be loaded.",
+    });
+    return response.json();
+  },
+});
+
+/**
+ * Alias of `usageDailyQueryOptions` under the name the redesign spec gives this query, so either
+ * import site resolves to the one definition.
+ */
+export const billingUsageDailyQueryOptions = usageDailyQueryOptions;
 
 /**
  * The most recent metered events: the line items the aggregate is made of. Always fresh, one
