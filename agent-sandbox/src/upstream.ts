@@ -37,6 +37,11 @@ export function startOpencodeServe(options: UpstreamOptions): Upstream {
         ...(options.env ?? process.env),
         XDG_CONFIG_HOME: options.configDir,
         HOME: options.configDir,
+        // State and cache are NOT the config: a lock or session file left by a SIGKILLed
+        // instance must never wedge the next boot. Ephemeral per boot; only opencode.json
+        // (written by writeOpencodeConfig) lives on the config volume.
+        XDG_DATA_HOME: "/tmp/opencode-data",
+        XDG_CACHE_HOME: "/tmp/opencode-cache",
       },
       stdio: ["ignore", "ignore", "inherit"],
     },
@@ -53,7 +58,11 @@ export function startOpencodeServe(options: UpstreamOptions): Upstream {
     for (;;) {
       if (exitCode !== undefined) throw new Error("opencode serve exited before it was ready.");
       try {
-        const probe = await doFetch(`http://127.0.0.1:${options.port}/doc`);
+        // A per-probe timeout: a fetch that never settles must not wedge the loop past the
+        // deadline below.
+        const probe = await doFetch(`http://127.0.0.1:${options.port}/doc`, {
+          signal: AbortSignal.timeout(2_000),
+        } as RequestInit);
         if (probe.ok) return;
       } catch {
         // Not listening yet; poll until the deadline.

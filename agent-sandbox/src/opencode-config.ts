@@ -44,8 +44,12 @@ export async function writeOpencodeConfig(
     },
     model: `openbot/${env.model}`,
   };
-  const path = join(configDir, "opencode.json");
+  // opencode reads its GLOBAL config from $XDG_CONFIG_HOME/opencode/opencode.json — one level
+  // deeper than the file this volume's first version wrote, which is how a healthy-looking
+  // /config/opencode.json left every model lookup answering "Model not found".
+  const path = join(configDir, "opencode", "opencode.json");
   const temporary = `${path}.${process.pid}.tmp`;
+  await mkdir(join(configDir, "opencode"), { recursive: true });
   await writeFile(temporary, JSON.stringify(body, null, 2), { mode: 0o600 });
   await chmod(temporary, 0o600);
   // Rename over so a half-written file can never be the one opencode reads.

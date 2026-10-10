@@ -166,6 +166,10 @@ services:
     build:
       context: .
       dockerfile: agent-sandbox/Dockerfile
+      # Set NPM_REGISTRY in .env when the default registry is unreachable for the ~60MB opencode
+      # binary packages (e.g. https://registry.npmmirror.com from a constrained network).
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
     image: ${SANDBOX_IMAGE:-openbot-agent-sandbox:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     ports:
@@ -458,6 +462,43 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # The Go runtime candidate (docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md):
+  # a verification-candidate execution runtime the ENTERPRISE entry's run gateway dials.
+  # Off by default — the `go-runtime` profile only starts when asked for:
+  #   docker compose --profile go-runtime up go-runtime
+  # It serves the enterprise wire (three-header authenticated execution/cancel), validates
+  # identity against the enterprise entry's /internal/enterprise/v1/runtime/validate, and calls
+  # governed tools back through /internal/enterprise/v1/tool-invocations. Nothing here touches
+  # the legacy deployment's bot registry.
+  go-runtime:
+    profiles: ["go-runtime"]
+    build:
+      context: ./runtime-go
+      dockerfile: Dockerfile
+    image: ${GO_RUNTIME_IMAGE:-openbot-go-runtime:latest}
+    pull_policy: ${IMAGE_PULL_POLICY:-build}
+    ports:
+      # Loopback only: the enterprise entry (a host process) is the sole caller.
+      - "127.0.0.1:${GO_RUNTIME_PORT:-4203}:4203"
+      - "[::1]:${GO_RUNTIME_PORT:-4203}:4203"
+    environment:
+      # The shared service credential; the enterprise entry must carry the same value.
+      OPENBOT_RUNTIME_SERVICE_CREDENTIAL: ${ENTERPRISE_RUNTIME_SERVICE_CREDENTIAL:-}
+      # The model credential is optional only for the isolated fake provider.
+      OPENBOT_RUNTIME_MODEL_CREDENTIAL: ${ENTERPRISE_RUNTIME_MODEL_CREDENTIAL:-${OPENAI_API_KEY:-}}
+    # Every required flag (runtimeconfig refuses to boot with any missing).
+    command:
+      - "-addr=0.0.0.0:4203"
+      - "-validation-endpoint=${ENTERPRISE_RUNTIME_VALIDATE_URL:-http://host.docker.internal:3101/internal/enterprise/v1/runtime/validate}"
+      - "-model-base-url=${ENTERPRISE_RUNTIME_MODEL_BASE_URL:-https://open.bigmodel.cn/api/coding/paas/v4}"
+      - "-model-alias=${ENTERPRISE_RUNTIME_MODEL_ALIAS:-GLM-5.3}"
+      - "-model-route-ref=${ENTERPRISE_RUNTIME_MODEL_ROUTE_REF:-glm-53-default}"
+      - "-expert=assistant-v1=/experts/assistant-v1.txt"
+      - "-governed-tools=${ENTERPRISE_RUNTIME_GOVERNED_TOOLS:-}"
+      - "-callback-endpoint=${ENTERPRISE_RUNTIME_CALLBACK_URL:-http://host.docker.internal:3101/internal/enterprise/v1/tool-invocations}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # The identity provider OpenBot signs in through, when CASDOOR_OAUTH_* is configured.
   #
