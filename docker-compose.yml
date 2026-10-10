@@ -162,6 +162,39 @@ services:
       timeout: 5s
       retries: 5
 
+  agent-sandbox:
+    build:
+      context: .
+      dockerfile: agent-sandbox/Dockerfile
+    image: ${SANDBOX_IMAGE:-openbot-agent-sandbox:latest}
+    pull_policy: ${IMAGE_PULL_POLICY:-build}
+    ports:
+      # Loopback only: the sandbox runs arbitrary generated code; the token is the request
+      # control and the published loopback keeps the surface off routed networks.
+      - "127.0.0.1:${SANDBOX_PORT:-4300}:4300"
+      - "[::1]:${SANDBOX_PORT:-4300}:4300"
+    # Unprivileged, cap-less, no privilege escalation — the same posture Craft's Docker backend
+    # provisions its per-user sandboxes with (docker_sandbox_manager.py).
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: ${SANDBOX_DOCKER_MEMORY_LIMIT:-2g}
+    cpus: ${SANDBOX_DOCKER_CPU_LIMIT:-2}
+    networks:
+      - openbot_sandbox
+    environment:
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN:-openbot-dev-sandbox-token}
+      # The model route, shared with the server's own GLM configuration in local development.
+      SANDBOX_PROVIDER_BASE_URL: ${OPENAI_BASE_URL}
+      SANDBOX_PROVIDER_API_KEY: ${OPENAI_API_KEY}
+      SANDBOX_MODEL: ${BOT_MODEL:-GLM-5.3}
+    volumes:
+      - openbot-sandbox-workspace:/workspace
+      - openbot-sandbox-config:/config
+    restart: unless-stopped
+
   # Bot identity is attested by SPIRE when these optional services run.
   #
   # SPIRE issues each computer an SVID based on the container labels set by the supervisor. A
@@ -769,6 +802,10 @@ networks:
   # Everything else, which is where `default` already put it. Named here only so that adding a
   # service without a `networks:` key keeps landing beside the Bots rather than beside the database.
   default:
+  # Dedicated bridge: the sandbox resolves nothing of the compose stack by service name
+  # (postgres/redis/minio unreachable), while outbound internet — the model endpoint — still
+  # works. A containerized API server joins this network too when it exists.
+  openbot_sandbox:
 
 volumes:
   postgres-data:
@@ -781,6 +818,8 @@ volumes:
   spire-agent-socket:
   spire-agent-data:
   agent-profiles:
+  openbot-sandbox-workspace:
+  openbot-sandbox-config:
   loki-data:
   tempo-data:
   prometheus-data:
