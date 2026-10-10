@@ -3241,6 +3241,11 @@ const workshopLock = workshopRedisPort
       ttlMs: Number(process.env.WORKSHOP_LOCK_TTL_MS?.trim() || 30_000),
     })
   : createInProcessTurnLock();
+const workshopClientFor = (botId: string) =>
+  sandboxUrl && sandboxToken
+    ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
+    : null;
+
 const workshopOrchestrator = createTurnOrchestrator({
   store: workshopStore,
   lock: workshopLock,
@@ -3255,6 +3260,8 @@ const workshopOrchestrator = createTurnOrchestrator({
       auditStore: bootAuditStore,
     }),
   auditStore: bootAuditStore,
+  // The Bot's sandbox client for the before/after workspace diff that feeds the gallery.
+  clientFor: workshopClientFor,
   // B4's gallery pipeline, on the streaming path: after the turn's stream ends, the new
   // files (a before/after listFiles diff) land in the session's workshop_artifacts rows.
   // Contained here like the gateway's own hook — a gallery miss never fails a turn.
@@ -3262,10 +3269,6 @@ const workshopOrchestrator = createTurnOrchestrator({
     await indexArtifacts(workshopStore, sessionId, artifacts);
   },
 });
-const workshopClientFor = (botId: string) =>
-  sandboxUrl && sandboxToken
-    ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
-    : null;
 const workshopRoutes: WorkshopRoutesFactory = ({ requireUser, canUseBot }) =>
   createWorkshopRoutes({
     requireUser,
