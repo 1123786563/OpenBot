@@ -60,6 +60,16 @@ func main() {
 		log.Fatalf("runtime: %v", err)
 	}
 
+	// Tracing (observability P2): never fatal and off by default, exactly as
+	// the Bun side. Without an endpoint spans are recorded but never
+	// exported; OPENBOT_TRACES=off leaves the globals unregistered, and the
+	// middleware below degenerates to a pass-through on the noop provider.
+	stopTraces, err := server.InitTracing(context.Background(), os.Getenv)
+	if err != nil {
+		log.Printf("runtime: tracing disabled: %v", err)
+		stopTraces = nil
+	}
+
 	// Fixed model client: the TS-approved model_route_ref resolves to THIS
 	// client the process was assembled with. Nothing a request carries can
 	// aim a run at another provider (forwardedProps is dropped by the input
@@ -155,7 +165,10 @@ func main() {
 	mux.Handle(cancelRoute, auth(server.Cancel(adapter.CompositeCanceler(cancelers...), executions)))
 
 	srv := &http.Server{
-		Handler:           mux,
+		// The trace middleware is the outermost layer: one `METHOD path`
+		// span per request across every route, continuing the platform's
+		// W3C traceparent when one arrived.
+		Handler:           server.TraceMiddleware(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -210,6 +223,18 @@ func main() {
 			_ = done()
 		}
 		os.Exit(1)
+	}
+
+	// Flush and retire tracing before the handlers close: the batch exporter
+	// ships what it holds, so the run spans recorded during the drain reach
+	// the collector. Skipped on the not-exited path above — a hard exit
+	// honestly loses those spans with the runs whose outcome is unknown.
+	if stopTraces != nil {
+		flushCtx, cancelFlush := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := stopTraces(flushCtx); err != nil {
+			log.Printf("runtime: flushing tracing failed: %v", err)
+		}
+		cancelFlush()
 	}
 
 	for _, done := range stops {
