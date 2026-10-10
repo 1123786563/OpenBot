@@ -8,7 +8,7 @@ export function browserAddress(value: string): string {
       url.password ||
       /\s/.test(input)
     )
-      throw new Error("Invalid address");
+      throw new Error("地址无效");
     return url.href;
   } catch {
     throw new Error("Enter a website address, like copilotkit.ai or https://news.ycombinator.com.");

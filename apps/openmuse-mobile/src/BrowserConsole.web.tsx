@@ -1,6 +1,6 @@
 export default function BrowserConsole({
   url,
-  title = "Remote browser session console",
+  title = "远程浏览器会话控制台",
   sandboxed = false,
 }: {
   url: string;

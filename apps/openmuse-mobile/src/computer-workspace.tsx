@@ -159,14 +159,14 @@ export function LinuxWorkspace({
             <Text style={s.heading}>Your Linux workspace</Text>
             <Text style={s.muted}>
               {running
-                ? "Running · files persist when stopped"
+                ? "运行中 · 停止后文件仍保留"
                 : snapshot?.status === "stopped"
-                  ? "Stopped · your files are saved"
+                  ? "已停止 · 文件已保存"
                   : snapshot?.status === "unconfigured"
-                    ? "Set up the computer to get started"
+                    ? "先完成计算机设置即可开始"
                     : snapshot?.status === "error"
-                      ? "Connection needs attention"
-                      : "Connecting…"}
+                      ? "连接需要处理"
+                      : "正在连接…"}
             </Text>
           </View>
           {!snapshot && !error && <ActivityIndicator color={colors.blueDark} />}
@@ -176,11 +176,11 @@ export function LinuxWorkspace({
           <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
             {running ? (
               <Button icon={Power} busy={busy} onPress={() => void control("stop")}>
-                Stop computer
+                关闭计算机
               </Button>
             ) : (
               <Button primary icon={Play} busy={busy} onPress={() => void control("start")}>
-                Start computer
+                启动计算机
               </Button>
             )}
             <Button
@@ -218,7 +218,7 @@ export function LinuxWorkspace({
                   TERMINAL
                 </Text>
                 <Field
-                  label="Working directory"
+                  label="工作目录"
                   value={cwd}
                   onChangeText={setCwd}
                   autoCapitalize="none"
@@ -226,7 +226,7 @@ export function LinuxWorkspace({
                   style={{ fontFamily: mono }}
                 />
                 <Field
-                  label="Command"
+                  label="命令"
                   value={command}
                   onChangeText={setCommand}
                   placeholder="pwd"
@@ -260,8 +260,8 @@ export function LinuxWorkspace({
                 </Button>
                 <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>
                   {snapshot.network === "enabled"
-                    ? "Runs on your computer with internet access. Start GUI apps with >/dev/null 2>&1 & to open them on the Desktop tab."
-                    : "Runs on your computer. Network access is off. Use Browser for the web."}
+                    ? "在你的计算机上运行，可访问互联网。用 >/dev/null 2>&1 & 启动图形应用，即可在“桌面”标签页打开。"
+                    : "在你的计算机上运行。网络已关闭。需要上网请使用“浏览器”。"}
                 </Text>
               </View>
             ) : (
@@ -276,14 +276,14 @@ export function LinuxWorkspace({
             )}
             {!!commandRunning && (
               <Text style={s.muted}>
-                Working… The result will appear here. Stop the computer to end running commands.
+                处理中…结果将显示在这里。关闭计算机可结束正在运行的命令。
               </Text>
             )}
             {snapshot.commands.length === 0 ? (
               <Empty
                 icon={Terminal}
-                title="Ready for your first command"
-                detail="Run scripts, work with files, or ask your agent to create something here."
+                title="准备就绪，等待第一条命令"
+                detail="运行脚本、处理文件，或让助手在这里为你创建内容。"
               />
             ) : (
               [...snapshot.commands]
@@ -293,7 +293,7 @@ export function LinuxWorkspace({
             )}
             {snapshot.commands.length > 5 && (
               <Button small onPress={() => setShowHistory(!showHistory)}>
-                {showHistory ? "Show recent commands" : "Earlier commands"}
+                {showHistory ? "显示最近命令" : "更早的命令"}
               </Button>
             )}
           </View>
@@ -315,18 +315,17 @@ function ComputerDesktop({ running }: { running: boolean }) {
     return (
       <Empty
         icon={Monitor}
-        title="Desktop is off"
-        detail="Start the computer to see and control its desktop."
+        title="桌面已关闭"
+        detail="启动计算机后即可查看并控制其桌面。"
       />
     );
   return (
     <View style={{ gap: 12 }}>
       <DesktopStream running />
       <Text style={s.small}>
-        You and your agent share this desktop. Stopping the computer closes its apps; files in
-        /workspace are kept. Opening the desktop keeps the computer awake for 30 minutes; keep this
-        tab open or come back to the app to extend it. The link controls the desktop, so do not
-        share it.
+        你与助手共享此桌面。关闭计算机会结束其应用；/workspace
+        中的文件会保留。打开桌面会让计算机保持唤醒 30
+        分钟；保持此标签页开启或回到应用即可延长。此链接可控制桌面，请勿分享给他人。
       </Text>
     </View>
   );
@@ -379,7 +378,7 @@ function CommandReceipt({ run }: { run: ComputerCommand }) {
             </Text>
           )}
           {!run.stdout && !run.stderr && run.status !== "running" && (
-            <Text style={s.small}>No output</Text>
+            <Text style={s.small}>暂无输出</Text>
           )}
           {run.truncated && (
             <Text style={s.small}>
@@ -390,7 +389,7 @@ function CommandReceipt({ run }: { run: ComputerCommand }) {
       )}
       {!!(run.stdout || run.stderr) && (
         <Button small onPress={() => setExpanded(!expanded)}>
-          {expanded ? "Hide output" : "Show output"}
+          {expanded ? "收起输出" : "查看输出"}
         </Button>
       )}
     </Card>
@@ -530,7 +529,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
   return (
     <View style={{ gap: 12 }}>
       <View style={s.between}>
-        <Text style={s.heading}>Workspace files</Text>
+        <Text style={s.heading}>工作区文件</Text>
         {(busy || loading) && <ActivityIndicator color={colors.blueDark} />}
       </View>
       <Text selectable style={[s.small, { fontFamily: mono }]}>
@@ -539,12 +538,12 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
       <ErrorNotice error={error} />
       {!!notice && <Text style={[s.small, { color: "#248258" }]}>{notice}</Text>}
       {!running && (
-        <Text style={s.muted}>Start the computer to browse or edit its saved files.</Text>
+        <Text style={s.muted}>启动计算机后即可浏览或编辑已保存的文件。</Text>
       )}
       {editor ? (
         <>
           <Field
-            label="File path"
+            label="文件路径"
             value={editor.path}
             onChangeText={(value) => setEditor({ ...editor, path: value })}
             autoCorrect={false}
@@ -552,7 +551,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
             style={{ fontFamily: mono }}
           />
           <Field
-            label="File contents"
+            label="文件内容"
             value={editor.text}
             onChangeText={(value) => setEditor({ ...editor, text: value })}
             multiline
@@ -571,7 +570,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
               disabled={!running || !editor.path.trim()}
               onPress={() => void save()}
             >
-              Save file
+              保存文件
             </Button>
             <Button
               disabled={busy}
@@ -581,7 +580,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
                 setNotice("");
               }}
             >
-              {dirty ? "Discard edits" : "Back to files"}
+              {dirty ? "放弃修改" : "返回文件列表"}
             </Button>
           </View>
         </>
@@ -636,7 +635,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
               icon={Upload}
               onPress={() => setImporting(!importing)}
             >
-              {importing ? "Hide documents" : "Copy a document here"}
+              {importing ? "收起文档" : "复制文档到这里"}
             </Button>
           </View>
           {importing && (
@@ -661,7 +660,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
           {folder !== undefined && (
             <Card style={{ gap: 8 }}>
               <Field
-                label="Folder name"
+                label="文件夹名称"
                 value={folder}
                 onChangeText={setFolder}
                 autoCapitalize="none"
@@ -674,7 +673,7 @@ function ComputerFiles({ running, active }: { running: boolean; active: boolean 
                   busy={busy}
                   onPress={() => void mkdir()}
                 >
-                  Create folder
+                  新建文件夹
                 </Button>
                 <Button disabled={busy} onPress={() => setFolder(undefined)}>
                   Cancel

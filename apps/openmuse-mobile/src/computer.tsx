@@ -28,7 +28,7 @@ export function ComputerEntry() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Agent computer — ${status}`}
+      accessibilityLabel={`助手计算机 — ${status}`}
       onPress={() => open({ type: "computer" })}
       style={[
         s.row,
@@ -73,9 +73,9 @@ export function BrowserThreadCard({ browser }: { browser: BrowserSession }) {
           <Text style={[s.text, { fontWeight: "600" }]}>Browser</Text>
           <Text numberOfLines={1} style={s.small}>
             {browser.status === "closed"
-              ? "Session saved"
+              ? "会话已保存"
               : browser.status === "error"
-                ? "Needs attention"
+                ? "需要处理"
                 : browser.title}
           </Text>
         </View>
@@ -100,16 +100,16 @@ export function BrowserThreadCard({ browser }: { browser: BrowserSession }) {
         >
           <Globe2 size={30} color={colors.muted} />
           <Text numberOfLines={2} style={[s.muted, { textAlign: "center" }]}>
-            {failed ? "Preview unavailable. Open the browser to reconnect." : browser.url}
+            {failed ? "预览不可用。请打开浏览器重新连接。" : browser.url}
           </Text>
         </View>
       )}
       <Button onPress={() => open({ type: "browser", browser })}>
         {browser.status === "closed"
-          ? "Reopen browser"
+          ? "重新打开浏览器"
           : browser.status === "error"
-            ? "Reconnect browser"
-            : "Take control"}
+            ? "重新连接浏览器"
+            : "接管控制"}
       </Button>
     </Card>
   );
@@ -168,8 +168,8 @@ export function ComputerSheet() {
   }
   return (
     <Sheet
-      title="Agent computer"
-      subtitle="Your agent works here. Step in whenever you need."
+      title="助手计算机"
+      subtitle="你的助手在这里工作。需要时可随时接手。"
       onClose={close}
     >
       <View style={{ gap: 20 }}>
@@ -179,11 +179,11 @@ export function ComputerSheet() {
           >
             <Monitor size={28} color={colors.blueDark} />
             <View style={{ flex: 1 }}>
-              <Text style={s.heading}>{available ? "Browser connected" : "Browser offline"}</Text>
+              <Text style={s.heading}>{available ? "浏览器已连接" : "浏览器离线"}</Text>
               <Text style={s.muted}>
                 {available
-                  ? "Your agent’s browser and documents, in one place."
-                  : "Start the browser worker to connect this computer."}
+                  ? "助手的浏览器与文档，集中一处。"
+                  : "启动浏览器工作进程以连接此计算机。"}
               </Text>
             </View>
           </View>
@@ -196,7 +196,7 @@ export function ComputerSheet() {
               icon={tabIcons[item]}
               onPress={() => setTab(item)}
             >
-              {item}
+              {{ Browser: "浏览器", Desktop: "桌面", Terminal: "终端", Files: "文件" }[item] || item}
             </Button>
           ))}
         </View>
@@ -208,7 +208,7 @@ export function ComputerSheet() {
           <>
             <View>
               <Field
-                label="Website address"
+                label="网站地址"
                 value={url}
                 onChangeText={setUrl}
                 placeholder="https://example.com"
@@ -223,7 +223,7 @@ export function ComputerSheet() {
                 disabled={!available || !url.trim()}
                 onPress={() => void create()}
               >
-                Open a browser session
+                打开浏览器会话
               </Button>
             </View>
             {[...workspace.browsers]
@@ -233,8 +233,7 @@ export function ComputerSheet() {
               ))}
             {!workspace.browsers.length && (
               <Text style={s.muted}>
-                Open a page here or ask your agent to research something. Its browsing sessions will
-                appear here.
+                在这里打开页面，或让助手去调研。它的浏览会话会显示在这里。
               </Text>
             )}
             <Text style={s.small}>

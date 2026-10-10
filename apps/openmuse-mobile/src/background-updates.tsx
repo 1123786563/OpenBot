@@ -34,7 +34,7 @@ export function BackgroundUpdates() {
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Dismiss background update"
+          accessibilityLabel="关闭后台更新"
           disabled={busy}
           onPress={() => void dismiss()}
           hitSlop={10}
@@ -51,11 +51,11 @@ export function BackgroundUpdates() {
           icon={ArrowRight}
           onPress={() => update.taskId && open({ type: "task", taskId: update.taskId })}
         >
-          View task
+          查看任务
         </Button>
         {updates.length > 1 && (
           <Button small onPress={() => open({ type: "notifications" })}>
-            {updates.length - 1} more updates
+            还有 {updates.length - 1} 条更新
           </Button>
         )}
       </View>

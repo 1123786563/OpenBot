@@ -50,7 +50,7 @@ export function MailToolCard({
           <Mail size={16} color={colors.muted} />
         )}
         <Text style={s.muted}>
-          {!active ? "Mail reading paused" : search ? "Checking your inbox…" : "Reading the email…"}
+          {!active ? "邮件读取已暂停" : search ? "正在检查收件箱…" : "正在读取邮件…"}
         </Text>
       </View>
     );
@@ -67,7 +67,7 @@ export function MailToolCard({
         <Text style={s.muted}>
           {count
             ? `Found ${parsed.data.truncated ? "at least " : ""}${count} ${count === 1 ? "email" : "emails"}`
-            : "No matching emails"}
+            : "没有匹配的邮件"}
         </Text>
       </View>
     );

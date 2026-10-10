@@ -46,14 +46,14 @@ export function SearchToolCard({ result, loading }: { result: unknown; loading: 
         )}
         <Text style={s.text}>
           {failure
-            ? "Search failed"
+            ? "搜索失败"
             : working
               ? "Searching the web…"
               : loading
-                ? "Search stopped"
+                ? "搜索已停止"
                 : count
                   ? `Found ${count} ${count === 1 ? "source" : "sources"}`
-                  : "No sources found"}
+                  : "未找到来源"}
         </Text>
       </View>
       {!loading && parsed.success && (
