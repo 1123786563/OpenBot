@@ -383,3 +383,130 @@ describe("createLagoClient", () => {
     expect(opened).toBe(0); // the gate ran before the transport, so nothing was sent
   });
 });
+
+describe("createLagoClient getUsage", () => {
+  test("reads the current period's usage and neutralises the wire shape", async () => {
+    const { client, seen } = clientWith(() =>
+      jsonResponse({
+        customer_usage: {
+          from_datetime: "2026-10-01T00:00:00Z",
+          to_datetime: "2026-10-31T23:59:59Z",
+          currency: "USD",
+          amount_cents: 10,
+          total_amount_cents: 12,
+          taxes_amount_cents: 2,
+          charges_usage: [
+            {
+              units: "1",
+              amount_cents: 10,
+              billable_metric: { code: "api_calls", name: "API calls" },
+            },
+          ],
+        },
+      }),
+    );
+    const result = await client.getUsage("deployment-1", "deployment-1-pro");
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        fromDatetime: "2026-10-01T00:00:00Z",
+        toDatetime: "2026-10-31T23:59:59Z",
+        currency: "USD",
+        amountCents: 10,
+        totalAmountCents: 12,
+        charges: [
+          {
+            metricCode: "api_calls",
+            metricName: "API calls",
+            units: "1",
+            amountCents: 10,
+          },
+        ],
+      },
+    });
+    // The subscription rides as a query parameter and the customer id as the path, never the reverse.
+    expect(seen[0]?.url).toBe(
+      `${BASE_URL}/api/v1/customers/deployment-1/current_usage?external_subscription_id=deployment-1-pro`,
+    );
+  });
+
+  test.each([404, 405])(
+    "HTTP %d is a fact the projections already know, answered with no body",
+    async (status) => {
+      const { client } = clientWith(() =>
+        jsonResponse({ status, error: "no active subscription" }, status),
+      );
+      const result = await client.getUsage("deployment-1", "deployment-1-pro");
+      expect(result).toEqual({ status, body: null });
+    },
+  );
+
+  test("a 500 is the retryable unreachable sentinel, not a usage answer", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 500));
+    const error = await expectCleanError(
+      client.getUsage("deployment-1", "deployment-1-pro"),
+    );
+    expect(error.code).toBe("unreachable");
+  });
+});
+
+describe("createLagoClient subscription history folding", () => {
+  test("a re-subscribed external id folds to its live record", async () => {
+    const { client } = clientWith(() =>
+      jsonResponse({
+        subscriptions: [
+          {
+            lago_id: "lago-sub-new",
+            external_customer_id: "deployment-1",
+            external_id: "deployment-1-pro",
+            plan_code: "pro",
+            status: "active",
+          },
+          {
+            // The lifecycle record the active one replaced: same external id, terminated. Whichever
+            // order the provider answers in, the fold keeps the live record.
+            lago_id: "lago-sub-old",
+            external_customer_id: "deployment-1",
+            external_id: "deployment-1-pro",
+            plan_code: "pro",
+            status: "terminated",
+          },
+        ],
+      }),
+    );
+    const result = await client.listSubscriptions("deployment-1");
+    expect(result.body).toEqual([
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-pro",
+        planCode: "pro",
+        status: "active",
+      },
+    ]);
+  });
+
+  test("distinct external ids are never folded", async () => {
+    const { client } = clientWith(() =>
+      jsonResponse({
+        subscriptions: [
+          {
+            lago_id: "lago-sub-base",
+            external_customer_id: "deployment-1",
+            external_id: "deployment-1-base",
+            plan_code: "base",
+            status: "terminated",
+          },
+          {
+            lago_id: "lago-sub-pro",
+            external_customer_id: "deployment-1",
+            external_id: "deployment-1-pro",
+            plan_code: "pro",
+            status: "active",
+          },
+        ],
+      }),
+    );
+    const result = await client.listSubscriptions("deployment-1");
+    expect(result.body).toHaveLength(2);
+  });
+});

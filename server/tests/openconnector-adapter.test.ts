@@ -16,14 +16,13 @@ function clientWith(dial: (path: string, init: { method: string; body?: unknown;
 describe("the broker", () => {
   test("maps the published authTypes array onto broker connections, oauth2-only to unsupported", async () => {
     const client = clientWith(async (path) => {
-      if (path === "/v1/providers") {
-        return { data: [
-          { service: "github", displayName: "GitHub", authTypes: ["api_key"] },
-          { service: "hackernews", displayName: "Hacker News", authTypes: ["no_auth"] },
-          { service: "example-oauth", displayName: "Example", authTypes: ["oauth2"] },
-        ] };
+      if (path === "/api/providers") {
+        return [
+          { service: "github", displayName: "GitHub", authTypes: ["api_key"], actions: [{ id: "github.get_current_user" }, { id: "github.create_issue" }] },
+          { service: "hackernews", displayName: "Hacker News", authTypes: ["no_auth"], actions: [{ id: "hackernews.get_top_stories" }] },
+          { service: "example-oauth", displayName: "Example", authTypes: ["oauth2"], actions: [{ id: "example.post" }] },
+        ];
       }
-      if (path === "/v1/actions") return { data: [{ service: "github", id: "github.get_current_user" }, { service: "github", id: "github.create_issue" }] };
       throw new Error(`unexpected ${path}`);
     });
     const apps = await client.broker.listApps();
@@ -32,20 +31,20 @@ describe("the broker", () => {
     expect(bySlug.github.name).toBe("GitHub");
     expect(bySlug.github.actionCount).toBe(2);
     expect(bySlug.hackernews.connection).toEqual({ kind: "no-auth" });
+    expect(bySlug.hackernews.actionCount).toBe(1);
     expect(bySlug["example-oauth"].connection.kind).toBe("unsupported");
   });
 
   test("a provider publishing several auth types is driven by a fixed priority, not array order", async () => {
     const client = clientWith(async (path) => {
-      if (path === "/v1/providers") {
-        return { data: [
-          { service: "airtable", displayName: "Airtable", authTypes: ["oauth2", "api_key"] },
-          { service: "swapped", displayName: "Swapped", authTypes: ["api_key", "oauth2"] },
-          { service: "custom-first", displayName: "Custom", authTypes: ["custom_credential", "oauth2"] },
-          { service: "keyed-anon", displayName: "Keyed", authTypes: ["api_key", "no_auth"] },
-        ] };
+      if (path === "/api/providers") {
+        return [
+          { service: "airtable", displayName: "Airtable", authTypes: ["oauth2", "api_key"], actions: [] },
+          { service: "swapped", displayName: "Swapped", authTypes: ["api_key", "oauth2"], actions: [] },
+          { service: "custom-first", displayName: "Custom", authTypes: ["custom_credential", "oauth2"], actions: [] },
+          { service: "keyed-anon", displayName: "Keyed", authTypes: ["api_key", "no_auth"], actions: [] },
+        ];
       }
-      if (path === "/v1/actions") return { data: [] };
       throw new Error(`unexpected ${path}`);
     });
     const apps = await client.broker.listApps();
@@ -235,20 +234,20 @@ describe("the actions client", () => {
     expect("x-oo-connector-alias" in seen[0].headers).toBe(false);
   });
 
-  test("listActions filters the directory's own answer rather than re-dialing per service", async () => {
+  test("listActions dials the per-service runtime endpoint, not the whole catalog", async () => {
     const paths: string[] = [];
     const client = clientWith(async (path) => {
       paths.push(path);
-      if (path === "/v1/actions") {
+      if (path === "/v1/actions?service=github") {
         return { data: [
-          { service: "github", id: "github.get_current_user", description: "Get the authenticated user", inputSchema: { type: "object" } },
-          { service: "hackernews", id: "hackernews.get_top_stories" },
+          { id: "github.get_current_user", description: "Get the authenticated user", inputSchema: { type: "object" } },
+          { id: "github.create_issue", description: "Create an issue" },
         ] };
       }
       throw new Error(`unexpected ${path}`);
     });
     const actions = await client.actions.listActions("github");
-    expect(paths).toEqual(["/v1/actions"]);
+    expect(paths).toEqual(["/v1/actions?service=github"]);
     expect(actions).toEqual([
       { id: "github.get_current_user", description: "Get the authenticated user", inputSchema: { type: "object" } },
     ]);
@@ -291,20 +290,18 @@ describe("the trust boundary of the configured base", () => {
     const seen: { url: string; init: RequestInit }[] = [];
     globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
       seen.push({ url: String(input), init: init ?? {} });
-      return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      return { ok: true, status: 200, json: async () => [] };
     }) as typeof globalThis.fetch;
     const client = createOpenConnectorClient({ url: "http://localhost:3100", adminToken: "a", runtimeToken: "r" });
     await client.broker.listApps();
     await client.broker.revoke({ account: { holder: "person", userId: "u", vendorUserId: "openbot-u-u-github" }, toolkit: "github" });
     expect(seen.map((attempt) => attempt.url)).toEqual([
-      "http://localhost:3100/v1/providers",
-      "http://localhost:3100/v1/actions",
+      "http://localhost:3100/api/providers",
       "http://localhost:3100/api/connections/github?connectionName=openbot-u-u-github",
     ]);
     expect(seen.every((attempt) => attempt.init.redirect === "manual")).toBe(true);
     const headers = (attempt: number) => seen[attempt].init.headers as Record<string, string>;
-    expect(headers(0).Authorization).toBe("Bearer r");
-    expect(headers(1).Authorization).toBe("Bearer r");
-    expect(headers(2).Authorization).toBe("Bearer a");
+    expect(headers(0).Authorization).toBe("Bearer a");
+    expect(headers(1).Authorization).toBe("Bearer a");
   });
 });

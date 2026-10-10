@@ -1,6 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { createAuth } from "../src/auth";
-import type { DeploymentConfig } from "../src/config";
+import { type AuthBootstrapConfig, createAuth } from "../src/auth";
 import { createDatabase } from "../src/db/client";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -10,7 +9,9 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * run the native app must not accept the scheme as a callback at all.
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const config = {
+// No cast: the factory reads exactly auth + keyEncryptionKey (plan 02 T3-B), so two fields are
+// all it needs and the type says so.
+const config: AuthBootstrapConfig = {
   auth: {
     baseUrl: "http://127.0.0.1:3000",
     secret: "x".repeat(40),
@@ -20,7 +21,7 @@ const config = {
     google: { clientId: "id", clientSecret: "secret" },
   },
   keyEncryptionKey: Buffer.alloc(32, 7).toString("base64"),
-} as unknown as DeploymentConfig;
+};
 /** What the Expo plugin's after hook consults before appending the session cookie to a redirect. */
 async function sendsSessionTo(auth: ReturnType<typeof createAuth>) {
   const context = (await auth.$context) as {

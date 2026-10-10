@@ -36,7 +36,9 @@ import { Route as AuthedAdminPeopleRouteImport } from './routes/_authed/admin/pe
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedSettingsBillingRouteImport } from './routes/_authed/settings/billing'
 import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/settings/passwords'
+import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
 import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppBotsIndexRouteImport } from './routes/_authed/_app/bots.index'
@@ -193,9 +195,19 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
+const AuthedSettingsBillingRoute = AuthedSettingsBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsPasswordsRoute = AuthedSettingsPasswordsRouteImport.update({
   id: '/passwords',
   path: '/passwords',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
+const AuthedSettingsUsageRoute = AuthedSettingsUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
 const AuthedSignInRequestIdRoute = AuthedSignInRequestIdRouteImport.update({
@@ -334,7 +346,9 @@ export interface FileRoutesByFullPath {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
+  '/settings/billing': typeof AuthedSettingsBillingRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
+  '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
@@ -380,7 +394,9 @@ export interface FileRoutesByTo {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
+  '/settings/billing': typeof AuthedSettingsBillingRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
+  '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
@@ -430,7 +446,9 @@ export interface FileRoutesById {
   '/_authed/admin/people': typeof AuthedAdminPeopleRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
+  '/_authed/settings/billing': typeof AuthedSettingsBillingRoute
   '/_authed/settings/passwords': typeof AuthedSettingsPasswordsRoute
+  '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
@@ -481,7 +499,9 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
+    | '/settings/billing'
     | '/settings/passwords'
+    | '/settings/usage'
     | '/sign-in/$requestId'
     | '/admin/'
     | '/settings/'
@@ -527,7 +547,9 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
+    | '/settings/billing'
     | '/settings/passwords'
+    | '/settings/usage'
     | '/sign-in/$requestId'
     | '/admin'
     | '/settings'
@@ -576,7 +598,9 @@ export interface FileRouteTypes {
     | '/_authed/admin/people'
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
+    | '/_authed/settings/billing'
     | '/_authed/settings/passwords'
+    | '/_authed/settings/usage'
     | '/_authed/sign-in/$requestId'
     | '/_authed/_app/'
     | '/_authed/admin/'
@@ -798,11 +822,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/billing': {
+      id: '/_authed/settings/billing'
+      path: '/billing'
+      fullPath: '/settings/billing'
+      preLoaderRoute: typeof AuthedSettingsBillingRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/settings/passwords': {
       id: '/_authed/settings/passwords'
       path: '/passwords'
       fullPath: '/settings/passwords'
       preLoaderRoute: typeof AuthedSettingsPasswordsRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
+    '/_authed/settings/usage': {
+      id: '/_authed/settings/usage'
+      path: '/usage'
+      fullPath: '/settings/usage'
+      preLoaderRoute: typeof AuthedSettingsUsageRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
     '/_authed/sign-in/$requestId': {
@@ -996,7 +1034,9 @@ const AuthedAdminRouteRouteWithChildren =
   AuthedAdminRouteRoute._addFileChildren(AuthedAdminRouteRouteChildren)
 
 interface AuthedSettingsRouteRouteChildren {
+  AuthedSettingsBillingRoute: typeof AuthedSettingsBillingRoute
   AuthedSettingsPasswordsRoute: typeof AuthedSettingsPasswordsRoute
+  AuthedSettingsUsageRoute: typeof AuthedSettingsUsageRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
   AuthedSettingsComponentsGalleryNameRoute: typeof AuthedSettingsComponentsGalleryNameRoute
   AuthedSettingsConnectedAccountsKeyRoute: typeof AuthedSettingsConnectedAccountsKeyRoute
@@ -1005,7 +1045,9 @@ interface AuthedSettingsRouteRouteChildren {
 }
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
+  AuthedSettingsBillingRoute: AuthedSettingsBillingRoute,
   AuthedSettingsPasswordsRoute: AuthedSettingsPasswordsRoute,
+  AuthedSettingsUsageRoute: AuthedSettingsUsageRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
   AuthedSettingsComponentsGalleryNameRoute:
     AuthedSettingsComponentsGalleryNameRoute,

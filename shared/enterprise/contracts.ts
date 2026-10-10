@@ -23,9 +23,8 @@ export function scopedKey(tenantId: string, kind: string, id: string): string {
   return JSON.stringify([tenantId, kind, id]);
 }
 
-export type TenantRole = "tenant_admin" | "member" | "auditor";
-
-export type TenantSummary = { id: string; name: string; role: TenantRole };
+import type { TenantRole, TenantSummary } from "./mobile-schemas";
+export type { TenantRole, TenantSummary };
 
 export type ScopeView = {
   tenantId: string;

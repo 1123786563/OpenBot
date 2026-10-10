@@ -7,7 +7,25 @@
     "general": "通用",
     "connectedAccounts": "已连接的账号",
     "passwords": "密码",
-    "componentsGallery": "组件库"
+    "componentsGallery": "组件库",
+    "entitlements": "权益",
+    "usage": "使用记录"
+  },
+  "billing": {
+    "title": "权益",
+    "description": "当前套餐为这个部署解锁了什么。套餐由管理员变更，所有人都在这里看到结果。",
+    "includedTitle": "套餐包含",
+    "includedDescription": "这个部署被授权使用的能力。",
+    "noCodes": "当前套餐没有附带额外能力。",
+    "inactive": "这个部署没有生效中的套餐。"
+  },
+  "usagePage": {
+    "title": "使用记录",
+    "description": "这个部署在当前计费周期内的用量。",
+    "currentPeriod": "当前周期",
+    "totalThisPeriod": "本周期合计：",
+    "noCharges": "本周期还没有产生任何用量。",
+    "noSubscription": "没有生效中的订阅，暂无用量可统计。"
   },
   "darkTheme": "深色主题",
   "darkThemeDescription": "在 OpenBot 中使用深色外观。",

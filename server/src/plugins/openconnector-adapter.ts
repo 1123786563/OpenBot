@@ -89,8 +89,16 @@ type ProviderField = {
  */
 type Vendor = {
   listProviders(): Promise<
-    { service: string; name: string; description: string; authType: string | undefined }[]
-  >;  listAllActions(): Promise<(OpenConnectorAction & { service: string })[]>;
+    {
+      service: string;
+      name: string;
+      description: string;
+      categories: string[];
+      actionCount: number;
+      authType: string | undefined;
+    }[]
+  >;
+  listServiceActions(service: string): Promise<OpenConnectorAction[]>;
   providerFields(service: string, authType: string): Promise<ProviderField[]>;
   putConnection(
     service: string,
@@ -148,7 +156,15 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
 
   const vendor: Vendor = {
   async listProviders() {
-    const body = await request("/v1/providers", { method: "GET" });
+    /*
+     * THE ADMIN FACE, BECAUSE IT IS THE ONLY DIRECTORY ANSWER THAT CARRIES ACTIONS. The runtime
+     * mirror (`/v1/providers`) lists providers bare, and `/v1/actions` without a service lists
+     * 1568 provider-level rows that name no action id at all — the live E2E caught both halves of
+     * that. The admin listing embeds each provider's actions in the same answer (9 MB served off
+     * the container's local catalog in ~10 ms), so one request yields the picker's action count —
+     * the number the directory exists to show before anybody enables anything.
+     */
+    const body = await request("/api/providers", { method: "GET" });
     return rowsOf(body, "provider directory").flatMap((row) => {
       if (row === null || typeof row !== "object") return [];
       const record = row as Record<string, unknown>;
@@ -165,6 +181,12 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
             (candidate): candidate is string => typeof candidate === "string",
           )
         : [];
+      const actions = Array.isArray(record.actions) ? (record.actions as unknown[]) : [];
+      const categories = Array.isArray(record.categories)
+        ? record.categories.filter(
+            (candidate): candidate is string => typeof candidate === "string",
+          )
+        : [];
       return [
         {
           service: record.service,
@@ -173,30 +195,34 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
               ? record.displayName
               : record.service,
           description: typeof record.description === "string" ? record.description : "",
+          categories,
+          actionCount: actions.length,
           authType: pickAuthType(authTypes),
         },
       ];
     });
   },
-    async listAllActions() {
-      const body = await request("/v1/actions", { method: "GET" });
-      return rowsOf(body, "action directory").flatMap((row) => {
-        if (row === null || typeof row !== "object") return [];
-        const record = row as Record<string, unknown>;
-        if (typeof record.service !== "string" || typeof record.id !== "string") return [];
-        return [
-          {
-            service: record.service,
-            id: record.id,
-            description: typeof record.description === "string" ? record.description : "",
-            inputSchema:
-              record.inputSchema !== null && typeof record.inputSchema === "object"
-                ? record.inputSchema
-                : null,
-          },
-        ];
-      });
-    },
+  async listServiceActions(service) {
+    const body = await request(
+      `/v1/actions?service=${encodeURIComponent(service)}`,
+      { method: "GET" },
+    );
+    return rowsOf(body, "action directory").flatMap((row) => {
+      if (row === null || typeof row !== "object") return [];
+      const record = row as Record<string, unknown>;
+      if (typeof record.id !== "string") return [];
+      return [
+        {
+          id: record.id,
+          description: typeof record.description === "string" ? record.description : "",
+          inputSchema:
+            record.inputSchema !== null && typeof record.inputSchema === "object"
+              ? record.inputSchema
+              : null,
+        },
+      ];
+    });
+  },
     async providerFields(service, authType) {
       const body = await request(
         `/api/providers/${encodeURIComponent(service)}`,
@@ -318,20 +344,7 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
 
   const actions: OpenConnectorActions = {
     async listActions(service) {
-      /*
-       * FILTERED, NOT RE-DIALLED, because the directory endpoint already fetched every action for
-       * `listApps`; a per-service query would be a second copy of the same answer held against the
-       * first. The route-level TTL cache in `routes.ts` is what keeps the transport's listing honest
-       * on this arrangement — see the composio twin for the shape.
-       */
-      const all = await vendor.listAllActions();
-      return all
-        .filter((action) => action.service === service)
-        .map((action) => ({
-          id: action.id,
-          description: action.description,
-          inputSchema: action.inputSchema,
-        }));
+      return vendor.listServiceActions(service);
     },
     async execute(call, args) {
       const body = await request(
@@ -345,14 +358,7 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
 
   const broker: ConnectedAppBroker = {
     async listApps(): Promise<BrokerApp[]> {
-      const [providers, actions] = await Promise.all([
-        vendor.listProviders(),
-        vendor.listAllActions(),
-      ]);
-      const counts = new Map<string, number>();
-      for (const action of actions) {
-        counts.set(action.service, (counts.get(action.service) ?? 0) + 1);
-      }
+      const providers = await vendor.listProviders();
       return providers.map((provider) => ({
         slug: provider.service,
         name: provider.name,
@@ -362,8 +368,8 @@ export function buildOpenConnectorClient(input: { dial: WireDial }): {
          * what the picker already draws for a toolkit without one.
          */
         logo: null,
-        categories: [],
-        actionCount: counts.get(provider.service) ?? 0,
+        categories: provider.categories,
+        actionCount: provider.actionCount,
         connection: connectionFor(provider.authType),
       }));
     },

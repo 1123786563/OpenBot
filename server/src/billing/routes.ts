@@ -41,11 +41,12 @@ export function createBillingWebhookRoutes(deps: { service: BillingService }) {
 }
 
 /**
- * What a signed-in person may ask about their deployment's entitlements.
+ * What a signed-in person may ask about their deployment's billing state.
  *
- * The answer is exactly `{active, codes}`. The provider's plan vocabulary stops at the service — it
- * is useful there, for the sync and for a log line, but it is not this deployment's own word for
- * anything and does not belong on the HTTP surface a client codes against.
+ * The entitlements answer is exactly `{active, codes}` and the usage answer carries only period,
+ * amounts and charges: the provider's plan vocabulary stops at the service — it is useful there,
+ * for the sync and for a log line, but it is not this deployment's own word for anything and
+ * does not belong on the HTTP surface a client codes against.
  */
 export function createBillingRoutes(deps: {
   service: BillingService;
@@ -59,6 +60,13 @@ export function createBillingRoutes(deps: {
       active: entitlements.active,
       codes: entitlements.codes,
     });
+  });
+  routes.get("/usage", async (context) => {
+    const usage = await deps.service.usage();
+    if (usage === null) {
+      return context.json({ active: false, charges: [] });
+    }
+    return context.json({ active: true, ...usage });
   });
   return routes;
 }

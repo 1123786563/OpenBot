@@ -400,6 +400,13 @@
       "when": 1791550419803,
       "tag": "0056_enterprise_tenancy_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1791558966072,
+      "tag": "0057_enterprise_identity_grants",
+      "breakpoints": true
     }
   ]
 }

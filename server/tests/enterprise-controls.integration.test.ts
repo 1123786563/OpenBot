@@ -13,10 +13,10 @@ import { createEnterpriseGate } from "../src/admin/gate";
 import { createEnterpriseAdminRoutes } from "../src/admin/routes";
 import { createHandoffDelivery } from "../src/agents/handoff-delivery";
 import { addAuditTap, createAuditStore, recordAuditEvent } from "../src/audit";
+import type { AuthBootstrapConfig } from "../src/auth";
 import { createAuth } from "../src/auth";
 import type { AppVariables } from "../src/auth/guards";
 import type { ComputerProvider } from "../src/computer/provider";
-import type { DeploymentConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import {
   actionRecords,
@@ -790,6 +790,8 @@ describe("SCIM 2.0 through Better Auth", () => {
   beforeAll(() => {
     process.env.SCIM_BEARER_TOKEN = token;
     auth = createAuth(
+      // No cast: the factory reads exactly auth + keyEncryptionKey (plan 02 T3-B), so the two
+      // fields below are all it needs and the type says so.
       {
         auth: {
           baseUrl: "http://127.0.0.1:3000",
@@ -800,7 +802,7 @@ describe("SCIM 2.0 through Better Auth", () => {
           google: { clientId: "id", clientSecret: "secret" },
         },
         keyEncryptionKey: Buffer.alloc(32, 7).toString("base64"),
-      } as unknown as DeploymentConfig,
+      } satisfies AuthBootstrapConfig,
       database,
       async () => false,
       auditStore,

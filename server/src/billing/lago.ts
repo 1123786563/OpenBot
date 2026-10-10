@@ -52,6 +52,23 @@ export type LagoSubscriptionBody = {
   status: BillingSubscriptionStatus;
 };
 
+export type LagoUsageChargeBody = {
+  metricCode: string;
+  metricName: string;
+  /** The wire sends units as a string decimal; it stays a string so precision survives the trip. */
+  units: string;
+  amountCents: number;
+};
+
+export type LagoUsageBody = {
+  fromDatetime?: string;
+  toDatetime?: string;
+  currency?: string;
+  amountCents: number;
+  totalAmountCents: number;
+  charges: readonly LagoUsageChargeBody[];
+};
+
 export type LagoResult<T> = { status: number; body: T | null };
 
 export type LagoClient = {
@@ -73,6 +90,11 @@ export type LagoClient = {
     externalSubscriptionId: string;
     planCode: string;
   }): Promise<LagoResult<LagoSubscriptionBody>>;
+  /** 200 is the current period's usage; 404/405 are facts the projections already know, not errors. */
+  getUsage(
+    externalCustomerId: string,
+    externalSubscriptionId: string,
+  ): Promise<LagoResult<LagoUsageBody>>;
 };
 
 const SUBSCRIPTION_STATUSES: readonly BillingSubscriptionStatus[] = [
@@ -106,6 +128,14 @@ function optionalStringOf(body: unknown, name: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function intOf(body: unknown, name: string): number {
+  const value = fieldOf(body, name);
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new BillingError("invalid_response");
+  }
+  return value;
+}
+
 function customerOf(body: unknown): LagoCustomerBody {
   return {
     externalId: stringOf(fieldOf(body, "customer"), "external_id"),
@@ -130,6 +160,67 @@ function subscriptionOf(item: unknown): LagoSubscriptionBody {
       optionalStringOf(item, "external_id") ?? stringOf(item, "lago_id"),
     planCode,
     status: status as BillingSubscriptionStatus,
+  };
+}
+
+/**
+ * How live a subscription state is, for folding the provider's lifecycle history.
+ *
+ * The provider keeps one record per subscription lifecycle, so a terminate-and-resubscribe under
+ * the same external id answers the list with an `active` record AND the `terminated` one it
+ * replaced. The external id is this server's identity for the subscription, never the provider's
+ * record number, so the live record is the answer and the history is noise.
+ */
+const STATUS_LIVELINESS: Record<BillingSubscriptionStatus, number> = {
+  active: 0,
+  incomplete: 1,
+  canceled: 2,
+  terminated: 3,
+};
+
+/** One subscription per external id: the liveliest record the provider still holds. */
+function foldSubscriptionHistory(
+  subscriptions: readonly LagoSubscriptionBody[],
+): LagoSubscriptionBody[] {
+  const folded = new Map<string, LagoSubscriptionBody>();
+  for (const subscription of subscriptions) {
+    const existing = folded.get(subscription.externalSubscriptionId);
+    if (
+      existing === undefined ||
+      STATUS_LIVELINESS[subscription.status] < STATUS_LIVELINESS[existing.status]
+    ) {
+      folded.set(subscription.externalSubscriptionId, subscription);
+    }
+  }
+  return [...folded.values()];
+}
+
+/**
+ * The usage answer's wire shape (`charges_usage` under `customer_usage`) neutralised: metric
+ * vocabulary in, plan-neutral charge rows out.
+ */
+function usageOf(body: unknown): LagoUsageBody {
+  const charges = fieldOf(body, "charges_usage");
+  if (!Array.isArray(charges)) {
+    throw new BillingError("invalid_response");
+  }
+  return {
+    fromDatetime: optionalStringOf(body, "from_datetime") ?? undefined,
+    toDatetime: optionalStringOf(body, "to_datetime") ?? undefined,
+    currency: optionalStringOf(body, "currency") ?? undefined,
+    amountCents: intOf(body, "amount_cents"),
+    totalAmountCents: intOf(body, "total_amount_cents"),
+    charges: charges.map(usageChargeOf),
+  };
+}
+
+function usageChargeOf(item: unknown): LagoUsageChargeBody {
+  const metric = asObject(fieldOf(item, "billable_metric"));
+  return {
+    metricCode: stringOf(metric, "code"),
+    metricName: stringOf(metric, "name"),
+    units: stringOf(item, "units"),
+    amountCents: intOf(item, "amount_cents"),
   };
 }
 
@@ -268,7 +359,10 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
       const subscriptions = fieldOf(result.body, "subscriptions");
       if (!Array.isArray(subscriptions))
         throw new BillingError("invalid_response");
-      return { status: 200, body: subscriptions.map(subscriptionOf) };
+      return {
+        status: 200,
+        body: foldSubscriptionHistory(subscriptions.map(subscriptionOf)),
+      };
     },
     async postSubscription(input) {
       const result = await request("/api/v1/subscriptions", {
@@ -289,6 +383,25 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
         };
       }
       if (result.status === 422) return { status: 422, body: null };
+      throw new BillingError("invalid_response");
+    },
+    async getUsage(externalCustomerId, externalSubscriptionId) {
+      const params = new URLSearchParams();
+      params.set("external_subscription_id", externalSubscriptionId);
+      const result = await request(
+        `/api/v1/customers/${encodeURIComponent(externalCustomerId)}/current_usage?${params.toString()}`,
+      );
+      if (result.status === 200) {
+        return {
+          status: 200,
+          body: usageOf(fieldOf(result.body, "customer_usage")),
+        };
+      }
+      // 404 is an unknown customer and 405 the provider's own "no active subscription": both are
+      // answers the service reports as no usage, not failures worth a retry.
+      if (result.status === 404 || result.status === 405) {
+        return { status: result.status, body: null };
+      }
       throw new BillingError("invalid_response");
     },
   };

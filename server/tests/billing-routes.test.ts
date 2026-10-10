@@ -4,7 +4,11 @@ import { Hono, type MiddlewareHandler } from "hono";
 import type { AuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { requireAdmin } from "../src/auth/guards";
-import { createLagoClient, type LagoClient } from "../src/billing/lago";
+import {
+  createLagoClient,
+  type LagoClient,
+  type LagoUsageBody,
+} from "../src/billing/lago";
 import {
   createBillingAdminRoutes,
   createBillingRoutes,
@@ -64,6 +68,7 @@ function countingClient() {
     postCustomer: 0,
     listSubscriptions: 0,
     postSubscription: 0,
+    getUsage: 0,
   };
   const customers = new Map<string, string>();
   const subscriptions: {
@@ -72,6 +77,8 @@ function countingClient() {
     planCode: string;
     status: "active" | "incomplete" | "canceled" | "terminated";
   }[] = [];
+  /** What the provider's current_usage endpoint answers; null stands in for its "no active" 405. */
+  let usage: LagoUsageBody | null = null;
   const client: LagoClient = {
     async getCustomer(externalId) {
       calls.getCustomer += 1;
@@ -106,8 +113,21 @@ function countingClient() {
       subscriptions.push(subscription);
       return { status: 201, body: subscription };
     },
+    async getUsage() {
+      calls.getUsage += 1;
+      return usage === null
+        ? { status: 405, body: null }
+        : { status: 200, body: usage };
+    },
   };
-  return { calls, client, subscriptions };
+  return {
+    calls,
+    client,
+    subscriptions,
+    setUsage: (value: LagoUsageBody | null) => {
+      usage = value;
+    },
+  };
 }
 
 function serviceFixture(client: LagoClient) {
@@ -312,6 +332,74 @@ describe("the entitlements route", () => {
     expect(Object.keys(body).sort()).toEqual(["active", "codes"]);
     expect(body.active).toBe(true);
     expect(body.codes).toEqual(["intelligence", "teams"]);
+  });
+});
+
+describe("the usage route", () => {
+  test("an unsigned-in request is refused 401", async () => {
+    const { app } = billingApp(undefined, countingClient().client);
+    const response = await app.request("/api/billing/usage");
+    expect(response.status).toBe(401);
+  });
+
+  test("no active subscription answers active false, with no provider call", async () => {
+    const stub = countingClient();
+    const { app } = billingApp(ADMIN, stub.client);
+    const response = await app.request("/api/billing/usage");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toEqual({ active: false, charges: [] });
+    expect(stub.calls.getUsage).toBe(0);
+  });
+
+  test("the active subscription's period, amounts and charges — and no plan vocabulary", async () => {
+    const stub = countingClient();
+    stub.setUsage({
+      fromDatetime: "2026-10-01T00:00:00Z",
+      toDatetime: "2026-10-31T23:59:59Z",
+      currency: "USD",
+      amountCents: 10,
+      totalAmountCents: 12,
+      charges: [
+        {
+          metricCode: "api_calls",
+          metricName: "API calls",
+          units: "1",
+          amountCents: 10,
+        },
+      ],
+    });
+    const { app } = billingApp(ADMIN, stub.client);
+    // A sync first, so the projection the usage read serves has an active subscription in it.
+    const synced = await app.request("/api/admin/billing/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planCode: "pro" }),
+    });
+    expect(synced.status).toBe(200);
+
+    const response = await app.request("/api/billing/usage");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual([
+      "active",
+      "amountCents",
+      "charges",
+      "currency",
+      "fromDatetime",
+      "toDatetime",
+      "totalAmountCents",
+    ]);
+    expect(body.active).toBe(true);
+    expect(body.charges).toEqual([
+      {
+        metricCode: "api_calls",
+        metricName: "API calls",
+        units: "1",
+        amountCents: 10,
+      },
+    ]);
+    expect(stub.calls.getUsage).toBe(1);
   });
 });
 
