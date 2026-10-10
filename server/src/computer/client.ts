@@ -1,4 +1,5 @@
 import type { HandoffRequest } from "../../../shared/computer-control";
+import { injectTraceHeaders } from "../../../shared/trace";
 import type { NavigateResult } from "./schema";
 import { checkNavigationTarget } from "./target";
 
@@ -207,13 +208,13 @@ export function createComputerTransport(
     try {
       response = await doFetch(`${target}${path}`, {
         ...init,
-        headers: {
+        headers: injectTraceHeaders({
           ...(init?.headers as Record<string, string> | undefined),
           "x-openbot-bot-id": botId,
           ...(options.token
             ? { "x-openbot-computer-token": options.token }
             : {}),
-        },
+        }),
         signal: caller
           ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
           : AbortSignal.timeout(timeoutMs),
