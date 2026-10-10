@@ -10,7 +10,10 @@ import { assertTrustedScope } from "../enterprise/tenancy/store";
 import type { MastraConversationBinding } from "./contracts";
 import type { TenantMastraStorage } from "./tenant-storage";
 
-type BoundConversationService = Pick<ConversationService, "resolveMastraBinding"> & {
+type BoundConversationService = Pick<
+  ConversationService,
+  "resolveMastraBinding"
+> & {
   resolveMastraBinding(
     scope: PlatformScope,
     threadId: string,

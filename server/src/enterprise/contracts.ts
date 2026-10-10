@@ -84,6 +84,11 @@ export interface RunService {
   start(scope: PlatformScope, input: StartRunInput): Promise<RunDTO>;
   cancel(scope: PlatformScope, input: CancelRunInput): Promise<RunDTO>;
   get(scope: PlatformScope, runId: string): Promise<RunDTO>;
+  getActiveAttemptGeneration(
+    scope: PlatformScope,
+    runId: string,
+    attemptId: string,
+  ): Promise<number>;
   reserveModelBudget(
     scope: PlatformScope,
     input: BudgetInput,

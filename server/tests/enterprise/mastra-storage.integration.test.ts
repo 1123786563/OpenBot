@@ -16,6 +16,7 @@ import {
   mastraMessageIntentAttachments,
   mastraMessageIntents,
 } from "../../src/db/schema/mastra-message-intents";
+import { createConversationService } from "../../src/enterprise/conversations/service";
 import {
   type DataDatabase,
   type DirectoryDatabase,
@@ -24,7 +25,6 @@ import {
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
 } from "../../src/enterprise/tenancy/connections";
-import { createConversationService } from "../../src/enterprise/conversations/service";
 import { provisionDeployment } from "../../src/enterprise/tenancy/provision";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
 import type {
@@ -37,6 +37,7 @@ import {
   tenantStorageRoleNames,
   tenantStorageSchemaName,
 } from "../../src/mastra/contracts";
+import { createMastraConversationRepository } from "../../src/mastra/conversations";
 import { PostgresTenantStorageRegistry } from "../../src/mastra/postgres-registry";
 import {
   PostgresTenantProvisioner,
@@ -45,7 +46,6 @@ import {
   type TenantStorageRegistry,
 } from "../../src/mastra/provisioning";
 import { createTenantMastraStorage } from "../../src/mastra/tenant-storage";
-import { createMastraConversationRepository } from "../../src/mastra/conversations";
 import { enterpriseTestDatabaseUrlFrom } from "../support/enterprise-database";
 
 const runId = randomUUID().replaceAll("-", "");
@@ -57,12 +57,17 @@ const schemaA = tenantStorageSchemaName(tenantStorageKey(tenantA), 1);
 const schemaB = tenantStorageSchemaName(tenantStorageKey(tenantB), 1);
 const threadId = `m02-thread-${runId}`;
 const resourceId = `private:${randomUUID()}`;
+const foreignActorId = `foreign-actor-${runId}`;
+const foreignPrincipalId = `foreign-principal-${runId}`;
 let database: Database | undefined;
 let admin: PostgresStore | undefined;
 let directory: DirectoryDatabase | undefined;
 let data: DataDatabase | undefined;
 let operator: OperatorDatabase | undefined;
 let trustedScope: Awaited<
+  ReturnType<ReturnType<typeof createScopeResolver>["resolve"]>
+>;
+let foreignScope: Awaited<
   ReturnType<ReturnType<typeof createScopeResolver>["resolve"]>
 >;
 let connectionString: string;
@@ -163,14 +168,24 @@ beforeAll(async () => {
   const workspaceId = `workspace-${runId}`;
   await db()
     .insert(users)
-    .values({
-      id: actorId,
-      email: `${actorId}@example.invalid`,
-      name: "Synthetic Mastra actor",
-    });
+    .values([
+      {
+        id: actorId,
+        email: `${actorId}@example.invalid`,
+        name: "Synthetic Mastra actor",
+      },
+      {
+        id: foreignActorId,
+        email: `${foreignActorId}@example.invalid`,
+        name: "Synthetic foreign Mastra actor",
+      },
+    ]);
   await db()
     .insert(enterprisePrincipals)
-    .values({ id: principalId, userId: actorId });
+    .values([
+      { id: principalId, userId: actorId },
+      { id: foreignPrincipalId, userId: foreignActorId },
+    ]);
   const operatorDb = createDatabase(
     process.env.ENTERPRISE_TEST_OPERATOR_DATABASE_URL!,
     { max: 2 },
@@ -186,7 +201,14 @@ beforeAll(async () => {
     operator: principalId,
     tenant: { id: tenantA, name: "Synthetic Mastra tenant" },
     workspace: { id: workspaceId, name: "Synthetic Mastra workspace" },
-    members: [{ principalId, userId: actorId, role: "tenant_admin" }],
+    members: [
+      { principalId, userId: actorId, role: "tenant_admin" },
+      {
+        principalId: foreignPrincipalId,
+        userId: foreignActorId,
+        role: "member",
+      },
+    ],
     resources: [],
   });
   const directoryDb = createDatabase(
@@ -206,6 +228,11 @@ beforeAll(async () => {
   const request = new Request("https://enterprise.example.invalid/mastra");
   authenticated.set(request, actorId);
   trustedScope = await resolver.resolve(request);
+  const foreignRequest = new Request(
+    "https://enterprise.example.invalid/mastra-foreign",
+  );
+  authenticated.set(foreignRequest, foreignActorId);
+  foreignScope = await resolver.resolve(foreignRequest);
 });
 
 afterAll(async () => {
@@ -291,6 +318,7 @@ afterAll(async () => {
         .delete(enterpriseTenants)
         .where(eq(enterpriseTenants.id, tenantA));
       await database.delete(users).where(eq(users.id, `actor-${runId}`));
+      await database.delete(users).where(eq(users.id, foreignActorId));
       await database.$client.close();
     }
   } catch (error) {
@@ -331,6 +359,7 @@ test("public Mastra append survives closing and recreating the restricted tenant
   const firstStorage = makeStorage();
   let reopenedStorage: ReturnType<typeof createTenantMastraStorage> | undefined;
   let thread: string | undefined;
+  let foreignThread: string | undefined;
   try {
     const firstService = createConversationService({
       data: data!,
@@ -368,6 +397,54 @@ test("public Mastra append survives closing and recreating the restricted tenant
     });
     expect(persisted?.messages).toHaveLength(1);
     expect(persisted?.messages[0]?.content.metadata?.openbotSeq).toBe(1);
+
+    let deniedStorageCalls = 0;
+    const deniedStorage = {
+      async getStore() {
+        deniedStorageCalls += 1;
+        throw new Error("foreign principal reached tenant storage");
+      },
+      async withConversationLock() {
+        deniedStorageCalls += 1;
+        throw new Error("foreign principal reached tenant storage lock");
+      },
+    } as never;
+    const foreignService = createConversationService({
+      data: data!,
+      mastraStorage: deniedStorage,
+    });
+    await expect(
+      foreignService.resolveMastraBinding(foreignScope, thread),
+    ).rejects.toThrow("CONVERSATION_NOT_FOUND");
+    await expect(
+      foreignService.append(foreignScope, {
+        threadId: thread,
+        clientMessageKey: `foreign-owner-write-${runId}`,
+        content: "foreign principal must not write",
+        attachments: [],
+      }),
+    ).rejects.toThrow("CONVERSATION_NOT_FOUND");
+    await expect(
+      foreignService.history(foreignScope, {
+        threadId: thread,
+        beforeSeq: null,
+        limit: 20,
+      }),
+    ).rejects.toThrow("CONVERSATION_NOT_FOUND");
+    expect(deniedStorageCalls).toBe(0);
+    const foreignConversation = await foreignService.getOrCreate(
+      foreignScope,
+      {},
+    );
+    foreignThread = foreignConversation.thread_id;
+    const foreignBinding = await foreignService.resolveMastraBinding(
+      foreignScope,
+      foreignThread,
+    );
+    expect(foreignBinding.resourceId).toBe(
+      `private:${JSON.stringify([tenantA, foreignScope.principalId])}`,
+    );
+    expect(foreignBinding.resourceId).not.toBe(binding.resourceId);
 
     const platformMessages = await db()
       .select({ threadId: enterpriseConversations.threadId })
@@ -412,20 +489,21 @@ test("public Mastra append survives closing and recreating the restricted tenant
   } finally {
     await firstStorage.close();
     await reopenedStorage?.close();
-    if (thread) {
+    for (const threadId of [thread, foreignThread]) {
+      if (!threadId) continue;
       await db()
         .delete(mastraMessageIntentAttachments)
-        .where(eq(mastraMessageIntentAttachments.threadId, thread));
+        .where(eq(mastraMessageIntentAttachments.threadId, threadId));
       await db()
         .delete(mastraMessageIntents)
-        .where(eq(mastraMessageIntents.threadId, thread));
+        .where(eq(mastraMessageIntents.threadId, threadId));
       await db()
         .delete(enterpriseConversations)
-        .where(eq(enterpriseConversations.threadId, thread));
+        .where(eq(enterpriseConversations.threadId, threadId));
       const remaining = await db()
         .select({ threadId: enterpriseConversations.threadId })
         .from(enterpriseConversations)
-        .where(eq(enterpriseConversations.threadId, thread));
+        .where(eq(enterpriseConversations.threadId, threadId));
       expect(remaining).toEqual([]);
     }
   }

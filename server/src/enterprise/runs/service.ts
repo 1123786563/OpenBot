@@ -1,3 +1,8 @@
+import { and, eq } from "drizzle-orm";
+import {
+  enterpriseRunAttempts,
+  enterpriseRuns,
+} from "../../db/schema/enterprise-runs";
 import type {
   BudgetInput,
   BudgetReservation,
@@ -9,6 +14,7 @@ import type {
   RunService,
   StartRunInput,
 } from "../contracts";
+import { createConversationStore } from "../conversations/store";
 import {
   createModelBudgetService,
   reserveModelBudgetInTransaction,
@@ -66,6 +72,7 @@ function validateStart(scope: PlatformScope, input: StartRunInput): void {
 
 export function createRunService(deps: RunServiceDependencies): RunService {
   const store = createRunStore(deps.data);
+  const scopedStore = createConversationStore(deps.data);
   const budget = createModelBudgetService({
     data: deps.data,
     configuredLimitTokens: deps.configuredBudgetTokens,
@@ -157,6 +164,43 @@ export function createRunService(deps: RunServiceDependencies): RunService {
       if (typeof runId !== "string" || !runId.trim())
         throw new Error("INVALID_RUN_ID");
       return store.get(scope, runId);
+    },
+    async getActiveAttemptGeneration(
+      scope: PlatformScope,
+      runId: string,
+      attemptId: string,
+    ): Promise<number> {
+      assertTrustedScope(scope);
+      return scopedStore.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select({ generation: enterpriseRuns.attemptGeneration })
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+            ),
+          )
+          .limit(1);
+        if (!run) throw new Error("RUN_NOT_FOUND");
+        const [attempt] = await tx
+          .select({ generation: enterpriseRunAttempts.generation })
+          .from(enterpriseRunAttempts)
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.id, attemptId),
+              eq(enterpriseRunAttempts.status, "active"),
+              eq(enterpriseRunAttempts.generation, run.generation),
+            ),
+          )
+          .limit(1);
+        if (!attempt) throw new Error("RUN_ATTEMPT_STALE");
+        return attempt.generation;
+      });
     },
     reserveModelBudget(
       scope: PlatformScope,
