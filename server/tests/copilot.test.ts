@@ -945,7 +945,10 @@ describe("connected-vendor lookup diagnostics", () => {
   test.each([[], ["google-drive"]])(
     "a successful vendor lookup stays quiet: %j",
     async (...vendors: string[]) => {
-      const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+      const diagnostic = spyOn(
+        getLogger("server"),
+        "error",
+      ).mockImplementation(() => {});
       try {
         const sent = await runWithVendors(async () => vendors);
         expect(sent.includes("This deployment also connects to:")).toBe(
@@ -1429,7 +1432,10 @@ describe("a person's standing instructions", () => {
   test.each([null, "Write in British English."])(
     "a successful instruction read stays quiet and private: %j",
     async (instructions) => {
-      const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+      const diagnostic = spyOn(
+        getLogger("server"),
+        "error",
+      ).mockImplementation(() => {});
       let reads = 0;
       try {
         const sent = await runWithInstructions(async () => {
@@ -1452,7 +1458,9 @@ describe("a person's standing instructions", () => {
 
   test("a remote-only roster never reads or diagnoses personal instructions", async () => {
     await using endpoint = fakeAgUiEndpoint();
-    const diagnostic = spyOn(console, "error").mockImplementation(() => {});
+    const diagnostic = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
     let reads = 0;
     try {
       const agents = await buildAgents(
