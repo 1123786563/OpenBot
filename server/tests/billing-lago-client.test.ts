@@ -622,3 +622,58 @@ describe("createLagoClient listEvents", () => {
     expect(result).toEqual({ status: 404, body: null });
   });
 });
+
+describe("createLagoClient getPlan", () => {
+  test("the wire's plan block reduces to the interval string and the amount currency", async () => {
+    const { client, seen } = clientWith(() =>
+      jsonResponse({
+        plan: {
+          lago_id: "plan-1",
+          code: "pro",
+          interval: "monthly",
+          amount_cents: 8800,
+          amount_currency: "CNY",
+        },
+      }),
+    );
+    const result = await client.getPlan("pro");
+    expect(result).toEqual({
+      status: 200,
+      body: { interval: "monthly", currency: "CNY" },
+    });
+    expect(seen[0]?.url).toBe(`${BASE_URL}/api/v1/plans/pro`);
+  });
+
+  test("a missing amount block answers a null currency, which activation refuses", async () => {
+    const { client } = clientWith(() =>
+      jsonResponse({ plan: { code: "pro", interval: "monthly" } }),
+    );
+    const result = await client.getPlan("pro");
+    expect(result.body).toEqual({ interval: "monthly", currency: null });
+  });
+
+  test("HTTP 404 is an absent plan, a fact the activation gate acts on", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 404));
+    expect(await client.getPlan("ghost")).toEqual({ status: 404, body: null });
+  });
+});
+
+describe("createLagoClient deleteSubscription", () => {
+  test("DELETE goes to the subscription's external id", async () => {
+    const { client, seen } = clientWith(() => jsonResponse({}));
+    const result = await client.deleteSubscription("deployment-1-pro");
+    expect(result.status).toBe(200);
+    expect(seen[0]?.url).toBe(`${BASE_URL}/api/v1/subscriptions/deployment-1-pro`);
+    expect(seen[0]?.init?.method).toBe("DELETE");
+  });
+
+  test("HTTP 404 answers as success: an absent subscription is already terminated", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 404));
+    expect((await client.deleteSubscription("deployment-1-pro")).status).toBe(404);
+  });
+
+  test("any other failure is the terminal sentinel", async () => {
+    const { client } = clientWith(() => jsonResponse({}, 422));
+    await expectCleanError(client.deleteSubscription("deployment-1-pro"));
+  });
+});

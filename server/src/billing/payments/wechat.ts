@@ -31,7 +31,11 @@ import {
   rsaSign,
   rsaVerify,
 } from "./crypto";
-import { getJson, postJson, type ChannelHttpConfig } from "./channel-http";
+import {
+  getJsonWithStatus,
+  postJson,
+  type ChannelHttpConfig,
+} from "./channel-http";
 import type {
   PaymentFact,
   PaymentProvider,
@@ -141,17 +145,20 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
   const gateway = config.gatewayUrl.replace(/\/+$/, "");
   const platforms = platformKeys(config.platformCertificates);
 
+  /* The order-create and order-close calls, the only POSTs this adapter speaks. The query is a
+   * GET graded by status (see queryPayment), so it lives outside this helper. */
   async function call(
-    method: "GET" | "POST",
+    method: "POST",
     pathWithQuery: string,
     body: string,
   ): Promise<string> {
     const authorization = authorizationHeader(config, method, pathWithQuery, body);
-    const url = new URL(`${gateway}${pathWithQuery}`);
-    if (method === "POST") {
-      return postJson(config, url, authorization, body);
-    }
-    return getJson(config, url, authorization);
+    return postJson(
+      config,
+      new URL(`${gateway}${pathWithQuery}`),
+      authorization,
+      body,
+    );
   }
 
   return {
@@ -177,8 +184,18 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
 
     async queryPayment(outTradeNo: string): Promise<PaymentFact> {
       const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(config.mchid)}`;
-      const response = parseJson(await call("GET", path, ""));
-      return wechatFact(response);
+      const { status, text } = await getJsonWithStatus(
+        config,
+        new URL(`${gateway}${path}`),
+        authorizationHeader(config, "GET", path, ""),
+      );
+      // A 404 is the channel's own terminal verdict — the order never existed there or has been
+      // purged — so it is spelled as a closed fact, not thrown: the sweeper can then expire the
+      // local order instead of re-asking a question the channel has already answered forever.
+      if (status === 404) {
+        return { outTradeNo, state: "closed" };
+      }
+      return wechatFact(parseJson(text));
     },
 
     async closePayment(outTradeNo: string): Promise<void> {

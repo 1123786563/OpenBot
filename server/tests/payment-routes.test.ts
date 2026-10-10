@@ -40,6 +40,7 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
       ],
       canPurchase,
       activePlanCode,
+      providers: ["alipay"],
     }),
     createPurchase: async () => ({ order: viewFor("po-new") }),
     readOrder: async (id) => ({ order: viewFor(id) }),
@@ -238,7 +239,7 @@ describe("user routes: catalog and reads", () => {
       createPaymentRoutes({
         service: fakeService(),
         requireUser,
-        requireAdmin: ((context: Context<{ Variables: AppVariables }>) => {
+        requireAdmin: ((_context: Context<{ Variables: AppVariables }>) => {
           adminChecked += 1;
           return undefined;
         }) as never,
@@ -253,6 +254,7 @@ describe("user routes: catalog and reads", () => {
       ],
       canPurchase: true,
       activePlanCode: "pro",
+      providers: ["alipay"],
     });
     expect(adminChecked).toBe(1);
   });

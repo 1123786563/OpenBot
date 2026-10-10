@@ -251,6 +251,41 @@ describe("request side (captured fetch)", () => {
       }),
     ).rejects.toThrow(/unreachable/);
   });
+
+  test("a query answered ACQ.TRADE_NOT_EXIST is a closed fact — a verdict, not a thrown error", async () => {
+    const provider = createAlipayProvider({
+      ...config,
+      fetch: (async () =>
+        new Response(
+          envelope("alipay_trade_query_response", {
+            code: "40004",
+            msg: "Business Failed",
+            sub_code: "ACQ.TRADE_NOT_EXIST",
+          }),
+          { status: 200 },
+        )) as typeof fetch,
+    });
+    expect(await provider.queryPayment("po-abc")).toEqual({
+      outTradeNo: "po-abc",
+      state: "closed",
+    });
+  });
+
+  test("another query business refusal (ACQ.INVALID_PARAMETER) stays invalid_response", async () => {
+    const provider = createAlipayProvider({
+      ...config,
+      fetch: (async () =>
+        new Response(
+          envelope("alipay_trade_query_response", {
+            code: "40004",
+            msg: "Business Failed",
+            sub_code: "ACQ.INVALID_PARAMETER",
+          }),
+          { status: 200 },
+        )) as typeof fetch,
+    });
+    await expect(provider.queryPayment("po-abc")).rejects.toThrow(/invalid_response/);
+  });
 });
 
 describe("notification verification", () => {

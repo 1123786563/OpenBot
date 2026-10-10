@@ -218,6 +218,17 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
         "alipay_trade_query_response",
         config.alipayPublicKeyPem,
       );
+      // ACQ.TRADE_NOT_EXIST is the gateway's terminal "no such order" verdict (code 40004): a
+      // fact, not a malfunction. Spelled as a closed fact so the sweeper can expire the local
+      // order instead of re-asking a question the gateway has already answered forever — every
+      // other non-10000 verdict (a system error, a transient refusal) still throws below and
+      // stays a skip-and-retry for the next pass.
+      if (
+        stringField(response, "code") === "40004" &&
+        stringField(response, "sub_code") === "ACQ.TRADE_NOT_EXIST"
+      ) {
+        return { outTradeNo, state: "closed" };
+      }
       requireSuccess(response);
       return alipayFact(response, outTradeNo);
     },
@@ -240,7 +251,7 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
     },
 
     async verifyNotification(
-      headers: Headers,
+      _headers: Headers,
       rawBody: string,
     ): Promise<{ ok: true; fact: PaymentFact } | { ok: false }> {
       // The form is parsed exactly once, from the raw bytes; every check below reads that parse.

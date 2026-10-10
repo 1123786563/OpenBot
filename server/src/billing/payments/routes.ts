@@ -120,6 +120,9 @@ function outcomeProviderShape(providerId: string): {
 /** A purchase request: one plan from the catalog, one configured channel, nothing else. */
 const purchaseInput = z.strictObject({
   planCode: z.string().trim().min(1).max(200),
+  // The wire shape: one of the two channel names this version speaks. Whether the deployment
+  // CONFIGURED that channel is the service's answer, graded before any order row exists —
+  // the catalog's `providers` field is the disclosure clients render from.
   provider: z.enum(["alipay", "wechat"]),
 });
 
@@ -148,6 +151,12 @@ export function createPaymentRoutes(deps: {
     if (error instanceof PurchaseError) {
       if (error.refusal.reason === "unknown-plan") {
         return context.json({ error: "That plan is not purchasable here." }, 400);
+      }
+      if (error.refusal.reason === "unknown-provider") {
+        return context.json(
+          { error: "That channel is not configured on this deployment." },
+          400,
+        );
       }
       return context.json(
         {

@@ -49,6 +49,7 @@ export type PaymentLagoFacade = {
 /** Why a purchase request cannot proceed; the routes map these to 400/409. */
 export type PurchaseRefusal =
   | { reason: "unknown-plan" }
+  | { reason: "unknown-provider" }
   | { reason: "active-subscription"; activePlanCode: string };
 
 export class PurchaseError extends Error {
@@ -58,7 +59,9 @@ export class PurchaseError extends Error {
     super(
       refusal.reason === "unknown-plan"
         ? "That plan is not purchasable here."
-        : "This deployment already has an active subscription.",
+        : refusal.reason === "unknown-provider"
+          ? "That channel is not configured on this deployment."
+          : "This deployment already has an active subscription.",
     );
     this.refusal = refusal;
   }
@@ -386,13 +389,22 @@ export function createPaymentService(deps: {
         }),
       );
       plans.sort((a, b) => a.planCode.localeCompare(b.planCode));
-      return { plans, canPurchase, activePlanCode };
+      // The configured channels, in a stable order the UI can render and a purchase must name.
+      const providers = [...deps.providers.keys()].sort();
+      return { plans, canPurchase, activePlanCode, providers };
     },
 
     async createPurchase(input) {
       const entry = deps.catalog.get(input.planCode);
       if (!entry) {
         throw new PurchaseError({ reason: "unknown-plan" });
+      }
+      // The channel must be one this deployment configured — checked BEFORE the replay lookup
+      // and the order row, so a wrong channel can neither strand a pending order no sweeper can
+      // query nor surface as a plan refusal.
+      const provider = deps.providers.get(input.provider);
+      if (!provider) {
+        throw new PurchaseError({ reason: "unknown-provider" });
       }
       const active = await deps.activePlanCode();
       if (active !== null) {
@@ -437,10 +449,6 @@ export function createPaymentService(deps: {
 
       // Order first, code second: a channel failure here leaves a pending order that a retry
       // replays into, instead of a QR the ledger cannot account for.
-      const provider = deps.providers.get(input.provider);
-      if (!provider) {
-        throw new PurchaseError({ reason: "unknown-plan" });
-      }
       const session = await provider.createSession({
         outTradeNo: order.id,
         description: `OpenBot plan ${order.planCode} · one month`,
@@ -570,7 +578,11 @@ export function createPaymentService(deps: {
         try {
           fact = await provider.queryPayment(order.id);
         } catch {
-          continue; // Unreachable: skip; the next pass asks again before anything expires twice.
+          // Unreachable (or an answer nothing could act on): skip; the next pass asks again
+          // before anything expires twice. The channel's TERMINAL verdicts are not exceptions —
+          // each adapter spells "no such order" (WeChat's 404, Alipay's ACQ.TRADE_NOT_EXIST) as
+          // a closed fact, so a settled answer can never strand here as a thrown error.
+          continue;
         }
         if (fact.state === "paid") {
           await settlePaidFact(order, fact);

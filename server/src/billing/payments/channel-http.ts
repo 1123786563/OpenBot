@@ -48,7 +48,7 @@ export async function postForm(
   } catch {
     throw new BillingError("unreachable");
   }
-  return readVerifiedResponse(response);
+  return (await readVerifiedResponse(response)).text;
 }
 
 /**
@@ -78,31 +78,7 @@ export async function postJson(
   } catch {
     throw new BillingError("unreachable");
   }
-  return readVerifiedResponse(response);
-}
-
-/** GET with the same discipline — WeChat's query call. */
-export async function getJson(
-  config: ChannelHttpConfig,
-  url: URL,
-  authorization: string,
-): Promise<string> {
-  await config.assertTarget(url);
-  let response: Response;
-  try {
-    response = await (config.fetch ?? fetch)(url, {
-      method: "GET",
-      redirect: "error",
-      signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
-      headers: {
-        accept: "application/json",
-        authorization,
-      },
-    });
-  } catch {
-    throw new BillingError("unreachable");
-  }
-  return readVerifiedResponse(response);
+  return (await readVerifiedResponse(response)).text;
 }
 
 /**
@@ -110,7 +86,9 @@ export async function getJson(
  * the caller (a query that misses is a fact, not an error); every other unexpected status is
  * classified here.
  */
-async function readVerifiedResponse(response: Response): Promise<string> {
+async function readVerifiedResponse(
+  response: Response,
+): Promise<{ status: number; text: string }> {
   if (response.status === 429 || response.status >= 500) {
     await response.body?.cancel().catch(() => {});
     throw new BillingError("unreachable");
@@ -152,10 +130,37 @@ async function readVerifiedResponse(response: Response): Promise<string> {
 
   if (response.status === 404) {
     // Preserved for the caller: WeChat answers a closed or unknown order's query with it.
-    return text;
+    return { status: response.status, text };
   }
   if (response.status >= 400) {
     throw new BillingError("invalid_response");
   }
-  return text;
+  return { status: response.status, text };
+}
+
+/**
+ * GET that answers the status line alongside the body — the query call's shape, because a 404 is
+ * the channel's own "no such order" verdict, not a malfunction the caller may gloss over.
+ */
+export async function getJsonWithStatus(
+  config: ChannelHttpConfig,
+  url: URL,
+  authorization: string,
+): Promise<{ status: number; text: string }> {
+  await config.assertTarget(url);
+  let response: Response;
+  try {
+    response = await (config.fetch ?? fetch)(url, {
+      method: "GET",
+      redirect: "error",
+      signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+      headers: {
+        accept: "application/json",
+        authorization,
+      },
+    });
+  } catch {
+    throw new BillingError("unreachable");
+  }
+  return readVerifiedResponse(response);
 }

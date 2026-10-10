@@ -101,6 +101,11 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { createLagoClient } from "./billing/lago";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
+import { createAlipayProvider } from "./billing/payments/alipay";
+import { createWechatProvider } from "./billing/payments/wechat";
+import { createPaymentService } from "./billing/payments/service";
+import { createPaymentStore } from "./billing/payments/store";
+import { startPaymentSweeps } from "./billing/payments/maintenance";
 import {
   createBillingService,
   deploymentExternalCustomerId,
@@ -130,6 +135,10 @@ import {
 } from "./channels/summary";
 import { createThreadIdentity } from "./channels/thread-identity";
 import { createChannelTitler } from "./channels/titler";
+import { createSandboxClient } from "./codesandbox/client";
+import { createCodeRunGateway } from "./codesandbox/gateway";
+import type { CodeRunGatewayFactory } from "./codesandbox/routes";
+import { createCodeRunStore } from "./codesandbox/store";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createComputerGateway } from "./computer/gateway";
@@ -2966,22 +2975,23 @@ const billing =
         const externalCustomerKey = deploymentExternalCustomerId(
           config.deploymentId ?? tenantPackage.tenantId,
         );
+        const lagoClient = createLagoClient({
+          baseUrl: settings.apiUrl,
+          apiKey: settings.apiKey,
+          assertTarget: createOutboundGuard({
+            allowPrivate: settings.allowPrivateHosts,
+          }),
+          ...(settings.requestTimeoutMs !== undefined
+            ? { requestTimeoutMs: settings.requestTimeoutMs }
+            : {}),
+        });
         return {
           service: createBillingService({
             config: {
               externalCustomerKey,
               webhookMode: settings.webhookMode,
             },
-            client: createLagoClient({
-              baseUrl: settings.apiUrl,
-              apiKey: settings.apiKey,
-              assertTarget: createOutboundGuard({
-                allowPrivate: settings.allowPrivateHosts,
-              }),
-              ...(settings.requestTimeoutMs !== undefined
-                ? { requestTimeoutMs: settings.requestTimeoutMs }
-                : {}),
-            }),
+            client: lagoClient,
             store: createBillingStore(database),
             ...(settings.webhookKey
               ? {
@@ -2992,6 +3002,10 @@ const billing =
               : {}),
             planEntitlements: settings.planEntitlements,
           }),
+          // Exposed for the payment assembly below: its activation gate reads the plan's wire
+          // facts (interval, currency) through the same client, so the two never disagree about
+          // where the provider lives.
+          client: lagoClient,
           externalCustomerKey,
           customerName: `OpenBot deployment ${externalCustomerKey}`,
         };
@@ -3022,6 +3036,144 @@ if (billing !== undefined) {
   });
 }
 
+/*
+ * The payment channels, assembled only when a channel was configured — which config.ts further
+ * conditions on billing being configured, so a channel here always has its projection below it.
+ *
+ * One fail-fast per channel gateway, the same boundary the billing block above uses: a gateway
+ * URL the outbound policy refuses is a deployment wired wrong, and it stops the process with the
+ * variable named rather than surfacing as a 503 on the first purchase. The guard built from the
+ * same verdict then rides on every channel request the adapters make.
+ */
+const paymentSettings = config.payments;
+const payments =
+  billing === undefined || paymentSettings === undefined
+    ? undefined
+    : await (async () => {
+        const settings = paymentSettings;
+        for (const [label, gatewayUrl] of [
+          ...(settings.alipay
+            ? ([["ALIPAY_GATEWAY_URL", settings.alipay.gatewayUrl]] as const)
+            : []),
+          ...(settings.wechat
+            ? ([["WXPAY_GATEWAY_URL", settings.wechat.gatewayUrl]] as const)
+            : []),
+        ] as const) {
+          const verdict = await checkOutboundUrl(gatewayUrl, {
+            allowPrivate: settings.allowPrivateHosts,
+          });
+          if (!verdict.allowed) {
+            throw new Error(
+              `${label} was refused by the outbound policy: ${verdict.reason}`,
+            );
+          }
+        }
+
+        const channelGuard = createOutboundGuard({
+          allowPrivate: settings.allowPrivateHosts,
+        });
+        const providers = new Map();
+        if (settings.alipay) {
+          providers.set(
+            "alipay",
+            createAlipayProvider({
+              appId: settings.alipay.appId,
+              privateKeyPem: settings.alipay.privateKeyPem,
+              alipayPublicKeyPem: settings.alipay.alipayPublicKeyPem,
+              gatewayUrl: settings.alipay.gatewayUrl,
+              assertTarget: channelGuard,
+            }),
+          );
+        }
+        if (settings.wechat) {
+          providers.set(
+            "wechat",
+            createWechatProvider({
+              mchid: settings.wechat.mchid,
+              appid: settings.wechat.appid,
+              apiv3Key: settings.wechat.apiv3Key,
+              merchantSerialNo: settings.wechat.merchantSerialNo,
+              merchantPrivateKeyPem: settings.wechat.merchantPrivateKeyPem,
+              platformCertificates: settings.wechat.platformCertificates,
+              gatewayUrl: settings.wechat.gatewayUrl,
+              skewSeconds: settings.callbackSkewSeconds,
+              assertTarget: channelGuard,
+            }),
+          );
+        }
+
+        const externalCustomerKey = billing.externalCustomerKey;
+        const paymentService = createPaymentService({
+          providers,
+          store: createPaymentStore(database),
+          catalog: settings.planCatalog,
+          notifyBaseUrl: settings.notifyBaseUrl,
+          orderTtlMinutes: settings.orderTtlMinutes,
+          latePaymentWindowHours: settings.latePaymentWindowHours,
+          acceptForeignCurrency: settings.acceptForeignCurrency,
+          lago: {
+            getPlan: async (planCode) => {
+              const result = await billing.client.getPlan(planCode);
+              if (result.status === 200 && result.body) {
+                return { found: true, interval: result.body.interval, currency: result.body.currency ?? undefined };
+              }
+              return { found: false };
+            },
+            ensureSubscription: async (input) => {
+              await billing.service.ensureSubscription(input);
+            },
+          },
+          externalCustomerKey,
+          activePlanCode: async () => {
+            const entitlements = await billing.service.entitlements();
+            return entitlements.active && entitlements.planCode
+              ? entitlements.planCode
+              : null;
+          },
+          invalidateEntitlementCache: () => {
+            billing.service.invalidateEntitlementCache();
+          },
+        });
+        startPaymentSweeps(paymentService);
+        return {
+          service: paymentService,
+          activePlanCode: async () => {
+            const entitlements = await billing.service.entitlements();
+            return entitlements.active && entitlements.planCode
+              ? entitlements.planCode
+              : null;
+          },
+        };
+      })();
+
+/*
+ * The code sandbox behind run_code: one client to the agent-sandbox container, one writer for the
+ * code_runs table, and the per-call factory the routes build their gateway through. Unset
+ * AGENT_SANDBOX_URL (or its token) leaves the client null — the surface still mounts, and every
+ * run lands a refused code_runs row beside its audit event rather than a 404 the caller cannot
+ * tell apart from a missing deployment. The timeout is the same budget the client itself assumes
+ * (client.ts falls back to it when a caller passes none), because a deployment cannot tune what
+ * `.env.example` does not name.
+ */
+const CODE_RUN_TIMEOUT_MS = 120_000;
+const sandboxUrl = process.env.AGENT_SANDBOX_URL?.trim();
+const sandboxToken = process.env.SANDBOX_TOKEN?.trim();
+const codeRunStore = createCodeRunStore(database);
+const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
+  createCodeRunGateway({
+    client:
+      sandboxUrl && sandboxToken
+        ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken })
+        : null,
+    modelId: runtimeModel.defaultModel,
+    timeoutMs: CODE_RUN_TIMEOUT_MS,
+    botId,
+    ownerUserId,
+    initiator: PERSON_INITIATOR,
+    store: codeRunStore,
+    auditStore: bootAuditStore,
+  });
+
 const app = createApp(
   config,
   auth,
@@ -3041,7 +3193,6 @@ const app = createApp(
   policyStore,
   // Bots as durable objects, and the channels they run in.
   agentProfileStore,
-  marketplaceStore,
   channelStore,
   channelEvents,
   // The same store the boot row uses, so a Bot's own refusal lands in the trail beside its actions.
@@ -3202,6 +3353,8 @@ const app = createApp(
       profiles: agentProfileStore,
       auditStore: bootAuditStore,
     },
+    // The marketplace's receipts, beside the agent store it writes Bots through.
+    marketplace: { installs: marketplaceStore },
   },
   createSelfHostBanner({
     enabled: config.selfHostBanner,
@@ -3213,6 +3366,13 @@ const app = createApp(
   // unset so the second app directory reports no broker rather than listing apps nobody could
   // connect.
   openConnector ? { broker: openConnector.broker } : undefined,
+  // APPENDED LAST, per the parameter's own docblock: optional and positional, so it goes after
+  // every argument the existing call sites already pass.
+  payments,
+  // The governed code interpreter, appended last beside `payments` per that parameter's own
+  // docblock: optional and positional, present even where the sandbox URL is not, so a run without
+  // a sandbox is a refused outcome rather than a missing route.
+  codeRunGatewayFactory,
 );
 
 /**
