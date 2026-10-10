@@ -9,12 +9,21 @@ import type {
   SandboxRunResult,
   SandboxSendMessageOptions,
   SandboxUsage,
+  TranslatedEvent,
+  TranslatedEventFamily,
 } from "./types";
 
 export class CodeSandboxTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`The sandbox run exceeded its ${timeoutMs}ms budget.`);
     this.name = "CodeSandboxTimeoutError";
+  }
+}
+
+export class CodeSandboxActivityTimeoutError extends Error {
+  constructor(activityTimeoutMs: number) {
+    super(`The sandbox stream was silent for ${activityTimeoutMs}ms.`);
+    this.name = "CodeSandboxActivityTimeoutError";
   }
 }
 
@@ -43,6 +52,16 @@ export type SandboxClient = {
   writeFile(path: string, content: string): Promise<{ path: string; size: number }>;
   /** Wipes this Bot's workspace through the governed reset endpoint. */
   resetWorkspace(): Promise<void>;
+  /**
+   * Aborts the session's in-flight turn (S5's forwarded endpoint). The upstream's own semantics
+   * apply; the client adds nothing but the token and bot headers.
+   */
+  abortSession(sessionId: string): Promise<void>;
+  /**
+   * The workshop's stream: /events (S2), family-labelled by the wrapper. The iterable ends when
+   * the upstream closes; the `: keepalive` comments never surface here.
+   */
+  subscribeEvents(onEvent: (event: TranslatedEvent) => void): Promise<{ stop(): void }>;
 };
 
 export function parseUsage(message: unknown): SandboxUsage | undefined {
@@ -186,6 +205,67 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
 
     async resetWorkspace() {
       await request("/workspace/reset", { method: "POST" });
+    },
+
+    async abortSession(sessionId) {
+      await request(`/session/${encodeURIComponent(sessionId)}/abort`, {
+        method: "POST",
+      });
+    },
+
+    async subscribeEvents(onEvent) {
+      // A raw SSE read against /events. The wrapper labels each block with its family in the
+      // `event:` line (S2); a block without one degrades to "unknown" rather than being
+      // dropped — the stream stays visible, never silently lossy here.
+      const doFetch = options.fetchImpl ?? fetch;
+      const headers: Record<string, string> = {
+        "x-sandbox-token": options.token,
+        "x-openbot-bot-id": options.botId,
+      };
+      const response = await doFetch(`${base}/events`, { headers });
+      if (!response.ok || !response.body) {
+        throw new Error(`Sandbox /events answered ${response.status}.`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let stopped = false;
+
+      const pump = async (): Promise<void> => {
+        while (!stopped) {
+          const chunk = await reader.read();
+          if (chunk.done) return;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+          for (const block of blocks) {
+            const familyLine = block
+              .split("\n")
+              .find((line) => line.startsWith("event:"));
+            const dataLine = block
+              .split("\n")
+              .find((line) => line.startsWith("data:"));
+            if (!dataLine) continue;
+            const family = (familyLine?.slice("event:".length).trim() ??
+              "unknown") as TranslatedEventFamily;
+            let payload: Record<string, unknown>;
+            try {
+              payload = JSON.parse(dataLine.slice("data:".length).trim()) as Record<string, unknown>;
+            } catch {
+              payload = {};
+            }
+            onEvent({ family, eventId: String(payload.id ?? ""), payload });
+          }
+        }
+        await reader.cancel().catch(() => undefined);
+      };
+      void pump();
+      return {
+        stop: () => {
+          stopped = true;
+          void reader.cancel().catch(() => undefined);
+        },
+      };
     },
 
     async writeFile(path, content) {
