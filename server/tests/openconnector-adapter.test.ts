@@ -250,6 +250,7 @@ describe("the actions client", () => {
     expect(paths).toEqual(["/v1/actions?service=github"]);
     expect(actions).toEqual([
       { id: "github.get_current_user", description: "Get the authenticated user", inputSchema: { type: "object" } },
+      { id: "github.create_issue", description: "Create an issue", inputSchema: null },
     ]);
   });
 });
