@@ -10,7 +10,8 @@
     "componentsGallery": "组件库",
     "entitlements": "权益",
     "subscribe": "订阅",
-    "usage": "使用记录"
+    "plansUsage": "套餐用量",
+    "invoices": "账单管理"
   },
   "billing": {
     "title": "权益",
@@ -24,7 +25,9 @@
     "statusOther": "未生效",
     "periodLabel": "本周期",
     "goSubscribe": "去订阅",
-    "retry": "重试"
+    "retry": "重试",
+    "pagerPrev": "上一页",
+    "pagerNext": "下一页"
   },
   "subscribe": {
     "title": "订阅",
@@ -63,30 +66,30 @@
     "backToPlans": "返回套餐"
   },
   "usagePage": {
-    "title": "使用记录",
-    "description": "这个部署在当前计费周期内的用量。",
-    "currentPeriod": "当前周期",
-    "totalThisPeriod": "本周期合计：",
-    "noCharges": "本周期还没有产生任何用量。",
+    "title": "套餐用量",
+    "description": "当前套餐的使用情况：每个资源用了多少、还剩多少，以及额度什么时候重置。",
     "noSubscription": "没有生效中的订阅，暂无用量可统计。",
     "eventLog": "用量明细",
-    "eventLogDescription": "每一次计量的模型调用，按时间倒序——上面合计数字的逐条明细。",
+    "eventLogDescription": "每一次计量的模型调用，按时间倒序——上面用量数字的逐条明细。",
     "noEvents": "还没有计量事件。",
     "eventIn": "输入",
     "eventOut": "输出",
     "eventTokens": "tokens",
     "eventPagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
-    "eventPagerPrev": "上一页",
-    "eventPagerNext": "下一页",
-    "kpiTotal": "本周期合计",
-    "kpiTokens": "总 tokens",
-    "kpiEvents": "计量事件",
     "trendTitle": "用量趋势（按天）",
     "trendTruncated": "图内仅含最近 {{total}} 条事件",
     "chartEmpty": "本周期还没有按天用量。",
     "columnTime": "时间",
     "columnMetric": "指标",
-    "columnAmount": "金额"
+    "overviewTitle": "用量概览",
+    "overviewDescription": "本计费周期内各资源的使用情况。没有配置上限的资源只计量、不限制。",
+    "noQuotas": "本周期还没有产生任何用量。",
+    "unlimited": "不限量",
+    "meteredOnly": "计量中，本部署未设置上限",
+    "usedPercent": "已用 {{percent}}%",
+    "usedOfTotal": "{{used}} / {{total}} {{unit}}",
+    "remaining": "剩余 {{remaining}} {{unit}}",
+    "resetsAt": "{{date}} 重置"
   },
   "darkTheme": "深色主题",
   "darkThemeDescription": "在 OpenBot 中使用深色外观。",
@@ -186,5 +189,50 @@
       "label": "新聊天",
       "description": "在应用任意位置开启新聊天。"
     }
+  },
+  "invoicesPage": {
+    "title": "账单管理",
+    "description": "这个部署的账单记录。账单由本部署开具，通过支付宝或微信支付结算，可查看明细或下载。",
+    "rangeLabel": "时间范围",
+    "ranges": {
+      "3m": "近 3 个月",
+      "6m": "近 6 个月",
+      "12m": "近 12 个月",
+      "all": "全部"
+    },
+    "refresh": "刷新",
+    "columnPeriod": "账单周期",
+    "columnAmount": "金额",
+    "columnStatus": "支付状态",
+    "columnMethod": "支付方式",
+    "columnNumber": "账单编号",
+    "columnActions": "操作",
+    "viewDetail": "详情",
+    "download": "下载账单",
+    "detailTitle": "账单详情",
+    "detailLoading": "正在加载账单……",
+    "detailPlan": "套餐",
+    "detailIssued": "开具时间",
+    "detailSettled": "支付时间",
+    "detailTransaction": "渠道流水号",
+    "detailLines": "费用明细",
+    "status": {
+      "pending": "等待支付",
+      "paid": "已支付",
+      "blocked": "支付异常",
+      "canceled": "已取消",
+      "expired": "已过期"
+    },
+    "method": {
+      "alipay": "支付宝",
+      "wechat": "微信支付"
+    },
+    "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
+    "empty": "暂无账单",
+    "emptyDescription": "这个部署还没有产生任何账单。购买套餐后，账单会出现在这里。",
+    "emptyFiltered": "该时间范围内没有账单。",
+    "showAll": "查看全部",
+    "unavailable": "此部署未启用计费",
+    "unavailableDescription": "未配置计费服务，因此没有账单记录。"
   }
 }

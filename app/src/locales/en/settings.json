@@ -10,7 +10,8 @@
     "componentsGallery": "Components gallery",
     "entitlements": "Entitlements",
     "subscribe": "Subscribe",
-    "usage": "Usage"
+    "plansUsage": "Plans & usage",
+    "invoices": "Bills"
   },
   "billing": {
     "title": "Entitlements",
@@ -24,7 +25,9 @@
     "statusOther": "Not active",
     "periodLabel": "Billing period",
     "goSubscribe": "Subscribe now",
-    "retry": "Retry"
+    "retry": "Retry",
+    "pagerPrev": "Previous",
+    "pagerNext": "Next"
   },
   "subscribe": {
     "title": "Subscribe",
@@ -63,30 +66,30 @@
     "backToPlans": "Back to plans"
   },
   "usagePage": {
-    "title": "Usage",
-    "description": "What this deployment has used in the current billing period.",
-    "currentPeriod": "Current period",
-    "totalThisPeriod": "Total this period:",
-    "noCharges": "Nothing has been used against this plan yet.",
+    "title": "Plans & usage",
+    "description": "What this deployment has used of its plan: how much of each resource, how much is left, and when it resets.",
     "noSubscription": "There is no active subscription to measure usage against.",
-    "eventLog": "Recent events",
-    "eventLogDescription": "Each metered model call, newest first. The line items behind the total above.",
+    "eventLog": "Usage details",
+    "eventLogDescription": "Each metered model call, newest first — the line items behind the numbers above.",
     "noEvents": "No metered events yet.",
     "eventIn": "in",
     "eventOut": "out",
     "eventTokens": "tokens",
     "eventPagerStatus": "Page {{page}} of {{totalPages}} · {{total}} events",
-    "eventPagerPrev": "Previous",
-    "eventPagerNext": "Next",
-    "kpiTotal": "Total this period",
-    "kpiTokens": "Total tokens",
-    "kpiEvents": "Metered events",
     "trendTitle": "Daily usage",
     "trendTruncated": "Chart covers the most recent {{total}} events only",
     "chartEmpty": "No daily usage in this period yet.",
     "columnTime": "Time",
     "columnMetric": "Metric",
-    "columnAmount": "Amount"
+    "overviewTitle": "Usage overview",
+    "overviewDescription": "Each resource in the current billing period. A resource with no configured ceiling is metered, not capped.",
+    "noQuotas": "Nothing has been used in this period yet.",
+    "unlimited": "Unlimited",
+    "meteredOnly": "Metered — this deployment set no ceiling",
+    "usedPercent": "{{percent}}% used",
+    "usedOfTotal": "{{used}} / {{total}} {{unit}}",
+    "remaining": "{{remaining}} {{unit}} left",
+    "resetsAt": "Resets {{date}}"
   },
   "darkTheme": "Dark theme",
   "darkThemeDescription": "Use the dark appearance across OpenBot.",
@@ -186,5 +189,50 @@
       "label": "New chat",
       "description": "Start a new chat from anywhere in the app."
     }
+  },
+  "invoicesPage": {
+    "title": "Bills",
+    "description": "What this deployment has been billed. Bills are raised here and settled through Alipay or WeChat Pay; open one for its detail, or download it.",
+    "rangeLabel": "Period",
+    "ranges": {
+      "3m": "Last 3 months",
+      "6m": "Last 6 months",
+      "12m": "Last 12 months",
+      "all": "All time"
+    },
+    "refresh": "Refresh",
+    "columnPeriod": "Billing period",
+    "columnAmount": "Amount",
+    "columnStatus": "Status",
+    "columnMethod": "Method",
+    "columnNumber": "Bill number",
+    "columnActions": "Actions",
+    "viewDetail": "Detail",
+    "download": "Download bill",
+    "detailTitle": "Bill detail",
+    "detailLoading": "Loading this bill…",
+    "detailPlan": "Plan",
+    "detailIssued": "Issued",
+    "detailSettled": "Paid at",
+    "detailTransaction": "Channel transaction",
+    "detailLines": "Lines",
+    "status": {
+      "pending": "Awaiting payment",
+      "paid": "Paid",
+      "blocked": "Payment blocked",
+      "canceled": "Canceled",
+      "expired": "Expired"
+    },
+    "method": {
+      "alipay": "Alipay",
+      "wechat": "WeChat Pay"
+    },
+    "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} bills",
+    "empty": "No bills yet",
+    "emptyDescription": "This deployment has not been billed for anything. Once a plan is purchased, its bills appear here.",
+    "emptyFiltered": "No bills in that period.",
+    "showAll": "Show all",
+    "unavailable": "Billing is not enabled here",
+    "unavailableDescription": "No billing provider is configured on this deployment, so there are no bills to show."
   }
 }
