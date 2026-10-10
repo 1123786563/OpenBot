@@ -26,10 +26,13 @@ import {
   type RoutineSweepOptions,
 } from "../../server/src/routines/sweep";
 import { createWorkQueue } from "../../server/src/work/queue";
+import { getLogger } from "../../shared/logger";
 import { loadWorkerEnv, routineRunUrl } from "./env";
 import { workerStatus } from "./status";
 
-console.info(`OpenBot worker status: ${workerStatus().status}`);
+const log = getLogger("worker");
+
+log.info({ status: workerStatus().status }, "worker status");
 
 /*
  * The worker's three settings, parsed and validated in one place (`./env`).
@@ -120,21 +123,23 @@ async function runOneTick(): Promise<void> {
   try {
     const { offered } = await offerDueRoutines(options);
     const report = await dispatchClaimedRoutines(options);
-    console.info(
-      JSON.stringify({
+    log.info(
+      {
         type: "routine-sweep",
         offered,
         considered: report.considered,
         fired: report.fired,
         skipped: report.skipped,
-      }),
+      },
+      "routine-sweep",
     );
   } catch (error) {
-    console.warn(
-      JSON.stringify({
+    log.warn(
+      {
         type: "routine-sweep-tick-failed",
         reason: error instanceof Error ? error.message : String(error),
-      }),
+      },
+      "routine-sweep-tick-failed",
     );
   }
 
@@ -148,13 +153,17 @@ async function runOneTick(): Promise<void> {
         kind: ROUTINE_FIRE_KIND,
         olderThanMs: PURGE_OLDER_THAN_MS,
       });
-      console.info(JSON.stringify({ type: "routine-sweep-purge", purged }));
+      log.info(
+        { type: "routine-sweep-purge", purged },
+        "routine-sweep-purge",
+      );
     } catch (error) {
-      console.warn(
-        JSON.stringify({
+      log.warn(
+        {
           type: "routine-sweep-purge-failed",
           reason: error instanceof Error ? error.message : String(error),
-        }),
+        },
+        "routine-sweep-purge-failed",
       );
     }
   }
