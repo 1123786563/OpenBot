@@ -1,14 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { canonicalString, createAlipayProvider } from "../src/billing/payments/alipay";
-import { rsaSign } from "../src/billing/payments/crypto";
 import { checkOutboundUrl } from "../src/billing/outbound";
+import {
+  canonicalString,
+  createAlipayProvider,
+} from "../src/billing/payments/alipay";
+import { rsaSign } from "../src/billing/payments/crypto";
 import { BillingError } from "../src/billing/types";
 
 // Fixture RSA pair under ./fixtures — the same material the crypto tests sign with. The platform
 // role (signing gateway answers) is played by the same pair.
 const fixtureDir = new URL("./fixtures/", import.meta.url).pathname;
-const privateKeyPem = await Bun.file(join(fixtureDir, "payment-test-key.pem")).text();
-const certificatePem = await Bun.file(join(fixtureDir, "payment-test-certificate.pem")).text();
+const privateKeyPem = await Bun.file(
+  join(fixtureDir, "payment-test-key.pem"),
+).text();
+const certificatePem = await Bun.file(
+  join(fixtureDir, "payment-test-certificate.pem"),
+).text();
 
 import { join } from "node:path";
 
@@ -127,12 +134,10 @@ describe("createAlipayProvider over the SDK transport", () => {
     const provider = providerWith(async () => {
       throw new Error("socket hang up");
     });
-    const error = await provider
-      .queryPayment("po-abc")
-      .then(
-        () => null,
-        (reason: unknown) => reason,
-      );
+    const error = await provider.queryPayment("po-abc").then(
+      () => null,
+      (reason: unknown) => reason,
+    );
     expect(error).toBeInstanceOf(BillingError);
     expect((error as BillingError).code).toBe("unreachable");
     expect((error as BillingError).retryable).toBe(true);
@@ -177,7 +182,12 @@ describe("the notification verifier", () => {
     const body = signedBody();
     const tampered = new URLSearchParams(body);
     tampered.set("total_amount", "999.00");
-    tampered.set("sign", platformSign(canonicalString(Object.fromEntries(tampered)).replace("999.00", "1.00")));
+    tampered.set(
+      "sign",
+      platformSign(
+        canonicalString(Object.fromEntries(tampered)).replace("999.00", "1.00"),
+      ),
+    );
     // Re-sign with the WRONG canonical (the untampered amounts) — the amount was swapped after
     // signing, which is the attack the verification exists to refuse.
     const forged = new URLSearchParams(body);

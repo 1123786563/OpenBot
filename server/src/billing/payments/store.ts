@@ -185,58 +185,61 @@ export function createPaymentStore(database: Database): PaymentStore {
         .limit(1);
       if (known) return { claimed: false, alreadyKnown: true };
 
-      return database.transaction(async (tx) => {
-        const moved = await tx
-          .update(paymentOrders)
-          .set({
-            status: "paid",
-            channelTransactionId: input.channelTransactionId,
-            periodStart: input.periodStart,
-            periodEnd: input.periodEnd,
-            terminalAt: new Date(),
-            version: input.expectedVersion + 1,
-          })
-          .where(
-            and(
-              eq(paymentOrders.id, input.id),
-              eq(paymentOrders.version, input.expectedVersion),
-              inArray(paymentOrders.status, [...input.fromStatuses]),
-            ),
-          )
-          .returning({ id: paymentOrders.id });
-        if (moved.length === 0) return { claimed: false, alreadyKnown: false };
-
-        // The insert carries the idempotency: inside the same transaction, a concurrent
-        // confirmation of the same transaction id loses here even if the CAS above somehow let
-        // both through — it cannot, but the index does not rely on that.
-        const inserted = await tx
-          .insert(paymentEvents)
-          .values(
-            eventInput({
-              orderId: input.id,
-              kind: "fact",
-              code: "paid",
-              state: "paid",
+      return database
+        .transaction(async (tx) => {
+          const moved = await tx
+            .update(paymentOrders)
+            .set({
+              status: "paid",
               channelTransactionId: input.channelTransactionId,
-              amountCents: input.amountCents,
-              detail: "",
-            }),
-          )
-          .onConflictDoNothing()
-          .returning({ id: paymentEvents.id });
-        if (inserted.length === 0) {
-          // Another order already holds this transaction's paid fact. Abort so the CAS above
-          // rolls back — one transaction id, one paid order — and tell the caller through the
-          // return value, not an exception across the seam: this is a verdict, not a fault.
-          throw new TransactionAlreadyKnown();
-        }
-        return { claimed: true, alreadyKnown: false };
-      }).catch((error: unknown) => {
-        if (error instanceof TransactionAlreadyKnown) {
-          return { claimed: false, alreadyKnown: true };
-        }
-        throw error;
-      });
+              periodStart: input.periodStart,
+              periodEnd: input.periodEnd,
+              terminalAt: new Date(),
+              version: input.expectedVersion + 1,
+            })
+            .where(
+              and(
+                eq(paymentOrders.id, input.id),
+                eq(paymentOrders.version, input.expectedVersion),
+                inArray(paymentOrders.status, [...input.fromStatuses]),
+              ),
+            )
+            .returning({ id: paymentOrders.id });
+          if (moved.length === 0)
+            return { claimed: false, alreadyKnown: false };
+
+          // The insert carries the idempotency: inside the same transaction, a concurrent
+          // confirmation of the same transaction id loses here even if the CAS above somehow let
+          // both through — it cannot, but the index does not rely on that.
+          const inserted = await tx
+            .insert(paymentEvents)
+            .values(
+              eventInput({
+                orderId: input.id,
+                kind: "fact",
+                code: "paid",
+                state: "paid",
+                channelTransactionId: input.channelTransactionId,
+                amountCents: input.amountCents,
+                detail: "",
+              }),
+            )
+            .onConflictDoNothing()
+            .returning({ id: paymentEvents.id });
+          if (inserted.length === 0) {
+            // Another order already holds this transaction's paid fact. Abort so the CAS above
+            // rolls back — one transaction id, one paid order — and tell the caller through the
+            // return value, not an exception across the seam: this is a verdict, not a fault.
+            throw new TransactionAlreadyKnown();
+          }
+          return { claimed: true, alreadyKnown: false };
+        })
+        .catch((error: unknown) => {
+          if (error instanceof TransactionAlreadyKnown) {
+            return { claimed: false, alreadyKnown: true };
+          }
+          throw error;
+        });
     },
 
     async blockOrder(input) {
@@ -257,18 +260,16 @@ export function createPaymentStore(database: Database): PaymentStore {
           )
           .returning({ id: paymentOrders.id });
         if (moved.length === 0) return false;
-        await tx
-          .insert(paymentEvents)
-          .values(
-            eventInput({
-              orderId: input.id,
-              kind: "anomaly",
-              code: "amount_mismatch",
-              channelTransactionId: input.channelTransactionId,
-              amountCents: input.amountCents,
-              detail: input.detail,
-            }),
-          );
+        await tx.insert(paymentEvents).values(
+          eventInput({
+            orderId: input.id,
+            kind: "anomaly",
+            code: "amount_mismatch",
+            channelTransactionId: input.channelTransactionId,
+            amountCents: input.amountCents,
+            detail: input.detail,
+          }),
+        );
         return true;
       });
     },
@@ -329,9 +330,27 @@ export function createPaymentStore(database: Database): PaymentStore {
         .select()
         .from(paymentOrders)
         .where(
-          and(eq(paymentOrders.status, "pending"), lte(paymentOrders.expiresAt, now)),
+          and(
+            eq(paymentOrders.status, "pending"),
+            lte(paymentOrders.expiresAt, now),
+          ),
         )
         .orderBy(asc(paymentOrders.expiresAt))
+        .limit(limit);
+      return rows.map(rowOf);
+    },
+
+    async listPaidPendingActivationOrders(limit) {
+      const rows = await database
+        .select()
+        .from(paymentOrders)
+        .where(
+          and(
+            eq(paymentOrders.status, "paid"),
+            eq(paymentOrders.activationState, "pending"),
+          ),
+        )
+        .orderBy(asc(paymentOrders.createdAt))
         .limit(limit);
       return rows.map(rowOf);
     },

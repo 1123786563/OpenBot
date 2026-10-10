@@ -14,7 +14,10 @@
  * answered from this triage alone; polling and the sweep share the same core, which is the
  * three-source convergence the flow relies on.
  */
+
+import { getLogger } from "../../../../shared/logger";
 import { BillingError } from "../types";
+import type { NotificationRefusal, PaymentProvider } from "./provider";
 import type {
   PaymentAnomalyCode,
   PaymentCatalog,
@@ -24,8 +27,6 @@ import type {
   PaymentProviderId,
   PaymentStore,
 } from "./types";
-import type { NotificationRefusal, PaymentProvider } from "./provider";
-import { getLogger } from "../../../../shared/logger";
 
 /** What the payment service needs from the billing projection, and nothing more. */
 export type PaymentLagoFacade = {
@@ -78,10 +79,7 @@ export type CallbackOutcome =
 
 export type PaymentService = {
   /** The catalog, price-snapshotted at boot; `canPurchase` and `activePlanCode` are the caller's. */
-  catalog(
-    canPurchase: boolean,
-    activePlanCode: string | null,
-  ): PaymentCatalog;
+  catalog(canPurchase: boolean, activePlanCode: string | null): PaymentCatalog;
   /**
    * Open or replay one order. Same plan + same provider + still pending returns it untouched;
    * the same plan on a *different* provider cancels the old order (and best-effort closes it at
@@ -100,7 +98,9 @@ export type PaymentService = {
   /** The newest still-live order (pending or paid), or null — the settings page's "current". */
   readCurrentOrder(): Promise<{ order: PaymentOrderView | null }>;
   /** Administrator cancel. Terminal states refuse; canceling twice is the same answer once. */
-  cancelPurchase(id: string): Promise<
+  cancelPurchase(
+    id: string,
+  ): Promise<
     | { outcome: "canceled"; order: PaymentOrderView }
     | { outcome: "idempotent"; order: PaymentOrderView }
     | { outcome: "unknown" }
@@ -114,12 +114,22 @@ export type PaymentService = {
   ): Promise<CallbackOutcome>;
   /** The expiry pass: query-first on every pending order past its TTL, then close. */
   sweepExpired(): Promise<void>;
+  /**
+   * The activation pass: every paid order whose activation has not landed gets another attempt.
+   * A paid order must never depend on somebody re-opening its page to become a subscription —
+   * a failed activation (a plan removed mid-flight, a currency rule) is retried here forever, so
+   * a rule fixed later still pays out.
+   */
+  sweepActivations(): Promise<void>;
 };
 
 export function createPaymentService(deps: {
   providers: ReadonlyMap<PaymentProviderId, PaymentProvider>;
   store: PaymentStore;
-  catalog: ReadonlyMap<string, { amountCents: number; currency: "CNY"; periodMonths: number }>;
+  catalog: ReadonlyMap<
+    string,
+    { amountCents: number; currency: "CNY"; periodMonths: number }
+  >;
   notifyBaseUrl: string;
   orderTtlMinutes: number;
   latePaymentWindowHours: number;
@@ -410,7 +420,10 @@ export function createPaymentService(deps: {
       if (active !== null) {
         // One subscription at a time: the guard that also blocks the admin sync's other-plan
         // route, so an upgrade cannot bypass the front door.
-        throw new PurchaseError({ reason: "active-subscription", activePlanCode: active });
+        throw new PurchaseError({
+          reason: "active-subscription",
+          activePlanCode: active,
+        });
       }
 
       // Replay: the same plan on the same channel, still open, comes back untouched.
@@ -427,7 +440,11 @@ export function createPaymentService(deps: {
           .readPendingOrder(input.planCode, otherId)
           .catch(() => null);
         if (!stale) continue;
-        if (await deps.store.cancelOrder(stale.id, stale.version).catch(() => false)) {
+        if (
+          await deps.store
+            .cancelOrder(stale.id, stale.version)
+            .catch(() => false)
+        ) {
           try {
             await other.closePayment(stale.id);
           } catch {
@@ -436,7 +453,9 @@ export function createPaymentService(deps: {
         }
       }
 
-      const expiresAt = new Date(now().getTime() + deps.orderTtlMinutes * 60_000);
+      const expiresAt = new Date(
+        now().getTime() + deps.orderTtlMinutes * 60_000,
+      );
       const order = await deps.store.insertOrder({
         planCode: input.planCode,
         provider: input.provider,
@@ -566,7 +585,9 @@ export function createPaymentService(deps: {
         return { kind: "not-success" };
       }
 
-      const order = await deps.store.readOrder(fact.outTradeNo).catch(() => null);
+      const order = await deps.store
+        .readOrder(fact.outTradeNo)
+        .catch(() => null);
       if (!order) {
         return { kind: "unknown-order" };
       }
@@ -613,6 +634,20 @@ export function createPaymentService(deps: {
           } catch {
             // The next sweep's query re-reads the truth; a failed close is not a lost order.
           }
+        }
+      }
+    },
+
+    async sweepActivations() {
+      const orders = await deps.store
+        .listPaidPendingActivationOrders(100)
+        .catch(() => [] as const);
+      for (const order of orders) {
+        try {
+          await activateOrder(order);
+        } catch {
+          // One order's failure is not the batch's: the next pass re-asks. A non-retryable
+          // refusal already recorded `failed` inside; anything thrown here is transport.
         }
       }
     },

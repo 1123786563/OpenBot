@@ -27,6 +27,10 @@ export function startPaymentSweeps(
       // cover; a failed pass is retried on the interval, and nothing here can lose an order
       // that a channel has not answered about yet.
     });
+    void service.sweepActivations().catch(() => {
+      // The activation pass runs on the same discipline: paid orders waiting for their Lago
+      // subscription are retried on the interval until the rule that refused them changes.
+    });
   };
 
   const first = setTimeout(() => {

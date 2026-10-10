@@ -25,17 +25,17 @@
 import { randomBytes } from "node:crypto";
 import { BillingError } from "../types";
 import {
+  type ChannelHttpConfig,
+  getJsonWithStatus,
+  postJson,
+} from "./channel-http";
+import {
   aesGcmDecrypt,
   certificatePublicKey,
   certificateSerial,
   rsaSign,
   rsaVerify,
 } from "./crypto";
-import {
-  getJsonWithStatus,
-  postJson,
-  type ChannelHttpConfig,
-} from "./channel-http";
 import type {
   PaymentFact,
   PaymentProvider,
@@ -104,7 +104,10 @@ function parseJson(text: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function stringField(record: Record<string, unknown>, name: string): string | undefined {
+function stringField(
+  record: Record<string, unknown>,
+  name: string,
+): string | undefined {
   const value = record[name];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -115,11 +118,15 @@ function wechatFact(record: Record<string, unknown>): PaymentFact {
   const state: PaymentFact["state"] =
     tradeState === "SUCCESS"
       ? "paid"
-      : tradeState === "CLOSED" || tradeState === "REVOKED" || tradeState === "PAYERROR"
+      : tradeState === "CLOSED" ||
+          tradeState === "REVOKED" ||
+          tradeState === "PAYERROR"
         ? "closed"
         : "pending";
   const amount =
-    record.amount && typeof record.amount === "object" && !Array.isArray(record.amount)
+    record.amount &&
+    typeof record.amount === "object" &&
+    !Array.isArray(record.amount)
       ? (record.amount as Record<string, unknown>)
       : undefined;
   const total = amount?.total;
@@ -152,7 +159,12 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
     pathWithQuery: string,
     body: string,
   ): Promise<string> {
-    const authorization = authorizationHeader(config, method, pathWithQuery, body);
+    const authorization = authorizationHeader(
+      config,
+      method,
+      pathWithQuery,
+      body,
+    );
     return postJson(
       config,
       new URL(`${gateway}${pathWithQuery}`),
@@ -214,7 +226,8 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
       headers: Headers,
       rawBody: string,
     ): Promise<
-      { ok: true; fact: PaymentFact } | { ok: false; refusal?: "stale" | "decryption" }
+      | { ok: true; fact: PaymentFact }
+      | { ok: false; refusal?: "stale" | "decryption" }
     > {
       const timestamp = headers.get(HEADER_TIMESTAMP);
       const nonce = headers.get(HEADER_NONCE);
@@ -224,13 +237,18 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
 
       const now = config.nowSeconds?.() ?? Math.floor(Date.now() / 1000);
       const headerTime = Number(timestamp);
-      if (!Number.isFinite(headerTime) || Math.abs(now - headerTime) > config.skewSeconds) {
+      if (
+        !Number.isFinite(headerTime) ||
+        Math.abs(now - headerTime) > config.skewSeconds
+      ) {
         // A replay riding an old timestamp is graded differently from a forged one: the channel
         // wants to know its clock or its retry is the problem.
         return { ok: false, refusal: "stale" };
       }
 
-      const platform = platforms.find((candidate) => candidate.serial === serial);
+      const platform = platforms.find(
+        (candidate) => candidate.serial === serial,
+      );
       if (!platform) return { ok: false };
 
       const canonical = `${timestamp}\n${nonce}\n${rawBody}\n`;
@@ -244,14 +262,18 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
       } catch {
         return { ok: false, refusal: "decryption" };
       }
-      if (!envelope || typeof envelope !== "object") return { ok: false, refusal: "decryption" };
+      if (!envelope || typeof envelope !== "object")
+        return { ok: false, refusal: "decryption" };
       const resource = (envelope as Record<string, unknown>).resource;
-      if (!resource || typeof resource !== "object") return { ok: false, refusal: "decryption" };
+      if (!resource || typeof resource !== "object")
+        return { ok: false, refusal: "decryption" };
       const resourceRecord = resource as Record<string, unknown>;
       const ciphertext = stringField(resourceRecord, "ciphertext");
       const resourceNonce = stringField(resourceRecord, "nonce");
-      if (!ciphertext || !resourceNonce) return { ok: false, refusal: "decryption" };
-      const associatedData = stringField(resourceRecord, "associated_data") ?? "";
+      if (!ciphertext || !resourceNonce)
+        return { ok: false, refusal: "decryption" };
+      const associatedData =
+        stringField(resourceRecord, "associated_data") ?? "";
 
       const plain = aesGcmDecrypt(
         Buffer.from(config.apiv3Key, "utf8"),
@@ -267,7 +289,8 @@ export function createWechatProvider(config: WechatConfig): PaymentProvider {
       } catch {
         return { ok: false, refusal: "decryption" };
       }
-      if (!decoded || typeof decoded !== "object") return { ok: false, refusal: "decryption" };
+      if (!decoded || typeof decoded !== "object")
+        return { ok: false, refusal: "decryption" };
       const fact = decoded as Record<string, unknown>;
 
       // The decrypted body names the parties; the deployment is the merchant, and a resource for

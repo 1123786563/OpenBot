@@ -77,7 +77,8 @@ export type PaymentProvider = {
     headers: Headers,
     rawBody: string,
   ): Promise<
-    { ok: true; fact: PaymentFact } | { ok: false; refusal?: NotificationRefusal }
+    | { ok: true; fact: PaymentFact }
+    | { ok: false; refusal?: NotificationRefusal }
   >;
   /** What a successful delivery is answered with, verbatim. */
   readonly successAck: { body: string; contentType: string };

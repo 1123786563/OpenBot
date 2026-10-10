@@ -222,7 +222,15 @@ export type PaymentStore = {
     activationState: PaymentActivationState,
   ): Promise<void>;
   /** Pending orders past their expiry, for the sweeper's query-first pass. */
-  listExpiredPendingOrders(now: Date, limit: number): Promise<
-    readonly PaymentOrderRecord[]
-  >;
+  listExpiredPendingOrders(
+    now: Date,
+    limit: number,
+  ): Promise<readonly PaymentOrderRecord[]>;
+  /**
+   * Paid orders whose activation has not landed yet, for the sweeper's activation-retry pass —
+   * a paid order must never depend on somebody re-opening its page to become a subscription.
+   */
+  listPaidPendingActivationOrders(
+    limit: number,
+  ): Promise<readonly PaymentOrderRecord[]>;
 };

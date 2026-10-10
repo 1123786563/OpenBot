@@ -1,17 +1,17 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { BillingError } from "../src/billing/types";
 import { getLogger } from "../../shared/logger";
+import type { PaymentProvider } from "../src/billing/payments/provider";
 import {
   createPaymentService,
-  PurchaseError,
   type PaymentLagoFacade,
+  PurchaseError,
 } from "../src/billing/payments/service";
-import type { PaymentProvider } from "../src/billing/payments/provider";
 import type {
   PaymentOrderRecord,
   PaymentProviderId,
   PaymentStore,
 } from "../src/billing/payments/types";
+import { BillingError } from "../src/billing/types";
 
 /*
  * The orchestration against in-memory doubles: a store that honours the CAS and the paid-fact
@@ -84,15 +84,20 @@ function memoryStore(): PaymentStore {
     },
     async readLatestPaidOrder(planCode) {
       const paid = [...orders.values()]
-        .filter((order) => order.planCode === planCode && order.status === "paid")
+        .filter(
+          (order) => order.planCode === planCode && order.status === "paid",
+        )
         .sort(
-          (a, b) => (b.terminalAt?.getTime() ?? 0) - (a.terminalAt?.getTime() ?? 0),
+          (a, b) =>
+            (b.terminalAt?.getTime() ?? 0) - (a.terminalAt?.getTime() ?? 0),
         );
       return paid[0] ?? null;
     },
     async readLatestLiveOrder() {
       const live = [...orders.values()]
-        .filter((order) => order.status === "pending" || order.status === "paid")
+        .filter(
+          (order) => order.status === "pending" || order.status === "paid",
+        )
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       return live[0] ?? null;
     },
@@ -102,7 +107,11 @@ function memoryStore(): PaymentStore {
     },
     async cancelOrder(id, expectedVersion) {
       const order = orders.get(id);
-      if (!order || order.version !== expectedVersion || order.status !== "pending") {
+      if (
+        !order ||
+        order.version !== expectedVersion ||
+        order.status !== "pending"
+      ) {
         return false;
       }
       orders.set(id, {
@@ -139,7 +148,11 @@ function memoryStore(): PaymentStore {
     },
     async blockOrder(input) {
       const order = orders.get(input.id);
-      if (!order || order.version !== input.expectedVersion || order.status !== "pending") {
+      if (
+        !order ||
+        order.version !== input.expectedVersion ||
+        order.status !== "pending"
+      ) {
         return false;
       }
       orders.set(input.id, {
@@ -153,7 +166,11 @@ function memoryStore(): PaymentStore {
     },
     async expireOrder(id, expectedVersion) {
       const order = orders.get(id);
-      if (!order || order.version !== expectedVersion || order.status !== "pending") {
+      if (
+        !order ||
+        order.version !== expectedVersion ||
+        order.status !== "pending"
+      ) {
         return false;
       }
       orders.set(id, {
@@ -178,7 +195,15 @@ function memoryStore(): PaymentStore {
     },
     async listExpiredPendingOrders(at) {
       return [...orders.values()].filter(
-        (order) => order.status === "pending" && order.expiresAt.getTime() <= at.getTime(),
+        (order) =>
+          order.status === "pending" &&
+          order.expiresAt.getTime() <= at.getTime(),
+      );
+    },
+    async listPaidPendingActivationOrders() {
+      return [...orders.values()].filter(
+        (order) =>
+          order.status === "paid" && order.activationState === "pending",
       );
     },
   };
@@ -194,7 +219,9 @@ function fakeProvider(
     id,
     closes,
     queries,
-    createSession: async () => ({ checkout: { kind: "qrcode", payload: `qr-${id}` } }),
+    createSession: async () => ({
+      checkout: { kind: "qrcode", payload: `qr-${id}` },
+    }),
     queryPayment: async (outTradeNo: string) => {
       queries.push(outTradeNo);
       return { outTradeNo, state: "pending" as const };
@@ -203,7 +230,10 @@ function fakeProvider(
       closes.push(outTradeNo);
     },
     verifyNotification: async () => ({ ok: false }),
-    successAck: { body: id === "alipay" ? "success" : '{"code":"SUCCESS"}', contentType: "text/plain" },
+    successAck: {
+      body: id === "alipay" ? "success" : '{"code":"SUCCESS"}',
+      contentType: "text/plain",
+    },
     ...overrides,
   } as PaymentProvider & { closes: string[]; queries: string[] };
 }
@@ -245,11 +275,15 @@ function buildService(
   const store = overrides.store ?? memoryStore();
   const providers = overrides.providers ?? [fakeProvider("alipay")];
   const lago = overrides.lago ?? fakeLago();
-  const providerMap = new Map(providers.map((provider) => [provider.id, provider]));
+  const providerMap = new Map(
+    providers.map((provider) => [provider.id, provider]),
+  );
   const s = createPaymentService({
     providers: providerMap,
     store,
-    catalog: new Map([["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }]]),
+    catalog: new Map([
+      ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+    ]),
     notifyBaseUrl: "https://payments.openbot.example",
     orderTtlMinutes: 15,
     latePaymentWindowHours: overrides.latePaymentWindowHours ?? 24,
@@ -302,7 +336,9 @@ describe("purchase ordering", () => {
     expect(second.order.orderId).not.toBe(first.order.orderId);
     expect(second.order.provider).toBe("wechat");
     expect(alipay.closes).toEqual([first.order.orderId]);
-    expect((await service.readOrder(first.order.orderId)).order?.status).toBe("canceled");
+    expect((await service.readOrder(first.order.orderId)).order?.status).toBe(
+      "canceled",
+    );
   });
 
   test("an active subscription refuses the purchase with its plan named", async () => {
@@ -310,7 +346,11 @@ describe("purchase ordering", () => {
       activePlanCode: async () => "pro",
     });
     await expect(
-      service.createPurchase({ planCode: "pro", provider: "alipay", createdBy: "admin-1" }),
+      service.createPurchase({
+        planCode: "pro",
+        provider: "alipay",
+        createdBy: "admin-1",
+      }),
     ).rejects.toMatchObject({
       refusal: { reason: "active-subscription", activePlanCode: "pro" },
     });
@@ -319,7 +359,11 @@ describe("purchase ordering", () => {
   test("a plan outside the catalog refuses", async () => {
     const { service } = buildService();
     await expect(
-      service.createPurchase({ planCode: "ghost", provider: "alipay", createdBy: "a" }),
+      service.createPurchase({
+        planCode: "ghost",
+        provider: "alipay",
+        createdBy: "a",
+      }),
     ).rejects.toBeInstanceOf(PurchaseError);
   });
 
@@ -327,7 +371,11 @@ describe("purchase ordering", () => {
     const alipay = fakeProvider("alipay");
     const { service, store } = buildService({ providers: [alipay] });
     await expect(
-      service.createPurchase({ planCode: "pro", provider: "wechat", createdBy: "a" }),
+      service.createPurchase({
+        planCode: "pro",
+        provider: "wechat",
+        createdBy: "a",
+      }),
     ).rejects.toMatchObject({ refusal: { reason: "unknown-provider" } });
     // The refusal left no stranded order behind: nothing pending on either channel, and the
     // configured provider was never touched.
@@ -346,14 +394,21 @@ describe("purchase ordering", () => {
   test("a channel failure leaves the order pending for a replay, and surfaces the sentinel", async () => {
     const broken = fakeProvider("alipay", {
       createSession: async () => {
-        throw Object.assign(new Error("Billing provider failed (unreachable)."), {
-          name: "BillingError",
-        });
+        throw Object.assign(
+          new Error("Billing provider failed (unreachable)."),
+          {
+            name: "BillingError",
+          },
+        );
       },
     });
     const { service, store } = buildService({ providers: [broken] });
     await expect(
-      service.createPurchase({ planCode: "pro", provider: "alipay", createdBy: "a" }),
+      service.createPurchase({
+        planCode: "pro",
+        provider: "alipay",
+        createdBy: "a",
+      }),
     ).rejects.toThrow(/unreachable/);
     const pending = await store.readPendingOrder("pro", "alipay");
     expect(pending?.status).toBe("pending");
@@ -401,7 +456,9 @@ describe("callback triage", () => {
       verifyNotification: async () => ({ ok: false, refusal: "stale" }),
     });
     const withStale = buildService({ providers: [stale] });
-    expect(await withStale.service.handleCallback("alipay", new Headers(), "x")).toEqual({
+    expect(
+      await withStale.service.handleCallback("alipay", new Headers(), "x"),
+    ).toEqual({
       kind: "unverified",
       refusal: "stale",
     });
@@ -427,12 +484,17 @@ describe("callback triage", () => {
     const { service } = buildService({ providers: [alipay], store });
     const outcome = await service.handleCallback("alipay", new Headers(), "x");
     expect(outcome).toEqual({ kind: "not-success" });
-    expect((await store.readPendingOrder("pro", "alipay"))?.status).toBe("pending");
+    expect((await store.readPendingOrder("pro", "alipay"))?.status).toBe(
+      "pending",
+    );
   });
 
   test("a paid fact for an order that does not exist answers unknown-order", async () => {
     const alipay = fakeProvider("alipay", {
-      verifyNotification: async () => ({ ok: true, fact: paidFactFor("po-missing") }),
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor("po-missing"),
+      }),
     });
     const { service } = buildService({ providers: [alipay] });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
@@ -452,7 +514,10 @@ describe("callback triage", () => {
       checkoutPayload: null,
     });
     const alipay = fakeProvider("alipay", {
-      verifyNotification: async () => ({ ok: true, fact: paidFactFor(order.id) }),
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
     });
     const lago = fakeLago();
     let invalidated = 0;
@@ -524,7 +589,11 @@ describe("callback triage", () => {
     const alipay = fakeProvider("alipay", {
       verifyNotification: async () => ({
         ok: true,
-        fact: { outTradeNo: order.id, state: "paid", channelTransactionId: "tx-9" },
+        fact: {
+          outTradeNo: order.id,
+          state: "paid",
+          channelTransactionId: "tx-9",
+        },
       }),
     });
     const { service } = buildService({ providers: [alipay], store });
@@ -547,7 +616,10 @@ describe("callback triage", () => {
     });
     const lago = fakeLago();
     const alipay = fakeProvider("alipay", {
-      verifyNotification: async () => ({ ok: true, fact: paidFactFor(order.id) }),
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
     });
     const { service } = buildService({ providers: [alipay], store, lago });
     await service.handleCallback("alipay", new Headers(), "x");
@@ -557,7 +629,11 @@ describe("callback triage", () => {
         fact: { ...paidFactFor(order.id), channelTransactionId: "tx-2" },
       }),
     });
-    const { service: second } = buildService({ providers: [secondDelivery], store, lago });
+    const { service: second } = buildService({
+      providers: [secondDelivery],
+      store,
+      lago,
+    });
     expect(await second.handleCallback("alipay", new Headers(), "x")).toEqual({
       kind: "success",
     });
@@ -579,17 +655,23 @@ describe("callback triage", () => {
       checkoutPayload: null,
     });
     await store.expireOrder(order.id, order.version);
-    const expiredAt = (await store.readOrder(order.id))?.terminalAt?.getTime() ?? 0;
+    const expiredAt =
+      (await store.readOrder(order.id))?.terminalAt?.getTime() ?? 0;
 
     const paidProvider = () =>
       fakeProvider("alipay", {
-        verifyNotification: async () => ({ ok: true, fact: paidFactFor(order.id) }),
+        verifyNotification: async () => ({
+          ok: true,
+          fact: paidFactFor(order.id),
+        }),
       });
 
     // +23h past the terminal moment: inside the 24h window — the money is honoured.
     clockMs = expiredAt + 23 * 3600_000;
     const inside = buildService({ providers: [paidProvider()], store });
-    expect(await inside.service.handleCallback("alipay", new Headers(), "x")).toEqual({
+    expect(
+      await inside.service.handleCallback("alipay", new Headers(), "x"),
+    ).toEqual({
       kind: "success",
     });
     expect((await store.readOrder(order.id))?.status).toBe("paid");
@@ -607,11 +689,15 @@ describe("callback triage", () => {
       checkoutPayload: null,
     });
     await store.expireOrder(order.id, order.version);
-    const terminalAt = (await store.readOrder(order.id))?.terminalAt?.getTime() ?? 0;
+    const terminalAt =
+      (await store.readOrder(order.id))?.terminalAt?.getTime() ?? 0;
     clockMs = terminalAt + 25 * 3600_000;
 
     const alipay = fakeProvider("alipay", {
-      verifyNotification: async () => ({ ok: true, fact: paidFactFor(order.id) }),
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
     });
     const lago = fakeLago();
     const { service } = buildService({ providers: [alipay], store, lago });
@@ -634,7 +720,8 @@ describe("callback triage", () => {
       checkoutPayload: null,
     });
     await store.cancelOrder(older.id, older.version);
-    const canceledAt = (await store.readOrder(older.id))?.terminalAt?.getTime() ?? 0;
+    const canceledAt =
+      (await store.readOrder(older.id))?.terminalAt?.getTime() ?? 0;
     clockMs = canceledAt + 60_000;
 
     // A newer order on the same plan has already been paid.
@@ -658,9 +745,15 @@ describe("callback triage", () => {
     });
 
     const alipay = fakeProvider("alipay", {
-      verifyNotification: async () => ({ ok: true, fact: paidFactFor(older.id) }),
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(older.id),
+      }),
     });
-    const { service } = buildService({ providers: [alipay, fakeProvider("wechat")], store });
+    const { service } = buildService({
+      providers: [alipay, fakeProvider("wechat")],
+      store,
+    });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
       kind: "success",
     });
@@ -686,7 +779,10 @@ describe("callback triage", () => {
       detail: "underpaid",
     });
     const alipay = fakeProvider("alipay", {
-      verifyNotification: async () => ({ ok: true, fact: paidFactFor(order.id) }),
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
     });
     const lago = fakeLago();
     const { service } = buildService({ providers: [alipay], store, lago });
@@ -754,7 +850,10 @@ describe("the poll's read side", () => {
     const view = await service.readOrder(order.id);
     expect(view.order?.status).toBe("pending");
     // The order as it stands: the QR the creator is showing survives an unreachable channel.
-    expect(view.order?.checkout).toEqual({ kind: "qrcode", payload: "qr-open" });
+    expect(view.order?.checkout).toEqual({
+      kind: "qrcode",
+      payload: "qr-open",
+    });
   });
 });
 
@@ -809,7 +908,9 @@ describe("cancel", () => {
     const { service } = buildService({ store });
     expect((await service.cancelPurchase(paid.id)).outcome).toBe("terminal");
     expect((await service.cancelPurchase(expired.id)).outcome).toBe("terminal");
-    expect((await service.cancelPurchase("po-missing")).outcome).toBe("unknown");
+    expect((await service.cancelPurchase("po-missing")).outcome).toBe(
+      "unknown",
+    );
   });
 });
 
@@ -856,7 +957,11 @@ describe("activation gate", () => {
     const store = memoryStore();
     const { order, alipay } = await pendingWithPaidDelivery(store);
     const lago = fakeLago({
-      getPlan: async () => ({ found: true, interval: "yearly", currency: "CNY" }),
+      getPlan: async () => ({
+        found: true,
+        interval: "yearly",
+        currency: "CNY",
+      }),
     });
     const { service } = buildService({ store, lago, providers: [alipay] });
     await service.handleCallback("alipay", new Headers(), "x");
@@ -876,7 +981,9 @@ describe("activation gate", () => {
       providers: [orderA.alipay],
     });
     await closed.handleCallback("alipay", new Headers(), "x");
-    expect((await storeA.readOrder(orderA.order.id))?.activationState).toBe("failed");
+    expect((await storeA.readOrder(orderA.order.id))?.activationState).toBe(
+      "failed",
+    );
 
     const storeB = memoryStore();
     const orderB = await pendingWithPaidDelivery(storeB);
@@ -890,7 +997,9 @@ describe("activation gate", () => {
       },
     });
     await open.handleCallback("alipay", new Headers(), "x");
-    expect((await storeB.readOrder(orderB.order.id))?.activationState).toBe("applied");
+    expect((await storeB.readOrder(orderB.order.id))?.activationState).toBe(
+      "applied",
+    );
     expect(invalidated).toBe(1);
   });
 
@@ -908,11 +1017,38 @@ describe("activation gate", () => {
     expect((await store.readOrder(order.id))?.activationState).toBe("pending");
   });
 
+  test("the activation sweep retries a paid order the poll left pending, without a page open", async () => {
+    const store = memoryStore();
+    const { order, alipay } = await pendingWithPaidDelivery(store);
+    const lago = fakeLago({
+      getPlan: async () => {
+        throw new BillingError("unreachable");
+      },
+    });
+    const { service } = buildService({ store, lago, providers: [alipay] });
+    await service.handleCallback("alipay", new Headers(), "x");
+    // The delivery settled the money but the provider was unreachable: paid + pending-activation.
+    // The sweep pass — nobody's page is open — retries and lands the subscription.
+    const lagoRecovering = fakeLago();
+    const { service: recovering } = buildService({
+      store,
+      lago: lagoRecovering,
+      providers: [alipay],
+    });
+    await recovering.sweepActivations();
+    expect((await store.readOrder(order.id))?.activationState).toBe("applied");
+    expect(lagoRecovering.state.subscriptions).toHaveLength(1);
+  });
+
   test("with no injected logger, warnings fall through to the shared server logger", async () => {
     const store = memoryStore();
     const { order, alipay } = await pendingWithPaidDelivery(store);
     const lago = fakeLago({
-      getPlan: async () => ({ found: true, interval: "monthly", currency: "USD" }),
+      getPlan: async () => ({
+        found: true,
+        interval: "monthly",
+        currency: "USD",
+      }),
     });
     const warned: string[] = [];
     const warn = spyOn(getLogger("server"), "warn").mockImplementation(
@@ -920,7 +1056,9 @@ describe("activation gate", () => {
         warned.push(
           args
             .map((argument) =>
-              typeof argument === "string" ? argument : JSON.stringify(argument),
+              typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument),
             )
             .join(" "),
         );
@@ -973,7 +1111,10 @@ describe("the expiry sweep", () => {
       }),
     });
     const wechat = fakeProvider("wechat", {
-      queryPayment: async () => ({ outTradeNo: stale.id, state: "pending" as const }),
+      queryPayment: async () => ({
+        outTradeNo: stale.id,
+        state: "pending" as const,
+      }),
     });
     const { service } = buildService({ providers: [alipay, wechat], store });
     await service.sweepExpired();
@@ -1018,7 +1159,10 @@ describe("the expiry sweep", () => {
     // thrown error — the order stranded by a failed createSession finally reaches a terminal
     // state instead of being re-asked forever.
     const alipay = fakeProvider("alipay", {
-      queryPayment: async () => ({ outTradeNo: order.id, state: "closed" as const }),
+      queryPayment: async () => ({
+        outTradeNo: order.id,
+        state: "closed" as const,
+      }),
     });
     const { service } = buildService({ providers: [alipay], store });
     await service.sweepExpired();
