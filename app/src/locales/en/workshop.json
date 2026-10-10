@@ -11,7 +11,6 @@
       "usage": "Usage"
     },
     "placeholder": {
-      "files": "The files view arrives in the next batch.",
       "artifacts": "The artifact gallery arrives in the next batch.",
       "usage": "The usage view arrives in the next batch.",
       "process": "The live turn view arrives with F5."
@@ -45,7 +44,7 @@
     "uploadDone": "Uploaded {{count}} files.",
     "refused": "Upload refused",
     "tooMany": "At most 20 files per upload.",
-    "tooLarge": "Each file must stay under 20MB.",
+    "tooLarge": "{{name}} exceeds the 20MB per-file limit.",
     "refresh": "Refresh"
   }
 }

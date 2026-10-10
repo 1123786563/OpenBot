@@ -11,7 +11,6 @@
       "usage": "用量"
     },
     "placeholder": {
-      "files": "文件视图将在下一批就绪。",
       "artifacts": "产物画廊将在下一批就绪。",
       "usage": "用量视图将在下一批就绪。",
       "process": "过程视图随 F5 就绪。"
@@ -45,7 +44,7 @@
     "uploadDone": "已上传 {{count}} 个文件。",
     "refused": "上传被拒绝",
     "tooMany": "一次最多 20 个文件。",
-    "tooLarge": "单个文件不能超过 20MB。",
+    "tooLarge": "单个文件 {{name}} 不能超过 20MB。",
     "refresh": "刷新"
   }
 }
