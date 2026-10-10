@@ -276,6 +276,91 @@ export function revokeWorkshopShare(channelId: string): Promise<void> {
   }).then(() => undefined);
 }
 
+// ── schedules (B16/B17/F10) ────────────────────────────────────────────────────
+
+/** One schedule as the panel lists it: the rule, its clocks, and its boundary. */
+export type WorkshopSchedule = {
+  id: string;
+  prompt: string;
+  rrule: string;
+  timezone: string | null;
+  status: "enabled" | "paused" | "deleted";
+  preapproved: { paths: string[]; tools: string[]; maxTurnsPerRun: number } | null;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+};
+
+/** One firing as the history shows it: planned, settled, or skipped — with its sentence. */
+export type WorkshopScheduleRun = {
+  id: string;
+  scheduleId: string;
+  scheduledFor: string;
+  turnId: string | null;
+  status: "planned" | "running" | "succeeded" | "failed" | "skipped";
+  note: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+/** The three modes the compiler accepts, structured — the panel never sends cron text. */
+export type ScheduleMode =
+  | { kind: "interval"; every: number; unit: "minutes" | "hours" | "days" }
+  | { kind: "daily"; time: string; days?: string[] }
+  | { kind: "advanced"; cron: string };
+
+/** The schedules answer: the list and the recent runs, one call. */
+export type SchedulesResponse = {
+  schedules: WorkshopSchedule[];
+  runs: WorkshopScheduleRun[];
+};
+
+export function listWorkshopSchedules(
+  channelId: string,
+): Promise<SchedulesResponse> {
+  return client(workshopPath(channelId, "/schedules"), {
+    fallback: "The schedules could not be loaded.",
+  }).then((response) => response.json() as Promise<SchedulesResponse>);
+}
+
+export function createWorkshopSchedule(
+  channelId: string,
+  input: {
+    prompt: string;
+    mode: ScheduleMode;
+    timezone?: string;
+    preapproval?: { paths?: string[]; tools?: string[]; maxTurnsPerRun?: number };
+  },
+): Promise<{ id: string; rrule: string }> {
+  return client(workshopPath(channelId, "/schedules"), {
+    method: "POST",
+    body: input,
+    fallback: "The schedule could not be created.",
+  }).then((response) => response.json() as Promise<{ id: string; rrule: string }>);
+}
+
+export function toggleWorkshopSchedule(
+  channelId: string,
+  id: string,
+  enabled: boolean,
+): Promise<{ id: string; status: string }> {
+  return client(workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`), {
+    method: "PATCH",
+    body: { enabled },
+    fallback: "The schedule could not be toggled.",
+  }).then((response) => response.json() as Promise<{ id: string; status: string }>);
+}
+
+export function deleteWorkshopSchedule(
+  channelId: string,
+  id: string,
+): Promise<{ ok: boolean }> {
+  return client(workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`), {
+    method: "DELETE",
+    fallback: "The schedule could not be deleted.",
+  }).then((response) => response.json() as Promise<{ ok: boolean }>);
+}
+
 /** Wipe the workspace and start the session over. Artifacts and turns are kept as history. */
 export function resetWorkshop(channelId: string): Promise<ResetResponse> {
   return client(workshopPath(channelId, "/reset"), {
