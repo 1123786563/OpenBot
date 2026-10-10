@@ -316,6 +316,10 @@ export function createTurnOrchestrator(
       const row = await store.enqueueTurn({
         sessionId: input.sessionId,
         prompt: input.prompt,
+        // The row's own marker: a person's turn, a machine's turn on somebody's behalf, or
+        // a schedule's. Mapped from the audit initiator's shape, which is richer.
+        initiator:
+          input.initiator && input.initiator.kind !== "person" ? "headless" : "person",
       });
       // Fire-and-forget: enqueue resolves on existence; the stream (B9) shows the rest.
       void runTurn({
