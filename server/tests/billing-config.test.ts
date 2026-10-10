@@ -220,10 +220,73 @@ describe("billing configuration", () => {
     });
     expect(config.billing?.planEntitlements).toEqual(
       new Map([
-        ["pro", ["intelligence", "teams"]],
+        ["pro", [{ code: "intelligence" }, { code: "teams" }]],
         ["trial", []],
       ]),
     );
+  });
+
+  // 旧形态：纯字符串数组，仍被接受
+  test("LAGO_PLAN_ENTITLEMENTS accepts the legacy list-of-codes form", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      LAGO_PLAN_ENTITLEMENTS: JSON.stringify({
+        pro: ["agents.pro", "skills.advanced"],
+      }),
+    });
+    expect(config.billing?.planEntitlements.get("pro")).toEqual([
+      { code: "agents.pro" },
+      { code: "skills.advanced" },
+    ]);
+  });
+
+  // 新形态：对象条目
+  test("LAGO_PLAN_ENTITLEMENTS accepts entries with label and description", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      LAGO_PLAN_ENTITLEMENTS: JSON.stringify({
+        pro: [
+          { code: "agents.pro", label: "Pro 代理", description: "不限量代理" },
+        ],
+      }),
+    });
+    expect(config.billing?.planEntitlements.get("pro")).toEqual([
+      { code: "agents.pro", label: "Pro 代理", description: "不限量代理" },
+    ]);
+  });
+
+  // 非法：条目既非字符串也非对象 / 对象缺 code / label 非字符串
+  test("LAGO_PLAN_ENTITLEMENTS rejects malformed entries", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_ENTITLEMENTS: JSON.stringify({ pro: [{ label: "no code" }] }),
+      }),
+    ).toThrow(/"code"/);
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_ENTITLEMENTS: JSON.stringify({ pro: [42] }),
+      }),
+    ).toThrow();
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_ENTITLEMENTS: JSON.stringify({
+          pro: [{ code: "a", label: 3 }],
+        }),
+      }),
+    ).toThrow(/label/);
   });
 
   test("a legal timeout and the private-host opt-in are carried", () => {

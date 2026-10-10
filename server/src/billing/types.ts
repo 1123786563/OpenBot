@@ -49,11 +49,26 @@ export type SubscriptionReceipt = {
   planCode: string;
 };
 
+/** One entitlement a plan grants, with optional presentational copy from deployment config. */
+export type BillingEntitlementEntry = {
+  code: string;
+  label?: string;
+  description?: string;
+};
+
+/** The subscription facts the entitlements read carries beside the plan. */
+export type BillingEntitlementSubscriptionContext = {
+  status: BillingSubscriptionStatus;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+};
+
 /** What a customer is entitled to, flattened from its plan. */
 export type BillingEntitlements = {
   active: boolean;
   planCode?: string;
-  codes: readonly string[];
+  codes: readonly BillingEntitlementEntry[];
+  subscription?: BillingEntitlementSubscriptionContext | null;
 };
 
 /** The admin status snapshot. Names and counts only; never a key or a URL. */
