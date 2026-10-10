@@ -27,7 +27,8 @@ type CapabilityCatalog = {
   login_has_expected_capability: boolean;
   capability_has_no_escalation_membership: boolean;
   login_has_no_other_memberships: boolean;
-  no_table_ownership: boolean;
+  no_protected_ownership: boolean;
+  login_has_no_enterprise_privileges: boolean;
 };
 
 const verifiedDirectory = new WeakSet<object>();
@@ -68,12 +69,72 @@ function capabilityCatalogQuery(role: string) {
       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
       WHERE namespace.nspname = 'public'
         AND relation.relname LIKE 'enterprise_%'
-        AND relation.relkind IN ('r', 'p')
+        AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
         AND (
           relation.relowner = capability.oid
+          OR relation.relowner = login.oid
           OR pg_has_role(current_user, relation.relowner, 'MEMBER')
+          OR pg_has_role(session_user, relation.relowner, 'MEMBER')
         )
-    ) AS no_table_ownership
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_namespace namespace
+      WHERE namespace.nspname = 'public'
+        AND (
+          namespace.nspowner = capability.oid
+          OR namespace.nspowner = login.oid
+          OR pg_has_role(current_user, namespace.nspowner, 'MEMBER')
+          OR pg_has_role(session_user, namespace.nspowner, 'MEMBER')
+        )
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_database target_database
+      WHERE target_database.datname = current_database()
+        AND (
+          target_database.datdba = capability.oid
+          OR target_database.datdba = login.oid
+          OR pg_has_role(current_user, target_database.datdba, 'MEMBER')
+          OR pg_has_role(session_user, target_database.datdba, 'MEMBER')
+        )
+    ) AS no_protected_ownership,
+    NOT EXISTS (
+      SELECT 1
+      FROM pg_class relation
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+      CROSS JOIN LATERAL aclexplode(
+        COALESCE(relation.relacl, acldefault('r', relation.relowner))
+      ) relation_acl
+      WHERE namespace.nspname = 'public'
+        AND relation.relname LIKE 'enterprise_%'
+        AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+        AND relation.relowner <> login.oid
+        AND relation_acl.grantee = login.oid
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_attribute attribute
+      JOIN pg_class relation ON relation.oid = attribute.attrelid
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+      CROSS JOIN LATERAL aclexplode(attribute.attacl) attribute_acl
+      WHERE namespace.nspname = 'public'
+        AND relation.relname LIKE 'enterprise_%'
+        AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+        AND attribute.attnum > 0
+        AND NOT attribute.attisdropped
+        AND attribute_acl.grantee = login.oid
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM pg_namespace namespace
+      CROSS JOIN LATERAL aclexplode(
+        COALESCE(namespace.nspacl, acldefault('n', namespace.nspowner))
+      ) schema_acl
+      WHERE namespace.nspname = 'public'
+        AND namespace.nspowner <> login.oid
+        AND schema_acl.grantee = login.oid
+    ) AS login_has_no_enterprise_privileges
   FROM pg_roles capability
   JOIN pg_roles login ON login.rolname = session_user
   WHERE capability.rolname = ${role}`;
@@ -100,7 +161,8 @@ async function verifyCapability<T extends object>(
     !catalog.login_has_expected_capability ||
     !catalog.capability_has_no_escalation_membership ||
     !catalog.login_has_no_other_memberships ||
-    !catalog.no_table_ownership
+    !catalog.no_protected_ownership ||
+    !catalog.login_has_no_enterprise_privileges
   ) {
     throw new Error("DATABASE_CAPABILITY_MISMATCH");
   }

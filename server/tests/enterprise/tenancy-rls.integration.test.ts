@@ -42,6 +42,9 @@ let setup: Database | undefined;
 let directory: DirectoryDatabase | undefined;
 let data: DataDatabase | undefined;
 let operator: OperatorDatabase | undefined;
+let directlyGrantedDataLogin: string | undefined;
+let temporarilyTransferredToDataLogin: string | undefined;
+let originalResourceOwner: string | undefined;
 
 function setupDb() {
   setup ??= createDatabase(enterpriseTestDatabaseUrlFrom(), { max: 2 });
@@ -96,6 +99,49 @@ async function closeDatabase(database: Database | undefined) {
   await database?.$client.close();
 }
 
+async function runCleanupActions(actions: Array<() => Promise<void>>) {
+  const failures: unknown[] = [];
+  for (const action of actions) {
+    try {
+      await action();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length) {
+    throw new AggregateError(
+      failures,
+      "Enterprise RLS fixture cleanup failed.",
+    );
+  }
+}
+
+test("runs every cleanup action after a failed action", async () => {
+  const firstError = new Error("first cleanup failed");
+  const ran: number[] = [];
+
+  let rejection: unknown;
+  try {
+    await runCleanupActions([
+      async () => {
+        ran.push(1);
+        throw firstError;
+      },
+      async () => {
+        ran.push(2);
+      },
+      async () => {
+        ran.push(3);
+      },
+    ]);
+  } catch (error) {
+    rejection = error;
+  }
+  expect(rejection).toBeInstanceOf(AggregateError);
+  expect((rejection as AggregateError).errors).toContain(firstError);
+  expect(ran).toEqual([1, 2, 3]);
+});
+
 test("RLS migration and DBA role artifacts are role-scoped", () => {
   const migration = readFileSync(
     new URL("../../drizzle/0055_enterprise_tenancy_rls.sql", import.meta.url),
@@ -119,52 +165,78 @@ test("RLS migration and DBA role artifacts are role-scoped", () => {
 });
 
 afterAll(async () => {
-  const failures: unknown[] = [];
-  try {
-    if (setup) {
-      await setup
-        .delete(enterpriseSecurityEvents)
-        .where(sql`${enterpriseSecurityEvents.tenantId} like ${`${prefix}%`}`);
-      await setup
-        .delete(enterpriseResourceGrants)
-        .where(sql`${enterpriseResourceGrants.tenantId} like ${`${prefix}%`}`);
-      await setup
-        .delete(enterpriseResources)
-        .where(sql`${enterpriseResources.tenantId} like ${`${prefix}%`}`);
-      await setup
-        .delete(enterpriseWorkspaces)
-        .where(sql`${enterpriseWorkspaces.tenantId} like ${`${prefix}%`}`);
-      await setup
-        .delete(enterpriseMemberships)
-        .where(sql`${enterpriseMemberships.tenantId} like ${`${prefix}%`}`);
-      await setup
-        .delete(enterprisePrincipals)
-        .where(sql`${enterprisePrincipals.id} like ${`${prefix}%`}`);
-      await setup
-        .delete(enterpriseTenants)
-        .where(sql`${enterpriseTenants.id} like ${`${prefix}%`}`);
-      await setup.delete(users).where(sql`${users.id} like ${`${prefix}%`}`);
+  const actions: Array<() => Promise<void>> = [];
+  const setupHandle = setup;
+  if (setupHandle) {
+    const resourceOwner = originalResourceOwner;
+    if (temporarilyTransferredToDataLogin && resourceOwner) {
+      actions.push(async () => {
+        await setupHandle.execute(sql`
+          ALTER TABLE enterprise_resources OWNER TO ${sql.identifier(resourceOwner)}
+        `);
+        temporarilyTransferredToDataLogin = undefined;
+        originalResourceOwner = undefined;
+      });
     }
-  } catch (error) {
-    failures.push(error);
-  }
-  const closes = await Promise.allSettled([
-    closeDatabase(operator),
-    closeDatabase(data),
-    closeDatabase(directory),
-    closeDatabase(setup),
-  ]);
-  failures.push(
-    ...closes.flatMap((result) =>
-      result.status === "rejected" ? [result.reason] : [],
-    ),
-  );
-  if (failures.length) {
-    throw new AggregateError(
-      failures,
-      "Enterprise RLS fixture cleanup failed.",
+    const dataLogin = directlyGrantedDataLogin;
+    if (dataLogin) {
+      actions.push(async () => {
+        await setupHandle.execute(sql`
+          REVOKE SELECT ON TABLE enterprise_resources FROM ${sql.identifier(dataLogin)}
+        `);
+        directlyGrantedDataLogin = undefined;
+      });
+    }
+    actions.push(
+      () =>
+        setupHandle
+          .delete(enterpriseSecurityEvents)
+          .where(sql`${enterpriseSecurityEvents.tenantId} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(enterpriseResourceGrants)
+          .where(sql`${enterpriseResourceGrants.tenantId} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(enterpriseResources)
+          .where(sql`${enterpriseResources.tenantId} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(enterpriseWorkspaces)
+          .where(sql`${enterpriseWorkspaces.tenantId} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(enterpriseMemberships)
+          .where(sql`${enterpriseMemberships.tenantId} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(enterprisePrincipals)
+          .where(sql`${enterprisePrincipals.id} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(enterpriseTenants)
+          .where(sql`${enterpriseTenants.id} like ${`${prefix}%`}`)
+          .then(() => undefined),
+      () =>
+        setupHandle
+          .delete(users)
+          .where(sql`${users.id} like ${`${prefix}%`}`)
+          .then(() => undefined),
     );
   }
+  actions.push(
+    () => closeDatabase(operator),
+    () => closeDatabase(data),
+    () => closeDatabase(directory),
+    () => closeDatabase(setup),
+  );
+  await runCleanupActions(actions);
 });
 
 function expectPostgresError(
@@ -244,6 +316,54 @@ test("restricted catalog identities and RLS enforce separate directory, data, an
     databaseIdentity?.setup_current,
   );
 
+  const [dataLoginIdentity] = (await dataDbHandle.execute(sql`
+    SELECT session_user AS login_name
+  `)) as unknown as Array<{ login_name: string }>;
+  const dataLoginName = dataLoginIdentity?.login_name;
+  expect(dataLoginName).toBeString();
+
+  directlyGrantedDataLogin = dataLoginName;
+  try {
+    await setupDbHandle.execute(sql`
+      GRANT SELECT ON TABLE enterprise_resources TO ${sql.identifier(dataLoginName!)}
+    `);
+    await expect(verifyDataDatabase(dataDbHandle)).rejects.toThrow(
+      "DATABASE_CAPABILITY_MISMATCH",
+    );
+  } finally {
+    await setupDbHandle.execute(sql`
+      REVOKE SELECT ON TABLE enterprise_resources FROM ${sql.identifier(dataLoginName!)}
+    `);
+    directlyGrantedDataLogin = undefined;
+  }
+  expect(await verifyDataDatabase(dataDbHandle)).toBe(dataDbHandle);
+
+  const [resourceOwner] = (await setupDbHandle.execute(sql`
+    SELECT pg_get_userbyid(relation.relowner) AS owner_name
+    FROM pg_class relation
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND relation.relname = 'enterprise_resources'
+  `)) as unknown as Array<{ owner_name: string }>;
+  originalResourceOwner = resourceOwner?.owner_name;
+  expect(originalResourceOwner).toBeString();
+  temporarilyTransferredToDataLogin = dataLoginName;
+  try {
+    await setupDbHandle.execute(sql`
+      ALTER TABLE enterprise_resources OWNER TO ${sql.identifier(dataLoginName!)}
+    `);
+    await expect(verifyDataDatabase(dataDbHandle)).rejects.toThrow(
+      "DATABASE_CAPABILITY_MISMATCH",
+    );
+  } finally {
+    await setupDbHandle.execute(sql`
+      ALTER TABLE enterprise_resources OWNER TO ${sql.identifier(originalResourceOwner!)}
+    `);
+    temporarilyTransferredToDataLogin = undefined;
+    originalResourceOwner = undefined;
+  }
+  expect(await verifyDataDatabase(dataDbHandle)).toBe(dataDbHandle);
+
   for (const [handle, capability] of [
     [directoryDbHandle, "ob_ent_directory"],
     [dataDbHandle, "ob_ent_data"],
@@ -284,6 +404,7 @@ test("restricted catalog identities and RLS enforce separate directory, data, an
   ]);
   await setupDbHandle.insert(enterpriseMemberships).values([
     { tenantId: tenantA, principalId: principalA, role: "member" },
+    { tenantId: tenantA, principalId: principalB, role: "member" },
     { tenantId: tenantB, principalId: principalB, role: "member" },
   ]);
   await setupDbHandle.insert(enterpriseWorkspaces).values([
@@ -320,12 +441,44 @@ test("restricted catalog identities and RLS enforce separate directory, data, an
       principalId: principalA,
       action: "read",
     },
+    {
+      tenantId: tenantA,
+      resourceId: resourceA,
+      principalId: principalB,
+      action: "read",
+    },
   ]);
+
+  const directoryRows = await directoryDbHandle.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.user_id', ${userA}, true)`);
+    const principals = await tx.execute(sql`
+      SELECT id FROM enterprise_principals ORDER BY id
+    `);
+    const memberships = await tx.execute(sql`
+      SELECT tenant_id, principal_id
+      FROM enterprise_memberships
+      ORDER BY tenant_id, principal_id
+    `);
+    const tenants = await tx.execute(sql`
+      SELECT id FROM enterprise_tenants ORDER BY id
+    `);
+    return { principals, memberships, tenants };
+  });
+  expect(directoryRows.principals).toEqual([{ id: principalA }]);
+  expect(directoryRows.memberships).toEqual([
+    { tenant_id: tenantA, principal_id: principalA },
+  ]);
+  expect(directoryRows.tenants).toEqual([{ id: tenantA }]);
 
   const withoutContext = await dataDbHandle.execute(sql`
     SELECT id FROM enterprise_resources WHERE tenant_id = ${tenantA}
   `);
   expect(withoutContext).toHaveLength(0);
+  const grantsWithoutContext = await dataDbHandle.execute(sql`
+    SELECT principal_id FROM enterprise_resource_grants
+    WHERE tenant_id = ${tenantA} AND resource_id = ${resourceA}
+  `);
+  expect(grantsWithoutContext).toHaveLength(0);
 
   const validRead = await dataDbHandle.transaction(async (tx) => {
     await tx.execute(sql`
@@ -338,6 +491,19 @@ test("restricted catalog identities and RLS enforce separate directory, data, an
     `);
   });
   expect(validRead).toHaveLength(1);
+  const visibleGrants = await dataDbHandle.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT set_config('app.tenant_id', ${tenantA}, true),
+        set_config('app.principal_id', ${principalA}, true),
+        set_config('app.user_id', ${userA}, true)
+    `);
+    return tx.execute(sql`
+      SELECT principal_id FROM enterprise_resource_grants
+      WHERE tenant_id = ${tenantA} AND resource_id = ${resourceA}
+      ORDER BY principal_id
+    `);
+  });
+  expect(visibleGrants).toEqual([{ principal_id: principalA }]);
   const foreignTenantRead = await dataDbHandle.transaction(async (tx) => {
     await tx.execute(sql`
       SELECT set_config('app.tenant_id', ${tenantA}, true),

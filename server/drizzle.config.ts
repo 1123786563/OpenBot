@@ -33,6 +33,7 @@ export default defineConfig({
     "./src/db/schema/demonstrations.ts",
     "./src/db/schema/delivery.ts",
     "./src/db/schema/enterprise-tenancy.ts",
+    "./src/db/schema/enterprise-conversations.ts",
     "./src/db/schema/group.ts",
     "./src/db/schema/admin.ts",
     "./src/db/schema/scim.ts",

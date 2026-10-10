@@ -379,18 +379,16 @@ export async function suspendMembership(
       ) {
         throw new Error("IDEMPOTENCY_CONFLICT");
       }
-      const [membership] = await tx
-        .select({ epoch: enterpriseMemberships.epoch })
-        .from(enterpriseMemberships)
-        .where(
-          and(
-            eq(enterpriseMemberships.tenantId, value.tenantId),
-            eq(enterpriseMemberships.principalId, value.principalId),
-          ),
-        )
-        .limit(1);
-      if (!membership) throw new Error("MEMBERSHIP_NOT_FOUND");
-      return { changed: false, epoch: membership.epoch };
+      const { changed, epoch } = prior.details;
+      if (
+        typeof changed !== "boolean" ||
+        typeof epoch !== "number" ||
+        !Number.isSafeInteger(epoch) ||
+        epoch <= 0
+      ) {
+        throw new Error("IDEMPOTENCY_RESULT_INVALID");
+      }
+      return { changed, epoch };
     }
 
     const [membership] = await tx
@@ -436,6 +434,7 @@ export async function suspendMembership(
       details: {
         payload_sha256: payloadDigest,
         principalId: value.principalId,
+        changed,
         epoch,
       },
     });
@@ -509,20 +508,18 @@ export async function revokeResourceRead(
       if (prior.eventType !== kind || prior.details.payload_sha256 !== digest) {
         throw new Error("IDEMPOTENCY_CONFLICT");
       }
-      const [resource] = await tx
-        .select({ aclEpoch: enterpriseResources.aclEpoch })
-        .from(enterpriseResources)
-        .where(
-          and(
-            eq(enterpriseResources.tenantId, value.tenantId),
-            eq(enterpriseResources.id, value.resourceId),
-          ),
-        )
-        .limit(1);
-      if (!resource) throw new Error("RESOURCE_NOT_FOUND");
+      const { changed, acl_epoch: aclEpoch } = prior.details;
+      if (
+        typeof changed !== "boolean" ||
+        typeof aclEpoch !== "number" ||
+        !Number.isSafeInteger(aclEpoch) ||
+        aclEpoch <= 0
+      ) {
+        throw new Error("IDEMPOTENCY_RESULT_INVALID");
+      }
       return {
-        changed: prior.details.changed === true,
-        aclEpoch: Number(prior.details.acl_epoch ?? resource.aclEpoch),
+        changed,
+        aclEpoch,
       };
     }
 
