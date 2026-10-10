@@ -12,8 +12,16 @@
  * context already teaches the main model.
  */
 import { recordAuditEvent, type AuditInitiator, type AuditStore } from "../audit";
-import { CodeSandboxTimeoutError, type SandboxClient } from "./client";
-import type { SandboxUsage, SandboxArtifact } from "./types";
+import {
+  CodeSandboxActivityTimeoutError,
+  CodeSandboxTimeoutError,
+  type SandboxClient,
+} from "./client";
+import type {
+  SandboxUsage,
+  SandboxArtifact,
+  TranslatedEvent,
+} from "./types";
 import type { CodeRunStore } from "./store";
 import { newCodeRunId } from "./store";
 
@@ -62,14 +70,59 @@ export type CodeRunRunOptions = {
   toolCallId?: string;
 };
 
+export type CodeRunStreamOptions = CodeRunRunOptions & {
+  /**
+   * How long the event stream may stay silent before the run is ended for the caller. A run
+   * that produces nothing for five minutes (the default) is not going to produce anything.
+   */
+  activityTimeoutMs?: number;
+};
+
+export type StreamingRun = {
+  runId: string;
+  events: AsyncIterable<TranslatedEvent>;
+  /** Ask the sandbox to stop; settles the run's rows either way. */
+  cancel(): Promise<void>;
+};
+
 export type CodeRunGateway = {
   run(task: string, opts?: CodeRunRunOptions): Promise<CodeRunOutcome>;
+  /**
+   * The streaming form (B8): same audit-first, same code_runs row, but the answer arrives as
+   * the five-family event stream and can be cancelled. Where `run` is one HTTP call, this is
+   * the workshop's turn shape — a stream that survives refreshes and interruptions.
+   */
+  startStreaming(task: string, opts?: CodeRunStreamOptions): Promise<StreamingRun>;
   resetWorkspace(): Promise<{ ok: true } | { ok: false; reason: string }>;
 };
 
 const MAX_RESULT_CHARS = 8_000;
 const DEFAULT_RUN_TIMEOUT_SECONDS = 120;
 const MAX_RUN_TIMEOUT_SECONDS = 600;
+const DEFAULT_ACTIVITY_TIMEOUT_MS = 300_000;
+
+/** A one-event stream that answers "not configured" in the same shape a real run would. */
+function refusedStream(): AsyncIterable<TranslatedEvent> {
+  return {
+    [Symbol.asyncIterator]() {
+      let sent = false;
+      return {
+        async next() {
+          if (sent) return { done: true, value: undefined };
+          sent = true;
+          return {
+            done: false,
+            value: {
+              family: "unknown",
+              eventId: "",
+              payload: { refused: "not-configured" },
+            },
+          };
+        },
+      };
+    },
+  };
+}
 
 /**
  * The budget a run actually gets, from the seconds a caller asked for. An ask outside 1-600 is not
@@ -93,6 +146,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       | "code.run_completed"
       | "code.run_refused"
       | "code.run_failed"
+      | "code.run_cancelled"
       | "code.workspace_reset",
     payload: Record<string, unknown>,
   ) =>
@@ -192,6 +246,178 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         });
         return { kind: "failed", runId, reason };
       }
+    },
+
+    async startStreaming(task, streamOpts): Promise<StreamingRun> {
+      const runId = newCodeRunId();
+      const toolCallId = streamOpts?.toolCallId;
+      const activityTimeoutMs =
+        streamOpts?.activityTimeoutMs && streamOpts.activityTimeoutMs > 0
+          ? streamOpts.activityTimeoutMs
+          : DEFAULT_ACTIVITY_TIMEOUT_MS;
+      const timeoutMs = clampRunSeconds(streamOpts?.timeoutSeconds) * 1000;
+
+      // AUDIT FIRST, ROW FIRST — the same order `run` holds, on the streaming path too: the
+      // audit row and the code_runs row exist before anything is asked of the sandbox, so a
+      // run that never streamed is still a run that was asked for.
+      if (!options.client) {
+        await audit("code.run_refused", {
+          runId,
+          reason: "not-configured",
+          toolCallId,
+          timeoutMs,
+        });
+        await options.store.create({
+          id: runId,
+          botId: options.botId,
+          ownerUserId: options.ownerUserId,
+          task,
+          model: options.modelId,
+        });
+        await options.store.finish(runId, { status: "refused", error: "not-configured" });
+        // The stream answers a single refusal event and ends: the caller reads a complete,
+        // honest shape instead of a throw that would make "no sandbox" a code path per consumer.
+        const events = refusedStream();
+        return { runId, events, cancel: async () => undefined };
+      }
+
+      const client = options.client;
+      await audit("code.run_started", { runId, task, toolCallId, timeoutMs, activityTimeoutMs });
+      await options.store.create({
+        id: runId,
+        botId: options.botId,
+        ownerUserId: options.ownerUserId,
+        task,
+        model: options.modelId,
+      });
+
+      const sessionId = await client.createSession(`run ${runId}`);
+      let lastEventAtMs = Date.now();
+      let cancelled = false;
+      let finished = false;
+      const fail = async (status: "failed" | "timeout" | "cancelled", error: string) => {
+        if (finished) return;
+        finished = true;
+        await audit(
+          status === "cancelled" ? "code.run_cancelled" : "code.run_failed",
+          { runId, sessionId, reason: error, timedOut: status === "timeout", toolCallId },
+        );
+        await options.store.finish(runId, {
+          status: status === "cancelled" ? "failed" : status,
+          sessionId,
+          error,
+        });
+      };
+
+      const queue: Array<TranslatedEvent> = [];
+      let wake: (() => void) | null = null;
+      const push = (event: TranslatedEvent) => {
+        queue.push(event);
+        wake?.();
+        wake = null;
+      };
+      let streamDone: (() => void) | null = null;
+      const done = new Promise<void>((resolve) => {
+        streamDone = resolve;
+      });
+
+      // The one subscription: every family-labelled block refreshes the activity clock and
+      // queues for the consumer; session.idle (prompt_response) ends the iteration.
+      const subscription = await client.subscribeEvents((event) => {
+        lastEventAtMs = Date.now();
+        push(event);
+        if (event.family === "prompt_response") {
+          push({ family: "other", eventId: "", payload: { __end: true } });
+        }
+      });
+
+      // The task itself: sent as one message; its stream IS the /events subscription. The
+      // promise is raced against `done` because a cancelled run's message may never resolve —
+      // the sandbox was told to stop — and the iterator must not wait for it.
+      const sendSettled = client
+        .sendMessage(sessionId, `${TASK_PREAMBLE}${task}`, {
+          modelId: options.modelId,
+          timeoutMs,
+        })
+        .then(async (result) => {
+          if (finished || cancelled) return;
+          finished = true;
+          await audit("code.run_completed", {
+            runId,
+            sessionId,
+            usage: result.usage,
+          });
+          await options.store.finish(runId, {
+            status: "completed",
+            sessionId,
+            inputTokens: result.usage?.inputTokens,
+            outputTokens: result.usage?.outputTokens,
+          });
+          streamDone?.();
+        })
+        .catch(async (error: unknown) => {
+          if (cancelled) return;
+          await fail(
+            error instanceof CodeSandboxTimeoutError ? "timeout" : "failed",
+            error instanceof Error ? error.message : String(error),
+          );
+          streamDone?.();
+        });
+      const sendPromise = Promise.race([sendSettled, done]);
+
+      const events: AsyncIterable<TranslatedEvent> = {
+        [Symbol.asyncIterator]() {
+          return {
+            async next(): Promise<IteratorResult<TranslatedEvent>> {
+              for (;;) {
+                if (queue.length > 0) {
+                  const event = queue.shift()!;
+                  if (event.payload.__end === true) {
+                    await sendPromise;
+                    return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;
+                  }
+                  return { done: false, value: event };
+                }
+                // Activity timeout: silence past the budget ends the iteration with the
+                // timeout error AFTER the rows are settled, so the caller's catch sees a
+                // finished run, not an orphan.
+                if (Date.now() - lastEventAtMs > activityTimeoutMs) {
+                  subscription.stop();
+                  await fail("timeout", `stream silent for ${activityTimeoutMs}ms`);
+                  streamDone?.();
+                  throw new CodeSandboxActivityTimeoutError(activityTimeoutMs);
+                }
+                if (finished) {
+                  await sendPromise;
+                  return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;
+                }
+                // Wait for the next event, or re-check the activity clock shortly.
+                await Promise.race([
+                  new Promise<void>((resolve) => {
+                    wake = resolve;
+                  }),
+                  new Promise<void>((resolve) =>
+                    setTimeout(resolve, Math.min(activityTimeoutMs, 1_000)),
+                  ),
+                ]);
+              }
+            },
+          };
+        },
+      };
+
+      return {
+        runId,
+        events,
+        cancel: async () => {
+          if (cancelled || finished) return;
+          cancelled = true;
+          subscription.stop();
+          await client.abortSession(sessionId).catch(() => undefined);
+          await fail("cancelled", "cancelled by the caller");
+          streamDone?.();
+        },
+      };
     },
 
     async resetWorkspace() {

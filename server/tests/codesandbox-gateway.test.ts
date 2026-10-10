@@ -223,3 +223,150 @@ describe("code run gateway", () => {
     expect(refused?.payload["reason"]).toBe("not-configured");
   });
 });
+
+/*
+ * ── startStreaming (B8) ───────────────────────────────────────────────────────────────────
+ *
+ * The streaming form holds the same discipline `run` does — audit first, code_runs row first —
+ * and adds two endings of its own: a silent stream past the activity budget, and a cancel.
+ */
+describe("code run gateway: startStreaming", () => {
+  /** A client whose stream produces a script of families, optionally with a silent gap. */
+  function streamingClient(script: Array<
+    | { family: string; delayMs?: number }
+    | "end"
+  >) {
+    const calls: string[] = [];
+    let aborted: string[] = [];
+    let finishScript: () => void = () => undefined;
+    const scriptDone = new Promise<void>((resolve) => {
+      finishScript = resolve;
+    });
+    const client = {
+      calls,
+      createSession: async () => "ses_s",
+      sendMessage: async () => {
+        // A real message resolves when the model finishes — long after the first events. The
+        // fake holds it open until the script ends (or the test tears down), so the stream's
+        // own endings (timeout, cancel) are what the iterator observes.
+        await scriptDone;
+        return {
+          sessionId: "ses_s",
+          text: "done",
+          usage: { inputTokens: 2, outputTokens: 3 },
+        };
+      },
+      listFiles: async () => [],
+      readFile: async (path: string) => ({
+        path,
+        size: 0,
+        content: "",
+        truncated: false,
+      }),
+      writeFile: async (path: string) => ({ path, size: 0 }),
+      resetWorkspace: async () => undefined,
+      abortSession: async (sessionId: string) => {
+        aborted.push(sessionId);
+      },
+      subscribeEvents: async (onEvent: (event: { family: string; eventId: string; payload: Record<string, unknown> }) => void) => {
+        calls.push("subscribe");
+        void (async () => {
+          for (const step of script) {
+            if (step === "end") {
+              finishScript();
+              break;
+            }
+            if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+            onEvent({
+              family: step.family,
+              eventId: `evt_${Math.random().toString(36).slice(2, 8)}`,
+              payload: {},
+            });
+          }
+        })();
+        return { stop: () => calls.push("stop") };
+      },
+    };
+    return { client: client as never as SandboxClient, calls, getAborted: () => aborted };
+  }
+
+  test("① unconfigured sandbox: refused audit and row BEFORE the stream answers", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: null,
+      store,
+      auditStore: audit.store,
+    });
+    const streaming = await gateway.startStreaming("做点什么");
+    // The refusal is already on the trail and in code_runs before any iteration.
+    expect(audit.events[0]?.eventType).toBe("code.run_refused");
+    expect(rows.get(streaming.runId)).toMatchObject({ status: "refused" });
+    const seen: string[] = [];
+    for await (const event of streaming.events) seen.push(event.family);
+    expect(seen).toEqual(["unknown"]);
+  });
+
+  test("② a silent stream past the activity budget: rows settled timeout, iteration throws", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    // One event, then silence forever: the activity clock runs out.
+    const { client, calls } = streamingClient([
+      { family: "progress" },
+      { family: "never", delayMs: 10_000 },
+    ]);
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client,
+      store,
+      auditStore: audit.store,
+    });
+    const streaming = await gateway.startStreaming("慢任务", {
+      activityTimeoutMs: 50,
+    });
+    let thrown: unknown;
+    const seen: string[] = [];
+    try {
+      for await (const event of streaming.events) seen.push(event.family);
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as Error).name).toBe("CodeSandboxActivityTimeoutError");
+    expect(seen).toEqual(["progress"]);
+    expect(rows.get(streaming.runId)).toMatchObject({ status: "timeout" });
+    expect(audit.events.some((e) => e.eventType === "code.run_failed" && e.payload["timedOut"] === true)).toBe(true);
+    expect(calls).toContain("stop");
+  });
+
+  test("③ cancel: upstream aborted, code_runs settled, code.run_cancelled audited", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const { client, getAborted } = streamingClient([
+      { family: "progress" },
+      { family: "message_chunk", delayMs: 10_000 },
+    ]);
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client,
+      store,
+      auditStore: audit.store,
+    });
+    const streaming = await gateway.startStreaming("可取消任务", { activityTimeoutMs: 60_000 });
+    const iterate = (async () => {
+      const seen: string[] = [];
+      for await (const event of streaming.events) seen.push(event.family);
+      return seen;
+    })();
+    // Let the first event land, then cancel.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await streaming.cancel();
+    const seen = await iterate;
+    expect(seen).toEqual(["progress"]);
+    expect(getAborted()).toEqual(["ses_s"]);
+    expect(rows.get(streaming.runId)).toMatchObject({ status: "failed" });
+    expect(
+      audit.events.some((e) => e.eventType === "code.run_cancelled"),
+    ).toBe(true);
+  });
+});
