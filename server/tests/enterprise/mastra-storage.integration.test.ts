@@ -218,6 +218,32 @@ afterAll(async () => {
             );
           }
         }
+        try {
+          const remaining = await admin!.pool.query<{
+            schema_exists: boolean;
+            runtime_role_exists: boolean;
+            owner_role_exists: boolean;
+          }>(
+            `SELECT
+              EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1) AS schema_exists,
+              EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $2) AS runtime_role_exists,
+              EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $3) AS owner_role_exists`,
+            [schemaName, runtimeRole, ownerRole],
+          );
+          if (
+            remaining.rows[0]?.schema_exists ||
+            remaining.rows[0]?.runtime_role_exists ||
+            remaining.rows[0]?.owner_role_exists
+          ) {
+            errors.push(new Error(`fixture cleanup verification ${tenantId}`));
+          }
+        } catch (error) {
+          errors.push(
+            new Error(`fixture cleanup verification ${tenantId}`, {
+              cause: error,
+            }),
+          );
+        }
       }
       const entryRefs = [...credentials.keys()];
       for (const ref of entryRefs) {
@@ -232,6 +258,16 @@ afterAll(async () => {
       records.delete(tenantId);
       claims.delete(tenantId);
     }
+    for (const tenantId of [tenantA, tenantB]) {
+      if (await registryState.get(tenantId))
+        errors.push(
+          new Error(`fixture registry cleanup verification ${tenantId}`),
+        );
+    }
+    if (credentials.size > 0 || claims.size > 0)
+      errors.push(
+        new Error("fixture credential or claim cleanup verification"),
+      );
     if (database) {
       await database
         .delete(enterpriseTenants)
@@ -355,6 +391,121 @@ test("production provisioner issues opaque receipts and two restricted, isolated
     ).rejects.toThrow();
   } finally {
     await Promise.all([storeA.close(), storeB.close()]);
+  }
+});
+
+test("production tenant storage inspects exact, absent, and mismatched intent identities without writes", async () => {
+  const inspectionThreadId = `m02-inspect-${runId}`;
+  const inspectionMessageId = `message-inspect-${runId}`;
+  const inspectionResourceId = `private:${JSON.stringify([tenantA, trustedScope.principalId])}`;
+  const digest = `digest-${runId}`;
+  const clientMessageKey = `client-key-${runId}`;
+  const attachmentIds = [`attachment-${runId}`];
+  const inspectionBinding: MastraConversationBinding = {
+    tenantId: tenantA,
+    conversationId: randomUUID(),
+    threadId: inspectionThreadId,
+    resourceId: inspectionResourceId,
+    storageKey: tenantStorageKey(tenantA),
+    backend: "mastra",
+  };
+  const storage = createTenantMastraStorage(
+    new RegistryTenantStorageLookup({
+      registry,
+      credentials: credentialStore,
+      runtimeConnectionString: connectionString,
+    }),
+  );
+  try {
+    const store = await storage.getStore(trustedScope, inspectionBinding);
+    const memory = await store.getStore("memory");
+    if (!memory) throw new Error("Mastra memory domain missing");
+    const [role] = (await store.pool.query("select session_user, current_user"))
+      .rows;
+    expect(role).toEqual({
+      session_user: records.get(tenantA)!.runtimeRole,
+      current_user: records.get(tenantA)!.runtimeRole,
+    });
+    const before = await memory.listMessages({
+      threadId: inspectionThreadId,
+      resourceId: inspectionResourceId,
+      perPage: false,
+    });
+    expect(before.messages).toHaveLength(0);
+    await memory.saveThread({
+      thread: {
+        id: inspectionThreadId,
+        resourceId: inspectionResourceId,
+        title: "Inspection characterization",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    await memory.saveMessages({
+      messages: [
+        {
+          id: inspectionMessageId,
+          threadId: inspectionThreadId,
+          resourceId: inspectionResourceId,
+          role: "user",
+          createdAt: new Date(),
+          content: {
+            format: 2,
+            parts: [{ type: "text", text: "synthetic inspection message" }],
+            metadata: {
+              openbotDigest: digest,
+              openbotSeq: 1,
+              openbotClientMessageKey: clientMessageKey,
+              openbotAttachments: attachmentIds,
+            },
+          },
+        },
+      ],
+    });
+    const expected = {
+      messageId: inspectionMessageId,
+      digest,
+      seq: 1,
+      clientMessageKey,
+      attachmentIds,
+    };
+    expect(
+      await storage.inspectIntentMessage(inspectionBinding, expected),
+    ).toBe("exact");
+    expect(
+      await storage.inspectIntentMessage(inspectionBinding, {
+        ...expected,
+        messageId: `absent-${runId}`,
+      }),
+    ).toBe("absent");
+    for (const mismatched of [
+      {
+        ...expected,
+        resourceId: `private:${JSON.stringify([tenantA, `wrong-${runId}`])}`,
+      },
+      { ...expected, digest: `${digest}-wrong` },
+      { ...expected, seq: 2 },
+      { ...expected, clientMessageKey: `${clientMessageKey}-wrong` },
+      { ...expected, attachmentIds: [`wrong-${runId}`] },
+    ]) {
+      const { resourceId: wrongResource, ...identity } = mismatched;
+      expect(
+        await storage.inspectIntentMessage(
+          wrongResource
+            ? { ...inspectionBinding, resourceId: wrongResource }
+            : inspectionBinding,
+          identity,
+        ),
+      ).toBe("mismatch");
+    }
+    const after = await memory.listMessages({
+      threadId: inspectionThreadId,
+      resourceId: inspectionResourceId,
+      perPage: false,
+    });
+    expect(after.messages).toHaveLength(1);
+  } finally {
+    await storage.close();
   }
 });
 

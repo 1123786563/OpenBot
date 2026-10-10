@@ -7,6 +7,15 @@ import type {
   TenantStorageLookup,
   TenantStorageProvisioner,
 } from "./contracts";
+import { tenantStorageKey } from "./contracts";
+
+export interface MastraIntentMessageIdentity {
+  readonly messageId: string;
+  readonly digest: string;
+  readonly seq: number;
+  readonly clientMessageKey: string;
+  readonly attachmentIds: readonly string[];
+}
 
 export interface TenantMastraStorage {
   getStore(
@@ -18,6 +27,10 @@ export interface TenantMastraStorage {
     binding: MastraConversationBinding,
     operation: () => Promise<T>,
   ): Promise<T>;
+  inspectIntentMessage(
+    binding: MastraConversationBinding,
+    expected: MastraIntentMessageIdentity,
+  ): Promise<"absent" | "exact" | "mismatch">;
   closeTenant(tenantId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -139,133 +152,207 @@ export function createTenantMastraStorage(
   const tenantEpochs = new Map<string, number>();
   let closed = false;
 
+  async function getStoreForTenant(
+    tenantId: string,
+    binding: MastraConversationBinding,
+  ): Promise<PostgresStore> {
+    if (
+      closed ||
+      binding.tenantId !== tenantId ||
+      (binding.backend !== "intelligence" && binding.backend !== "mastra")
+    ) {
+      throw new Error("MASTRA_STORAGE_FORBIDDEN");
+    }
+    if (closingTenants.has(tenantId) || failedClosures.has(tenantId))
+      throw new Error("MASTRA_STORAGE_CLOSING");
+    const tenantEpoch = tenantEpochs.get(tenantId) ?? 0;
+    const location = await lookup.resolveTenantStorage(tenantId);
+    if (
+      closed ||
+      closingTenants.has(tenantId) ||
+      failedClosures.has(tenantId) ||
+      tenantEpoch !== (tenantEpochs.get(tenantId) ?? 0)
+    )
+      throw new Error("MASTRA_STORAGE_CLOSING");
+    validateLocation(location, tenantId);
+    const fingerprint = locationFingerprint(location);
+    if (location.storageKey !== binding.storageKey)
+      throw new Error("MASTRA_STORAGE_BINDING_STALE");
+    const key = `${location.tenantId}:${location.storageKey}`;
+    const entry = stores.get(key);
+    if (entry) {
+      if (entry.fingerprint !== fingerprint)
+        throw new Error("MASTRA_STORAGE_BINDING_STALE");
+      return entry.store;
+    }
+    let opening = pending.get(key);
+    if (opening && pendingFingerprints.get(key) !== fingerprint)
+      throw new Error("MASTRA_STORAGE_BINDING_STALE");
+    if (!opening) {
+      pendingFingerprints.set(key, fingerprint);
+      opening = (async () => {
+        const conversationConnectionString =
+          boundedConversationConnectionString(location.connectionString);
+        const store = new PostgresStore({
+          id: `openbot-${location.storageKey}`,
+          connectionString: conversationConnectionString,
+          schemaName: location.schemaName,
+          disableInit: true,
+          max: 4,
+          idleTimeoutMillis: 5_000,
+          connectionTimeoutMillis: 3_000,
+        });
+        const lockStore = new PostgresStore({
+          id: `openbot-lock-${location.storageKey}`,
+          connectionString: conversationConnectionString,
+          schemaName: location.schemaName,
+          disableInit: true,
+          max: 1,
+          idleTimeoutMillis: 5_000,
+          connectionTimeoutMillis: 3_000,
+        });
+        try {
+          await assertRestrictedRuntimeRole(store, location);
+          if (
+            closed ||
+            closingTenants.has(location.tenantId) ||
+            failedClosures.has(location.tenantId)
+          )
+            throw new Error("MASTRA_STORAGE_CLOSING");
+          stores.set(key, {
+            tenantId: location.tenantId,
+            storageKey: location.storageKey,
+            fingerprint,
+            store,
+            lockStore,
+          });
+          return store;
+        } catch (error) {
+          await Promise.all([store.close(), lockStore.close()]);
+          throw error;
+        }
+      })();
+      pending.set(key, opening);
+      void opening
+        .finally(() => {
+          if (pending.get(key) === opening) {
+            pending.delete(key);
+            pendingFingerprints.delete(key);
+          }
+        })
+        .catch(() => undefined);
+    }
+    return opening;
+  }
+
+  async function withTenantConversationLock<T>(
+    binding: MastraConversationBinding,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const store = await getStoreForTenant(binding.tenantId, binding);
+    const key = `${binding.tenantId}:${binding.storageKey}`;
+    const entry = stores.get(key);
+    if (!entry || entry.store !== store)
+      throw new Error("MASTRA_STORAGE_BINDING_STALE");
+    const client = await entry.lockStore.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '2s'");
+      await client.query("SET LOCAL statement_timeout = '5s'");
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [
+          JSON.stringify([
+            "mastra-conversation",
+            binding.tenantId,
+            binding.threadId,
+          ]),
+        ],
+      );
+      const result = await operation();
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   return {
     async getStore(scope, binding) {
       assertTrustedScope(scope);
-      if (
-        closed ||
-        binding.tenantId !== scope.tenantId ||
-        (binding.backend !== "intelligence" && binding.backend !== "mastra")
-      ) {
+      if (binding.tenantId !== scope.tenantId)
         throw new Error("MASTRA_STORAGE_FORBIDDEN");
-      }
-      if (
-        closingTenants.has(scope.tenantId) ||
-        failedClosures.has(scope.tenantId)
-      )
-        throw new Error("MASTRA_STORAGE_CLOSING");
-      const tenantEpoch = tenantEpochs.get(scope.tenantId) ?? 0;
-      const location = await lookup.resolveTenantStorage(scope.tenantId);
-      if (
-        closed ||
-        closingTenants.has(scope.tenantId) ||
-        failedClosures.has(scope.tenantId) ||
-        tenantEpoch !== (tenantEpochs.get(scope.tenantId) ?? 0)
-      )
-        throw new Error("MASTRA_STORAGE_CLOSING");
-      validateLocation(location, scope.tenantId);
-      const fingerprint = locationFingerprint(location);
-      if (location.storageKey !== binding.storageKey)
-        throw new Error("MASTRA_STORAGE_BINDING_STALE");
-      const key = `${location.tenantId}:${location.storageKey}`;
-      const entry = stores.get(key);
-      if (entry) {
-        if (entry.fingerprint !== fingerprint)
-          throw new Error("MASTRA_STORAGE_BINDING_STALE");
-        return entry.store;
-      }
-      let opening = pending.get(key);
-      if (opening && pendingFingerprints.get(key) !== fingerprint)
-        throw new Error("MASTRA_STORAGE_BINDING_STALE");
-      if (!opening) {
-        pendingFingerprints.set(key, fingerprint);
-        opening = (async () => {
-          const conversationConnectionString =
-            boundedConversationConnectionString(location.connectionString);
-          const store = new PostgresStore({
-            id: `openbot-${location.storageKey}`,
-            connectionString: conversationConnectionString,
-            schemaName: location.schemaName,
-            disableInit: true,
-            max: 4,
-            idleTimeoutMillis: 5_000,
-            connectionTimeoutMillis: 3_000,
-          });
-          const lockStore = new PostgresStore({
-            id: `openbot-lock-${location.storageKey}`,
-            connectionString: conversationConnectionString,
-            schemaName: location.schemaName,
-            disableInit: true,
-            max: 1,
-            idleTimeoutMillis: 5_000,
-            connectionTimeoutMillis: 3_000,
-          });
-          try {
-            await assertRestrictedRuntimeRole(store, location);
-            if (
-              closed ||
-              closingTenants.has(location.tenantId) ||
-              failedClosures.has(location.tenantId)
-            )
-              throw new Error("MASTRA_STORAGE_CLOSING");
-            stores.set(key, {
-              tenantId: location.tenantId,
-              storageKey: location.storageKey,
-              fingerprint,
-              store,
-              lockStore,
-            });
-            return store;
-          } catch (error) {
-            await Promise.all([store.close(), lockStore.close()]);
-            throw error;
-          }
-        })();
-        pending.set(key, opening);
-        void opening
-          .finally(() => {
-            if (pending.get(key) === opening) {
-              pending.delete(key);
-              pendingFingerprints.delete(key);
-            }
-          })
-          .catch(() => undefined);
-      }
-      return opening;
+      return getStoreForTenant(scope.tenantId, binding);
     },
     async withConversationLock(scope, binding, operation) {
       assertTrustedScope(scope);
       if (binding.tenantId !== scope.tenantId)
         throw new Error("MASTRA_STORAGE_FORBIDDEN");
-      const store = await this.getStore(scope, binding);
-      const key = `${binding.tenantId}:${binding.storageKey}`;
-      const entry = stores.get(key);
-      if (!entry || entry.store !== store)
-        throw new Error("MASTRA_STORAGE_BINDING_STALE");
-      const client = await entry.lockStore.pool.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query("SET LOCAL lock_timeout = '2s'");
-        await client.query("SET LOCAL statement_timeout = '5s'");
-        await client.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-          [
-            JSON.stringify([
-              "mastra-conversation",
-              binding.tenantId,
-              binding.threadId,
-            ]),
-          ],
-        );
-        const result = await operation();
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
+      return withTenantConversationLock(binding, operation);
+    },
+    async inspectIntentMessage(binding, expected) {
+      if (
+        binding.backend !== "mastra" ||
+        binding.storageKey !== tenantStorageKey(binding.tenantId) ||
+        !Number.isSafeInteger(expected.seq) ||
+        expected.seq < 1 ||
+        !Array.isArray(expected.attachmentIds)
+      ) {
+        throw new Error("MASTRA_INTENT_INSPECTION_FORBIDDEN");
       }
+      let resource: unknown;
+      try {
+        const encoded = binding.resourceId.slice("private:".length);
+        resource = binding.resourceId.startsWith("private:")
+          ? JSON.parse(encoded)
+          : null;
+      } catch {
+        resource = null;
+      }
+      if (
+        !Array.isArray(resource) ||
+        resource.length !== 2 ||
+        resource[0] !== binding.tenantId ||
+        typeof resource[1] !== "string" ||
+        !binding.threadId ||
+        !expected.messageId ||
+        !expected.digest ||
+        !expected.clientMessageKey
+      ) {
+        throw new Error("MASTRA_INTENT_INSPECTION_FORBIDDEN");
+      }
+      const store = await getStoreForTenant(binding.tenantId, binding);
+      const memory = await store.getStore("memory");
+      if (!memory) throw new Error("MASTRA_MEMORY_STORAGE_UNAVAILABLE");
+      return withTenantConversationLock(binding, async () => {
+        const found = await memory.listMessagesById({
+          messageIds: [expected.messageId],
+        });
+        const message = found.messages.find(
+          ({ id }) => id === expected.messageId,
+        );
+        if (!message) return "absent";
+        const metadata = message.content.metadata ?? {};
+        const attachmentIds = metadata.openbotAttachments;
+        const attachmentsMatch =
+          Array.isArray(attachmentIds) &&
+          attachmentIds.length === expected.attachmentIds.length &&
+          attachmentIds.every(
+            (attachmentId, index) =>
+              attachmentId === expected.attachmentIds[index],
+          );
+        return message.threadId === binding.threadId &&
+          message.resourceId === binding.resourceId &&
+          metadata.openbotDigest === expected.digest &&
+          metadata.openbotSeq === expected.seq &&
+          metadata.openbotClientMessageKey === expected.clientMessageKey &&
+          attachmentsMatch
+          ? "exact"
+          : "mismatch";
+      });
     },
     async closeTenant(tenantId) {
       const existing = closingTenants.get(tenantId);

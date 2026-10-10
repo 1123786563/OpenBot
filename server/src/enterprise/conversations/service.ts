@@ -467,6 +467,12 @@ export function createConversationService({
           return conversationDto(existing);
         }
         if (suppliedThreadId) throw new Error("CONVERSATION_NOT_FOUND");
+        if (!mastraStorage) {
+          throw Object.assign(new Error("MASTRA_STORAGE_UNAVAILABLE"), {
+            code: "MASTRA_STORAGE_UNAVAILABLE",
+            status: 503,
+          });
+        }
         const [created] = await tx
           .insert(enterpriseConversations)
           .values({
@@ -475,7 +481,7 @@ export function createConversationService({
             principalId: scope.principalId,
             threadId,
             title: input.title ?? null,
-            storageBackend: mastraStorage ? "mastra" : "platform",
+            storageBackend: "mastra",
           })
           .onConflictDoNothing({
             target: [
