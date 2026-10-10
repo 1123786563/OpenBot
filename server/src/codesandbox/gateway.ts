@@ -365,6 +365,20 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         });
       const sendPromise = Promise.race([sendSettled, done]);
 
+      /**
+       * The idle tail: `sendMessage` resolving means the model finished, but the session's
+       * idle event (prompt_response) rides the same subscription a beat later. Ending the
+       * iteration the instant the send resolves drops that last event — the turn's own
+       * completion signal, observed live as "stream ended without completing". Before every
+       * done, give the subscription one short beat to deliver it.
+       */
+      const drainTail = async (): Promise<void> => {
+        await sendPromise;
+        for (let i = 0; i < 40 && queue.length === 0; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      };
+
       const events: AsyncIterable<TranslatedEvent> = {
         [Symbol.asyncIterator]() {
           return {
@@ -373,7 +387,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
                 if (queue.length > 0) {
                   const event = queue.shift()!;
                   if (event.payload.__end === true) {
-                    await sendPromise;
+                    await drainTail();
                     return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;
                   }
                   return { done: false, value: event };
@@ -388,7 +402,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
                   throw new CodeSandboxActivityTimeoutError(activityTimeoutMs);
                 }
                 if (finished) {
-                  await sendPromise;
+                  await drainTail();
                   return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;
                 }
                 // Wait for the next event, or re-check the activity clock shortly.
