@@ -20,8 +20,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
-import { BillingError, type BillingService } from "./types";
 import type { BillingStatements } from "./statements";
+import { BillingError, type BillingService } from "./types";
 
 /** The shape `requireAdmin` takes in auth/guards.ts: a refusal answer, or nothing to add. */
 type RequireAdmin = (

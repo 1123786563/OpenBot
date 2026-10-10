@@ -19,7 +19,7 @@ export function BillingPager({
   totalCount,
   hasNext,
   onPage,
-  statusLabel,
+  statusTemplate,
   className,
 }: {
   page: number;
@@ -27,7 +27,14 @@ export function BillingPager({
   totalCount: number;
   hasNext: boolean;
   onPage: (page: number) => void;
-  statusLabel: string;
+  /**
+   * An already-translated template carrying `{{page}}`, `{{totalPages}}` and `{{total}}`.
+   *
+   * Filled here rather than at the call site because the clamp is the part worth owning once: a
+   * filter that shrank the result under a pager already sitting on page 4 must not read
+   * "第 4 / 2 页". The reader is on an empty page, and the honest answer is "第 2 / 2 页".
+   */
+  statusTemplate: string;
   className?: string;
 }) {
   const { t } = useTranslation("settings");
@@ -39,7 +46,10 @@ export function BillingPager({
       )}
     >
       <span className="text-muted-foreground text-xs tabular-nums">
-        {statusLabel}
+        {statusTemplate
+          .replace("{{page}}", String(clampedPage(page, totalPages)))
+          .replace("{{totalPages}}", String(Math.max(totalPages, 1)))
+          .replace("{{total}}", String(totalCount))}
       </span>
       <div className="flex gap-2">
         <Button
@@ -63,12 +73,7 @@ export function BillingPager({
   );
 }
 
-/**
- * The clamp every pager status needs: a page past the end reads as the last page.
- *
- * A filter that shrank the result under a pager already sitting on page 4 must not read
- * "第 4 / 2 页" — the reader is on an empty page, and the honest answer is "第 2 / 2 页".
- */
-export function clampedPage(page: number, totalPages: number): number {
+/** A page past the end reads as the last page, so the status never overstates where the reader is. */
+function clampedPage(page: number, totalPages: number): number {
   return Math.min(page, Math.max(totalPages, 1));
 }
