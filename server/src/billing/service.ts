@@ -4,6 +4,7 @@ import {
   type LagoClient,
   type LagoSubscriptionBody,
 } from "./lago";
+import { readBodyCapped } from "./raw-body";
 import {
   type BillingEntitlements,
   BillingError,
@@ -11,12 +12,21 @@ import {
   type BillingSnapshot,
   type BillingStore,
   type BillingSubscriptionRow,
+  type BillingUsageEventPage,
   type VerifiedWebhook,
   type WebhookVerifier,
 } from "./types";
 
-/** The request body a webhook may carry. A bigger one is answered 413, never read whole. */
-const MAX_WEBHOOK_BYTES = 1024 * 1024;
+/** Read one property as a finite number; absent or non-numeric stays undefined. */
+function numberOf(
+  properties: Record<string, number | string>,
+  name: string,
+): number | undefined {
+  const value = properties[name];
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
 
 /**
  * The external customer ID one deployment is known by at the provider: deterministic, derived from
@@ -26,44 +36,6 @@ const MAX_WEBHOOK_BYTES = 1024 * 1024;
  */
 export function deploymentExternalCustomerId(tenantId: string): string {
   return `openbot-deployment-${tenantId}`;
-}
-
-/**
- * Read the raw webhook body exactly once, with a hard cap.
- *
- * Same discipline as the client's response read (./lago.ts `readCapped`): the delivery must be
- * verified against the exact bytes that arrived, so the body cannot be re-read or transformed — but
- * it is also unauthenticated input at this point, so it is never buffered beyond 1 MiB.
- * `content-length` is checked first and the stream is cut mid-read when it lies. Over the cap the
- * caller answers 413: the provider retries a bounded delivery, and nobody allocates for an
- * attacker.
- */
-async function readBodyCapped(request: Request): Promise<string | null> {
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_WEBHOOK_BYTES) {
-    return null;
-  }
-  if (!request.body) return "";
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_WEBHOOK_BYTES) {
-      await reader.cancel().catch(() => {});
-      return null;
-    }
-    chunks.push(value);
-  }
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(merged);
 }
 
 /**
@@ -332,6 +304,10 @@ export function createBillingService(deps: {
       return reader.active(externalCustomerId);
     },
 
+    invalidateEntitlementCache(externalCustomerId) {
+      reader.invalidate(externalCustomerId);
+    },
+
     /**
      * Uncached on purpose: the entitlements reader answers a stable fact through a TTL, while
      * usage moves with every event the provider accepts, so a settings page wants it fresh.
@@ -396,6 +372,59 @@ export function createBillingService(deps: {
           }`,
         );
       }
+    },
+
+    /**
+     * One page of the line items behind the usage aggregate: the provider's own event list for the
+     * active subscription, newest first. Read-only and uncached, like usage. An unknown page past
+     * the end is the provider's empty page, not an error.
+     */
+    async usageEvents(
+      limit,
+      page,
+      externalCustomerId,
+    ): Promise<BillingUsageEventPage> {
+      const key = externalCustomerId ?? config.externalCustomerKey;
+      const rows = await store.readSubscriptions(key);
+      const active = rows.find((row) => row.status === "active");
+      if (!active) {
+        return {
+          events: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: page,
+          nextPage: null,
+        };
+      }
+      const result = await client.listEvents(
+        active.externalSubscriptionId,
+        limit,
+        page,
+      );
+      if (!result.body) {
+        return {
+          events: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: page,
+          nextPage: null,
+        };
+      }
+      const body = result.body;
+      return {
+        events: body.events.map((event) => ({
+          timestamp: event.timestamp,
+          metricCode: event.code,
+          transactionId: event.transactionId,
+          inputTokens: numberOf(event.properties, "input_tokens"),
+          outputTokens: numberOf(event.properties, "output_tokens"),
+          tokens: numberOf(event.properties, "tokens"),
+        })),
+        totalCount: body.totalCount,
+        totalPages: body.totalPages,
+        currentPage: body.currentPage,
+        nextPage: body.nextPage,
+      };
     },
 
     async snapshot(): Promise<BillingSnapshot> {

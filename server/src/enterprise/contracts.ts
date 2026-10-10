@@ -64,7 +64,8 @@ export type ResourceSnapshot = {
 export type AuthorizationInput = {
   scope: Scope;
   resource: ResourceSnapshot;
-  action: "read";
+  /** The grantable actions (spec §6.2): `run` is the conversations-domain addition. */
+  action: "read" | "run";
 };
 
 export interface Authz {

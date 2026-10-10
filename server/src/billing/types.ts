@@ -74,6 +74,26 @@ export type BillingUsageCharge = {
   amountCents: number;
 };
 
+/** One metered event as the provider recorded it: the line item behind the aggregate. */
+export type BillingUsageEvent = {
+  /** ISO-8601 of when the usage happened. */
+  timestamp: string;
+  metricCode: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokens?: number;
+  transactionId: string;
+};
+
+/** One page of metered events, with what a pager needs to offer the next one. */
+export type BillingUsageEventPage = {
+  events: readonly BillingUsageEvent[];
+  totalCount: number;
+  totalPages: number;
+  currentPage: number;
+  nextPage: number | null;
+};
+
 /** The current billing period's usage for one subscription, straight from the provider. */
 export type BillingUsage = {
   fromDatetime?: string;
@@ -177,8 +197,23 @@ export type BillingService = {
   handleWebhook(request: Request): Promise<Response>;
   /** Cached entitlements read, per customer key. */
   entitlements(externalCustomerId?: string): Promise<BillingEntitlements>;
+  /**
+   * Drop the cached entitlement answer — one customer's, or every bucket when no key is named.
+   * The payment flow calls this the moment a subscription it activated lands, so a settings page
+   * never spends the TTL showing a paid plan as free.
+   */
+  invalidateEntitlementCache(externalCustomerId?: string): void;
   /** The active subscription's current-period usage, or null when there is no active one. */
   usage(externalCustomerId?: string): Promise<BillingUsage | null>;
+  /**
+   * One page of the active subscription's metered events, newest first — the line items the
+   * aggregate above is made of, with pagination facts for the next ask.
+   */
+  usageEvents(
+    limit: number,
+    page: number,
+    externalCustomerId?: string,
+  ): Promise<BillingUsageEventPage>;
   /**
    * Meter one consumption event against the active subscription. Fire-and-forget by design: the
    * caller is a model call's epilogue, and billing must never sit in front of a token stream.

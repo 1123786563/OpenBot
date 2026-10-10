@@ -7,17 +7,19 @@
  * ResourceReader read inside the same transaction. `Authz.check` stays a Promise so the call
  * contract survives, but the resolution is local and synchronous underneath.
  *
- * MVP rules: only the `read` action, only an explicit resource grant. A tenant_admin, an auditor or
- * a deployment admin never skips the grant — membership roles feed explicit administrative-domain
- * rules only, never implicit content access. Booleans are compared to `true`, never coerced, and a
- * scope this process did not issue fails closed in `assertScope` before any rule runs.
+ * MVP rules: explicit resource grants only, over the two actions the grants table admits (`read`
+ * and `run`, spec §6.2). A tenant_admin, an auditor or a deployment admin never skips the grant —
+ * membership roles feed explicit administrative-domain rules only, never implicit content access.
+ * Booleans are compared to `true`, never coerced, and a scope this process did not issue fails
+ * closed in `assertScope` before any rule runs.
  *
- * `policyRules` is the deterministic revision → rule map shipped with the build. It starts with
- * exactly tenancy-v1; SUPPORTED_POLICY_REVISIONS is its frozen read-only derivation, so a new
- * revision cannot be appended at runtime — it takes an independent function, its own tests, and a
- * build that implements old and new rules together before any tenant's policy_revision switches
- * inside its exclusive lock. An unknown revision is a closed POLICY_REVISION_UNSUPPORTED (503), an
- * identifier of authorization unavailability, never a silent allow.
+ * `policyRules` is the deterministic revision → rule map shipped with the build. It holds exactly
+ * tenancy-v1 and conversations-v1; SUPPORTED_POLICY_REVISIONS is its frozen read-only derivation,
+ * so a new revision cannot be appended at runtime — it takes an independent function, its own
+ * tests, and a build that implements old and new rules together before any tenant's
+ * policy_revision switches inside its exclusive lock. An unknown revision is a closed
+ * POLICY_REVISION_UNSUPPORTED (503), an identifier of authorization unavailability, never a
+ * silent allow.
  */
 import type { AuthorizationInput, Authz } from "../contracts";
 import { EnterpriseError } from "../errors";
@@ -28,7 +30,8 @@ type LocalRule = (input: AuthorizationInput) => boolean;
 /*
  * tenancy-v1: a same-tenant read of an active resource the transaction's own grant query marked
  * allowed. Every comparison is an identity check against the literal — a truthy string, a non-one
- * number or a missing value can never satisfy it.
+ * number or a missing value can never satisfy it. Deliberately unchanged by the conversations
+ * work: a tenant still on tenancy-v1 refuses `run` here (default deny below).
  */
 const tenancyV1: LocalRule = ({ scope, resource, action }) =>
   action === "read" &&
@@ -36,8 +39,21 @@ const tenancyV1: LocalRule = ({ scope, resource, action }) =>
   resource.active === true &&
   resource.locallyAllowed === true;
 
+/*
+ * conversations-v1 (spec §6.2): the same same-tenant active-and-locally-allowed decision,
+ * widened to `run`. `locallyAllowed` is the per-request-action grant fact the same-transaction
+ * reader matched (the authz/repository.ts grant-exists pattern), so read and run remain two
+ * independent grant rows that never imply each other.
+ */
+const conversationsV1: LocalRule = ({ scope, resource, action }) =>
+  (action === "read" || action === "run") &&
+  scope.tenantId === resource.tenantId &&
+  resource.active === true &&
+  resource.locallyAllowed === true;
+
 const policyRules: ReadonlyMap<string, LocalRule> = new Map<string, LocalRule>([
   ["tenancy-v1", tenancyV1],
+  ["conversations-v1", conversationsV1],
 ]);
 
 export const SUPPORTED_POLICY_REVISIONS: readonly string[] = Object.freeze([
@@ -48,9 +64,10 @@ export function createAuthz(): Authz {
   return {
     async check({ scope, resource, action }) {
       assertScope(scope);
-      /* Default deny first: anything not an exact same-tenant active granted read is false. */
+      /* Default deny first: anything not an exact same-tenant active granted read/run is false;
+       * which of the two a revision admits is the revision rule's own decision. */
       if (
-        action !== "read" ||
+        (action !== "read" && action !== "run") ||
         scope.tenantId !== resource.tenantId ||
         resource.active !== true ||
         resource.locallyAllowed !== true

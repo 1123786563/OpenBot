@@ -25,7 +25,16 @@
     "currentPeriod": "当前周期",
     "totalThisPeriod": "本周期合计：",
     "noCharges": "本周期还没有产生任何用量。",
-    "noSubscription": "没有生效中的订阅，暂无用量可统计。"
+    "noSubscription": "没有生效中的订阅，暂无用量可统计。",
+    "eventLog": "用量明细",
+    "eventLogDescription": "每一次计量的模型调用，按时间倒序——上面合计数字的逐条明细。",
+    "noEvents": "还没有计量事件。",
+    "eventIn": "输入",
+    "eventOut": "输出",
+    "eventTokens": "tokens",
+    "eventPagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
+    "eventPagerPrev": "上一页",
+    "eventPagerNext": "下一页"
   },
   "darkTheme": "深色主题",
   "darkThemeDescription": "在 OpenBot 中使用深色外观。",

@@ -19,6 +19,7 @@ export * from "./group";
 export * from "./learning";
 export * from "./lifecycle";
 export * from "./memory";
+export * from "./payment";
 export * from "./passwords";
 export * from "./plugins";
 export * from "./proactive";

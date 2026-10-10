@@ -359,6 +359,15 @@ export type DeploymentConfig = {
    * environment and in the request headers the client sends — never in a log line or a response.
    */
   billing?: LagoBillingConfig;
+  /**
+   * The direct-collection channels, beside the billing projection above. Same absent-means-
+   * unmounted contract: a deployment that configured no channel mounts no payment surface at all.
+   * Present only when at least one channel is whole AND billing itself is configured — the
+   * channels collect money that becomes a Lago subscription, so a channel without the projection
+   * it feeds is a deployment wired wrong, and refuses to start rather than collecting into
+   * nothing.
+   */
+  payments?: PaymentsConfig;
   /** How far one Bot handing work to another may go. */
   handoff: HandoffCaps;
   /**
@@ -1153,7 +1162,6 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
 
   const allowPrivateHosts = privateHostsAllowed(environment);
   const policy = actionPolicy(environment);
-
   /*
    * Checked before the other two, because a deployment that named a namespace means the cluster to
    * make the computers, and a stray `AGENT_COMPUTER_URL` left in an environment would otherwise
@@ -1380,6 +1388,405 @@ function billingPrivateHostsAllowed(environment: Environment): boolean {
   return allowed;
 }
 
+/** One purchasable plan, as the payment catalog names it. */
+export type PaymentPlanConfig = {
+  amountCents: number;
+  currency: "CNY";
+  periodMonths: number;
+};
+
+/** One collection channel, wholly configured or not present at all. */
+export type AlipayProviderConfig = {
+  appId: string;
+  /** Merchant private key, inline PEM or a file path; read once at boot, never logged. */
+  privateKeyPem: string;
+  /** Alipay's platform public key, shared by callback and gateway-response verification. */
+  alipayPublicKeyPem: string;
+  gatewayUrl: string;
+};
+
+export type WechatProviderConfig = {
+  mchid: string;
+  appid: string;
+  /** The 32-byte APIv3 key, used only for callback decryption; never logged. */
+  apiv3Key: string;
+  merchantSerialNo: string;
+  merchantPrivateKeyPem: string;
+  /** Platform certificates, each inline PEM or a file path; serials derive at boot. */
+  platformCertificates: readonly string[];
+  gatewayUrl: string;
+};
+
+export type PaymentsConfig = {
+  /** Whichever channels this deployment configured; at least one, by construction. */
+  alipay?: AlipayProviderConfig;
+  wechat?: WechatProviderConfig;
+  /** What may be bought. Keys are a subset of the billing plan map's keys, checked at boot. */
+  planCatalog: ReadonlyMap<string, PaymentPlanConfig>;
+  /** Where the channels must call back: a public https origin, no path. */
+  notifyBaseUrl: string;
+  /** The private-host opt-in for the channel gateways, with the same warning as the Lago one. */
+  allowPrivateHosts: boolean;
+  /** How long a QR checkout stays payable, in minutes. */
+  orderTtlMinutes: number;
+  /** How far a callback timestamp may drift, in seconds. */
+  callbackSkewSeconds: number;
+  /** How long after an order expired a late payment is still honoured, in hours. */
+  latePaymentWindowHours: number;
+  /**
+   * Whether a Lago plan priced in another currency may still be activated. Off is the default:
+   * the order is collected in CNY, and a plan billed in anything else is a mismatch worth
+   * refusing. On, the activation proceeds with a loud warning — the order table is the
+   * authority on what was collected.
+   */
+  acceptForeignCurrency: boolean;
+};
+
+/** A credential that may arrive inline (a PEM's banner) or as a path to a file holding one. */
+function pemOrFile(value: string, variable: string): string {
+  if (value.includes("-----BEGIN")) {
+    return value;
+  }
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  try {
+    const contents = readFileSync(value, "utf8");
+    if (!contents.includes("-----BEGIN")) {
+      throw new Error(`${variable} points at ${value}, which holds no PEM material`);
+    }
+    return contents;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith(variable)) throw error;
+    throw new Error(`${variable} names a file that could not be read: ${value}`);
+  }
+}
+
+/** Comma-separated credentials, each inline PEM or path. */
+function pemList(value: string, variable: string): string[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => pemOrFile(entry, variable));
+}
+
+/**
+ * The notify base's destination floor, judged statically: the scheme must be https, and the host
+ * must not be loopback, private, link-local or otherwise reserved — the same tables the outbound
+ * gate owns (../billing/outbound.ts), minus DNS: this check runs synchronously at boot, and the
+ * async gate still runs on every channel request with resolution. Loopback and RFC1918 are
+ * forgivable under the opt-in; link-local, CGNAT, TEST-NET and multicast never are, on either
+ * layer.
+ */
+function notifyBaseAllowed(environment: Environment, raw: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return "PAYMENT_NOTIFY_BASE_URL must be a valid URL";
+  }
+  if (parsed.protocol !== "https:") {
+    return "PAYMENT_NOTIFY_BASE_URL must be an https URL: the channels post payment notifications to it";
+  }
+  if (parsed.pathname.replace(/\/+$/, "") !== "" || parsed.search || parsed.hash) {
+    return "PAYMENT_NOTIFY_BASE_URL must be the origin only, without a path, query or fragment";
+  }
+
+  const refusal =
+    "PAYMENT_NOTIFY_BASE_URL must be a public https address the channels can reach";
+  const allowPrivate = paymentPrivateHostsAllowed(environment);
+  const host = parsed.hostname.toLowerCase().replace(/\.+$/, "");
+
+  if (host === "localhost" || host.endsWith(".localhost")) {
+    return allowPrivate ? undefined : refusal;
+  }
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return ipv6LiteralAllowed(host.slice(1, -1), allowPrivate) ? undefined : refusal;
+  }
+  if (host.includes(":")) {
+    return ipv6LiteralAllowed(host, allowPrivate) ? undefined : refusal;
+  }
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    return ipv4LiteralAllowed(Number(ipv4[1]), Number(ipv4[2]), allowPrivate)
+      ? undefined
+      : refusal;
+  }
+  return undefined;
+}
+
+/** The IPv4 tables from the outbound gate, reduced to boot's yes/no. */
+function ipv4LiteralAllowed(a: number, b: number, allowPrivate: boolean): boolean {
+  if (a === 127 || (a === 0 && b === 0)) return allowPrivate; // loopback and "this host"
+  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+    return allowPrivate; // RFC1918
+  }
+  // Link-local (the metadata addresses sit here), "this network", CGNAT, TEST-NET,
+  // benchmarking, multicast and reserved: never, opt-in or not.
+  if (a === 169 || a === 0 || a >= 224) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  if (a === 192 && (b === 0 || b === 88)) return false;
+  if (a === 198 && (b === 18 || b === 19 || b === 51)) return false;
+  if (a === 203 && b === 0) return false;
+  return true;
+}
+
+/**
+ * The IPv6 spellings boot can judge by hand: loopback (`::1`), the unspecified address, and the
+ * two prefixes that are never a payment destination — unique-local `fc00::/7` (private, opt-in
+ * forgivable) and link-local `fe80::/10` (never). A global unicast literal passes; a name is not
+ * this function's problem.
+ */
+function ipv6LiteralAllowed(literal: string, allowPrivate: boolean): boolean {
+  const address = literal.toLowerCase();
+  if (address === "::1" || address === "::") return allowPrivate;
+  if (address.startsWith("fc") || address.startsWith("fd")) return allowPrivate; // fc00::/7
+  if (/^fe[89ab]/.test(address)) return false; // fe80::/10 link-local
+  if (address.startsWith("ff")) return false; // multicast
+  return true;
+}
+
+function paymentPrivateHostsAllowed(environment: Environment): boolean {
+  const raw = optional(environment, "PAYMENT_ALLOW_PRIVATE_HOSTS");
+  return raw === "true" || raw === "1";
+}
+
+/** A whole positive number from an optional variable, with the refusal naming the variable. */
+function positiveInt(
+  environment: Environment,
+  name: string,
+  fallback: number,
+): number {
+  const raw = optional(environment, name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a whole number greater than zero`);
+  }
+  return value;
+}
+
+function loudSwitch(
+  environment: Environment,
+  name: string,
+  warning: string,
+): boolean {
+  const raw = optional(environment, name);
+  const enabled = raw === "true" || raw === "1";
+  if (enabled) log.warn(warning);
+  return enabled;
+}
+
+/**
+ * The direct-collection configuration, or `undefined` when no channel exists.
+ *
+ * All-or-nothing per channel group, and the catalog is mandatory the moment any channel exists —
+ * the same half-configuration refusal the billing block above practises. A deployment that can
+ * collect money but has no price to collect for is a mis-wiring, not a soft degradation, and it
+ * stops the boot here where somebody is looking. The catalog's keys must be plans the billing
+ * provider actually knows (a subset of LAGO_PLAN_ENTITLEMENTS), prices are integer cents in CNY,
+ * and the period is monthly — the Lago wire interval the activation below creates.
+ *
+ * The notify base is the one public address the channels are told to call back; it must be https
+ * and public (loopback and private space are refused unless PAYMENT_ALLOW_PRIVATE_HOSTS is on,
+ * which also warns, exactly like the Lago opt-in). A deployment that configured channels but no
+ * billing projection refuses: collection without a subscription to activate is half a product.
+ */
+function paymentsConfig(
+  environment: Environment,
+  billing: LagoBillingConfig | undefined,
+): PaymentsConfig | undefined {
+  const alipayAppId = optional(environment, "ALIPAY_APP_ID");
+  const alipayPrivateKey = optional(environment, "ALIPAY_PRIVATE_KEY");
+  const alipayPublicKey = optional(environment, "ALIPAY_PUBLIC_KEY");
+  const alipayConfigured =
+    alipayAppId !== undefined ||
+    alipayPrivateKey !== undefined ||
+    alipayPublicKey !== undefined;
+  let alipay: AlipayProviderConfig | undefined;
+  if (alipayConfigured) {
+    if (!alipayAppId || !alipayPrivateKey || !alipayPublicKey) {
+      throw new Error(
+        "Alipay is half configured: ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY and ALIPAY_PUBLIC_KEY must all be set, or none",
+      );
+    }
+    alipay = {
+      appId: alipayAppId,
+      privateKeyPem: pemOrFile(alipayPrivateKey, "ALIPAY_PRIVATE_KEY"),
+      alipayPublicKeyPem: pemOrFile(alipayPublicKey, "ALIPAY_PUBLIC_KEY"),
+      gatewayUrl:
+        optional(environment, "ALIPAY_GATEWAY_URL") ??
+        "https://openapi.alipay.com/gateway.do",
+    };
+  }
+
+  const wechatMchid = optional(environment, "WXPAY_MCHID");
+  const wechatAppid = optional(environment, "WXPAY_APPID");
+  const wechatApiv3Key = optional(environment, "WXPAY_API_V3_KEY");
+  const wechatSerial = optional(environment, "WXPAY_SERIAL_NO");
+  const wechatPrivateKey = optional(environment, "WXPAY_PRIVATE_KEY");
+  const wechatPlatformCerts = optional(environment, "WXPAY_PLATFORM_CERTS");
+  const wechatConfigured =
+    wechatMchid !== undefined ||
+    wechatAppid !== undefined ||
+    wechatApiv3Key !== undefined ||
+    wechatSerial !== undefined ||
+    wechatPrivateKey !== undefined ||
+    wechatPlatformCerts !== undefined;
+  let wechat: WechatProviderConfig | undefined;
+  if (wechatConfigured) {
+    if (
+      !wechatMchid ||
+      !wechatAppid ||
+      !wechatApiv3Key ||
+      !wechatSerial ||
+      !wechatPrivateKey ||
+      !wechatPlatformCerts
+    ) {
+      throw new Error(
+        "WeChat Pay is half configured: WXPAY_MCHID, WXPAY_APPID, WXPAY_API_V3_KEY, WXPAY_SERIAL_NO, WXPAY_PRIVATE_KEY and WXPAY_PLATFORM_CERTS must all be set, or none",
+      );
+    }
+    if (wechatApiv3Key.length !== 32) {
+      throw new Error("WXPAY_API_V3_KEY must be exactly 32 characters");
+    }
+    const platformCertificates = pemList(wechatPlatformCerts, "WXPAY_PLATFORM_CERTS");
+    if (platformCertificates.length === 0) {
+      throw new Error(
+        "WXPAY_PLATFORM_CERTS must name at least one platform certificate (PEM or path)",
+      );
+    }
+    wechat = {
+      mchid: wechatMchid,
+      appid: wechatAppid,
+      apiv3Key: wechatApiv3Key,
+      merchantSerialNo: wechatSerial,
+      merchantPrivateKeyPem: pemOrFile(wechatPrivateKey, "WXPAY_PRIVATE_KEY"),
+      platformCertificates,
+      gatewayUrl:
+        optional(environment, "WXPAY_GATEWAY_URL") ?? "https://api.mch.weixin.qq.com",
+    };
+  }
+
+  if (!alipay && !wechat) {
+    return undefined;
+  }
+
+  // A channel that collects into a deployment with no billing projection has nothing to activate.
+  if (!billing) {
+    throw new Error(
+      "Payment channels are configured but billing is not: LAGO_API_URL and LAGO_API_KEY are required whenever ALIPAY_* or WXPAY_* is set, because collected payments activate Lago subscriptions",
+    );
+  }
+
+  const catalogRaw = optional(environment, "PAYMENT_PLAN_CATALOG");
+  if (catalogRaw === undefined || catalogRaw.trim() === "") {
+    throw new Error(
+      "PAYMENT_PLAN_CATALOG is required when a payment channel is configured: the deployment can collect money but has no price to collect for",
+    );
+  }
+  let catalogParsed: unknown;
+  try {
+    catalogParsed = JSON.parse(catalogRaw);
+  } catch {
+    throw new Error("PAYMENT_PLAN_CATALOG must be valid JSON");
+  }
+  if (
+    !catalogParsed ||
+    typeof catalogParsed !== "object" ||
+    Array.isArray(catalogParsed)
+  ) {
+    throw new Error(
+      "PAYMENT_PLAN_CATALOG must be a JSON object of plan code to { amountCents, currency, periodMonths }",
+    );
+  }
+  const planCatalog = new Map<string, PaymentPlanConfig>();
+  for (const [planCode, entry] of Object.entries(
+    catalogParsed as Record<string, unknown>,
+  )) {
+    if (!billing.planEntitlements.has(planCode)) {
+      throw new Error(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" is not a plan in LAGO_PLAN_ENTITLEMENTS: a plan the deployment cannot entitle must not be purchasable`,
+      );
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" must be an object with amountCents, currency and periodMonths`,
+      );
+    }
+    const { amountCents, currency, periodMonths } = entry as Record<string, unknown>;
+    if (typeof amountCents !== "number" || !Number.isInteger(amountCents) || amountCents <= 0) {
+      throw new Error(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents must be a positive integer number of cents`,
+      );
+    }
+    if (currency !== "CNY") {
+      throw new Error(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" currency must be "CNY": only CNY is collected in v1`,
+      );
+    }
+    if (periodMonths !== 1) {
+      throw new Error(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" periodMonths must be 1 (monthly): that is the Lago interval the activation creates`,
+      );
+    }
+    planCatalog.set(planCode, {
+      amountCents,
+      currency: "CNY",
+      periodMonths: 1,
+    });
+  }
+
+  const notifyRaw =
+    optional(environment, "PAYMENT_NOTIFY_BASE_URL") ??
+    optional(environment, "OPENBOT_PUBLIC_URL") ??
+    authBaseUrl(environment);
+  if (notifyRaw === undefined) {
+    throw new Error(
+      "PAYMENT_NOTIFY_BASE_URL is required when a payment channel is configured (or set OPENBOT_PUBLIC_URL / BETTER_AUTH_URL): the channels need a public https address to call back",
+    );
+  }
+  const notifyProblem = notifyBaseAllowed(environment, notifyRaw);
+  if (notifyProblem) {
+    throw new Error(notifyProblem);
+  }
+
+  const allowPrivateHosts = paymentPrivateHostsAllowed(environment);
+  if (allowPrivateHosts) {
+    log.warn(
+      "PAYMENT_ALLOW_PRIVATE_HOSTS=true lets a payment gateway sit on this deployment's own network. Fine against a sandboxed channel stack; check that this is deliberate before deploying.",
+    );
+  }
+
+  return {
+    ...(alipay ? { alipay } : {}),
+    ...(wechat ? { wechat } : {}),
+    planCatalog,
+    notifyBaseUrl: notifyRaw.replace(/\/+$/, ""),
+    allowPrivateHosts,
+    orderTtlMinutes: positiveInt(environment, "PAYMENT_ORDER_TTL_MINUTES", 15),
+    callbackSkewSeconds: positiveInt(
+      environment,
+      "PAYMENT_CALLBACK_SKEW_SECONDS",
+      300,
+    ),
+    latePaymentWindowHours: positiveInt(
+      environment,
+      "PAYMENT_LATE_PAYMENT_WINDOW_HOURS",
+      24,
+    ),
+    acceptForeignCurrency: loudSwitch(
+      environment,
+      "PAYMENT_ACCEPT_FOREIGN_CURRENCY",
+      "PAYMENT_ACCEPT_FOREIGN_CURRENCY=true lets a payment activate a Lago plan priced in a currency other than CNY. The order table remains the authority on what was collected; check that this mismatch is deliberate.",
+    ),
+  };
+}
+
+/** The auth base URL, read the way loadConfig derives `publicUrl`, without building auth. */
+function authBaseUrl(environment: Environment): string | undefined {
+  return optional(environment, "BETTER_AUTH_URL");
+}
+
 /**
  * The action policy, as JSON in one variable.
  *
@@ -1536,6 +1943,8 @@ export function loadConfig(
     : undefined;
   const managedAgent = managedAgentConfig(environment);
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
+  // Read once so the payments block can refuse a channel configured without its projection.
+  const billing = billingConfig(environment);
 
   return {
     port: serverPort(environment),
@@ -1587,7 +1996,8 @@ export function loadConfig(
       ? { appDistDir: optional(environment, "APP_DIST_DIR") as string }
       : {}),
     computer: computerConfig(environment),
-    billing: billingConfig(environment),
+    billing,
+    payments: paymentsConfig(environment, billing),
     handoff: handoffCaps(environment),
     ...(optional(environment, "AGENT_TOOL_TOKEN")
       ? { agentToolToken: optional(environment, "AGENT_TOOL_TOKEN") as string }

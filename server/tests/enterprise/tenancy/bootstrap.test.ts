@@ -8,6 +8,7 @@ import {
   bootstrapEnterprise,
   createRevocationCheck,
   type DatabaseFactory,
+  ENTERPRISE_BOUNDARY_TABLES,
 } from "../../../src/enterprise/bootstrap";
 import type { EnterpriseConfig } from "../../../src/enterprise/config";
 import { testDatabaseUrlFrom } from "../../support/database";
@@ -90,14 +91,8 @@ const UNIT_URLS = {
  * Fake pools: the DatabaseFactory seam (plan step 1).
  * ------------------------------------------------------------------------- */
 
-const ENTERPRISE_TABLE_NAMES = [
-  "enterprise_principals",
-  "enterprise_memberships",
-  "enterprise_tenants",
-  "enterprise_workspaces",
-  "enterprise_resources",
-  "enterprise_resource_grants",
-] as const;
+/* Same source as the boot's own statement text: one list, no second copy to drift. */
+const ENTERPRISE_TABLE_NAMES = ENTERPRISE_BOUNDARY_TABLES;
 
 type RoleRow = Record<string, unknown>;
 type TableRow = Record<string, unknown>;

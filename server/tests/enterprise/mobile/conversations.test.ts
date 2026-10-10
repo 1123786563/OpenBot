@@ -362,6 +362,14 @@ beforeAll(async () => {
     operationId: "t5c-op-open-other-a",
   });
 
+  /* The run decision is governed by the tenant's policy revision (spec §6.2)：本子系统的
+   * fixture 租户在生产切换纪律（租户排他锁、显式 switch）的对应物下切到 conversations-v1，
+   * run 判定才由引擎按该修订裁决；断言本身不变，仅补齐被治理的前置事实。 */
+  await ownerDatabase
+    .update(enterpriseTenants)
+    .set({ policyRevision: "conversations-v1" })
+    .where(like(enterpriseTenants.id, `${PREFIX}%`));
+
   /* Bot rows: kind='bot' has no producer domain yet (spec §11.6), so the fixture writes the
    * resource rows directly as the owner. */
   await ownerDatabase.insert(enterpriseResources).values(

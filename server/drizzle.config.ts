@@ -40,6 +40,7 @@ export default defineConfig({
     "./src/db/schema/team-bots.ts",
     "./src/db/schema/shared-use.ts",
     "./src/db/schema/billing.ts",
+    "./src/db/schema/payment.ts",
     "./src/db/schema/enterprise-tenancy.ts",
     "./src/db/schema/enterprise-authz.ts",
     "./src/db/schema/enterprise-conversations.ts",

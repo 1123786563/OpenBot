@@ -122,6 +122,7 @@ async function runScript(
     let code: number;
     let out = "";
     let err = "";
+    let silentFaultExit: string | undefined;
     try {
       const { stdout, stderr, exitCode } = Bun.spawnSync(
         ["bun", "--no-env-file", script, ...args],
@@ -139,15 +140,34 @@ async function runScript(
       code = exitCode;
       out = stdout.toString();
       err = stderr.toString();
+      if (out.length === 0 && err.length === 0) {
+        /* 空输出不是任何 CLI 能产出的行为（见上注释）。观测值记入独立变量，不污染 err 的
+         * "原始输出"语义——否则重试判断被这行非空字符串短路（第三轮门禁的 attempt=1 即该
+         * 缺陷），故障场景就只剩一次机会。 */
+        silentFaultExit = String(exitCode);
+        code = exitCode === null ? -1 : exitCode;
+      }
     } catch (spawnError) {
       code = -1;
       err = `[spawn] ${
         spawnError instanceof Error ? spawnError.message : String(spawnError)
       }`;
     }
-    if (out.length > 0 || err.length > 0 || attempt >= 3) {
+    if (out.length > 0 || err.length > 0) {
       return { code, out, err };
     }
+    if (attempt >= 4) {
+      /* 重试耗尽仍是空输出：把 spawn 层观测编码进 err，让这类故障在断言消息里可见、可归因
+       * （退出码/尝试次数），而不是无声的空串；该行不含任何 CLI 会打印的变量名，因此不会
+       * 让任何失败断言误通过——真实断言依旧失败。 */
+      return {
+        code,
+        out,
+        err: `[spawn-observability] exit=${silentFaultExit ?? String(code)} attempt=${attempt}`,
+      };
+    }
+    /* 指数退避后重试：瞬态高负载窗口下的 spawn 故障多数在下一次尝试时消失。 */
+    await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
   }
 }
 

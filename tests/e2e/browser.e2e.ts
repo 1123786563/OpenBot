@@ -192,6 +192,15 @@ async function waitForWithReload(page: Page, locator: ReturnType<Page["locator"]
   }
 }
 
+/** Agent 弹窗是分区式的：Pin/Hide/Delete 都在 “Manage” 分区里，先点开它。 */
+async function openManageSection(page: Page) {
+  const manageTab = page.locator("[role='dialog']").last()
+    .getByText("Manage", { exact: true })
+    .first();
+  await manageTab.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
+  await manageTab.click();
+}
+
 /** 等 Bot 回合真正结束：transcript 里的 “Thinking” 指示消失（否则单运行锁会拒收下一条消息）。 */
 async function waitForTurnIdle(page: Page, timeoutMs = 120_000) {
   const thinking = page.getByText("Thinking", { exact: true });
@@ -304,52 +313,102 @@ async function runConversationFlow(browser: Browser) {
   await step("频道页发送消息，消息出现在时间线且刷新后仍在", async () => {
     // 上一步 Bot 会话的运行可能仍占用该 Bot（单运行锁会拒收新消息），先留出收尾时间
     await page.waitForTimeout(8000);
-    await gotoRetry(page, `${APP_URL}/channel/new`);
-    // 输入框是 PromptArea 富文本编辑器（contenteditable，aria-label "Message"），不是 textarea
-    const composer = page
-      .locator('[aria-label="Message"], [contenteditable="true"]')
-      .first();
-    await waitForWithReload(page, composer, 30000);
-    // 换一个与上一步 Bot 会话不同的接收者，避免上一轮运行仍占用同一个 Bot
-    const recipientInput = page.getByPlaceholder(/choose|选择/i).first();
-    if (await recipientInput.isVisible().catch(() => false)) {
-      await recipientInput.click();
-      await page.waitForTimeout(600);
-      const option = page.getByRole("option").last();
-      if (await option.isVisible().catch(() => false)) {
-        await option.click();
-        await page.waitForTimeout(600);
+    // 接收者用 URL 搜索参数指定（new.tsx:37 validateSearch 原生支持 ?agent=，Combobox 选中后
+    // 也是写进同一个参数），绕开下拉交互：实测 Combobox 的 onValueChange 会触发一次
+    // navigate({replace, search})，与首条消息发出后的 navigate(/channel/:id) 偶发竞态，
+    // 失败时 URL 被弹回 /channel/new?agent=…，首条消息已建频道但页面停在新建页。
+    // 取一个系统内置 agent（endpoint 为空、无外部依赖）作接收者，且与上一步 Bot 会话页的
+    // 默认接收者（default-agent.ts 取 agents[0]）不同，避免上一轮运行仍占用同一个 Bot；
+    // 遗留的测试 Bot 带假 endpoint（如 https://agui.example.com/...），运行会挂起占住单运行锁，
+    // 后续消息会被拒收，所以不能用名单里最后一个。
+    const roster = await context.request.get(`${APP_URL}/api/agents`);
+    if (!roster.ok()) {
+      throw new Error(`GET /api/agents 失败：${roster.status()}`);
+    }
+    const agents = (
+      (await roster.json()) as {
+        agents: Array<{ id: string; endpoint: string | null }>;
+      }
+    ).agents;
+    if (agents.length === 0) {
+      throw new Error("agent 名单为空，无法指定频道接收者");
+    }
+    const builtinOther = agents.find(
+      (agent) => agent.id !== agents[0].id && !agent.endpoint,
+    );
+    const fallbackOther = agents.find((agent) => agent.id !== agents[0].id);
+    const recipientAgent = builtinOther ?? fallbackOther;
+    if (!recipientAgent) {
+      throw new Error("agent 名单里找不到与默认接收者不同的 agent");
+    }
+    const recipientId = recipientAgent.id;
+    // 首条消息要经外部 runtime 网关落库，偶发挂起时消息迟迟不进时间线；此时重开一个新频道
+    // 用新消息重试一次（首条消息建频道，重试是新频道，不会重复计数）。断言不放宽：
+    // 最终仍要求消息出现在时间线且刷新后仍在。
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await gotoRetry(page, `${APP_URL}/channel/new?agent=${recipientId}`);
+      // 输入框是 PromptArea 富文本编辑器（contenteditable，aria-label "Message"），不是 textarea
+      const composer = page
+        .locator('[aria-label="Message"], [contenteditable="true"]')
+        .first();
+      await waitForWithReload(page, composer, 30000);
+      const message = `频道时间线冒烟 ${Date.now()}`;
+      await composer.click();
+      // PromptArea 是 Lexical 富文本编辑器，用真实键盘输入保证事件被框架接收
+      await page.keyboard.insertText(message);
+      // 确认编辑器真的吃到了文本，再点发送
+      await page
+        .locator(`[aria-label="Message"]:has-text("${message}"), [contenteditable="true"]:has-text("${message}")`)
+        .first()
+        .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
+      await page
+        .locator('[aria-label="Send message"], button:has-text("Send message")')
+        .first()
+        .click();
+      // 首条消息会真正建频道并跳到 /channel/:id
+      await page.waitForURL((url) => /\/channel\/(?!new$)[^/]+$/.test(url.pathname), {
+        timeout: SHORT_TIMEOUT_MS,
+      });
+      try {
+        // 轮询时间线文本：实测该消息节点会出现在 main 的渲染文本里，但 waitFor(visible) 会一直
+        // 超时（节点存在而可见性判定不过），所以用 innerText 包含来断言「消息出现在时间线」。
+        const timeline = page.locator("main");
+        let shown = false;
+        const shownDeadline = Date.now() + 120_000;
+        while (Date.now() < shownDeadline) {
+          await page.waitForTimeout(5000);
+          const text = await timeline.innerText().catch(() => "");
+          if (text.includes(message)) {
+            shown = true;
+            break;
+          }
+        }
+        if (!shown) {
+          throw new Error("120 秒内消息未出现在时间线");
+        }
+        // 刷新后仍在：对应 GET /api/channels/events 的持久时间线
+        await page.reload();
+        const persistedDeadline = Date.now() + 120_000;
+        let persisted = false;
+        while (Date.now() < persistedDeadline) {
+          await page.waitForTimeout(5000);
+          const text = await page.locator("main").innerText().catch(() => "");
+          if (text.includes(message)) {
+            persisted = true;
+            break;
+          }
+        }
+        if (!persisted) {
+          throw new Error("刷新后消息不在时间线（未持久化）");
+        }
+        return `消息「${message}」刷新后仍在时间线`;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        log(`  第 ${attempt} 次尝试未在时间线看到消息（${lastError.message.split("\n")[0]}），重开频道重试`);
       }
     }
-    const message = `频道时间线冒烟 ${Date.now()}`;
-    await composer.click();
-    // PromptArea 是 Lexical 富文本编辑器，用真实键盘输入保证事件被框架接收
-    await page.keyboard.insertText(message);
-    // 确认编辑器真的吃到了文本，再点发送
-    await page
-      .locator(`[aria-label="Message"]:has-text("${message}"), [contenteditable="true"]:has-text("${message}")`)
-      .first()
-      .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
-    await page
-      .locator('[aria-label="Send message"], button:has-text("Send message")')
-      .first()
-      .click();
-    // 首条消息会真正建频道并跳到 /channel/:id
-    await page.waitForURL((url) => /\/channel\/(?!new$)[^/]+$/.test(url.pathname), {
-      timeout: SHORT_TIMEOUT_MS,
-    });
-    const timeline = page.locator("main");
-    await timeline
-      .locator(`text=${message}`)
-      .first()
-      .waitFor({ state: "visible", timeout: 60000 });
-    // 刷新后仍在：对应 GET /api/channels/events 的持久时间线
-    await waitForWithReload(
-      page,
-      page.locator(`text=${message}`).first(),
-      60000,
-    );
-    return `消息「${message}」刷新后仍在时间线`;
+    throw lastError ?? new Error("频道时间线步骤失败");
   });
 
   await context.close();
@@ -439,10 +498,11 @@ async function runBotLifecycleFlow(browser: Browser) {
         .first()
         .click();
     }
+    await openManageSection(page);
     await dialogPin.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
     await dialogPin.click();
     await page
-      .locator('text=Pinned, button:has-text("Unpin")')
+      .getByRole("button", { name: "Unpin", exact: true })
       .first()
       .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
     await page.getByRole("button", { name: "Unpin", exact: true }).first().click();
@@ -480,7 +540,12 @@ async function runBotLifecycleFlow(browser: Browser) {
 
   await step("隐藏 Bot 并从列表消失，再取消隐藏", async () => {
     await gotoRetry(page, `${APP_URL}/agents`);
-    await page.getByRole('link', { name: BOT_NAME }).first().click();
+        // AgentCard 的 Details 控件（可访问名 “View details for {name}”）
+    await page
+      .getByRole("button", { name: `View details for ${BOT_NAME}` })
+      .first()
+      .click();
+    await openManageSection(page);
     const hideButton = page.getByRole('button', { name: 'Hide', exact: true }).first();
     await hideButton.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
     await hideButton.click();
@@ -488,12 +553,18 @@ async function runBotLifecycleFlow(browser: Browser) {
     await page.waitForURL((url) => url.pathname === "/agents", {
       timeout: SHORT_TIMEOUT_MS,
     });
-    // Hidden 区里还能找到它（roster.hidden）
+    // Hidden 区是折叠的 <details>（roster.hidden），先展开再找卡片
+    const hiddenSummary = page.locator("summary").filter({ hasText: "Hidden" });
+    if (await hiddenSummary.isVisible().catch(() => false)) {
+      await hiddenSummary.click();
+      await page.waitForTimeout(600);
+    }
     const hiddenRow = page
       .getByRole("button", { name: `View details for ${BOT_NAME}` })
       .first();
     await hiddenRow.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
     await hiddenRow.click();
+    await openManageSection(page);
     await page.getByRole('button', { name: 'Unhide', exact: true }).first().click();
     await page.getByRole('button', { name: 'Hide', exact: true }).first().waitFor({
       state: "visible",
@@ -508,6 +579,7 @@ async function runBotLifecycleFlow(browser: Browser) {
       .getByRole("button", { name: `View details for ${BOT_NAME}` })
       .first()
       .click();
+    await openManageSection(page);
     const deleteButton = page.getByRole('button', { name: 'Delete', exact: true }).first();
     await deleteButton.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
     await deleteButton.click();

@@ -35,9 +35,30 @@ export type BillingUsage = {
   charges: BillingUsageCharge[];
 };
 
+/** One metered event: the line item behind the aggregate. */
+export type BillingUsageEvent = {
+  timestamp: string;
+  metricCode: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokens?: number;
+};
+
+/** One page of metered events, with what a pager needs to offer the next one. */
+export type BillingUsageEventPageResponse = {
+  events: BillingUsageEvent[];
+  pagination: {
+    totalCount: number;
+    totalPages: number;
+    currentPage: number;
+    nextPage: number | null;
+  };
+};
+
 export const billingKeys = {
   entitlements: ["billing", "entitlements"] as const,
   usage: ["billing", "usage"] as const,
+  usageEvents: ["billing", "usage-events"] as const,
 };
 
 /**
@@ -66,3 +87,19 @@ export const usageQueryOptions = queryOptions({
     return response.json();
   },
 });
+
+/**
+ * The most recent metered events: the line items the aggregate is made of. Always fresh, one
+ * fixed server-side page at a time; the page number lives in the route's search params.
+ */
+export const usageEventsQueryOptions = (page: number) =>
+  queryOptions({
+    queryKey: [...billingKeys.usageEvents, page],
+    staleTime: 0,
+    queryFn: async (): Promise<BillingUsageEventPageResponse> => {
+      const response = await client(`/api/billing/usage/events?page=${page}`, {
+        fallback: "Your usage details could not be loaded.",
+      });
+      return response.json();
+    },
+  });

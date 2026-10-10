@@ -43,6 +43,7 @@ import { createResourceReader } from "./authz/repository";
 import { createAuthz } from "./authz/service";
 import type { EnterpriseConfig, RedactedSecurityError } from "./config";
 import { createDirectory } from "./tenancy/directory";
+
 const log = getLogger("server");
 
 /**
@@ -66,15 +67,46 @@ export type EnterpriseProcess = {
  * below is a compile-time constant, and no runtime value is ever interpolated.
  * ------------------------------------------------------------------------- */
 
-const SELECT_LOGIN_ROLE = `
-  select current_user as user_name,
-         r.rolsuper as superuser,
-         r.rolbypassrls as bypasses_rls,
-         pg_has_role(current_user, 'ob_ent_operator', 'MEMBER') as operator_member,
-         pg_has_role(current_user, 'ob_ent_identity_operator', 'MEMBER') as identity_operator_member
-  from pg_roles r
-  where r.rolname = current_user`;
+/**
+ * Every enterprise table the entry's tenant boundary depends on, per plan 02 §5 T1-A and plan 03
+ * §4.1 (the 22 runs/models tables the runs custom migration put under ENABLE + FORCE RLS). §9.3:
+ * the boot verifies the whole role/RLS table SET instead of a hand-count of the old six — adding
+ * a ledger table means adding its name here and nowhere else.
+ */
+export const ENTERPRISE_BOUNDARY_TABLES = [
+  // Plan 02: tenancy and ACL.
+  "enterprise_principals",
+  "enterprise_memberships",
+  "enterprise_tenants",
+  "enterprise_workspaces",
+  "enterprise_resources",
+  "enterprise_resource_grants",
+  // Plan 03: runs ledger, durable events, model/budget domain.
+  "enterprise_threads",
+  "enterprise_run_releases",
+  "enterprise_run_grants",
+  "enterprise_runs",
+  "enterprise_run_attempts",
+  "enterprise_run_commands",
+  "enterprise_run_messages",
+  "enterprise_run_steps",
+  "enterprise_run_checkpoints",
+  "enterprise_run_events",
+  "enterprise_run_snapshots",
+  "enterprise_run_outbox",
+  "enterprise_capabilities",
+  "enterprise_run_delegations",
+  "enterprise_model_routes",
+  "enterprise_model_grants",
+  "enterprise_budget_accounts",
+  "enterprise_budget_reservations",
+  "enterprise_budget_bindings",
+  "enterprise_model_attempts",
+  "enterprise_usage_entries",
+  "enterprise_model_calls",
+] as const;
 
+/* Compile-time constant array folded into the statement text: no runtime value is interpolated. */
 const SELECT_ENTERPRISE_TABLES = `
   select c.relname as table_name,
          c.relrowsecurity as rls_enabled,
@@ -83,10 +115,18 @@ const SELECT_ENTERPRISE_TABLES = `
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public'
-    and c.relname in ('enterprise_principals', 'enterprise_memberships', 'enterprise_tenants',
-                      'enterprise_workspaces', 'enterprise_resources', 'enterprise_resource_grants')`;
+    and c.relname in (${ENTERPRISE_BOUNDARY_TABLES.map((name) => `'${name}'`).join(", ")})`;
 
-const ENTERPRISE_TABLE_COUNT = 6;
+const ENTERPRISE_TABLE_COUNT = ENTERPRISE_BOUNDARY_TABLES.length;
+
+const SELECT_LOGIN_ROLE = `
+  select current_user as user_name,
+         r.rolsuper as superuser,
+         r.rolbypassrls as bypasses_rls,
+         pg_has_role(current_user, 'ob_ent_operator', 'MEMBER') as operator_member,
+         pg_has_role(current_user, 'ob_ent_identity_operator', 'MEMBER') as identity_operator_member
+  from pg_roles r
+  where r.rolname = current_user`;
 
 const LoginRoleSchema = z
   .object({

@@ -15,7 +15,7 @@ import {
   type PersonalConversation,
 } from "../../../../shared/enterprise/mobile-schemas";
 import type { Database } from "../../db/client";
-import type { Scope } from "../contracts";
+import type { Authz, Scope } from "../contracts";
 import { EnterpriseError } from "../errors";
 import {
   type BotPage,
@@ -39,8 +39,9 @@ export type ConversationsService = {
 
 export function createConversationsService(
   database: Database,
+  authz: Authz,
 ): ConversationsService {
-  const store = createConversationsStore(database);
+  const store = createConversationsStore(database, authz);
   return {
     listBots: (scope, cursor) =>
       store.listAuthorizedBots(scope, cursor, PAGE_LIMIT),
