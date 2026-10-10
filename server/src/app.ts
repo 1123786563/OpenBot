@@ -75,6 +75,7 @@ import type { ComputerGateway } from "./computer/gateway";
 import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
+import { createCodeSandboxRoutes, type CodeRunGatewayFactory } from "./codesandbox/routes";
 import { configuredAuthProviders, type DeploymentConfig } from "./config";
 import {
   type CredentialAdminService,
@@ -249,8 +250,6 @@ export function createApp(
   computerPolicy?: PolicyStore,
   /** Bots as durable objects: profile, roster, visibility. */
   agentProfileStore?: AgentProfileStore,
-  /** The marketplace's own receipts: which expert each person installed, and the Bot it created. */
-  marketplaceStore?: MarketplaceStore,
   /** The durable channels a Bot runs in. */
   channelStore?: ChannelStore,
   /** Live channel activity. Absent leaves the routes working, just without the socket. */
@@ -449,6 +448,14 @@ export function createApp(
     teamBots?: TeamBots;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
+    /**
+     * The marketplace's own receipts: which expert each person installed, and the Bot the install
+     * created. A field here rather than another positional parameter, for the same reason every
+     * sibling above is: a misplaced positional argument is silent, and this one only matters
+     * beside the agent store it writes through. Absent leaves the catalogue readable but nothing
+     * installable — a deployment that cannot remember what a person installed must not guess.
+     */
+    marketplace?: { installs: MarketplaceStore };
   },
   /**
    * Whether to offer help self-hosting, which also hides it from a deployment that pays for
@@ -499,6 +506,14 @@ export function createApp(
     service: PaymentService;
     activePlanCode(): Promise<string | null>;
   },
+  /**
+   * The governed code-interpreter module. Absent leaves run_code refusing everywhere.
+   *
+   * APPENDED LAST, like `payments` beside it, for the reason those parameters' own docblocks give:
+   * these are positional, so inserting one anywhere else silently shifts every existing call
+   * site's arguments by one.
+   */
+  codeRunGatewayFactory?: CodeRunGatewayFactory,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
@@ -1393,6 +1408,12 @@ export function createApp(
     );
   }
 
+  if (codeRunGatewayFactory)
+    app.route(
+      "/api/codesandbox",
+      createCodeSandboxRoutes(requireUser, canUseBot, codeRunGatewayFactory),
+    );
+
   if (hostAccessBroker) {
     app.route(
       "/api/host-access",
@@ -1413,15 +1434,13 @@ export function createApp(
   if (agentProfileStore) {
     /*
      * The marketplace, beside the agents routes: an expert install writes a Bot through the same
-     * profile store, and the receipt store it reads is passed in beside it. Absent receipts leave
-     * the catalogue readable but nothing installable — a deployment that cannot remember what a
-     * person installed must not guess.
+     * profile store, and the receipt store arrives on the coworker object beside it.
      */
-    if (marketplaceStore) {
+    if (coworker?.marketplace) {
       app.route(
         "/api/marketplace",
         createMarketplaceRoutes({
-          installs: marketplaceStore,
+          installs: coworker.marketplace.installs,
           agents: agentProfileStore,
           ...(pluginStore
             ? {
