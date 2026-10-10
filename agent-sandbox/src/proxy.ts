@@ -14,6 +14,7 @@ import { timingSafeEqual } from "node:crypto";
 import { rm } from "node:fs/promises";
 import type { SandboxEnv } from "./env";
 import type { BotRuntimes } from "./bot-runtimes";
+import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
 import { isPlainBotId } from "./bot-id";
 import { forwardEvents } from "./sse";
 
@@ -44,6 +45,10 @@ const ALLOWED = new Set([
   // Not yet implemented — allowed, and answered 501 until their tasks land:
   "POST /devserver/start",
   "POST /devserver/stop",
+  // The static webapp road (S3): a different door from the dev server — built files, no process.
+  "POST /webapp/start",
+  "POST /webapp/stop",
+  "GET /webapp/file",
   "GET /runtimes",
   "GET /workspace/snapshot",
   "POST /workspace/restore",
@@ -176,6 +181,35 @@ export function createProxyHandler(
     if (url.pathname === "/devserver/stop" && request.method === "POST") {
       await runtimes.stopDevServer(botId);
       return Response.json({ ok: true, botId });
+    }
+
+    // The static webapp road (S3): files that were built, no process. Start verifies the
+    // build exists (404-shaped refusal); GET serves one file under containment.
+    if (url.pathname === "/webapp/start" && request.method === "POST") {
+      const started = await startWebapp({ workspaceRoot: env.workspaceDir + "/bots" }, botId);
+      if (!started.ok) {
+        return Response.json(
+          { error: "No webapp build found for this Bot.", reason: started.reason },
+          { status: 404 },
+        );
+      }
+      return Response.json({ ok: true, root: started.root });
+    }
+    if (url.pathname === "/webapp/stop" && request.method === "POST") {
+      return Response.json(await stopWebapp());
+    }
+    if (url.pathname === "/webapp/file" && request.method === "GET") {
+      const path = url.searchParams.get("path") ?? "";
+      const file = await readWebappFile(
+        { workspaceRoot: env.workspaceDir + "/bots" },
+        botId,
+        path,
+      );
+      if (!file) return Response.json({ error: "Not found." }, { status: 404 });
+      return new Response(file.bytes as BodyInit, {
+        status: 200,
+        headers: { "content-type": file.contentType },
+      });
     }
 
     const runtime = await runtimes.getOrSpawn(botId);
