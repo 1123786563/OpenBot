@@ -18,7 +18,8 @@
     "includedTitle": "Included in your plan",
     "includedDescription": "The capabilities this deployment is entitled to.",
     "noCodes": "This plan grants no extra capabilities.",
-    "inactive": "This deployment has no active plan."
+    "inactive": "This deployment has no active plan.",
+    "goSubscribe": "Subscribe now"
   },
   "subscribe": {
     "title": "Subscribe",

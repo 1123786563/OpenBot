@@ -42,10 +42,10 @@ function RouteComponent() {
             <ul className="mt-4 flex flex-wrap gap-2">
               {entitlements.data.codes.map((code) => (
                 <li
-                  key={code}
+                  key={code.code}
                   className="bg-muted text-muted-foreground rounded-full border px-3 py-1 font-mono text-xs"
                 >
-                  {code}
+                  {code.code}
                 </li>
               ))}
             </ul>
