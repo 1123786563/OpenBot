@@ -36,6 +36,10 @@ export type SandboxEnv = {
   sweepIntervalMs: number;
   /** First port a per-bot opencode serve may take; ports increment per concurrently-live bot. */
   upstreamPortBase: number;
+  /** First port of the per-bot dev server pool (vite et al.); 100 ports from here. */
+  devserverPortBase: number;
+  /** How many per-bot dev servers may run at once. The next start is refused, not queued. */
+  devserverMax: number;
   /** Bot workspace dirs untouched for longer than this are swept. 0 disables (default). */
   workspaceTtlMs: number;
 };
@@ -88,6 +92,8 @@ export function sandboxEnvFrom(env: Record<string, string | undefined>): Sandbox
     activityTimeoutMs: optionalNumber(env, "SANDBOX_ACTIVITY_TIMEOUT_MS", 300_000),
     sweepIntervalMs: optionalNumber(env, "SANDBOX_SWEEP_INTERVAL_MS", 60_000),
     upstreamPortBase: optionalNumber(env, "SANDBOX_UPSTREAM_PORT_BASE", 4400),
+    devserverPortBase: optionalNumber(env, "SANDBOX_DEVSERVER_PORT_BASE", 4600),
+    devserverMax: Math.floor(optionalNumber(env, "SANDBOX_DEVSERVER_MAX", 8)),
     workspaceTtlMs: optionalNonNegativeNumber(env, "SANDBOX_WORKSPACE_TTL_MS", 0),
   };
 }

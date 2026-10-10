@@ -171,8 +171,9 @@ describe("proxy: the workshop surface (S2/S5)", () => {
   });
 
   test("the not-yet-implemented allow-list entries answer honest 501s", async () => {
-    // /runtimes graduated (S6): its real implementation is asserted below, not 501'd here.
-    for (const path of ["/webapp/start", "/webapp/stop", "/workspace/snapshot", "/workspace/restore"]) {
+    // /runtimes (S6) and the devserver verbs (S8) graduated: real implementations are
+    // asserted in their own cases, not 501'd here.
+    for (const path of ["/workspace/snapshot", "/workspace/restore"]) {
       const method = path === "/workspace/snapshot" ? "GET" : "POST";
       const response = await call(path, {
         method,
