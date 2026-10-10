@@ -259,7 +259,9 @@ export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT
 # variable rather than `--progress`, because a Compose too old to know the flag refuses it, and one
 # too old to know the variable ignores it.
 COMPOSE_PROGRESS=quiet docker compose up -d --build "${SERVICES[@]}" >/dev/null
-if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
+# Appended, not truncated: the collector tails this file, and a rewrite on every start drops the
+# history it and anyone reading back depend on.
+if ! docker compose run --rm --build migrate >>"$LOGS/migrate.log" 2>&1; then
   red "  Migrations did not apply. The database is not the schema this server expects."
   red "  Log: $LOGS/migrate.log"
   exit 1
@@ -339,6 +341,8 @@ if identifies_as_openbot "$SERVER_PORT" server; then
       ;;
   esac
 fi
+# Both branches append to server.log, not truncate: the collector tails it, and a rewrite on every
+# start drops the history it and anyone reading back depend on.
 if ! identifies_as_openbot "$SERVER_PORT" server; then
   if [ "$ONE_COMPUTER_EACH" = "true" ]; then
     (cd server && PORT="$SERVER_PORT" \
@@ -346,11 +350,11 @@ if ! identifies_as_openbot "$SERVER_PORT" server; then
       SUPERVISOR_TOKEN="$SUPERVISOR_TOKEN" \
       COMPUTER_TOKEN="$COMPUTER_TOKEN" \
       WORKER_SHARED_SECRET="$WORKER_SHARED_SECRET" \
-      bun --env-file=../.env src/production-entry.ts >"$LOGS/server.log" 2>&1 &)
+      bun --env-file=../.env src/production-entry.ts >>"$LOGS/server.log" 2>&1 &)
   else
     (cd server && PORT="$SERVER_PORT" \
       WORKER_SHARED_SECRET="$WORKER_SHARED_SECRET" \
-      bun --env-file=../.env src/production-entry.ts >"$LOGS/server.log" 2>&1 &)
+      bun --env-file=../.env src/production-entry.ts >>"$LOGS/server.log" 2>&1 &)
   fi
 fi
 wait_for_openbot "$SERVER_PORT" server
@@ -373,11 +377,13 @@ wait_for_openbot "$SERVER_PORT" server
 # relative imports resolve from the importing file, not from the process's cwd.
 if ! running "bun worker/src/index.ts"; then
   WORKER_DATABASE_URL="$(setting DATABASE_URL postgres://openbot:openbot@localhost:5432/openbot)"
+  # Appended, not truncated: the collector tails this file, and a rewrite on every start drops the
+  # history it and anyone reading back depend on.
   (cd "$ROOT" && \
     DATABASE_URL="$WORKER_DATABASE_URL" \
     SERVER_INTERNAL_URL="http://localhost:$SERVER_PORT" \
     WORKER_SHARED_SECRET="$WORKER_SHARED_SECRET" \
-    bun worker/src/index.ts >"$LOGS/worker.log" 2>&1 &)
+    bun worker/src/index.ts >>"$LOGS/worker.log" 2>&1 &)
   info "  worker: started (routine sweep loop)"
   sleep 1
   if ! running "bun worker/src/index.ts"; then
@@ -413,7 +419,9 @@ JS
 info "4/4  App"
 require_free_or_ours "$APP_PORT" app
 if ! identifies_as_openbot "$APP_PORT" app; then
-  (cd app && bun run dev --port "$APP_PORT" --strictPort >"$LOGS/app.log" 2>&1 &)
+  # Appended, not truncated: the collector tails this file, and a rewrite on every start drops the
+  # history it and anyone reading back depend on.
+  (cd app && bun run dev --port "$APP_PORT" --strictPort >>"$LOGS/app.log" 2>&1 &)
 fi
 wait_for_openbot "$APP_PORT" app
 
