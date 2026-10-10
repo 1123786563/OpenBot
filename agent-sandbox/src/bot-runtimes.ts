@@ -50,6 +50,12 @@ type Entry = {
    * promise instead of spawning their own.
    */
   starting: Promise<void> | null;
+  /**
+   * How many spawns this Bot has had in this process's lifetime, stopped runtimes included:
+   * the status endpoint's churn number — a Bot at attempts 7 today says something about
+   * reaping policy that a point-in-time snapshot never will.
+   */
+  spawnAttempts: number;
 };
 
 export type BotRuntimes = {
@@ -76,6 +82,20 @@ export type BotRuntimes = {
   stopBot(botId: string): Promise<void>;
   stopAll(): Promise<void>;
   size(): number;
+  /**
+   * The point-in-time roster for GET /runtimes: every Bot this process has state for, with the
+   * fields an operator asks about (is it up, where does it live, when did it last do anything).
+   * Read-only and stable-string-keyed; it never mutates anything.
+   */
+  listRuntimes(): Array<{
+    botId: string;
+    status: "up" | "down";
+    port: number;
+    workspaceDir: string;
+    lastUsedAtMs: number;
+    lastActivityAtMs: number;
+    spawnAttempts: number;
+  }>;
 };
 
 export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
@@ -102,6 +122,7 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
     entry.upstream = upstream;
     entry.lastUsedAtMs = nowMs();
     entry.lastActivityAtMs = nowMs();
+    entry.spawnAttempts += 1;
     void upstream.ready.catch(() => {
       // 上线失败不在此处崩溃：探活由代理请求失败与下次清扫兜底。
       if (entry.upstream === upstream) entry.upstream = null;
@@ -156,6 +177,7 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
           lastActivityAtMs: nowMs(),
           streamCount: 0,
           starting: null,
+          spawnAttempts: 0,
         };
         entries.set(botId, entry);
       }
@@ -225,6 +247,20 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
         const entry = entries.get(botId);
         if (entry) stop(botId, entry);
       }
+    },
+
+    listRuntimes() {
+      return [...entries.entries()]
+        .map(([botId, entry]) => ({
+          botId,
+          status: entry.upstream ? ("up" as const) : ("down" as const),
+          port: entry.port,
+          workspaceDir: entry.workspaceDir,
+          lastUsedAtMs: entry.lastUsedAtMs,
+          lastActivityAtMs: entry.lastActivityAtMs,
+          spawnAttempts: entry.spawnAttempts,
+        }))
+        .sort((a, b) => a.botId.localeCompare(b.botId));
     },
 
     size() {

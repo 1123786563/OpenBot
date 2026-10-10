@@ -171,8 +171,9 @@ describe("proxy: the workshop surface (S2/S5)", () => {
   });
 
   test("the not-yet-implemented allow-list entries answer honest 501s", async () => {
-    for (const path of ["/webapp/start", "/webapp/stop", "/runtimes", "/workspace/snapshot", "/workspace/restore"]) {
-      const method = path === "/runtimes" || path === "/workspace/snapshot" ? "GET" : "POST";
+    // /runtimes graduated (S6): its real implementation is asserted below, not 501'd here.
+    for (const path of ["/webapp/start", "/webapp/stop", "/workspace/snapshot", "/workspace/restore"]) {
+      const method = path === "/workspace/snapshot" ? "GET" : "POST";
       const response = await call(path, {
         method,
         headers: botHeaders,
@@ -180,6 +181,34 @@ describe("proxy: the workshop surface (S2/S5)", () => {
       });
       expect(response.status).toBe(501);
     }
+  });
+
+  test("GET /runtimes answers the roster this proxy holds (S6)", async () => {
+    // One Bot is up (the shared upstream fake answers it), then the roster names it with the
+    // fields an operator asks for — and nothing else, because the roster is read-only.
+    const warm = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
+    expect(warm.status).toBe(200);
+    const response = await call("/runtimes", { method: "GET", headers: botHeaders });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      bots: Array<{
+        botId: string;
+        status: string;
+        port: number;
+        workspaceDir: string;
+        lastUsedAtMs: number;
+        lastActivityAtMs: number;
+        spawnAttempts: number;
+      }>;
+    };
+    const mine = body.bots.find((bot) => bot.botId === "alpha");
+    expect(mine).toBeDefined();
+    expect(mine?.status).toBe("up");
+    expect(typeof mine?.port).toBe("number");
+    expect(mine?.workspaceDir).toContain("alpha");
+    expect(mine?.spawnAttempts).toBeGreaterThanOrEqual(1);
+    expect(typeof mine?.lastUsedAtMs).toBe("number");
+    expect(typeof mine?.lastActivityAtMs).toBe("number");
   });
 
   test("POST /file is allowed (B5's writeFile verb) and reaches the upstream", async () => {
