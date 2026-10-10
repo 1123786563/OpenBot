@@ -105,6 +105,7 @@ import { createAlipayProvider } from "./billing/payments/alipay";
 import { createWechatProvider } from "./billing/payments/wechat";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
+import { createBillingStatements } from "./billing/statements";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
 import {
   createBillingService,
@@ -3103,9 +3104,10 @@ const payments =
         }
 
         const externalCustomerKey = billing.externalCustomerKey;
+        const paymentOrderStore = createPaymentStore(database);
         const paymentService = createPaymentService({
           providers,
-          store: createPaymentStore(database),
+          store: paymentOrderStore,
           catalog: settings.planCatalog,
           notifyBaseUrl: settings.notifyBaseUrl,
           orderTtlMinutes: settings.orderTtlMinutes,
@@ -3137,6 +3139,9 @@ const payments =
         startPaymentSweeps(paymentService);
         return {
           service: paymentService,
+          // The statement read's other half: a bill is a stored order, so the ledger is the only
+          // source that can answer it.
+          store: paymentOrderStore,
           activePlanCode: async () => {
             const entitlements = await billing.service.entitlements();
             return entitlements.active && entitlements.planCode
@@ -3145,6 +3150,24 @@ const payments =
           },
         };
       })();
+
+/*
+ * The statement reads: 套餐用量 and the bill list.
+ *
+ * Built from whichever halves this deployment has, because the two answers draw on different
+ * things — the plan-usage read needs the provider's reader plus this deployment's configured
+ * ceilings, the bill list needs the local payment ledger. Billing configured without channels
+ * answers plan usage and an empty bill list; neither half is missing-by-error, so a person with
+ * no bills sees an empty page rather than a failure.
+ */
+const statements =
+  billing === undefined
+    ? undefined
+    : createBillingStatements({
+        service: billing.service,
+        quotas: billingSettings?.planQuotas ?? new Map(),
+        ...(payments ? { orders: payments.store } : {}),
+      });
 
 /*
  * The code sandbox behind run_code: a client per Bot to the agent-sandbox container, one writer
@@ -3372,6 +3395,9 @@ const app = createApp(
   // docblock: optional and positional, present even where the sandbox URL is not, so a run without
   // a sandbox is a refused outcome rather than a missing route.
   codeRunGatewayFactory,
+  // APPENDED LAST, per the parameter's own docblock: the statement reads, built from the billing
+  // service and the payment ledger above.
+  statements,
 );
 
 /**

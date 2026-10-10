@@ -49,9 +49,11 @@ import { desktopAuthPage } from "./auth/native-browser";
 import {
   createBillingAdminRoutes,
   createBillingRoutes,
+  createBillingStatementRoutes,
   createBillingWebhookRoutes,
 } from "./billing/routes";
 import type { BillingService } from "./billing/types";
+import type { BillingStatements } from "./billing/statements";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
@@ -514,6 +516,17 @@ export function createApp(
    * site's arguments by one.
    */
   codeRunGatewayFactory?: CodeRunGatewayFactory,
+  /**
+   * The statement reads: 套餐用量 (`/api/billing/plan-usage`) and the bill list
+   * (`/api/billing/invoices`). APPENDED LAST for the same reason every parameter above it is.
+   *
+   * Separate from `billing` because the two answers are not the provider's: the plan-usage read
+   * joins the provider's period and charges against a ceiling this DEPLOYMENT configured, and a
+   * bill is a local payment order read as a statement — so the assembly builds this from whichever
+   * of the two it has, and a deployment with channels but no configured ceiling still gets bills.
+   * Absent mounts neither path, which is what a free deployment should look like from outside.
+   */
+  statements?: BillingStatements,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
@@ -1998,6 +2011,17 @@ export function createApp(
         externalCustomerKey: billing.externalCustomerKey,
         customerName: billing.customerName,
       }),
+    );
+  }
+  /*
+   * The statement reads, on the same prefix and behind the same session. Mounted in its own group
+   * rather than folded into the one above, because it is built from a different thing: the group
+   * above is the provider's reader, this one is the deployment's own two answers about its money.
+   */
+  if (statements) {
+    app.route(
+      "/api/billing",
+      createBillingStatementRoutes({ statements, requireUser }),
     );
   }
 

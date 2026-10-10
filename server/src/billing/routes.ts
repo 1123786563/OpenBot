@@ -21,6 +21,7 @@ import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { BillingError, type BillingService } from "./types";
+import type { BillingStatements } from "./statements";
 
 /** The shape `requireAdmin` takes in auth/guards.ts: a refusal answer, or nothing to add. */
 type RequireAdmin = (
@@ -110,6 +111,77 @@ export function createBillingRoutes(deps: {
   routes.get("/usage/daily", async (context) => {
     return context.json(await deps.service.usageDaily());
   });
+  return routes;
+}
+
+/**
+ * The statement reads: 套餐用量 and the bill list.
+ *
+ * Mounted on the same `/api/billing` prefix as the entitlement read, under the same session, and
+ * registered BEFORE any parametric segment that could swallow them — the same ordering fact the
+ * payment group's header records. `plan-usage` and `invoices` are static paths on a group whose
+ * only other segment is static too, but the next person to add `/invoices/:id` will be glad the
+ * shape was already right.
+ *
+ * The window is the caller's, the page size is not: `from`/`to`/`page` come from the query, 20
+ * bills at a time do not. A bad date is a 400 with a sentence of ours; a page past the end is an
+ * empty page, because a pager that walked off the end is not a client that misbehaved.
+ */
+const statementQueryInput = z.object({
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+});
+
+/** Exported for the route tests, which assert the window's own grammar. */
+export { statementQueryInput };
+
+export function createBillingStatementRoutes(deps: {
+  statements: BillingStatements;
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+}) {
+  const routes = new Hono<{ Variables: AppVariables }>();
+  routes.use("*", deps.requireUser);
+  routes.onError((error, context) => {
+    if (error instanceof z.ZodError) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    if (error instanceof BillingError) {
+      return context.json({ error: error.message }, billingStatus(error));
+    }
+    return context.json({ error: "Billing is unavailable. Try again." }, 503);
+  });
+
+  routes.get("/plan-usage", async (context) => {
+    return context.json(await deps.statements.planUsage());
+  });
+
+  routes.get("/invoices", async (context) => {
+    const parsed = statementQueryInput.safeParse({
+      from: context.req.query("from"),
+      to: context.req.query("to"),
+      page: context.req.query("page") ?? "1",
+    });
+    if (!parsed.success) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    return context.json(
+      await deps.statements.invoices({
+        from: parsed.data.from ? new Date(parsed.data.from) : null,
+        to: parsed.data.to ? new Date(parsed.data.to) : null,
+        page: parsed.data.page,
+      }),
+    );
+  });
+
+  routes.get("/invoices/:id", async (context) => {
+    const invoice = await deps.statements.invoice(context.req.param("id"));
+    if (!invoice) {
+      return context.json({ error: "No such bill." }, 404);
+    }
+    return context.json({ invoice });
+  });
+
   return routes;
 }
 

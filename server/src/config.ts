@@ -11,7 +11,10 @@ import { getLogger } from "../../shared/logger";
 import { singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
 import { organizationAuthority } from "./auth/organization";
-import type { BillingEntitlementEntry } from "./billing/types";
+import type {
+  BillingEntitlementEntry,
+  BillingQuotaEntry,
+} from "./billing/types";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 import {
@@ -1509,6 +1512,9 @@ function billingPlanQuotas(
   }
   return plans;
 }
+
+/**
+ * Whether the provider URL may sit inside this deployment's own network.
  *
  * Off unless asked for, and the asking is loud. Unlike the computer's switch this one is not
  * production-refused: a company that runs its own Lago inside its own network is a legitimate
