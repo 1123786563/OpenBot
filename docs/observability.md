@@ -10,8 +10,9 @@ the end.
 **Every log line goes through the logger in `shared/logger`**, which is pino ^10.4.0 underneath.
 Bare `console.*` calls are banned in new code: Biome enforces `noConsole` as an error across
 `server/src` and `worker/src`, so the linter rather than a review checklist keeps the rule. Tests
-are the deliberate exception. A process that needs a logger asks for one by service name and gets a
-memoized instance, so there is exactly one per process.
+are the deliberate exception, and so is one transitional carve-out, `server/src/billing/service.ts`,
+pending a parallel workstream's cleanup. A process that needs a logger asks for one by service name
+and gets a memoized instance, so there is exactly one per process.
 
 **Level semantics.** `error` means a failure a person needs to look at. `warn` means something
 failed and recovered on its own, which is worth knowing but not worth paging anyone for. `info`
