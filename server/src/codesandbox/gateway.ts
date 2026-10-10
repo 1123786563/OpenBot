@@ -41,6 +41,19 @@ export type CodeRunGatewayOptions = {
   auditStore?: AuditStore;
   maxArtifacts?: number;
   maxArtifactBytes?: number;
+  /**
+   * The workshop's artifact-indexing hook, called with the files a completed run produced.
+   *
+   * The gateway stays `code_runs`' one writer and the one collector of files; this is a
+   * downstream observer, and its failure is contained on purpose — the hook sees the same
+   * artifacts the tool already returns, and a gallery row that failed to land must not turn a
+   * completed run into a failed one. Absent (the tool's own path) nothing runs.
+   */
+  onArtifacts?: (input: {
+    runId: string;
+    sessionId: string;
+    artifacts: SandboxArtifact[];
+  }) => Promise<void>;
 };
 
 export type CodeRunRunOptions = {
@@ -154,6 +167,15 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
           outputTokens: result.usage?.outputTokens,
           artifactPaths: JSON.stringify(created),
         });
+        // The workshop gallery hook, after the run's own row is durable. Contained: a hook
+        // failure must not rewrite a completed run's outcome (see CodeRunGatewayOptions).
+        if (options.onArtifacts && artifacts.length > 0) {
+          try {
+            await options.onArtifacts({ runId, sessionId: sessionId!, artifacts });
+          } catch {
+            // Deliberately silent on the run's path; the hook owns its own failure story.
+          }
+        }
         const text =
           result.text.length > MAX_RESULT_CHARS
             ? `${result.text.slice(0, MAX_RESULT_CHARS)}\n…（结果已截断）`
