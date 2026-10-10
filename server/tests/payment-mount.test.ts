@@ -59,8 +59,9 @@ const paymentService = {
     plans: [{ planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 }],
     canPurchase,
     activePlanCode,
+    providers: ["alipay"],
   }),
-  readOrder: async (id: string) => ({ order: null }),
+  readOrder: async (_id: string) => ({ order: null }),
   readCurrentOrder: async () => ({ order: null }),
   handleCallback: async () => ({ kind: "success" }),
 } as unknown as PaymentService;

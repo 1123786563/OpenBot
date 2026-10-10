@@ -546,12 +546,9 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
       if (result.status === 200) {
         const plan = asObject(fieldOf(result.body, "plan"));
         const interval = stringOf(plan, "interval");
-        // The currency rides the amount block; a plan without one has none to reconcile.
-        const amount = plan.amount;
-        const currency =
-          amount && typeof amount === "object" && !Array.isArray(amount)
-            ? optionalStringOf(amount as Record<string, unknown>, "amount_currency")
-            : null;
+        // The plan's base price currency sits on the plan block itself (amount_currency beside
+        // amount_cents); a plan without one has no currency to reconcile against.
+        const currency = optionalStringOf(plan, "amount_currency");
         return { status: 200, body: { interval, currency } };
       }
       if (result.status === 404) return { status: 404, body: null };

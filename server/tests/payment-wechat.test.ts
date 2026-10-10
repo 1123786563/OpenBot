@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createCipheriv, createSign, randomBytes } from "node:crypto";
+import { createCipheriv, createSign } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import { createWechatProvider } from "../src/billing/payments/wechat";
 import type { WechatConfig } from "../src/billing/payments/wechat";
@@ -199,6 +199,23 @@ describe("request side (captured fetch)", () => {
       new Response(JSON.stringify({ trade_state: "SOMETHING_NEW" }), { status: 200 }),
     );
     expect((await provider.queryPayment("po-x")).state).toBe("pending");
+  });
+
+  test("a 404 is the channel's 'no such order' verdict: a closed fact, not an error", async () => {
+    // Both spellings the gate hands back: an empty body and a JSON error body. The status line
+    // is the verdict, so the sweeper can expire the stranded order either way.
+    const empty = providerWith(() => new Response("", { status: 404 }));
+    expect(await empty.queryPayment("po-abc")).toEqual({
+      outTradeNo: "po-abc",
+      state: "closed",
+    });
+    const withBody = providerWith(() =>
+      new Response(JSON.stringify({ code: "ORDER_NOT_EXIST" }), { status: 404 }),
+    );
+    expect(await withBody.queryPayment("po-abc")).toEqual({
+      outTradeNo: "po-abc",
+      state: "closed",
+    });
   });
 
   test("a 429/5xx gateway answers unreachable (retryable)", async () => {

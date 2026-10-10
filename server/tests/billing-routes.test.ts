@@ -131,7 +131,7 @@ function countingClient() {
       postedEvents.push(event);
       return { status: 200, body: null };
     },
-    async listEvents(externalSubscriptionId, perPage, page) {
+    async listEvents(externalSubscriptionId, _perPage, _page) {
       calls.listEvents += 1;
       if (eventPage === null) return { status: 404, body: null };
       return {

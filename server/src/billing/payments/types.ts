@@ -89,6 +89,12 @@ export type PaymentCatalog = {
   plans: readonly PaymentPlanEntry[];
   canPurchase: boolean;
   activePlanCode: string | null;
+  /**
+   * The channels this deployment actually configured, in stable order. The catalog is the one
+   * place the configuration is disclosed, so every client renders — and every purchase names —
+   * only channels that exist here; the service refuses any other name before an order row exists.
+   */
+  providers: readonly PaymentProviderId[];
 };
 
 /**

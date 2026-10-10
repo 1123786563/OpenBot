@@ -20,12 +20,9 @@ import type {
  * the replay rules, the amount gate, the window anchored at terminalAt, and the activation gate.
  */
 
-/** A fixed clock the tests share; `advance` moves it so window edges are reachable. */
+/** A fixed clock the tests share. */
 let clockMs = 1_791_900_000_000;
 const tick = () => new Date(clockMs);
-const advance = (ms: number) => {
-  clockMs += ms;
-};
 
 function memoryStore(): PaymentStore {
   const orders = new Map<string, PaymentOrderRecord>();
@@ -50,13 +47,6 @@ function memoryStore(): PaymentStore {
     createdAt: new Date(clockMs),
     version: 0,
   };
-
-  function seed(overrides: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
-    serial += 1;
-    const order = { ...base, ...overrides, id: overrides.id ?? `po-${String(serial).padStart(16, "0")}` };
-    orders.set(order.id, order);
-    return order;
-  }
 
   return {
     async insertOrder(input) {
@@ -331,6 +321,26 @@ describe("purchase ordering", () => {
     await expect(
       service.createPurchase({ planCode: "ghost", provider: "alipay", createdBy: "a" }),
     ).rejects.toBeInstanceOf(PurchaseError);
+  });
+
+  test("an unconfigured channel refuses before any order row exists", async () => {
+    const alipay = fakeProvider("alipay");
+    const { service, store } = buildService({ providers: [alipay] });
+    await expect(
+      service.createPurchase({ planCode: "pro", provider: "wechat", createdBy: "a" }),
+    ).rejects.toMatchObject({ refusal: { reason: "unknown-provider" } });
+    // The refusal left no stranded order behind: nothing pending on either channel, and the
+    // configured provider was never touched.
+    expect(await store.readPendingOrder("pro", "alipay")).toBeNull();
+    expect(await store.readPendingOrder("pro", "wechat")).toBeNull();
+    expect(alipay.queries).toEqual([]);
+  });
+
+  test("the catalog discloses exactly the configured channels, in stable order", async () => {
+    const wechat = fakeProvider("wechat");
+    const alipay = fakeProvider("alipay");
+    const { service } = buildService({ providers: [wechat, alipay] });
+    expect(service.catalog(true, null).providers).toEqual(["alipay", "wechat"]);
   });
 
   test("a channel failure leaves the order pending for a replay, and surfaces the sentinel", async () => {
@@ -991,5 +1001,28 @@ describe("the expiry sweep", () => {
     const { service } = buildService({ providers: [alipay], store });
     await service.sweepExpired();
     expect((await store.readOrder(order.id))?.status).toBe("pending");
+  });
+
+  test("a channel's terminal 'no such order' verdict (a closed fact) expires the order", async () => {
+    const store = memoryStore();
+    const order = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs - 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    // The shape a 404 (WeChat) or ACQ.TRADE_NOT_EXIST (Alipay) is spelled as: a verdict, not a
+    // thrown error — the order stranded by a failed createSession finally reaches a terminal
+    // state instead of being re-asked forever.
+    const alipay = fakeProvider("alipay", {
+      queryPayment: async () => ({ outTradeNo: order.id, state: "closed" as const }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+    await service.sweepExpired();
+    expect((await store.readOrder(order.id))?.status).toBe("expired");
+    expect(alipay.closes).toEqual([order.id]);
   });
 });
