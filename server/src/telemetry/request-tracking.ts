@@ -4,11 +4,14 @@
  * id up through the ambient store instead of threading a parameter through every
  * handler. The id is server-minted unless the caller sent a well-formed one, so a
  * hostile header cannot smuggle junk into Loki; that matches the tenancy plan's
- * rule (TEN-22) that logs correlate by server-generated ids.
+ * rule (TEN-22) that logs correlate by server-generated ids. When a trace span is
+ * active above the store (the inbound trace middleware), the same logs also carry
+ * its `trace_id`, tying a log line to the distributed trace it happened in.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
+import { currentTraceId } from "../../../shared/trace";
 import type { Logger } from "../../../shared/logger";
 
 export type RequestTrackingVariables = { requestId?: string };
@@ -23,7 +26,11 @@ export function currentRequestId(): string | undefined {
 
 export function requestScopedLogger(root: Logger): Logger {
   const requestId = currentRequestId();
-  return requestId ? root.child({ request_id: requestId }) : root;
+  if (!requestId) return root;
+  const traceId = currentTraceId();
+  return traceId
+    ? root.child({ request_id: requestId, trace_id: traceId })
+    : root.child({ request_id: requestId });
 }
 
 export function createRequestTracking(options: {
