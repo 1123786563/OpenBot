@@ -53,7 +53,6 @@ const ALLOWED = new Set([
 const NOT_YET_IMPLEMENTED = new Set([
   "POST /webapp/start",
   "POST /webapp/stop",
-  "GET /runtimes",
   "GET /workspace/snapshot",
   "POST /workspace/restore",
 ]);
@@ -126,6 +125,14 @@ export function createProxyHandler(
         { error: `${stubKey} is not implemented yet.` },
         { status: 501 },
       );
+    }
+
+    // The operator's roster: this proxy's own runtimes, their liveness and their churn. Not a
+    // proxied call — the answer IS this process. It sits after the bot-id gate (a roster ask
+    // still names a Bot today, like every other call through this proxy) and before the
+    // per-bot resolution, which it does not need.
+    if (request.method === "GET" && url.pathname === "/runtimes") {
+      return Response.json({ bots: runtimes.listRuntimes() });
     }
 
     const runtime = await runtimes.getOrSpawn(botId);
