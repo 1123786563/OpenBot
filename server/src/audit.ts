@@ -361,6 +361,14 @@ export const auditEventTypes = [
   "component.function_refused",
   "component.function_failed",
   /*
+   * Code-interpreter runs. The started row is written before the sandbox is called, whichever way
+   * the decision went — the same record-first order the computer's gateway holds.
+   */
+  "code.run_started",
+  "code.run_completed",
+  "code.run_refused",
+  "code.run_failed",
+  /*
    * Who may use this deployment, and at what level.
    *
    * On the trail rather than only in the table, because the table holds the current answer and this
