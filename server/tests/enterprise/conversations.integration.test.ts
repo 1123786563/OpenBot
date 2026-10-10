@@ -49,6 +49,7 @@ import {
 } from "../../src/enterprise/tenancy/provision";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
 import { tenantStorageKey } from "../../src/mastra/contracts";
+import { createMastraConversationRepository } from "../../src/mastra/conversations";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
   enterpriseTestDatabaseUrlFrom,
@@ -1089,6 +1090,51 @@ test("legacy intelligence mapping remains legacy-owned during migration", async 
   ).resolves.toBe("intelligence");
 });
 
+test("legacy channel bindings stay channel-specific and disjoint from principal-private bindings", async () => {
+  const firstChannelBinding = await conversations.resolveMastraBinding(
+    scope,
+    `${prefix}-legacy-thread`,
+  );
+  const repeatedBinding = await conversations.resolveMastraBinding(
+    scope,
+    `${prefix}-legacy-thread`,
+  );
+  const secondChannelBinding = await conversations.resolveMastraBinding(
+    scope,
+    `${prefix}-race-legacy-thread`,
+  );
+  const mastraService = createConversationService({
+    data: dataDatabase!,
+    mastraStorage: {} as never,
+  });
+  const privateConversation = await mastraService.getOrCreate(scope, {});
+  const privateBinding = await mastraService.resolveMastraBinding(
+    scope,
+    privateConversation.thread_id,
+  );
+
+  expect(firstChannelBinding.resourceId).toBe(`channel:${channelId}`);
+  expect(repeatedBinding.resourceId).toBe(firstChannelBinding.resourceId);
+  expect(secondChannelBinding.resourceId).toBe(`channel:${raceChannelId}`);
+  expect(secondChannelBinding.resourceId).not.toBe(
+    firstChannelBinding.resourceId,
+  );
+  expect(privateBinding.resourceId).toBe(
+    `private:${JSON.stringify([tenantId, principalId])}`,
+  );
+  expect(privateBinding.resourceId).not.toBe(firstChannelBinding.resourceId);
+  expect(privateBinding.resourceId).not.toBe(secondChannelBinding.resourceId);
+
+  await setupDb()
+    .delete(enterpriseConversations)
+    .where(
+      and(
+        eq(enterpriseConversations.tenantId, tenantId),
+        eq(enterpriseConversations.threadId, privateConversation.thread_id),
+      ),
+    );
+});
+
 test("deleted legacy channel remains legacy-owned and denies platform takeover", async () => {
   const threadId = `${prefix}-legacy-thread`;
   const [original] = await setupDb()
@@ -1171,6 +1217,145 @@ test("attachment references are denied after membership revocation and channel d
   }
 });
 
+test("Mastra attachment denial writes no message, intent, or attachment stamp", async () => {
+  let threadId: string | undefined;
+  let foreignThreadId: string | undefined;
+  let storeCalls = 0;
+  let writes = 0;
+  const memory = {
+    async listMessagesById() {
+      return { messages: [] };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async saveMessages() {
+      writes += 1;
+      return { messages: [] };
+    },
+  };
+  const mastraStorage = {
+    async getStore() {
+      storeCalls += 1;
+      return { getStore: async () => memory };
+    },
+    async withConversationLock<T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) {
+      storeCalls += 1;
+      return run();
+    },
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  const [originalChannel] = await setupDb()
+    .select({ deletedAt: channels.deletedAt })
+    .from(channels)
+    .where(eq(channels.id, channelId));
+  const originalAttachmentStamps = await setupDb()
+    .select({ id: attachments.id, attachedAt: attachments.attachedAt })
+    .from(attachments)
+    .where(inArray(attachments.id, [attachmentId, rollbackAttachmentId]));
+  try {
+    const conversation = await service.getOrCreate(scope, {});
+    threadId = conversation.thread_id;
+    const foreignConversation = await service.getOrCreate(foreignScope, {});
+    foreignThreadId = foreignConversation.thread_id;
+    await expect(
+      service.append(foreignScope, {
+        threadId: foreignThreadId,
+        clientMessageKey: `${prefix}-mastra-foreign-channel-attachment`,
+        content: "foreign actor attachment must not be saved",
+        attachments: [attachmentId],
+      }),
+    ).rejects.toThrow("ATTACHMENT_FORBIDDEN");
+    await setupDb()
+      .delete(channelMemberships)
+      .where(
+        and(
+          eq(channelMemberships.channelId, channelId),
+          eq(channelMemberships.userId, actorId),
+        ),
+      );
+    await expect(
+      service.append(scope, {
+        threadId,
+        clientMessageKey: `${prefix}-mastra-revoked-channel-attachment`,
+        content: "revoked channel attachment must not be saved",
+        attachments: [attachmentId],
+      }),
+    ).rejects.toThrow("ATTACHMENT_FORBIDDEN");
+
+    await setupDb()
+      .insert(channelMemberships)
+      .values({ channelId, userId: actorId })
+      .onConflictDoNothing();
+    await setupDb()
+      .update(channels)
+      .set({ deletedAt: new Date() })
+      .where(eq(channels.id, channelId));
+    await expect(
+      service.append(scope, {
+        threadId,
+        clientMessageKey: `${prefix}-mastra-deleted-channel-attachment`,
+        content: "deleted channel attachment must not be saved",
+        attachments: [rollbackAttachmentId],
+      }),
+    ).rejects.toThrow("ATTACHMENT_FORBIDDEN");
+
+    expect(storeCalls).toBe(0);
+    expect(writes).toBe(0);
+    const intents = await setupDb()
+      .select({ clientMessageKey: mastraMessageIntents.clientMessageKey })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, threadId));
+    expect(intents).toEqual([]);
+    const foreignIntents = await setupDb()
+      .select({ clientMessageKey: mastraMessageIntents.clientMessageKey })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, foreignThreadId!));
+    expect(foreignIntents).toEqual([]);
+    const stamps = await setupDb()
+      .select({ id: attachments.id, attachedAt: attachments.attachedAt })
+      .from(attachments)
+      .where(inArray(attachments.id, [attachmentId, rollbackAttachmentId]));
+    const byId = (rows: typeof originalAttachmentStamps) =>
+      rows.toSorted((left, right) => left.id.localeCompare(right.id));
+    expect(byId(stamps)).toEqual(byId(originalAttachmentStamps));
+  } finally {
+    await setupDb()
+      .update(channels)
+      .set({ deletedAt: originalChannel?.deletedAt ?? null })
+      .where(eq(channels.id, channelId));
+    await setupDb()
+      .insert(channelMemberships)
+      .values({ channelId, userId: actorId })
+      .onConflictDoNothing();
+    for (const cleanupThreadId of [threadId, foreignThreadId]) {
+      if (!cleanupThreadId) continue;
+      await setupDb()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, cleanupThreadId));
+      await setupDb()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, cleanupThreadId));
+      await setupDb()
+        .delete(enterpriseConversations)
+        .where(
+          and(
+            eq(enterpriseConversations.tenantId, tenantId),
+            eq(enterpriseConversations.threadId, cleanupThreadId),
+          ),
+        );
+    }
+  }
+});
+
 test("thread status checks platform ownership before falling back to legacy", async () => {
   const legacyCalls: string[] = [];
   const platformKnown = createThreadReader({
@@ -1226,6 +1411,16 @@ test("thread status propagates platform and legacy lookup failures", async () =>
 
 test("legacy read-grant revocation denies enterprise discovery", async () => {
   const threadId = `${prefix}-legacy-thread`;
+  let repositoryStorageCalls = 0;
+  const repository = createMastraConversationRepository({
+    conversations,
+    storage: {
+      async getStore() {
+        repositoryStorageCalls += 1;
+        throw new Error("revoked legacy channel reached tenant storage");
+      },
+    } as never,
+  });
   try {
     const resourcesBefore = await setupDb()
       .select({ id: enterpriseResources.id })
@@ -1252,6 +1447,9 @@ test("legacy read-grant revocation denies enterprise discovery", async () => {
       );
     expect(resourcesBefore).toEqual([{ id: channelId }]);
     expect(grantsBefore).toEqual([{ principalId }]);
+    await expect(repository.resolve(scope, threadId)).resolves.toMatchObject({
+      resourceId: `channel:${channelId}`,
+    });
     await expect(conversations.resolveBackend(scope, threadId)).resolves.toBe(
       "intelligence",
     );
@@ -1317,6 +1515,17 @@ test("legacy read-grant revocation denies enterprise discovery", async () => {
     await expect(
       conversations.getOrCreate(scope, { threadId }),
     ).rejects.toThrow("CHANNEL_FORBIDDEN");
+    await expect(repository.resolve(scope, threadId)).rejects.toThrow(
+      "CHANNEL_FORBIDDEN",
+    );
+    await expect(
+      repository.history(scope, {
+        threadId,
+        beforeSeq: null,
+        limit: 20,
+      }),
+    ).rejects.toThrow("CHANNEL_FORBIDDEN");
+    expect(repositoryStorageCalls).toBe(0);
     await expect(conversations.list(scope)).resolves.not.toContainEqual(
       expect.objectContaining({ thread_id: threadId }),
     );
@@ -2054,6 +2263,141 @@ test("a Mastra-backed public conversation writes and reads only through Mastra",
           eq(enterpriseConversations.threadId, threadId ?? ""),
         ),
       );
+  }
+});
+
+test("a persisted Mastra backend and incremented version direct the next append to tenant storage", async () => {
+  const conversation = await createPlatformConversation();
+  const threadId = conversation.thread_id;
+  const bindings: Array<{ backend: string; resourceId: string }> = [];
+  const persisted: Array<{
+    id: string;
+    threadId: string;
+    resourceId: string;
+    role: "user";
+    type: "text";
+    createdAt: Date;
+    content: {
+      format: 2;
+      parts: Array<{ type: "text"; text: string }>;
+      metadata: Record<string, unknown>;
+    };
+  }> = [];
+  const memory = {
+    async listMessages() {
+      return { messages: [...persisted], total: persisted.length };
+    },
+    async listMessagesById({ messageIds }: { messageIds: string[] }) {
+      return {
+        messages: persisted.filter(({ id }) => messageIds.includes(id)),
+      };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async saveMessages({ messages }: { messages: typeof persisted }) {
+      persisted.push(...messages);
+      return { messages };
+    },
+  };
+  const mastraStorage = {
+    async getStore(
+      _scope: unknown,
+      binding: { backend: string; resourceId: string },
+    ) {
+      bindings.push(binding);
+      return { getStore: async () => memory };
+    },
+    async withConversationLock<T>(
+      _scope: unknown,
+      binding: { backend: string; resourceId: string },
+      run: () => Promise<T>,
+    ) {
+      bindings.push(binding);
+      return run();
+    },
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+
+  try {
+    await setupDb()
+      .update(enterpriseConversations)
+      .set({ storageBackend: "mastra", backendVersion: 2 })
+      .where(
+        and(
+          eq(enterpriseConversations.tenantId, tenantId),
+          eq(enterpriseConversations.threadId, threadId),
+        ),
+      );
+    const changed = await setupDb()
+      .select({
+        storageBackend: enterpriseConversations.storageBackend,
+        backendVersion: enterpriseConversations.backendVersion,
+      })
+      .from(enterpriseConversations)
+      .where(eq(enterpriseConversations.threadId, threadId));
+    expect(changed).toEqual([{ storageBackend: "mastra", backendVersion: 2 }]);
+
+    const message = await service.append(scope, {
+      threadId,
+      clientMessageKey: `${prefix}-persisted-backend-dispatch`,
+      content: "dispatch follows persisted backend",
+      attachments: [],
+    });
+    expect(message).toMatchObject({
+      threadId,
+      seq: 1,
+      content: "dispatch follows persisted backend",
+    });
+    expect(persisted).toHaveLength(1);
+    expect(bindings.length).toBeGreaterThan(0);
+    expect(bindings.every(({ backend }) => backend === "mastra")).toBe(true);
+    expect(
+      bindings.every(
+        ({ resourceId }) =>
+          resourceId === `private:${JSON.stringify([tenantId, principalId])}`,
+      ),
+    ).toBe(true);
+    const platformRows = await setupDb()
+      .select({ id: enterpriseMessages.id })
+      .from(enterpriseMessages)
+      .where(eq(enterpriseMessages.threadId, threadId));
+    expect(platformRows).toEqual([]);
+    const intents = await setupDb()
+      .select({
+        state: mastraMessageIntents.state,
+        backendVersion: mastraMessageIntents.backendVersion,
+      })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, threadId));
+    expect(intents).toEqual([{ state: "finalized", backendVersion: 2 }]);
+  } finally {
+    await setupDb()
+      .delete(mastraMessageIntentAttachments)
+      .where(eq(mastraMessageIntentAttachments.threadId, threadId));
+    await setupDb()
+      .delete(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, threadId));
+    await setupDb()
+      .delete(enterpriseMessages)
+      .where(eq(enterpriseMessages.threadId, threadId));
+    await setupDb()
+      .delete(enterpriseConversations)
+      .where(
+        and(
+          eq(enterpriseConversations.tenantId, tenantId),
+          eq(enterpriseConversations.threadId, threadId),
+        ),
+      );
+    const remaining = await setupDb()
+      .select({ threadId: enterpriseConversations.threadId })
+      .from(enterpriseConversations)
+      .where(eq(enterpriseConversations.threadId, threadId));
+    expect(remaining).toEqual([]);
   }
 });
 
