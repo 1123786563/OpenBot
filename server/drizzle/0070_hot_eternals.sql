@@ -1,0 +1,1 @@
+ALTER TABLE "workshop_schedules" ADD COLUMN "preapproved" jsonb;
