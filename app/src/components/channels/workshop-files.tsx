@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconFile, IconFolder, IconRefresh, IconUpload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { uploadWorkshopFiles, type WorkshopFileNode } from "@/lib/workshop/client";
-import { workshopFilesQueryOptions, workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
+import { workshopFilesQueryOptions } from "@/lib/workshop/queries";
 
 /**
  * The workspace as a tree, and the door data comes in through.

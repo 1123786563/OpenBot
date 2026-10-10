@@ -1,0 +1,216 @@
+import { and, asc, count, desc, eq, gte, lte, ne } from "drizzle-orm";
+import type { Database } from "../db/client";
+import { creditGrants, creditLedger } from "../db/schema/credits";
+import type {
+  CreditConsumptionPage,
+  CreditGrantEntry,
+  CreditGrantStatus,
+  CreditSummary,
+  PlanCatalogEntry,
+} from "./types";
+
+/**
+ * The local credit ledger — the "套餐与积分" page's whole answer.
+ *
+ * Credits are the deployment's own currency, kept entirely in this deployment's database (the
+ * confirmed split: Lago owns the subscription and the metered raw events, the credit ledger is
+ * local). One credit is stored as `CREDIT_SCALE` whole units, the same "never store money as a
+ * float" rule the payment orders keep, so a grant of "23.63" is the integer `2363` and never a
+ * binary float that drifts.
+ *
+ * All three reads are scoped to one customer key — the deployment's own, unless a caller names
+ * another — and are read-only. `status` and `expiringSoon` are derived here, not stored, because
+ * "used up" and "expired" are functions of the clock and the balance, not facts a writer must
+ * remember to flip; the page never shows a stale pill.
+ */
+
+/** One credit = this many stored units, so the two-place decimals stay exact. */
+export const CREDIT_SCALE = 100;
+
+/** How many ledger rows a page holds. Ours, not the caller's — the same rule as the event log. */
+const CONSUMPTION_PAGE_SIZE = 20;
+
+/** The window a consumption read is narrowed to. Both ends inclusive, either end optional. */
+export type CreditConsumptionWindow = {
+  from: Date | null;
+  to: Date | null;
+  page: number;
+};
+
+export type Credits = {
+  /** The plan catalog this deployment configured, for the upgrade dialog. */
+  catalog: ReadonlyMap<string, PlanCatalogEntry>;
+  summary(externalCustomerId?: string): Promise<CreditSummary>;
+  grants(externalCustomerId?: string): Promise<readonly CreditGrantEntry[]>;
+  consumption(
+    window: CreditConsumptionWindow,
+    externalCustomerId?: string,
+  ): Promise<CreditConsumptionPage>;
+};
+
+export function createCredits(deps: {
+  database: Database;
+  /** The deployment's own customer key, so the read needs no explicit caller. */
+  externalCustomerKey: string;
+  /** The plan catalog from deployment config, passed through for the upgrade dialog. */
+  catalog: ReadonlyMap<string, PlanCatalogEntry>;
+}): Credits {
+  const { database, externalCustomerKey, catalog } = deps;
+  const keyOf = (externalCustomerId?: string) =>
+    externalCustomerId ?? externalCustomerKey;
+
+  return {
+    catalog,
+    async summary(externalCustomerId) {
+      const rows = await database
+        .select()
+        .from(creditGrants)
+        .where(eq(creditGrants.externalCustomerId, keyOf(externalCustomerId)));
+
+      const now = Date.now();
+      let plan = { total: 0, used: 0, remaining: 0 };
+      let rewards = { total: 0, used: 0, remaining: 0, grantCount: 0 };
+
+      for (const row of rows) {
+        const total = row.total;
+        const used = row.used;
+        const remaining = Math.max(total - used, 0);
+        const live = remaining > 0 && row.expiresAt.getTime() > now;
+        if (row.source === "plan") {
+          plan.total += total;
+          plan.used += used;
+          plan.remaining += remaining;
+        } else {
+          rewards.total += total;
+          rewards.used += used;
+          rewards.remaining += remaining;
+          if (live) rewards.grantCount += 1;
+        }
+      }
+
+      return {
+        plan: {
+          total: scaleDown(plan.total),
+          used: scaleDown(plan.used),
+          remaining: scaleDown(plan.remaining),
+        },
+        rewards: {
+          total: scaleDown(rewards.total),
+          used: scaleDown(rewards.used),
+          remaining: scaleDown(rewards.remaining),
+          grantCount: rewards.grantCount,
+        },
+      };
+    },
+
+    async grants(externalCustomerId) {
+      const rows = await database
+        .select()
+        .from(creditGrants)
+        .where(
+          and(
+            eq(creditGrants.externalCustomerId, keyOf(externalCustomerId)),
+            ne(creditGrants.source, "plan"),
+          ),
+        )
+        // Soonest-to-lapse first, so the red "24小时内过期" cue leads the list.
+        .orderBy(asc(creditGrants.expiresAt));
+
+      const now = Date.now();
+      const soon = now + 24 * 60 * 60 * 1000;
+      return rows.map((row) => grantOf(row, now, soon));
+    },
+
+    async consumption(window, externalCustomerId) {
+      const conditions = [
+        eq(creditLedger.externalCustomerId, keyOf(externalCustomerId)),
+      ];
+      if (window.from) conditions.push(gte(creditLedger.createdAt, window.from));
+      if (window.to) conditions.push(lte(creditLedger.createdAt, window.to));
+      const where = and(...conditions);
+
+      const totalCount = await database
+        .select({ value: count() })
+        .from(creditLedger)
+        .where(where)
+        .then((rows) => rows[0]?.value ?? 0);
+
+      const rows = await database
+        .select()
+        .from(creditLedger)
+        .where(where)
+        .orderBy(desc(creditLedger.createdAt))
+        .limit(CONSUMPTION_PAGE_SIZE)
+        .offset((window.page - 1) * CONSUMPTION_PAGE_SIZE);
+
+      const totalPages = Math.max(
+        Math.ceil(totalCount / CONSUMPTION_PAGE_SIZE),
+        1,
+      );
+      return {
+        entries: rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          requestId: row.requestId,
+          credits: scaleDown(row.credits),
+          model: row.model,
+          client: row.client,
+          timestamp: row.createdAt.toISOString(),
+        })),
+        pagination: {
+          totalCount,
+          totalPages,
+          currentPage: window.page,
+          nextPage:
+            window.page * CONSUMPTION_PAGE_SIZE < totalCount
+              ? window.page + 1
+              : null,
+        },
+      };
+    },
+  };
+}
+
+/**
+ * A grant's life, derived from its balance and its expiry — never stored, because "used up" and
+ * "expired" are functions of the clock and the balance, not facts a writer must remember to flip.
+ * Exported for the tests that pin the three-way state machine.
+ */
+export function deriveGrantStatus(
+  grant: { total: number; used: number; expiresAt: Date },
+  now: number,
+): CreditGrantStatus {
+  const remaining = Math.max(grant.total - grant.used, 0);
+  return grant.expiresAt.getTime() <= now
+    ? "expired"
+    : remaining <= 0
+      ? "exhausted"
+      : "active";
+}
+
+/** The stored row → the page's entry, the two-place decimal restored and the life derived. */
+function grantOf(
+  row: typeof creditGrants.$inferSelect,
+  now: number,
+  soon: number,
+): CreditGrantEntry {
+  const remaining = Math.max(row.total - row.used, 0);
+  const status = deriveGrantStatus(row, now);
+  return {
+    id: row.id,
+    source: row.source,
+    reason: row.reason,
+    total: scaleDown(row.total),
+    used: scaleDown(row.used),
+    remaining: scaleDown(remaining),
+    grantedAt: row.grantedAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    status,
+    expiringSoon: status === "active" && row.expiresAt.getTime() <= soon,
+  };
+}
+
+/** Stored units → credits, a decimal with two places. */
+function scaleDown(units: number): number {
+  return units / CREDIT_SCALE;
+}

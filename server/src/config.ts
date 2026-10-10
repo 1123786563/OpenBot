@@ -14,6 +14,8 @@ import { organizationAuthority } from "./auth/organization";
 import type {
   BillingEntitlementEntry,
   BillingQuotaEntry,
+  PlanCatalogCycle,
+  PlanCatalogEntry,
 } from "./billing/types";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
@@ -1246,6 +1248,8 @@ export type LagoBillingConfig = {
   planEntitlements: ReadonlyMap<string, readonly BillingEntitlementEntry[]>;
   /** Plan code → the metered ceilings that plan includes. Empty means "metered, not capped". */
   planQuotas: ReadonlyMap<string, readonly BillingQuotaEntry[]>;
+  /** Plan code → the catalog entry the upgrade dialog shows (name, credits, cycles, pricing). */
+  planCatalog: ReadonlyMap<string, PlanCatalogEntry>;
   /** One request's ceiling, when the default 10s is not what this deployment wants. */
   requestTimeoutMs?: number;
 };
@@ -1311,6 +1315,7 @@ function billingConfig(
 
   const planEntitlements = billingPlanEntitlements(environment);
   const planQuotas = billingPlanQuotas(environment);
+  const planCatalog = billingPlanCatalog(environment);
   const allowPrivateHosts = billingPrivateHostsAllowed(environment);
 
   const timeoutRaw = optional(environment, "LAGO_REQUEST_TIMEOUT_MS");
@@ -1333,6 +1338,7 @@ function billingConfig(
     allowPrivateHosts,
     planEntitlements,
     planQuotas,
+    planCatalog,
     ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   };
 }
@@ -1510,6 +1516,174 @@ function billingPlanQuotas(
       });
     }
     plans.set(planCode, entries);
+  }
+  return plans;
+}
+
+/**
+ * Read `PLAN_CATALOG`: plan code → the catalog entry the upgrade dialog shows.
+ *
+ * ```json
+ * {
+ *   "advanced": {
+ *     "name": "高级版",
+ *     "credits": 9000,
+ *     "features": ["每月基础积分", "每月赠送积分", "全部模型可选"],
+ *     "pricing": [
+ *       { "code": "recurring_monthly", "label": "连续包月", "priceCents": 14000, "originalCents": 19900, "discountLabel": "7折", "unit": "month" },
+ *       { "code": "monthly", "label": "1个月", "priceCents": 19900, "unit": "month" }
+ *     ]
+ *   }
+ * }
+ * ```
+ *
+ * The same strictness as the entitlement and quota maps beside it: a cycle whose price is silently
+ * wrong is a checkout that charges the wrong number. `credits` and `priceCents` are whole
+ * non-negative integers; a cycle without `originalCents`/`discountLabel` is sold at face value.
+ * `unit` defaults from the cycle code. Empty and absent are the same answer — a deployment that
+ * names no catalog still bills, it just has no upgrade dialog to draw.
+ */
+function billingPlanCatalog(
+  environment: Environment,
+): ReadonlyMap<string, PlanCatalogEntry> {
+  const raw = optional(environment, "LAGO_PLAN_CATALOG") ?? "{}";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("LAGO_PLAN_CATALOG must be valid JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      "LAGO_PLAN_CATALOG must be a JSON object of plan code to a plan entry",
+    );
+  }
+
+  const cycleCodes = new Set<PlanCatalogCycle["code"]>([
+    "recurring_monthly",
+    "monthly",
+    "recurring_yearly",
+    "yearly",
+  ]);
+  const plans = new Map<string, PlanCatalogEntry>();
+  for (const [planCode, entry] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(
+        `PLAN_CATALOG plan "${planCode}" must be an object with a name, credits, features and pricing`,
+      );
+    }
+    const record = entry as Record<string, unknown>;
+    if (typeof record.name !== "string" || record.name.length === 0) {
+      throw new Error(
+        `PLAN_CATALOG plan "${planCode}" must carry a non-empty "name"`,
+      );
+    }
+    if (
+      typeof record.credits !== "number" ||
+      !Number.isInteger(record.credits) ||
+      record.credits < 0
+    ) {
+      throw new Error(
+        `PLAN_CATALOG plan "${planCode}" credits must be a whole non-negative number`,
+      );
+    }
+    if (!Array.isArray(record.features)) {
+      throw new Error(
+        `PLAN_CATALOG plan "${planCode}" features must be a list of strings`,
+      );
+    }
+    const features: string[] = [];
+    for (const feature of record.features) {
+      if (typeof feature !== "string" || feature.length === 0) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" features must be non-empty strings`,
+        );
+      }
+      features.push(feature);
+    }
+    if (!Array.isArray(record.pricing) || record.pricing.length === 0) {
+      throw new Error(
+        `PLAN_CATALOG plan "${planCode}" pricing must be a non-empty list of cycles`,
+      );
+    }
+    const pricing: PlanCatalogCycle[] = [];
+    for (const cycle of record.pricing) {
+      if (cycle === null || typeof cycle !== "object" || Array.isArray(cycle)) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycles must be objects with a "code" and a "priceCents"`,
+        );
+      }
+      const c = cycle as Record<string, unknown>;
+      if (typeof c.code !== "string" || !cycleCodes.has(c.code as never)) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle code must be one of recurring_monthly, monthly, recurring_yearly, yearly`,
+        );
+      }
+      const code = c.code as PlanCatalogCycle["code"];
+      if (
+        typeof c.priceCents !== "number" ||
+        !Number.isInteger(c.priceCents) ||
+        c.priceCents < 0
+      ) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" priceCents must be a whole non-negative number`,
+        );
+      }
+      if (c.label !== undefined && typeof c.label !== "string") {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" label must be a string`,
+        );
+      }
+      if (
+        c.originalCents !== undefined &&
+        c.originalCents !== null &&
+        (typeof c.originalCents !== "number" ||
+          !Number.isInteger(c.originalCents))
+      ) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" originalCents must be a whole number`,
+        );
+      }
+      if (
+        c.discountLabel !== undefined &&
+        c.discountLabel !== null &&
+        typeof c.discountLabel !== "string"
+      ) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" discountLabel must be a string`,
+        );
+      }
+      const unit =
+        c.unit ??
+        (code === "recurring_yearly" || code === "yearly" ? "year" : "month");
+      if (unit !== "month" && unit !== "year") {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" unit must be "month" or "year"`,
+        );
+      }
+      pricing.push({
+        code,
+        label: c.label ?? code,
+        priceCents: c.priceCents as number,
+        originalCents:
+          c.originalCents === undefined || c.originalCents === null
+            ? null
+            : (c.originalCents as number),
+        discountLabel:
+          c.discountLabel === undefined || c.discountLabel === null
+            ? null
+            : (c.discountLabel as string),
+        unit: unit as "month" | "year",
+      });
+    }
+    plans.set(planCode, {
+      name: record.name,
+      credits: record.credits as number,
+      features,
+      pricing,
+    });
   }
   return plans;
 }

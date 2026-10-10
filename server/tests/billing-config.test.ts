@@ -180,6 +180,7 @@ describe("billing configuration", () => {
       allowPrivateHosts: false,
       planEntitlements: new Map(),
       planQuotas: new Map(),
+      planCatalog: new Map(),
     });
   });
 
@@ -389,5 +390,133 @@ describe("billing configuration", () => {
       LAGO_API_KEY: "provider-bearer-key",
     });
     expect(config.billing?.planQuotas.size).toBe(0);
+  });
+
+  test("LAGO_PLAN_CATALOG resolves into plan code → catalog entry", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      LAGO_PLAN_CATALOG: JSON.stringify({
+        advanced: {
+          name: "高级版",
+          credits: 9000,
+          features: ["每月基础积分", "全部模型可选"],
+          pricing: [
+            {
+              code: "recurring_monthly",
+              label: "连续包月",
+              priceCents: 14000,
+              originalCents: 19900,
+              discountLabel: "7折",
+              unit: "month",
+            },
+            { code: "monthly", label: "1个月", priceCents: 19900, unit: "month" },
+          ],
+        },
+      }),
+    });
+    expect(config.billing?.planCatalog.get("advanced")).toEqual({
+      name: "高级版",
+      credits: 9000,
+      features: ["每月基础积分", "全部模型可选"],
+      pricing: [
+        {
+          code: "recurring_monthly",
+          label: "连续包月",
+          priceCents: 14000,
+          originalCents: 19900,
+          discountLabel: "7折",
+          unit: "month",
+        },
+        {
+          code: "monthly",
+          label: "1个月",
+          priceCents: 19900,
+          originalCents: null,
+          discountLabel: null,
+          unit: "month",
+        },
+      ],
+    });
+  });
+
+  test("a catalog cycle without unit derives it from the code", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      LAGO_PLAN_CATALOG: JSON.stringify({
+        pro: {
+          name: "标准版",
+          credits: 4000,
+          features: ["x"],
+          pricing: [{ code: "recurring_yearly", priceCents: 134400 }],
+        },
+      }),
+    });
+    expect(config.billing?.planCatalog.get("pro")?.pricing[0]).toEqual({
+      code: "recurring_yearly",
+      label: "recurring_yearly",
+      priceCents: 134400,
+      originalCents: null,
+      discountLabel: null,
+      unit: "year",
+    });
+  });
+
+  test("LAGO_PLAN_CATALOG rejects a plan it cannot draw", () => {
+    const withCatalog = (value: unknown) =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_CATALOG: JSON.stringify(value),
+      });
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://api.getlago.com",
+        LAGO_API_KEY: "provider-bearer-key",
+        LAGO_PLAN_CATALOG: "{",
+      }),
+    ).toThrow(/valid JSON/);
+    expect(() => withCatalog({ pro: { credits: 1 } })).toThrow(/name/);
+    expect(() =>
+      withCatalog({ pro: { name: "x", credits: -1, features: [], pricing: [] } }),
+    ).toThrow(/credits/);
+    expect(() =>
+      withCatalog({ pro: { name: "x", credits: 1, features: [], pricing: [] } }),
+    ).toThrow(/pricing/);
+    expect(() =>
+      withCatalog({
+        pro: {
+          name: "x",
+          credits: 1,
+          features: ["a"],
+          pricing: [{ code: "nope", priceCents: 1 }],
+        },
+      }),
+    ).toThrow(/cycle code/);
+    expect(() =>
+      withCatalog({
+        pro: {
+          name: "x",
+          credits: 1,
+          features: ["a"],
+          pricing: [{ code: "monthly", priceCents: -1 }],
+        },
+      }),
+    ).toThrow(/priceCents/);
+    expect(() => withCatalog({ pro: "nope" })).toThrow(/object/);
+  });
+
+  test("absent catalog is an empty map, which hides the upgrade dialog", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+    });
+    expect(config.billing?.planCatalog.size).toBe(0);
   });
 });

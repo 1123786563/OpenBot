@@ -31,3 +31,24 @@ export function period(from?: string, to?: string): string {
 export function totalTokensOf(charges: readonly { units: string }[]): number {
   return charges.reduce((sum, charge) => sum + (Number(charge.units) || 0), 0);
 }
+
+/** Credits as a reader reads them: up to two places, no trailing noise (23.63, 376.37, 500, 0). */
+export function credits(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/** A datetime to the second, as the design shows expiries and resets: "2026-10-11 18:48:21". */
+export function dateTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}

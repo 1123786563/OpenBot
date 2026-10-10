@@ -20,6 +20,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
+import type { Credits } from "./credits";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
 
@@ -180,6 +181,61 @@ export function createBillingStatementRoutes(deps: {
       return context.json({ error: "No such bill." }, 404);
     }
     return context.json({ invoice });
+  });
+
+  return routes;
+}
+
+/**
+ * The credit-ledger reads: 套餐与积分.
+ *
+ * Mounted on the same `/api/billing` prefix under the same session, in the same spirit as the
+ * statement reads beside it — but from a different source: the local credit ledger, not the
+ * provider's reader and not the payment order table. `summary` is the plan's base allowance plus
+ * the reward totals, `grants` the reward list, `consumption` the ledger with the same window/page
+ * grammar as the bill list.
+ */
+export function createBillingCreditRoutes(deps: {
+  credits: Credits;
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+}) {
+  const routes = new Hono<{ Variables: AppVariables }>();
+  routes.use("*", deps.requireUser);
+  routes.onError((error, context) => {
+    if (error instanceof z.ZodError) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    return context.json({ error: "Billing is unavailable. Try again." }, 503);
+  });
+
+  routes.get("/catalog", async (context) => {
+    return context.json(Object.fromEntries(deps.credits.catalog));
+  });
+
+  routes.get("/credits/summary", async (context) => {
+    return context.json(await deps.credits.summary());
+  });
+
+  routes.get("/credits/grants", async (context) => {
+    return context.json({ grants: await deps.credits.grants() });
+  });
+
+  routes.get("/credits/consumption", async (context) => {
+    const parsed = statementQueryInput.safeParse({
+      from: context.req.query("from"),
+      to: context.req.query("to"),
+      page: context.req.query("page") ?? "1",
+    });
+    if (!parsed.success) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    return context.json(
+      await deps.credits.consumption({
+        from: parsed.data.from ? new Date(parsed.data.from) : null,
+        to: parsed.data.to ? new Date(parsed.data.to) : null,
+        page: parsed.data.page,
+      }),
+    );
   });
 
   return routes;
