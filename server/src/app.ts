@@ -22,6 +22,8 @@ import {
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
+import { createMarketplaceRoutes } from "./marketplace/routes";
+import type { MarketplaceStore } from "./marketplace/store";
 import { createApprovalRoutes } from "./approvals/routes";
 import type { ApprovalService } from "./approvals/service";
 import {
@@ -50,6 +52,11 @@ import {
   createBillingWebhookRoutes,
 } from "./billing/routes";
 import type { BillingService } from "./billing/types";
+import {
+  createPaymentCallbackRoutes,
+  createPaymentRoutes,
+} from "./billing/payments/routes";
+import type { PaymentService } from "./billing/payments/service";
 import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
@@ -241,6 +248,8 @@ export function createApp(
   computerPolicy?: PolicyStore,
   /** Bots as durable objects: profile, roster, visibility. */
   agentProfileStore?: AgentProfileStore,
+  /** The marketplace's own receipts: which expert each person installed, and the Bot it created. */
+  marketplaceStore?: MarketplaceStore,
   /** The durable channels a Bot runs in. */
   channelStore?: ChannelStore,
   /** Live channel activity. Absent leaves the routes working, just without the socket. */
@@ -475,6 +484,20 @@ export function createApp(
    * no Composio: one inert row under More apps, nothing connectable.
    */
   openConnector?: { broker: ConnectedAppBroker },
+  /**
+   * The direct-collection channels, APPENDED LAST for the reason the parameter above states:
+   * everything past `auditReader` is optional and positional, and a mislaid argument there is
+   * silent. Mounted only when the assembly built them (which it does only when a channel is whole
+   * AND billing is configured — config.ts owns that precondition).
+   *
+   * `activePlanCode` arrives derived rather than derived here, for the same reason the billing
+   * group's `externalCustomerKey` does: the single-subscription guard and the catalog's answer
+   * must both read the projection through the billing service, never around it.
+   */
+  payments?: {
+    service: PaymentService;
+    activePlanCode(): Promise<string | null>;
+  },
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
@@ -1386,6 +1409,29 @@ export function createApp(
   }
 
   if (agentProfileStore) {
+    /*
+     * The marketplace, beside the agents routes: an expert install writes a Bot through the same
+     * profile store, and the receipt store it reads is passed in beside it. Absent receipts leave
+     * the catalogue readable but nothing installable — a deployment that cannot remember what a
+     * person installed must not guess.
+     */
+    if (marketplaceStore) {
+      app.route(
+        "/api/marketplace",
+        createMarketplaceRoutes({
+          installs: marketplaceStore,
+          agents: agentProfileStore,
+          ...(pluginStore
+            ? {
+                grants: pluginStore,
+                skillWrites: pluginStore,
+              }
+            : {}),
+          auditStore,
+          requireUser,
+        }),
+      );
+    }
     app.route(
       "/api/agents",
       createAgentRoutes(
@@ -1924,6 +1970,38 @@ export function createApp(
         audit: auditStore,
         externalCustomerKey: billing.externalCustomerKey,
         customerName: billing.customerName,
+      }),
+    );
+  }
+
+  /*
+   * The payment surfaces, when the assembly built them. Mount order here is not taste — two of
+   * these facts were established by direct router experiments and reproduced by review:
+   *
+   * 1. THE CHANNEL CALLBACKS LIVE AT THEIR OWN PREFIX (`/api/payments/callbacks/:provider`),
+   *    mounted with no session, like the Lago webhook door above. Mounted under `/api/billing`
+   *    instead, the requireUser gate stands in front of the channels and every delivery answers
+   *    401 — the exact failure the mount regression (payment-mount.test.ts) pins.
+   * 2. THE PAYMENT USER GROUP RIDES `/api/billing` AFTER the billing user group, so both groups'
+   *    paths coexist on one prefix.
+   * 3. INSIDE that group, the static purchase routes (catalog, current) are REGISTERED BEFORE
+   *    `GET /purchases/:id`: Hono matches a group's routes in registration order, and a
+   *    parametric segment registered first swallows the static paths — with the order inverted,
+   *    `catalog` is answered by the `:id` handler. payment-routes.test.ts asserts the order.
+   */
+  if (payments) {
+    app.route(
+      "/api/payments/callbacks",
+      createPaymentCallbackRoutes({ service: payments.service }),
+    );
+    app.route(
+      "/api/billing",
+      createPaymentRoutes({
+        service: payments.service,
+        requireUser,
+        requireAdmin,
+        audit: auditStore,
+        activePlanCode: payments.activePlanCode,
       }),
     );
   }

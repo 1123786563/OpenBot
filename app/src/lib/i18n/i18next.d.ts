@@ -5,6 +5,7 @@ import type channels from "../../locales/en/channels.json";
 import type common from "../../locales/en/common.json";
 import type computer from "../../locales/en/computer.json";
 import type errors from "../../locales/en/errors.json";
+import type market from "../../locales/en/market.json";
 import type routines from "../../locales/en/routines.json";
 import type settings from "../../locales/en/settings.json";
 import type skills from "../../locales/en/skills.json";
@@ -28,6 +29,7 @@ declare module "i18next" {
       approvals: typeof approvals;
       routines: typeof routines;
       skills: typeof skills;
+      market: typeof market;
       errors: typeof errors;
     };
   }

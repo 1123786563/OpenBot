@@ -161,6 +161,8 @@ export type PaymentStore = {
   ): Promise<PaymentOrderRecord | null>;
   /** The newest paid order for one plan, any provider — the duplicate-payment check. */
   readLatestPaidOrder(planCode: string): Promise<PaymentOrderRecord | null>;
+  /** The newest order still live (pending or paid) — what "current purchase" means. */
+  readLatestLiveOrder(): Promise<PaymentOrderRecord | null>;
   /** Attach the checkout artifact after the channel session opens (order first, code second). */
   setCheckoutPayload(id: string, payload: string): Promise<void>;
   /**

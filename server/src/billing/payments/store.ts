@@ -132,6 +132,16 @@ export function createPaymentStore(database: Database): PaymentStore {
       return row ? rowOf(row) : null;
     },
 
+    async readLatestLiveOrder() {
+      const [row] = await database
+        .select()
+        .from(paymentOrders)
+        .where(inArray(paymentOrders.status, ["pending", "paid"]))
+        .orderBy(sql`${paymentOrders.createdAt} DESC`)
+        .limit(1);
+      return row ? rowOf(row) : null;
+    },
+
     async setCheckoutPayload(id, payload) {
       await database
         .update(paymentOrders)

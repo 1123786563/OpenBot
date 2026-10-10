@@ -141,6 +141,20 @@ export type LagoClient = {
     perPage: number,
     page: number,
   ): Promise<LagoResult<LagoEventPage>>;
+  /**
+   * The plan a code names, with the two facts activation reconciles against: the wire's billing
+   * interval (an enum string, compared as one) and the currency the plan is priced in. 404 is
+   * "absent", a fact the payment activation acts on.
+   */
+  getPlan(planCode: string): Promise<
+    LagoResult<{ interval: string; currency: string | null }>
+  >;
+  /**
+   * Terminate one subscription at the provider, keyed on this server's external id. 404 answers
+   * as success — an absent subscription is already terminated as far as this deployment is
+   * concerned; deleting twice is the same end state.
+   */
+  deleteSubscription(externalSubscriptionId: string): Promise<LagoResult<null>>;
 };
 
 const SUBSCRIPTION_STATUSES: readonly BillingSubscriptionStatus[] = [
@@ -331,7 +345,7 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
 
   async function request(
     path: string,
-    init: { method: "GET" | "POST"; body?: unknown } = { method: "GET" },
+    init: { method: "GET" | "POST" | "DELETE"; body?: unknown } = { method: "GET" },
   ): Promise<{ status: number; body: unknown }> {
     const url = new URL(`${base}${path}`);
     await config.assertTarget(url);
@@ -524,6 +538,35 @@ export function createLagoClient(config: LagoClientConfig): LagoClient {
           nextPage: typeof nextPage === "number" ? nextPage : null,
         },
       };
+    },
+    async getPlan(planCode) {
+      const result = await request(
+        `/api/v1/plans/${encodeURIComponent(planCode)}`,
+      );
+      if (result.status === 200) {
+        const plan = asObject(fieldOf(result.body, "plan"));
+        const interval = stringOf(plan, "interval");
+        // The currency rides the amount block; a plan without one has none to reconcile.
+        const amount = plan.amount;
+        const currency =
+          amount && typeof amount === "object" && !Array.isArray(amount)
+            ? optionalStringOf(amount as Record<string, unknown>, "amount_currency")
+            : null;
+        return { status: 200, body: { interval, currency } };
+      }
+      if (result.status === 404) return { status: 404, body: null };
+      throw new BillingError("invalid_response");
+    },
+    async deleteSubscription(externalSubscriptionId) {
+      const result = await request(
+        `/api/v1/subscriptions/${encodeURIComponent(externalSubscriptionId)}`,
+        { method: "DELETE" },
+      );
+      // 200 is terminated; 404 is already gone — the same end state either way.
+      if (result.status === 200 || result.status === 404) {
+        return { status: result.status, body: null };
+      }
+      throw new BillingError("invalid_response");
     },
   };
 }

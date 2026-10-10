@@ -8,6 +8,7 @@ import channels from "../../locales/en/channels.json";
 import common from "../../locales/en/common.json";
 import computer from "../../locales/en/computer.json";
 import errors from "../../locales/en/errors.json";
+import market from "../../locales/en/market.json";
 import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
@@ -19,6 +20,7 @@ import zhChannels from "../../locales/zh-CN/channels.json";
 import zhCommon from "../../locales/zh-CN/common.json";
 import zhComputer from "../../locales/zh-CN/computer.json";
 import zhErrors from "../../locales/zh-CN/errors.json";
+import zhMarket from "../../locales/zh-CN/market.json";
 import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
@@ -41,6 +43,7 @@ export const NAMESPACES = [
   "approvals",
   "routines",
   "skills",
+  "market",
   "errors",
 ] as const;
 
@@ -98,6 +101,7 @@ void i18next
         approvals,
         routines,
         skills,
+        market,
         errors,
       },
       "zh-CN": {
@@ -111,6 +115,7 @@ void i18next
         approvals: zhApprovals,
         routines: zhRoutines,
         skills: zhSkills,
+        market: zhMarket,
         errors: zhErrors,
       },
     },

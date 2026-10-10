@@ -10,6 +10,7 @@ import {
   IconSearch,
   IconSettings,
   IconShieldLock,
+  IconShoppingBag,
   IconTargetArrow,
   IconUsers,
   IconUsersGroup,
@@ -416,6 +417,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <IconBox />
               </div>
               <span className="text-sm trackint-tight">{t("skills")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* Beside Skills: the marketplace is where a person goes to find one to install. */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/market"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconShoppingBag />
+              </div>
+              <span className="text-sm trackint-tight">{t("market")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

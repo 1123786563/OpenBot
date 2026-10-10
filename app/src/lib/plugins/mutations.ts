@@ -18,6 +18,9 @@ export type SkillInput = {
   summary?: string;
   instructions: string;
   global?: boolean;
+  /** The marketplace mark (an emoji) and shelf. Absent on a re-save leaves what was there. */
+  icon?: string;
+  category?: string;
   /**
    * The tools this skill says it needs, as `<serverId>/<toolName>` refs.
    *

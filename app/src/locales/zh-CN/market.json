@@ -1,0 +1,42 @@
+{
+  "title": "市场",
+  "description": "为你的 Bots 安装专家、技能与连接器——一键安装，装完即用。",
+  "tab": {
+    "experts": "专家",
+    "skills": "技能",
+    "connectors": "连接器"
+  },
+  "searchAria": "搜索市场",
+  "search": {
+    "experts": "搜索专家",
+    "skills": "搜索技能",
+    "connectors": "搜索连接器"
+  },
+  "installedOnly": "我安装的",
+  "category": {
+    "all": "全部"
+  },
+  "install": "安装",
+  "installed": "已安装",
+  "installing": "安装中…",
+  "uninstall": "卸载",
+  "chat": "对话",
+  "connect": "去连接",
+  "contactAdmin": "请联系管理员",
+  "section": {
+    "builtin": "内置连接器",
+    "openConnector": "OpenConnector 目录",
+    "composio": "Composio 目录"
+  },
+  "connectors": {
+    "adminHint": "接入新连接器需要部署级凭据，属于管理员操作。上面展示了部署已有的连接器；如需更多请联系管理员。"
+  },
+  "empty": {
+    "experts": "没有匹配的专家。",
+    "skills": "没有匹配的技能。",
+    "connectors": "这里还没有连接器。",
+    "search": "没有匹配“{{query}}”的内容。"
+  },
+  "loadError": "市场加载失败。",
+  "loading": "加载中…"
+}

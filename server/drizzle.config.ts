@@ -47,6 +47,7 @@ export default defineConfig({
     "./src/db/schema/enterprise-runs.ts",
     "./src/db/schema/enterprise-run-events.ts",
     "./src/db/schema/enterprise-models.ts",
+    "./src/db/schema/marketplace.ts",
   ],
   out: "./drizzle",
   dbCredentials: {

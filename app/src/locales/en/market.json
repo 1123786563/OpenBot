@@ -1,0 +1,42 @@
+{
+  "title": "Marketplace",
+  "description": "Install experts, skills and connectors for your Bots — one press, ready to use.",
+  "tab": {
+    "experts": "Experts",
+    "skills": "Skills",
+    "connectors": "Connectors"
+  },
+  "searchAria": "Search the marketplace",
+  "search": {
+    "experts": "Search experts",
+    "skills": "Search skills",
+    "connectors": "Search connectors"
+  },
+  "installedOnly": "Installed",
+  "category": {
+    "all": "All"
+  },
+  "install": "Install",
+  "installed": "Installed",
+  "installing": "Installing…",
+  "uninstall": "Uninstall",
+  "chat": "Chat",
+  "connect": "Connect account",
+  "contactAdmin": "Ask an admin",
+  "section": {
+    "builtin": "Built-in connectors",
+    "openConnector": "OpenConnector directory",
+    "composio": "Composio directory"
+  },
+  "connectors": {
+    "adminHint": "Connecting a new connector needs a deployment credential, so it is an administrator's action. What the deployment already has is shown above; ask an administrator to add more."
+  },
+  "empty": {
+    "experts": "No experts match.",
+    "skills": "No skills match.",
+    "connectors": "No connectors here yet.",
+    "search": "Nothing matches “{{query}}”."
+  },
+  "loadError": "The marketplace could not be loaded.",
+  "loading": "Loading…"
+}
