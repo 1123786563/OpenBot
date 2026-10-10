@@ -1,0 +1,28 @@
+{
+  "channels": {
+    "title": "租户频道",
+    "description": "你在所选租户下的个人会话，均以所选租户的身份读取。",
+    "tenant": {
+      "label": "租户",
+      "aria": "选择租户",
+      "placeholder": "选择一个租户",
+      "empty": "你还不属于任何启用中的租户。"
+    },
+    "list": {
+      "title": "你的频道",
+      "description": "你在此租户拥有的频道，按新旧排列。选择一个查看其记录。",
+      "empty": "此租户下还没有频道。",
+      "more": "下一页"
+    },
+    "detail": {
+      "title": "频道记录",
+      "description": "此部署为所选频道保存的记录。运行状态按 run id 经 /runs/:id 读取，而频道记录本身不含 run id，本页如实仅展示这份记录。",
+      "bot": "机器人",
+      "thread": "线程",
+      "mode": "模式",
+      "status": "状态",
+      "statusActive": "活跃",
+      "statusArchived": "已归档"
+    }
+  }
+}

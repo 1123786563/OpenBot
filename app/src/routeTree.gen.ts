@@ -41,6 +41,7 @@ import { Route as AuthedSettingsBillingRouteImport } from './routes/_authed/sett
 import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/settings/passwords'
 import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
 import { Route as AuthedSignInRequestIdRouteImport } from './routes/_authed/sign-in/$requestId'
+import { Route as AuthedTenantChannelsRouteImport } from './routes/_authed/tenant/channels'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppBotsIndexRouteImport } from './routes/_authed/_app/bots.index'
 import { Route as AuthedAppBotsAgentIdRouteImport } from './routes/_authed/_app/bots.$agentId'
@@ -54,6 +55,7 @@ import { Route as AuthedAdminPluginsIndexRouteImport } from './routes/_authed/ad
 import { Route as AuthedAdminPluginsKeyRouteImport } from './routes/_authed/admin/plugins/$key'
 import { Route as AuthedAdminPluginsComposioRouteImport } from './routes/_authed/admin/plugins/composio'
 import { Route as AuthedAdminPluginsOpenConnectorRouteImport } from './routes/_authed/admin/plugins/open-connector'
+import { Route as AuthedSettingsBillingSubscribeRouteImport } from './routes/_authed/settings/billing_.subscribe'
 import { Route as AuthedSettingsComponentsGalleryIndexRouteImport } from './routes/_authed/settings/components-gallery/index'
 import { Route as AuthedSettingsComponentsGalleryNameRouteImport } from './routes/_authed/settings/components-gallery/$name'
 import { Route as AuthedSettingsConnectedAccountsIndexRouteImport } from './routes/_authed/settings/connected-accounts/index'
@@ -221,6 +223,11 @@ const AuthedSignInRequestIdRoute = AuthedSignInRequestIdRouteImport.update({
   path: '/sign-in/$requestId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedTenantChannelsRoute = AuthedTenantChannelsRouteImport.update({
+  id: '/tenant/channels',
+  path: '/tenant/channels',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedAppAgentsIndexRoute = AuthedAppAgentsIndexRouteImport.update({
   id: '/agents/',
   path: '/agents/',
@@ -291,6 +298,12 @@ const AuthedAdminPluginsOpenConnectorRoute =
     path: '/plugins/open-connector',
     getParentRoute: () => AuthedAdminRouteRoute,
   } as any)
+const AuthedSettingsBillingSubscribeRoute =
+  AuthedSettingsBillingSubscribeRouteImport.update({
+    id: '/billing_/subscribe',
+    path: '/billing/subscribe',
+    getParentRoute: () => AuthedSettingsRouteRoute,
+  } as any)
 const AuthedSettingsComponentsGalleryIndexRoute =
   AuthedSettingsComponentsGalleryIndexRouteImport.update({
     id: '/components-gallery/',
@@ -357,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+  '/tenant/channels': typeof AuthedTenantChannelsRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/bots/$agentId': typeof AuthedAppBotsAgentIdRoute
@@ -368,6 +382,7 @@ export interface FileRoutesByFullPath {
   '/admin/plugins/$key': typeof AuthedAdminPluginsKeyRoute
   '/admin/plugins/composio': typeof AuthedAdminPluginsComposioRoute
   '/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
+  '/settings/billing/subscribe': typeof AuthedSettingsBillingSubscribeRoute
   '/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
@@ -406,6 +421,7 @@ export interface FileRoutesByTo {
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
   '/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+  '/tenant/channels': typeof AuthedTenantChannelsRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/bots/$agentId': typeof AuthedAppBotsAgentIdRoute
@@ -417,6 +433,7 @@ export interface FileRoutesByTo {
   '/admin/plugins/$key': typeof AuthedAdminPluginsKeyRoute
   '/admin/plugins/composio': typeof AuthedAdminPluginsComposioRoute
   '/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
+  '/settings/billing/subscribe': typeof AuthedSettingsBillingSubscribeRoute
   '/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
@@ -459,6 +476,7 @@ export interface FileRoutesById {
   '/_authed/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
   '/_authed/sign-in/$requestId': typeof AuthedSignInRequestIdRoute
+  '/_authed/tenant/channels': typeof AuthedTenantChannelsRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
@@ -471,6 +489,7 @@ export interface FileRoutesById {
   '/_authed/admin/plugins/$key': typeof AuthedAdminPluginsKeyRoute
   '/_authed/admin/plugins/composio': typeof AuthedAdminPluginsComposioRoute
   '/_authed/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
+  '/_authed/settings/billing_/subscribe': typeof AuthedSettingsBillingSubscribeRoute
   '/_authed/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/_authed/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
@@ -513,6 +532,7 @@ export interface FileRouteTypes {
     | '/settings/passwords'
     | '/settings/usage'
     | '/sign-in/$requestId'
+    | '/tenant/channels'
     | '/admin/'
     | '/settings/'
     | '/bots/$agentId'
@@ -524,6 +544,7 @@ export interface FileRouteTypes {
     | '/admin/plugins/$key'
     | '/admin/plugins/composio'
     | '/admin/plugins/open-connector'
+    | '/settings/billing/subscribe'
     | '/settings/components-gallery/$name'
     | '/settings/connected-accounts/$key'
     | '/agents/'
@@ -562,6 +583,7 @@ export interface FileRouteTypes {
     | '/settings/passwords'
     | '/settings/usage'
     | '/sign-in/$requestId'
+    | '/tenant/channels'
     | '/admin'
     | '/settings'
     | '/bots/$agentId'
@@ -573,6 +595,7 @@ export interface FileRouteTypes {
     | '/admin/plugins/$key'
     | '/admin/plugins/composio'
     | '/admin/plugins/open-connector'
+    | '/settings/billing/subscribe'
     | '/settings/components-gallery/$name'
     | '/settings/connected-accounts/$key'
     | '/agents'
@@ -614,6 +637,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/passwords'
     | '/_authed/settings/usage'
     | '/_authed/sign-in/$requestId'
+    | '/_authed/tenant/channels'
     | '/_authed/_app/'
     | '/_authed/admin/'
     | '/_authed/settings/'
@@ -626,6 +650,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/plugins/$key'
     | '/_authed/admin/plugins/composio'
     | '/_authed/admin/plugins/open-connector'
+    | '/_authed/settings/billing_/subscribe'
     | '/_authed/settings/components-gallery/$name'
     | '/_authed/settings/connected-accounts/$key'
     | '/_authed/_app/agents/'
@@ -869,6 +894,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSignInRequestIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/tenant/channels': {
+      id: '/_authed/tenant/channels'
+      path: '/tenant/channels'
+      fullPath: '/tenant/channels'
+      preLoaderRoute: typeof AuthedTenantChannelsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/_app/agents/': {
       id: '/_authed/_app/agents/'
       path: '/agents'
@@ -959,6 +991,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/plugins/open-connector'
       preLoaderRoute: typeof AuthedAdminPluginsOpenConnectorRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
+    }
+    '/_authed/settings/billing_/subscribe': {
+      id: '/_authed/settings/billing_/subscribe'
+      path: '/billing/subscribe'
+      fullPath: '/settings/billing/subscribe'
+      preLoaderRoute: typeof AuthedSettingsBillingSubscribeRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
     }
     '/_authed/settings/components-gallery/': {
       id: '/_authed/settings/components-gallery/'
@@ -1057,6 +1096,7 @@ interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsPasswordsRoute: typeof AuthedSettingsPasswordsRoute
   AuthedSettingsUsageRoute: typeof AuthedSettingsUsageRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
+  AuthedSettingsBillingSubscribeRoute: typeof AuthedSettingsBillingSubscribeRoute
   AuthedSettingsComponentsGalleryNameRoute: typeof AuthedSettingsComponentsGalleryNameRoute
   AuthedSettingsConnectedAccountsKeyRoute: typeof AuthedSettingsConnectedAccountsKeyRoute
   AuthedSettingsComponentsGalleryIndexRoute: typeof AuthedSettingsComponentsGalleryIndexRoute
@@ -1068,6 +1108,7 @@ const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsPasswordsRoute: AuthedSettingsPasswordsRoute,
   AuthedSettingsUsageRoute: AuthedSettingsUsageRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
+  AuthedSettingsBillingSubscribeRoute: AuthedSettingsBillingSubscribeRoute,
   AuthedSettingsComponentsGalleryNameRoute:
     AuthedSettingsComponentsGalleryNameRoute,
   AuthedSettingsConnectedAccountsKeyRoute:
@@ -1131,6 +1172,7 @@ interface AuthedRouteChildren {
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
+  AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -1139,6 +1181,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAppRoute: AuthedAppRouteWithChildren,
   AuthedOnboardingRoute: AuthedOnboardingRoute,
   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
+  AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
 }
 
 const AuthedRouteWithChildren =
