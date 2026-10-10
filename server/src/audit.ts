@@ -535,6 +535,17 @@ export const auditEventTypes = [
    * by construction (read-before-create), so a repeated row means a repeated press, nothing more.
    */
   "billing.synced",
+  /*
+   * An administrator opened a payment order at a collection channel (plan, provider and price in
+   * the payload). Opening an order commits nothing: money moves only when a verified callback or
+   * query settles it, and the order row itself carries the state.
+   */
+  "billing.purchase.created",
+  /*
+   * An administrator canceled a pending payment order (order id in the payload). Terminal orders
+   * refuse, so a row always stands for a pending order that actually ended.
+   */
+  "billing.purchase.canceled",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

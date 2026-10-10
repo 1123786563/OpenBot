@@ -110,6 +110,10 @@ export type PluginSkill = {
   summary: string;
   instructions: string;
   origin: string;
+  /** A one-character mark (an emoji) from the marketplace. Null when none was picked. */
+  icon?: string | null;
+  /** The marketplace shelf this skill sits on. Null for a skill written outside the marketplace. */
+  category?: string | null;
   installedBy: string | null;
   grantedTo: string[];
   /**

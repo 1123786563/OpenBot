@@ -162,7 +162,17 @@ function SkillsPage() {
                 <StaggerItem index={index} key={skill.id}>
                   <Item size="sm">
                     <ItemContent>
-                      <ItemTitle>{skill.title}</ItemTitle>
+                      <ItemTitle>
+                        {skill.icon ? (
+                          <span className="mr-1.5">{skill.icon}</span>
+                        ) : null}
+                        {skill.title}
+                        {skill.category ? (
+                          <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 align-middle text-muted-foreground text-[11px]">
+                            {skill.category}
+                          </span>
+                        ) : null}
+                      </ItemTitle>
                       {/*
                        * THE COMMAND FIRST, because it is the only part a person has to know. The title
                        * says what the skill is for; `/slug` is what they actually type, and a page that
@@ -243,7 +253,17 @@ function SkillsPage() {
                 <StaggerItem index={index} key={skill.id}>
                   <Item size="sm">
                     <ItemContent>
-                      <ItemTitle>{skill.title}</ItemTitle>
+                      <ItemTitle>
+                        {skill.icon ? (
+                          <span className="mr-1.5">{skill.icon}</span>
+                        ) : null}
+                        {skill.title}
+                        {skill.category ? (
+                          <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 align-middle text-muted-foreground text-[11px]">
+                            {skill.category}
+                          </span>
+                        ) : null}
+                      </ItemTitle>
                       {/*
                        * THE COMMAND FIRST, because it is the only part a person has to know. The title
                        * says what the skill is for; `/slug` is what they actually type, and a page that

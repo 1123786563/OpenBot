@@ -549,6 +549,15 @@ export const skills = pgTable(
     instructions: text("instructions").notNull(),
     /** Where it came from: `catalogue` for one we ship, `yours` for one somebody wrote here. */
     origin: text("origin").notNull().default("yours"),
+    /**
+     * A one-character mark (an emoji) the marketplace card and the skill row are drawn with.
+     *
+     * Nullable because every row that predates the marketplace has none, and a skill somebody
+     * wrote here is never required to have picked one.
+     */
+    icon: text("icon"),
+    /** The marketplace shelf this skill sits on, as free text the cards group by. */
+    category: text("category"),
     installedBy: text("installed_by"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

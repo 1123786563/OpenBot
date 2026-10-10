@@ -2669,6 +2669,8 @@ export function createPluginRoutes(
       instructions?: unknown;
       global?: boolean;
       tools?: unknown;
+      icon?: unknown;
+      category?: unknown;
     } | null;
     /*
      * The body is JSON, so the annotations are wishes: `{"slug":123}` passes a truthiness
@@ -2698,6 +2700,20 @@ export function createPluginRoutes(
     if (body.summary !== undefined && typeof body.summary !== "string") {
       return context.json(
         { error: "A summary is text when it is present." },
+        400,
+      );
+    }
+    /*
+     * The marketplace mark and shelf, as the catalogue or the form published them. Optional and
+     * free-text: an emoji is one character today and three tomorrow, and a shelf is whatever the
+     * cards group by. Absent on a re-save leaves what was there, the same rule `summary` follows.
+     */
+    if (body.icon !== undefined && typeof body.icon !== "string") {
+      return context.json({ error: "An icon is text when it is present." }, 400);
+    }
+    if (body.category !== undefined && typeof body.category !== "string") {
+      return context.json(
+        { error: "A category is text when it is present." },
         400,
       );
     }
@@ -2751,6 +2767,12 @@ export function createPluginRoutes(
         summary: body.summary ?? "",
         instructions: body.instructions.trim(),
         ownerUserId: body.global ? null : actor.id,
+        ...(typeof body.icon === "string" && body.icon.trim()
+          ? { icon: body.icon.trim() }
+          : {}),
+        ...(typeof body.category === "string" && body.category.trim()
+          ? { category: body.category.trim() }
+          : {}),
         ...(tools === undefined ? {} : { tools }),
         by: actorEmail(context),
       });

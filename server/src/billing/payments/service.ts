@@ -93,6 +93,8 @@ export type PaymentService = {
   readOrder(
     id: string,
   ): Promise<{ order: PaymentOrderView | null; storeFailure?: boolean }>;
+  /** The newest still-live order (pending or paid), or null — the settings page's "current". */
+  readCurrentOrder(): Promise<{ order: PaymentOrderView | null }>;
   /** Administrator cancel. Terminal states refuse; canceling twice is the same answer once. */
   cancelPurchase(id: string): Promise<
     | { outcome: "canceled"; order: PaymentOrderView }
@@ -472,6 +474,11 @@ export function createPaymentService(deps: {
       }
       const fresh = await deps.store.readOrder(id).catch(() => null);
       return { order: fresh ? toView(fresh) : toView(order) };
+    },
+
+    async readCurrentOrder() {
+      const order = await deps.store.readLatestLiveOrder().catch(() => null);
+      return { order: order ? toView(order) : null };
     },
 
     async cancelPurchase(id) {

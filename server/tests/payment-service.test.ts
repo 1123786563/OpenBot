@@ -99,6 +99,12 @@ function memoryStore(): PaymentStore {
         );
       return paid[0] ?? null;
     },
+    async readLatestLiveOrder() {
+      const live = [...orders.values()]
+        .filter((order) => order.status === "pending" || order.status === "paid")
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      return live[0] ?? null;
+    },
     async setCheckoutPayload(id, payload) {
       const order = orders.get(id);
       if (order) orders.set(id, { ...order, checkoutPayload: payload });

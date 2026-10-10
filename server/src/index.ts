@@ -50,6 +50,7 @@ import {
 } from "./agents/lifecycle";
 import { createBotReset } from "./agents/lifecycle-reset";
 import { createAgentProfileStore } from "./agents/profile-store";
+import { createMarketplaceStore } from "./marketplace/store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import {
@@ -368,6 +369,9 @@ const agentProfileStore = createAgentProfileStore(
   config.managedAgent?.endpoint,
   agentVault,
 );
+// The marketplace's own receipts, beside the agent store: an install writes a Bot through it and
+// remembers which one here.
+const marketplaceStore = createMarketplaceStore(database);
 // Read here rather than beside the synchronise below, because the package names the deployment and
 // the channel store needs that name before it can mint a thread id.
 const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
@@ -3037,6 +3041,7 @@ const app = createApp(
   policyStore,
   // Bots as durable objects, and the channels they run in.
   agentProfileStore,
+  marketplaceStore,
   channelStore,
   channelEvents,
   // The same store the boot row uses, so a Bot's own refusal lands in the trail beside its actions.

@@ -346,7 +346,7 @@ async function runConversationFlow(browser: Browser) {
     // 用新消息重试一次（首条消息建频道，重试是新频道，不会重复计数）。断言不放宽：
     // 最终仍要求消息出现在时间线且刷新后仍在。
     let lastError: Error | null = null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
       await gotoRetry(page, `${APP_URL}/channel/new?agent=${recipientId}`);
       // 输入框是 PromptArea 富文本编辑器（contenteditable，aria-label "Message"），不是 textarea
       const composer = page
@@ -387,6 +387,8 @@ async function runConversationFlow(browser: Browser) {
         if (!shown) {
           throw new Error("120 秒内消息未出现在时间线");
         }
+        // 等回合真正结束再刷新：持久时间线在 run 完成后写入，run 在途时刷新会看不到这条消息
+        await waitForTurnIdle(page, 120_000);
         // 刷新后仍在：对应 GET /api/channels/events 的持久时间线
         await page.reload();
         const persistedDeadline = Date.now() + 120_000;

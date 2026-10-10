@@ -285,6 +285,10 @@ export type SkillRecord = {
   summary: string;
   instructions: string;
   origin: string;
+  /** A one-character mark (an emoji) the marketplace card is drawn with. Null when none was picked. */
+  icon: string | null;
+  /** The marketplace shelf this skill sits on. Null for a skill written outside the marketplace. */
+  category: string | null;
   installedBy: string | null;
   grantedTo: string[];
   /**
@@ -4857,6 +4861,8 @@ export function createPluginStore(options: PluginStoreOptions) {
         summary: row.summary,
         instructions: row.instructions,
         origin: row.origin,
+        icon: row.icon,
+        category: row.category,
         installedBy: row.installedBy,
         grantedTo: grants.get(row.slug) ?? [],
         tools: declared.get(row.id) ?? [],
@@ -4953,6 +4959,9 @@ export function createPluginStore(options: PluginStoreOptions) {
       summary: string;
       instructions: string;
       origin?: string;
+      /** The marketplace mark and shelf, as the catalogue published them. Absent leaves them alone. */
+      icon?: string;
+      category?: string;
       /** Whose it is. Null writes a skill for the whole deployment, which is an admin's to make. */
       ownerUserId: string | null;
       /**
@@ -4994,6 +5003,8 @@ export function createPluginStore(options: PluginStoreOptions) {
           summary: input.summary,
           instructions: input.instructions,
           origin: input.origin ?? "yours",
+          ...(input.icon === undefined ? {} : { icon: input.icon }),
+          ...(input.category === undefined ? {} : { category: input.category }),
           installedBy: input.by,
         })
         // Editing keeps the owner it already had. Whose a skill is, is not something a re-save
@@ -5004,6 +5015,8 @@ export function createPluginStore(options: PluginStoreOptions) {
             title: input.title,
             summary: input.summary,
             instructions: input.instructions,
+            ...(input.icon === undefined ? {} : { icon: input.icon }),
+            ...(input.category === undefined ? {} : { category: input.category }),
             updatedAt: new Date(),
           },
         });
