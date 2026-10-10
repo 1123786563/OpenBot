@@ -252,7 +252,9 @@ fi
 SERVICES+=(agent-langgraph)
 # The Go runtime candidate starts only when the enterprise runtime block is configured.
 # The enterprise entry itself always runs on the host (bun run dev:enterprise), never here.
-if [ -n "$ENTERPRISE_RUNTIME_SERVICE_CREDENTIAL" ]; then
+# Defaulted: the script runs under `set -u`, and deployments without the enterprise block
+# (the common local one) don't define the variable at all.
+if [ -n "${ENTERPRISE_RUNTIME_SERVICE_CREDENTIAL:-}" ]; then
   SERVICES+=(go-runtime)
 else
   info "  go-runtime: skipped (ENTERPRISE_RUNTIME_SERVICE_CREDENTIAL not set)"
