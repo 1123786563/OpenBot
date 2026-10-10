@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { cullStagedAttachments } from "../../scripts/cull-staged-attachments";
 import { createGroupStore } from "../../src/channels/group";
 import { createChannelStore } from "../../src/channels/routes";
 import { createThreadIdentity } from "../../src/channels/thread-identity";
@@ -24,8 +25,14 @@ import {
   enterpriseTenants,
   enterpriseWorkspaces,
 } from "../../src/db/schema/enterprise-tenancy";
+import {
+  mastraMessageIntentAttachments,
+  mastraMessageIntents,
+} from "../../src/db/schema/mastra-message-intents";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import { createConversationService } from "../../src/enterprise/conversations/service";
+import { createConversationStore } from "../../src/enterprise/conversations/store";
+import { createMastraMessageIntentReconciler } from "../../src/enterprise/conversations/mastra-intent-reconciler";
 import type {
   DataDatabase,
   DirectoryDatabase,
@@ -36,7 +43,10 @@ import {
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
 } from "../../src/enterprise/tenancy/connections";
-import { provisionDeployment } from "../../src/enterprise/tenancy/provision";
+import {
+  provisionDeployment,
+  suspendMembership,
+} from "../../src/enterprise/tenancy/provision";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
@@ -52,6 +62,10 @@ const actorId = `${prefix}-actor`;
 const principalId = `${prefix}-principal`;
 const foreignActorId = `${prefix}-foreign-actor`;
 const foreignPrincipalId = `${prefix}-foreign-principal`;
+const raceActorId = `${prefix}-race-actor`;
+const racePrincipalId = `${prefix}-race-principal`;
+const reconcileActorId = `${prefix}-reconcile-actor`;
+const reconcilePrincipalId = `${prefix}-reconcile-principal`;
 const attachmentId = randomUUID();
 const rollbackAttachmentId = randomUUID();
 const directAttachmentId = randomUUID();
@@ -63,6 +77,8 @@ let dataDatabase: DataDatabase | undefined;
 let operatorDatabase: OperatorDatabase | undefined;
 let scope: PlatformScope;
 let foreignScope: PlatformScope;
+let raceScope: PlatformScope;
+let reconcileScope: PlatformScope;
 let conversations: ReturnType<typeof createConversationService>;
 
 function setupDb() {
@@ -103,10 +119,22 @@ beforeAll(async () => {
       email: `${foreignActorId}@example.invalid`,
       name: "Synthetic foreign actor",
     },
+      {
+        id: raceActorId,
+        email: `${raceActorId}@example.invalid`,
+        name: "Synthetic race actor",
+      },
+      {
+        id: reconcileActorId,
+        email: `${reconcileActorId}@example.invalid`,
+        name: "Synthetic reconcile actor",
+      },
   ]);
   await setup.insert(enterprisePrincipals).values([
     { id: principalId, userId: actorId },
     { id: foreignPrincipalId, userId: foreignActorId },
+    { id: racePrincipalId, userId: raceActorId },
+    { id: reconcilePrincipalId, userId: reconcileActorId },
   ]);
   await provisionDeployment(operatorDatabase, {
     operationId: `${prefix}-provision`,
@@ -118,6 +146,12 @@ beforeAll(async () => {
       {
         principalId: foreignPrincipalId,
         userId: foreignActorId,
+        role: "member",
+      },
+      { principalId: racePrincipalId, userId: raceActorId, role: "member" },
+      {
+        principalId: reconcilePrincipalId,
+        userId: reconcileActorId,
         role: "member",
       },
     ],
@@ -150,6 +184,7 @@ beforeAll(async () => {
   ]);
   await setup.insert(channelMemberships).values([
     { channelId, userId: actorId },
+    { channelId, userId: reconcileActorId },
     { channelId: raceChannelId, userId: actorId },
   ]);
   await setup.insert(intelligenceChannelMappings).values([
@@ -217,14 +252,62 @@ beforeAll(async () => {
   };
   scope = await resolver.resolve(requestFor(actorId));
   foreignScope = await resolver.resolve(requestFor(foreignActorId));
+  raceScope = await resolver.resolve(requestFor(raceActorId));
+  reconcileScope = await resolver.resolve(requestFor(reconcileActorId));
   conversations = createConversationService({ data: dataDatabase });
 });
 
 async function createPlatformConversation() {
-  const conversation = await conversations.getOrCreate(scope, {});
+  const threadId = randomUUID();
+  const [seeded] = await createConversationStore(dataDatabase!).transaction(
+    scope,
+    (tx) =>
+      tx
+        .insert(enterpriseConversations)
+        .values({
+          tenantId,
+          workspaceId,
+          principalId,
+          threadId,
+          storageBackend: "platform",
+          backendVersion: 1,
+          lastSeq: 0,
+        })
+        .returning(),
+  );
+  if (!seeded) throw new Error("PLATFORM_FIXTURE_SEED_FAILED");
+  const conversation = await conversations.getOrCreate(scope, { threadId });
   expect(conversation.storage_backend).toBe("platform");
   return conversation;
 }
+
+test("new conversation fails closed without Mastra storage", async () => {
+  const service = createConversationService({ data: dataDatabase! });
+  const before = await setupDb()
+    .select({ threadId: enterpriseConversations.threadId })
+    .from(enterpriseConversations)
+    .where(
+      and(
+        eq(enterpriseConversations.tenantId, tenantId),
+        eq(enterpriseConversations.principalId, principalId),
+      ),
+    );
+
+  await expect(service.getOrCreate(scope, {})).rejects.toThrow(
+    "MASTRA_STORAGE_UNAVAILABLE",
+  );
+
+  const rows = await setupDb()
+    .select({ threadId: enterpriseConversations.threadId })
+    .from(enterpriseConversations)
+    .where(
+      and(
+        eq(enterpriseConversations.tenantId, tenantId),
+        eq(enterpriseConversations.principalId, principalId),
+      ),
+    );
+  expect(rows).toEqual(before);
+});
 
 const legacyChannelLockKey = (id: string) =>
   JSON.stringify(["legacy", "channel", id]);
@@ -251,6 +334,26 @@ async function waitForAdvisoryLockWaiter(blockerPid: number): Promise<boolean> {
         where locks.locktype = 'advisory'
           and not locks.granted
           and ${blockerPid} = any(pg_blocking_pids(activity.pid))
+          and activity.query like '%pg_advisory_xact_lock%'
+      ) as waiting
+    `);
+    if (firstQueryRow(result)?.waiting === true) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return false;
+}
+
+async function waitForAnyAdvisoryLockWaiter(): Promise<boolean> {
+  const deadline = Date.now() + 1_500;
+  while (Date.now() < deadline) {
+    const result = await setupDb().execute(sql`
+      select exists (
+        select 1
+        from pg_locks as locks
+        join pg_stat_activity as activity using (pid)
+        where locks.locktype = 'advisory'
+          and not locks.granted
+          and cardinality(pg_blocking_pids(activity.pid)) > 0
           and activity.query like '%pg_advisory_xact_lock%'
       ) as waiting
     `);
@@ -1366,5 +1469,574 @@ test("leaving a group cannot turn its former thread into a platform transcript",
       .insert(intelligenceChannelMappings)
       .values({ userId: actorId, channelId, threadId })
       .onConflictDoNothing();
+  }
+});
+
+test("a Mastra-backed public conversation writes and reads only through Mastra", async () => {
+  let threadId: string | undefined;
+  type FakeMessage = {
+    id: string;
+    threadId: string;
+    resourceId: string;
+    role: "user";
+    type: "text";
+    createdAt: Date;
+    content: {
+      format: 2;
+      parts: Array<{ type: "text"; text: string }>;
+      metadata: Record<string, unknown>;
+    };
+  };
+  const persisted: FakeMessage[] = [];
+  const memory = {
+    async listMessages() {
+      return { messages: [...persisted], total: persisted.length };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async listMessagesById({ messageIds }: { messageIds: string[] }) {
+      return {
+        messages: persisted.filter(({ id }) => messageIds.includes(id)),
+      };
+    },
+    async saveMessages({ messages }: { messages: FakeMessage[] }) {
+      persisted.push(...messages);
+      return { messages };
+    },
+  };
+  const store = { getStore: async () => memory };
+  const mastraStorage = {
+    getStore: async () => store,
+    withConversationLock: async <T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) => run(),
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  try {
+    const conversation = await service.getOrCreate(scope, {});
+    threadId = conversation.thread_id;
+    const createdThreadId = conversation.thread_id;
+    expect(conversation.storage_backend).toBe("mastra");
+
+    const appended = await service.append(scope, {
+      threadId: createdThreadId,
+      clientMessageKey: `${prefix}-mastra-public-key`,
+      content: "stored once in Mastra",
+      attachments: [],
+    });
+    expect(appended.seq).toBe(1);
+    expect(persisted).toHaveLength(1);
+
+    const history = await service.history(scope, {
+      threadId: createdThreadId,
+      beforeSeq: null,
+      limit: 20,
+    });
+    expect(history.items.map(({ content }) => content)).toEqual([
+      "stored once in Mastra",
+    ]);
+    expect(persisted).toHaveLength(1);
+    const platformRows = await setupDb()
+      .select({ threadId: enterpriseMessages.threadId })
+      .from(enterpriseMessages)
+      .where(eq(enterpriseMessages.threadId, createdThreadId));
+    expect(platformRows).toEqual([]);
+  } finally {
+    await setupDb()
+      .delete(enterpriseMessages)
+      .where(eq(enterpriseMessages.threadId, threadId ?? ""));
+    await setupDb()
+      .delete(enterpriseConversations)
+      .where(
+        and(
+          eq(enterpriseConversations.tenantId, tenantId),
+          eq(enterpriseConversations.threadId, threadId ?? ""),
+        ),
+      );
+  }
+});
+
+test("Mastra attachment intent stays pending until confirmed and same-key retry finalizes once", async () => {
+  const attachmentId = randomUUID();
+  let threadId: string | undefined;
+  let failNextWrite = true;
+  let writeCount = 0;
+  type FakeMessage = {
+    id: string;
+    threadId: string;
+    resourceId: string;
+    role: "user";
+    type: "text";
+    createdAt: Date;
+    content: {
+      format: 2;
+      parts: Array<{ type: "text"; text: string }>;
+      metadata: Record<string, unknown>;
+    };
+  };
+  const persisted: FakeMessage[] = [];
+  const memory = {
+    async listMessagesById({ messageIds }: { messageIds: string[] }) {
+      return {
+        messages: persisted.filter(({ id }) => messageIds.includes(id)),
+      };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async saveMessages({ messages }: { messages: FakeMessage[] }) {
+      const [row] = await setupDb()
+        .select({ attachedAt: attachments.attachedAt })
+        .from(attachments)
+        .where(eq(attachments.id, attachmentId));
+      expect(row?.attachedAt).toBeNull();
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error("synthetic Mastra write failure");
+      }
+      writeCount += 1;
+      persisted.push(...messages);
+      return { messages };
+    },
+  };
+  const mastraStorage = {
+    getStore: async () => ({ getStore: async () => memory }),
+    withConversationLock: async <T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) => run(),
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  const clientMessageKey = `${prefix}-mastra-attachment-saga`;
+  try {
+    await setupDb()
+      .insert(attachments)
+      .values({
+        id: attachmentId,
+        channelId,
+        uploadedBy: actorId,
+        name: "mastra-saga.txt",
+        mimeType: "text/plain",
+        sizeBytes: 5,
+        bytes: Buffer.from("saga!"),
+      });
+    const conversation = await service.getOrCreate(scope, {});
+    threadId = conversation.thread_id;
+    const message = {
+      threadId,
+      clientMessageKey,
+      content: "attach after Mastra confirms",
+      attachments: [attachmentId],
+    };
+
+    await expect(service.append(scope, message)).rejects.toMatchObject({
+      code: "message_pending",
+      status: 503,
+    });
+    const [pendingIntent] = await setupDb()
+      .select({ state: mastraMessageIntents.state })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+    expect(pendingIntent?.state).toBe("pending");
+    const pendingReferences = await setupDb()
+      .select({ attachmentId: mastraMessageIntentAttachments.attachmentId })
+      .from(mastraMessageIntentAttachments)
+      .where(
+        eq(mastraMessageIntentAttachments.clientMessageKey, clientMessageKey),
+      );
+    expect(pendingReferences).toHaveLength(1);
+    await expect(
+      Promise.resolve().then(() =>
+        setupDb().delete(attachments).where(eq(attachments.id, attachmentId)),
+      ),
+    ).rejects.toThrow();
+    const [heldAttachment] = await setupDb()
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId));
+    expect(heldAttachment?.id).toBe(attachmentId);
+    await setupDb()
+      .update(attachments)
+      .set({ createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) })
+      .where(eq(attachments.id, attachmentId));
+    const rolledBackSweep = new Error("rollback isolated culler assertion");
+    let sweptWhilePending: number | undefined;
+    try {
+      await setupDb().transaction(async (tx) => {
+        await tx
+          .delete(attachments)
+          .where(sql`${attachments.id} <> ${attachmentId}`);
+        sweptWhilePending = await cullStagedAttachments(
+          tx as unknown as Database,
+          {
+            olderThanHours: 1,
+          },
+        );
+        throw rolledBackSweep;
+      });
+    } catch (error) {
+      if (error !== rolledBackSweep) throw error;
+    }
+    expect(sweptWhilePending).toBe(0);
+    const [survivedSweep] = await setupDb()
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId));
+    expect(survivedSweep?.id).toBe(attachmentId);
+
+    const accepted = await service.append(scope, message);
+    expect(accepted.seq).toBe(1);
+    expect(writeCount).toBe(1);
+    const [sentAttachment] = await setupDb()
+      .select({ attachedAt: attachments.attachedAt })
+      .from(attachments)
+      .where(eq(attachments.id, attachmentId));
+    expect(sentAttachment?.attachedAt).toBeInstanceOf(Date);
+    const [finalizedIntent] = await setupDb()
+      .select({ state: mastraMessageIntents.state })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.clientMessageKey, clientMessageKey));
+    expect(finalizedIntent?.state).toBe("finalized");
+    const finalizedReferences = await setupDb()
+      .select({ attachmentId: mastraMessageIntentAttachments.attachmentId })
+      .from(mastraMessageIntentAttachments)
+      .where(
+        eq(mastraMessageIntentAttachments.clientMessageKey, clientMessageKey),
+      );
+    expect(finalizedReferences).toEqual([]);
+
+    const replay = await service.append(scope, message);
+    expect(replay.seq).toBe(accepted.seq);
+    expect(writeCount).toBe(1);
+    await expect(
+      service.append(scope, { ...message, content: "conflicting digest" }),
+    ).rejects.toMatchObject({ code: "message_conflict", status: 409 });
+    expect(writeCount).toBe(1);
+  } finally {
+    if (threadId) {
+      await setupDb()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, threadId));
+      await setupDb()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, threadId));
+      await setupDb()
+        .delete(enterpriseMessages)
+        .where(eq(enterpriseMessages.threadId, threadId));
+      await setupDb()
+        .delete(enterpriseConversations)
+        .where(
+          and(
+            eq(enterpriseConversations.tenantId, tenantId),
+            eq(enterpriseConversations.threadId, threadId),
+          ),
+        );
+    }
+    await setupDb().delete(attachments).where(eq(attachments.id, attachmentId));
+  }
+});
+
+test("membership revocation waits for an authorized Mastra write to settle", async () => {
+  let threadId: string | undefined;
+  let releaseWrite!: () => void;
+  let writeStarted!: () => void;
+  const release = new Promise<void>((resolve) => {
+    releaseWrite = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    writeStarted = resolve;
+  });
+  type FakeMessage = {
+    id: string;
+    threadId: string;
+    resourceId: string;
+    role: "user";
+    type: "text";
+    createdAt: Date;
+    content: {
+      format: 2;
+      parts: Array<{ type: "text"; text: string }>;
+      metadata: Record<string, unknown>;
+    };
+  };
+  const persisted: FakeMessage[] = [];
+  const memory = {
+    async listMessagesById({ messageIds }: { messageIds: string[] }) {
+      return {
+        messages: persisted.filter(({ id }) => messageIds.includes(id)),
+      };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async saveMessages({ messages }: { messages: FakeMessage[] }) {
+      writeStarted();
+      await release;
+      persisted.push(...messages);
+      return { messages };
+    },
+  };
+  const mastraStorage = {
+    getStore: async () => ({ getStore: async () => memory }),
+    withConversationLock: async <T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) => run(),
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  let revokeSettled = false;
+  try {
+    const conversation = await service.getOrCreate(raceScope, {});
+    threadId = conversation.thread_id;
+    const append = service.append(raceScope, {
+      threadId,
+      clientMessageKey: `${prefix}-mastra-revocation-race`,
+      content: "write holds membership fence",
+      attachments: [],
+    });
+    await started;
+    const revoke = suspendMembership(operatorDatabase!, {
+      operationId: `${prefix}-mastra-revoke-race`,
+      operator: principalId,
+      tenantId,
+      principalId: racePrincipalId,
+    }).then((result) => {
+      revokeSettled = true;
+      return result;
+    });
+    const observedWaiter = await waitForAnyAdvisoryLockWaiter();
+    expect(observedWaiter).toBe(true);
+    expect(revokeSettled).toBe(false);
+    releaseWrite();
+    const accepted = await append;
+    const revoked = await revoke;
+    expect(accepted.seq).toBe(1);
+    expect(revoked.changed).toBe(true);
+    expect(persisted).toHaveLength(1);
+  } finally {
+    releaseWrite();
+    if (threadId) {
+      await setupDb()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, threadId));
+      await setupDb()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, threadId));
+      await setupDb()
+        .delete(enterpriseConversations)
+        .where(
+          and(
+            eq(enterpriseConversations.tenantId, tenantId),
+            eq(enterpriseConversations.threadId, threadId),
+          ),
+        );
+    }
+  }
+});
+
+test("revocation before Mastra append authorization creates no message", async () => {
+  let threadId: string | undefined;
+  let writes = 0;
+  const memory = {
+    async listMessagesById() {
+      return { messages: [] };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async saveMessages() {
+      writes += 1;
+      return { messages: [] };
+    },
+  };
+  const mastraStorage = {
+    getStore: async () => ({ getStore: async () => memory }),
+    withConversationLock: async <T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) => run(),
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  try {
+    const conversation = await service.getOrCreate(foreignScope, {});
+    threadId = conversation.thread_id;
+    await suspendMembership(operatorDatabase!, {
+      operationId: `${prefix}-mastra-revoke-before-auth`,
+      operator: principalId,
+      tenantId,
+      principalId: foreignPrincipalId,
+    });
+    await expect(
+      service.append(foreignScope, {
+        threadId,
+        clientMessageKey: `${prefix}-mastra-revoked-before-auth`,
+        content: "must never reach Mastra",
+        attachments: [],
+      }),
+    ).rejects.toThrow("SCOPE_REVOKED");
+    expect(writes).toBe(0);
+    const intents = await setupDb()
+      .select({ threadId: mastraMessageIntents.threadId })
+      .from(mastraMessageIntents)
+      .where(eq(mastraMessageIntents.threadId, threadId));
+    expect(intents).toEqual([]);
+  } finally {
+    if (threadId) {
+      await setupDb()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, threadId));
+      await setupDb()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, threadId));
+      await setupDb()
+        .delete(enterpriseConversations)
+        .where(
+          and(
+            eq(enterpriseConversations.tenantId, tenantId),
+            eq(enterpriseConversations.threadId, threadId),
+          ),
+        );
+    }
+  }
+});
+
+test("concurrent Mastra appends reserve unique sequences and page without full history", async () => {
+  let threadId: string | undefined;
+  let unboundedHistoryReads = 0;
+  const loadedIds: string[][] = [];
+  type FakeMessage = {
+    id: string;
+    threadId: string;
+    resourceId: string;
+    role: "user";
+    type: "text";
+    createdAt: Date;
+    content: {
+      format: 2;
+      parts: Array<{ type: "text"; text: string }>;
+      metadata: Record<string, unknown>;
+    };
+  };
+  const persisted: FakeMessage[] = [];
+  const memory = {
+    async listMessages() {
+      unboundedHistoryReads += 1;
+      return { messages: [...persisted], total: persisted.length };
+    },
+    async listMessagesById({ messageIds }: { messageIds: string[] }) {
+      loadedIds.push([...messageIds]);
+      return {
+        messages: persisted.filter(({ id }) => messageIds.includes(id)),
+      };
+    },
+    async getThreadById() {
+      return null;
+    },
+    async saveThread() {},
+    async saveMessages({ messages }: { messages: FakeMessage[] }) {
+      const equalTimestamp = new Date("2026-01-01T00:00:00.000Z");
+      const stored = messages.map((message) => ({
+        ...message,
+        createdAt: equalTimestamp,
+      }));
+      persisted.push(...stored);
+      return { messages: stored };
+    },
+  };
+  const mastraStorage = {
+    getStore: async () => ({ getStore: async () => memory }),
+    withConversationLock: async <T>(
+      _scope: unknown,
+      _binding: unknown,
+      run: () => Promise<T>,
+    ) => run(),
+  } as never;
+  const service = createConversationService({
+    data: dataDatabase!,
+    mastraStorage,
+  });
+  try {
+    const conversation = await service.getOrCreate(scope, {});
+    threadId = conversation.thread_id;
+    const writes = await Promise.all(
+      ["one", "two", "three"].map((content) =>
+        service.append(scope, {
+          threadId,
+          clientMessageKey: `${prefix}-sequence-${content}`,
+          content,
+          attachments: [],
+        }),
+      ),
+    );
+    expect(writes.map(({ seq }) => seq).sort((a, b) => a - b)).toEqual([
+      1, 2, 3,
+    ]);
+    const firstPage = await service.history(scope, {
+      threadId,
+      beforeSeq: null,
+      limit: 2,
+    });
+    expect(firstPage.items.map(({ seq }) => seq)).toEqual([2, 3]);
+    expect(firstPage.nextBeforeSeq).toBe(2);
+    const secondPage = await service.history(scope, {
+      threadId,
+      beforeSeq: firstPage.nextBeforeSeq,
+      limit: 2,
+    });
+    expect(secondPage.items.map(({ seq }) => seq)).toEqual([1]);
+    expect(secondPage.nextBeforeSeq).toBeNull();
+    expect(
+      new Set([...firstPage.items, ...secondPage.items].map(({ seq }) => seq))
+        .size,
+    ).toBe(3);
+    expect(unboundedHistoryReads).toBe(0);
+    expect(loadedIds.slice(-2).map((ids) => ids.length)).toEqual([2, 1]);
+    const platformRows = await setupDb()
+      .select({ threadId: enterpriseMessages.threadId })
+      .from(enterpriseMessages)
+      .where(eq(enterpriseMessages.threadId, threadId));
+    expect(platformRows).toEqual([]);
+  } finally {
+    if (threadId) {
+      await setupDb()
+        .delete(mastraMessageIntentAttachments)
+        .where(eq(mastraMessageIntentAttachments.threadId, threadId));
+      await setupDb()
+        .delete(mastraMessageIntents)
+        .where(eq(mastraMessageIntents.threadId, threadId));
+      await setupDb()
+        .delete(enterpriseMessages)
+        .where(eq(enterpriseMessages.threadId, threadId));
+      await setupDb()
+        .delete(enterpriseConversations)
+        .where(
+          and(
+            eq(enterpriseConversations.tenantId, tenantId),
+            eq(enterpriseConversations.threadId, threadId),
+          ),
+        );
+    }
   }
 });

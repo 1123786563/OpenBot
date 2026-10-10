@@ -74,6 +74,10 @@ export interface ConversationService {
     scope: PlatformScope,
     threadId: string,
   ): Promise<StorageBackend>;
+  resolveMastraBinding(
+    scope: PlatformScope,
+    threadId: string,
+  ): Promise<import("../mastra/contracts").MastraConversationBinding>;
 }
 
 export interface RunService {
@@ -147,7 +151,7 @@ export interface ToolService {
   ): Promise<ApprovalDTO>;
 }
 
-export type StorageBackend = "intelligence" | "platform";
+export type StorageBackend = "intelligence" | "mastra" | "platform";
 
 export interface ConversationInput {
   readonly threadId?: string;
