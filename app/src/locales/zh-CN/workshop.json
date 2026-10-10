@@ -8,7 +8,8 @@
       "process": "过程",
       "files": "文件",
       "artifacts": "产物",
-      "usage": "用量"
+      "usage": "用量",
+      "share": "分享"
     },
     "placeholder": {
       "process": "过程视图随 F5 就绪。"
@@ -70,5 +71,43 @@
     "failed": "失败/取消",
     "cost": "费用",
     "note": "用量为展示汇总；计费以服务端 code_runs 记录为准。"
+  },
+  "share": {
+    "heading": "分享链接",
+    "hint": "创建后明文链接只展示一次；服务端只保存哈希，无法再次查询。",
+    "scope": {
+      "preview": "仅预览",
+      "previewDownload": "预览+下载"
+    },
+    "days": {
+      "7": "7 天",
+      "30": "30 天",
+      "forever": "直到撤销"
+    },
+    "create": "创建链接",
+    "replace": "换新链接",
+    "createError": "链接创建失败。",
+    "copy": "复制",
+    "minted": {
+      "aria": "新建的分享链接",
+      "title": "链接已创建",
+      "once": "只显示这一次，复制后关闭。",
+      "expires": "有效期至 {{date}}。",
+      "dismiss": "我已保存，关闭"
+    },
+    "revoke": {
+      "confirm": "撤销后已分享的链接立即失效，确定？",
+      "yes": "确认撤销",
+      "no": "取消"
+    },
+    "state": {
+      "heading": "当前状态",
+      "live": "分享生效中。",
+      "liveUntil": "分享生效中，至 {{date}}。",
+      "none": "当前没有生效的分享。"
+    },
+    "revokeButton": "撤销链接",
+    "scopeLabel": "范围",
+    "daysLabel": "有效期"
   }
 }

@@ -8,6 +8,7 @@ import { WorkshopTurnView } from "./workshop-turn";
 import { WorkshopFilesView } from "./workshop-files";
 import { WorkshopArtifactsView } from "./workshop-artifacts";
 import { WorkshopUsageView } from "./workshop-usage";
+import { WorkshopShareView } from "./workshop-share";
 
 /**
  * The workshop tab: one channel's working surface in four panes.
@@ -27,9 +28,9 @@ export function WorkshopPanel({
   botId: string;
 }) {
   const { t } = useTranslation("workshop");
-  const [tab, setTab] = useState<"process" | "files" | "artifacts" | "usage">(
-    "process",
-  );
+  const [tab, setTab] = useState<
+    "process" | "files" | "artifacts" | "usage" | "share"
+  >("process");
   const snapshot = useQuery(workshopSnapshotQueryOptions(channelId));
 
   const tabs = [
@@ -37,6 +38,7 @@ export function WorkshopPanel({
     { id: "files" as const, label: t("panel.tabs.files") },
     { id: "artifacts" as const, label: t("panel.tabs.artifacts") },
     { id: "usage" as const, label: t("panel.tabs.usage") },
+    { id: "share" as const, label: t("panel.tabs.share") },
   ];
 
   return (
@@ -87,8 +89,13 @@ export function WorkshopPanel({
                 channelId={channelId}
                 artifacts={snapshot.data.artifacts}
               />
-            ) : (
+            ) : tab === "usage" ? (
               <WorkshopUsageView snapshot={snapshot.data} />
+            ) : (
+              <WorkshopShareView
+                channelId={channelId}
+                share={snapshot.data.share}
+              />
             )}
           </div>
         </>

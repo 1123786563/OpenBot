@@ -8,7 +8,8 @@
       "process": "Process",
       "files": "Files",
       "artifacts": "Artifacts",
-      "usage": "Usage"
+      "usage": "Usage",
+      "share": "Share"
     },
     "placeholder": {
       "process": "The live turn view arrives with F5."
@@ -70,5 +71,43 @@
     "failed": "Failed/cancelled",
     "cost": "Cost",
     "note": "Usage here is a display copy; billing reads the server's code_runs rows."
+  },
+  "share": {
+    "heading": "Share link",
+    "hint": "The plaintext link shows exactly once after creation; the server keeps only a hash and cannot answer for it again.",
+    "scope": {
+      "preview": "Preview only",
+      "previewDownload": "Preview + download"
+    },
+    "days": {
+      "7": "7 days",
+      "30": "30 days",
+      "forever": "Until revoked"
+    },
+    "create": "Create link",
+    "replace": "New link",
+    "createError": "The link could not be created.",
+    "copy": "Copy",
+    "minted": {
+      "aria": "Newly created share link",
+      "title": "Link created",
+      "once": "Shown once — copy it before closing.",
+      "expires": "Valid until {{date}}.",
+      "dismiss": "Saved, dismiss"
+    },
+    "revoke": {
+      "confirm": "Revoking stops every shared link immediately. Sure?",
+      "yes": "Revoke",
+      "no": "Cancel"
+    },
+    "state": {
+      "heading": "Current state",
+      "live": "Sharing is live.",
+      "liveUntil": "Sharing is live, until {{date}}.",
+      "none": "No share is live."
+    },
+    "revokeButton": "Revoke link",
+    "scopeLabel": "Scope",
+    "daysLabel": "Validity"
   }
 }
