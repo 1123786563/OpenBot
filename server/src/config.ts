@@ -1240,6 +1240,8 @@ export type LagoBillingConfig = {
   allowPrivateHosts: boolean;
   /** Plan code → the entitlement entries that plan grants. */
   planEntitlements: ReadonlyMap<string, readonly BillingEntitlementEntry[]>;
+  /** Plan code → the metered ceilings that plan includes. Empty means "metered, not capped". */
+  planQuotas: ReadonlyMap<string, readonly BillingQuotaEntry[]>;
   /** One request's ceiling, when the default 10s is not what this deployment wants. */
   requestTimeoutMs?: number;
 };
@@ -1304,6 +1306,7 @@ function billingConfig(
         : undefined;
 
   const planEntitlements = billingPlanEntitlements(environment);
+  const planQuotas = billingPlanQuotas(environment);
   const allowPrivateHosts = billingPrivateHostsAllowed(environment);
 
   const timeoutRaw = optional(environment, "LAGO_REQUEST_TIMEOUT_MS");
@@ -1325,6 +1328,7 @@ function billingConfig(
     webhookKey,
     allowPrivateHosts,
     planEntitlements,
+    planQuotas,
     ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   };
 }
@@ -1413,7 +1417,98 @@ function billingPlanEntitlements(
 }
 
 /**
- * Whether the provider URL may sit inside this deployment's own network.
+ * Read `LAGO_PLAN_QUOTAS`: plan code → the metered ceilings that plan includes.
+ *
+ * ```json
+ * { "pro": [{ "metricCode": "llm_tokens", "metricName": "模型 tokens", "unit": "tokens", "limit": 2000000 }] }
+ * ```
+ *
+ * The same strictness as the entitlement map next door, for the same reason: a ceiling that is
+ * silently wrong is a usage bar that lies. `limit` is a whole non-negative number because a
+ * fraction of a token is not a thing, and `unit` defaults to the metric code rather than to a
+ * guess at what the deployment measures.
+ *
+ * Empty and absent are the same answer, and it is a legitimate one: a deployment that caps nothing
+ * still measures everything, and the usage page draws "metered, not capped" rather than nothing.
+ */
+function billingPlanQuotas(
+  environment: Environment,
+): ReadonlyMap<string, readonly BillingQuotaEntry[]> {
+  const raw = optional(environment, "LAGO_PLAN_QUOTAS") ?? "{}";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("LAGO_PLAN_QUOTAS must be valid JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      "LAGO_PLAN_QUOTAS must be a JSON object of plan code to a list of quotas",
+    );
+  }
+  const plans = new Map<string, readonly BillingQuotaEntry[]>();
+  for (const [planCode, quotas] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (!Array.isArray(quotas)) {
+      throw new Error(
+        `LAGO_PLAN_QUOTAS plan "${planCode}" must be a list of quota objects`,
+      );
+    }
+    const entries: BillingQuotaEntry[] = [];
+    for (const entry of quotas) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quotas must be objects with a "metricCode" and a "limit"`,
+        );
+      }
+      const record = entry as Record<string, unknown>;
+      if (typeof record.metricCode !== "string" || !record.metricCode) {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quotas must carry a non-empty "metricCode"`,
+        );
+      }
+      if (typeof record.limit !== "number" || !Number.isInteger(record.limit)) {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" limit must be a whole number`,
+        );
+      }
+      if (record.limit < 0) {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" limit must not be negative`,
+        );
+      }
+      if (record.metricName !== undefined && typeof record.metricName !== "string") {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" metricName must be a string`,
+        );
+      }
+      if (record.unit !== undefined && typeof record.unit !== "string") {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" unit must be a string`,
+        );
+      }
+      if (record.usedCents !== undefined && typeof record.usedCents !== "number") {
+        throw new Error(
+          `LAGO_PLAN_QUOTAS plan "${planCode}" quota "${record.metricCode}" usedCents must be a number`,
+        );
+      }
+      const metricCode: string = record.metricCode;
+      const unit: string = record.unit ?? metricCode;
+      entries.push({
+        metricCode,
+        metricName: record.metricName ?? metricCode,
+        unit,
+        used: 0,
+        limit: record.limit as number,
+        remaining: record.limit as number,
+        usedCents: record.usedCents ?? 0,
+      });
+    }
+    plans.set(planCode, entries);
+  }
+  return plans;
+}
  *
  * Off unless asked for, and the asking is loud. Unlike the computer's switch this one is not
  * production-refused: a company that runs its own Lago inside its own network is a legitimate
