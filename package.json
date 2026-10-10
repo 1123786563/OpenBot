@@ -37,6 +37,10 @@
     "yaml": "^2.9.0"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-trace-node": "^2.12.0",
     "pino": "^10.4.0",
     "playwright-core": "1.62.1",
     "zod": "^3.22.2"
