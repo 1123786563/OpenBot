@@ -346,5 +346,32 @@ export function createBillingAdminRoutes(deps: {
     }
     return context.json({ grant });
   });
+
+  /*
+   * The reconciliation pass, on demand (T7): POST because it is an action with a side-effect
+   * trail (the audit row and the service's log line), read-only in its books. The answer IS
+   * the report — counts first, findings with their codes — so an operator reads the books'
+   * agreement in one round trip. No scheduler: v1 reconciles when asked.
+   */
+  routes.post("/reconcile", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) return denied;
+    const report = await deps.service.reconcile();
+    if (deps.audit) {
+      await recordAuditEvent(deps.audit, {
+        eventType: "billing.reconciled",
+        targetType: "billing",
+        actorUserId: context.var.actor.id,
+        // The trail carries the counts and the finding codes (not the sentences): enough to
+        // answer "when did we last look, and did the books agree" without duplicating the
+        // report's evidence into the audit log.
+        payload: {
+          checked: report.checked,
+          findings: report.findings.map((finding) => finding.code),
+        },
+      });
+    }
+    return context.json(report);
+  });
   return routes;
 }
