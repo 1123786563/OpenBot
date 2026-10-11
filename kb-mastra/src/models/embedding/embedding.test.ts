@@ -1,13 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { createBatchEmbedder, DEFAULT_BATCH_EMBED_SIZE } from "./batch";
+import {
+  createLimiter,
+  DEFAULT_EMBED_MAX_CONCURRENCY,
+  withConcurrency,
+} from "./concurrency";
 import type { Embedder } from "./embedder";
-import { createLimiter, DEFAULT_EMBED_MAX_CONCURRENCY, withConcurrency } from "./concurrency";
 import { createOllamaEmbedder } from "./ollama";
 import { createEmbedTransport } from "./transport";
 
 /** embedding 层：分批快停、并发限流、双协议 transport。 */
 
-function countingEmbedder(vectors: number[][]): { embedder: Embedder; batchCalls: string[][] } {
+function countingEmbedder(vectors: number[][]): {
+  embedder: Embedder;
+  batchCalls: string[][];
+} {
   const batchCalls: string[][] = [];
   const embedder: Embedder = {
     async embed() {
@@ -61,7 +68,9 @@ describe("batch", () => {
       getModelID: () => "m",
     };
     const batched = createBatchEmbedder(failing, { batchSize: 1 });
-    await expect(batched.batchEmbed(["a", "b", "c", "d"])).rejects.toThrow("batch 2 failed");
+    await expect(batched.batchEmbed(["a", "b", "c", "d"])).rejects.toThrow(
+      "batch 2 failed",
+    );
     expect(calls).toBe(2); // 第 3、4 批未发出
   });
 
@@ -78,7 +87,9 @@ describe("batch", () => {
       getModelID: () => "m",
     };
     const batched = createBatchEmbedder(bad, { batchSize: 5 });
-    await expect(batched.batchEmbed(["a", "b", "c"])).rejects.toThrow(/expected 3 vectors/);
+    await expect(batched.batchEmbed(["a", "b", "c"])).rejects.toThrow(
+      /expected 3 vectors/,
+    );
   });
 });
 
@@ -180,7 +191,8 @@ describe("transport (dual protocol)", () => {
     const paths: string[] = [];
     const fetchImpl = (async (url: string) => {
       paths.push(url);
-      if (url.endsWith("/api/embed")) return jsonResponse({ error: "not found" }, 404);
+      if (url.endsWith("/api/embed"))
+        return jsonResponse({ error: "not found" }, 404);
       return jsonResponse({ data: [{ index: 0, embedding: [9] }] });
     }) as unknown as typeof fetch;
     const transport = createEmbedTransport({
@@ -202,14 +214,18 @@ describe("transport (dual protocol)", () => {
       model: "m",
       fetchImpl,
     });
-    await expect(transport.embed("q")).rejects.toThrow(/unreachable|cannot reach/);
+    await expect(transport.embed("q")).rejects.toThrow(
+      /unreachable|cannot reach/,
+    );
   });
 });
 
 describe("ollama embedder adapter", () => {
   test("dimensions observed from first vector when not declared", async () => {
     const fetchImpl = (async () =>
-      new Response(JSON.stringify({ embedding: [1, 2, 3, 4] }), { status: 200 })) as unknown as typeof fetch;
+      new Response(JSON.stringify({ embedding: [1, 2, 3, 4] }), {
+        status: 200,
+      })) as unknown as typeof fetch;
     const embedder = createOllamaEmbedder({
       baseUrl: "http://o.test",
       model: "m",
@@ -229,7 +245,8 @@ describe("ollama embedder adapter", () => {
       model: "m",
       dimensions: 1024,
       protocol: "ollama",
-      fetchImpl: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+      fetchImpl: (async () =>
+        new Response("{}", { status: 200 })) as unknown as typeof fetch,
     });
     expect(embedder.getDimensions()).toBe(1024);
   });

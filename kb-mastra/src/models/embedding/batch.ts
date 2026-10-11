@@ -12,7 +12,10 @@ export type BatchOptions = {
   batchSize?: number;
 };
 
-export function createBatchEmbedder(inner: Embedder, options: BatchOptions = {}): Embedder {
+export function createBatchEmbedder(
+  inner: Embedder,
+  options: BatchOptions = {},
+): Embedder {
   const batchSize =
     options.batchSize !== undefined && options.batchSize > 0
       ? options.batchSize

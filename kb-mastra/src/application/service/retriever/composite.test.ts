@@ -1,12 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { allHits, createCompositeRetrieveEngine, engineErrors } from "./composite";
+import {
+  allHits,
+  createCompositeRetrieveEngine,
+  engineErrors,
+} from "./composite";
 import type { IndexWithScore, RetrieveEngine, RetrieveParams } from "./engine";
 import { createKeywordsEngine } from "./keywords";
 
 /** composite 错误契约 + keywords no-op + registry 组装。 */
 
 function hit(chunkId: string, score: number): IndexWithScore {
-  return { chunkId, score, docId: `doc-${chunkId}`, kbId: "kb1", content: chunkId, contextHeader: "", chunkIndex: 0 };
+  return {
+    chunkId,
+    score,
+    docId: `doc-${chunkId}`,
+    kbId: "kb1",
+    content: chunkId,
+    contextHeader: "",
+    chunkIndex: 0,
+  };
 }
 
 function stubEngine(
@@ -28,7 +40,10 @@ const params: RetrieveParams = {
 
 describe("composite", () => {
   test("routes by retriever type and flattens hits", async () => {
-    const vector = stubEngine("qdrant", ["vector"], async () => [hit("c1", 0.9), hit("c2", 0.8)]);
+    const vector = stubEngine("qdrant", ["vector"], async () => [
+      hit("c1", 0.9),
+      hit("c2", 0.8),
+    ]);
     const composite = createCompositeRetrieveEngine([vector]);
     const out = await composite.retrieve([params]);
     expect(out.length).toBe(1);
@@ -49,7 +64,9 @@ describe("composite", () => {
   });
 
   test("unregistered retriever type yields EngineNotFoundError for that param only", async () => {
-    const vector = stubEngine("qdrant", ["vector"], async () => [hit("c1", 0.9)]);
+    const vector = stubEngine("qdrant", ["vector"], async () => [
+      hit("c1", 0.9),
+    ]);
     const composite = createCompositeRetrieveEngine([vector]);
     const out = await composite.retrieve([
       params,
@@ -63,7 +80,10 @@ describe("composite", () => {
 
   test("null engines filtered at construction", async () => {
     const vector = stubEngine("qdrant", ["vector"], async () => [hit("c1", 1)]);
-    const composite = createCompositeRetrieveEngine([vector, null as unknown as RetrieveEngine]);
+    const composite = createCompositeRetrieveEngine([
+      vector,
+      null as unknown as RetrieveEngine,
+    ]);
     const out = await composite.retrieve([params]);
     expect(out[0].results.length).toBe(1);
   });

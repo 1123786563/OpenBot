@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-import { apiKeyMiddleware, requestIdMiddleware } from "../middleware/api-key";
-import { buildRoutes, type BuildRoutesDeps } from "./routes";
-import type { AppEnv } from "./app";
 import type { Db } from "../db/client";
 import type { DocRow, KbRow } from "../handler/shared";
+import { apiKeyMiddleware, requestIdMiddleware } from "../middleware/api-key";
+import type { AppEnv } from "./app";
+import { type BuildRoutesDeps, buildRoutes } from "./routes";
 
 /**
  * 十条路由 HTTP 契约测试：越权 404（不泄漏存在性）、角色 403、hybrid=true
@@ -78,14 +78,26 @@ function setupApp(overrides: Partial<BuildRoutesDeps> = {}): Hono<AppEnv> {
   return app;
 }
 
-async function get(app: Hono<AppEnv>, path: string, key = "sk-admin"): Promise<Response> {
+async function get(
+  app: Hono<AppEnv>,
+  path: string,
+  key = "sk-admin",
+): Promise<Response> {
   return app.request(path, { headers: { authorization: `Bearer ${key}` } });
 }
 
-async function post(app: Hono<AppEnv>, path: string, body: unknown, key = "sk-read"): Promise<Response> {
+async function post(
+  app: Hono<AppEnv>,
+  path: string,
+  body: unknown,
+  key = "sk-read",
+): Promise<Response> {
   return app.request(path, {
     method: "POST",
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    headers: {
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+    },
     body: JSON.stringify(body),
   });
 }
@@ -95,7 +107,11 @@ describe("routes: auth and tenant isolation", () => {
     const app = setupApp();
     const res = await app.request("/kb");
     expect(res.status).toBe(401);
-    const body = (await res.json()) as { code: string; message: string; request_id: string };
+    const body = (await res.json()) as {
+      code: string;
+      message: string;
+      request_id: string;
+    };
     expect(body.code).toBe("unauthorized");
     expect(typeof body.request_id).toBe("string");
     expect(body.request_id.length).toBeGreaterThan(0);
@@ -119,7 +135,10 @@ describe("routes: auth and tenant isolation", () => {
     const app = setupApp();
     const res = await app.request("/kb", {
       method: "POST",
-      headers: { authorization: "Bearer sk-read", "content-type": "application/json" },
+      headers: {
+        authorization: "Bearer sk-read",
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ name: "新库" }),
     });
     expect(res.status).toBe(403);
@@ -141,7 +160,10 @@ describe("routes: GET /kb list and detail", () => {
     const app = setupApp();
     const res = await get(app, "/kb", "sk-read");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: Record<string, unknown>[]; count: number };
+    const body = (await res.json()) as {
+      items: Record<string, unknown>[];
+      count: number;
+    };
     expect(body.count).toBe(1);
     expect(body.items[0].id).toBe("kb-a");
     expect(body.items[0].doc_count).toBe(1);
@@ -160,7 +182,10 @@ describe("routes: documents", () => {
     const app = setupApp();
     const res = await get(app, "/kb/kb-a/documents", "sk-read");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: Record<string, unknown>[]; count: number };
+    const body = (await res.json()) as {
+      items: Record<string, unknown>[];
+      count: number;
+    };
     expect(body.items[0].source).toBe("text");
     expect(body.items[0].parse_status).toBe("processing");
   });
@@ -184,7 +209,12 @@ describe("routes: documents", () => {
 
   test("upload before T3 wiring → 501 not_implemented", async () => {
     const app = setupApp();
-    const res = await post(app, "/kb/kb-a/documents", { type: "text", content: "x" }, "sk-admin");
+    const res = await post(
+      app,
+      "/kb/kb-a/documents",
+      { type: "text", content: "x" },
+      "sk-admin",
+    );
     expect(res.status).toBe(501);
   });
 });
@@ -224,7 +254,11 @@ describe("routes: POST /kb/:id/retrieve contract", () => {
     });
     await post(app, "/kb/kb-a/retrieve", { query: "q" });
     expect((seen as unknown as Record<string, unknown>).hybrid).toBe(true);
-    await post(app, "/kb/kb-a/retrieve", { query: "q", hybrid: false, rerank: true });
+    await post(app, "/kb/kb-a/retrieve", {
+      query: "q",
+      hybrid: false,
+      rerank: true,
+    });
     const second = seen as unknown as Record<string, unknown>;
     expect(second.hybrid).toBe(false);
     expect(second.rerank).toBe(true);
@@ -253,7 +287,12 @@ describe("routes: POST /kb/:id/retrieve contract", () => {
 
   test("cross-tenant retrieve → 404", async () => {
     const app = setupApp();
-    const res = await post(app, "/kb/kb-a/retrieve", { query: "q" }, "sk-other");
+    const res = await post(
+      app,
+      "/kb/kb-a/retrieve",
+      { query: "q" },
+      "sk-other",
+    );
     expect(res.status).toBe(404);
   });
 
@@ -261,7 +300,10 @@ describe("routes: POST /kb/:id/retrieve contract", () => {
     const app = setupApp();
     const res = await app.request("/kb/kb-a/retrieve", {
       method: "POST",
-      headers: { authorization: "Bearer sk-read", "content-type": "application/json" },
+      headers: {
+        authorization: "Bearer sk-read",
+        "content-type": "application/json",
+      },
       body: "{broken",
     });
     expect(res.status).toBe(400);
@@ -270,7 +312,10 @@ describe("routes: POST /kb/:id/retrieve contract", () => {
   test("x-request-id header echoed back", async () => {
     const app = setupApp();
     const res = await app.request("/kb", {
-      headers: { authorization: "Bearer sk-read", "x-request-id": "req-fixed-123" },
+      headers: {
+        authorization: "Bearer sk-read",
+        "x-request-id": "req-fixed-123",
+      },
     });
     expect(res.headers.get("x-request-id")).toBe("req-fixed-123");
   });

@@ -34,14 +34,19 @@ export type OpenAICompatRerankerOptions = {
   fetchImpl?: typeof fetch;
 };
 
-export function createOpenAICompatReranker(options: OpenAICompatRerankerOptions): Reranker {
+export function createOpenAICompatReranker(
+  options: OpenAICompatRerankerOptions,
+): Reranker {
   const url = options.url;
   const model = options.model;
   const apiKey = options.apiKey?.trim() ?? "";
   const timeoutMs = options.timeoutMs ?? 60_000;
   const doFetch = options.fetchImpl ?? fetch;
 
-  async function call(query: string, documents: string[]): Promise<RankResult[]> {
+  async function call(
+    query: string,
+    documents: string[],
+  ): Promise<RankResult[]> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -83,7 +88,9 @@ export function createOpenAICompatReranker(options: OpenAICompatRerankerOptions)
       if (error instanceof Error && error.name === "AbortError") {
         throw new RerankError(`rerank timed out after ${timeoutMs}ms`);
       }
-      throw new RerankError(`rerank is unreachable: ${(error as Error).message}`);
+      throw new RerankError(
+        `rerank is unreachable: ${(error as Error).message}`,
+      );
     } finally {
       clearTimeout(timer);
     }

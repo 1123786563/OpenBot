@@ -5,13 +5,17 @@
  * 保留，kw 空数组自然退化）→ top_k 截断 → 上下文扩展（相邻链表一跳）→
  * 组装 SearchResult → 可选 rerank（默认关）。
  */
+
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { chunks, knowledges } from "../../db/schema";
-import { and, eq, inArray } from "drizzle-orm";
 import type { Embedder } from "../../models/embedding/embedder";
 import type { Reranker } from "../../models/rerank/openai-compat";
-import { rerank, type RerankRow } from "../../reranking/rerank";
-import { allHits, engineErrors, type CompositeRetrieveEngine } from "./retriever/composite";
+import { type RerankRow, rerank } from "../../reranking/rerank";
+import {
+  type CompositeRetrieveEngine,
+  engineErrors,
+} from "./retriever/composite";
 import type { RetrieveParams } from "./retriever/engine";
 
 /** RRF 参数（WeKnora RetrievalConfig 默认值）：k=60，向量 0.7 / 关键词 0.3。 */
@@ -71,7 +75,10 @@ export type KbSearchDeps = {
 };
 
 /** 检索主入口。 */
-export async function hybridSearch(deps: KbSearchDeps, request: SearchRequest): Promise<SearchOutcome> {
+export async function hybridSearch(
+  deps: KbSearchDeps,
+  request: SearchRequest,
+): Promise<SearchOutcome> {
   // 1. 查询嵌入一次。
   const queryVector = await deps.embedder.embed(request.query);
 
@@ -97,7 +104,7 @@ export async function hybridSearch(deps: KbSearchDeps, request: SearchRequest): 
     });
   }
   const retrieveResults = await deps.composite.retrieve(params);
-  const errors = engineErrors(retrieveResults);
+  const _errors = engineErrors(retrieveResults);
   // 引擎级失败：vector 通道挂了 = 无候选（G4 miss 语义），keywords 空数组本就无贡献。
   // P1 单 vector 引擎：错误时自然空结果；日志由 composite 上层记录。
 
@@ -159,11 +166,14 @@ function sortByScoreDesc(a: { score: number }, b: { score: number }): number {
 }
 
 /** ChunkID 去重取最高分，按分数降序。 */
-function deduplicateByScore<T extends { chunkId: string; score: number }>(results: T[]): T[] {
+function deduplicateByScore<T extends { chunkId: string; score: number }>(
+  results: T[],
+): T[] {
   const map = new Map<string, T>();
   for (const r of results) {
     const existing = map.get(r.chunkId);
-    if (existing === undefined || r.score > existing.score) map.set(r.chunkId, r);
+    if (existing === undefined || r.score > existing.score)
+      map.set(r.chunkId, r);
   }
   return [...map.values()].sort(sortByScoreDesc);
 }
@@ -203,7 +213,10 @@ function rescaleUnboundedScores(rows: { score: number }[]): void {
  * 加权 RRF：score = (vw/(k+vRank) + kw/(k+kRank)) / ((vw+kw)/(k+1))。
  * 每 chunk 的 rank = 其在该检索类型任一列表中的最佳 1-based 名次。
  */
-function fuseWithRRF(vectorLists: FusedRow[][], keywordLists: FusedRow[][]): FusedRow[] {
+function fuseWithRRF(
+  vectorLists: FusedRow[][],
+  keywordLists: FusedRow[][],
+): FusedRow[] {
   const maxRRF = (RRF_VECTOR_WEIGHT + RRF_KEYWORD_WEIGHT) / (RRF_K + 1);
   const vectorRanks = bestRanks(vectorLists);
   const keywordRanks = bestRanks(keywordLists);
@@ -211,7 +224,8 @@ function fuseWithRRF(vectorLists: FusedRow[][], keywordLists: FusedRow[][]): Fus
   const chunkMap = new Map<string, FusedRow>();
   for (const r of flatten(vectorLists)) {
     const existing = chunkMap.get(r.chunkId);
-    if (existing === undefined || r.score > existing.score) chunkMap.set(r.chunkId, r);
+    if (existing === undefined || r.score > existing.score)
+      chunkMap.set(r.chunkId, r);
   }
   for (const r of flatten(keywordLists)) {
     if (!chunkMap.has(r.chunkId)) chunkMap.set(r.chunkId, r);
@@ -251,7 +265,11 @@ function bestRanks(lists: FusedRow[][]): Map<string, number> {
  * 扩展行不改变排序位置——按 chunkIndex 就近附加在命中行内容尾部（P1 投影：
  * 命中块内容 + 相邻一跳拼接，分数沿用命中块）。
  */
-async function expandNeighbors(db: Db, rows: FusedRow[], tenantId: string): Promise<FusedRow[]> {
+async function expandNeighbors(
+  db: Db,
+  rows: FusedRow[],
+  tenantId: string,
+): Promise<FusedRow[]> {
   if (rows.length === 0) return [];
   const chunkIds = rows.map((r) => r.chunkId);
   const neighborIds = new Set<string>();
@@ -278,7 +296,9 @@ async function expandNeighbors(db: Db, rows: FusedRow[], tenantId: string): Prom
       knowledgeBaseId: chunks.knowledgeBaseId,
     })
     .from(chunks)
-    .where(and(eq(chunks.tenantId, tenantId), inArray(chunks.id, [...neighborIds])));
+    .where(
+      and(eq(chunks.tenantId, tenantId), inArray(chunks.id, [...neighborIds])),
+    );
   const neighborsById = new Map(neighborRows.map((r) => [r.id, r]));
 
   return rows.map((row) => {
@@ -295,12 +315,22 @@ async function expandNeighbors(db: Db, rows: FusedRow[], tenantId: string): Prom
 }
 
 /** 组装 SearchResult：批量取 knowledge 行（title/source）。 */
-async function assembleSearchResults(db: Db, rows: FusedRow[]): Promise<SearchResult[]> {
+async function assembleSearchResults(
+  db: Db,
+  rows: FusedRow[],
+): Promise<SearchResult[]> {
   if (rows.length === 0) return [];
-  const docIds = [...new Set(rows.map((r) => r.docId))].filter((id) => id !== "");
+  const docIds = [...new Set(rows.map((r) => r.docId))].filter(
+    (id) => id !== "",
+  );
   const docs = docIds.length
     ? await db
-        .select({ id: knowledges.id, title: knowledges.title, source: knowledges.source, type: knowledges.type })
+        .select({
+          id: knowledges.id,
+          title: knowledges.title,
+          source: knowledges.source,
+          type: knowledges.type,
+        })
         .from(knowledges)
         .where(inArray(knowledges.id, docIds))
     : [];
@@ -319,7 +349,9 @@ async function assembleSearchResults(db: Db, rows: FusedRow[]): Promise<SearchRe
       metadata: {
         title: doc?.title ?? "",
         chunk_index: String(row.chunkIndex),
-        ...(row.contextHeader !== "" ? { context_header: row.contextHeader } : {}),
+        ...(row.contextHeader !== ""
+          ? { context_header: row.contextHeader }
+          : {}),
       },
     };
   });

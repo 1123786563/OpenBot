@@ -3,13 +3,11 @@
  * 依赖经 buildRoutes 注入（DB 查询薄层 + kb-search service），路由函数
  * 只做 HTTP 边界（解析→校验→service→装配）。
  */
-import type { Hono } from "hono";
+
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
-import type { AppEnv } from "./app";
-import { errorBody, identityOf, requestIdOf } from "../middleware/api-key";
-import { canAccessKB, canRead, canWrite, canAdmin } from "../middleware/auth";
+import type { Hono } from "hono";
 import type { Db } from "../db/client";
-import { knowledges, knowledgeBases } from "../db/schema";
+import { knowledgeBases, knowledges } from "../db/schema";
 import {
   type DocRow,
   type KbHandlerDeps,
@@ -22,14 +20,23 @@ import {
   validateCreateKbInput,
   validateRetrieveInput,
 } from "../handler/shared";
+import { errorBody, identityOf, requestIdOf } from "../middleware/api-key";
+import { canAccessKB, canAdmin, canRead, canWrite } from "../middleware/auth";
+import type { AppEnv } from "./app";
 
 export type BuildRoutesDeps = {
   db: Db;
   search: KbHandlerDeps["search"];
   /** 文档创建/删除（T03 摄取管线的入口；T04 阶段返回 501 引导位）。 */
   documentIngest: {
-    createFromJson(kb: KbRow, body: unknown): Promise<{ status: number; body: unknown }>;
-    createFromUpload(kb: KbRow, form: FormData): Promise<{ status: number; body: unknown }>;
+    createFromJson(
+      kb: KbRow,
+      body: unknown,
+    ): Promise<{ status: number; body: unknown }>;
+    createFromUpload(
+      kb: KbRow,
+      form: FormData,
+    ): Promise<{ status: number; body: unknown }>;
     deleteDocument(doc: DocRow): Promise<void>;
   } | null;
   /** 查询层覆写（测试注入桩；生产留空走 makeDbQueries(db)）。 */
@@ -63,7 +70,12 @@ function makeDbQueries(db: Db): KbHandlerDeps["dbQueries"] {
       const rows = await db
         .select()
         .from(knowledgeBases)
-        .where(and(eq(knowledgeBases.tenantId, tenantId), isNull(knowledgeBases.deletedAt)))
+        .where(
+          and(
+            eq(knowledgeBases.tenantId, tenantId),
+            isNull(knowledgeBases.deletedAt),
+          ),
+        )
         .orderBy(asc(knowledgeBases.createdAt));
       return rows.map((row) => ({
         id: row.id,
@@ -81,14 +93,24 @@ function makeDbQueries(db: Db): KbHandlerDeps["dbQueries"] {
       const rows = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(knowledges)
-        .where(and(eq(knowledges.knowledgeBaseId, kbId), isNull(knowledges.deletedAt)));
+        .where(
+          and(
+            eq(knowledges.knowledgeBaseId, kbId),
+            isNull(knowledges.deletedAt),
+          ),
+        );
       return rows[0]?.n ?? 0;
     },
     async listDocuments(kbId: string): Promise<DocRow[]> {
       const rows = await db
         .select()
         .from(knowledges)
-        .where(and(eq(knowledges.knowledgeBaseId, kbId), isNull(knowledges.deletedAt)))
+        .where(
+          and(
+            eq(knowledges.knowledgeBaseId, kbId),
+            isNull(knowledges.deletedAt),
+          ),
+        )
         .orderBy(asc(knowledges.createdAt));
       return rows.map(toDocRow);
     },
@@ -134,7 +156,11 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canAdmin(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks admin permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks admin permission",
+        ),
         403,
       );
     }
@@ -142,15 +168,25 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     try {
       body = await context.req.json();
     } catch {
-      return context.json(errorBody(requestIdOf(context), "bad_request", "invalid JSON body"), 400);
+      return context.json(
+        errorBody(requestIdOf(context), "bad_request", "invalid JSON body"),
+        400,
+      );
     }
     const validated = validateCreateKbInput(body as Record<string, unknown>);
     if (!validated.ok) {
-      return context.json(errorBody(requestIdOf(context), "bad_request", validated.message), 400);
+      return context.json(
+        errorBody(requestIdOf(context), "bad_request", validated.message),
+        400,
+      );
     }
     // T03 前的引导位：建库依赖 T01 骨架的 service 层写路径；此处返回明确 501。
     return context.json(
-      errorBody(requestIdOf(context), "not_implemented", "KB creation arrives with T03 ingest wiring"),
+      errorBody(
+        requestIdOf(context),
+        "not_implemented",
+        "KB creation arrives with T03 ingest wiring",
+      ),
       501,
     );
   });
@@ -160,7 +196,11 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canRead(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks read permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks read permission",
+        ),
         403,
       );
     }
@@ -176,11 +216,20 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canRead(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks read permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks read permission",
+        ),
         403,
       );
     }
-    const kb = await requireKB(context, { dbQueries, search: deps.search }, identity, context.req.param("kbId"));
+    const kb = await requireKB(
+      context,
+      { dbQueries, search: deps.search },
+      identity,
+      context.req.param("kbId"),
+    );
     if (kb === null) return notFound(context, "knowledge base not found");
     return context.json(toWireKB(kb, await dbQueries.docCount(kb.id)));
   });
@@ -190,14 +239,27 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canAdmin(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks admin permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks admin permission",
+        ),
         403,
       );
     }
-    const kb = await requireKB(context, { dbQueries, search: deps.search }, identity, context.req.param("kbId"));
+    const kb = await requireKB(
+      context,
+      { dbQueries, search: deps.search },
+      identity,
+      context.req.param("kbId"),
+    );
     if (kb === null) return notFound(context, "knowledge base not found");
     return context.json(
-      errorBody(requestIdOf(context), "not_implemented", "KB deletion arrives with T03 ingest wiring"),
+      errorBody(
+        requestIdOf(context),
+        "not_implemented",
+        "KB deletion arrives with T03 ingest wiring",
+      ),
       501,
     );
   });
@@ -207,28 +269,47 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canWrite(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks write permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks write permission",
+        ),
         403,
       );
     }
-    const kb = await requireKB(context, { dbQueries, search: deps.search }, identity, context.req.param("kbId"));
+    const kb = await requireKB(
+      context,
+      { dbQueries, search: deps.search },
+      identity,
+      context.req.param("kbId"),
+    );
     if (kb === null) return notFound(context, "knowledge base not found");
     if (deps.documentIngest === null) {
       return context.json(
-        errorBody(requestIdOf(context), "not_implemented", "document ingestion arrives with T03"),
+        errorBody(
+          requestIdOf(context),
+          "not_implemented",
+          "document ingestion arrives with T03",
+        ),
         501,
       );
     }
     const contentType = context.req.header("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
       const form = await context.req.formData();
-      return context.json(await deps.documentIngest.createFromUpload(kb, form), 202 as never);
+      return context.json(
+        await deps.documentIngest.createFromUpload(kb, form),
+        202 as never,
+      );
     }
     let body: unknown;
     try {
       body = await context.req.json();
     } catch {
-      return context.json(errorBody(requestIdOf(context), "bad_request", "invalid JSON body"), 400);
+      return context.json(
+        errorBody(requestIdOf(context), "bad_request", "invalid JSON body"),
+        400,
+      );
     }
     const result = await deps.documentIngest.createFromJson(kb, body);
     return context.json(result.body, result.status as never);
@@ -239,14 +320,26 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canRead(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks read permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks read permission",
+        ),
         403,
       );
     }
-    const kb = await requireKB(context, { dbQueries, search: deps.search }, identity, context.req.param("kbId"));
+    const kb = await requireKB(
+      context,
+      { dbQueries, search: deps.search },
+      identity,
+      context.req.param("kbId"),
+    );
     if (kb === null) return notFound(context, "knowledge base not found");
     const docs = await dbQueries.listDocuments(kb.id);
-    return context.json({ items: docs.map(toWireDocument), count: docs.length });
+    return context.json({
+      items: docs.map(toWireDocument),
+      count: docs.length,
+    });
   });
 
   // 7. GET /kb/:kbId/documents/:docId — 文档详情（read）
@@ -254,14 +347,21 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canRead(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks read permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks read permission",
+        ),
         403,
       );
     }
     const doc = await dbQueries.getDocument(context.req.param("docId"));
     if (doc === null) return notFound(context, "document not found");
     const kb = await dbQueries.getKB(doc.kbId);
-    if (kb === null || !canAccessKB(identity, { tenantId: kb.tenantId, id: kb.id })) {
+    if (
+      kb === null ||
+      !canAccessKB(identity, { tenantId: kb.tenantId, id: kb.id })
+    ) {
       return notFound(context, "document not found");
     }
     return context.json(toWireDocument(doc));
@@ -273,18 +373,29 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const doc = await dbQueries.getDocument(context.req.param("docId"));
     if (doc === null) return notFound(context, "document not found");
     const kb = await dbQueries.getKB(doc.kbId);
-    if (kb === null || !canAccessKB(identity, { tenantId: kb.tenantId, id: kb.id })) {
+    if (
+      kb === null ||
+      !canAccessKB(identity, { tenantId: kb.tenantId, id: kb.id })
+    ) {
       return notFound(context, "document not found");
     }
     if (!canWrite(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks write permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks write permission",
+        ),
         403,
       );
     }
     if (deps.documentIngest === null) {
       return context.json(
-        errorBody(requestIdOf(context), "not_implemented", "document deletion arrives with T03"),
+        errorBody(
+          requestIdOf(context),
+          "not_implemented",
+          "document deletion arrives with T03",
+        ),
         501,
       );
     }
@@ -297,14 +408,21 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canRead(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks read permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks read permission",
+        ),
         403,
       );
     }
     const doc = await dbQueries.getDocument(context.req.param("taskId"));
     if (doc === null) return notFound(context, "task not found");
     const kb = await dbQueries.getKB(doc.kbId);
-    if (kb === null || !canAccessKB(identity, { tenantId: kb.tenantId, id: kb.id })) {
+    if (
+      kb === null ||
+      !canAccessKB(identity, { tenantId: kb.tenantId, id: kb.id })
+    ) {
       return notFound(context, "task not found");
     }
     return context.json(toWireTask(doc));
@@ -315,21 +433,36 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const identity = identityOf(context);
     if (!canRead(identity.role)) {
       return context.json(
-        errorBody(requestIdOf(context), "forbidden", "role lacks read permission"),
+        errorBody(
+          requestIdOf(context),
+          "forbidden",
+          "role lacks read permission",
+        ),
         403,
       );
     }
-    const kb = await requireKB(context, { dbQueries, search: deps.search }, identity, context.req.param("kbId"));
+    const kb = await requireKB(
+      context,
+      { dbQueries, search: deps.search },
+      identity,
+      context.req.param("kbId"),
+    );
     if (kb === null) return notFound(context, "knowledge base not found");
     let body: unknown;
     try {
       body = await context.req.json();
     } catch {
-      return context.json(errorBody(requestIdOf(context), "bad_request", "invalid JSON body"), 400);
+      return context.json(
+        errorBody(requestIdOf(context), "bad_request", "invalid JSON body"),
+        400,
+      );
     }
     const validated = validateRetrieveInput(body as Record<string, unknown>);
     if (!validated.ok) {
-      return context.json(errorBody(requestIdOf(context), "bad_request", validated.message), 400);
+      return context.json(
+        errorBody(requestIdOf(context), "bad_request", validated.message),
+        400,
+      );
     }
     const { query, topK, scoreThreshold, hybrid, rerank } = validated.value;
     try {
@@ -343,10 +476,14 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
         ...(rerank ? { rerank } : {}),
       });
       return context.json({ results: outcome.results, count: outcome.count });
-    } catch (error) {
+    } catch (_error) {
       // 上游（Qdrant/embedder）不可达：503 语义（OpenBot client 折 503 触发熔断）。
       return context.json(
-        errorBody(requestIdOf(context), "unavailable", "knowledge service is unavailable. Try again."),
+        errorBody(
+          requestIdOf(context),
+          "unavailable",
+          "knowledge service is unavailable. Try again.",
+        ),
         503,
       );
     }

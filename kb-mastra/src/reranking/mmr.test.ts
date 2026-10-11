@@ -88,7 +88,7 @@ describe("selectMMR", () => {
     const items = [
       item(0.95, "风险准备金率说明"),
       item(0.94, "风险准备金率说明补充"),
-      item(0.20, "完全不同的低分主题"),
+      item(0.2, "完全不同的低分主题"),
     ];
     const picks = selectMMR(items, 2, DEFAULT_MMR_LAMBDA);
     expect(picks).toEqual([0, 1]);
