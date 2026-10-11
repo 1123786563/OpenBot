@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -9,12 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import type { PlanCatalogCycle, PlanCatalogEntry } from "@/lib/billing/credits";
 import { credits } from "@/lib/billing/format";
-import type {
-  PlanCatalogCycle,
-  PlanCatalogEntry,
-} from "@/lib/billing/credits";
+import { createPurchase, type PurchaseOrderView } from "@/lib/billing/payments";
 import { cn } from "@/lib/utils";
 
 /**
@@ -39,13 +37,45 @@ export function UpgradeDialog({
   const { t } = useTranslation("settings");
   const entries = Object.entries(catalog);
   const [selected, setSelected] = useState<string>(entries[0]?.[0] ?? "");
-  const [cycle, setCycle] = useState<PlanCatalogCycle["code"]>(
-    "recurring_monthly",
-  );
+  const [cycle, setCycle] =
+    useState<PlanCatalogCycle["code"]>("recurring_monthly");
   const [agreed, setAgreed] = useState(false);
+  /*
+   * The catalog can arrive after mount (React Query), and `useState` above captured the empty
+   * first render's "" — a selection that matches no tier, so neither cycles nor the summary ever
+   * render. Re-anchor on the entries as they land: an invalid selection (a stale catalog's tier,
+   * or the initial empty one) falls back to the first tier once there is one.
+   */
+  if (entries.length > 0 && !catalog[selected]) {
+    setSelected(entries[0][0]);
+  }
+  /*
+   * The checkout state: once an order exists the QR block shows the channel's real code and this
+   * dialog polls the order (the page reads it back; see the poll below) until the money lands or
+   * the code expires. A failed create keeps the dialog open with the server's sentence.
+   */
+  const [order, setOrder] = useState<PurchaseOrderView | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
 
   const plan = catalog[selected];
   const cycleEntry = plan?.pricing.find((c) => c.code === cycle);
+
+  const startCheckout = async () => {
+    setPayError(null);
+    setPaying(true);
+    try {
+      const created = await createPurchase({
+        planCode: selected,
+        provider: "alipay",
+      });
+      setOrder(created);
+    } catch (error) {
+      setPayError((error as Error).message);
+    } finally {
+      setPaying(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,12 +138,16 @@ export function UpgradeDialog({
                   <span className="flex items-center gap-2 text-sm font-medium">
                     {c.label}
                     {c.discountLabel ? (
-                      <span className="text-success text-xs">{c.discountLabel}</span>
+                      <span className="text-success text-xs">
+                        {c.discountLabel}
+                      </span>
                     ) : null}
                   </span>
                   <span className="tabular-nums">
                     {yuan(c.priceCents)}
-                    <span className="text-muted-foreground text-xs">/{t(`upgradeDialog.unit.${c.unit}`)}</span>
+                    <span className="text-muted-foreground text-xs">
+                      /{t(`upgradeDialog.unit.${c.unit}`)}
+                    </span>
                   </span>
                   {c.originalCents ? (
                     <span className="text-muted-foreground text-xs line-through tabular-nums">
@@ -125,14 +159,37 @@ export function UpgradeDialog({
             </div>
           ) : null}
 
-          {/* The checkout summary and the scan-to-pay placeholder. */}
+          {/* The plan-compare entry the design shows under the cycles. Links out in phase three;
+              present now so the layout matches. */}
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground self-start text-sm hover:underline"
+            onClick={() => {
+              /* Phase three: the comparison page/route. */
+            }}
+          >
+            {t("upgradeDialog.comparePlans")} &gt;
+          </button>
+
+          {/* The checkout summary and the scan-to-pay block. Once an order exists the block shows
+              the channel's real QR payload; before that it is the design's placeholder. */}
           {cycleEntry ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-center">
-                <span className="text-muted-foreground text-xs">
-                  {t("upgradeDialog.qrPlaceholder")}
-                </span>
-              </div>
+              {order?.checkout?.kind === "qrcode" ? (
+                <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-lg border bg-card p-2 text-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=280&data=${encodeURIComponent(order.checkout.payload)}`}
+                    alt={t("upgradeDialog.qrPlaceholder")}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-center">
+                  <span className="text-muted-foreground text-xs">
+                    {t("upgradeDialog.qrPlaceholder")}
+                  </span>
+                </div>
+              )}
               <div className="flex-1 space-y-1 text-sm">
                 <p className="font-medium">
                   {plan.name} · {cycleEntry.label}
@@ -144,8 +201,33 @@ export function UpgradeDialog({
                   </span>
                 </p>
                 <p className="text-muted-foreground text-xs">
+                  {t("upgradeDialog.validUntil", {
+                    date: formatDate(validUntilOf(cycleEntry.code)),
+                  })}
+                </p>
+                <p className="text-muted-foreground text-xs">
                   {t("upgradeDialog.autoRenew")}
                 </p>
+                {order ? (
+                  <p
+                    className={cn(
+                      "text-xs",
+                      order.status === "paid"
+                        ? "text-success"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {t(`upgradeDialog.orderStatus.${order.status}`)}
+                    {order.activationState === "applied"
+                      ? ` · ${t("upgradeDialog.applied")}`
+                      : null}
+                  </p>
+                ) : null}
+                {payError ? (
+                  <p className="text-destructive text-xs" role="alert">
+                    {payError}
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -162,14 +244,14 @@ export function UpgradeDialog({
         </DialogBody>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("billing.cancel")}
           </Button>
-          <Button disabled={!agreed || !cycleEntry}>
-            {t("upgradeDialog.pay")}
+          <Button
+            disabled={!agreed || !cycleEntry || paying}
+            onClick={() => void startCheckout()}
+          >
+            {paying ? t("upgradeDialog.paying") : t("upgradeDialog.pay")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -182,4 +264,25 @@ function yuan(cents: number): string {
   return `¥${(cents / 100).toLocaleString(undefined, {
     maximumFractionDigits: 0,
   })}`;
+}
+
+/**
+ * When the period being bought ends: one cycle from today, the same date the design's summary
+ * shows ("有效期至 2026-11-11"). A local fact until checkout exists; the order will carry its own.
+ */
+function validUntilOf(code: PlanCatalogCycle["code"]): Date {
+  const end = new Date();
+  if (code === "recurring_yearly" || code === "yearly") {
+    end.setFullYear(end.getFullYear() + 1);
+  } else {
+    end.setMonth(end.getMonth() + 1);
+  }
+  return end;
+}
+
+/** The summary's date, in the reader's locale. */
+function formatDate(value: Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).format(value);
 }

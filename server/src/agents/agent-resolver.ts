@@ -13,6 +13,7 @@ import {
   type SignRun,
   type ToolSelection,
 } from "../copilot";
+import type { LoadKnowledgeForBot } from "../knowledge/retrieval";
 import type { AcquireLearnedSkills } from "../learning/runtime";
 import type { LoadPersonalMemory } from "../memory/tools";
 import type { AgentActor } from "./profile-types";
@@ -69,6 +70,15 @@ export type ActorAgentResolverDependencies = {
   markAttachmentsSentForActor?: (actorId: string) => MarkAttachmentsSent;
   acquireLearnedSkills?: AcquireLearnedSkills;
   loadPersonalMemoryForActor?: (actorId: string) => LoadPersonalMemory;
+  /**
+   * How a run gets knowledge-base reference material, resolved for whoever is asking.
+   *
+   * Appended after `loadPersonalMemoryForActor` as the last field: `resolveRegisteredAgents`
+   * forwards to `resolveRuntimeAgents` positionally, so the field order here and the argument
+   * order there must not drift apart. P1 ignores the actor (kb list is global, A1) but keeps
+   * the per-actor shape for the P2 per-person binding.
+   */
+  loadKnowledgeForActor?: (actorId: string) => LoadKnowledgeForBot;
 };
 
 /**
@@ -112,6 +122,7 @@ export function createActorAgentResolver(
       deps.markAttachmentsSentForActor?.(actor.id),
       deps.acquireLearnedSkills,
       deps.loadPersonalMemoryForActor?.(actor.id),
+      deps.loadKnowledgeForActor?.(actor.id),
     );
 
   const resolveAgentsForActor = async (actor: AgentActor) =>

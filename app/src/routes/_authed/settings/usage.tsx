@@ -31,6 +31,7 @@ import {
   creditsSummaryQueryOptions,
   type PlanCatalogEntry,
 } from "@/lib/billing/credits";
+import { credits as formatCredits } from "@/lib/billing/format";
 import { BillingUnavailableError } from "@/lib/billing/invoices";
 import { entitlementsQueryOptions } from "@/lib/billing/queries";
 
@@ -173,6 +174,47 @@ function RouteComponent() {
             onUpgrade={hasCatalog ? () => setUpgradeOpen(true) : undefined}
           />
         )}
+      </PageSection>
+
+      {/*
+       * 购买积分: the design's fifth block — a purchase entry beside the reward block. The buy
+       * itself is a phase-three write; what this pass renders is the design's empty state, so the
+       * page's shape matches while the transaction lane is not built.
+       */}
+      <PageSection
+        title={t("creditsPage.purchaseTitle")}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-muted-foreground text-xs">
+              {t("creditsPage.purchaseBadge")}
+            </span>
+            {/*
+             * Credits ride a plan in this model, so buying credits IS choosing a plan: the button
+             * opens the same dialog the upgrade button does. The standalone top-up order (buying
+             * credit packs without a plan change) is the phase-three write this entry grows into.
+             */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={hasCatalog ? () => setUpgradeOpen(true) : undefined}
+              disabled={!hasCatalog}
+            >
+              {t("creditsPage.purchaseButton")}
+            </Button>
+          </div>
+        }
+      >
+        <div className="rounded-xl border bg-card p-5">
+          <p className="text-muted-foreground text-sm">
+            {t("creditsPage.purchaseEmpty")}
+          </p>
+          <p className="text-muted-foreground mt-1 text-sm tabular-nums">
+            {t("creditsPage.rewardsSummary", {
+              count: summary.data?.rewards.grantCount ?? 0,
+              remaining: formatCredits(summary.data?.rewards.remaining ?? 0),
+            })}
+          </p>
+        </div>
       </PageSection>
 
       <PageSection

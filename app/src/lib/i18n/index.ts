@@ -1,32 +1,34 @@
 import i18next from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
-import approvals from "../../locales/en/approvals.json";
 import admin from "../../locales/en/admin.json";
 import agents from "../../locales/en/agents.json";
+import approvals from "../../locales/en/approvals.json";
 import channels from "../../locales/en/channels.json";
 import common from "../../locales/en/common.json";
 import computer from "../../locales/en/computer.json";
 import errors from "../../locales/en/errors.json";
+import knowledge from "../../locales/en/knowledge.json";
 import market from "../../locales/en/market.json";
+import nav from "../../locales/en/nav.json";
 import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
-import nav from "../../locales/en/nav.json";
 import tenant from "../../locales/en/tenant.json";
 import workshop from "../../locales/en/workshop.json";
-import zhApprovals from "../../locales/zh-CN/approvals.json";
 import zhAdmin from "../../locales/zh-CN/admin.json";
 import zhAgents from "../../locales/zh-CN/agents.json";
+import zhApprovals from "../../locales/zh-CN/approvals.json";
 import zhChannels from "../../locales/zh-CN/channels.json";
 import zhCommon from "../../locales/zh-CN/common.json";
 import zhComputer from "../../locales/zh-CN/computer.json";
 import zhErrors from "../../locales/zh-CN/errors.json";
+import zhKnowledge from "../../locales/zh-CN/knowledge.json";
 import zhMarket from "../../locales/zh-CN/market.json";
+import zhNav from "../../locales/zh-CN/nav.json";
 import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
-import zhNav from "../../locales/zh-CN/nav.json";
 import zhTenant from "../../locales/zh-CN/tenant.json";
 import zhWorkshop from "../../locales/zh-CN/workshop.json";
 
@@ -47,6 +49,7 @@ export const NAMESPACES = [
   "approvals",
   "routines",
   "skills",
+  "knowledge",
   "market",
   "errors",
   "tenant",
@@ -75,9 +78,8 @@ export function normalizeDetectedLanguage(detected: string): string {
   if (SUPPORTED_LANGUAGES.includes(detected as Language)) return detected;
   const base = detected.split("-")[0];
   return (
-    SUPPORTED_LANGUAGES.find(
-      (supported) => supported.split("-")[0] === base,
-    ) ?? base
+    SUPPORTED_LANGUAGES.find((supported) => supported.split("-")[0] === base) ??
+    base
   );
 }
 
@@ -107,6 +109,7 @@ void i18next
         approvals,
         routines,
         skills,
+        knowledge,
         market,
         workshop,
         errors,
@@ -123,6 +126,7 @@ void i18next
         approvals: zhApprovals,
         routines: zhRoutines,
         skills: zhSkills,
+        knowledge: zhKnowledge,
         market: zhMarket,
         workshop: zhWorkshop,
         errors: zhErrors,

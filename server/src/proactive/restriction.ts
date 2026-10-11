@@ -51,6 +51,16 @@ export const PROACTIVE_MEMORY_READS: ReadonlySet<string> = new Set([
   "memory/recall_personal_memory",
 ]);
 
+/**
+ * Knowledge retrieval a proactive run may call by name. Reading a knowledge base is a read, so a
+ * proactive run researching in the background may consult it; both spellings for the same reason
+ * `PROACTIVE_MEMORY_READS` carries two: matching happens against whichever form the caller holds.
+ */
+export const PROACTIVE_KNOWLEDGE_READS: ReadonlySet<string> = new Set([
+  "search_knowledge",
+  "knowledge/search_knowledge",
+]);
+
 type CatalogueReader = {
   listServers(): Promise<
     {
@@ -65,7 +75,10 @@ type CatalogueReader = {
 export function createReadOnlyClassifier(plugins: CatalogueReader) {
   return async (): Promise<ReadonlySet<string>> => {
     const servers = await plugins.listServers();
-    const refs = new Set<string>(PROACTIVE_MEMORY_READS);
+    const refs = new Set<string>([
+      ...PROACTIVE_MEMORY_READS,
+      ...PROACTIVE_KNOWLEDGE_READS,
+    ]);
     for (const server of servers)
       for (const tool of server.tools)
         if (tool.effect === "read" && tool.destructive !== true)

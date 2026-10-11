@@ -1,0 +1,67 @@
+{
+  "title": "知识库",
+  "description": "构建并管理知识库，用你自己的文档为 Bot 提供可靠的知识底座。",
+  "back": "知识库",
+  "create": {
+    "title": "创建知识库",
+    "name": "名称",
+    "namePlaceholder": "例如：产品手册",
+    "description": "描述",
+    "descriptionPlaceholder": "这个知识库覆盖什么内容（可选）",
+    "submit": "创建",
+    "creating": "创建中…"
+  },
+  "list": {
+    "title": "知识库",
+    "description": "文档会被解析、切分并建立索引，让 Bot 能检索到相关内容。",
+    "loading": "正在加载知识库…",
+    "noDescription": "暂无描述",
+    "docCount": "{{count}} 份文档",
+    "delete": "删除",
+    "emptyTitle": "还没有知识库",
+    "emptyDescription": "在上方创建一个知识库，开始添加文档。"
+  },
+  "detail": {
+    "description": "添加文档，然后测试检索返回的结果。",
+    "unreachable": "无法加载这个知识库。"
+  },
+  "docs": {
+    "title": "文档",
+    "description": "每份文档都会被异步解析并建立索引。",
+    "emptyTitle": "还没有文档",
+    "emptyDescription": "在下方添加一份文档以建立索引。",
+    "delete": "删除",
+    "chunks": "{{count}} 个分块"
+  },
+  "add": {
+    "title": "添加文档",
+    "type": "类型",
+    "typeText": "文本",
+    "typeUrl": "链接",
+    "typeFile": "文件",
+    "titleField": "标题（可选）",
+    "content": "内容",
+    "contentPlaceholder": "粘贴文档文本…",
+    "url": "链接",
+    "urlPlaceholder": "https://…",
+    "file": "选择文件",
+    "submit": "添加",
+    "adding": "添加中…"
+  },
+  "status": {
+    "pending": "待处理",
+    "processing": "解析中",
+    "completed": "已完成",
+    "failed": "失败"
+  },
+  "search": {
+    "title": "测试检索",
+    "description": "查看你的 Bot 对某个问题会检索到什么内容。",
+    "query": "问题",
+    "placeholder": "输入一个问题…",
+    "submit": "搜索",
+    "searching": "搜索中…",
+    "noResults": "没有匹配的分块。换个问题试试，或添加更多文档。",
+    "score": "得分 {{score}}"
+  }
+}

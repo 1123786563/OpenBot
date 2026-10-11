@@ -236,7 +236,7 @@
   },
   "creditsPage": {
     "title": "套餐与积分",
-    "description": "查看您的订阅套餐与积分信息：当前套餐与基础积分、平台奖励积分，以及每一笔积分消耗的明细。",
+    "description": "查看您的订阅套餐和账单信息",
     "creditUnit": "积分",
     "remaining": "剩余",
     "freePlan": "体验版",
@@ -249,6 +249,10 @@
     "unavailableDescription": "未配置计费服务，因此没有积分记录。",
     "emptyGrants": "暂无奖励积分。",
     "emptyConsumption": "该时间范围内还没有积分消耗记录。",
+    "purchaseTitle": "购买积分",
+    "purchaseBadge": "体验版限时开放至10月23日",
+    "purchaseButton": "购买积分",
+    "purchaseEmpty": "暂无积分，购买后会展示在这里。",
     "grantStatus": {
       "active": "使用中",
       "exhausted": "已用完",
@@ -274,7 +278,7 @@
   },
   "welcomeBanner": {
     "badge": "限时加赠 10/31截止",
-    "message": "欢迎体验 OpenBot，首月赠送个人标准版基础积分权益，快点击领取吧！",
+    "message": "欢迎体验 WorkBuddy，首月赠送个人标准版基础积分权益，快点击领取吧！",
     "claim": "领取",
     "claimed": "{{date}}已领取"
   },
@@ -289,11 +293,22 @@
     "title": "Buddy AI 套餐",
     "subtitle": "选择适合你的套餐与计费周期。",
     "currentPlan": "当前套餐：{{plan}}",
+    "comparePlans": "查看套餐对比",
     "unit": {
       "month": "月",
       "year": "年"
     },
     "qrPlaceholder": "扫码支付",
+    "paying": "正在创建订单…",
+    "applied": "套餐已生效",
+    "orderStatus": {
+      "pending": "订单待支付",
+      "paid": "已支付",
+      "blocked": "支付异常",
+      "canceled": "已取消",
+      "expired": "已过期"
+    },
+    "validUntil": "有效期至 {{date}}",
     "autoRenew": "到期前一天自动续费，随时可取消",
     "agreement": "我已阅读并同意《服务协议》",
     "pay": "同意协议"
