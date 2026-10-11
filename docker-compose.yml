@@ -22,14 +22,16 @@ x-lago-backend-environment: &lago-backend-environment
 
 services:
   postgres:
-    # pgvector plus pg_partman: OpenBot's database on a base Lago's fresh-install path can use.
-    # The overlay exists only for the `lago` profile's benefit — see
-    # docker/pgvector-partman.Dockerfile for why the extension has to be in the server itself —
-    # and the data volume this stack already runs on is unaffected by the image growing a
-    # package. Named like the other built images, and pullable the same way.
+    # Plain PostgreSQL plus pg_partman. The pgvector base image this service used to build on
+    # is gone: embeddings moved to Qdrant (the `qdrant` service below), the last Postgres-side
+    # vector column was dropped in migration 0010, and nothing here needs the extension
+    # anymore. The overlay that remains exists only for the `lago` profile's benefit — see
+    # docker/postgres-partman.Dockerfile for why the extension has to be in the server itself —
+    # and the data volume this stack already runs on is unaffected by the image swap.
+    # Named like the other built images, and pullable the same way.
     build:
       context: .
-      dockerfile: docker/pgvector-partman.Dockerfile
+      dockerfile: docker/postgres-partman.Dockerfile
     image: ${POSTGRES_IMAGE:-openbot-postgres:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     # Off the network the Bots are on, because a Bot's computer is on it and a Bot has a shell.
@@ -85,6 +87,30 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - data
+
+  # The vector store. Embeddings live here and nowhere else: the last Postgres-side vector
+  # column (chunks.embedding) was dropped in migration 0010, and the knowledge service that
+  # owns embeddings talks to Qdrant over HTTP on 6333. Redis-style: one binary, no external
+  # dependencies, storage in the named volume below — do not remove the volume or `docker rm`
+  # takes the corpus with it.
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:1.19.2}
+    # Loopback both stacks, like every other port in this file: the API server on the host
+    # reaches it through the published port, nothing off the machine can.
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+      - "[::1]:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # The health endpoint answers 200 with the version once the HTTP API is up; no TCP
+      # probing, because a listening socket says nothing about the REST API being served.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:6333/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     networks:
       - data
 
@@ -986,6 +1012,7 @@ networks:
 
 volumes:
   postgres-data:
+  qdrant-data:
   lago-redis-data:
   lago-storage-data:
   open-connector-data:

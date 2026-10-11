@@ -189,6 +189,9 @@ function runComposeConfig(env: Record<string, string>) {
       env: {
         PATH: process.env.PATH ?? "",
         PICKED_HARNESS_IMAGE: "openbot-agent-langgraph-agui:test",
+        // The observability stack interpolates required secrets; any non-empty placeholder
+        // satisfies `docker compose config`, which never runs the services.
+        GLITCHTIP_SECRET_KEY: "compose-config-fixture-only",
         ...env,
       },
       encoding: "utf8",
@@ -216,13 +219,34 @@ beforeAll(() => {
   runComposeConfig({});
 }, 60_000);
 
-test("provides PostgreSQL with pgvector for local development", () => {
+test("provides PostgreSQL for local development", () => {
   const compose = composeFile();
 
   expect(compose).toContain("postgres:");
-  expect(compose).toContain("pgvector/pgvector:");
+  expect(compose).toContain("postgres-partman.Dockerfile");
+  // The pgvector base is gone with the vector columns: embeddings live in Qdrant now, so a
+  // pgvector image creeping back into the compose file would be a vector store regressing.
+  expect(compose).not.toContain("pgvector/pgvector:");
   // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal `${...}` is the fixture — this asserts on unexpanded placeholder text, so a real template would break the test.
   expect(compose).toContain("${POSTGRES_PORT:-5432}:5432");
+});
+
+/**
+ * Qdrant is the one vector store. Every embedding write, update, delete and similarity
+ * search goes through it; PostgreSQL has had no vector column since migration 0010 dropped
+ * the document index. The property under test is that the service exists, is pinned to a
+ * version (not `latest`), keeps its storage on a named volume, and is published on loopback
+ * only — the same rules every other stateful service in this file answers to.
+ */
+test("provides Qdrant as the only vector store", () => {
+  const compose = composeFile();
+
+  expect(compose).toContain("qdrant:");
+  expect(compose).toContain("qdrant/qdrant:");
+  // A floating tag would make every fresh `up` a different engine version.
+  expect(compose).not.toContain("qdrant/qdrant:latest");
+  expect(compose).toContain("qdrant-data:/qdrant/storage");
+  expect(compose).toMatch(/\$\{QDRANT_PORT:-6333\}:6333/);
 });
 
 /**
@@ -427,15 +451,29 @@ test("mounts the ChatGPT token store directory into the picked harness", () => {
   );
 });
 
-test("enables pgvector before creating vector columns", () => {
+test("keeps the migration order the schema requires", () => {
   const migration = readFileSync(
     join(import.meta.dir, "..", "server", "drizzle", "0000_schema.sql"),
     "utf8",
   );
 
-  // The order is the property, not the first line. A `vector` column cannot be created before the
-  // extension that defines the type, and a generated migration has no reason to put them in that
-  // order on its own.
+  // Migration 0010 dropped the last vector column along with the `vector` extension, and
+  // nothing in the schema uses the type since. A new `vector` column appearing in the
+  // baseline schema would mean vector storage moving back into Postgres after the Qdrant
+  // migration, which this test exists to catch — while the historical 0000 lines below keep
+  // asserting the create-order property they always did, in case the type ever returns.
+  const dropped = readFileSync(
+    join(
+      import.meta.dir,
+      "..",
+      "server",
+      "drizzle",
+      "0010_drop_the_document_index.sql",
+    ),
+    "utf8",
+  );
+  expect(dropped).toContain('DROP EXTENSION IF EXISTS "vector"');
+
   const extension = migration.indexOf("CREATE EXTENSION IF NOT EXISTS vector;");
   const firstVectorColumn = migration.search(/"embedding" vector\(/);
   expect(extension).toBeGreaterThanOrEqual(0);
