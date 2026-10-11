@@ -21,7 +21,7 @@
     "loading": "Reading the turn…",
     "live": "Live",
     "reconnecting": "Reconnecting",
-    "noEvents": "This turn left no events.",
+    "noEvents": "This turn left no events (settled turns replay their history from the server).",
     "stop": "Stop",
     "stopping": "Stopping…",
     "done": "The turn finished.",

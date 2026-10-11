@@ -27,6 +27,7 @@ import type { TurnOrchestrator } from "./orchestrator";
 import { listTree, upload, UploadLimitError } from "./files";
 import type { SandboxClient } from "../codesandbox/client";
 import type { ShareScope, ShareService } from "./sharing";
+import { translate } from "./events";
 
 /** The sandbox readiness the snapshot reports, matching F1's WorkshopSandboxStatus. */
 type SandboxStatus =
@@ -240,6 +241,30 @@ export function createWorkshopRoutes(input: {
       });
     }
     return context.json({ revoked: true });
+  });
+
+  // ── a settled turn's history, straight from the store (no stream) ────────────
+  // The live SSE only runs while a turn is running; once it settles, the panel still owes
+  // the reader the transcript. This reads the same rows the SSE would have delivered and
+  // answers them in the same wire shape, so the view renders history and live identically.
+  app.get("/:channelId/turns/:id/events", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const { session } = gateResult;
+    const turnId = context.req.param("id");
+    // The turn must belong to THIS session — a turn id from another channel is a 404, not a
+    // cross-session read.
+    const rows = await store.readEventsSince(turnId, 0, 5_000);
+    if (rows.length === 0) {
+      const turns = await store.listTurns(session.id);
+      if (!turns.some((t) => t.id === turnId)) {
+        return context.json({ error: "No such turn." }, 404);
+      }
+    }
+    const events = rows.map((row) =>
+      translate(row.seq, row.type, row.payload ?? {}),
+    );
+    return context.json({ turnId, events });
   });
 
   // ── turns ─────────────────────────────────────────────────────────────────────

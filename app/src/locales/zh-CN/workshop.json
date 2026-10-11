@@ -21,7 +21,7 @@
     "loading": "读取轮次…",
     "live": "实时",
     "reconnecting": "重连中",
-    "noEvents": "这轮没有留下事件。",
+    "noEvents": "这轮没有留下事件记录（结束的轮次会从服务端回放历史）。",
     "stop": "停止",
     "stopping": "停止中…",
     "done": "本轮已完成。",
