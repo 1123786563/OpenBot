@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -13,10 +13,13 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const outbox = createUsageOutbox(database);
 const prefix = `usage-${randomUUID()}`;
 
-afterAll(async () => {
+afterEach(async () => {
   await database
     .delete(usageOutbox)
     .where(sql`${usageOutbox.eventId} LIKE ${`${prefix}%`}`);
+});
+
+afterAll(async () => {
   await database.$client.close();
 });
 
@@ -122,3 +125,33 @@ test("delivery failures are target-specific and leave the target pending", async
     },
   ]);
 });
+
+for (const target of ["lago", "credits"] as const) {
+  test(`a late ${target} failure preserves delivered state and does not reopen completed usage`, async () => {
+    const event = usageEvent(`${prefix}-late-${target}-failure`);
+    await outbox.record(event);
+    await outbox.markLagoDelivered(event.eventId);
+    await outbox.markCreditsDelivered(event.eventId);
+    const [before] = await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId));
+
+    await outbox.recordDeliveryFailure(event.eventId, target, "late_failure");
+
+    const [after] = await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId));
+    expect(after).toEqual(before);
+    expect(after).toMatchObject({
+      lagoStatus: "delivered",
+      creditsStatus: "delivered",
+      lagoLastErrorCode: null,
+      creditsLastErrorCode: null,
+    });
+    expect(
+      (await outbox.pending(100)).some((row) => row.eventId === event.eventId),
+    ).toBe(false);
+  });
+}

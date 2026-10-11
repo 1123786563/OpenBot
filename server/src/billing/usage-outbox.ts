@@ -1,4 +1,4 @@
-import { asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type UsageOutboxDeliveryStatus,
@@ -116,21 +116,36 @@ export function createUsageOutbox(database: Database): UsageOutbox {
       .set(
         target === "lago"
           ? {
-              lagoStatus: "pending" satisfies UsageOutboxDeliveryStatus,
               lagoLastErrorCode: failureCode,
               updatedAt: new Date(),
             }
           : {
-              creditsStatus: "pending" satisfies UsageOutboxDeliveryStatus,
               creditsLastErrorCode: failureCode,
               updatedAt: new Date(),
             },
       )
-      .where(eq(usageOutbox.eventId, eventId))
+      .where(
+        and(
+          eq(usageOutbox.eventId, eventId),
+          eq(
+            target === "lago"
+              ? usageOutbox.lagoStatus
+              : usageOutbox.creditsStatus,
+            "pending",
+          ),
+        ),
+      )
       .returning({ eventId: usageOutbox.eventId });
 
     if (rows.length === 0) {
-      throw new UsageOutboxRecordNotFoundError(eventId);
+      const [record] = await database
+        .select({ eventId: usageOutbox.eventId })
+        .from(usageOutbox)
+        .where(eq(usageOutbox.eventId, eventId))
+        .limit(1);
+      if (!record) {
+        throw new UsageOutboxRecordNotFoundError(eventId);
+      }
     }
   }
 
