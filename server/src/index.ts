@@ -98,6 +98,7 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
+import { createCredits } from "./billing/credits";
 import { createLagoClient } from "./billing/lago";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
@@ -105,7 +106,6 @@ import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
-import { createCredits } from "./billing/credits";
 import {
   createBillingService,
   deploymentExternalCustomerId,
@@ -139,14 +139,6 @@ import { createChannelTitler } from "./channels/titler";
 import { createSandboxClient } from "./codesandbox/client";
 import { createCodeRunGateway } from "./codesandbox/gateway";
 import type { CodeRunGatewayFactory } from "./codesandbox/routes";
-import { createRedisPort } from "./redis";
-import { createInProcessTurnLock, createRedisTurnLock } from "./workshop/locks";
-import { createTurnEventBus } from "./workshop/bus";
-import { createWorkshopStore } from "./workshop/store";
-import { createTurnOrchestrator } from "./workshop/orchestrator";
-import { createWorkshopRoutes, type WorkshopRoutesFactory } from "./workshop/routes";
-import { reportCodeRunUsage } from "./workshop/metering";
-import { indexArtifacts } from "./workshop/artifacts";
 import { createCodeRunStore } from "./codesandbox/store";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
@@ -211,6 +203,12 @@ import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
+import { knowledgeServiceConfig } from "./knowledge/config";
+import {
+  createKnowledgeRuntime,
+  knowledgeRetrievalOptionsFromEnv,
+} from "./knowledge/retrieval";
+import { knowledgeTools } from "./knowledge/tools";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
 import { createMarketplaceStore } from "./marketplace/store";
@@ -254,6 +252,7 @@ import {
 } from "./proactive/restriction";
 import { createProactiveStore } from "./proactive/store";
 import { createProviderOAuthProxy } from "./provider-oauth";
+import { createRedisPort } from "./redis";
 import { createResponsibilityBindingStore } from "./responsibilities/bindings";
 import {
   createEmailTriggerRoutes,
@@ -301,6 +300,18 @@ import {
   startWorkOfferedListener,
   type WorkOfferedListener,
 } from "./work/queue";
+import { indexArtifacts } from "./workshop/artifacts";
+import { createTurnEventBus } from "./workshop/bus";
+import { createInProcessTurnLock, createRedisTurnLock } from "./workshop/locks";
+import { reportCodeRunUsage } from "./workshop/metering";
+import { createTurnOrchestrator } from "./workshop/orchestrator";
+import {
+  createWorkshopRoutes,
+  type WorkshopRoutesFactory,
+} from "./workshop/routes";
+import { createWorkshopStore } from "./workshop/store";
+import { createShareService, createInProcessShareLimiter } from "./workshop/sharing";
+import { createWorkshopPublicRoutes } from "./workshop/public-routes";
 
 const log = getLogger("server");
 
@@ -1154,6 +1165,23 @@ const memoryIngestion = createMemoryIngestion({
 });
 // Proactive research may only read; see proactive/restriction.ts. Read from the catalogue per call.
 const proactiveReadOnlyRefs = createReadOnlyClassifier(pluginStore);
+// Conversation-side knowledge retrieval (P1): middleware injects reference material into every
+// run and the search_knowledge tool re-queries on demand. Both come from one runtime, so the
+// circuit breaker and the merge/dedup/format logic are shared. Built only when the service URL
+// AND the kb list are configured: an unset URL is the feature off entirely (no log), while a set
+// URL with no KB_RETRIEVAL_KB_IDS is half-configured and gets one boot-time warn naming it.
+const knowledgeRetrievalOptions = knowledgeRetrievalOptionsFromEnv();
+const knowledgeService = knowledgeServiceConfig();
+const knowledgeRuntime =
+  knowledgeService && knowledgeRetrievalOptions
+    ? createKnowledgeRuntime(knowledgeService, knowledgeRetrievalOptions)
+    : null;
+if (!knowledgeRuntime && knowledgeService) {
+  log.warn(
+    { type: "knowledge-retrieval-unconfigured" },
+    "knowledge-retrieval-unconfigured",
+  );
+}
 const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) =>
   memoryIngestion.contextFor(ownerUserId, botId);
 const memorySweep = repeatAfterEach(async () => {
@@ -1215,6 +1243,17 @@ const loadToolsForActor =
       auditStore: bootAuditStore,
       initiator,
     }),
+    // Knowledge search appended last: same grant model as memory tools (every Bot holds it in
+    // P1, A2), and the spread keeps the array literal append-only as the wiring grows.
+    ...(knowledgeRuntime
+      ? knowledgeTools({
+          retriever: knowledgeRuntime.retriever,
+          initiator,
+          kbIds: knowledgeRetrievalOptions?.kbIds,
+          // 工具路径的超时档：KB_SERVICE_TIMEOUT_MS（config.timeoutMs，默认 10s）。
+          timeoutMs: knowledgeService?.timeoutMs,
+        })
+      : []),
   ];
 
 /** One person's standing instructions, for both the /api/settings routes and every run they start. */
@@ -1818,6 +1857,9 @@ const actorAgentResolver = createActorAgentResolver({
     return copilotRuntime.learning?.acquire;
   },
   loadPersonalMemoryForActor,
+  // Undefined when retrieval is off: the resolver forwards it as an absent optional, which is
+  // exactly "no middleware mounted" — the same shape as an unconfigured personal memory.
+  loadKnowledgeForActor: knowledgeRuntime?.loadKnowledgeForActor,
 });
 
 const copilotRuntime = mountCopilotRuntime(
@@ -3127,7 +3169,11 @@ const payments =
             getPlan: async (planCode) => {
               const result = await billing.client.getPlan(planCode);
               if (result.status === 200 && result.body) {
-                return { found: true, interval: result.body.interval, currency: result.body.currency ?? undefined };
+                return {
+                  found: true,
+                  interval: result.body.interval,
+                  currency: result.body.currency ?? undefined,
+                };
               }
               return { found: false };
             },
@@ -3222,7 +3268,11 @@ const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
   createCodeRunGateway({
     client:
       sandboxUrl && sandboxToken
-        ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
+        ? createSandboxClient({
+            baseUrl: sandboxUrl,
+            token: sandboxToken,
+            botId,
+          })
         : null,
     modelId: runtimeModel.defaultModel,
     botId,
@@ -3284,6 +3334,57 @@ const workshopOrchestrator = createTurnOrchestrator({
     await indexArtifacts(workshopStore, sessionId, artifacts);
   },
 });
+/**
+ * The workshop's ANONYMOUS half (B14/F9/B15b): the share routes, one factory like their
+ * owner sibling. The sharing service rides the same workshopStore (the session row IS the
+ * share row), the limiter degrades in-process (Redis is the multi-replica shape, per
+ * sharing.ts), and the signing key derives from the deployment's key-encryption key — a
+ * dedicated WORKSHOP_SHARE_SIGNING_KEY is the cleaner long home, noted for the day it earns
+ * its own rotation story.
+ */
+const publicWorkshopRoutes = () => {
+  const sharing = createShareService({
+    store: workshopStore,
+    signingKey: `workshop-share:${config.keyEncryptionKey}`,
+    limiter: createInProcessShareLimiter(),
+  });
+  return createWorkshopPublicRoutes({
+    sharing: {
+      resolveShareActor: sharing.resolveShareActor,
+      underRateLimit: sharing.underRateLimit,
+      signArtifactUrl: sharing.signArtifactUrl,
+    },
+    listArtifacts: async (channelId) => {
+      const session = await workshopStore.sessionByChannel(channelId);
+      if (!session) return [];
+      const rows = await workshopStore.listArtifacts(session.id);
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        sizeBytes: row.sizeBytes,
+      }));
+    },
+    readArtifactFile: async (targetChannelId, artifactPath) => {
+      // The static preview road reads the session's artifact bytes — the same reader the
+      // owner's download route uses, reached anonymously through a token instead.
+      const session = await workshopStore.sessionByChannel(targetChannelId);
+      if (!session) return null;
+      const rows = await workshopStore.listArtifacts(session.id);
+      const artifact = rows.find((row) => row.path === artifactPath || row.name === artifactPath);
+      if (!artifact) return null;
+      const client = workshopClientFor(session.botId);
+      if (!client) return null;
+      const read = await client
+        .readFile(artifact.path, 2_000_000)
+        .catch(() => null);
+      return read === null
+        ? null
+        : { bytes: new TextEncoder().encode(read.content), contentType: "application/octet-stream" };
+    },
+  });
+};
+
 const workshopRoutes: WorkshopRoutesFactory = ({ requireUser, canUseBot }) =>
   createWorkshopRoutes({
     requireUser,
@@ -3503,6 +3604,7 @@ const app = createApp(
   // beside it: positional parameters only ever go at the end (see the block above the call
   // for the Redis-or-in-process wiring decision).
   workshopRoutes,
+  publicWorkshopRoutes,
 );
 
 /**
@@ -3558,7 +3660,10 @@ serve<SocketData>({
     // The workshop's event streams outlive the default request timeout by design: their
     // connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
     // default — without this raise, every quiet stream is cut before its first keepalive.
-    if (url.pathname.startsWith("/api/workshop/") && url.pathname.endsWith("/events")) {
+    if (
+      url.pathname.startsWith("/api/workshop/") &&
+      url.pathname.endsWith("/events")
+    ) {
       server.timeout(request, 255);
     }
     if (url.pathname === "/api/voice/calls") server.timeout(request, 30);

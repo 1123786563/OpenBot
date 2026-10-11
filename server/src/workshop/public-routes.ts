@@ -83,10 +83,13 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
       // The uniform miss: wrong, expired, revoked, and not-this-channel all look alike.
       return context.notFound();
     }
-    const path = context.req.path.replace(
-      new RegExp(`^/api/workshop/[^/]+/public/preview/`),
-      "",
-    );
+    // The preview path is whatever follows the route's own /public/preview/ segment —
+    // spelled mount-relative (c.req.path keeps the mount prefix), so the route serves the
+    // same bytes under /api/workshop (the owner's test mount) and /api/public/workshop
+    // (app.ts's anonymous mount) without either mount's prefix leaking into a file name.
+    const marker = "/public/preview/";
+    const markerAt = context.req.path.lastIndexOf(marker);
+    const path = markerAt === -1 ? "" : context.req.path.slice(markerAt + marker.length);
     const file = await input.readArtifactFile(actor.channelId, path || "index.html");
     if (!file) return context.notFound();
     const headers = publicHeaders(new Headers());
