@@ -38,6 +38,7 @@ import { ComputerEntry } from "./src/computer";
 import { ComputerDraftProvider } from "./src/computer-drafts";
 import { Details } from "./src/details";
 import { OpenBotGate, toMuseWorkspace } from "./src/openbot/gate";
+import { SignOutButton } from "./src/openbot/email-signin";
 import { openbotBackend, openbotUrl } from "./src/openbot/config";
 import type { OpenBotWorkspace } from "./src/openbot/types";
 import { BrowserScreen, CalendarScreen, FilesScreen, MailScreen } from "./src/screens";
@@ -79,11 +80,13 @@ export default function App() {
 /** OpenBot 数据源外壳：登录门 → 工作区适配 → 复用既有 WorkspaceApp 骨架。 */
 function OpenBotApp() {
   const [snapshot, setSnapshot] = useState<OpenBotWorkspace>();
+  // 登出时清空 snapshot：渲染层立即回到登录门（访问控制——
+  // 没有有效会话就永远停在 gate，拿不到任何工作区数据）。
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
       {snapshot ? (
-        <OpenBotWorkspaceApp snapshot={snapshot} />
+        <OpenBotWorkspaceApp snapshot={snapshot} onSignOut={() => setSnapshot(undefined)} />
       ) : (
         <OpenBotGate onReady={setSnapshot} />
       )}
@@ -91,7 +94,13 @@ function OpenBotApp() {
   );
 }
 
-function OpenBotWorkspaceApp({ snapshot }: { snapshot: OpenBotWorkspace }) {
+function OpenBotWorkspaceApp({
+  snapshot,
+  onSignOut,
+}: {
+  snapshot: OpenBotWorkspace;
+  onSignOut: () => void;
+}) {
   const shim = useMemo(() => toMuseWorkspace(snapshot, snapshot.user.id), [snapshot]);
   return (
     <WorkspaceContext.Provider
@@ -120,6 +129,7 @@ function OpenBotWorkspaceApp({ snapshot }: { snapshot: OpenBotWorkspace }) {
             登录、工作区与会话标识（OpenBotSession）已打通；聊天运行时接入
             （CopilotKit Runtime）为下一阶段联调项。
           </Text>
+          <SignOutButton onSignedOut={onSignOut} />
         </View>
       </SafeAreaView>
     </WorkspaceContext.Provider>
