@@ -82,6 +82,9 @@ services:
       # first-boot-only, hand-applied to the volume this stack already runs on — same story
       # as Casdoor's and Lago's.
       - ./docker/openconnector/init-db.sql:/docker-entrypoint-initdb.d/30-openconnector.sql:ro
+      # kb-mastra's role and database (metadata four tables only; vectors are in Qdrant).
+      # Same story as the three above.
+      - ./docker/kb-mastra/init-db.sql:/docker-entrypoint-initdb.d/40-kb-mastra.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openbot -d openbot"]
       interval: 5s
@@ -111,6 +114,79 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    networks:
+      - data
+
+  # The WeKnora knowledge domain ported to TypeScript + Mastra, replacing kb-service as the
+  # KB_SERVICE_URL upstream. Reaches postgres (metadata four tables, its own kb_mastra database,
+  # see docker/kb-mastra/init-db.sql), qdrant above (the only vector store, collection
+  # kb_chunks_{dim}), openbot-redis (BullMQ ingest queue) and docreader below (gRPC parsing).
+  # Switch upstreams by pointing KB_SERVICE_URL at http://kb-mastra:8082; the Go kb-service on
+  # 8081 stays as the contract-comparison fallback.
+  kb-mastra:
+    build:
+      context: .
+      dockerfile: kb-mastra/Dockerfile
+    image: ${KB_MASTRA_IMAGE:-openbot-kb-mastra:latest}
+    pull_policy: ${IMAGE_PULL_POLICY:-build}
+    environment:
+      KB_PORT: "8082"
+      KB_DATABASE_URL: postgres://kb_mastra:${KB_MASTRA_DB_PASSWORD:-kb_mastra}@postgres:5432/kb_mastra
+      KB_REDIS_URL: redis://openbot-redis:6379
+      # Same variable names the main stack already uses (A13): one deployment, one value.
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      KB_QDRANT_BATCH: ${KB_QDRANT_BATCH:-40}
+      KB_API_KEYS: ${KB_API_KEYS:-sk-kb-dev-001:tenant-a:admin}
+      DOCREADER_ADDR: docreader:50051
+      DOCREADER_CALL_TIMEOUT_MS: ${DOCREADER_CALL_TIMEOUT_MS:-1800000}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      KB_EMBED_MODEL: ${KB_EMBED_MODEL:?set KB_EMBED_MODEL in .env}
+      KB_EMBED_DIMENSIONS: ${KB_EMBED_DIMENSIONS:-1024}
+      BATCH_EMBED_SIZE: ${BATCH_EMBED_SIZE:-5}
+      KB_EMBED_MAX_CONCURRENCY: ${KB_EMBED_MAX_CONCURRENCY:-32}
+      KB_RERANK_ENABLED: ${KB_RERANK_ENABLED:-false}
+      KB_RERANK_URL: ${KB_RERANK_URL:-}
+      KB_RERANK_MODEL: ${KB_RERANK_MODEL:-}
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /data/kb-files
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      KB_VECTOR_THRESHOLD: ${KB_VECTOR_THRESHOLD:-0.15}
+      KB_DEFAULT_TOP_K: ${KB_DEFAULT_TOP_K:-50}
+    volumes:
+      - kb-mastra-files:/data/kb-files
+    ports:
+      - "127.0.0.1:${KB_MASTRA_PORT:-8082}:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbot-redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      docreader:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"await fetch('http://localhost:8082/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - data
+
+  # WeKnora's document parser, reused as-is: gRPC :50051, the heavy JVM/LibreOffice/Playwright
+  # stack that turns PDF/DOCX/PPTX/HTML into markdown + source locators. kb-mastra dials it by
+  # service name; nothing else in this stack speaks to it.
+  docreader:
+    image: ${DOCREADER_IMAGE:-wechatopenai/weknora-docreader:latest}
+    restart: unless-stopped
+    healthcheck:
+      # gRPC health probing without grpcurl: the port accepting TCP is the best cheap signal
+      # this image offers. kb-mastra's client retries connections anyway.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/50051' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
     networks:
       - data
 
@@ -1013,6 +1089,7 @@ networks:
 volumes:
   postgres-data:
   qdrant-data:
+  kb-mastra-files:
   lago-redis-data:
   lago-storage-data:
   open-connector-data:
