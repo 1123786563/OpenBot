@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "bun --env-file=.env --watch src/index.ts",
     "start": "bun --no-env-file src/index.ts",
+    "worker": "bun --env-file=.env src/worker.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "bun x drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "bun --env-file=.env src/db/migrate.ts",
     "test": "bun test src/",
-    "grpc:smoke": "bun --env-file=.env scripts/grpc-smoke.ts"
+    "grpc:smoke": "bun --env-file=.env scripts/grpc-smoke.ts",
+    "t03:smoke": "bun scripts/t03-smoke.ts"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.0",

@@ -46,12 +46,14 @@ const BACKOFF_BASE_MS = 200;
 let queueSingleton: Queue<DocumentProcessPayload> | null = null;
 
 /** 共享队列实例（HTTP 入队与 worker 消费各自进程内单例）。 */
-export function getQueue(
-  connection?: { url: string },
-): Queue<DocumentProcessPayload> {
+export function getQueue(connection?: {
+  url: string;
+}): Queue<DocumentProcessPayload> {
   if (queueSingleton && !connection) return queueSingleton;
   const queue = new Queue<DocumentProcessPayload>(QUEUE_NAME, {
-    connection: connection ?? { url: process.env.KB_REDIS_URL ?? "redis://localhost:6379" },
+    connection: connection ?? {
+      url: process.env.KB_REDIS_URL ?? "redis://localhost:6379",
+    },
   });
   if (!connection) queueSingleton = queue;
   return queue;

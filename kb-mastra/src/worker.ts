@@ -7,22 +7,24 @@
  * processing/pending」覆盖（投影源是 DB 行不是 job 状态）。
  */
 
-import { eq } from "drizzle-orm";
 import { Worker } from "bullmq";
+import { eq } from "drizzle-orm";
 import { getLogger } from "../../shared/logger";
+import { createIndexWriter } from "./application/repository/retriever/qdrant/index-writer";
 import { loadConfig } from "./config";
 import { getDb } from "./db/client";
 import { runMigrations } from "./db/migrate";
+import { knowledges } from "./db/schema";
 import { createDocReaderClient } from "./docreader/client";
 import { createParserRegistry } from "./infrastructure/docparser/registry";
-import { ensureCollection } from "./infrastructure/qdrant/collections";
 import { QdrantClient } from "./infrastructure/qdrant/client";
-import { collectionName } from "./infrastructure/qdrant/collections";
-import { createIndexWriter } from "./application/repository/retriever/qdrant/index-writer";
+import {
+  collectionName,
+  ensureCollection,
+} from "./infrastructure/qdrant/collections";
 import { createBatchEmbedder } from "./models/embedding/batch";
 import { withConcurrency } from "./models/embedding/concurrency";
 import { createOllamaEmbedder } from "./models/embedding/ollama";
-import { knowledges } from "./db/schema";
 import { processDocument } from "./tasks/document-process";
 import { JOB_DOCUMENT_PROCESS, QUEUE_NAME } from "./tasks/queue";
 
@@ -129,10 +131,7 @@ worker.on("failed", async (job, error) => {
   );
 });
 
-log.info(
-  { type: "kb-worker-started", queue: QUEUE_NAME },
-  "kb-worker-started",
-);
+log.info({ type: "kb-worker-started", queue: QUEUE_NAME }, "kb-worker-started");
 
 process.on("SIGTERM", async () => {
   await worker.close();

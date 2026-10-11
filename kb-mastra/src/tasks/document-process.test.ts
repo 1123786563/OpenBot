@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { drizzle } from "drizzle-orm/postgres-js";
 import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { knowledges } from "../db/schema";
-import * as schema from "../db/schema";
-import { processDocument, type ProcessDeps } from "./document-process";
-import type { DocumentProcessPayload } from "./queue";
 import type { IndexWriter } from "../application/repository/retriever/qdrant/index-writer";
+import * as schema from "../db/schema";
+import { knowledges } from "../db/schema";
+import { type ProcessDeps, processDocument } from "./document-process";
+import type { DocumentProcessPayload } from "./queue";
 
 /**
  * 摄取管线用例（T03 验收核心）：幂等守卫 / attempt 竞态 / 删除顺序铁律 /
@@ -82,7 +82,9 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
   const db = drizzle(sql, { schema });
   let kbId: string;
 
-  const payload = (over: Partial<DocumentProcessPayload> = {}): DocumentProcessPayload => ({
+  const payload = (
+    over: Partial<DocumentProcessPayload> = {},
+  ): DocumentProcessPayload => ({
     requestId: "req-test",
     tenantId: "tenant-test",
     knowledgeId: "doc-guard",
@@ -121,8 +123,12 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
   });
 
   afterAll(async () => {
-    await db.delete(schema.knowledges).where(eq(schema.knowledges.knowledgeBaseId, kbId));
-    await db.delete(schema.knowledgeBases).where(eq(schema.knowledgeBases.id, kbId));
+    await db
+      .delete(schema.knowledges)
+      .where(eq(schema.knowledges.knowledgeBaseId, kbId));
+    await db
+      .delete(schema.knowledgeBases)
+      .where(eq(schema.knowledgeBases.id, kbId));
     await sql.end();
   });
 
@@ -149,7 +155,10 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
       payload(),
     );
     expect(result.skipped).toBeUndefined();
-    const [row] = await db.select().from(knowledges).where(eq(knowledges.id, "doc-guard"));
+    const [row] = await db
+      .select()
+      .from(knowledges)
+      .where(eq(knowledges.id, "doc-guard"));
     expect(row?.parseStatus).toBe("completed");
     expect(row?.progress?.chunksTotal ?? 0).toBeGreaterThan(0);
     expect(row?.progress?.chunksDone).toBe(row?.progress?.chunksTotal);
@@ -187,16 +196,19 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
     await insertDoc("doc-del", { parseStatus: "deleting" });
     await insertDoc("doc-can", { parseStatus: "cancelled" });
     expect(
-      (await processDocument(deps(), payload({ knowledgeId: "doc-del" }))).skipped,
+      (await processDocument(deps(), payload({ knowledgeId: "doc-del" })))
+        .skipped,
     ).toBe("deleting");
     expect(
-      (await processDocument(deps(), payload({ knowledgeId: "doc-can" }))).skipped,
+      (await processDocument(deps(), payload({ knowledgeId: "doc-can" })))
+        .skipped,
     ).toBe("cancelled");
   });
 
   test("missing row is skipped", async () => {
     expect(
-      (await processDocument(deps(), payload({ knowledgeId: "doc-none" }))).skipped,
+      (await processDocument(deps(), payload({ knowledgeId: "doc-none" })))
+        .skipped,
     ).toBe("missing");
   });
 
@@ -213,13 +225,18 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
     );
     // 删除顺序铁律：deleteDoc 先于 upsert。
     expect(recorder.calls[0]).toMatch(/^deleteDoc:doc-guard$/);
-    expect(recorder.calls.some((call) => call.startsWith("upsert:"))).toBe(true);
+    expect(recorder.calls.some((call) => call.startsWith("upsert:"))).toBe(
+      true,
+    );
     // 不翻倍：chunk 行数 = 首跑数（新 id 覆盖旧 point）。
     const chunkRows = await db
       .select()
       .from(schema.chunks)
       .where(eq(schema.chunks.knowledgeId, "doc-guard"));
-    const [row] = await db.select().from(knowledges).where(eq(knowledges.id, "doc-guard"));
+    const [row] = await db
+      .select()
+      .from(knowledges)
+      .where(eq(knowledges.id, "doc-guard"));
     expect(chunkRows.length).toBe(row?.progress?.chunksTotal ?? -1);
     // chunk_revisions 追加语义：每次运行每块一版，总数 ≥ 当前块数。
     const revisions = await db
@@ -246,7 +263,10 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
     await expect(
       processDocument(failing, payload({ knowledgeId: "doc-fail" })),
     ).rejects.toThrow("ollama down");
-    const [row] = await db.select().from(knowledges).where(eq(knowledges.id, "doc-fail"));
+    const [row] = await db
+      .select()
+      .from(knowledges)
+      .where(eq(knowledges.id, "doc-fail"));
     expect(row?.parseStatus).toBe("failed");
     expect(row?.errorMessage).toContain("embedding failed");
   });
@@ -258,7 +278,10 @@ describe.skipIf(!up)("processDocument guard semantics", () => {
       { ...deps(), indexWriter: recorder.writer },
       payload({ knowledgeId: "doc-empty", passages: "" }),
     );
-    const [row] = await db.select().from(knowledges).where(eq(knowledges.id, "doc-empty"));
+    const [row] = await db
+      .select()
+      .from(knowledges)
+      .where(eq(knowledges.id, "doc-empty"));
     expect(row?.parseStatus).toBe("completed");
     expect(row?.progress?.chunksTotal).toBe(0);
     expect(recorder.calls[0]).toMatch(/^deleteDoc:doc-empty$/);

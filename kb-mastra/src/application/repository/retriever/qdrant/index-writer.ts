@@ -127,7 +127,10 @@ export function createIndexWriter(
         { key: "tenant_id", match: { value: tenantId } },
       ],
     });
-    log.info({ type: "kb-index-deleted-kb", collection, kbId }, "kb-index-deleted-kb");
+    log.info(
+      { type: "kb-index-deleted-kb", collection, kbId },
+      "kb-index-deleted-kb",
+    );
   }
 
   return { upsertChunks, deleteByDoc, deleteByKb };
