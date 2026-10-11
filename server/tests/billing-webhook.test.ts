@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createLagoClient } from "../src/billing/lago";
 import { createBillingService } from "../src/billing/service";
+import { createBillingStore } from "../src/billing/store";
 import { BillingPersistenceError } from "../src/billing/types";
 import { createWebhookVerifier } from "../src/billing/webhook-signature";
+import type { Database } from "../src/db/client";
 import { memoryBillingStore } from "./support/billing";
 
 // A stand-in signing key for the stub endpoint; referenced, never inlined at a call site.
@@ -136,6 +139,60 @@ function signedDelivery(
 }
 
 describe("createBillingService.handleWebhook", () => {
+  test("a wrapped SQL transient failure returns fixed 503 and retries the whole delivery", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    const failure = new DrizzleQueryError(
+      "sensitive query",
+      ["sensitive parameter"],
+      new Bun.SQL.PostgresError("sensitive database failure", {
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno: "40001",
+      }),
+    );
+    const failedStore = createBillingStore({
+      transaction: () => Promise.reject(failure),
+    } as unknown as Database);
+    const apply = store.applyWebhookProjection.bind(store);
+    let failNext = true;
+    store.applyWebhookProjection = (input) => {
+      if (failNext) {
+        failNext = false;
+        return failedStore.applyWebhookProjection(input);
+      }
+      return apply(input);
+    };
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const deliver = () =>
+      signedDelivery("evt-wrapped-sql", "subscription.created", {
+        external_customer_id: "deployment-1",
+      });
+    const first = await service.handleWebhook(deliver());
+    expect(first.status).toBe(503);
+    expect(await first.json()).toEqual({
+      error: "Billing webhook could not be applied.",
+    });
+    expect(store.inbox.size).toBe(0);
+    expect(store.customers.size).toBe(0);
+    expect(store.subscriptions.size).toBe(0);
+    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+    const retry = await service.handleWebhook(deliver());
+    expect(retry.status).toBe(200);
+    expect(stub.state.reads).toBe(2);
+    expect(store.inbox.size).toBe(1);
+    expect(store.subscriptions.size).toBe(1);
+  });
+
   test("an unsigned delivery is refused before anything else happens", async () => {
     const { stub, store, service } = webhookFixture();
     const response = await service.handleWebhook(
