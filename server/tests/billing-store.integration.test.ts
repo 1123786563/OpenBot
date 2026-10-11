@@ -2,7 +2,6 @@ import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createBillingStore } from "../src/billing/store";
-import { BillingPersistenceError } from "../src/billing/types";
 import { createDatabase } from "../src/db/client";
 import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -23,7 +22,9 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`${prefix}%`}`,
   );
-  await database.execute(sql`DELETE FROM billing_webhook_events WHERE provider = 'test'`);
+  await database.execute(
+    sql`DELETE FROM billing_webhook_events WHERE provider = 'test'`,
+  );
   await database.$client.close();
 });
 
@@ -105,12 +106,8 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
   } catch (error) {
     failure = error;
   }
-  expect(failure).toBeInstanceOf(BillingPersistenceError);
-  expect(failure).toMatchObject({
-    code: "persistence_failure",
-    retryable: true,
-    operation: "subscription_upsert",
-  });
+  expect(failure).toBeInstanceOf(Bun.SQL.PostgresError);
+  expect(failure).toMatchObject({ code: "23503" });
 });
 
 test("deleting a customer cascades to its subscriptions", async () => {

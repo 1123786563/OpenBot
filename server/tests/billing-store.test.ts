@@ -46,3 +46,29 @@ test("a transient PostgreSQL connection failure is marked retryable", async () =
     operation: "customer_upsert",
   });
 });
+
+test("a PostgreSQL constraint violation is not classified as retryable", async () => {
+  const failure = new Bun.SQL.PostgresError("foreign key violation", {
+    code: "23503",
+  });
+  const database = {
+    insert() {
+      return {
+        values() {
+          return {
+            onConflictDoUpdate() {
+              return Promise.reject(failure);
+            },
+          };
+        },
+      };
+    },
+  } as unknown as Database;
+
+  await expect(
+    createBillingStore(database).upsertCustomer({
+      externalId: "customer-1",
+      name: null,
+    }),
+  ).rejects.toBe(failure);
+});
