@@ -99,6 +99,48 @@ async function main(): Promise<number> {
     },
     "kb-grpc-smoke: docreader ListEngines OK",
   );
+
+  // 第 3 级：Read 一个小 markdown（builtin 引擎）——全数据面验证。
+  // ⚠️ keepCase:true 时请求字段必须 snake_case（file_content/file_name/
+  // file_type/config.parser_engine）：camelCase 会被静默丢成空值，服务端报
+  // "Unsupported file type: "。响应字段同为 snake_case（markdown_content/
+  // source_blocks）。
+  const smokeContent = Buffer.from(
+    "# kb-mastra gRPC smoke\n\nread roundtrip body.\n",
+  );
+  const read = await new Promise<{
+    error?: string;
+    markdown_content?: string;
+    source_blocks?: unknown[];
+  }>((resolve, reject) => {
+    client.read(
+      {
+        file_content: smokeContent,
+        file_name: "smoke.md",
+        file_type: "md",
+        config: { parser_engine: "builtin" },
+        request_id: "kb-grpc-smoke",
+      },
+      (error, response) => (error ? reject(error) : resolve(response)),
+      Date.now() + 60_000,
+    );
+  });
+  const readOk = !read.error;
+  const markdownChars = read.markdown_content?.length ?? 0;
+  if (!readOk || markdownChars === 0) {
+    throw new Error(
+      `docreader Read failed: error=${read.error ?? "(empty markdown)"}`,
+    );
+  }
+  log.info(
+    {
+      type: "kb-grpc-smoke-read",
+      readOk,
+      markdownChars,
+      sourceBlocks: read.source_blocks?.length ?? 0,
+    },
+    "kb-grpc-smoke: docreader Read OK",
+  );
   client.close();
   return 0;
 }
