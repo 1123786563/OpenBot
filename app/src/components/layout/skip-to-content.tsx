@@ -9,7 +9,11 @@ import { useTranslation } from "react-i18next";
  * shell (app/admin/settings) rather than inside `SidebarShell`, because the shell's children are
  * the sidebar itself — the link has to come BEFORE the sidebar to be the first stop.
  */
-export function SkipToContent({ targetId = "main-content" }: { targetId?: string }) {
+export function SkipToContent({
+  targetId = "main-content",
+}: {
+  targetId?: string;
+}) {
   const { t } = useTranslation("nav");
   return (
     <a

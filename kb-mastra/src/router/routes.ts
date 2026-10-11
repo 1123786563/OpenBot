@@ -326,10 +326,8 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
     const contentType = context.req.header("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
       const form = await context.req.formData();
-      return context.json(
-        await deps.documentIngest.createFromUpload(kb, form),
-        202 as never,
-      );
+      const uploaded = await deps.documentIngest.createFromUpload(kb, form);
+      return context.json(uploaded.body, uploaded.status as never);
     }
     let body: unknown;
     try {

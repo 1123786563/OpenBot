@@ -349,7 +349,7 @@ export class CraftSessionManager {
     sandboxEvent: SandboxEvent | BuildPacket,
     routingMeta: Record<string, unknown> | null = null,
   ): Promise<void> {
-    await persistSandboxEvent(db, this.store, sessionId, state, sandboxEvent, routingMeta);
+    await persistSandboxEvent(this.store, sessionId, state, sandboxEvent, routingMeta);
   }
 
   /** End-of-stream persistence — see streaming.finalizePersist. */
@@ -359,7 +359,7 @@ export class CraftSessionManager {
     state: BuildStreamingState,
     routingMeta: Record<string, unknown> | null = null,
   ): Promise<void> {
-    await finalizePersist(db, this.store, sessionId, state, routingMeta);
+    await finalizePersist(this.store, sessionId, state, routingMeta);
   }
 
   /** User-visible error row so a failed turn still explains itself after reload. */

@@ -597,54 +597,54 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarGroup className="gap-px">
               {/* Bots that need you, or that you paused. See bot-profile/attention.tsx. */}
               <BotAttentionList />
-            {/*
-             * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
-             * used yet needs telling how to start. A roster that simply does not match what is in
-             * the box has to say so and quote it back — told "you don't have channels yet" while
-             * holding a typo, a person reads their conversations as gone.
-             */}
-            {searching && visibleChannels.length === 0 ? (
-              <div className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {channels.hasNextPage
-                        ? t("searchNoMatchLoaded")
-                        : t("searchNoMatch")}
-                    </EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      {channels.hasNextPage
-                        ? t("searchNoMatchLoadOlder")
-                        : t("searchNoMatchNothing", {
-                            query: search.trim(),
-                          })}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </div>
-            ) : null}
-            {!searching && channels.data?.length === 0 ? (
-              <div className="py-4">
-                <Empty className="border border-dashed min-h-[40dvh]">
-                  <EmptyHeader>
-                    <EmptyTitle>{t("noChannelsTitle")}</EmptyTitle>
-                    <EmptyDescription className="text-pretty">
-                      {t("noChannelsDescription")}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </div>
-            ) : null}
-            <AnimatePresence initial={false}>
-              {visibleChannels.map((channel) => (
-                <ChannelRow
-                  emphasis={emphasis}
-                  key={channel.id}
-                  animateOrder={animateOrder}
-                  channel={channel}
-                />
-              ))}
-            </AnimatePresence>
+              {/*
+               * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
+               * used yet needs telling how to start. A roster that simply does not match what is in
+               * the box has to say so and quote it back — told "you don't have channels yet" while
+               * holding a typo, a person reads their conversations as gone.
+               */}
+              {searching && visibleChannels.length === 0 ? (
+                <div className="py-4">
+                  <Empty className="border border-dashed min-h-[40dvh]">
+                    <EmptyHeader>
+                      <EmptyTitle>
+                        {channels.hasNextPage
+                          ? t("searchNoMatchLoaded")
+                          : t("searchNoMatch")}
+                      </EmptyTitle>
+                      <EmptyDescription className="text-pretty">
+                        {channels.hasNextPage
+                          ? t("searchNoMatchLoadOlder")
+                          : t("searchNoMatchNothing", {
+                              query: search.trim(),
+                            })}
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </div>
+              ) : null}
+              {!searching && channels.data?.length === 0 ? (
+                <div className="py-4">
+                  <Empty className="border border-dashed min-h-[40dvh]">
+                    <EmptyHeader>
+                      <EmptyTitle>{t("noChannelsTitle")}</EmptyTitle>
+                      <EmptyDescription className="text-pretty">
+                        {t("noChannelsDescription")}
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </div>
+              ) : null}
+              <AnimatePresence initial={false}>
+                {visibleChannels.map((channel) => (
+                  <ChannelRow
+                    emphasis={emphasis}
+                    key={channel.id}
+                    animateOrder={animateOrder}
+                    channel={channel}
+                  />
+                ))}
+              </AnimatePresence>
               <ChannelPagination
                 query={channels}
                 scrollRoot={scrollRoot}

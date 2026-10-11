@@ -379,6 +379,35 @@ export function ComputerView({
     return () => window.removeEventListener("keydown", onKey);
   }, [expanded]);
 
+  /*
+   * Focus management for the fullscreen overlay: initial focus in, Tab kept inside, focus returned
+   * to the opener on close. Base UI's Dialog does all this; this portal predates that and keeps a
+   * live socket across opens, so the three behaviors are provided here instead — without them Tab
+   * walks into the aria-hidden page behind the overlay and the reading order breaks (WCAG 2.4.3).
+   */
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    // Initial focus: the dialog itself (tabIndex makes it a valid stop); the screen is a canvas,
+    // not a control — focus starts on the container and Tab reaches the wheel from there.
+    dialog.focus();
+    const onFocusIn = (event: FocusEvent) => {
+      if (dialog.contains(event.target as Node)) return;
+      // Focus escaped the overlay (background refocus, devtools): pull it back to the first or
+      // last stop depending on direction, approximated by putting it back on the container.
+      dialog.focus();
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      returnFocusRef.current?.focus();
+    };
+  }, [expanded]);
+
   // Always render the card frame; help/secret controls live below the conditional picture.
   /*
    * A finished turn is never "blank": it opened a page, and that is what it shows or names. Only a
@@ -592,10 +621,12 @@ export function ComputerView({
       {expanded && typeof document !== "undefined"
         ? createPortal(
             <div
+              ref={dialogRef}
               role="dialog"
               aria-modal="true"
               aria-label={t("view.dialogLabel")}
-              className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-8"
+              tabIndex={-1}
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-8 outline-none"
             >
               {/*
                 Backdrop closes only while read-only; during driving, Escape remains the exit. A
