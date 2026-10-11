@@ -43,6 +43,12 @@ export type ProcessDeps = {
   registry: ParserRegistry;
   embedder: Embedder;
   indexWriter: IndexWriter;
+  /**
+   * 本次是否为最后一次尝试（BullMQ attemptsMade+1 >= attempts）。非最终次
+   * 失败不落 error_message——重试链上每次失败都会走到这里，只有最后一次
+   * 的错误才是终态语义，中途覆盖会掩掉真正的首次原因。
+   */
+  isFinalAttempt?: boolean;
   /** 进度回调（BullMQ job.updateProgress + knowledges.progress 回写的桥）。 */
   onProgress?: (progress: {
     chunksDone: number;
@@ -144,6 +150,25 @@ async function markFailed(
     .where(eq(knowledges.id, knowledgeId));
 }
 
+/** 诊断：当前阶段写 progress.stage（task 投影可见，失败定位不用翻日志）。 */
+async function markStage(
+  db: Db,
+  knowledgeId: string,
+  stage: string,
+): Promise<void> {
+  await db
+    .update(knowledges)
+    .set({
+      progress: {
+        chunksTotal: 0,
+        chunksDone: 0,
+        stage,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(knowledges.id, knowledgeId));
+}
+
 /** markdown 清洗：UTF-8 净化 + 行尾归一（WeKnora sanitize 步骤）。 */
 function cleanMarkdown(markdown: string): string {
   return normalizeLineEndings(cleanInvalidUTF8(markdown));
@@ -158,6 +183,11 @@ export async function processDocument(
   payload: DocumentProcessPayload,
 ): Promise<{ skipped?: string }> {
   const { db, registry, embedder, indexWriter } = deps;
+  const isFinal = deps.isFinalAttempt ?? true;
+  /** 终次失败才落 error_message（中途失败留给重试，避免覆盖首次原因）。 */
+  const markFailedIfFinal = async (message: string): Promise<void> => {
+    if (isFinal) await markFailed(db, payload.knowledgeId, message);
+  };
 
   const decision = await guard(db, payload);
   if (decision.kind === "skip") {
@@ -214,7 +244,7 @@ export async function processDocument(
     }
   } catch (error) {
     // 解析失败：置 failed 并抛出——BullMQ attempts 内重试（docreader 抖动自愈）。
-    await markFailed(db, payload.knowledgeId, (error as Error).message);
+    await markFailedIfFinal((error as Error).message);
     throw error;
   }
 
@@ -254,6 +284,7 @@ export async function processDocument(
 
   // ---- processChunks ----
   // ① 清旧（修订 A15 铁律：先 Qdrant 后 SQL；幂等——重跑不翻倍的前提）。
+  await markStage(db, payload.knowledgeId, "index-cleanup");
   await indexWriter.deleteByDoc(payload.tenantId, payload.knowledgeId);
   await db.delete(chunks).where(eq(chunks.knowledgeId, payload.knowledgeId));
 
@@ -298,6 +329,7 @@ export async function processDocument(
   );
 
   // ③ 嵌入（sanitizeForEmbedding：剥 base64/截 20000 字符；标题+面包屑前置）。
+  await markStage(db, payload.knowledgeId, "embed");
   const embedInputs = rows.map((row) =>
     sanitizeForEmbedding(
       row.contextHeader !== ""
@@ -309,16 +341,12 @@ export async function processDocument(
   try {
     vectors = await embedder.batchEmbed(embedInputs);
   } catch (error) {
-    await markFailed(
-      db,
-      payload.knowledgeId,
-      `embedding failed: ${(error as Error).message}`,
-    );
+    await markFailedIfFinal(`embedding failed: ${(error as Error).message}`);
     throw error;
   }
   if (vectors.length !== rows.length) {
     const message = `embedder returned ${vectors.length} vectors for ${rows.length} chunks`;
-    await markFailed(db, payload.knowledgeId, message);
+    await markFailedIfFinal(message);
     throw new Error(message);
   }
 
@@ -337,23 +365,28 @@ export async function processDocument(
     vector: vectors[i]!,
   }));
   let lastProgressAt = 0;
-  await indexWriter.upsertChunks(points, (progress) => {
-    const now = Date.now();
-    // 节流：200ms 一条，完成那条必发。
-    if (now - lastProgressAt < 200 && progress.upserted < progress.total)
-      return;
-    lastProgressAt = now;
-    void deps.onProgress?.({
-      chunksDone: progress.upserted,
-      chunksTotal: progress.total,
-      stage: "index",
+  try {
+    await indexWriter.upsertChunks(points, (progress) => {
+      const now = Date.now();
+      // 节流：200ms 一条，完成那条必发。
+      if (now - lastProgressAt < 200 && progress.upserted < progress.total)
+        return;
+      lastProgressAt = now;
+      void deps.onProgress?.({
+        chunksDone: progress.upserted,
+        chunksTotal: progress.total,
+        stage: "index",
+      });
     });
-  });
-  await deps.onProgress?.({
-    chunksDone: points.length,
-    chunksTotal: points.length,
-    stage: "done",
-  });
+    await deps.onProgress?.({
+      chunksDone: points.length,
+      chunksTotal: points.length,
+      stage: "done",
+    });
+  } catch (error) {
+    await markFailedIfFinal(`index upsert failed: ${(error as Error).message}`);
+    throw error;
+  }
 
   // ⑤ 终态 completed + progress 落行。
   await db

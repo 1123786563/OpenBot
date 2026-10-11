@@ -16,6 +16,7 @@ import {
   requireKB,
   toWireDocument,
   toWireKB,
+  toWireSource,
   toWireTask,
   validateCreateKbInput,
   validateRetrieveInput,
@@ -502,7 +503,24 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
         hybrid,
         ...(rerank ? { rerank } : {}),
       });
-      return context.json({ results: outcome.results, count: outcome.count });
+      // wire 投影：service 层的 camelCase（chunkId/docId/kbId…）→ OpenBot
+      // 契约的 snake_case（server/src/knowledge/types.ts KnowledgeSearchResult）。
+      // source 走 toWireSource（manual→text），与文档出向同规则。
+      return context.json({
+        results: (outcome.results as Record<string, unknown>[]).map(
+          (result) => ({
+            chunk_id: result.chunkId,
+            doc_id: result.docId,
+            content: result.content,
+            score: result.score,
+            source: toWireSource(String(result.source ?? "")),
+            ...(result.metadata !== undefined
+              ? { metadata: result.metadata }
+              : {}),
+          }),
+        ),
+        count: outcome.count,
+      });
     } catch (_error) {
       // 上游（Qdrant/embedder）不可达：503 语义（OpenBot client 折 503 触发熔断）。
       return context.json(

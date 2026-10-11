@@ -7,6 +7,7 @@
  * 目录内，若换 @qdrant/js-client-rest 不动 service 层。
  */
 
+import { request as httpRequest } from "node:http";
 import type {
   CollectionInfo,
   CreateCollectionConfig,
@@ -62,19 +63,20 @@ export class QdrantClient {
       timeoutMs ?? this.timeoutMs,
     );
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      const response = await this.dispatch(
+        `${this.baseUrl}${path}`,
         method,
-        ...(body !== undefined
-          ? {
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(body),
-            }
-          : {}),
-        ...(this.apiKey !== "" ? { headers: { "api-key": this.apiKey } } : {}),
-        signal: controller.signal,
-      });
+        body,
+        timeoutMs ?? this.timeoutMs,
+      );
       if (!response.ok) {
         const text = await response.text().catch(() => "");
+        if (process.env.KB_QDRANT_DEBUG === "1") {
+          // 排障档：完整请求/响应落日志（含代理介入时的 url）。
+          console.error(
+            `[qdrant-debug] ${method} ${path} -> ${response.status} url=${response.url} body=${text.slice(0, 300)}`,
+          );
+        }
         throw new QdrantError(
           response.status,
           `Qdrant ${method} ${path} responded ${response.status}: ${text.slice(0, 200)}`,
@@ -99,6 +101,64 @@ export class QdrantClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * node:http 直连（不经任何代理层）：Bun 的 fetch 在部分进程上下文里被
+   * 环境代理劫持（127.0.0.1 → 代理 404 "not found"），且 proxy:"" 与
+   * NO_PROXY 均拦不住；node:http 从不读代理变量，是这里的唯一稳定通道。
+   * 返回 fetch 的 Response 形状子集（ok/status/text/json）。
+   */
+  private dispatch(
+    url: string,
+    method: "GET" | "PUT" | "POST" | "DELETE",
+    body: unknown,
+    timeoutMs: number,
+  ): Promise<Response> {
+    const parsed = new URL(url);
+    const payload = body !== undefined ? JSON.stringify(body) : undefined;
+    return new Promise<Response>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          hostname: parsed.hostname,
+          port: parsed.port,
+          path: `${parsed.pathname}${parsed.search}`,
+          method,
+          headers: {
+            ...(payload !== undefined
+              ? {
+                  "content-type": "application/json",
+                  "content-length": String(Buffer.byteLength(payload)),
+                }
+              : {}),
+            ...(this.apiKey !== "" ? { "api-key": this.apiKey } : {}),
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            const buffer = Buffer.concat(chunks);
+            const status = res.statusCode ?? 0;
+            resolve(
+              new Response(buffer, {
+                status,
+                ...(status >= 200 && status < 300
+                  ? {}
+                  : { statusText: buffer.toString("utf8").slice(0, 200) }),
+              }),
+            );
+          });
+          res.on("error", reject);
+        },
+      );
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`timeout after ${timeoutMs}ms`));
+      });
+      req.on("error", reject);
+      if (payload !== undefined) req.write(payload);
+      req.end();
+    });
   }
 
   // ---- collection ----

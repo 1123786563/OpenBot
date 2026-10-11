@@ -30,6 +30,15 @@ import { JOB_DOCUMENT_PROCESS, QUEUE_NAME } from "./tasks/queue";
 
 const log = getLogger("kb-mastra");
 
+// 本进程的网络出口全是内网依赖（postgres/qdrant/redis/ollama/docreader），
+// 绝不经系统代理：开发机的 HTTP_PROXY 会把 127.0.0.1 请求劫持成代理 404，
+// 且 Bun 1.4.2 的 fetch 读环境代理、NO_PROXY 逐请求开关（proxy:""）对带
+// body 的 POST 实测不生效——最稳的出口是直接摘掉本进程的代理变量。
+delete process.env.HTTP_PROXY;
+delete process.env.http_proxy;
+delete process.env.HTTPS_PROXY;
+delete process.env.https_proxy;
+
 const config = loadConfig();
 
 /** 组装管线的全部依赖（HTTP 侧 reparse 将来也走这里）。 */
@@ -75,12 +84,15 @@ const worker = new Worker(
   QUEUE_NAME,
   async (job) => {
     if (job.name !== JOB_DOCUMENT_PROCESS) return;
+    // 最后一次尝试标记：失败才落终态 error_message（中途失败不覆盖）。
+    const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     await processDocument(
       {
         db: pipeline.db,
         registry: pipeline.registry,
         embedder: pipeline.embedder,
         indexWriter: pipeline.indexWriter,
+        isFinalAttempt,
         onProgress: async (progress) => {
           // BullMQ job 进度 + knowledges.progress jsonb 双写（投影源是后者）。
           await job.updateProgress({
@@ -126,12 +138,26 @@ worker.on("failed", async (job, error) => {
       type: "kb-ingest-dead-letter",
       knowledgeId: job.data.knowledgeId,
       error: error.name,
+      message: error.message.slice(0, 300),
     },
     "kb-ingest-dead-letter",
   );
 });
 
 log.info({ type: "kb-worker-started", queue: QUEUE_NAME }, "kb-worker-started");
+// 排障档（KB_QDRANT_DEBUG=1）：proxy 差异是本机 127.0.0.1 服务被外部代理
+// 劫持成 404 的首要嫌疑，启动时快照。
+if (process.env.KB_QDRANT_DEBUG === "1") {
+  log.warn(
+    {
+      type: "kb-worker-debug-env",
+      http_proxy: process.env.HTTP_PROXY ?? "(unset)",
+      no_proxy: process.env.NO_PROXY ?? process.env.no_proxy ?? "(unset)",
+      qdrantUrl: config.qdrantUrl,
+    },
+    "kb-worker-debug-env",
+  );
+}
 
 process.on("SIGTERM", async () => {
   await worker.close();

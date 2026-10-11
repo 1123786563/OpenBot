@@ -217,3 +217,5 @@ main().catch((error) => {
   console.error("contract-diff crashed:", (error as Error).message);
   process.exit(1);
 });
+
+export {};
