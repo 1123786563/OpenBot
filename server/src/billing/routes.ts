@@ -264,6 +264,14 @@ export function createBillingAdminRoutes(deps: {
       externalSubscriptionId: `${deps.externalCustomerKey}-${input.planCode}`,
       planCode: input.planCode,
     });
+    /*
+     * The sync just changed what the deployment is subscribed to; the entitlement reader would
+     * otherwise keep answering the pre-sync cached value for up to its 10-minute TTL (and its
+     * stale-while-revalidate returns the old answer even past expiry). Dropping the cache here is
+     * what makes the next purchase's one-subscription gate — and the page's plan name — see the
+     * world the sync just wrote.
+     */
+    deps.service.invalidateEntitlementCache();
     if (deps.audit) {
       await recordAuditEvent(deps.audit, {
         eventType: "billing.synced",

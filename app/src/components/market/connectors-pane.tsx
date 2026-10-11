@@ -1,9 +1,9 @@
 import {
+  IconAlertTriangle,
   IconCheck,
   IconLink,
   IconPlug,
   IconSettings,
-  IconWarning,
 } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -179,7 +179,7 @@ export function ConnectorDialogWb({
           </div>
           {server.withdrawn.length > 0 ? (
             <p className="mt-4 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-amber-700 text-sm dark:text-amber-400">
-              <IconWarning className="mt-0.5 size-4 shrink-0" />
+              <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
               {t("wb.withdrawn", { count: server.withdrawn.length })}
             </p>
           ) : null}
@@ -325,6 +325,7 @@ function ServerCard({
           <span
             aria-label={label.installed}
             className="flex size-6 items-center justify-center rounded-md bg-foreground/[0.06] text-foreground/70"
+            role="img"
             title={label.installed}
           >
             <IconCheck className="size-3.5" />
@@ -420,6 +421,7 @@ function BrokerCard({
           <span
             aria-label={label.installed}
             className="flex size-6 items-center justify-center rounded-md bg-foreground/[0.06] text-foreground/70"
+            role="img"
             title={label.installed}
           >
             <IconCheck className="size-3.5" />

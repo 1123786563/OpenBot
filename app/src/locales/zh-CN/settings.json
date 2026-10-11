@@ -287,6 +287,7 @@
     },
     "qrPlaceholder": "扫码支付",
     "paying": "正在创建订单…",
+    "alreadySubscribed": "当前已有生效套餐，到期前无需重复购买",
     "applied": "套餐已生效",
     "orderStatus": {
       "pending": "订单待支付",

@@ -201,6 +201,7 @@ function TemplateCard({
             <span
               aria-label={label.installed}
               className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground/[0.06] text-foreground/70"
+              role="img"
               title={label.installed}
             >
               <IconCheck className="size-3.5" />

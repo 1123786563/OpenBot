@@ -28,11 +28,18 @@ export function UpgradeDialog({
   onOpenChange,
   catalog,
   currentPlanName,
+  purchaseBlocked = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   catalog: Record<string, PlanCatalogEntry>;
   currentPlanName?: string;
+  /**
+   * The deployment already has a live subscription, so the server will refuse any purchase with
+   * "already has an active subscription". Set by the page from the entitlements read; the dialog
+   * says it up front rather than letting the reader click into the refusal.
+   */
+  purchaseBlocked?: boolean;
 }) {
   const { t } = useTranslation("settings");
   const entries = Object.entries(catalog);
@@ -223,6 +230,11 @@ export function UpgradeDialog({
                       : null}
                   </p>
                 ) : null}
+                {purchaseBlocked ? (
+                  <p className="text-muted-foreground text-xs" role="note">
+                    {t("upgradeDialog.alreadySubscribed")}
+                  </p>
+                ) : null}
                 {payError ? (
                   <p className="text-destructive text-xs" role="alert">
                     {payError}
@@ -248,7 +260,7 @@ export function UpgradeDialog({
             {t("billing.cancel")}
           </Button>
           <Button
-            disabled={!agreed || !cycleEntry || paying}
+            disabled={!agreed || !cycleEntry || paying || purchaseBlocked}
             onClick={() => void startCheckout()}
           >
             {paying ? t("upgradeDialog.paying") : t("upgradeDialog.pay")}

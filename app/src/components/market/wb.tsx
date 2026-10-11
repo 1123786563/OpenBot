@@ -1,4 +1,4 @@
-import { IconCheck, IconLoaderCircle, IconPlus } from "@tabler/icons-react";
+import { IconCheck, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
@@ -60,7 +60,7 @@ export function WbIconSlot({
 /** Card title. WB: 16px/24px, weight 500, single line. */
 export function WbName({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("truncate text-base font-medium leading-6 text-foreground", className)}>
+    <span className={cn("block truncate text-base font-medium leading-6 text-foreground", className)}>
       {children}
     </span>
   );
@@ -69,7 +69,7 @@ export function WbName({ className, children }: { className?: string; children: 
 /** Card description. WB: 14px/22px at 70% foreground, single line. */
 export function WbDesc({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("truncate text-sm leading-[22px] text-foreground/70", className)}>
+    <span className={cn("block truncate text-sm leading-[22px] text-foreground/70", className)}>
       {children}
     </span>
   );
@@ -180,17 +180,12 @@ export function WbPrimaryButton({
 }
 
 /** The same black verb as a router link (a button cannot nest one). */
-export function WbPrimaryLink({ className, children, ...props }: LinkProps) {
+export function WbPrimaryLink(props: LinkProps) {
   return (
     <Link
-      className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85",
-        className,
-      )}
+      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
       {...props}
-    >
-      {children}
-    </Link>
+    />
   );
 }
 
@@ -233,6 +228,7 @@ export function WbAddButton({
       <span
         aria-label={installedLabel}
         className="flex size-6 items-center justify-center rounded-md bg-foreground/[0.06] text-foreground/70"
+        role="img"
         title={installedLabel}
       >
         <IconCheck className="size-3.5" />
@@ -249,7 +245,7 @@ export function WbAddButton({
       type="button"
     >
       {pending ? (
-        <IconLoaderCircle className="size-3.5 animate-spin" />
+        <IconLoader2 className="size-3.5 animate-spin" />
       ) : (
         <IconPlus className="size-3.5" />
       )}
