@@ -166,5 +166,26 @@
         "skipped": "Skipped"
       }
     }
+  },
+  "sharePublic": {
+    "loading": "Opening the share…",
+    "heading": "A shared workshop",
+    "hint": "Read-only; downloads depend on the share's scope.",
+    "missing": {
+      "title": "This link does not exist or is no longer valid.",
+      "hint": "It may have expired or been revoked."
+    },
+    "preview": {
+      "aria": "Static preview"
+    },
+    "artifacts": {
+      "aria": "Artifacts",
+      "heading": "Artifacts",
+      "empty": "Nothing to show.",
+      "download": "Download"
+    },
+    "footer": "Read-only share · not indexed",
+    "report": "Report",
+    "reported": "Reported"
   }
 }
