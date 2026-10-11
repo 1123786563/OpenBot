@@ -1,0 +1,8 @@
+{
+  "script": "<script> [21 bytes]",
+  "args": [
+    {
+      "component": "com.android.settings/.Settings"
+    }
+  ]
+}

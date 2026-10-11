@@ -329,9 +329,28 @@ export function createPaymentStore(database: Database): PaymentStore {
     },
 
     async recordAnomaly(event) {
+      // Targetless DO NOTHING: any uniqueness this insert trips — the (order_id, code) anomaly
+      // key above all — answers "already recorded", which is exactly what a channel
+      // redelivering a refused notification deserves (P2-2: Alipay retries a 409 up to eight
+      // times; each retry used to append a duplicate row). The FIRST row's detail stands.
       await database
         .insert(paymentEvents)
-        .values(eventInput({ ...event, kind: "anomaly", state: undefined }));
+        .values(eventInput({ ...event, kind: "anomaly", state: undefined }))
+        .onConflictDoNothing();
+    },
+
+    async countAnomalies(orderId, code) {
+      const [row] = await database
+        .select({ value: count() })
+        .from(paymentEvents)
+        .where(
+          and(
+            eq(paymentEvents.orderId, orderId),
+            eq(paymentEvents.kind, "anomaly"),
+            eq(paymentEvents.code, code),
+          ),
+        );
+      return row?.value ?? 0;
     },
 
     async recordPaidFact(event) {

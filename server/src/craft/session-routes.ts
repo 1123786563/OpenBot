@@ -1,0 +1,228 @@
+/**
+ * Craft session management routes — ported from onyx `session/api.py`, Hono-shaped, first
+ * phase (no snapshots/webapp-proxy/docx: those endpoints are phase 2 and the report's §五
+ * table carries the reasoning).
+ *
+ * Endpoint set here: GET/POST /sessions, GET /sessions/:id, PUT /sessions/:id/name, PATCH
+ * /sessions/:id/public, DELETE /sessions/:id, POST /sessions/:id/generate-name, GET
+ * /sessions/:id/pre-provisioned-check, POST /sessions/:id/restore (no-op fast path in the
+ * warm-sandbox phase — the workspace reconcile runs on demand).
+ */
+
+import { Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
+import type { AppVariables } from "../auth/guards";
+import type { Database } from "../db/client";
+
+const logger = getLogger("server");
+
+import type { CraftConfig } from "./config";
+import type { SessionFlowLocks } from "./locks";
+import type { CraftSessionManager } from "./manager";
+import { generateSessionName } from "./naming";
+import type { CraftSessionRow, CraftStore } from "./store";
+
+type Json = Record<string, unknown>;
+
+export type SessionRoutesDeps = {
+  db: Database;
+  config: CraftConfig;
+  store: CraftStore;
+  manager: CraftSessionManager;
+  locks: SessionFlowLocks;
+  /** Optional one-shot LLM for name generation (deterministic fallback without it). */
+  generateName?: (system: string, user: string) => Promise<string>;
+  /** The user's display name (AGENTS.md personalization on session create). */
+  userNameFor: (userId: string) => Promise<string | null>;
+};
+
+export function sessionResponse(
+  session: CraftSessionRow,
+  extra: Json = {},
+): Json {
+  return {
+    id: session.id,
+    user_id: session.userId,
+    name: session.name,
+    status: session.status,
+    created_at: session.createdAt.toISOString(),
+    last_activity_at: session.lastActivityAt.toISOString(),
+    nextjs_port: session.nextjsPort,
+    sharing_scope: session.sharingScope,
+    origin: session.origin,
+    agent_provider: session.agentProvider,
+    agent_model: session.agentModel,
+    opencode_session_id: session.opencodeSessionId,
+    skills_stale: false, // phase 2: managed-content staleness contract
+    ...extra,
+  };
+}
+
+export function createSessionRoutes(
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  deps: SessionRoutesDeps,
+): Hono<{ Variables: AppVariables }> {
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", requireUser);
+
+  // ── GET /sessions — the sidebar list ────────────────────────────────────────
+  app.get("/sessions", async (context) => {
+    const actor = context.var.actor;
+    const sessions = await deps.store.listUserSessions(actor.id);
+    return context.json({
+      sessions: sessions.map((session) => sessionResponse(session)),
+    });
+  });
+
+  // ── POST /sessions — create or reuse the empty pre-provisioned session ─────
+  app.post("/sessions", async (context) => {
+    const actor = context.var.actor;
+    const body = (await context.req.json().catch(() => ({}))) as {
+      name?: unknown;
+    };
+    const name = typeof body.name === "string" ? body.name : null;
+    try {
+      const session = await deps.locks.withSessionCreationLock(
+        actor.id,
+        async () =>
+          deps.manager.getOrCreateEmptySession(deps.db, {
+            userId: actor.id,
+            name,
+            userName: await deps.userNameFor(actor.id),
+          }),
+      );
+      return context.json(
+        sessionResponse(session, { session_loaded_in_sandbox: true }),
+        201,
+      );
+    } catch (error) {
+      logger.error({ error }, "[craft] session creation failed");
+      return context.json({ error: "Session creation failed" }, 500);
+    }
+  });
+
+  // ── GET /sessions/:sessionId ────────────────────────────────────────────────
+  app.get("/sessions/:sessionId", async (context) => {
+    const actor = context.var.actor;
+    const session = await deps.store.getSession(
+      context.req.param("sessionId"),
+      actor.id,
+    );
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    return context.json(
+      sessionResponse(session, { session_loaded_in_sandbox: true }),
+    );
+  });
+
+  // ── PUT /sessions/:sessionId/name ───────────────────────────────────────────
+  app.put("/sessions/:sessionId/name", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    const body = (await context.req.json().catch(() => ({}))) as {
+      name?: unknown;
+    };
+    if (typeof body.name !== "string" || body.name.length === 0) {
+      return context.json({ error: "name is required" }, 400);
+    }
+    const updated = await deps.store.updateSession(sessionId, {
+      name: body.name,
+    });
+    return context.json(sessionResponse(updated ?? session));
+  });
+
+  // ── POST /sessions/:sessionId/generate-name ────────────────────────────────
+  app.post("/sessions/:sessionId/generate-name", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    const name = await generateSessionName(
+      { db: deps.db, store: deps.store, generateName: deps.generateName },
+      sessionId,
+    );
+    const updated = await deps.store.updateSession(sessionId, { name });
+    return context.json({ name: updated?.name ?? name });
+  });
+
+  // ── PATCH /sessions/:sessionId/public ──────────────────────────────────────
+  app.patch("/sessions/:sessionId/public", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    const body = (await context.req.json().catch(() => ({}))) as {
+      sharing_scope?: unknown;
+    };
+    if (
+      body.sharing_scope !== "private" &&
+      body.sharing_scope !== "public_org"
+    ) {
+      return context.json(
+        { error: "sharing_scope must be private or public_org" },
+        400,
+      );
+    }
+    const updated = await deps.store.updateSession(sessionId, {
+      sharingScope: body.sharing_scope,
+    });
+    return context.json({
+      session_id: sessionId,
+      sharing_scope: updated?.sharingScope ?? body.sharing_scope,
+    });
+  });
+
+  // ── DELETE /sessions/:sessionId ─────────────────────────────────────────────
+  app.delete("/sessions/:sessionId", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const deleted = await deps.store.deleteSession(sessionId, actor.id);
+    if (!deleted) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    return context.body(null, 204);
+  });
+
+  // ── GET /sessions/:sessionId/pre-provisioned-check ─────────────────────────
+  app.get("/sessions/:sessionId/pre-provisioned-check", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ valid: false, session_id: null });
+    }
+    const hasMessages = await deps.store.sessionHasMessages(sessionId);
+    return context.json(
+      hasMessages
+        ? { valid: false, session_id: null }
+        : { valid: true, session_id: sessionId },
+    );
+  });
+
+  // ── POST /sessions/:sessionId/restore — warm-sandbox fast path ─────────────
+  app.post("/sessions/:sessionId/restore", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    // Phase 1: sandboxes are warm — restore is the no-op compatibility shape
+    // (the workspace reconcile happens lazily on the next turn). The real
+    // sleep/snapshot/restore chain is the deferred phase (report §五).
+    return context.json(
+      sessionResponse(session, { session_loaded_in_sandbox: true }),
+    );
+  });
+
+  return app;
+}

@@ -20,6 +20,7 @@ import {
 } from "./workspace";
 import type { CraftSessionRow } from "./store";
 import { StaleProvisioningAttemptError } from "./errors";
+import type { CraftConfig } from "./config";
 
 /** The AGENTS.md template, read once per process (the port of onyx's file-read-at-import). */
 let agentsTemplateCache: string | null = null;
@@ -57,6 +58,8 @@ export type EnsureSessionReadyInput = {
   llmConfigFor: (session: CraftSessionRow) => Promise<
     import("./opencode-config").CraftLLMProviderConfig
   >;
+  /** The craft runtime config — workspace generation reads it (explicit DI, no globals). */
+  config: CraftConfig;
 };
 
 /**
@@ -69,10 +72,12 @@ export type EnsureSessionReadyInput = {
 export async function ensureSessionReady(
   input: EnsureSessionReadyInput,
 ): Promise<void> {
-  const { db, store, gateway, session, botId } = input;
+  const { store, gateway, session, botId } = input;
   const directory = sessionDirectory(session.id);
 
-  if (await sessionWorkspaceExists(gateway.fileApiFor(botId) ?? nullApi, session.id)) {
+  if (
+    await sessionWorkspaceExists(gateway.fileApiFor(botId) ?? nullApi, session.id)
+  ) {
     if (session.status !== "active") {
       await store.updateSession(session.id, { status: "active" });
     }
@@ -93,7 +98,7 @@ export async function ensureSessionReady(
       },
       {
         sessionId: session.id,
-        config: llmConfigOptions(input),
+        config: input.config,
         llmConfig,
         userName: input.userName,
         organizationInstructions: input.organizationInstructions,
@@ -134,16 +139,6 @@ export async function ensureSessionReady(
   }
 }
 
-import type { CraftConfig } from "./config";
-let activeConfig: CraftConfig | null = null;
-export function setActiveCraftConfig(config: CraftConfig): void {
-  activeConfig = config;
-}
-function llmConfigOptions(_input: EnsureSessionReadyInput): CraftConfig {
-  if (activeConfig === null) throw new Error("craft config not initialized");
-  return activeConfig;
-}
-
 /** A null-object file API: every probe fails, so "workspace exists" answers false. */
 const nullApi: AgentSandboxFileApi = {
   async listFiles() {
@@ -153,6 +148,9 @@ const nullApi: AgentSandboxFileApi = {
     throw new Error("no sandbox file api");
   },
   async deletePath() {
+    throw new Error("no sandbox file api");
+  },
+  async readFile() {
     throw new Error("no sandbox file api");
   },
 };

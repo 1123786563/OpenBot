@@ -1,0 +1,14 @@
+-- Billing batch 2 (T5-4): the anomaly retry-storm dam. One row per (order_id, code) among
+-- anomaly rows, PARTIAL on kind='anomaly' AND code <> 'amount_unreadable'.
+--
+-- Why the exclusion: P2-2's storm is a channel REDLIVERING the same notification (Alipay
+-- retries a refused ack up to eight times) — those repeats carry no new information and were
+-- appending a row each. `amount_unreadable` repeats are different: they are not a delivery
+-- echo but successive ASKS, and their COUNT is the signal that ends the order (see
+-- settlePaidFact's endgame, which blocks after three) — so that word must accumulate.
+--
+-- The trade the index makes, named here: two DISTINCT events sharing one word on one order
+-- (a second over-paid transaction, say) collapse into the first row. Rare against a retry
+-- storm, and the fact table still holds every transaction. `recordAnomaly` inserts with
+-- targetless ON CONFLICT DO NOTHING, which a partial index answers without inference.
+CREATE UNIQUE INDEX "payment_events_anomaly_unique_idx" ON "payment_events" USING btree ("order_id","code") WHERE "payment_events"."kind" = 'anomaly' AND "payment_events"."code" <> 'amount_unreadable';

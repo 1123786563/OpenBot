@@ -207,6 +207,36 @@ test("cancel is a CAS on pending only; activation records on paid", async () => 
   expect((await store.readOrder(paid.id))?.activationState).toBe("applied");
 });
 
+test("the anomaly dedup index: same (order, word) is one row; amount_unreadable accumulates", async () => {
+  const { order } = await store.insertOrder(orderInput());
+  // A redelivered late-payment notification: the second insert is a no-op (P2-2's dam).
+  const anomaly = {
+    orderId: order.id,
+    kind: "anomaly" as const,
+    code: "late_payment",
+    channelTransactionId: `${prefix}-tx-late`,
+    amountCents: 8800,
+    detail: "redelivered",
+  };
+  await store.recordAnomaly(anomaly);
+  await store.recordAnomaly(anomaly);
+  expect(await store.countAnomalies(order.id, "late_payment")).toBe(1);
+  // A DIFFERENT word on the same order coexists — the index is per word.
+  await store.recordAnomaly({ ...anomaly, code: "over_paid", detail: "" });
+  expect(await store.countAnomalies(order.id, "over_paid")).toBe(1);
+  // amount_unreadable is excluded from the dam: its repeats accumulate (the endgame counts them).
+  for (let i = 0; i < 3; i += 1) {
+    await store.recordAnomaly({
+      ...anomaly,
+      code: "amount_unreadable",
+      channelTransactionId: null,
+      amountCents: null,
+      detail: `strike ${i + 1}`,
+    });
+  }
+  expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(3);
+});
+
 test("the sweeper's read returns only expired pending orders", async () => {
   const { order: fresh } = await store.insertOrder(orderInput());
   const { order: stale } = await store.insertOrder({

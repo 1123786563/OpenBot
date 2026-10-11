@@ -1,0 +1,4 @@
+{
+  "using": "-android uiautomator",
+  "value": "new UiSelector().packageName(\"com.android.settings\").className(\"android.widget.TextView\").instance(0)"
+}
