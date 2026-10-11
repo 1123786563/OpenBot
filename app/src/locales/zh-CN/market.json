@@ -59,6 +59,14 @@
     "segmentMarket": "市场",
     "segmentMineSkills": "我创建的",
     "segmentDeployment": "部署提供",
+    "segment": {
+      "market": "市场",
+      "mineSkills": "我创建的",
+      "deployment": "部署提供"
+    },
+    "section": {
+      "connected": "已连接"
+    },
     "sourceMarket": "市场",
     "summon": "去对话",
     "edit": "编辑",
@@ -100,6 +108,7 @@
       "kindShared": "共享给我",
       "grantedBots": "授权 Bot",
       "tools": "工具",
+      "skillsCount": "技能数",
       "origin": "来源",
       "category": "分类",
       "categoriesCount": "分类数",

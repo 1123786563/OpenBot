@@ -33,10 +33,7 @@ import {
   uninstallExpertMutationOptions,
   uninstallMarketSkillMutationOptions,
 } from "@/lib/marketplace/mutations";
-import {
-  type MarketExpert,
-  marketplaceQueryOptions,
-} from "@/lib/marketplace/queries";
+import { marketplaceQueryOptions } from "@/lib/marketplace/queries";
 import {
   addCuratedServerMutationOptions,
   enableComposioAppMutationOptions,
@@ -334,8 +331,8 @@ function MarketPage() {
 
           {pending ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }, (_, i) => (
-                <WbCardSkeleton key={i} />
+              {["a", "b", "c", "d", "e", "f"].map((slot) => (
+                <WbCardSkeleton key={slot} />
               ))}
             </div>
           ) : marketplace.error && tab !== "connectors" ? (
@@ -393,6 +390,7 @@ function MarketPage() {
               onInstall={installConnector}
               onOpen={setConnectorSubject}
               openConnectorApps={filterBroker(openConnector.data?.apps)}
+              pending={busy.has("connector")}
               servers={servers}
             />
           )}

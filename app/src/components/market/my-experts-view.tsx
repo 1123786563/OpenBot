@@ -1,5 +1,4 @@
 import { IconArrowLeft, IconPlus, IconSearch } from "@tabler/icons-react";
-import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import * as React from "react";
 import { AgentCardWb } from "@/components/market/experts-pane";

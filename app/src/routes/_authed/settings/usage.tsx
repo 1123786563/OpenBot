@@ -140,6 +140,12 @@ function RouteComponent() {
 
   const hasCatalog = !!catalog.data && Object.keys(catalog.data).length > 0;
   const planName = planNameFor(entitlements.data?.planCode, catalog.data);
+  /*
+   * A deployment with a live subscription cannot buy another one — the server refuses the purchase
+   * with "already has an active subscription". Knowing that here lets the dialog say it up front
+   * (a disabled pay button with the reason) instead of letting the reader click into the refusal.
+   */
+  const hasActivePlan = !!entitlements.data?.active;
 
   return (
     <PageShell
@@ -273,6 +279,7 @@ function RouteComponent() {
         onOpenChange={setUpgradeOpen}
         catalog={catalog.data ?? {}}
         currentPlanName={planName}
+        purchaseBlocked={hasActivePlan}
       />
     </PageShell>
   );
