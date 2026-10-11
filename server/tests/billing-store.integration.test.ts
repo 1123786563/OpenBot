@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createBillingStore } from "../src/billing/store";
+import { BillingPersistenceError } from "../src/billing/types";
 import { createDatabase } from "../src/db/client";
 import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -93,7 +94,7 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
 
   // And the foreign key the floor exists for is real: a subscription for a customer with no row
   // is refused by the database, not absorbed.
-  let refused = false;
+  let failure: unknown;
   try {
     await store.upsertSubscription({
       externalCustomerId: `${prefix}-no-such-customer`,
@@ -101,10 +102,15 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
       planCode: "pro",
       status: "active",
     });
-  } catch {
-    refused = true;
+  } catch (error) {
+    failure = error;
   }
-  expect(refused).toBe(true);
+  expect(failure).toBeInstanceOf(BillingPersistenceError);
+  expect(failure).toMatchObject({
+    code: "persistence_failure",
+    retryable: true,
+    operation: "subscription_upsert",
+  });
 });
 
 test("deleting a customer cascades to its subscriptions", async () => {
