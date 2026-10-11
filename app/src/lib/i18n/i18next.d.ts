@@ -1,15 +1,16 @@
-import type approvals from "../../locales/en/approvals.json";
 import type admin from "../../locales/en/admin.json";
 import type agents from "../../locales/en/agents.json";
+import type approvals from "../../locales/en/approvals.json";
 import type channels from "../../locales/en/channels.json";
 import type common from "../../locales/en/common.json";
 import type computer from "../../locales/en/computer.json";
 import type errors from "../../locales/en/errors.json";
+import type knowledge from "../../locales/en/knowledge.json";
 import type market from "../../locales/en/market.json";
+import type nav from "../../locales/en/nav.json";
 import type routines from "../../locales/en/routines.json";
 import type settings from "../../locales/en/settings.json";
 import type skills from "../../locales/en/skills.json";
-import type nav from "../../locales/en/nav.json";
 import type tenant from "../../locales/en/tenant.json";
 import type workshop from "../../locales/en/workshop.json";
 
@@ -31,6 +32,7 @@ declare module "i18next" {
       approvals: typeof approvals;
       routines: typeof routines;
       skills: typeof skills;
+      knowledge: typeof knowledge;
       market: typeof market;
       errors: typeof errors;
       tenant: typeof tenant;

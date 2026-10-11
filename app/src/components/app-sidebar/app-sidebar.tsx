@@ -1,5 +1,6 @@
 import {
   IconBolt,
+  IconBook2,
   IconBox,
   IconBrain,
   IconChecks,
@@ -28,9 +29,10 @@ import {
   useParams,
 } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useTranslation } from "react-i18next";
 import type * as React from "react";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +55,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -63,8 +66,6 @@ import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { relativeTime } from "@/lib/relative-time";
-import { agentListQueryOptions } from "@/lib/agents/queries";
-import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   type MessageListEmphasis,
   useMessageListEmphasis,
@@ -538,6 +539,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               render={(props) => (
                 <Link
                   {...props}
+                  to="/knowledge"
+                  activeProps={{ className: "bg-foreground/5" }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBook2 />
+              </div>
+              <span className="text-sm">{t("knowledge")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
                   to="/memory"
                   activeProps={{ className: "bg-foreground/5" }}
                 />
@@ -601,15 +619,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <IconSettings />
                   {t("settings")}
                 </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className={userMenuItemClassName}
-                    disabled={signOut.isPending}
-                    onClick={handleSignOut}
-                    variant="destructive"
-                  >
-                    <IconLogout />
-                    {t("logOut")}
-                  </DropdownMenuItem>
+                <DropdownMenuItem
+                  className={userMenuItemClassName}
+                  disabled={signOut.isPending}
+                  onClick={handleSignOut}
+                  variant="destructive"
+                >
+                  <IconLogout />
+                  {t("logOut")}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

@@ -236,7 +236,7 @@
   },
   "creditsPage": {
     "title": "Plans & credits",
-    "description": "Your plan and credits: the plan's base allowance, the reward credits the platform granted, and every credit this deployment has spent.",
+    "description": "View your subscription plan and billing information",
     "creditUnit": "credits",
     "remaining": "left",
     "freePlan": "Trial",
@@ -249,6 +249,10 @@
     "unavailableDescription": "No billing provider is configured on this deployment, so there are no credits to show.",
     "emptyGrants": "No reward credits yet.",
     "emptyConsumption": "No credit usage in that period.",
+    "purchaseTitle": "Buy credits",
+    "purchaseBadge": "Trial open until Oct 23",
+    "purchaseButton": "Buy credits",
+    "purchaseEmpty": "No credits yet. Purchases will appear here.",
     "grantStatus": {
       "active": "In use",
       "exhausted": "Spent",
@@ -274,7 +278,7 @@
   },
   "welcomeBanner": {
     "badge": "Bonus until 10/31",
-    "message": "Welcome to OpenBot. Your first month includes the standard plan's base credits — claim them now!",
+    "message": "Welcome to WorkBuddy. Your first month includes the standard plan's base credits — claim them now!",
     "claim": "Claim",
     "claimed": "Claimed {{date}}"
   },
@@ -289,11 +293,22 @@
     "title": "Buddy AI plans",
     "subtitle": "Choose the plan and billing cycle that fits.",
     "currentPlan": "Current plan: {{plan}}",
+    "comparePlans": "Compare plans",
     "unit": {
       "month": "mo",
       "year": "yr"
     },
     "qrPlaceholder": "Scan to pay",
+    "paying": "Creating order…",
+    "applied": "Plan activated",
+    "orderStatus": {
+      "pending": "Awaiting payment",
+      "paid": "Paid",
+      "blocked": "Payment blocked",
+      "canceled": "Canceled",
+      "expired": "Expired"
+    },
+    "validUntil": "Valid until {{date}}",
     "autoRenew": "Auto-renews the day before expiry; cancel anytime",
     "agreement": "I have read and agree to the Terms of Service",
     "pay": "Agree"

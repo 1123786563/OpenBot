@@ -1,0 +1,67 @@
+{
+  "title": "Knowledge",
+  "description": "Build and manage knowledge bases that ground your bots with your own documents.",
+  "back": "Knowledge",
+  "create": {
+    "title": "Create a knowledge base",
+    "name": "Name",
+    "namePlaceholder": "e.g. Product handbook",
+    "description": "Description",
+    "descriptionPlaceholder": "What this knowledge base covers (optional)",
+    "submit": "Create",
+    "creating": "Creating…"
+  },
+  "list": {
+    "title": "Knowledge bases",
+    "description": "Documents are parsed, chunked and indexed so your bots can retrieve the relevant parts.",
+    "loading": "Loading knowledge bases…",
+    "noDescription": "No description",
+    "docCount": "{{count}} docs",
+    "delete": "Delete",
+    "emptyTitle": "No knowledge bases yet",
+    "emptyDescription": "Create one above to start adding documents."
+  },
+  "detail": {
+    "description": "Add documents, then test what retrieval returns.",
+    "unreachable": "This knowledge base could not be loaded."
+  },
+  "docs": {
+    "title": "Documents",
+    "description": "Each document is parsed and indexed asynchronously.",
+    "emptyTitle": "No documents yet",
+    "emptyDescription": "Add a document below to index it.",
+    "delete": "Delete",
+    "chunks": "{{count}} chunks"
+  },
+  "add": {
+    "title": "Add a document",
+    "type": "Type",
+    "typeText": "Text",
+    "typeUrl": "URL",
+    "typeFile": "File",
+    "titleField": "Title (optional)",
+    "content": "Content",
+    "contentPlaceholder": "Paste the document text…",
+    "url": "URL",
+    "urlPlaceholder": "https://…",
+    "file": "Choose a file",
+    "submit": "Add",
+    "adding": "Adding…"
+  },
+  "status": {
+    "pending": "Pending",
+    "processing": "Processing",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "search": {
+    "title": "Test retrieval",
+    "description": "See what your bots would get back for a query.",
+    "query": "Query",
+    "placeholder": "Ask a question…",
+    "submit": "Search",
+    "searching": "Searching…",
+    "noResults": "No matching chunks. Try a different query or add more documents.",
+    "score": "score {{score}}"
+  }
+}
