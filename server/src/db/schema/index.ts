@@ -8,6 +8,7 @@ export * from "./components";
 export * from "./computer";
 export * from "./core";
 export * from "./coworker";
+export * from "./craft";
 export * from "./credits";
 export * from "./delivery";
 export * from "./demonstrations";

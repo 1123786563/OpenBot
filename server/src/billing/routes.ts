@@ -20,6 +20,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
+import type { CreditWriter } from "./credits-writer";
 import type { Credits } from "./credits";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
@@ -201,6 +202,19 @@ const syncInput = z.strictObject({
   planCode: z.string().trim().min(1).max(200),
 });
 
+/**
+ * A manual grant: the operator's campaign or check-in reward, in scaled credit units (×100),
+ * with an optional expiry (ISO-8601) and the operator's own reason for the trail. `source`
+ * refuses `plan` on purpose — the plan allowance is paid out by the payment activation, never
+ * by hand; what an operator hands out is a promo or a signin reward.
+ */
+const grantInput = z.strictObject({
+  source: z.enum(["promo", "signin"]),
+  totalCents: z.number().int().positive().max(1_000_000_000),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
 /** The sentinel codes, as HTTP numbers: the two 503s might pass on a retry, the two 400s will not. */
 function billingStatus(error: BillingError): 503 | 400 {
   return error.code === "unreachable" || error.code === "unconfigured"
@@ -229,6 +243,11 @@ export function createBillingAdminRoutes(deps: {
   externalCustomerKey: string;
   /** What the provider's customer record calls this deployment. */
   customerName: string;
+  /**
+   * The credit writer, when the deployment built one. Present → the grant route mounts; absent →
+   * the route answers 503 rather than pretending a ledger that was never wired accepted a grant.
+   */
+  creditWriter?: CreditWriter;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -281,6 +300,51 @@ export function createBillingAdminRoutes(deps: {
       });
     }
     return context.json({ synced: true });
+  });
+  routes.post("/credits/grants", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) return denied;
+    const input = grantInput.parse(await context.req.json());
+    if (!deps.creditWriter) {
+      // Configured without the writer, asked to grant: a refusal, not a silent no-op — the
+      // caller is an operator who believes the credits landed, and they did not.
+      return context.json({ error: "Credits are unavailable. Try again." }, 503);
+    }
+    const expiresAt =
+      input.expiresAt !== undefined
+        ? new Date(input.expiresAt)
+        : // No expiry named: the grant lives a year, long enough for a campaign reward and short
+          // enough that an forgotten row cannot sit on the balance forever. The operator can
+          // always name the exact date they want.
+          new Date(Date.now() + 365 * 24 * 3600_000);
+    if (Number.isNaN(expiresAt.getTime())) {
+      return context.json({ error: "Supply a valid request." }, 400);
+    }
+    const { grant } = await deps.creditWriter.grantCredits({
+      externalCustomerId: deps.externalCustomerKey,
+      source: input.source,
+      totalCents: input.totalCents,
+      expiresAt,
+      reason: input.reason ?? null,
+      // Keyless on purpose: two presses of the promo button mean two grants (a campaign paid
+      // out twice is a decision, not a retry), which is why the writer's unique index is
+      // partial over NULL keys.
+      idempotencyKey: null,
+    });
+    if (deps.audit) {
+      await recordAuditEvent(deps.audit, {
+        eventType: "billing.credits.granted",
+        targetType: "billing",
+        actorUserId: context.var.actor.id,
+        payload: {
+          source: input.source,
+          totalCents: input.totalCents,
+          grantId: grant.id,
+          ...(input.reason ? { reason: input.reason } : {}),
+        },
+      });
+    }
+    return context.json({ grant });
   });
   return routes;
 }

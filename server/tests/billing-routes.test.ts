@@ -4,6 +4,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import type { AuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { requireAdmin } from "../src/auth/guards";
+import type { CreditWriter } from "../src/billing/credits-writer";
 import {
   createLagoClient,
   type LagoClient,
@@ -59,6 +60,39 @@ function recordingAudit() {
     },
   };
   return { events, store };
+}
+
+/** A recording double of the credit writer, shaped exactly like the real seam. */
+function recordingCreditWriter() {
+  const grants: unknown[] = [];
+  return {
+    grants,
+    writer: {
+      async grantCredits(input: {
+        externalCustomerId: string;
+        source: "promo" | "signin" | "plan";
+        totalCents: number;
+        expiresAt: Date;
+        reason?: string | null;
+        idempotencyKey?: string | null;
+      }) {
+        grants.push(input);
+        return {
+          inserted: true,
+          grant: {
+            id: `cg-${grants.length}`,
+            externalCustomerId: input.externalCustomerId,
+            source: input.source,
+            reason: input.reason ?? null,
+            total: input.totalCents,
+            used: 0,
+            grantedAt: "2026-10-11T00:00:00.000Z",
+            expiresAt: input.expiresAt.toISOString(),
+          },
+        };
+      },
+    },
+  };
 }
 
 /**
@@ -200,7 +234,11 @@ function serviceFixture(client: LagoClient) {
 }
 
 /** An app with the three billing groups mounted where app.ts mounts them. */
-function billingApp(actor: AuthenticatedActor | undefined, client: LagoClient) {
+function billingApp(
+  actor: AuthenticatedActor | undefined,
+  client: LagoClient,
+  creditWriter?: CreditWriter,
+) {
   const { service } = serviceFixture(client);
   const audit = recordingAudit();
   const app = new Hono<{ Variables: AppVariables }>();
@@ -218,6 +256,7 @@ function billingApp(actor: AuthenticatedActor | undefined, client: LagoClient) {
       audit: audit.store,
       externalCustomerKey: DEPLOYMENT_KEY,
       customerName: `OpenBot deployment ${DEPLOYMENT_KEY}`,
+      ...(creditWriter ? { creditWriter } : {}),
     }),
   );
   return { app, service, audit };
@@ -541,6 +580,64 @@ describe("the admin routes", () => {
     const text = JSON.stringify(await response.json());
     expect(text).not.toContain(PROVIDER_API_KEY);
     expect(text).not.toContain("lago.unreachable.test");
+  });
+
+  test("a credit grant lands on the deployment's customer and leaves an audit row", async () => {
+    const recording = recordingCreditWriter();
+    const { app, audit } = billingApp(ADMIN, countingClient().client, recording.writer as CreditWriter);
+    const response = await app.request("/api/admin/billing/credits/grants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: "promo",
+        totalCents: 10_000,
+        reason: "官方活动发放",
+        expiresAt: "2026-11-01T00:00:00Z",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { grant: { id: string } };
+    expect(body.grant.id).toBe("cg-1");
+    // The grant targeted the deployment's own customer key, not a caller-named one.
+    expect(recording.grants[0]).toMatchObject({
+      externalCustomerId: DEPLOYMENT_KEY,
+      source: "promo",
+      totalCents: 10_000,
+      reason: "官方活动发放",
+    });
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({ eventType: "billing.credits.granted" });
+  });
+
+  test("a grant refuses `plan` as a source and a non-administrator outright", async () => {
+    const recording = recordingCreditWriter();
+    const { app } = billingApp(ADMIN, countingClient().client, recording.writer as CreditWriter);
+    const planSource = await app.request("/api/admin/billing/credits/grants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "plan", totalCents: 100 }),
+    });
+    expect(planSource.status).toBe(400);
+    expect(recording.grants).toHaveLength(0);
+
+    const memberApp = billingApp(MEMBER, countingClient().client, recording.writer as CreditWriter);
+    const denied = await memberApp.app.request("/api/admin/billing/credits/grants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "promo", totalCents: 100 }),
+    });
+    expect(denied.status).toBe(403);
+    expect(recording.grants).toHaveLength(0);
+  });
+
+  test("without a credit writer wired, the grant route answers 503 and grants nothing", async () => {
+    const { app } = billingApp(ADMIN, countingClient().client);
+    const response = await app.request("/api/admin/billing/credits/grants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "promo", totalCents: 100 }),
+    });
+    expect(response.status).toBe(503);
   });
 });
 

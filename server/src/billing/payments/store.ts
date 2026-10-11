@@ -7,6 +7,7 @@ import type {
   PaymentEventInput,
   PaymentOrderRecord,
   PaymentOrderStatus,
+  PaymentProviderId,
   PaymentStore,
 } from "./types";
 
@@ -19,6 +20,11 @@ import type {
  * true) — are both read from committed state, never from a read that can race. The paid fact's
  * partial unique index is the cross-order idempotency key; the insert-or-nothing against it is
  * what turns a replay into data, not into a second payment.
+ *
+ * The second idempotency is at insert time: the pending-pair partial unique index ((plan_code,
+ * provider) WHERE status='pending') makes "one open order per pair" a fact the database holds,
+ * and `insertOrder`'s ON CONFLICT DO NOTHING plus the conflict re-read turn a losing racer into
+ * the winner's replay answer instead of a second payable QR.
  *
  * Short ids are generated here, not by callers: a `po-` collision (8 random bytes) retries with a
  * fresh draw up to five times, which keeps a database unique violation from becoming an HTTP 500
@@ -62,6 +68,32 @@ function eventInput(input: PaymentEventInput & { state?: string }) {
   };
 }
 
+/**
+ * The newest still-pending order for one (plan, provider) pair — the replay lookup, shared by
+ * the store's own read path and `insertOrder`'s conflict resolution. Newest wins, because with
+ * the pending-pair partial unique index there is at most one row to find anyway; the ordering
+ * is kept for the memory-doubled tests and for any pre-index database that still holds two.
+ */
+async function readPendingRow(
+  database: Database,
+  planCode: string,
+  provider: PaymentProviderId,
+): Promise<PaymentOrderRecord | null> {
+  const [row] = await database
+    .select()
+    .from(paymentOrders)
+    .where(
+      and(
+        eq(paymentOrders.planCode, planCode),
+        eq(paymentOrders.provider, provider),
+        eq(paymentOrders.status, "pending"),
+      ),
+    )
+    .orderBy(sql`${paymentOrders.createdAt} DESC`)
+    .limit(1);
+  return row ? rowOf(row) : null;
+}
+
 export function createPaymentStore(database: Database): PaymentStore {
   return {
     async insertOrder(input) {
@@ -81,10 +113,26 @@ export function createPaymentStore(database: Database): PaymentStore {
             expiresAt: input.expiresAt,
             createdBy: input.createdBy,
           })
-          .onConflictDoNothing({ target: paymentOrders.id })
+          // Two conflicts, both absorbed: the redrawable `po-` id collision, and the pending-pair
+          // partial unique index ((plan, provider) WHERE status='pending') that makes "one open
+          // order per pair" a database fact. No row back means one of the two fired — the caller
+          // below re-reads, and for the pending pair that re-read is the answer (replay the
+          // existing order), not a retry.
+          .onConflictDoNothing()
           .returning();
         const row = rows[0];
-        if (row) return rowOf(row);
+        if (row) return { order: rowOf(row), conflict: null };
+        // The pair conflict is not redrawable: an existing pending order for this (plan,
+        // provider) is the replay answer, whatever fresh id we draw. Reading it here (rather
+        // than only at the service layer) keeps the race closed inside one store call — the
+        // read happens after the insert lost, so the winner is already committed.
+        const existing = await readPendingRow(
+          database,
+          input.planCode,
+          input.provider,
+        );
+        if (existing) return { order: existing, conflict: "pending-pair" };
+        // No pending row and no inserted row: the loss was on the id alone — redraw.
       }
       // Five redraws colliding is not a probability, it is a broken generator; say so rather
       // than loop.
@@ -101,20 +149,7 @@ export function createPaymentStore(database: Database): PaymentStore {
     },
 
     async readPendingOrder(planCode, provider) {
-      const [row] = await database
-        .select()
-        .from(paymentOrders)
-        .where(
-          and(
-            eq(paymentOrders.planCode, planCode),
-            eq(paymentOrders.provider, provider),
-            eq(paymentOrders.status, "pending"),
-          ),
-        )
-        // Newest wins when a replay arrives while an earlier pending row exists.
-        .orderBy(sql`${paymentOrders.createdAt} DESC`)
-        .limit(1);
-      return row ? rowOf(row) : null;
+      return readPendingRow(database, planCode, provider);
     },
 
     async readLatestPaidOrder(planCode) {

@@ -146,8 +146,12 @@ export type PaymentEventInput = {
 
 export type PaymentStore = {
   /**
-   * Insert a fresh pending order. The store generates the order id itself (short, collision
-   * retried), so the caller never sees a database unique violation. Answers the whole row.
+   * Insert a fresh pending order, or hand back the one that already exists. The store generates
+   * the order id itself (short, collision retried), so the caller never sees a database unique
+   * violation; and the pending-pair partial unique index ((plan, provider) WHERE status='pending')
+   * makes a concurrent purchase of the same pair answer the winner's row — `conflict:
+   * "pending-pair"` — instead of opening a second payable order. The replay answer is not an
+   * error: the caller shows the existing order.
    */
   insertOrder(input: {
     planCode: string;
@@ -157,7 +161,7 @@ export type PaymentStore = {
     expiresAt: Date;
     createdBy: string | null;
     checkoutPayload: string | null;
-  }): Promise<PaymentOrderRecord>;
+  }): Promise<{ order: PaymentOrderRecord; conflict: "pending-pair" | null }>;
   /** The one order an out-trade number names, or null. */
   readOrder(id: string): Promise<PaymentOrderRecord | null>;
   /** The newest order for one (plan, provider) pair still pending — the replay lookup. */
