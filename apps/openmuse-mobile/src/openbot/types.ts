@@ -73,30 +73,33 @@ export type OpenBotConversations = z.infer<typeof conversationsSchema>;
 
 /**
  * GET /api/delivery/conversations/:id/history?agentId= 的消息体。
- * Intelligence 线程消息的 content 形态宽松（文本或分段数组），这里只
- * 校验骨架，内容渲染交给现有 AssistantResponse。
+ * 实际形状（已实测）：`{ history: { messages: [...] } }`——history 是对象，
+ * 消息数组在其 `messages` 字段。content 形态宽松（文本或分段数组），
+ * 骨架在此校验，内容渲染交给现有 AssistantResponse。
  */
 export const historySchema = z.object({
-  history: z.array(
-    z.object({
-      id: z.string().optional(),
-      role: z.string(),
-      content: z.union([z.string(), z.array(z.unknown()), z.null()]).optional(),
-      createdAt: z.string().optional(),
-    }),
-  ),
+  history: z.object({
+    messages: z.array(
+      z.object({
+        id: z.string().optional(),
+        role: z.string(),
+        content: z.union([z.string(), z.array(z.unknown()), z.null()]).optional(),
+        createdAt: z.string().optional(),
+      }),
+    ),
+  }),
 });
 export type OpenBotHistory = z.infer<typeof historySchema>;
 
 /**
- * POST /api/delivery/conversations/:id/messages 的 202 响应：
- * 服务端只承诺"已受理"，结果经 Intelligence 异步产生，由 history 轮询或
- * CopilotKit Runtime 事件读取（设计文档 §7.1）。
+ * POST /api/delivery/conversations/:id/messages 的 202 响应。
+ * 实测形状：`{ queued: true, id: "<uuid>" }`。服务端只承诺"已受理"，
+ * 结果经 Intelligence 异步产生，由 history 轮询或 Runtime 事件读取
+ * （设计文档 §7.1）。
  */
 export const messageAcceptedSchema = z.object({
-  messageId: z.string().optional(),
-  threadId: z.string().optional(),
-  status: z.string().optional(),
+  queued: z.boolean().optional(),
+  id: z.string().optional(),
 });
 export type OpenBotMessageAccepted = z.infer<typeof messageAcceptedSchema>;
 
