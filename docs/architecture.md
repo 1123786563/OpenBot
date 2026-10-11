@@ -20,7 +20,8 @@ Regenerate it with `bun run diagram` after changing anything it shows.
 | `agent-langgraph`        | 4201                       | LangGraph AG-UI Bot.                                                                                                                        |
 | `agent-harness`          | 4202                       | The Bot framework harness chosen during setup, one of the `agent-<framework>` images, behind the `harness` compose profile.                 |
 | `supervisor`             | 4500 host / 4300 container | Creates, stops, resets, and lists per-Bot computer containers.                                                                              |
-| PostgreSQL with pgvector | 5432                       | Product data, audit rows, credentials, policy, grants, channels, and components.                                           |
+| PostgreSQL              | 5432                       | Product data, audit rows, credentials, policy, grants, channels, and components.                                           |
+| Qdrant                  | 6333                       | Vector store: embeddings for similarity search. No vector data lives in PostgreSQL.                                       |
 | CopilotKit Intelligence  | external                   | Durable threads, memory, and realtime gateway.                                                                                              |
 
 `scripts/start.sh` starts PostgreSQL, `agent-computer`, `agent-langgraph`, `agent-bot` (skipped when `BOT_PROVIDER=anthropic`, since that sample only takes OpenAI keys) and the supervisor (unless `OPENBOT_ONE_COMPUTER_EACH=false`) through Docker Compose, and runs `migrate`. It then starts `server`, the routines worker (`bun worker/src/index.ts`, the local stand-in for the routines CronJob) and `app` on the host.

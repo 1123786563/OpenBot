@@ -309,7 +309,8 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 | `agent-langgraph`        | 4201                       | LangGraph AG-UI Bot.                                                                             |
 | `supervisor`             | 4500 host / 4300 container | Creates and manages one computer per Bot.                                                        |
 | `worker`                 | none                       | Fires due routines by handing each run to the server.                                            |
-| PostgreSQL with pgvector | 5432                       | Product data, policy, audit, credentials, grants, channels, and component metadata.              |
+| PostgreSQL              | 5432                       | Product data, policy, audit, credentials, grants, channels, and component metadata.              |
+| Qdrant                  | 6333                       | Vector store for embeddings and similarity search.                                               |
 | CopilotKit Intelligence  | external                   | Durable threads and memory.                                                                      |
 
 The server gateway is the product/API path for Bot browser and file tool calls.
