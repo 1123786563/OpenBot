@@ -98,7 +98,7 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
-import { createCredits, CREDIT_SCALE } from "./billing/credits";
+import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
 import { createLagoClient } from "./billing/lago";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
@@ -164,9 +164,9 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { streamPathBotId } from "./computer/stream-path";
 import { loadConfig } from "./config";
 import {
+  CreditGateError,
   type IdentifyActor,
   type IdentifyUser,
-  CreditGateError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
@@ -174,6 +174,12 @@ import {
   setModelUsageMeter,
   type ToolSelection,
 } from "./copilot";
+import { loadCraftConfig } from "./craft/config";
+import type {
+  CraftLLMProviderConfig,
+  CraftModelDescriptor,
+} from "./craft/opencode-config";
+import { type CraftRoutesFactory, createCraftRoutes } from "./craft/routes";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -284,7 +290,11 @@ import { createTurnRunner } from "./routines/run-turn";
 import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
-import { createModelCompleter } from "./routing/model";
+import {
+  anthropicMessagesUrl,
+  chatCompletionsUrl,
+  createModelCompleter,
+} from "./routing/model";
 import { createSelfHostBanner } from "./self-host-banner";
 import { createTeamBots } from "./team-bots/team-bots";
 import {
@@ -309,15 +319,27 @@ import { createTurnEventBus } from "./workshop/bus";
 import { createInProcessTurnLock, createRedisTurnLock } from "./workshop/locks";
 import { reportCodeRunUsage } from "./workshop/metering";
 import { createTurnOrchestrator } from "./workshop/orchestrator";
+import { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import {
   createWorkshopRoutes,
   type WorkshopRoutesFactory,
 } from "./workshop/routes";
+import {
+  createInProcessShareLimiter,
+  createShareService,
+} from "./workshop/sharing";
 import { createWorkshopStore } from "./workshop/store";
-import { createShareService, createInProcessShareLimiter } from "./workshop/sharing";
-import { createWorkshopPublicRoutes } from "./workshop/public-routes";
 
 const log = getLogger("server");
+
+// 本进程的全部出站依赖都是内网/本机（Casdoor、kb-mastra、agent 运行时等）：
+// 开发机的 HTTP_PROXY 会把 localhost 请求劫持成代理 404/HTML（Bun fetch 读
+// 环境代理且部分上下文连 NO_PROXY 都不生效——kb-mastra E2E 实测）。摘掉本
+// 进程的代理变量是最稳出口；部署环境本就无代理，不受影响。
+delete process.env.HTTP_PROXY;
+delete process.env.http_proxy;
+delete process.env.HTTPS_PROXY;
+delete process.env.https_proxy;
 
 /**
  * Who is asking, for a CopilotKit request.
@@ -3535,7 +3557,9 @@ const publicWorkshopRoutes = () => {
       const session = await workshopStore.sessionByChannel(targetChannelId);
       if (!session) return null;
       const rows = await workshopStore.listArtifacts(session.id);
-      const artifact = rows.find((row) => row.path === artifactPath || row.name === artifactPath);
+      const artifact = rows.find(
+        (row) => row.path === artifactPath || row.name === artifactPath,
+      );
       if (!artifact) return null;
       const client = workshopClientFor(session.botId);
       if (!client) return null;
@@ -3544,7 +3568,10 @@ const publicWorkshopRoutes = () => {
         .catch(() => null);
       return read === null
         ? null
-        : { bytes: new TextEncoder().encode(read.content), contentType: "application/octet-stream" };
+        : {
+            bytes: new TextEncoder().encode(read.content),
+            contentType: "application/octet-stream",
+          };
     },
   });
 };
@@ -3563,6 +3590,185 @@ const workshopRoutes: WorkshopRoutesFactory = ({ requireUser, canUseBot }) =>
       sharing: workshopSharing,
     },
   });
+
+/*
+ * Craft: the autonomous-build surface, assembled beside the workshop for the same reason —
+ * its wiring is one boot decision. The config answers the deployment's three questions in
+ * one place (enabled, which Bot's sandbox, and the opencode-serve topology: native onyx
+ * pods speak /event + prompt_async + absolute session dirs, the agent-sandbox gateway
+ * speaks /events + /message + Bot-relative dirs). When AGENT_SANDBOX_URL points the
+ * deployment at agent-sandbox, the assembly applies that gateway's topology itself below
+ * (the OPENBOT_CRAFT_* variables remain the operator's explicit override of any leg).
+ *
+ * The LLM seam is the runtime model the rest of this process already answers on
+ * (runtimeModel + resolveRuntimeModelApiKey), re-expressed as craft's provider catalog: one
+ * OpenAI-compatible gateway provider whose catalog is the single default model. apiBase
+ * falls back to the provider's public endpoint when the deployment set no gateway URL —
+ * opencode needs SOME base URL, and the public one is the only honest default.
+ */
+const craftConfig = loadCraftConfig(process.env);
+/*
+ * The topology half of the wiring: behind the agent-sandbox gateway (AGENT_SANDBOX_URL
+ * set), the opencode-serve surface is the gateway's, not a native pod's — /events (family-
+ * filtered SSE), /message (the one prompt verb the allowlist carries), Bot-relative session
+ * directories (its file API refuses absolute paths). The OPENBOT_CRAFT_* topology variables
+ * are the operator's override for a future gateway that changes one of these; unset, the
+ * assembly applies the agent-sandbox shape itself so a working deployment is the default,
+ * not a configuration checklist.
+ */
+const craftTopoEnv: Record<string, string | undefined> = {
+  OPENBOT_CRAFT_OPENCODE_EVENT_PATH: "/events",
+  OPENBOT_CRAFT_OPENCODE_PROMPT_ENDPOINT: "message",
+  OPENBOT_CRAFT_SESSION_DIRECTORY_MODE: "bot-relative",
+};
+const craftEffectiveConfig = sandboxUrl
+  ? loadCraftConfig({
+      ...process.env,
+      ...Object.fromEntries(
+        Object.entries(craftTopoEnv).map(([name, value]) => [
+          name,
+          process.env[name]?.trim() ? process.env[name] : value,
+        ]),
+      ),
+    })
+  : craftConfig;
+const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
+  ? ({ requireUser }) =>
+      createCraftRoutes({
+        requireUser,
+        deps: {
+          config: craftEffectiveConfig,
+          db: database,
+          // Same port the workshop's locks and bus answer on: Redis when configured,
+          // the in-process fallback when not — craft's turn state carries both shapes.
+          redis: workshopRedisPort,
+          // craft_sessions rows hold no Bot relationship; every session routes to the
+          // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
+          // inside loadCraftConfig — an unusable configured id already fell back).
+          botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+          llmConfigFor: async () => craftLlmConfig(),
+          sandboxConnectionFor: () =>
+            sandboxUrl && sandboxToken
+              ? { baseUrl: sandboxUrl, token: sandboxToken }
+              : null,
+          userNameFor: async (userId) =>
+            (await peopleStore.find(userId))?.name ?? null,
+          generateName: craftGenerateName,
+        },
+      })
+  : undefined;
+
+/**
+ * The craft model catalog as one descriptor. The limits are honest defaults rather than
+ * per-model facts: OpenBot's runtime model is a wire id, not a models.dev entry, so the
+ * catalog cannot know the real context window — a generous fixed pair keeps opencode's
+ * compaction arithmetic from collapsing (see opencode-config.ts's limit comment) and is
+ * corrected the day a per-model lookup exists.
+ */
+function craftModelDescriptor(modelId: string): CraftModelDescriptor {
+  return {
+    id: modelId,
+    displayName: modelId,
+    maxInputTokens: 200_000,
+    maxOutputTokens: 32_000,
+    inputModalities: ["text", "image"],
+    outputModalities: ["text"],
+    supportsReasoning: true,
+    supportsToolCalls: true,
+    supportsTemperature: true,
+    supportsInterleavedReasoning: false,
+  };
+}
+
+/** The single-model provider config a craft session's opencode.json is built from. */
+async function craftLlmConfig(): Promise<CraftLLMProviderConfig> {
+  const anthropic = runtimeModel.provider === "anthropic";
+  // The gateway URL the rest of this process already uses; the provider's public
+  // endpoint when none is set (opencode requires a base URL — absent is not an answer
+  // it accepts, and the public API is the only neutral default).
+  const apiBase =
+    (anthropic
+      ? process.env.ANTHROPIC_BASE_URL?.trim()
+      : process.env.OPENAI_BASE_URL?.trim()) ||
+    (anthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1");
+  return {
+    provider: "openbot",
+    modelName: runtimeModel.defaultModel,
+    apiKey: await resolveRuntimeModelApiKey(),
+    apiBase,
+    displayName: "OpenBot",
+    models: [craftModelDescriptor(runtimeModel.defaultModel)],
+  };
+}
+
+/**
+ * The naming seam: one-shot system+user generation on the deployment's own model. NOT
+ * createModelCompleter — that helper is single-prompt and force-enables
+ * response_format:{type:"json_object"}, both wrong for a naming call whose prompt asks
+ * for bare prose. Instead the two endpoint dialects are spoken directly (OpenAI
+ * chat/completions with a system message; Anthropic messages with a system block), on the
+ * base URLs normalizeModelBaseUrls() already normalized. Throws on failure — craft's
+ * naming path catches and falls back deterministically, so the throw is the contract.
+ */
+async function craftGenerateName(
+  system: string,
+  user: string,
+): Promise<string> {
+  const key = await resolveRuntimeModelApiKey();
+  if (!key) throw new Error("no model key");
+  const anthropic = runtimeModel.provider === "anthropic";
+  // normalizeModelBaseUrls() (above) has already normalized the provider's base URL —
+  // including the /v1 segment chatCompletionsUrl/anthropicMessagesUrl would otherwise add —
+  // so the version-aware helpers are reused for the one case it does NOT touch: the
+  // unset-variable fallback to the provider's public endpoint.
+  const url = anthropic
+    ? anthropicMessagesUrl(process.env)
+    : chatCompletionsUrl(process.env);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(anthropic
+        ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
+        : { authorization: `Bearer ${key}` }),
+    },
+    // No response_format, no temperature: the naming prompt asks for a bare short
+    // string, and reasoning models refuse temperature anyway.
+    body: JSON.stringify(
+      anthropic
+        ? {
+            model: runtimeModel.defaultModel,
+            max_tokens: 200,
+            system,
+            messages: [{ role: "user", content: user }],
+          }
+        : {
+            model: runtimeModel.defaultModel,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+          },
+    ),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`naming model answered ${response.status}`);
+  const body = (await response.json()) as {
+    choices?: { message?: { content?: unknown } }[];
+    content?: { type?: string; text?: unknown }[];
+  };
+  const content = anthropic
+    ? body.content
+        ?.filter(
+          (block) => block.type === "text" && typeof block.text === "string",
+        )
+        .map((block) => block.text)
+        .join("") || undefined
+    : body.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content)
+    throw new Error("naming model returned no text");
+  return content;
+}
 
 const app = createApp(
   config,
@@ -3772,6 +3978,9 @@ const app = createApp(
   // for the Redis-or-in-process wiring decision).
   workshopRoutes,
   publicWorkshopRoutes,
+  // The craft surface, after the workshop pair it sits beside. APPENDED LAST, same
+  // positional rule; undefined when the deployment disabled craft, which mounts nothing.
+  craftRoutes,
 );
 
 /**

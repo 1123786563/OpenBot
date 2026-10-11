@@ -18,7 +18,16 @@ beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
 afterAll(() => GlobalRegistrator.unregister());
 
-const originalFetch = global.fetch;
+/*
+ * NOT module-load time. bun loads every test file up front, and a sibling file's stub (e.g.
+ * billing-credits-ui's catalog fetch, installed in its beforeEach) can already be sitting on
+ * `global.fetch` when this module is evaluated — capturing "original" then means restoring the
+ * sibling's stub after every test, and this dialog's own requests start answering as that stub's
+ * catalog. The test preload runs before any test file, so what it leaves on `global.fetch` is
+ * the one true original.
+ */
+const originalFetch: typeof globalThis.fetch =
+  globalThis.BunTEST_ORIGINAL_FETCH ?? global.fetch;
 const sent: { body: unknown }[] = [];
 let failing = false;
 beforeEach(() => {

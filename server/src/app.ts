@@ -44,6 +44,8 @@ import {
 } from "./auth/guards";
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
+import type { Credits } from "./billing/credits";
+import type { CreditWriter } from "./billing/credits-writer";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
@@ -56,8 +58,6 @@ import {
   createBillingStatementRoutes,
   createBillingWebhookRoutes,
 } from "./billing/routes";
-import type { Credits } from "./billing/credits";
-import type { CreditWriter } from "./billing/credits-writer";
 import type { BillingStatements } from "./billing/statements";
 import type { BillingService } from "./billing/types";
 import {
@@ -70,9 +70,10 @@ import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
 import { createThreadRoutes } from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
-import { type CodeRunGatewayFactory, createCodeSandboxRoutes } from "./codesandbox/routes";
-import { type WorkshopRoutesFactory } from "./workshop/routes";
-import { createWorkshopPublicRoutes } from "./workshop/public-routes";
+import {
+  type CodeRunGatewayFactory,
+  createCodeSandboxRoutes,
+} from "./codesandbox/routes";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -82,6 +83,7 @@ import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
 import { configuredAuthProviders, type DeploymentConfig } from "./config";
+import type { CraftRoutesFactory } from "./craft/routes";
 import {
   type CredentialAdminService,
   type CredentialInput,
@@ -102,12 +104,12 @@ import { createDictationRoutes } from "./dictation/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { createIntelligenceClient } from "./intelligence-client";
+import { knowledgeServiceConfig } from "./knowledge/config";
+import { createKnowledgeRoutes } from "./knowledge/routes";
 import {
   createLearningRoutes,
   type LearningAdminDependencies,
 } from "./learning/routes";
-import { knowledgeServiceConfig } from "./knowledge/config";
-import { createKnowledgeRoutes } from "./knowledge/routes";
 import { createMarketplaceRoutes } from "./marketplace/routes";
 import type { MarketplaceStore } from "./marketplace/store";
 import type { MemoryIngestion } from "./memory/ingestion";
@@ -166,6 +168,8 @@ import { userPreferencesRoutes } from "./user-preferences-routes";
 import { createVoiceProvider } from "./voice/provider";
 import { createVoiceRoutes } from "./voice/routes";
 import type { VoiceSessionServices } from "./voice/session-routes";
+import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
+import type { WorkshopRoutesFactory } from "./workshop/routes";
 
 const log = getLogger("server");
 
@@ -566,6 +570,16 @@ export function createApp(
    * deployment without it simply has no public share surface.
    */
   publicWorkshopRoutes?: () => ReturnType<typeof createWorkshopPublicRoutes>,
+  /**
+   * Craft: the autonomous-build surface (`/api/craft` — sessions, send-message, SSE turn
+   * streams), ported from onyx's build feature. APPENDED LAST like `workshopRoutes` beside
+   * it: positional parameters only ever go at the end. A factory for the same reason — the
+   * wiring (store, gateway, manager, executor, the deployment's model catalog) is one boot
+   * decision; the craft tree carries its own enabled gate (503 mid-flight) and needs only
+   * `requireUser` (its sandbox routing is not Bot-scoped like the workshop's canUseBot).
+   * Absent (or the deployment's OPENBOT_CRAFT_ENABLED unset) mounts nothing.
+   */
+  craftRoutes?: CraftRoutesFactory,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
@@ -1479,16 +1493,21 @@ export function createApp(
    * one assembly decision with a Redis branch that belongs to the boot file, not here.
    */
   if (workshopRoutes)
-    app.route(
-      "/api/workshop",
-      workshopRoutes({ requireUser, canUseBot }),
-    );
+    app.route("/api/workshop", workshopRoutes({ requireUser, canUseBot }));
 
   // The anonymous sibling, beside the owner surface it shares a vocabulary with: same
   // /api/public/workshop prefix the share page fetches, no session, no canUseBot — the
   // token is the only key (see sharing.ts's "the one exception" head).
   if (publicWorkshopRoutes)
     app.route("/api/public/workshop", publicWorkshopRoutes());
+
+  /*
+   * Craft, after the workshop pair it sits beside in the product's mind: sessions,
+   * send-message, SSE turn streams — the autonomous-build surface, behind requireUser only
+   * (its sandbox routing is deployment-level, not Bot-scoped, so there is no canUseBot
+   * question to answer here; the tree's own enabled gate answers the rest).
+   */
+  if (craftRoutes) app.route("/api/craft", craftRoutes({ requireUser }));
 
   if (hostAccessBroker) {
     app.route(
@@ -1623,7 +1642,10 @@ export function createApp(
         requireUser,
         agentProfileStore,
         channelStore,
-        workspace: createMobileBffWorkspace({ agentProfileStore, channelStore }),
+        workspace: createMobileBffWorkspace({
+          agentProfileStore,
+          channelStore,
+        }),
         ...(coworker
           ? {
               activity: createMobileBffActivity({
@@ -2098,9 +2120,7 @@ export function createApp(
         // The credit ledger's write side, mounted only where billing itself is: the grant route
         // reads its presence, so a deployment without the writer answers 503 instead of writing
         // into a ledger nobody configured.
-        ...(billing.creditWriter
-          ? { creditWriter: billing.creditWriter }
-          : {}),
+        ...(billing.creditWriter ? { creditWriter: billing.creditWriter } : {}),
       }),
     );
   }

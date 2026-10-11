@@ -72,12 +72,16 @@ export async function ensureSessionReady(
   input: EnsureSessionReadyInput,
 ): Promise<void> {
   const { store, gateway, session, botId } = input;
-  const directory = sessionDirectory(session.id);
+  const directory = sessionDirectory(
+    session.id,
+    input.config.sessionDirectoryMode,
+  );
 
   if (
     await sessionWorkspaceExists(
       gateway.fileApiFor(botId) ?? nullApi,
       session.id,
+      input.config.sessionDirectoryMode,
     )
   ) {
     if (session.status !== "active") {

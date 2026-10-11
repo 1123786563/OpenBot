@@ -4,7 +4,15 @@
  * 所有 OpenBot → KB-Service 的调用都收敛到这里，服务间鉴权（API Key）只存在
  * 这一处，不向任何调用方泄漏。错误统一转成带状态码的 `KnowledgeServiceError`，
  * 让路由层用一个 `onError` 就能把上游的 404/403/409 等如实透传给前端。
+ *
+ * 传输层：node:http 直连（不经任何代理层）。Bun 的 fetch 在长驻进程里会被
+ * 开发机的 HTTP_PROXY 劫持 localhost 上游（折成代理 404/HTML），且实测
+ * NO_PROXY 与逐请求 `proxy: ""` 都拦不住——node:http 从不读代理变量，是
+ * 本机/内网上游的唯一稳定通道（与 kb-mastra 的 QdrantClient 同款结论）。
+ * `init.body` 支持 JSON 字符串与 ReadableStream（文件上传）：流会被完整
+ * 读入内存再转发（上传文件本就有大小上限，内存化不改变语义）。
  */
+import { request as httpRequest } from "node:http";
 import { getLogger } from "../../../shared/logger";
 import type { KnowledgeServiceConfig } from "./config";
 
@@ -48,25 +56,35 @@ export async function knowledgeRequest(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  const startedAt = Date.now();
   try {
-    const response = await fetch(`${config.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${config.apiKey}`,
-        ...(init.headers ?? {}),
-      },
-      signal: controller.signal,
-    });
+    const body =
+      init.body === undefined
+        ? undefined
+        : typeof init.body === "string"
+          ? Buffer.from(init.body, "utf8")
+          : init.body instanceof Uint8Array
+            ? Buffer.from(init.body)
+            : // ReadableStream / Blob 等：整体读入（上传有大小上限）。
+              Buffer.from(
+                await new Response(init.body as BodyInit).arrayBuffer(),
+              );
+
+    const response = await dispatch(
+      config,
+      path,
+      init.method ?? "GET",
+      init.headers as Record<string, string> | undefined,
+      body,
+    );
 
     if (!response.ok) {
       let message = `The knowledge service responded with ${response.status}.`;
       let code: string | undefined;
       try {
-        const body = (await response.json()) as UpstreamError;
-        if (body.message) message = body.message;
-        code = body.code;
+        const parsed = (await response.json()) as UpstreamError;
+        if (parsed.message) message = parsed.message;
+        code = parsed.code;
       } catch {
         // 非 JSON 错误体，保留默认消息。
       }
@@ -76,6 +94,7 @@ export async function knowledgeRequest(
           status: response.status,
           code,
           path,
+          tookMs: Date.now() - startedAt,
         },
         "knowledge-upstream-error",
       );
@@ -98,7 +117,54 @@ export async function knowledgeRequest(
       "The knowledge service is unavailable. Try again.",
       "unavailable",
     );
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+/** node:http 直连：返回 fetch 形状的 Response（调用面读 ok/status/json/text）。 */
+function dispatch(
+  config: KnowledgeServiceConfig,
+  path: string,
+  method: string,
+  headers: Record<string, string> | undefined,
+  body: Buffer | undefined,
+): Promise<Response> {
+  const url = new URL(`${config.baseUrl}${path}`);
+  const callerHeaders = headers ?? {};
+  const callerContentType =
+    callerHeaders["content-type"] ?? callerHeaders["Content-Type"];
+
+  return new Promise<Response>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers: {
+          ...callerHeaders,
+          authorization: `Bearer ${config.apiKey}`,
+          ...(body !== undefined && callerContentType === undefined
+            ? { "content-type": "application/json" }
+            : {}),
+          ...(body !== undefined
+            ? { "content-length": String(body.byteLength) }
+            : {}),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          resolve(new Response(Buffer.concat(chunks), { status: res.statusCode ?? 0 }));
+        });
+        res.on("error", reject);
+      },
+    );
+    req.setTimeout(config.timeoutMs, () => {
+      req.destroy(new Error(`timeout after ${config.timeoutMs}ms`));
+    });
+    req.on("error", reject);
+    if (body !== undefined) req.write(body);
+    req.end();
+  });
 }

@@ -20,9 +20,20 @@ import type { AgentSandboxFileApi } from "./sandbox-gateway";
 
 export const SESSIONS_ROOT = "/workspace/sessions";
 
-/** The session's directory inside the sandbox — also the `?directory=` anchor everywhere. */
-export function sessionDirectory(sessionId: string): string {
-  return `${SESSIONS_ROOT}/${sessionId}`;
+/**
+ * The session's directory anchor — the `?directory=` scope key for opencode-serve AND the
+ * path prefix for file-API calls. Mode-dependent (see config.sessionDirectoryMode):
+ *
+ * - "absolute" (onyx-native, the default): `/workspace/sessions/{id}` — a real absolute path
+ *   inside a session-dedicated pod, where opencode's cwd IS this directory.
+ * - "bot-relative" (agent-sandbox): the bare `{sessionId}` — relative to the Bot's workspace
+ *   root, which is opencode's cwd there; the file API only accepts relative paths.
+ */
+export function sessionDirectory(
+  sessionId: string,
+  mode: "absolute" | "bot-relative" = "absolute",
+): string {
+  return mode === "bot-relative" ? sessionId : `${SESSIONS_ROOT}/${sessionId}`;
 }
 
 export type SetupSessionWorkspaceInput = {
@@ -49,7 +60,10 @@ export async function setupSessionWorkspace(
   api: WorkspaceApi,
   input: SetupSessionWorkspaceInput,
 ): Promise<void> {
-  const root = sessionDirectory(input.sessionId);
+  const root = sessionDirectory(
+    input.sessionId,
+    input.config.sessionDirectoryMode,
+  );
 
   await api.mkdir(`${root}/outputs`);
   await api.mkdir(`${root}/attachments`);
@@ -81,8 +95,9 @@ export async function setupSessionWorkspace(
 export async function sessionWorkspaceExists(
   api: Pick<AgentSandboxFileApi, "listFiles">,
   sessionId: string,
+  mode: "absolute" | "bot-relative" = "absolute",
 ): Promise<boolean> {
-  const root = sessionDirectory(sessionId);
+  const root = sessionDirectory(sessionId, mode);
   try {
     const entries = await api.listFiles(`${root}/outputs`);
     return Array.isArray(entries);
@@ -95,6 +110,7 @@ export async function sessionWorkspaceExists(
 export async function cleanupSessionWorkspace(
   api: AgentSandboxFileApi,
   sessionId: string,
+  mode: "absolute" | "bot-relative" = "absolute",
 ): Promise<void> {
-  await api.deletePath(sessionDirectory(sessionId));
+  await api.deletePath(sessionDirectory(sessionId, mode));
 }

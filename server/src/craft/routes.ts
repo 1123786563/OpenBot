@@ -47,6 +47,14 @@ export type CraftRoutesDeps = {
   generateName?: (system: string, user: string) => Promise<string>;
 };
 
+/**
+ * What app.ts mounts — the workshop's factory shape (requireUser only: craft's sandbox
+ * routing is deployment-level, so there is no canUseBot question to answer here).
+ */
+export type CraftRoutesFactory = (input: {
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+}) => Hono<{ Variables: AppVariables }>;
+
 export function createCraftRoutes(input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   deps: CraftRoutesDeps;

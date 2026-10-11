@@ -22,6 +22,20 @@
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
+/*
+ * The one true fetch, captured before any test file has had a chance to stub it. Files that
+ * swap `global.fetch` in beforeEach/afterEach pairs restore "the original" — but bun evaluates
+ * every test module up front, so a module-level capture can pick up a SIBLING's stub instead
+ * (billing-credits-ui's catalog fetch, installed before account-mode-dialog's body runs).
+ * Restoring that means installing the sibling's stub for keeps. Any file may restore to this
+ * handle instead; see account-mode-dialog.test.tsx.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var BunTEST_ORIGINAL_FETCH: typeof globalThis.fetch | undefined;
+}
+globalThis.BunTEST_ORIGINAL_FETCH = globalThis.fetch;
+
 GlobalRegistrator.register();
 /* `@base-ui/utils` is not a dependency of this package; the react package that owns it is. */
 await import("@base-ui/react/dialog");

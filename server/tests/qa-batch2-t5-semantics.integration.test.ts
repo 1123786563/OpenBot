@@ -199,13 +199,12 @@ describe("probe h: the amount_unreadable endgame against the real partial index"
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     expect((await anomaliesOn(order.id, "amount_unreadable")).length).toBe(3);
 
-    // The fourth no-amount delivery on a blocked order: the amount gate's unreadable branch
-    // precedes the blocked check, so a FOURTH amount_unreadable row lands on the terminal
-    // order (pinned separately in qa-batch2-unreadable-fourth; harmless to the sweeper, which
-    // never queries blocked rows). What matters HERE: the money state never moved and no fact
-    // was recorded — the endgame is not reversible by more deliveries.
+    // The fourth no-amount delivery on a blocked order: batch 3's blocked→silence guard
+    // (the B3 fix) means the delivery is ACKED but writes NOTHING — the strike count stays
+    // at three (the bounded shape, pinned in full in qa-batch2-unreadable-fourth), and the
+    // endgame is not reversible by more deliveries.
     await silent().handleCallback("alipay", new Headers(), "x");
-    expect((await anomaliesOn(order.id, "amount_unreadable")).length).toBe(4);
+    expect((await anomaliesOn(order.id, "amount_unreadable")).length).toBe(3);
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
   });
 });

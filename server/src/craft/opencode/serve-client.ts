@@ -13,6 +13,7 @@
  * on the default instance (the subtlest bug in the original; every request here passes it).
  */
 
+import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 import {
   type CompactionPacket,
@@ -200,6 +201,15 @@ function wrapRawOutput(state: Json): ToolCallStart["rawOutput"] | undefined {
 
 export class TurnState {
   readonly sessionId: string;
+  /**
+   * Deltas are delivered for messages whose role the translator cannot confirm: the
+   * agent-sandbox /events forwarder drops message.updated (outside its five families),
+   * so the assistant-role registry the delta filter keys on never fills. Set ONLY on a
+   * bus whose stream is known-filtered — a user-role delta then passes too, which is
+   * benign in craft (prompts are authored here, never echoed by opencode) and the
+   * alternative under that gateway is dropping every assistant delta outright.
+   */
+  assumeAssistantDeltas = false;
   /** ToolCallStart is emitted only on the FIRST sighting of a callID. */
   seenToolCalls = new Set<string>();
   /** PromptResponse is yielded at most once per turn; backstop signals are no-ops after. */
@@ -326,6 +336,21 @@ export function routingMetaOf(
 
 export type FetchMessage = (messageId: string) => Json | null;
 
+/**
+ * A turn state pre-flagged for the configured event stream. A bus reading a family-
+ * filtered stream (agent-sandbox "/events") never delivers the message.updated events
+ * that register assistant roles, so every delta would die in the assistant filter —
+ * flag those states to deliver deltas unconditionally (TurnState.assumeAssistantDeltas).
+ */
+export function turnStateForStream(
+  sessionId: string,
+  config: CraftConfig,
+): TurnState {
+  const state = new TurnState(sessionId);
+  state.assumeAssistantDeltas = config.opencodeEventPath === "/events";
+  return state;
+}
+
 /** Emit a text delta routed by the PART's type (delta events carry only the part id). */
 function* emitTextDelta(
   props: Json,
@@ -340,7 +365,14 @@ function* emitTextDelta(
   if (!delta) return;
   // Assistant-only filter. Deltas race ~300ms ahead of message.updated;
   // isAssistantMessage hydrates via REST when the role is unknown.
-  if (!isAssistantMessage(state, messageId, fetchMessage)) return;
+  // Filtered-stream mode (assumeAssistantDeltas) skips the check: the registry
+  // can never fill there (see the field's docblock).
+  if (
+    !state.assumeAssistantDeltas &&
+    !isAssistantMessage(state, messageId, fetchMessage)
+  ) {
+    return;
+  }
   if (typeof messageId === "string" && state.summaryMessageIds.has(messageId))
     return;
   if (fieldName !== "text") {
@@ -876,6 +908,15 @@ export type OpencodeServeClientOptions = {
 const COLD_POD_RETRIES = 3;
 const COLD_POD_BASE_DELAY_MS = 250;
 
+/**
+ * How long the sync "/message" prompt may take before we stop awaiting it and trust the
+ * bus: past this window the server has accepted the prompt and the turn is running (its
+ * events are already streaming), so the POST's eventual response is redundant. Long
+ * enough for a cold pod + slow model warmup to reach "admitted"; short enough that a
+ * genuine fast refusal (401/404/bad model) still surfaces synchronously.
+ */
+const PROMPT_MESSAGE_ADMISSION_WINDOW_MS = 10_000;
+
 export class OpencodeServeClient {
   private readonly base: string;
   private readonly config: CraftConfig;
@@ -1040,19 +1081,56 @@ export class OpencodeServeClient {
     return [200, 204, 404].includes(response.status);
   }
 
-  /** Dispose the directory-scoped runtime so opencode reloads managed files. */
+  /**
+   * Dispose the directory-scoped runtime so opencode reloads managed files. Degrades to a
+   * warning on 404/501: the agent-sandbox gateway allowlists no /instance/dispose, so every
+   * dispose there is an honest "no such route" rather than a failed reload — and the
+   * runtime-restart semantics it would drive are absorbed by the gateway's own per-Bot
+   * serve lifecycle. Any other status is still a real error and throws.
+   */
   async disposeInstance(options: { directory: string }): Promise<void> {
-    const response = await this.request("POST", "/instance/dispose", {
-      idempotent: true,
-      query: { directory: options.directory },
-    });
-    if (!response.ok) {
-      throw new OpencodeHttpError(
-        "instance dispose",
-        response.status,
-        await response.text().catch(() => ""),
+    let response: Response;
+    try {
+      response = await this.request("POST", "/instance/dispose", {
+        idempotent: true,
+        query: { directory: options.directory },
+      });
+    } catch (error) {
+      // Transport-level failure reaching opencode-serve: same reasoning as 404/501 —
+      // the reload is best-effort, never turn-fatal.
+      getLogger("server").warn(
+        { err: error instanceof Error ? error.message : String(error) },
+        "[craft] instance dispose transport failure (degraded to no-op)",
       );
+      return;
     }
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      if (response.status === 404 || response.status === 501) {
+        getLogger("server").warn(
+          { status: response.status },
+          "[craft] instance dispose unsupported by this opencode endpoint set " +
+            "(agent-sandbox allowlist omits it); degraded to no-op",
+        );
+        return;
+      }
+      throw new OpencodeHttpError("instance dispose", response.status, body);
+    }
+  }
+
+  /**
+   * `file://` URI for an attachment, rooted at the session's true filesystem location.
+   * Absolute-mode directories already ARE that location; bot-relative ones are relative
+   * to the Bot's workspace root inside the sandbox, so the root is prepended (agent-
+   * sandbox's layout: /workspace/bots/{botId}/…) — without it the URI's authority would
+   * swallow the session id and opencode would resolve nothing.
+   */
+  private attachmentUri(directory: string, path: string): string {
+    const rooted =
+      this.config.sessionDirectoryMode === "bot-relative" && this.botId
+        ? `/workspace/bots/${this.botId}/${directory.replace(/^\/+/, "")}`
+        : `/${directory.replace(/^\/+/, "")}`;
+    return `file://${encodeURI(`${rooted}/${path.replace(/^\/+/, "")}`)}`;
   }
 
   /** Snapshot the assistant message accumulator; post-terminator reconnect fallback. */
@@ -1119,7 +1197,20 @@ export class OpencodeServeClient {
     return body instanceof Object && body !== null ? (body as Json) : null;
   }
 
-  /** POST /session/{id}/prompt_async. Model override only when both halves are set. */
+  /**
+   * POST the turn's prompt. Model override only when both halves are set; the body shape
+   * ({parts, model:{providerID, modelID}}) is the same on both endpoint dialects — verified
+   * against codesandbox/client.ts:141-152 (message) and the onyx port (prompt_async).
+   *
+   * The endpoint decides the response contract. "prompt_async" (onyx) admits the turn and
+   * returns at once, so the call awaits a fast ack. "message" (opencode sync — the only
+   * prompt verb agent-sandbox's allowlist carries) resolves at TURN END, so awaiting it
+   * would starve the bus consumer while the subscriber queue filled, and any request
+   * timeout would abort live turns. In that mode the POST is fired and only a short
+   * admission window is awaited: a fast HTTP error surfaces synchronously (the honest
+   * refusal case — bad model, session gone), and everything past that window is the turn
+   * itself, whose outcome arrives on the bus exactly as it does in async mode.
+   */
   private async postPromptAsync(
     opencodeSessionId: string,
     message: string,
@@ -1138,25 +1229,71 @@ export class OpencodeServeClient {
         type: "file",
         mime: attachment.mimeType,
         filename: attachment.name,
-        url: fileUri(options.directory, attachment.path),
+        url: this.attachmentUri(options.directory, attachment.path),
       });
     }
     const body: Record<string, unknown> = { parts };
     if (modelProvider && modelId) {
       body.model = { providerID: modelProvider, modelID: modelId };
     }
-    const response = await this.request(
-      "POST",
-      `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-      { body, query: { directory: options.directory } },
-    );
-    if (!response.ok) {
+    const endpoint = this.config.opencodePromptEndpoint;
+    const path = `/session/${encodeURIComponent(opencodeSessionId)}/${endpoint}`;
+
+    if (endpoint === "prompt_async") {
+      const response = await this.request("POST", path, {
+        body,
+        query: { directory: options.directory },
+      });
+      if (!response.ok) {
+        throw new OpencodeHttpError(
+          endpoint,
+          response.status,
+          await response.text().catch(() => ""),
+        );
+      }
+      return;
+    }
+
+    // "message" mode: fire, race a short admission window, never await the turn.
+    const url = new URL(`${this.base}${path}`);
+    url.searchParams.set("directory", options.directory);
+    const pending = this.doFetch(url.toString(), {
+      method: "POST",
+      headers: this.buildHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify(body),
+      // Generous bound: this bounds the whole turn's HTTP lifetime, and only matters
+      // if the bus has already gone silent past it — the consumer's own inactivity
+      // timeout is the real turn watchdog.
+      signal: AbortSignal.timeout(
+        this.config.opencodePromptInactivityTimeoutSeconds * 1000 * 2,
+      ),
+    });
+    pending.catch(() => undefined); // a late rejection (post-window) is the bus's story
+    type AdmissionOutcome =
+      | { kind: "elapsed" }
+      | { kind: "failed"; error: unknown }
+      | { kind: "answered"; response: Response };
+    const firstAnswer: AdmissionOutcome = await Promise.race([
+      pending.then(
+        (response): AdmissionOutcome => ({ kind: "answered", response }),
+        (error: unknown): AdmissionOutcome => ({ kind: "failed", error }),
+      ),
+      sleep(PROMPT_MESSAGE_ADMISSION_WINDOW_MS).then(
+        (): AdmissionOutcome => ({ kind: "elapsed" }),
+      ),
+    ]);
+    if (firstAnswer.kind === "elapsed") return; // admitted; the turn now speaks through the bus
+    if (firstAnswer.kind === "failed") throw firstAnswer.error;
+    if (!firstAnswer.response.ok) {
       throw new OpencodeHttpError(
-        "prompt_async",
-        response.status,
-        await response.text().catch(() => ""),
+        endpoint,
+        firstAnswer.response.status,
+        await firstAnswer.response.text().catch(() => ""),
       );
     }
+    // A fast 200 means the turn finished within the window (a very short turn):
+    // its events were buffered on the bus while we raced, and the consumer
+    // drains them next — no special-casing needed.
   }
 
   /**
@@ -1238,7 +1375,7 @@ export class OpencodeServeClient {
       yield* this.consumeFromBus(sub, {
         timeoutMs,
         opencodeSessionId,
-        state: new TurnState(opencodeSessionId),
+        state: turnStateForStream(opencodeSessionId, config),
         directory: options.directory,
         absoluteDeadlineMs:
           options.absoluteTimeoutMs != null
@@ -1467,12 +1604,6 @@ export class OpencodeServeClient {
       return false;
     }
   }
-}
-
-/** `file://` URI for an attachment, rooted at the session directory (onyx's PurePosixPath.as_uri). */
-function fileUri(directory: string, path: string): string {
-  const clean = `/${directory.replace(/^\/+/, "")}/${path.replace(/^\/+/, "")}`;
-  return `file://${encodeURI(clean)}`;
 }
 
 function sleep(ms: number): Promise<void> {

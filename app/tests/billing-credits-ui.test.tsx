@@ -9,9 +9,11 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cloneElement, createContext, useContext } from "react";
 import type * as React from "react";
 import type { PlanCatalogEntry } from "@/lib/billing/credits";
 import i18n from "@/lib/i18n";
+import { settleReactWork } from "./settle-react-work";
 
 /*
  * The Base UI dialog never mounts under happy-dom: its portal rides browser transition APIs this
@@ -28,39 +30,111 @@ import i18n from "@/lib/i18n";
 mock.module("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: React.ReactNode }) =>
     children ?? null;
+  const CloseContext = createContext<() => void>(() => {});
   /*
    * A SHAPE-COMPATIBLE passthrough, because mock.module is registry-level and OUTLIVES THIS
    * FILE. Later files (brokered-account-row's key dialog, the transcript's lightbox) exercise
-   * the real Dialog's semantics through this mock, so the mock has to honor them:
-   * - closed renders nothing (the real portal mounts nothing until open);
-   * - open renders role="dialog" (they find it by role);
-   * - DialogContent carries the close button a real one renders (they close it by name).
-   * Children render inline instead of into a portal — the only part happy-dom cannot do, and
+   * the real Dialog's semantics through this mock, so it honors the real one's split behavior:
+   * - a DialogTrigger child ALWAYS renders (the real trigger is the closed-state affordance;
+   *   eating it made the transcript's attachment tiles vanish for every later file);
+   * - every other child (the DialogContent tree) renders ONLY while open, wrapped in
+   *   role="dialog" (a closed dialog mounting its content gave the no-auth row a phantom
+   *   Close button — the real popup mounts nothing until open);
+   * - DialogContent keeps the close button a real one renders (they close it by name).
+   * Content renders inline instead of into a portal — the only part happy-dom cannot do, and
    * the part this file's assertions never looked at.
    */
+  /*
+   * The trigger honors `render` the way the real one does: the rendered element IS the trigger
+   * (carrying its aria-label) with the children inside it, plus the `aria-haspopup="dialog"` the
+   * real trigger answers for. Without this the transcript's tile button vanished and its label
+   * and semantics with it.
+   */
+  const DialogTriggerMock = ({
+    children,
+    render,
+  }: {
+    children?: React.ReactNode;
+    render?: React.ReactElement<Record<string, unknown>>;
+  }) =>
+    render
+      ? cloneElement(
+          render,
+          { "aria-haspopup": "dialog" },
+          children,
+        )
+      : (children ?? null);
+  DialogTriggerMock.displayName = "DialogTriggerMock";
+  const isTrigger = (child: React.ReactNode) =>
+    child !== null &&
+    typeof child === "object" &&
+    "type" in child &&
+    (child as { type?: { displayName?: string } }).type?.displayName ===
+      "DialogTriggerMock";
   const Dialog = ({
     children,
     open = false,
+    onOpenChange,
   }: {
     children?: React.ReactNode;
     open?: boolean;
-  }) => (open ? <div role="dialog">{children}</div> : null);
-  const DialogContent = ({ children }: { children?: React.ReactNode }) => (
-    <div>
-      {children}
-      <button type="button">
-        <span className="sr-only">Close</span>
-      </button>
-    </div>
-  );
+    onOpenChange?: (open: boolean) => void;
+  }) => {
+    const array = (Array.isArray(children) ? children : [children]).filter(
+      Boolean,
+    );
+    const triggers = array.filter(isTrigger);
+    const rest = array.filter((child) => !isTrigger(child));
+    /*
+     * The close affordance is threaded through context rather than props: a real DialogContent's
+     * Close button asks the Dialog root to close (onOpenChange(false)), and a later file's tests
+     * click that button by name and wait for the dialog to be gone — a dumb button that rendered
+     * but did nothing broke them.
+     */
+    const close = () => onOpenChange?.(false);
+    return open ? (
+      <CloseContext.Provider value={close}>
+        <div role="dialog">
+          {triggers}
+          {rest}
+        </div>
+      </CloseContext.Provider>
+    ) : (
+      <>
+        {triggers}
+        {rest.length === 0 ? null : null}
+      </>
+    );
+  };
+  const DialogTrigger = DialogTriggerMock;
+  const DialogContent = ({ children }: { children?: React.ReactNode }) => {
+    const close = useContext(CloseContext);
+    return (
+      <div>
+        {children}
+        <button onClick={close} type="button">
+          <span className="sr-only">Close</span>
+        </button>
+      </div>
+    );
+  };
   return {
     Dialog,
     DialogContent,
     DialogHeader: pass,
     DialogBody: pass,
     DialogFooter: pass,
-    DialogTitle: pass,
-    DialogDescription: pass,
+    /*
+     * Title and Description get their own elements, as the real ones do (heading and p): a
+     * later file's getByText pins a sentence that sits in a Description, and a bare passthrough
+     * merged title and description into one text blob no exact matcher could hit.
+     */
+    DialogTitle: ({ children }: { children?: React.ReactNode }) => (
+      <h2>{children}</h2>
+    ),
+    DialogDescription: ({ children }: { children?: React.ReactNode }) => (
+      <p>{children}</p>
+    ),
     /*
      * EVERY export, because mock.module is process-lifetime: a later test file importing
      * chat-transcript pulls this same mock, and a missing DialogClose/Overlay/Portal/Trigger
@@ -69,7 +143,7 @@ mock.module("@/components/ui/dialog", () => {
     DialogClose: pass,
     DialogOverlay: pass,
     DialogPortal: pass,
-    DialogTrigger: pass,
+    DialogTrigger,
   };
 });
 
@@ -141,7 +215,17 @@ afterEach(() => {
   void i18n.changeLanguage("en");
   if (realFetch !== undefined) globalThis.fetch = realFetch;
 });
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(async () => {
+  /*
+   * React first, before the document goes away: the dialog's polling leaves scheduler work on a
+   * macrotask, and that callback reads `window` when it runs — after `unregister` it throws
+   * "window is not defined" against whichever file bun runs next. Same medicine
+   * `transcript-attachments.test.tsx` takes at its own exit; see `settle-react-work.ts` for why
+   * this is `act` and not a `setTimeout`.
+   */
+  await settleReactWork();
+  GlobalRegistrator.unregister();
+});
 
 /*
  * What these cover: the two entries this page's money questions hang on — the upgrade button and
