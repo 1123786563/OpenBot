@@ -92,7 +92,7 @@ function AgentsScreen() {
           <div className="flex flex-row w-full items-center justify-between">
             <h2 className="font-bold text-lg">{t("roster.yourAgents")}</h2>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               render={(props) => (
                 <Link to="/agents" search={{ new: true }} {...props} />

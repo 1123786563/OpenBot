@@ -56,6 +56,7 @@ function setupApp(overrides: Partial<BuildRoutesDeps> = {}): Hono<AppEnv> {
     db: {} as Db,
     search: async () => ({ results: [], count: 0 }),
     documentIngest: null,
+    kbAdmin: null,
     dbQueriesOverride: {
       async getKB(id) {
         return kbs.get(id) ?? null;

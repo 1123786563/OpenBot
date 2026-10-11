@@ -8,7 +8,7 @@
  * (ApprovalRequested, ConnectAppRequest) keep their types so the union and the SSE serializer
  * are already shaped for them.
  */
-import type { SandboxEvent } from "./types";
+import { SSEKeepalive, type SandboxEvent } from "./types";
 
 export type BasePacket = {
   timestamp: string;
@@ -107,6 +107,11 @@ export function compactionPacket(summary: string | null): CompactionPacket {
 /** Everything one opencode turn can yield: ACP events plus the custom packets above. */
 export type TurnStreamItem = SandboxEvent | BuildPacket;
 
-export function isBuildPacket(item: TurnStreamItem): item is BuildPacket {
-  return "packetKind" in item;
+export function isBuildPacket(item: unknown): item is BuildPacket {
+  return (
+    item !== null &&
+    typeof item === "object" &&
+    "packetKind" in item &&
+    !(item instanceof SSEKeepalive)
+  );
 }

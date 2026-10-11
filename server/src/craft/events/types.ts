@@ -144,45 +144,45 @@ export function isKeepalive(event: unknown): event is SSEKeepalive {
   return event instanceof SSEKeepalive;
 }
 
-export function isAgentMessageChunk(event: SandboxEvent): event is AgentMessageChunk {
+export function isAgentMessageChunk(event: unknown): event is AgentMessageChunk {
   return (
     !(event instanceof SSEKeepalive) &&
     (event as AgentMessageChunk).sessionUpdate === "agent_message_chunk"
   );
 }
 
-export function isAgentThoughtChunk(event: SandboxEvent): event is AgentThoughtChunk {
+export function isAgentThoughtChunk(event: unknown): event is AgentThoughtChunk {
   return (
     !(event instanceof SSEKeepalive) &&
     (event as AgentThoughtChunk).sessionUpdate === "agent_thought_chunk"
   );
 }
 
-export function isToolCallStart(event: SandboxEvent): event is ToolCallStart {
+export function isToolCallStart(event: unknown): event is ToolCallStart {
   return (
     !(event instanceof SSEKeepalive) &&
     (event as ToolCallStart).sessionUpdate === "tool_call"
   );
 }
 
-export function isToolCallProgress(event: SandboxEvent): event is ToolCallProgress {
+export function isToolCallProgress(event: unknown): event is ToolCallProgress {
   return (
     !(event instanceof SSEKeepalive) &&
     (event as ToolCallProgress).sessionUpdate === "tool_call_update"
   );
 }
 
-export function isAgentPlanUpdate(event: SandboxEvent): event is AgentPlanUpdate {
+export function isAgentPlanUpdate(event: unknown): event is AgentPlanUpdate {
   return !(event instanceof SSEKeepalive) && "entries" in (event as AgentPlanUpdate);
 }
 
-export function isCurrentModeUpdate(event: SandboxEvent): event is CurrentModeUpdate {
+export function isCurrentModeUpdate(event: unknown): event is CurrentModeUpdate {
   return (
     !(event instanceof SSEKeepalive) && "currentMode" in (event as CurrentModeUpdate)
   );
 }
 
-export function isPromptResponse(event: SandboxEvent): event is PromptResponse {
+export function isPromptResponse(event: unknown): event is PromptResponse {
   return (
     !(event instanceof SSEKeepalive) &&
     "stopReason" in (event as PromptResponse) &&
@@ -190,7 +190,7 @@ export function isPromptResponse(event: SandboxEvent): event is PromptResponse {
   );
 }
 
-export function isSandboxError(event: SandboxEvent): event is SandboxError {
+export function isSandboxError(event: unknown): event is SandboxError {
   return (
     !(event instanceof SSEKeepalive) &&
     "code" in (event as SandboxError) &&

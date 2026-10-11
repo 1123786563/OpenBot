@@ -43,7 +43,8 @@
     "description": "你的每个 Bot 正在做什么、需要你做什么，以及是否已暂停。",
     "loadError": "无法加载你的 Bots。",
     "empty": "你还没有任何 Bot。",
-    "paused": "已暂停"
+    "paused": "已暂停",
+    "createFirst": "创建你的第一个 Bot"
   },
   "browser": {
     "browsing": "正在浏览…",
