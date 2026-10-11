@@ -24,6 +24,7 @@ import {
   reserveModelBudgetInTransaction,
   runCeilingIdempotencyKey,
 } from "../../src/enterprise/models/budget";
+import { createModelInvocationCapabilityService } from "../../src/enterprise/runs/model-capability";
 import { createRunOutbox } from "../../src/enterprise/runs/outbox";
 import { createRunService } from "../../src/enterprise/runs/service";
 import { createRunStore } from "../../src/enterprise/runs/store";
@@ -282,6 +283,133 @@ test("concurrent_starts_reserve_once_and_fence_old_attempts", async () => {
   });
 });
 
+test("run lease access requires exact owner and renewal uses configured duration", async () => {
+  const runInput = await createRunInput("lease-owner-duration");
+  const run = await runs.start(scope, runInput);
+  const originalAttempt = await runStore.currentAttempt(scope, run.run_id);
+  const otherPrincipal = `${prefix}-lease-other-principal`;
+  const otherActor = `${prefix}-lease-other-actor`;
+  const otherWorkspace = `${prefix}-lease-other-workspace`;
+  await setupDb()
+    .insert(users)
+    .values({
+      id: otherActor,
+      email: `${otherActor}@example.invalid`,
+      name: "Synthetic other lease actor",
+    });
+  await setupDb()
+    .insert(enterprisePrincipals)
+    .values({ id: otherPrincipal, userId: otherActor });
+  await setupDb().insert(enterpriseMemberships).values({
+    tenantId,
+    principalId: otherPrincipal,
+    role: "member",
+  });
+  await setupDb().insert(enterpriseWorkspaces).values({
+    tenantId,
+    id: otherWorkspace,
+    name: "Synthetic other lease workspace",
+  });
+  const otherPrincipalScope = await createScopeResolver(directoryDatabase!, {
+    authenticate: async () => ({ actorId: otherActor, entrypoint: "web" }),
+    selectTenant: () => tenantId,
+    selectWorkspace: () => workspaceId,
+  }).resolve(new Request("https://enterprise.example.invalid/runs"));
+  const otherWorkspaceScope = await createScopeResolver(directoryDatabase!, {
+    authenticate: async () => ({ actorId, entrypoint: "web" }),
+    selectTenant: () => tenantId,
+    selectWorkspace: () => otherWorkspace,
+  }).resolve(new Request("https://enterprise.example.invalid/runs"));
+
+  const snapshot = async () => {
+    const [storedRun] = await setupDb()
+      .select()
+      .from(enterpriseRuns)
+      .where(eq(enterpriseRuns.id, run.run_id));
+    const [storedAttempt] = await setupDb()
+      .select()
+      .from(enterpriseRunAttempts)
+      .where(eq(enterpriseRunAttempts.id, originalAttempt.attemptId));
+    return {
+      generation: storedRun?.attemptGeneration,
+      status: storedRun?.status,
+      runLease: storedRun?.leaseExpiresAt?.toISOString(),
+      attemptStatus: storedAttempt?.status,
+      attemptLease: storedAttempt?.leaseExpiresAt?.toISOString(),
+    };
+  };
+
+  const before = await snapshot();
+  for (const foreignScope of [otherPrincipalScope, otherWorkspaceScope]) {
+    await expect(
+      runStore.currentAttempt(foreignScope, run.run_id),
+    ).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      runStore.expireLease(
+        foreignScope,
+        run.run_id,
+        new Date(Date.now() + 60_000),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await snapshot()).toEqual(before);
+  }
+
+  const configuredRuns = createRunService({
+    data: dataDatabase!,
+    conversations,
+    modelRouteFor: async () => ({
+      expertVersionRef: "synthetic-expert-v1",
+      routeRef: "synthetic-model-route",
+      maximumTokens: 1000,
+    }),
+    configuredBudgetTokens: () => 2000,
+    modelCapabilitySecret:
+      "test-only-model-capability-secret-000000000000000000000000000000",
+    leaseMilliseconds: 90_000,
+  });
+  const durationRunInput = await createRunInput("lease-configured-duration");
+  const startBefore = Date.now();
+  const durationRun = await configuredRuns.start(scope, durationRunInput);
+  const startAfter = Date.now();
+  const durationRunRow = await setupDb()
+    .select()
+    .from(enterpriseRuns)
+    .where(eq(enterpriseRuns.id, durationRun.run_id));
+  const durationAttempt = await createRunStore(dataDatabase!).currentAttempt(
+    scope,
+    durationRun.run_id,
+  );
+  const renewalNow = new Date(Date.now() + 120_000);
+  const renewed = await createRunStore(dataDatabase!, {
+    leaseMilliseconds: 90_000,
+  }).expireLease(scope, durationRun.run_id, renewalNow);
+  const renewedRunRow = await setupDb()
+    .select()
+    .from(enterpriseRuns)
+    .where(eq(enterpriseRuns.id, durationRun.run_id));
+  expect(durationRunRow[0]?.leaseExpiresAt.getTime()).toBe(
+    durationAttempt.leaseExpiresAt.getTime(),
+  );
+  for (const initialLeaseExpiry of [
+    durationRunRow[0]?.leaseExpiresAt.getTime(),
+    durationAttempt.leaseExpiresAt.getTime(),
+  ]) {
+    expect(initialLeaseExpiry).toBeGreaterThanOrEqual(startBefore + 90_000);
+    expect(initialLeaseExpiry).toBeLessThanOrEqual(startAfter + 90_000);
+  }
+  expect(renewed.leaseExpiresAt.getTime()).toBe(renewalNow.getTime() + 90_000);
+  expect(renewedRunRow[0]?.leaseExpiresAt.getTime()).toBe(
+    renewalNow.getTime() + 90_000,
+  );
+  await runs.cancel(scope, { runId: run.run_id, reason: "user_requested" });
+  await configuredRuns.cancel(scope, {
+    runId: durationRun.run_id,
+    reason: "user_requested",
+  });
+});
+
 test("budget reservation is idempotent, rejects changed input, and confirms exact usage", async () => {
   const input = await createRunInput("budget-idempotency");
   const run = await runs.start(scope, input);
@@ -496,6 +624,44 @@ function budgetService() {
     configuredLimitTokens: () => 2000,
   });
 }
+
+test("wrong capability service secret rejects without consuming the issued capability", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("wrong-capability-secret"),
+  );
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  const issued = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: `${prefix}-wrong-secret-request`,
+    maximumTokens: 100,
+  });
+  const wrongSecret = createModelInvocationCapabilityService({
+    data: dataDatabase!,
+    secret: "different-test-only-model-capability-secret-0000000000000000",
+  });
+
+  await expect(
+    wrongSecret.resolve(scope, issued.capability),
+  ).rejects.toMatchObject({
+    status: 401,
+    code: "MODEL_CAPABILITY_INVALID",
+  });
+  await expect(
+    runs.resolveModelInvocationCapability(scope, issued.capability),
+  ).resolves.toMatchObject({
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: `${prefix}-wrong-secret-request`,
+    maximumTokens: 100,
+  });
+  await expect(
+    runs.resolveModelInvocationCapability(scope, issued.capability),
+  ).rejects.toMatchObject({ status: 409 });
+});
 
 test("model invocation claims enforce an independent cumulative ceiling per run", async () => {
   const first = await runs.start(
@@ -730,6 +896,83 @@ test("model invocation claims enforce an independent cumulative ceiling per run"
       independentAfterSafeRelease.capability,
     ),
   ).rejects.toMatchObject({ status: 409 });
+});
+
+test("data role cannot forge a model capability by replacing its digest", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("capability-forged-digest"),
+  );
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  const modelRequestId = `${prefix}-forged-digest-request`;
+  const issued = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId,
+    maximumTokens: 100,
+  });
+  const forgedCapability = "A".repeat(43);
+  const forgedDigest = createHash("sha256")
+    .update(forgedCapability)
+    .digest("hex");
+  const extendedExpiry = new Date(Date.now() + 60 * 60_000);
+
+  await dataDatabase!.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+    );
+    await tx
+      .update(enterpriseModelInvocationCapabilities)
+      .set({ capabilityDigest: forgedDigest, expiresAt: extendedExpiry })
+      .where(
+        and(
+          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+          eq(enterpriseModelInvocationCapabilities.runId, run.run_id),
+          eq(
+            enterpriseModelInvocationCapabilities.modelRequestId,
+            modelRequestId,
+          ),
+        ),
+      );
+  });
+
+  expect(issued.capability).not.toBe(forgedCapability);
+  await expect(
+    runs.resolveModelInvocationCapability(scope, forgedCapability),
+  ).rejects.toMatchObject({
+    status: 401,
+    code: "MODEL_CAPABILITY_INVALID",
+  });
+
+  const [stored] = await dataDatabase!.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+    );
+    return tx
+      .select({
+        capabilityDigest:
+          enterpriseModelInvocationCapabilities.capabilityDigest,
+        expiresAt: enterpriseModelInvocationCapabilities.expiresAt,
+        status: enterpriseModelInvocationCapabilities.status,
+      })
+      .from(enterpriseModelInvocationCapabilities)
+      .where(
+        and(
+          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+          eq(enterpriseModelInvocationCapabilities.runId, run.run_id),
+          eq(
+            enterpriseModelInvocationCapabilities.modelRequestId,
+            modelRequestId,
+          ),
+        ),
+      );
+  });
+  expect(stored).toEqual({
+    capabilityDigest: forgedDigest,
+    expiresAt: extendedExpiry,
+    status: "reserved",
+  });
 });
 
 test("capability renewal racing old-token resolve uses Run-before-capability locks", async () => {
@@ -1401,28 +1644,6 @@ test("model capability consumption checks capability expiry using database time"
     await createRunInput("capability-db-time-expiry"),
   );
   const attempt = await runStore.currentAttempt(scope, run.run_id);
-  const capability = await runs.issueModelInvocationCapability(scope, {
-    runId: run.run_id,
-    attemptId: attempt.attemptId,
-    generation: attempt.generation,
-    modelRequestId: `${prefix}-db-time-expiry-request`,
-    maximumTokens: 100,
-  });
-  await setupDb().transaction(async (tx) => {
-    await tx
-      .update(enterpriseModelInvocationCapabilities)
-      .set({ expiresAt: new Date(Date.now() - 60_000) })
-      .where(
-        and(
-          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
-          eq(
-            enterpriseModelInvocationCapabilities.modelRequestId,
-            `${prefix}-db-time-expiry-request`,
-          ),
-        ),
-      );
-  });
-
   const realNow = Date.now;
   const RealDate = Date;
   class ApplicationClockBehindDate extends RealDate {
@@ -1447,6 +1668,23 @@ test("model capability consumption checks capability expiry using database time"
       return realNow() - 10 * 60_000;
     }
   }
+  let capability: Awaited<
+    ReturnType<typeof runs.issueModelInvocationCapability>
+  >;
+  try {
+    globalThis.Date = ApplicationClockBehindDate as DateConstructor;
+    capability = await runs.issueModelInvocationCapability(scope, {
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: `${prefix}-db-time-expiry-request`,
+      maximumTokens: 100,
+    });
+  } finally {
+    globalThis.Date = RealDate;
+  }
+  expect(Date.parse(capability.expires_at)).toBeLessThanOrEqual(realNow());
+
   try {
     globalThis.Date = ApplicationClockBehindDate as DateConstructor;
     await expect(
@@ -1455,6 +1693,74 @@ test("model capability consumption checks capability expiry using database time"
   } finally {
     globalThis.Date = RealDate;
   }
+});
+
+test("model capability consumption accepts application clock ahead of database time", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("capability-app-time-ahead"),
+  );
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  const capability = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: `${prefix}-app-time-ahead-request`,
+    maximumTokens: 100,
+  });
+
+  const realNow = Date.now;
+  const RealDate = Date;
+  class ApplicationClockAheadDate extends RealDate {
+    constructor(...args: unknown[]) {
+      if (args.length === 0) super(realNow() + 10 * 60_000);
+      else if (args.length === 1) super(args[0] as string | number);
+      else
+        super(
+          ...(args as [
+            number,
+            number,
+            number?,
+            number?,
+            number?,
+            number?,
+            number?,
+          ]),
+        );
+    }
+
+    static now() {
+      return realNow() + 10 * 60_000;
+    }
+  }
+  try {
+    globalThis.Date = ApplicationClockAheadDate as DateConstructor;
+    await expect(
+      runs.resolveModelInvocationCapability(scope, capability.capability),
+    ).resolves.toMatchObject({
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: `${prefix}-app-time-ahead-request`,
+      maximumTokens: 100,
+    });
+  } finally {
+    globalThis.Date = RealDate;
+  }
+
+  const [stored] = await setupDb()
+    .select({ status: enterpriseModelInvocationCapabilities.status })
+    .from(enterpriseModelInvocationCapabilities)
+    .where(
+      and(
+        eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+        eq(
+          enterpriseModelInvocationCapabilities.modelRequestId,
+          `${prefix}-app-time-ahead-request`,
+        ),
+      ),
+    );
+  expect(stored?.status).toBe("consumed");
 });
 
 test("concurrent outbox dispatchers receive disjoint live start claims", async () => {

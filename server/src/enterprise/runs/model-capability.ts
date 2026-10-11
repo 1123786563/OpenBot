@@ -1,4 +1,9 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   enterpriseModelBudgetReservations,
@@ -573,6 +578,17 @@ export function createModelInvocationCapabilityService(deps: {
         ) {
           throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
         }
+        const expectedCapability = Buffer.from(
+          createCapability(secret, row),
+          "utf8",
+        );
+        const presentedCapability = Buffer.from(capability, "utf8");
+        if (
+          expectedCapability.length !== presentedCapability.length ||
+          !timingSafeEqual(expectedCapability, presentedCapability)
+        ) {
+          throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
+        }
         if (
           !["queued", "running", "waiting_approval", "suspended"].includes(
             run.status,
@@ -584,7 +600,7 @@ export function createModelInvocationCapabilityService(deps: {
           throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
         }
         const now = new Date();
-        if (row.status !== "reserved" || row.expiresAt <= now) {
+        if (row.status !== "reserved") {
           throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
         }
         if (

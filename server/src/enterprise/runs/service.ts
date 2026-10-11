@@ -72,7 +72,15 @@ function validateStart(scope: PlatformScope, input: StartRunInput): void {
 }
 
 export function createRunService(deps: RunServiceDependencies): RunService {
-  const store = createRunStore(deps.data);
+  const leaseMilliseconds = deps.leaseMilliseconds ?? 30_000;
+  if (
+    !Number.isSafeInteger(leaseMilliseconds) ||
+    leaseMilliseconds < 1000 ||
+    leaseMilliseconds > 15 * 60_000
+  ) {
+    throw new RangeError("RUN_LEASE_DURATION_INVALID");
+  }
+  const store = createRunStore(deps.data, { leaseMilliseconds });
   const scopedStore = createConversationStore(deps.data);
   const budget = createModelBudgetService({
     data: deps.data,
@@ -82,14 +90,6 @@ export function createRunService(deps: RunServiceDependencies): RunService {
     data: deps.data,
     secret: deps.modelCapabilitySecret,
   });
-  const leaseMilliseconds = deps.leaseMilliseconds ?? 30_000;
-  if (
-    !Number.isSafeInteger(leaseMilliseconds) ||
-    leaseMilliseconds < 1000 ||
-    leaseMilliseconds > 15 * 60_000
-  ) {
-    throw new RangeError("RUN_LEASE_DURATION_INVALID");
-  }
 
   return {
     async start(scope: PlatformScope, input: StartRunInput): Promise<RunDTO> {

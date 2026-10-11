@@ -13,8 +13,8 @@ DECLARE
 	holder_count bigint;
 	matching_holder_count bigint;
 BEGIN
-	LOCK TABLE mastra_message_intents IN SHARE ROW EXCLUSIVE MODE;
-	LOCK TABLE mastra_message_intent_attachments IN SHARE ROW EXCLUSIVE MODE;
+	LOCK TABLE enterprise_runs IN SHARE ROW EXCLUSIVE MODE;
+	LOCK TABLE enterprise_model_budget_reservations IN SHARE ROW EXCLUSIVE MODE;
 
 	SELECT count(*) INTO invalid_run_count
 	FROM enterprise_runs
@@ -25,6 +25,9 @@ BEGIN
 	WHERE token_limit <= 0
 		OR confirmed_tokens < 0
 		OR confirmed_tokens > token_limit;
+
+	LOCK TABLE mastra_message_intents IN SHARE ROW EXCLUSIVE MODE;
+	LOCK TABLE mastra_message_intent_attachments IN SHARE ROW EXCLUSIVE MODE;
 
 	FOR intent IN
 		SELECT tenant_id, thread_id, client_message_key, attachment_ids
