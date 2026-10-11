@@ -3335,24 +3335,29 @@ const workshopOrchestrator = createTurnOrchestrator({
   },
 });
 /**
+ * The ONE share service: the owner routes (mint/revoke behind canUseBot) and the anonymous
+ * public routes (resolve/preview by token) are the same service's two faces, so they share one
+ * instance — one limiter budget, one signing key, one place the token mint lives. The limiter
+ * degrades in-process (Redis is the multi-replica shape, per sharing.ts), and the signing key
+ * derives from the deployment's key-encryption key — a dedicated WORKSHOP_SHARE_SIGNING_KEY is
+ * the cleaner long home, noted for the day it earns its own rotation story.
+ */
+const workshopSharing = createShareService({
+  store: workshopStore,
+  signingKey: `workshop-share:${config.keyEncryptionKey}`,
+  limiter: createInProcessShareLimiter(),
+});
+/**
  * The workshop's ANONYMOUS half (B14/F9/B15b): the share routes, one factory like their
  * owner sibling. The sharing service rides the same workshopStore (the session row IS the
- * share row), the limiter degrades in-process (Redis is the multi-replica shape, per
- * sharing.ts), and the signing key derives from the deployment's key-encryption key — a
- * dedicated WORKSHOP_SHARE_SIGNING_KEY is the cleaner long home, noted for the day it earns
- * its own rotation story.
+ * share row).
  */
 const publicWorkshopRoutes = () => {
-  const sharing = createShareService({
-    store: workshopStore,
-    signingKey: `workshop-share:${config.keyEncryptionKey}`,
-    limiter: createInProcessShareLimiter(),
-  });
   return createWorkshopPublicRoutes({
     sharing: {
-      resolveShareActor: sharing.resolveShareActor,
-      underRateLimit: sharing.underRateLimit,
-      signArtifactUrl: sharing.signArtifactUrl,
+      resolveShareActor: workshopSharing.resolveShareActor,
+      underRateLimit: workshopSharing.underRateLimit,
+      signArtifactUrl: workshopSharing.signArtifactUrl,
     },
     listArtifacts: async (channelId) => {
       const session = await workshopStore.sessionByChannel(channelId);
@@ -3394,6 +3399,9 @@ const workshopRoutes: WorkshopRoutesFactory = ({ requireUser, canUseBot }) =>
       bus: workshopBus,
       orchestrator: workshopOrchestrator,
       clientFor: workshopClientFor,
+      // The owner-side mint/revoke endpoints (F8's panel) ride the same single share service
+      // the anonymous public routes read from — one budget, one key, two gated faces.
+      sharing: workshopSharing,
     },
   });
 

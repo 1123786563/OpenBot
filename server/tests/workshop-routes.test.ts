@@ -273,6 +273,124 @@ describe("workshop routes", () => {
   });
 });
 
+describe("workshop routes: the owner share endpoints", () => {
+  /** A share service stub: mint answers a handle once, revoke flips the flag. */
+  const fakeSharing = () => {
+    const mints: Array<{ channelId: string; scope: string; expiresInDays?: number; createdBy: string }> = [];
+    let revoked = 0;
+    return {
+      mints,
+      revokes: () => revoked,
+      service: {
+        createShare: async (input: { channelId: string; scope: string; expiresInDays?: number; createdBy: string }) => {
+          mints.push(input);
+          return {
+            token: "token-once",
+            shareUrl: "/share/token-once",
+            scope: input.scope,
+            expiresAt: null,
+          };
+        },
+        revokeShare: async () => {
+          revoked += 1;
+        },
+      } as never,
+    };
+  };
+
+  test("POST /share mints through the gate and answers the plaintext exactly once", async () => {
+    const sharing = fakeSharing();
+    const { orchestrator } = fakeOrchestrator();
+    const app = createWorkshopRoutes({
+      requireUser,
+      canUseBot: (async () => true) as never,
+      deps: {
+        store: fakeStore(),
+        bus: fakeBus(),
+        orchestrator,
+        clientFor: () => fakeClient(),
+        sharing: sharing.service,
+      },
+    });
+    const response = await app.request("/ch_1/share", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "preview_download", expiresInDays: 7 }),
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { token: string; shareUrl: string; scope: string };
+    expect(body.token).toBe("token-once");
+    expect(body.shareUrl).toBe("/share/token-once");
+    expect(body.scope).toBe("preview_download");
+    expect(sharing.mints).toHaveLength(1);
+    expect(sharing.mints[0]?.scope).toBe("preview_download");
+    expect(sharing.mints[0]?.expiresInDays).toBe(7);
+  });
+
+  test("POST /share without the service configured answers 503, not a crash", async () => {
+    const { orchestrator } = fakeOrchestrator();
+    const app = createWorkshopRoutes({
+      requireUser,
+      canUseBot: (async () => true) as never,
+      deps: {
+        store: fakeStore(),
+        bus: fakeBus(),
+        orchestrator,
+        clientFor: () => fakeClient(),
+      },
+    });
+    const response = await app.request("/ch_1/share", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "preview" }),
+    });
+    expect(response.status).toBe(503);
+  });
+
+  test("a non-user of the Bot cannot mint (403 through the same gate)", async () => {
+    const sharing = fakeSharing();
+    const { orchestrator } = fakeOrchestrator();
+    const app = createWorkshopRoutes({
+      requireUser,
+      canUseBot: (async () => false) as never,
+      deps: {
+        store: fakeStore(),
+        bus: fakeBus(),
+        orchestrator,
+        clientFor: () => fakeClient(),
+        sharing: sharing.service,
+      },
+    });
+    const response = await app.request("/ch_1/share", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "preview" }),
+    });
+    expect(response.status).toBe(403);
+    expect(sharing.mints).toHaveLength(0);
+  });
+
+  test("DELETE /share revokes", async () => {
+    const sharing = fakeSharing();
+    const { orchestrator } = fakeOrchestrator();
+    const app = createWorkshopRoutes({
+      requireUser,
+      canUseBot: (async () => true) as never,
+      deps: {
+        store: fakeStore(),
+        bus: fakeBus(),
+        orchestrator,
+        clientFor: () => fakeClient(),
+        sharing: sharing.service,
+      },
+    });
+    const response = await app.request("/ch_1/share", { method: "DELETE" });
+    expect(response.status).toBe(200);
+    expect((await response.json()).revoked).toBe(true);
+    expect(sharing.revokes()).toBe(1);
+  });
+});
+
 describe("workshop routes: canUseBot is required at construction", () => {
   test("the type demands it — this test exists to pin the parameter's presence", () => {
     // Compile-time property: createWorkshopRoutes without canUseBot does not typecheck. The
