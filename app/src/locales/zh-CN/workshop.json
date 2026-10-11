@@ -166,5 +166,26 @@
         "skipped": "已跳过"
       }
     }
+  },
+  "sharePublic": {
+    "loading": "打开分享…",
+    "heading": "分享的工作台",
+    "hint": "这是只读分享；下载取决于分享范围。",
+    "missing": {
+      "title": "这个链接不存在或已失效。",
+      "hint": "链接可能已过期或被撤销。"
+    },
+    "preview": {
+      "aria": "静态预览"
+    },
+    "artifacts": {
+      "aria": "产物列表",
+      "heading": "产物",
+      "empty": "没有可展示的产物。",
+      "download": "下载"
+    },
+    "footer": "只读分享 · 不索引",
+    "report": "举报",
+    "reported": "已举报"
   }
 }
