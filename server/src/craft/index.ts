@@ -84,6 +84,7 @@ export {
   type PromptAttachment,
   TurnState,
   translateOpencodeEvent,
+  turnStateForStream,
 } from "./opencode/serve-client";
 export {
   buildProviderOpencodeConfig,
@@ -91,7 +92,11 @@ export {
   type CraftModelDescriptor,
   opencodeConfigJson,
 } from "./opencode-config";
-export { type CraftRoutesDeps, createCraftRoutes } from "./routes";
+export {
+  type CraftRoutesDeps,
+  type CraftRoutesFactory,
+  createCraftRoutes,
+} from "./routes";
 export { createSandboxGateway, type SandboxGateway } from "./sandbox-gateway";
 export {
   type CraftMessageRow,

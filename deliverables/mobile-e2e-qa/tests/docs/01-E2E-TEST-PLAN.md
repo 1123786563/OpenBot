@@ -6,7 +6,8 @@
 | 应用类型 | 跨平台混合移动应用（React Native / Flutter，兼容原生） |
 | 目标平台 | iOS 16+（iPhone 真机 + 模拟器）、Android 8+（真机 + 模拟器/云真机） |
 | 测试范围 | 关键用户旅程 E2E + 关键路径安全测试（OWASP MASVS 映射） |
-| 主框架 | WebdriverIO + Appium（跨平台统一），原生深度用例以 XCUITest/Espresso 补充 |
+| 主框架 | WebdriverIO v9 + Appium 2.19（跨平台统一），原生深度用例以 XCUITest/Espresso 补充 |
+| 验证状态 | ✅ 2026-10-11 本机 Android 链路实测跑通：Appium 2.19 + uiautomator2 3.10 + AVD test36-small(API 36)，环境冒烟 3/3 passing（详见 `tests/e2e/RUNBOOK.md`） |
 | 执行方式 | 本地调试 + CI 并行（GitHub Actions 矩阵 × 云真机） |
 | 报告 | Allure 报告 + 截图/录屏 + 追踪 CSV 状态同步 |
 | 周期规模 | 约 60 条用例 / 4 周（中型项目） |

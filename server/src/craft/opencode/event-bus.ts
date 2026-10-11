@@ -241,7 +241,13 @@ export class PodEventBus {
   }
 
   private async readOneStream(): Promise<void> {
-    const url = new URL(`${this.base}/event`);
+    // Configurable path: opencode's own "/event" (onyx pods) or the agent-sandbox gateway's
+    // "/events" — a filtered, keepalive-labelled re-exposition of the same stream (see
+    // config.opencodeEventPath and docs/craft-port/README.md 差异点).
+    const path = this.config.opencodeEventPath.startsWith("/")
+      ? this.config.opencodeEventPath
+      : `/${this.config.opencodeEventPath}`;
+    const url = new URL(`${this.base}${path}`);
     if (this.directory) url.searchParams.set("directory", this.directory);
     const headers: Record<string, string> = {
       accept: "text/event-stream",

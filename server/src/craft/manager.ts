@@ -200,7 +200,10 @@ export class CraftSessionManager {
     userName: string | null,
   ): Promise<void> {
     const botId = (await this.deps.botIdFor(session.id)) ?? "";
-    const directory = sessionDirectory(session.id);
+    const directory = sessionDirectory(
+      session.id,
+      this.config.sessionDirectoryMode,
+    );
     const llmConfig = await this.deps.llmConfigFor(session);
     const expected = opencodeConfigJson(
       buildProviderOpencodeConfig(llmConfig, {
@@ -309,7 +312,10 @@ export class CraftSessionManager {
     },
     onOpencodeSessionResolved: (newId: string) => Promise<void>,
   ): AsyncGenerator<SandboxEvent | BuildPacket> {
-    const directory = sessionDirectory(input.sessionId);
+    const directory = sessionDirectory(
+      input.sessionId,
+      this.config.sessionDirectoryMode,
+    );
     const client = this.gateway.serveClientFor({
       botId: input.botId,
       directory,
@@ -396,7 +402,10 @@ export class CraftSessionManager {
    */
   async interruptMessage(session: CraftSessionRow): Promise<boolean> {
     const botId = (await this.deps.botIdFor(session.id)) ?? "";
-    const directory = sessionDirectory(session.id);
+    const directory = sessionDirectory(
+      session.id,
+      this.config.sessionDirectoryMode,
+    );
     if (!botId) return false;
     if (!session.opencodeSessionId) return false;
     const client = this.gateway.serveClientFor({ botId, directory });
@@ -419,7 +428,10 @@ export class CraftSessionManager {
     botId: string;
     keepaliveSeconds?: number;
   }): AsyncGenerator<SandboxEvent | BuildPacket> {
-    const directory = sessionDirectory(input.session.id);
+    const directory = sessionDirectory(
+      input.session.id,
+      this.config.sessionDirectoryMode,
+    );
     const opencodeSessionId = input.session.opencodeSessionId;
     if (!opencodeSessionId) {
       throw new Error("Session live stream is not ready yet.");
@@ -439,10 +451,10 @@ export class CraftSessionManager {
       input.keepaliveSeconds ?? this.config.sseKeepaliveIntervalSeconds;
 
     const sub = bus.subscribe(opencodeSessionId);
-    const state = new (await import("./opencode/serve-client")).TurnState(
-      opencodeSessionId,
+    const { translateOpencodeEvent, turnStateForStream } = await import(
+      "./opencode/serve-client"
     );
-    const { translateOpencodeEvent } = await import("./opencode/serve-client");
+    const state = turnStateForStream(opencodeSessionId, this.config);
 
     let lastEventAt = Date.now();
     try {

@@ -38,6 +38,16 @@ const stringEnv = (env: CraftEnv, name: string, fallback: string): string => {
   return raw === undefined || raw === "" ? fallback : raw;
 };
 
+/**
+ * agent-sandbox's bot-id contract (its src/bot-id.ts): an id becomes a filesystem directory
+ * and a port key, so it may hold only letters, digits, hyphen and underscore, start with a
+ * letter or digit, and stay ≤64 chars. Mirrored here so an unusable configured id falls
+ * back to the default at load time instead of 400-ing every sandbox call at runtime.
+ */
+function isPlainBotId(value: string): boolean {
+  return value.length <= 64 && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value);
+}
+
 export type CraftConfig = {
   /** Total switch (`ENABLE_CRAFT`). Off = the /api/craft tree is not mounted. */
   readonly enabled: boolean;
@@ -107,6 +117,40 @@ export type CraftConfig = {
    */
   readonly sandboxGatewayBaseUrl: string;
   readonly sandboxGatewayToken: string;
+
+  // ── opencode-serve topology adaptations (agent-sandbox vs native onyx pods) ──
+  /**
+   * The SSE subscription path on the opencode-serve side. onyx's pods expose opencode's own
+   * `GET /event`; the agent-sandbox gateway exposes a filtered, keepalive-labelled
+   * `GET /events` instead (its allowlist has no /event). deployments behind agent-sandbox
+   * set "/events" — accepting the gateway's family filter, which drops everything outside
+   * the five product families (see docs/craft-port/README.md 差异点).
+   */
+  readonly opencodeEventPath: string;
+  /**
+   * The prompt endpoint suffix on opencode-serve: "prompt_async" (onyx-native, admits the
+   * turn and returns at once) or "message" (opencode's sync endpoint — the only prompt verb
+   * agent-sandbox's allowlist carries; the response resolves at turn end, so the client
+   * fires it and observes rather than awaits). Body shape ({parts, model:{providerID,
+   * modelID}}) is identical on both endpoints.
+   */
+  readonly opencodePromptEndpoint: "prompt_async" | "message";
+  /**
+   * How a session's directory is expressed wherever it appears — the SSE `?directory=` scope
+   * key AND the file-API path prefix. "absolute" (onyx-native): `/workspace/sessions/{id}`
+   * inside a session-dedicated pod. "bot-relative" (agent-sandbox): the bare session id,
+   * relative to the Bot's workspace root — the only path shape its file API accepts (POST
+   * /file refuses absolute paths) and the cwd its per-Bot opencode-serve runs in.
+   */
+  readonly sessionDirectoryMode: "absolute" | "bot-relative";
+  /**
+   * The Bot whose sandbox hosts every craft session (craft_sessions rows carry no bot
+   * relationship; OpenBot routes all of craft to one deployment-chosen Bot workspace).
+   * Must satisfy agent-sandbox's bot-id rules: letters/digits/hyphen/underscore, first
+   * char alphanumeric, ≤64 chars — an invalid value falls back to the default rather than
+   * 400-ing every sandbox call.
+   */
+  readonly sandboxBotId: string;
 
   // ── derived timeout family (timeouts.py) ───────────────────────────────────
   /**
@@ -263,6 +307,31 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       "OPENBOT_CRAFT_SANDBOX_GATEWAY_TOKEN",
       "",
     ),
+
+    // ── topology adaptations: validated against agent-sandbox's proxy allowlist ──
+    opencodeEventPath: stringEnv(
+      env,
+      "OPENBOT_CRAFT_OPENCODE_EVENT_PATH",
+      "/event",
+    ),
+    opencodePromptEndpoint:
+      stringEnv(
+        env,
+        "OPENBOT_CRAFT_OPENCODE_PROMPT_ENDPOINT",
+        "prompt_async",
+      ) === "message"
+        ? "message"
+        : "prompt_async",
+    sessionDirectoryMode:
+      stringEnv(env, "OPENBOT_CRAFT_SESSION_DIRECTORY_MODE", "absolute") ===
+      "bot-relative"
+        ? "bot-relative"
+        : "absolute",
+    sandboxBotId: isPlainBotId(
+      stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft"),
+    )
+      ? stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft")
+      : "craft",
 
     // ── derived family: arithmetic over the roots, exactly onyx's ──
     runnerStaleAfterSeconds: 6 * sseKeepaliveIntervalSeconds, // 90s at the default

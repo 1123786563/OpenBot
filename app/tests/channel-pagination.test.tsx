@@ -181,6 +181,21 @@ function renderSidebar() {
     refetchInterval: false,
   });
   queryClient.setQueryData(botLifecycleKeys.attention, []);
+  /*
+   * Same treatment for the sidebar's Approvals badge: it reads its own poll on the same key the
+   * /approvals page uses, and its background fetch would land in this test's request count.
+   */
+  queryClient.setQueryDefaults(["approvals"], {
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchInterval: false,
+  });
+  queryClient.setQueryData(["approvals"], {
+    enabled: true,
+    requests: [],
+    rules: [],
+    teamRules: [],
+    questions: [],
+  });
   queryClient.setQueryData(channelKeys.list(), {
     pages: [
       { channels: [channel("Recent conversation")], nextCursor: "older/page" },
