@@ -107,6 +107,7 @@ import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
+import { createReconciler } from "./billing/reconcile";
 import {
   createBillingService,
   deploymentExternalCustomerId,
@@ -3049,6 +3050,11 @@ const billing =
             },
             client: lagoClient,
             store: createBillingStore(database),
+            // The reconciliation pass (T7): over the database directly, not the deps the
+            // service holds — the pass audits those collaborators and must not read through
+            // them. Scoped to the deployment's customer key, the same key the purchase
+            // guard's uncached read uses, so audit and gate agree about "live".
+            reconciler: createReconciler(database, externalCustomerKey),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({

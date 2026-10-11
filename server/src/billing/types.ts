@@ -104,6 +104,38 @@ export type BillingEntitlements = {
 };
 
 /** The admin status snapshot. Names and counts only; never a key or a URL. */
+/**
+ * One reconciliation finding (T7): what broke, where, in one sentence. The words are fixed
+ * here — the seam's vocabulary rule — so a report is greppable and a consumer can group it.
+ */
+export type ReconcileFinding = {
+  /** The invariant's family: `payment` (the three-way) or `credits` (the identity). */
+  category: "payment" | "credits";
+  /** The specific break, stable and greppable. */
+  code:
+    | "paid_without_fact"
+    | "fact_transaction_mismatch"
+    | "applied_without_subscription"
+    | "grants_ledger_divergence";
+  /** The row the finding is about: an order id, or a customer key. */
+  subject: string;
+  /** The human sentence — numbers included, because the report is the evidence. */
+  detail: string;
+};
+
+/** One reconciliation pass's answer: what was checked, and what (if anything) disagrees. */
+export type ReconcileReport = {
+  /** When the pass ran (ISO) — a report is a snapshot, not a stream. */
+  ranAt: string;
+  /** The counts an operator needs to trust an empty findings list. */
+  checked: {
+    paidOrders: number;
+    appliedOrders: number;
+    creditCustomers: number;
+  };
+  findings: readonly ReconcileFinding[];
+};
+
 export type BillingSnapshot = {
   configured: true;
   customers: number;
