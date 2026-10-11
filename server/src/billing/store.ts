@@ -11,13 +11,49 @@ import {
   type BillingStore,
 } from "./types";
 
+const RETRYABLE_POSTGRES_CODES = new Set([
+  "40001",
+  "40P01",
+  "55P03",
+  "57P01",
+  "57P02",
+  "57P03",
+  "53300",
+]);
+
+const RETRYABLE_CONNECTION_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTDOWN",
+  "EHOSTUNREACH",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+  "EPIPE",
+]);
+
+function isRetryableDatabaseError(error: unknown): boolean {
+  if (error instanceof Bun.SQL.PostgresError) {
+    return (
+      error.code.startsWith("08") || RETRYABLE_POSTGRES_CODES.has(error.code)
+    );
+  }
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    RETRYABLE_CONNECTION_CODES.has(error.code)
+  );
+}
+
 async function withPersistenceError<T>(
   operation: BillingPersistenceOperation,
-  action: () => Promise<T>,
+  query: PromiseLike<T>,
 ): Promise<T> {
   try {
-    return await action();
-  } catch {
+    return await query;
+  } catch (error) {
+    if (!isRetryableDatabaseError(error)) throw error;
     throw new BillingPersistenceError(operation);
   }
 }
@@ -33,9 +69,10 @@ async function withPersistenceError<T>(
 export function createBillingStore(database: Database): BillingStore {
   return {
     async upsertCustomer(input) {
-      await withPersistenceError("customer_upsert", async () => {
-        const now = new Date();
-        await database
+      const now = new Date();
+      await withPersistenceError(
+        "customer_upsert",
+        database
           .insert(billingCustomers)
           .values({
             externalId: input.externalId,
@@ -45,24 +82,26 @@ export function createBillingStore(database: Database): BillingStore {
           .onConflictDoUpdate({
             target: billingCustomers.externalId,
             set: { name: input.name, lastSyncedAt: now },
-          });
-      });
+          }),
+      );
     },
     async ensureCustomerRow(input) {
       // Insert-only: a row that already exists — with the name an earlier refresh wrote — is left
       // exactly as it is. This is the webhook path's floor under the subscription foreign key, not
       // a refresh; the placeholder it may insert is nameless and waits for a real read.
-      await withPersistenceError("customer_ensure", async () => {
-        await database
+      await withPersistenceError(
+        "customer_ensure",
+        database
           .insert(billingCustomers)
           .values({ externalId: input.externalId, name: null })
-          .onConflictDoNothing({ target: billingCustomers.externalId });
-      });
+          .onConflictDoNothing({ target: billingCustomers.externalId }),
+      );
     },
     async upsertSubscription(input) {
-      await withPersistenceError("subscription_upsert", async () => {
-        const now = new Date();
-        await database
+      const now = new Date();
+      await withPersistenceError(
+        "subscription_upsert",
+        database
           .insert(billingSubscriptions)
           .values({ ...input, updatedAt: now })
           .onConflictDoUpdate({
@@ -73,23 +112,24 @@ export function createBillingStore(database: Database): BillingStore {
               status: input.status,
               updatedAt: now,
             },
-          });
-      });
+          }),
+      );
     },
     async readSubscriptions(externalCustomerId) {
-      return withPersistenceError("subscription_read", async () => {
-        const rows = await database
+      return withPersistenceError(
+        "subscription_read",
+        database
           .select()
           .from(billingSubscriptions)
           .where(
             eq(billingSubscriptions.externalCustomerId, externalCustomerId),
-          );
-        return rows;
-      });
+          ),
+      );
     },
     async hasWebhookEvent(provider, eventId) {
-      return withPersistenceError("webhook_lookup", async () => {
-        const [row] = await database
+      const rows = await withPersistenceError(
+        "webhook_lookup",
+        database
           .select({ one: billingWebhookEvents.eventId })
           .from(billingWebhookEvents)
           .where(
@@ -98,13 +138,14 @@ export function createBillingStore(database: Database): BillingStore {
               eq(billingWebhookEvents.eventId, eventId),
             ),
           )
-          .limit(1);
-        return row !== undefined;
-      });
+          .limit(1),
+      );
+      return rows[0] !== undefined;
     },
     async recordWebhookEvent(input) {
-      return withPersistenceError("webhook_record", async () => {
-        const rows = await database
+      const rows = await withPersistenceError(
+        "webhook_record",
+        database
           .insert(billingWebhookEvents)
           .values({
             provider: input.provider,
@@ -119,27 +160,30 @@ export function createBillingStore(database: Database): BillingStore {
               billingWebhookEvents.eventId,
             ],
           })
-          .returning({ eventId: billingWebhookEvents.eventId });
-        return rows.length > 0;
-      });
+          .returning({ eventId: billingWebhookEvents.eventId }),
+      );
+      return rows.length > 0;
     },
     async snapshot() {
-      return withPersistenceError("snapshot", async () => {
-        const [customers] = await database
-          .select({ value: count() })
-          .from(billingCustomers);
-        const [subscriptions] = await database
-          .select({ value: count() })
-          .from(billingSubscriptions);
-        const [latest] = await database
+      const [customers] = await withPersistenceError(
+        "snapshot",
+        database.select({ value: count() }).from(billingCustomers),
+      );
+      const [subscriptions] = await withPersistenceError(
+        "snapshot",
+        database.select({ value: count() }).from(billingSubscriptions),
+      );
+      const [latest] = await withPersistenceError(
+        "snapshot",
+        database
           .select({ value: max(billingCustomers.lastSyncedAt) })
-          .from(billingCustomers);
-        return {
-          customers: customers?.value ?? 0,
-          subscriptions: subscriptions?.value ?? 0,
-          ...(latest?.value ? { lastSyncedAt: latest.value } : {}),
-        };
-      });
+          .from(billingCustomers),
+      );
+      return {
+        customers: customers?.value ?? 0,
+        subscriptions: subscriptions?.value ?? 0,
+        ...(latest?.value ? { lastSyncedAt: latest.value } : {}),
+      };
     },
   };
 }
