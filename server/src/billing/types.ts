@@ -46,6 +46,7 @@ export type BillingPersistenceOperation =
   | "subscription_read"
   | "webhook_lookup"
   | "webhook_record"
+  | "webhook_apply"
   | "snapshot";
 
 /** A database operation failed after the request reached the billing store. */
@@ -406,7 +407,24 @@ export type BillingSubscriptionRow = {
  * the re-read succeeds, never before, so a row always stands for finished work. Redelivery of a
  * known event is answered from the inbox alone; see the service for the ordering and why.
  */
+export type BillingWebhookProjection = {
+  /** An authoritative customer refresh, or an insert-only floor when the name is absent. */
+  customer?: { externalId: string; name?: string | null };
+  subscriptions?: readonly BillingSubscriptionRow[];
+  event: {
+    provider: string;
+    eventId: string;
+    uniqueKey?: string;
+    webhookType: string;
+    objectId?: string;
+  };
+};
+
 export type BillingStore = {
+  /** Commit all local delivery work together; a duplicate retains the durable winner's writes. */
+  applyWebhookProjection(
+    input: BillingWebhookProjection,
+  ): Promise<"processed" | "duplicate">;
   upsertCustomer(input: {
     externalId: string;
     name: string | null;

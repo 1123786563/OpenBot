@@ -19,6 +19,7 @@ import {
   type BillingUsageDaily,
   type BillingUsageDailyBucket,
   type BillingUsageEventPage,
+  type BillingWebhookProjection,
   type VerifiedWebhook,
   type WebhookVerifier,
 } from "./types";
@@ -63,8 +64,9 @@ export function deploymentExternalCustomerId(tenantId: string): string {
  * overwrite.
  *
  * handleWebhook order, fixed deliberately: verify (401) → inbox check (a known event is already
- * fully applied, 200) → fresh read of the authoritative object → refresh the projections → write
- * the inbox row → 200. Retryable provider and typed persistence failures answer 503 without writing
+ * fully applied, 200) → fresh read of the authoritative object → atomically commit the local
+ * projections and inbox row → 200. Provider reads stay outside the SQL transaction.
+ * Retryable provider and typed persistence failures answer 503 without writing
  * the inbox, so the provider retries the whole delivery. An inbox row therefore always means "the
  * work it names is done", which is the one property that keeps a crash mid-delivery from losing an
  * event. (The Go implementation this descends from wrote the inbox before acting, so a delivery
@@ -136,45 +138,53 @@ export function createBillingService(deps: {
   }
 
   /**
-   * The customer floor under a subscription refresh.
-   *
-   * The subscription projection's customer column is a foreign key (../db/schema/billing.ts): a
-   * subscription row cannot land before the customer row exists. A subscription delivery can be
-   * the first thing a deployment ever receives — configured but never synced, its `customer.*`
-   * deliveries lost — so the floor is laid here, before any subscription row is written: an
-   * authoritative read when the provider still has the customer, and when it answers 404 an
-   * insert-if-absent placeholder, which is enough for the rows that follow and never overwrites a
-   * projection that already carries the customer's name.
-   */
-  async function ensureCustomerProjection(externalId: string): Promise<void> {
-    if (await readCustomerIntoStore(externalId)) return;
-    await store.ensureCustomerRow({ externalId });
-  }
-
-  /**
    * What a delivery implies locally, refreshed from the authoritative object rather than from the
    * event payload: a delivery that arrives out of order must not walk a projection backwards.
    */
-  async function refreshFor(delivery: VerifiedWebhook): Promise<void> {
+  async function readProjectionFor(
+    delivery: VerifiedWebhook,
+  ): Promise<Omit<BillingWebhookProjection, "event">> {
     if (delivery.webhookType.startsWith("customer.")) {
       if (!delivery.externalCustomerId)
         throw new BillingError("invalid_response");
       // A 404 leaves the projection alone: the object is gone remotely, and the subscription
       // projections say what that means for entitlements. The delivery itself is done.
-      await readCustomerIntoStore(delivery.externalCustomerId);
-      return;
+      const result = await client.getCustomer(delivery.externalCustomerId);
+      return result.status === 200 && result.body
+        ? {
+            customer: {
+              externalId: delivery.externalCustomerId,
+              name: result.body.name,
+            },
+          }
+        : {};
     }
     if (delivery.webhookType.startsWith("subscription.")) {
       if (!delivery.externalCustomerId)
         throw new BillingError("invalid_response");
-      await ensureCustomerProjection(delivery.externalCustomerId);
-      await writeSubscriptionProjections(
-        await readSubscriptions(delivery.externalCustomerId),
+      const result = await client.getCustomer(delivery.externalCustomerId);
+      const subscriptions = await readSubscriptions(
+        delivery.externalCustomerId,
       );
-      return;
+      return {
+        // A 404 stages an insert-only floor; it never clears an existing customer's name.
+        customer: {
+          externalId: delivery.externalCustomerId,
+          ...(result.status === 200 && result.body
+            ? { name: result.body.name }
+            : {}),
+        },
+        subscriptions: subscriptions.map((subscription) => ({
+          externalCustomerId: subscription.externalCustomerId,
+          externalSubscriptionId: subscription.externalSubscriptionId,
+          planCode: subscription.planCode,
+          status: subscription.status,
+        })),
+      };
     }
     // Every other type names an object this deployment does not project. Nothing to refresh is
     // not a failure: the inbox row below records it as processed.
+    return {};
   }
 
   const reader = createBillingEntitlementReader({
@@ -343,15 +353,18 @@ export function createBillingService(deps: {
           return json(200, { status: "duplicate" });
         }
 
-        await refreshFor(delivery);
-        const inserted = await store.recordWebhookEvent({
-          provider: LAGO_PROVIDER_ID,
-          eventId: delivery.eventId,
-          uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
-          webhookType: delivery.webhookType,
-          ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
+        const projection = await readProjectionFor(delivery);
+        const status = await store.applyWebhookProjection({
+          ...projection,
+          event: {
+            provider: LAGO_PROVIDER_ID,
+            eventId: delivery.eventId,
+            uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
+            webhookType: delivery.webhookType,
+            ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
+          },
         });
-        return json(200, { status: inserted ? "processed" : "duplicate" });
+        return json(200, { status });
       } catch (error) {
         if (error instanceof BillingPersistenceError) {
           (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
