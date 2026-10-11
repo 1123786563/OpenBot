@@ -30,9 +30,7 @@ export const enterpriseRuns = pgTable(
     clientMessageKey: text("client_message_key").notNull(),
     expertVersionRef: text("expert_version_ref").notNull(),
     modelRouteRef: text("model_route_ref").notNull(),
-    modelRouteMaximumTokens: integer("model_route_maximum_tokens")
-      .notNull()
-      .default(0),
+    modelRouteMaximumTokens: integer("model_route_maximum_tokens").notNull(),
     status: text("status")
       .$type<
         | "queued"
@@ -87,6 +85,10 @@ export const enterpriseRuns = pgTable(
     check(
       "enterprise_runs_generation_check",
       sql`${table.attemptGeneration} > 0`,
+    ),
+    check(
+      "enterprise_runs_model_route_maximum_tokens_check",
+      sql`${table.modelRouteMaximumTokens} > 0`,
     ),
     check(
       "enterprise_runs_status_check",
@@ -191,7 +193,7 @@ export const enterpriseModelBudgetReservations = pgTable(
     }).onDelete("cascade"),
     check(
       "enterprise_budget_reservation_tokens_check",
-      sql`${table.tokenLimit} > 0 and ${table.confirmedTokens} >= 0`,
+      sql`${table.tokenLimit} > 0 and ${table.confirmedTokens} >= 0 and ${table.confirmedTokens} <= ${table.tokenLimit}`,
     ),
     check(
       "enterprise_budget_reservation_status_check",

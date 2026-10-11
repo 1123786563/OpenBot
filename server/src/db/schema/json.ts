@@ -27,3 +27,12 @@ export const jsonb = customType<{
   // Straight through. The double `JSON.stringify` is the whole bug.
   toDriver: (value) => value,
 });
+
+/** A JSONB array column with the same single-serialization behavior as {@link jsonb}. */
+export const jsonbArray = customType<{
+  data: unknown[];
+  driverData: unknown;
+}>({
+  dataType: () => "jsonb",
+  toDriver: (value) => value,
+});

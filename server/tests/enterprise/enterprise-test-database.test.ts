@@ -9,16 +9,21 @@ const setup =
   "postgres://setup:unused@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009";
 
 test("accepts only the controller-reserved isolated database for setup", () => {
-  expect(enterpriseTestDatabaseUrlFrom({ TEST_DATABASE_URL: setup })).toBe(
-    setup,
-  );
+  expect(
+    enterpriseTestDatabaseUrlFrom({
+      ENTERPRISE_TEST_SETUP_DATABASE_URL: setup,
+    }),
+  ).toBe(setup);
   for (const name of ["openbot", "openbot_enterprise_test", "another_db"]) {
     expect(() =>
       enterpriseTestDatabaseUrlFrom({
-        TEST_DATABASE_URL: `postgres://setup:unused@127.0.0.1:5434/${name}`,
+        ENTERPRISE_TEST_SETUP_DATABASE_URL: `postgres://setup:unused@127.0.0.1:5434/${name}`,
       }),
     ).toThrow("controller-reserved PostgreSQL test database");
   }
+  expect(() =>
+    enterpriseTestDatabaseUrlFrom({ TEST_DATABASE_URL: setup }),
+  ).toThrow("ENTERPRISE_TEST_SETUP_DATABASE_URL is required");
 });
 
 test("requires per-capability login URLs to set the exact session role", () => {
@@ -38,7 +43,7 @@ test("requires per-capability login URLs to set the exact session role", () => {
 
 test("fails closed when a required test URL is missing", () => {
   expect(() => enterpriseTestDatabaseUrlFrom({})).toThrow(
-    "TEST_DATABASE_URL is required",
+    "ENTERPRISE_TEST_SETUP_DATABASE_URL is required",
   );
   expect(() => enterpriseRuntimeDatabaseUrlFrom("directory", {})).toThrow(
     "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL is required",

@@ -4,7 +4,6 @@ import {
   foreignKey,
   index,
   integer,
-  jsonb,
   pgPolicy,
   pgTable,
   primaryKey,
@@ -16,6 +15,7 @@ import {
 import { attachments } from "./core";
 import { enterpriseConversations } from "./enterprise-conversations";
 import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
+import { jsonbArray } from "./json";
 
 const tenantScoped = (table: string) =>
   sql`${sql.raw(table)}.tenant_id = nullif(current_setting('app.tenant_id', true), '')`;
@@ -32,7 +32,7 @@ export const mastraMessageIntents = pgTable(
     actorId: text("actor_id").notNull(),
     principalId: text("principal_id").notNull(),
     backendVersion: integer("backend_version").notNull(),
-    attachmentIds: jsonb("attachment_ids")
+    attachmentIds: jsonbArray("attachment_ids")
       .$type<string[]>()
       .notNull()
       .default([]),
@@ -91,6 +91,10 @@ export const mastraMessageIntents = pgTable(
     check(
       "mastra_message_intents_backend_version_check",
       sql`${table.backendVersion} > 0`,
+    ),
+    check(
+      "mastra_message_intents_attachment_ids_array_check",
+      sql`jsonb_typeof(${table.attachmentIds}) = 'array'`,
     ),
     check(
       "mastra_message_intents_state_check",

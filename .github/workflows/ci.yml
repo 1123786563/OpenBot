@@ -273,9 +273,26 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      enterprise-postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: openbot_enterprise_r2_codex_20261009
+          POSTGRES_USER: enterprise_setup
+          POSTGRES_PASSWORD: enterprise-setup-only
+        ports:
+          - "127.0.0.1:5434:5432"
+        options: >-
+          --health-cmd "pg_isready -U enterprise_setup -d openbot_enterprise_r2_codex_20261009"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
+      ENTERPRISE_TEST_SETUP_DATABASE_URL: postgres://enterprise_setup:enterprise-setup-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009
+      ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: postgres://enterprise_directory_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_directory
+      ENTERPRISE_TEST_DATA_DATABASE_URL: postgres://enterprise_data_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_data
+      ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://enterprise_operator_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_operator
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -300,9 +317,19 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
-      # Not the db:migrate script: that one loads ../.env, which does not exist in CI. DATABASE_URL
-      # comes from the job env instead, which drizzle.config.ts already reads.
-      - run: bunx drizzle-kit migrate --config=drizzle.config.ts
+      # CI owns this disposable database and opts into the same role bootstrap as local Compose.
+      - run: bun scripts/migrate.ts
+        working-directory: server
+        env:
+          OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES: "on"
+      # The second service is fresh and isolated from the regular test database. Prove a missing-role
+      # migration fails before DDL, then bootstrap and migrate it through the reserved test wrapper.
+      - name: Enterprise migration preflight and role-safety fixture
+        run: bun test server/tests/enterprise/migration-role-preflight.integration.test.ts
+        env:
+          ENTERPRISE_TEST_PREFLIGHT_MODE: fresh
+      - name: Prepare the enterprise test database
+        run: bun scripts/enterprise-test-db.ts migrate
         working-directory: server
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.

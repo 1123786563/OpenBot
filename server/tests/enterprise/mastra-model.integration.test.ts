@@ -235,12 +235,57 @@ test("native OpenAI and Anthropic factories honor persisted route identity and l
       });
       const result = await model.doGenerate(options);
       expect(result.content).toContainEqual({ type: "text", text: "ok" });
+      expect(new URL(observed.at(-1)!.url).pathname).toBe(
+        provider === "anthropic" ? "/v1/messages" : "/chat/completions",
+      );
     }
     expect(observed).toHaveLength(2);
     expect(observed[0]?.body.model).toBe("gpt-locked");
     expect(observed[1]?.body.model).toBe("claude-locked");
     expect(observed[0]?.url).toContain("127.0.0.1");
     expect(observed[1]?.url).toContain("127.0.0.1");
+
+    const versionedAnthropicModel = adapter.createNativeModel(
+      {
+        model: { provider: "anthropic", defaultModel: "claude-locked" },
+        credentialSecretRef: "synthetic-ref",
+      },
+      "synthetic-key",
+      { ANTHROPIC_BASE_URL: `${endpoint}/v1/` },
+    );
+    await versionedAnthropicModel.doGenerate(options);
+    expect(new URL(observed.at(-1)!.url).pathname).toBe("/v1/messages");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("native model rejects unsupported providers before making a request", () => {
+  let requestCount = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      requestCount += 1;
+      return new Response(null, { status: 500 });
+    },
+  });
+  try {
+    const adapter = createRuntimeModelAdapter({
+      encryptionKey: "synthetic-only",
+      reader: {} as never,
+      selectModel: async () => null,
+    });
+    const unsupportedRoute = {
+      model: { provider: "unsupported", defaultModel: "test-only" },
+      credentialSecretRef: "synthetic-ref",
+    } as never;
+
+    expect(() =>
+      adapter.createNativeModel(unsupportedRoute, "synthetic-key", {
+        OPENAI_BASE_URL: `http://127.0.0.1:${server.port}`,
+      }),
+    ).toThrow("UNSUPPORTED_MODEL_PROVIDER");
+    expect(requestCount).toBe(0);
   } finally {
     server.stop(true);
   }
