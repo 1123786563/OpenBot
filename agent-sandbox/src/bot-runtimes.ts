@@ -98,6 +98,8 @@ export type BotRuntimes = {
     lastUsedAtMs: number;
     lastActivityAtMs: number;
     spawnAttempts: number;
+    /** Live /events listeners: the restore's busy-check (S4) reads it as "mid-turn". */
+    streamCount: number;
   }>;
   /** Start (or reuse) this Bot's dev server for a dir; the cap is a refusal, not a queue. */
   startDevServer(input: {
@@ -300,6 +302,7 @@ export function createBotRuntimes(options: BotRuntimesOptions): BotRuntimes {
           lastUsedAtMs: entry.lastUsedAtMs,
           lastActivityAtMs: entry.lastActivityAtMs,
           spawnAttempts: entry.spawnAttempts,
+          streamCount: entry.streamCount,
         }))
         .sort((a, b) => a.botId.localeCompare(b.botId));
     },

@@ -1,4 +1,5 @@
-import { describe, expect, test, afterAll } from "bun:test";
+import { afterAll } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { serve } from "bun";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,6 +83,13 @@ const runtimes = createBotRuntimes({
 });
 
 const handler = createProxyHandler(env, runtimes);
+// The fake upstream's server is stopped at process exit: under `--isolate` the runner keeps
+// this file's process alive for later files, and a serve left listening wedges the next
+// file's port 4600 acquire (seen with the snapshot file's real tar children in the pool —
+// the combination, not either alone). process exit, not afterAll: the serve serves THIS
+// file's every describe.
+process.on("exit", () => upstream.stop(true));
+
 const call = (path: string, init?: RequestInit) =>
   handler(new Request(`http://127.0.0.1:4300${path}`, init));
 const botHeaders = { "x-sandbox-token": "secret-token", "x-openbot-bot-id": "alpha" };
@@ -170,18 +178,16 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(body.port).toBe("4600");
   });
 
-  test("the not-yet-implemented allow-list entries answer honest 501s", async () => {
-    // /runtimes (S6) and the devserver verbs (S8) graduated: real implementations are
-    // asserted in their own cases, not 501'd here.
-    for (const path of ["/workspace/snapshot", "/workspace/restore"]) {
-      const method = path === "/workspace/snapshot" ? "GET" : "POST";
-      const response = await call(path, {
-        method,
-        headers: botHeaders,
-        ...(method === "POST" ? { body: "{}" } : {}),
-      });
-      expect(response.status).toBe(501);
-    }
+  test("the not-yet-implemented table is empty — every allow-listed verb is real (S4)", async () => {
+    // /runtimes (S6), the devserver verbs (S8), and the snapshot pair (S4) have all
+    // graduated. The last two honest 501s are gone; this case stays as the tombstone that
+    // says the surface is fully implemented, so a future stub lands with its own test.
+    const snapshot = await call("/workspace/snapshot", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(snapshot.status).toBe(200);
+    expect(snapshot.headers.get("content-type")).toBe("application/gzip");
   });
 
   test("GET /runtimes answers the roster this proxy holds (S6)", async () => {
