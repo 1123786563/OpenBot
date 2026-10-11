@@ -89,6 +89,16 @@ export const paymentOrders = pgTable(
       table.provider,
       table.status,
     ),
+    // THE ordering guard: at most ONE pending order per (plan, provider), as a database fact. The
+    // service's read-before-insert replay check is a fast path only — two concurrent purchases both
+    // read "no pending", both insert, and without this partial unique index both QR codes go live
+    // for the same purchase (two payable orders, double the money, one entitlement). The store's
+    // INSERT ... ON CONFLICT DO NOTHING against this index makes the loser replay into the winner's
+    // row instead. Partial on status='pending': a plan's paid/expired/canceled history is exactly
+    // what repeated buying should accumulate.
+    uniqueIndex("payment_orders_pending_pair_unique_idx")
+      .on(table.planCode, table.provider)
+      .where(sql`${table.status} = 'pending'`),
     // The sweeper's query-first pass reads exactly this.
     index("payment_orders_status_expires_idx").on(table.status, table.expiresAt),
   ],

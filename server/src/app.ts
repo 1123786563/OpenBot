@@ -57,6 +57,7 @@ import {
   createBillingWebhookRoutes,
 } from "./billing/routes";
 import type { Credits } from "./billing/credits";
+import type { CreditWriter } from "./billing/credits-writer";
 import type { BillingStatements } from "./billing/statements";
 import type { BillingService } from "./billing/types";
 import {
@@ -491,6 +492,13 @@ export function createApp(
     externalCustomerKey: string;
     /** What the provider's customer record calls this deployment. */
     customerName: string;
+    /**
+     * The credit ledger's write side, when the assembly built it. Lives on the billing group
+     * (not the credits parameter further down) because the admin grant route is one of the
+     * billing surfaces: absent leaves that route answering 503, the same "not configured, not
+     * broken" answer every other absent piece here gives.
+     */
+    creditWriter?: CreditWriter;
   },
   /**
    * OpenConnector the broker, `composio`'s twin: the client behind a second app directory, already
@@ -2087,6 +2095,12 @@ export function createApp(
         audit: auditStore,
         externalCustomerKey: billing.externalCustomerKey,
         customerName: billing.customerName,
+        // The credit ledger's write side, mounted only where billing itself is: the grant route
+        // reads its presence, so a deployment without the writer answers 503 instead of writing
+        // into a ledger nobody configured.
+        ...(billing.creditWriter
+          ? { creditWriter: billing.creditWriter }
+          : {}),
       }),
     );
   }

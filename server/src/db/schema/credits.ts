@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type {
   CreditGrantSource,
@@ -45,8 +46,23 @@ export const creditGrants = pgTable(
       .defaultNow(),
     /** When the unspent remainder lapses. */
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    /** active until spent or expired; the sweeper flips the latter. */
+    /**
+     * The INITIAL state at grant time, written once by the writer (../billing/credits-writer.ts)
+     * and never maintained afterwards. Every read derives the live status from the clock and the
+     * balance (credits.ts `deriveGrantStatus`) — "used up" and "expired" are functions of time, not
+     * facts a background job flips — so this column is an audit of how the row was born, not a
+     * second truth about how it is doing.
+     */
     status: text("status").$type<CreditGrantStatus>().notNull().default("active"),
+    /**
+     * What makes a retried grant one grant: the writer's stable key for the occurrence (e.g.
+     * `plan:<orderId>` for the allowance a paid order pays out; `admin:<random>` for a hand
+     * grant, so two presses of the promo button stay two grants). The unique index below holds
+     * it, so a replay of the same activation inserts nothing rather than a duplicate grant.
+     * Always present — the writer derives one when the caller has no natural key, which is what
+     * lets the index be a plain unique index (ON CONFLICT can only infer a non-partial one).
+     */
+    idempotencyKey: text("idempotency_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -70,6 +86,15 @@ export const creditGrants = pgTable(
     index("credit_grants_customer_expires_idx").on(
       table.externalCustomerId,
       table.expiresAt,
+    ),
+    // One grant per writer occurrence: the insert-or-nothing against this index is what turns a
+    // retried activation or a replayed grant into a no-op rather than a second allowance. Plain
+    // (not partial) because the column is never null — the writer derives a unique key when the
+    // caller has none, keeping "two presses mean two grants" while letting ON CONFLICT infer the
+    // index (Postgres cannot infer a partial index without its WHERE clause spelled in the
+    // statement).
+    uniqueIndex("credit_grants_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
     ),
   ],
 );

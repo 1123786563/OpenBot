@@ -98,7 +98,8 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
-import { createCredits } from "./billing/credits";
+import { createCredits, CREDIT_SCALE } from "./billing/credits";
+import { createCreditWriter } from "./billing/credits-writer";
 import { createLagoClient } from "./billing/lago";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
@@ -3061,24 +3062,43 @@ const billing =
           client: lagoClient,
           externalCustomerKey,
           customerName: `OpenBot deployment ${externalCustomerKey}`,
+          // The credit ledger's write side — the same writer the admin grant route and the plan
+          // payout below share. One writer, one set of birth invariants, every grant flows here.
+          creditWriter: createCreditWriter(database),
         };
       })();
 
-// The billing seam meters what the built-in Bots consume, once it exists: every model call's
-// finish lands here and becomes one provider event, keyed on a transaction id derived from the
-// deployment key and the millisecond — stable enough to deduplicate a retry, unique enough to
-// never merge two real calls. A usage miss is a billing miss, never a product error, which is
-// why the meter never awaits and the service never throws.
+/*
+ * The billing seam meters what the built-in Bots consume, once it exists: every model call's
+ * finish lands here and becomes one provider event.
+ *
+ * The transaction id is a per-process monotonic sequence (`llm:<key>:<seq>`), NOT a timestamp
+ * mix: the meter callback carries only the token counts (copilot.ts `setModelUsageMeter` — no
+ * run id, no session id reaches it; the finish part of a model stream is all it sees), so the
+ * two properties the id needs cannot come from a business identifier and are built instead:
+ * * different calls → different ids: the sequence increments per reported finish, so two calls
+ *   in the same millisecond (or the same tick of any clock) still number apart;
+ * * a retried REPORT of the same call → the same id: the id is minted once, when the finish is
+ *   first seen, and the report itself is fire-and-forget with no caller-side retry, so there is
+ *   no second minting of one call to deduplicate.
+ * This replaces the old `llm-<key>-<Date.now()>-<in>-<out>`, which double-metered real retries
+ * (a new millisecond meant a "new" event) and merged distinct same-millisecond same-usage calls
+ * into one (the provider deduplicates on the id). A usage miss is a billing miss, never a
+ * product error, which is why the meter never awaits and the service never throws.
+ */
 if (billing !== undefined) {
   const billingService = billing.service;
+  let meterSequence = 0;
   setModelUsageMeter((usage) => {
     const input = usage.inputTokens ?? 0;
     const output = usage.outputTokens ?? 0;
     if (input === 0 && output === 0) return;
+    meterSequence += 1;
+    const transactionId = `llm:${billing.externalCustomerKey}:${meterSequence}`;
     void billingService
       .recordUsage({
         metricCode: "llm_tokens",
-        transactionId: `llm-${billing.externalCustomerKey}-${Date.now()}-${input}-${output}`,
+        transactionId,
         properties: {
           input_tokens: input,
           output_tokens: output,
@@ -3191,6 +3211,50 @@ const payments =
           invalidateEntitlementCache: () => {
             billing.service.invalidateEntitlementCache();
           },
+          /*
+           * The plan allowance's payout, built from the credit writer above and the catalog the
+           * billing block parsed. `readCurrentPeriodEnd` goes through the SAME courtesy read the
+           * entitlement answer rides (the subscription read beside the projection), so the grant's
+           * expiry and the page's "下次权益周期更新" can never disagree about which period is running.
+           */
+          grantor: {
+            creditsFor: (planCode) => {
+              const entry = billingSettings?.planCatalog.get(planCode);
+              // Whole credits in the catalog → scaled units (×100) in the ledger; null when the
+              // plan is absent or grants none — the service treats that as "skip", not an error.
+              return entry && entry.credits > 0
+                ? Math.round(entry.credits * CREDIT_SCALE)
+                : null;
+            },
+            grantPlanCredits: async (input) => {
+              // The payment service only calls this with a non-null expiry (its own fallback
+              // chain decided the period), so the seam's `Date | null` lands here as a Date.
+              if (input.expiresAt === null) return { inserted: false };
+              const result = await billing.creditWriter.grantCredits({
+                externalCustomerId: input.externalCustomerId,
+                source: "plan",
+                totalCents: input.totalCents,
+                expiresAt: input.expiresAt,
+                reason: `plan allowance · ${input.planCode} · order ${input.orderId}`,
+                // THE retry answer: one order buys one allowance, however many times its
+                // activation is retried by the sweep, a replayed callback or a re-opened page.
+                idempotencyKey: `plan:${input.orderId}`,
+              });
+              return { inserted: result.inserted };
+            },
+            readCurrentPeriodEnd: async (planCode) => {
+              const entitlements = await billing.service.entitlements();
+              const end = entitlements.subscription?.currentPeriodEnd ?? null;
+              // The cache can lag the activation by one read (this grant runs BEFORE the
+              // entitlement invalidation below), so the period answer is trusted only when the
+              // projection already names this plan; otherwise the order's own period end answers.
+              return entitlements.active &&
+                entitlements.planCode === planCode &&
+                end
+                ? new Date(end)
+                : null;
+            },
+          },
         });
         startPaymentSweeps(paymentService);
         return {
@@ -3228,7 +3292,9 @@ const statements =
 /*
  * The credit-ledger reads: 套餐与积分. Local only — the ledger lives in this deployment's own
  * database, so the read needs the shared `database` and the same customer key the billing block
- * derived, and nothing from the provider.
+ * derived, and nothing from the provider. (The WRITE side lives on the billing block above —
+ * `billing.creditWriter` — because both its callers, the plan payout and the admin grant route,
+ * are billing surfaces.)
  */
 const credits =
   billing === undefined

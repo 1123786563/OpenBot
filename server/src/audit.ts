@@ -642,6 +642,13 @@ export const auditEventTypes = [
    * refuse, so a row always stands for a pending order that actually ended.
    */
   "billing.purchase.canceled",
+  /*
+   * An administrator granted credits by hand — a campaign or check-in reward (source, amount and
+   * the new grant's id in the payload; the reason, when one was given, beside them). The plan
+   * allowance never appears here: it is paid out by the payment activation, not by hand, which is
+   * exactly why the manual grant's source is a promo or a signin and nothing else.
+   */
+  "billing.credits.granted",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

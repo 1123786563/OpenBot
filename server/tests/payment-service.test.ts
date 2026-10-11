@@ -4,6 +4,7 @@ import type { PaymentProvider } from "../src/billing/payments/provider";
 import {
   createPaymentService,
   type PaymentLagoFacade,
+  type PlanCreditGrantor,
   PurchaseError,
 } from "../src/billing/payments/service";
 import type {
@@ -65,7 +66,7 @@ function memoryStore(): PaymentStore {
         createdAt: tick(),
       };
       orders.set(order.id, order);
-      return order;
+      return { order, conflict: null };
     },
     async readOrder(id) {
       return orders.get(id) ?? null;
@@ -268,6 +269,17 @@ function buildService(
     latePaymentWindowHours?: number;
     activePlanCode?: () => Promise<string | null>;
     invalidateEntitlementCache?: () => void;
+    grantor?: {
+      creditsFor: (planCode: string) => number | null;
+      grantPlanCredits: (input: {
+        externalCustomerId: string;
+        planCode: string;
+        orderId: string;
+        totalCents: number;
+        expiresAt: Date | null;
+      }) => Promise<{ inserted: boolean }>;
+      readCurrentPeriodEnd: (planCode: string) => Promise<Date | null>;
+    };
     /** `false` injects no logger, exercising the service's shared-logger fallback. */
     log?: { warn(message: string): void } | false;
   } = {},
@@ -293,6 +305,7 @@ function buildService(
     activePlanCode: overrides.activePlanCode ?? (async () => null),
     invalidateEntitlementCache:
       overrides.invalidateEntitlementCache ?? (() => undefined),
+    ...(overrides.grantor ? { grantor: overrides.grantor } : {}),
     now: tick,
     log:
       overrides.log === false
@@ -317,6 +330,45 @@ describe("purchase ordering", () => {
     });
     expect(second.order.orderId).toBe(first.order.orderId);
     expect((await store.readOrder(first.order.orderId))?.version).toBe(0);
+  });
+
+  test("a store insert that loses the pending-pair race replays the winner's order", async () => {
+    // The losing racer's view: the replay read found nothing, but the insert conflicted and the
+    // store handed back the winner's row — exactly what the partial unique index forces under
+    // a real concurrent double-submit.
+    const store = memoryStore();
+    const { order: winner } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "someone-else",
+      checkoutPayload: "qr-winner",
+    });
+    await store.setCheckoutPayload(winner.id, "qr-winner");
+    const racing: PaymentStore = {
+      ...store,
+      async insertOrder(input) {
+        // Simulate the index conflict: no insert, the winner's row back, the conflict named.
+        const existing = await store.readPendingOrder(
+          input.planCode,
+          input.provider,
+        );
+        return { order: existing!, conflict: "pending-pair" as const };
+      },
+    };
+    const { service } = buildService({ store: racing });
+    const result = await service.createPurchase({
+      planCode: "pro",
+      provider: "alipay",
+      createdBy: "admin-1",
+    });
+    expect(result.order.orderId).toBe(winner.id);
+    expect(result.order.checkout).toEqual({
+      kind: "qrcode",
+      payload: "qr-winner",
+    });
   });
 
   test("a channel switch cancels the old order and closes it at the old channel", async () => {
@@ -504,7 +556,7 @@ describe("callback triage", () => {
 
   test("a matching paid fact moves pending to paid and activates", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -548,7 +600,7 @@ describe("callback triage", () => {
 
   test("an amount mismatch blocks a pending order and answers success (terminal quiet)", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -577,7 +629,7 @@ describe("callback triage", () => {
 
   test("a paid fact whose amount the channel did not state leaves the order pending", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -605,7 +657,7 @@ describe("callback triage", () => {
 
   test("a second transaction on a paid order is an over-payment anomaly, not a migration", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -645,7 +697,7 @@ describe("callback triage", () => {
 
   test("an expired order inside the window pays, anchored at terminalAt (+23h yes, +25h no)", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -679,7 +731,7 @@ describe("callback triage", () => {
 
   test("an expired order outside the window records late_payment and stays expired", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -710,7 +762,7 @@ describe("callback triage", () => {
 
   test("a canceled order revives inside the window; a newer paid order on the plan raises duplicate_paid", async () => {
     const store = memoryStore();
-    const older = await store.insertOrder({
+    const { order: older } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -725,7 +777,7 @@ describe("callback triage", () => {
     clockMs = canceledAt + 60_000;
 
     // A newer order on the same plan has already been paid.
-    const newer = await store.insertOrder({
+    const { order: newer } = await store.insertOrder({
       planCode: "pro",
       provider: "wechat",
       amountCents: 8800,
@@ -760,9 +812,64 @@ describe("callback triage", () => {
     expect((await store.readOrder(older.id))?.status).toBe("paid");
   });
 
+  test("a pending order confirmed while the plan already has a paid order (cross-provider) is paid and activated anyway", async () => {
+    const store = memoryStore();
+    // The plan's first purchase, already paid, on alipay.
+    const { order: first } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: first.id,
+      expectedVersion: first.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-first",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: tick(),
+    });
+
+    // A wechat order the pending-pair index cannot bar (the index is per (plan, provider) on
+    // purpose: a channel switch is a legal flow). Its money is real and its confirm must STAND
+    // — the duplicate_paid anomaly the service records is what makes the double collection
+    // visible to reconciliation, not a refusal that strands a paid order.
+    const { order: second } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const wechat = fakeProvider("wechat", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: second.id,
+          state: "paid" as const,
+          channelTransactionId: "tx-second",
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({ providers: [wechat], store });
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    const settled = await store.readOrder(second.id);
+    expect(settled?.status).toBe("paid");
+    expect(settled?.activationState).toBe("applied");
+  });
+
   test("blocked refuses every migration, including a well-paid fact", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -797,7 +904,7 @@ describe("callback triage", () => {
 describe("the poll's read side", () => {
   test("a pending order gets one channel query; money found settles and activates", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -831,7 +938,7 @@ describe("the poll's read side", () => {
 
   test("an unreachable channel answers the order as it stands", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -877,7 +984,7 @@ describe("cancel", () => {
 
   test("paid and expired refuse to cancel; unknown answers unknown", async () => {
     const store = memoryStore();
-    const paid = await store.insertOrder({
+    const { order: paid } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -895,7 +1002,7 @@ describe("cancel", () => {
       periodStart: tick(),
       periodEnd: tick(),
     });
-    const expired = await store.insertOrder({
+    const { order: expired } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -920,7 +1027,7 @@ describe("activation gate", () => {
    * triggered by the settle core, so every gate test rides the same path a real delivery does.
    */
   async function pendingWithPaidDelivery(store: PaymentStore) {
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -1081,10 +1188,139 @@ describe("activation gate", () => {
   });
 });
 
+describe("the plan allowance payout", () => {
+  /** A grantor double that records every payout the service asks for. */
+  function recordingGrantor(overrides: Partial<PlanCreditGrantor> = {}) {
+    const payouts: Array<{
+      planCode: string;
+      orderId: string;
+      totalCents: number;
+      expiresAt: Date | null;
+    }> = [];
+    const grantor: PlanCreditGrantor = {
+      creditsFor: (planCode) => (planCode === "pro" ? 900_000 : null),
+      async grantPlanCredits(input) {
+        payouts.push({
+          planCode: input.planCode,
+          orderId: input.orderId,
+          totalCents: input.totalCents,
+          expiresAt: input.expiresAt,
+        });
+        return { inserted: true };
+      },
+      readCurrentPeriodEnd: async () => new Date("2026-11-01T00:00:00Z"),
+      ...overrides,
+    };
+    return { grantor, payouts };
+  }
+
+  /** One settled-and-activated order paid through the same callback path production uses. */
+  async function settledOrder(
+    grantor: PlanCreditGrantor,
+    store: PaymentStore = memoryStore(),
+  ): Promise<{ orderId: string; store: PaymentStore }> {
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid" as const,
+          channelTransactionId: `tx-${order.id}`,
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({ store, providers: [alipay], grantor });
+    await service.handleCallback("alipay", new Headers(), "x");
+    return { orderId: order.id, store };
+  }
+
+  test("an applied activation grants the catalog's credits once, keyed on the order", async () => {
+    const { grantor, payouts } = recordingGrantor();
+    const { orderId } = await settledOrder(grantor);
+    expect(payouts).toHaveLength(1);
+    expect(payouts[0]).toMatchObject({
+      planCode: "pro",
+      orderId,
+      totalCents: 900_000,
+      // The provider's period end, not a local +1 month guess.
+      expiresAt: new Date("2026-11-01T00:00:00Z"),
+    });
+  });
+
+  test("a re-run activation (the sweep's retry) does not double-grant", async () => {
+    const { grantor, payouts } = recordingGrantor();
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid" as const,
+          channelTransactionId: `tx-${order.id}`,
+          amountCents: 8800,
+        },
+      }),
+    });
+    // First pass: the grantor is unreachable-looking — grant THROWS, activation stays pending.
+    const failing: PlanCreditGrantor = {
+      ...grantor,
+      grantPlanCredits: async () => {
+        throw new Error("ledger down");
+      },
+    };
+    const first = buildService({ store, providers: [alipay], grantor: failing });
+    await first.service.handleCallback("alipay", new Headers(), "x");
+    expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+
+    // The sweep retries with a healthy grantor: exactly one payout lands.
+    const second = buildService({ store, providers: [alipay], grantor });
+    await second.service.sweepActivations();
+    expect(payouts).toHaveLength(1);
+    expect((await store.readOrder(order.id))?.activationState).toBe("applied");
+  });
+
+  test("a plan the catalog grants no credits to grants nothing, silently", async () => {
+    const { grantor, payouts } = recordingGrantor({
+      creditsFor: () => null,
+    });
+    await settledOrder(grantor);
+    expect(payouts).toHaveLength(0);
+  });
+
+  test("an already-applied order re-asked grants nothing", async () => {
+    const { grantor, payouts } = recordingGrantor();
+    const { orderId, store } = await settledOrder(grantor);
+    expect((await store.readOrder(orderId))?.activationState).toBe("applied");
+    // The sweep's pass on an applied order is a no-op — activation short-circuits.
+    const { service } = buildService({ store, grantor });
+    await service.sweepActivations();
+    expect(payouts).toHaveLength(1);
+  });
+});
+
 describe("the expiry sweep", () => {
   test("query-first: a channel that says paid settles; one that says pending expires then closes", async () => {
     const store = memoryStore();
-    const paid = await store.insertOrder({
+    const { order: paid } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -1093,7 +1329,7 @@ describe("the expiry sweep", () => {
       createdBy: "a",
       checkoutPayload: null,
     });
-    const stale = await store.insertOrder({
+    const { order: stale } = await store.insertOrder({
       planCode: "pro",
       provider: "wechat",
       amountCents: 8800,
@@ -1125,7 +1361,7 @@ describe("the expiry sweep", () => {
 
   test("an unreachable channel is skipped, not expired", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,
@@ -1146,7 +1382,7 @@ describe("the expiry sweep", () => {
 
   test("a channel's terminal 'no such order' verdict (a closed fact) expires the order", async () => {
     const store = memoryStore();
-    const order = await store.insertOrder({
+    const { order } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
       amountCents: 8800,

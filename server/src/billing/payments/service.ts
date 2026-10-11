@@ -77,6 +77,30 @@ export type CallbackOutcome =
   | { kind: "unknown-order" }
   | { kind: "store-failure" };
 
+/**
+ * The plan-allowance payout: what the payments module needs from the credit writer, and nothing
+ * more. `creditsFor` answers the catalog's whole-credit number for the plan (scaled ×100 by the
+ * caller that owns the catalog — kept out of the seam so the payments module keeps no second
+ * copy of the scale), and `grantPlanCredits` records the deposit idempotently.
+ *
+ * `readCurrentPeriodEnd` supplies the expiry the grant aligns to (the provider's own period), so
+ * the allowance lapses when the subscription's period does — not on a local +1 month guess.
+ */
+export type PlanCreditGrantor = {
+  /** Scaled credit units (×100) for the plan, or null when the plan grants no credits. */
+  creditsFor(planCode: string): number | null;
+  grantPlanCredits(input: {
+    externalCustomerId: string;
+    planCode: string;
+    /** The order whose activation pays this allowance out — the idempotency key's anchor. */
+    orderId: string;
+    totalCents: number;
+    expiresAt: Date | null;
+  }): Promise<{ inserted: boolean }>;
+  /** The subscription's current period end at the provider, when it answers one. */
+  readCurrentPeriodEnd(planCode: string): Promise<Date | null>;
+};
+
 export type PaymentService = {
   /** The catalog, price-snapshotted at boot; `canPurchase` and `activePlanCode` are the caller's. */
   catalog(canPurchase: boolean, activePlanCode: string | null): PaymentCatalog;
@@ -140,6 +164,11 @@ export function createPaymentService(deps: {
   activePlanCode(): Promise<string | null>;
   /** Called the moment activation lands, so the entitlement read never lags behind a payment. */
   invalidateEntitlementCache(): void;
+  /**
+   * The plan allowance's payout. Optional: an assembly that wires no credit writer (a deployment
+   * testing payments before the ledger is on) still activates, just without granting.
+   */
+  grantor?: PlanCreditGrantor;
   now?: () => Date;
   log?: { warn(message: string): void };
 }): PaymentService {
@@ -202,9 +231,72 @@ export function createPaymentService(deps: {
   }
 
   /**
-   * Activation: the reconciliation gate, then the subscription, then the cache drop. Unreachable
-   * keeps the order pending-activation for the next pass; everything terminal writes `failed`.
-   * A re-run on an already-applied order writes nothing.
+   * The plan allowance payout, run inside activation after the subscription exists and before
+   * `applied` is written. Idempotency: the grant's idempotency key is `plan:<orderId>`, so an
+   * activation retried by the sweep, a replayed callback or a re-opened page inserts the grant
+   * exactly once — the credit writer's insert-or-nothing against the unique index is the
+   * guarantee, the same shape the paid fact uses.
+   *
+   * Answers whether the allowance is settled (granted, or rightly absent). `false` means the
+   * payout has not landed, so the caller does NOT write `applied` and the sweep's next pass
+   * re-runs the whole sequence — the subscription half is idempotent (read-before-create), the
+   * grant half is idempotent (the key), so the retry converges. Writing `applied` over a failed
+   * payout would strand the allowance with no sweeper ever looking at the order again.
+   */
+  async function grantPlanCreditsFor(
+    order: PaymentOrderRecord,
+  ): Promise<boolean> {
+    const grantor = deps.grantor;
+    if (!grantor) return true;
+    const totalCents = grantor.creditsFor(order.planCode);
+    // A plan the catalog grants no credits to (or a zero allowance) grants nothing — not an
+    // error, not a warning: "this plan has no credit component" is a configured fact.
+    if (totalCents === null || totalCents <= 0) return true;
+    try {
+      // The expiry aligns to the provider's period end. Unknown period (provider refused the
+      // courtesy read) falls back to the order's own paid period — never to "no expiry", which
+      // would make a one-month allowance permanent. Neither answering one withholds the grant
+      // and keeps the order pending-activation: better a retried payout than an allowance with
+      // no defensible expiry.
+      const periodEnd =
+        (await grantor.readCurrentPeriodEnd(order.planCode)) ??
+        order.periodEnd;
+      if (!periodEnd) {
+        log.warn(
+          `payments: plan ${order.planCode} credits withheld on order ${order.id} — neither the provider's period nor the order's own period answered an expiry`,
+        );
+        return false;
+      }
+      const { inserted } = await grantor.grantPlanCredits({
+        externalCustomerId: deps.externalCustomerKey,
+        planCode: order.planCode,
+        orderId: order.id,
+        totalCents,
+        expiresAt: periodEnd,
+      });
+      if (!inserted) {
+        // The retry answer: the allowance this order pays was already granted. Expected under
+        // the sweep's retry; a log line, not an anomaly — this is the idempotency working.
+        log.warn(
+          `payments: plan credit grant for order ${order.id} already recorded; nothing added`,
+        );
+      }
+      return true;
+    } catch {
+      // The ledger refused: the subscription stands, but the allowance is not yet paid out.
+      // `false` keeps the order out of `applied` so the sweep retries — the idempotency key is
+      // what makes that retry safe.
+      log.warn(
+        `payments: plan credit grant for order ${order.id} failed; the activation retry re-runs it`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Activation: the reconciliation gate, then the subscription, then the credit payout, then the
+   * cache drop. Unreachable keeps the order pending-activation for the next pass; everything
+   * terminal writes `failed`. A re-run on an already-applied order writes nothing.
    */
   async function activateOrder(
     order: PaymentOrderRecord,
@@ -237,6 +329,11 @@ export function createPaymentService(deps: {
         externalSubscriptionId: `${deps.externalCustomerKey}-${order.planCode}`,
         planCode: order.planCode,
       });
+      // The subscription is the entitlement; the credits are the allowance that rides with it.
+      // Granted here — after `ensureSubscription` (no allowance without the entitlement it
+      // belongs to) and before `recordActivation(applied)` (a payout that has not landed leaves
+      // the activation un-applied, so the sweep's next pass retries it).
+      if (!(await grantPlanCreditsFor(order))) return "pending";
       deps.invalidateEntitlementCache();
       await deps.store.recordActivation(order.id, "applied");
       return "applied";
@@ -366,21 +463,28 @@ export function createPaymentService(deps: {
       return { claimed: false };
     }
 
-    // A canceled order coming back to life is worth one more look: if the same plan already has
-    // a newer paid order, this payment doubles it — money collected twice for one entitlement.
-    if (order.status === "canceled") {
-      const latestPaid = await deps.store
-        .readLatestPaidOrder(order.planCode)
-        .catch(() => null);
-      if (latestPaid && latestPaid.id !== order.id) {
-        await recordAnomalyQuietly({
-          orderId: order.id,
-          code: "duplicate_paid",
-          channelTransactionId: transactionId,
-          amountCents: fact.amountCents,
-          detail: `plan already paid by ${latestPaid.id}`,
-        });
-      }
+    // A cross-order duplicate is worth one more look on EVERY confirm, not only a canceled order
+    // reviving: two QR codes can coexist only if one predates the pending-pair index, or the pair
+    // spans providers (one pending alipay + one pending wechat — the index is per (plan,
+    // provider), deliberately, because a channel switch is a legal flow). Either way, the same
+    // plan already holding another paid order while this money lands means double collection for
+    // one entitlement. The confirm STANDS — the money is real and the payer bought something —
+    // the anomaly is what makes it visible to reconciliation instead of hiding inside a second
+    // paid row nobody compares. `readLatestPaidOrder` answers the newest paid row, which after
+    // our own confirm is US unless an older confirm raced inside this same window — so the
+    // anomaly fires for whichever side of the pair lands second, which is exactly the one that
+    // doubled the first.
+    const latestPaid = await deps.store
+      .readLatestPaidOrder(order.planCode)
+      .catch(() => null);
+    if (latestPaid && latestPaid.id !== order.id) {
+      await recordAnomalyQuietly({
+        orderId: order.id,
+        code: "duplicate_paid",
+        channelTransactionId: transactionId,
+        amountCents: fact.amountCents,
+        detail: `plan already paid by ${latestPaid.id}`,
+      });
     }
 
     const fresh = await deps.store.readOrder(order.id).catch(() => null);
@@ -426,7 +530,10 @@ export function createPaymentService(deps: {
         });
       }
 
-      // Replay: the same plan on the same channel, still open, comes back untouched.
+      // Replay: the same plan on the same channel, still open, comes back untouched. The read is
+      // a fast path only — the pending-pair partial unique index and the store's conflict
+      // re-read below are the actual guarantee, so a concurrent double-submit converges on one
+      // order even when both callers get here before either insert lands.
       const replayed = await deps.store
         .readPendingOrder(input.planCode, input.provider)
         .catch(() => null);
@@ -456,7 +563,7 @@ export function createPaymentService(deps: {
       const expiresAt = new Date(
         now().getTime() + deps.orderTtlMinutes * 60_000,
       );
-      const order = await deps.store.insertOrder({
+      const { order, conflict } = await deps.store.insertOrder({
         planCode: input.planCode,
         provider: input.provider,
         amountCents: entry.amountCents,
@@ -465,6 +572,12 @@ export function createPaymentService(deps: {
         createdBy: input.createdBy,
         checkoutPayload: null,
       });
+      if (conflict === "pending-pair") {
+        // Another caller's insert won the pending pair while we were between the read above and
+        // this insert: their order is this answer, exactly what the replay path would return.
+        // No second QR is created, no session opened, nothing to do but hand it back.
+        return { order: toView(order) };
+      }
 
       // Order first, code second: a channel failure here leaves a pending order that a retry
       // replays into, instead of a QR the ledger cannot account for. The session create itself
