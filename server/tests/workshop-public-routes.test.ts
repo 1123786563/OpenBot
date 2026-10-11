@@ -62,10 +62,12 @@ function build(input?: {
         : { bytes: new TextEncoder().encode(body), contentType: "text/html" };
     },
   });
-  // Mounted as the app mounts it (the same /api/workshop prefix the path regex trims).
+  // Mounted as app.ts mounts BOTH surfaces: the owner prefix the path regexes trim, and
+  // the public prefix the anonymous routes answer under.
   const { Hono } = require("hono") as typeof import("hono");
   const mounted = new Hono();
   mounted.route("/api/workshop", app);
+  mounted.route("/api/public/workshop", app);
   return { app: mounted, sharing, token };
 }
 
@@ -133,6 +135,22 @@ describe("the public share door (B15b)", () => {
       `${mangled}${mangled.includes("?") ? "&" : "?"}t=${token}`,
     );
     expect(refused.status).toBe(404);
+  });
+
+  test("MOUNT SEMANTICS (closeout): the real /api/public/workshop mount answers, anonymously", async () => {
+    // The shape app.ts actually serves: /api/public/workshop/<channelId>/public/…?t=<token>.
+    // A valid token previews; an anonymous wrong token answers the uniform 404 — never a
+    // 401, because no session exists to fail: the token is the only key.
+    const { app, token } = build();
+    const good = await app.request(
+      `http://x/api/public/workshop/ch_1/public/preview/index.html?t=${token}`,
+    );
+    expect(good.status).toBe(200);
+    expect(good.headers.get("x-robots-tag")).toBe("noindex");
+    const wrong = await app.request(
+      `http://x/api/public/workshop/ch_1/public/preview/index.html?t=not-a-token`,
+    );
+    expect([404, 429]).toContain(wrong.status); // rate-limited first, else the uniform miss.
   });
 
   test("the rate limiter slows a probe before it is told anything", async () => {

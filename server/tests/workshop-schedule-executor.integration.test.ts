@@ -8,6 +8,7 @@ import {
   workshopScheduleRuns,
   workshopSchedules,
   workshopSessions,
+  workshopTurns,
 } from "../src/db/schema";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 import {
@@ -109,7 +110,19 @@ function recorder() {
       initiator: { kind: "routine"; id: string };
     }) => {
       enqueued.push(input);
-      return `turn-${enqueued.length}`;
+      // A REAL turn row, not a made-up id: the run's turn_id carries a foreign key, and a
+      // recorder that mints phantom ids keeps the FK untested while looking green.
+      const id = `sch-turn-${enqueued.length}`;
+      await database.insert(workshopTurns).values({
+        id,
+        sessionId: input.sessionId,
+        prompt: input.prompt.slice(0, 60),
+        status: "queued",
+        turnIndex: enqueued.length - 1,
+        usage: {},
+        initiator: "headless",
+      });
+      return id;
     },
   };
 }
@@ -137,7 +150,7 @@ describe("the workshop schedule executor (B18)", () => {
       .from(workshopScheduleRuns);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.status).toBe("running");
-    expect(runs[0]?.turnId).toBe("turn-1");
+    expect(runs[0]?.turnId).toBe("sch-turn-1"); // The recorder's REAL turn row, not a phantom id.
     // And the schedule advanced: nextRunAt moved past the sweep moment.
     const schedule = (
       await database.select().from(workshopSchedules).where(eq(workshopSchedules.id, "sch-1"))

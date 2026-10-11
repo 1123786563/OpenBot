@@ -71,6 +71,7 @@ import { createThreadRoutes } from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
 import { type CodeRunGatewayFactory, createCodeSandboxRoutes } from "./codesandbox/routes";
 import { type WorkshopRoutesFactory } from "./workshop/routes";
+import { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
@@ -104,6 +105,8 @@ import {
   createLearningRoutes,
   type LearningAdminDependencies,
 } from "./learning/routes";
+import { knowledgeServiceConfig } from "./knowledge/config";
+import { createKnowledgeRoutes } from "./knowledge/routes";
 import { createMarketplaceRoutes } from "./marketplace/routes";
 import type { MarketplaceStore } from "./marketplace/store";
 import type { MemoryIngestion } from "./memory/ingestion";
@@ -548,6 +551,13 @@ export function createApp(
    * Redis/no-Redis branch lives.
    */
   workshopRoutes?: WorkshopRoutesFactory,
+  /**
+   * The workshop's ANONYMOUS half (B14/F9/B15b): the share-token routes, mounted at
+   * /api/public/workshop. A factory for the same reason `workshopRoutes` is — the sharing
+   * service's wiring (store, limiter, signing key) is a boot decision. Optional: a
+   * deployment without it simply has no public share surface.
+   */
+  publicWorkshopRoutes?: () => ReturnType<typeof createWorkshopPublicRoutes>,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
@@ -1466,6 +1476,12 @@ export function createApp(
       workshopRoutes({ requireUser, canUseBot }),
     );
 
+  // The anonymous sibling, beside the owner surface it shares a vocabulary with: same
+  // /api/public/workshop prefix the share page fetches, no session, no canUseBot — the
+  // token is the only key (see sharing.ts's "the one exception" head).
+  if (publicWorkshopRoutes)
+    app.route("/api/public/workshop", publicWorkshopRoutes());
+
   if (hostAccessBroker) {
     app.route(
       "/api/host-access",
@@ -1763,6 +1779,11 @@ export function createApp(
         requireUser,
       ),
     );
+  // 知识库是独立的外部服务（KB-Service），不依赖 coworker 装配；未配置时端点以 503 应答。
+  app.route(
+    "/api/knowledge",
+    createKnowledgeRoutes(knowledgeServiceConfig(), requireUser),
+  );
   if (coworker?.responsibilities) {
     const { store, engine, bindings } = coworker.responsibilities;
     app.route(

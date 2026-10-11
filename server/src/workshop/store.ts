@@ -8,7 +8,7 @@
  * whoever wrote last. `recoverStale` relies on the same guards to settle a dead runner's turn
  * exactly once even when two replicas notice the same heartbeat going quiet.
  */
-import { and, asc, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import type { Database } from "../db/client";
 import {
@@ -31,6 +31,29 @@ export type WorkshopTurnEventRow = typeof workshopTurnEvents.$inferSelect;
 export type WorkshopArtifactRow = typeof workshopArtifacts.$inferSelect;
 
 export type WorkshopStore = {
+  // ── shares (B14): the session row IS the share row — one live link per session ──
+  /** Set or replace the session's live share (token hash + scope + window). */
+  setShare(input: {
+    channelId: string;
+    tokenHash: string;
+    scope: "preview" | "preview_download";
+    expiresAt: Date | null;
+    createdBy: string;
+  }): Promise<void>;
+  /** Revoke: shareRevokedAt set, the row kept (plan §3.7.2: auditable after it stops working). */
+  revokeShare(channelId: string): Promise<void>;
+  /** The live share BY TOKEN HASH — the one read that starts from a bearer secret. */
+  findLiveShareByTokenHash(tokenHash: string): Promise<
+    | {
+        channelId: string;
+        botId: string;
+        scope: "preview" | "preview_download";
+        expiresAt: Date | null;
+        revokedAt: Date | null;
+      }
+    | undefined
+  >;
+
   // ── schedules (B16/B17) ─────────────────────────────────────────────────────
   /** Every schedule for a session, newest first; the panel's list. */
   listSchedules(
@@ -387,6 +410,48 @@ export function createWorkshopStore(db: Database): WorkshopStore {
         .where(and(eq(workshopTurnEvents.turnId, turnId), gt(workshopTurnEvents.seq, seq)))
         .orderBy(asc(workshopTurnEvents.seq))
         .limit(limit);
+    },
+
+    // ── shares (B14): guarded updates, the turn methods' own register ────────────
+    async setShare(input) {
+      await db
+        .update(workshopSessions)
+        .set({
+          shareTokenHash: input.tokenHash,
+          shareScope: input.scope,
+          shareExpiresAt: input.expiresAt,
+          shareRevokedAt: null,
+          shareCreatedBy: input.createdBy,
+          shareCreatedAt: new Date(),
+        })
+        .where(eq(workshopSessions.channelId, input.channelId));
+    },
+
+    async revokeShare(channelId) {
+      await db
+        .update(workshopSessions)
+        .set({ shareRevokedAt: new Date() })
+        .where(
+          and(
+            eq(workshopSessions.channelId, channelId),
+            isNotNull(workshopSessions.shareTokenHash),
+          ),
+        );
+    },
+
+    async findLiveShareByTokenHash(tokenHash) {
+      const rows = await db
+        .select({
+          channelId: workshopSessions.channelId,
+          botId: workshopSessions.botId,
+          scope: workshopSessions.shareScope,
+          expiresAt: workshopSessions.shareExpiresAt,
+          revokedAt: workshopSessions.shareRevokedAt,
+        })
+        .from(workshopSessions)
+        .where(eq(workshopSessions.shareTokenHash, tokenHash))
+        .limit(1);
+      return rows[0];
     },
 
     // ── schedules (B16/B17): the store owns rows, the routes own invariants ─────
