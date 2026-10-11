@@ -14,6 +14,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -208,6 +209,139 @@ export const craftSnapshots = pgTable(
     index("craft_snapshots_session_created_idx").on(
       table.sessionId,
       table.createdAt.desc(),
+    ),
+  ],
+);
+
+/**
+ * A user-defined recurring Craft prompt + schedule — ported from onyx `ScheduledTask`.
+ *
+ * One fire spawns a fresh SCHEDULED-origin session (via the scheduled-task executor) and records
+ * a `craft_scheduled_task_runs` row pointing back at the session. Soft-deleted tasks stay out of
+ * dispatch but are retained so past runs keep their history.
+ *
+ * The three UI editor modes (interval / daily_weekly / advanced) all compile to the canonical
+ * five-field cron in `cron_expression` on save; `editor_mode` is a UI hint only. onyx stores the
+ * enum member NAME via a non-native enum; here the lowercase wire values are stored directly
+ * (matching the house style of the sibling workshop/sandbox tables).
+ */
+export type CraftScheduledTaskStatus = "active" | "paused";
+
+export type CraftScheduledTaskEditorMode =
+  | "interval"
+  | "daily_weekly"
+  | "advanced";
+
+export const craftScheduledTasks = pgTable(
+  "craft_scheduled_tasks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    prompt: text("prompt").notNull(),
+    /** Canonical 5-field cron; the sole source of truth for execution. */
+    cronExpression: text("cron_expression").notNull(),
+    editorMode: text("editor_mode")
+      .$type<CraftScheduledTaskEditorMode>()
+      .notNull(),
+    status: text("status")
+      .$type<CraftScheduledTaskStatus>()
+      .notNull()
+      .default("active"),
+    /** The dispatcher's only read field. Null when paused; recomputed on every fire and edit. */
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    /** Soft delete: the row + runs stay for run-history deep links. */
+    deleted: boolean("deleted").notNull().default(false),
+    createdAt: stamp("created_at"),
+    updatedAt: stamp("updated_at"),
+  },
+  (table) => [
+    // Dispatcher hot path: status='active' AND deleted=false AND next_run_at <= now.
+    index("craft_scheduled_tasks_dispatch_idx").on(
+      table.status,
+      table.deleted,
+      table.nextRunAt,
+    ),
+    // User-scoped list, newest first.
+    index("craft_scheduled_tasks_user_created_idx").on(
+      table.userId,
+      table.createdAt.desc(),
+    ),
+    check(
+      "craft_scheduled_tasks_status_check",
+      sql`${table.status} IN ('active', 'paused')`,
+    ),
+    check(
+      "craft_scheduled_tasks_editor_mode_check",
+      sql`${table.editorMode} IN ('interval', 'daily_weekly', 'advanced')`,
+    ),
+  ],
+);
+
+/**
+ * One firing of a `craftScheduledTask` — ported from onyx `ScheduledTaskRun`.
+ *
+ * `sessionId` is nullable for the brief window between the dispatcher inserting this row and the
+ * executor creating the session; on session delete the FK clears (SET NULL) so the run survives
+ * as part of the task's run history.
+ */
+export type CraftScheduledTaskRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "awaiting_approval";
+
+export type CraftScheduledTaskTriggerSource = "scheduled" | "manual_run_now";
+
+export const craftScheduledTaskRuns = pgTable(
+  "craft_scheduled_task_runs",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => craftScheduledTasks.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").references(() => craftSessions.id, {
+      onDelete: "set null",
+    }),
+    status: text("status")
+      .$type<CraftScheduledTaskRunStatus>()
+      .notNull()
+      .default("queued"),
+    triggerSource: text("trigger_source")
+      .$type<CraftScheduledTaskTriggerSource>()
+      .notNull(),
+    /** Populated when a prior run was still in flight, or by the stuck-run sweeper. */
+    skipReason: text("skip_reason"),
+    /** Short failure classifier (closed vocabulary); the detail lives in error_detail. */
+    errorClass: text("error_class"),
+    errorDetail: text("error_detail"),
+    /** ~120-char snippet of the final agent message for the run-history table. */
+    summary: text("summary"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [
+    // Run history: per task, newest first.
+    index("craft_scheduled_task_runs_task_started_idx").on(
+      table.taskId,
+      table.startedAt.desc(),
+    ),
+    index("craft_scheduled_task_runs_status_idx").on(table.status),
+    // Session-view banner lookup by session_id.
+    index("craft_scheduled_task_runs_session_idx").on(table.sessionId),
+    check(
+      "craft_scheduled_task_runs_status_check",
+      sql`${table.status} IN ('queued', 'running', 'succeeded', 'failed', 'skipped', 'awaiting_approval')`,
+    ),
+    check(
+      "craft_scheduled_task_runs_trigger_check",
+      sql`${table.triggerSource} IN ('scheduled', 'manual_run_now')`,
     ),
   ],
 );

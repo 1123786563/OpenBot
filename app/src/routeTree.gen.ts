@@ -48,6 +48,8 @@ import { Route as AuthedAppBotsIndexRouteImport } from './routes/_authed/_app/bo
 import { Route as AuthedAppBotsAgentIdRouteImport } from './routes/_authed/_app/bots.$agentId'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
+import { Route as AuthedAppCraftIndexRouteImport } from './routes/_authed/_app/craft/index'
+import { Route as AuthedAppCraftSessionIdRouteImport } from './routes/_authed/_app/craft/$sessionId'
 import { Route as AuthedAppGroupChannelIdRouteImport } from './routes/_authed/_app/group/$channelId'
 import { Route as AuthedAppGroupNewRouteImport } from './routes/_authed/_app/group/new'
 import { Route as AuthedAppKnowledgeIndexRouteImport } from './routes/_authed/_app/knowledge.index'
@@ -261,6 +263,16 @@ const AuthedAppChannelNewRoute = AuthedAppChannelNewRouteImport.update({
   path: '/channel/new',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppCraftIndexRoute = AuthedAppCraftIndexRouteImport.update({
+  id: '/craft/',
+  path: '/craft/',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppCraftSessionIdRoute = AuthedAppCraftSessionIdRouteImport.update({
+  id: '/craft/$sessionId',
+  path: '/craft/$sessionId',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppGroupChannelIdRoute = AuthedAppGroupChannelIdRouteImport.update({
   id: '/group/$channelId',
   path: '/group/$channelId',
@@ -388,6 +400,7 @@ export interface FileRoutesByFullPath {
   '/bots/$agentId': typeof AuthedAppBotsAgentIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
+  '/craft/$sessionId': typeof AuthedAppCraftSessionIdRoute
   '/group/$channelId': typeof AuthedAppGroupChannelIdRoute
   '/group/new': typeof AuthedAppGroupNewRoute
   '/knowledge/$kbId': typeof AuthedAppKnowledgeKbIdRoute
@@ -399,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
   '/bots/': typeof AuthedAppBotsIndexRoute
+  '/craft/': typeof AuthedAppCraftIndexRoute
   '/knowledge/': typeof AuthedAppKnowledgeIndexRoute
   '/admin/components/': typeof AuthedAdminComponentsIndexRoute
   '/admin/plugins/': typeof AuthedAdminPluginsIndexRoute
@@ -441,6 +455,7 @@ export interface FileRoutesByTo {
   '/bots/$agentId': typeof AuthedAppBotsAgentIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
+  '/craft/$sessionId': typeof AuthedAppCraftSessionIdRoute
   '/group/$channelId': typeof AuthedAppGroupChannelIdRoute
   '/group/new': typeof AuthedAppGroupNewRoute
   '/knowledge/$kbId': typeof AuthedAppKnowledgeKbIdRoute
@@ -452,6 +467,7 @@ export interface FileRoutesByTo {
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
   '/bots': typeof AuthedAppBotsIndexRoute
+  '/craft': typeof AuthedAppCraftIndexRoute
   '/knowledge': typeof AuthedAppKnowledgeIndexRoute
   '/admin/components': typeof AuthedAdminComponentsIndexRoute
   '/admin/plugins': typeof AuthedAdminPluginsIndexRoute
@@ -499,6 +515,7 @@ export interface FileRoutesById {
   '/_authed/_app/bots/$agentId': typeof AuthedAppBotsAgentIdRoute
   '/_authed/_app/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/_authed/_app/channel/new': typeof AuthedAppChannelNewRoute
+  '/_authed/_app/craft/$sessionId': typeof AuthedAppCraftSessionIdRoute
   '/_authed/_app/group/$channelId': typeof AuthedAppGroupChannelIdRoute
   '/_authed/_app/group/new': typeof AuthedAppGroupNewRoute
   '/_authed/_app/knowledge/$kbId': typeof AuthedAppKnowledgeKbIdRoute
@@ -510,6 +527,7 @@ export interface FileRoutesById {
   '/_authed/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
   '/_authed/_app/bots/': typeof AuthedAppBotsIndexRoute
+  '/_authed/_app/craft/': typeof AuthedAppCraftIndexRoute
   '/_authed/_app/knowledge/': typeof AuthedAppKnowledgeIndexRoute
   '/_authed/admin/components/': typeof AuthedAdminComponentsIndexRoute
   '/_authed/admin/plugins/': typeof AuthedAdminPluginsIndexRoute
@@ -556,6 +574,7 @@ export interface FileRouteTypes {
     | '/bots/$agentId'
     | '/channel/$channelId'
     | '/channel/new'
+    | '/craft/$sessionId'
     | '/group/$channelId'
     | '/group/new'
     | '/knowledge/$kbId'
@@ -567,6 +586,7 @@ export interface FileRouteTypes {
     | '/settings/connected-accounts/$key'
     | '/agents/'
     | '/bots/'
+    | '/craft/'
     | '/knowledge/'
     | '/admin/components/'
     | '/admin/plugins/'
@@ -609,6 +629,7 @@ export interface FileRouteTypes {
     | '/bots/$agentId'
     | '/channel/$channelId'
     | '/channel/new'
+    | '/craft/$sessionId'
     | '/group/$channelId'
     | '/group/new'
     | '/knowledge/$kbId'
@@ -620,6 +641,7 @@ export interface FileRouteTypes {
     | '/settings/connected-accounts/$key'
     | '/agents'
     | '/bots'
+    | '/craft'
     | '/knowledge'
     | '/admin/components'
     | '/admin/plugins'
@@ -666,6 +688,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/bots/$agentId'
     | '/_authed/_app/channel/$channelId'
     | '/_authed/_app/channel/new'
+    | '/_authed/_app/craft/$sessionId'
     | '/_authed/_app/group/$channelId'
     | '/_authed/_app/group/new'
     | '/_authed/_app/knowledge/$kbId'
@@ -677,6 +700,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/connected-accounts/$key'
     | '/_authed/_app/agents/'
     | '/_authed/_app/bots/'
+    | '/_authed/_app/craft/'
     | '/_authed/_app/knowledge/'
     | '/_authed/admin/components/'
     | '/_authed/admin/plugins/'
@@ -967,6 +991,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppChannelNewRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/craft/': {
+      id: '/_authed/_app/craft/'
+      path: '/craft'
+      fullPath: '/craft/'
+      preLoaderRoute: typeof AuthedAppCraftIndexRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/craft/$sessionId': {
+      id: '/_authed/_app/craft/$sessionId'
+      path: '/craft/$sessionId'
+      fullPath: '/craft/$sessionId'
+      preLoaderRoute: typeof AuthedAppCraftSessionIdRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/group/$channelId': {
       id: '/_authed/_app/group/$channelId'
       path: '/group/$channelId'
@@ -1172,11 +1210,13 @@ interface AuthedAppRouteChildren {
   AuthedAppBotsAgentIdRoute: typeof AuthedAppBotsAgentIdRoute
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
   AuthedAppChannelNewRoute: typeof AuthedAppChannelNewRoute
+  AuthedAppCraftSessionIdRoute: typeof AuthedAppCraftSessionIdRoute
   AuthedAppGroupChannelIdRoute: typeof AuthedAppGroupChannelIdRoute
   AuthedAppGroupNewRoute: typeof AuthedAppGroupNewRoute
   AuthedAppKnowledgeKbIdRoute: typeof AuthedAppKnowledgeKbIdRoute
   AuthedAppAgentsIndexRoute: typeof AuthedAppAgentsIndexRoute
   AuthedAppBotsIndexRoute: typeof AuthedAppBotsIndexRoute
+  AuthedAppCraftIndexRoute: typeof AuthedAppCraftIndexRoute
   AuthedAppKnowledgeIndexRoute: typeof AuthedAppKnowledgeIndexRoute
 }
 
@@ -1194,11 +1234,13 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotsAgentIdRoute: AuthedAppBotsAgentIdRoute,
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,
   AuthedAppChannelNewRoute: AuthedAppChannelNewRoute,
+  AuthedAppCraftSessionIdRoute: AuthedAppCraftSessionIdRoute,
   AuthedAppGroupChannelIdRoute: AuthedAppGroupChannelIdRoute,
   AuthedAppGroupNewRoute: AuthedAppGroupNewRoute,
   AuthedAppKnowledgeKbIdRoute: AuthedAppKnowledgeKbIdRoute,
   AuthedAppAgentsIndexRoute: AuthedAppAgentsIndexRoute,
   AuthedAppBotsIndexRoute: AuthedAppBotsIndexRoute,
+  AuthedAppCraftIndexRoute: AuthedAppCraftIndexRoute,
   AuthedAppKnowledgeIndexRoute: AuthedAppKnowledgeIndexRoute,
 }
 
