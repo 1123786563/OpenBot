@@ -649,6 +649,13 @@ export const auditEventTypes = [
    * exactly why the manual grant's source is a promo or a signin and nothing else.
    */
   "billing.credits.granted",
+  /**
+   * The reconciliation pass was run (T7): an on-demand audit of the books' two invariants
+   * (the payment three-way and the credit identity). Audited because it is an operator
+   * action with a finding trail — the payload carries the counts and the finding codes, so
+   * "when did we last look, and did the books agree" is answerable from the trail alone.
+   */
+  "billing.reconciled",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

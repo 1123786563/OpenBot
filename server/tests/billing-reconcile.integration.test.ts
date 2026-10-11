@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq, like } from "drizzle-orm";
 import { createReconciler } from "../src/billing/reconcile";
 import { createDatabase } from "../src/db/client";
-import { billingSubscriptions } from "../src/db/schema/billing";
+import { billingCustomers, billingSubscriptions } from "../src/db/schema/billing";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -45,6 +45,9 @@ afterAll(async () => {
   await database
     .delete(billingSubscriptions)
     .where(like(billingSubscriptions.externalCustomerId, `${prefix}%`));
+  await database
+    .delete(billingCustomers)
+    .where(eq(billingCustomers.externalId, prefix));
   await database.$client.close();
 });
 
@@ -72,6 +75,13 @@ async function agreeingWorld(): Promise<string> {
     state: "paid",
     channelTransactionId: `${prefix}-tx-ok`,
   });
+  // The customer floor the writer itself lays: the grant's foreign key must find the
+  // billing_customers row (the writer inserts-if-absent; this test writes rows directly, so
+  // it lays the floor itself).
+  await database
+    .insert(billingCustomers)
+    .values({ externalId: prefix, name: null })
+    .onConflictDoNothing({ target: billingCustomers.externalId });
   // The credit identity for this customer: one grant fully drawn, one ledger row recording
   // exactly that draw.
   await database.insert(creditGrants).values({
@@ -98,8 +108,7 @@ async function agreeingWorld(): Promise<string> {
   // A live projection row (applied orders ↔ live subscription).
   await database.insert(billingSubscriptions).values({
     externalCustomerId: prefix,
-    provider: "lago",
-    providerSubscriptionId: `${prefix}-sub`,
+    externalSubscriptionId: `${prefix}-sub`,
     planCode: "pro",
     status: "active",
   });
@@ -133,9 +142,12 @@ describe("reconcile (the skeleton, over real tables)", () => {
       version: 2,
     });
     const report = await reconciler.reconcile();
-    const findings = mine(report.findings);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
+    // Earlier cases' rows still sit in the tables (whole-table audit is the pass's shape), so
+    // this case asserts ITS order's finding precisely — present, correctly coded — and that
+    // no OTHER finding names this order.
+    const mineOnly = report.findings.filter((f) => f.subject === orderId);
+    expect(mineOnly).toHaveLength(1);
+    expect(mineOnly[0]).toMatchObject({
       category: "payment",
       code: "paid_without_fact",
       subject: orderId,
@@ -166,9 +178,9 @@ describe("reconcile (the skeleton, over real tables)", () => {
       channelTransactionId: `${prefix}-tx-other`, // the swap
     });
     const report = await reconciler.reconcile();
-    const findings = mine(report.findings);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
+    const mineOnly = report.findings.filter((f) => f.subject === orderId);
+    expect(mineOnly).toHaveLength(1);
+    expect(mineOnly[0]).toMatchObject({
       category: "payment",
       code: "fact_transaction_mismatch",
       subject: orderId,
