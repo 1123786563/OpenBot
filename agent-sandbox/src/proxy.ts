@@ -364,9 +364,15 @@ export function createProxyHandler(
       }).catch(() => null);
       if (!response)
         return Response.json({ error: "The abort did not reach the runtime." }, { status: 503 });
+      // Same encoding-header discipline as the main pass-through below: the body bun hands
+      // us is already decompressed, so the upstream's content-encoding/content-length no
+      // longer describe it.
+      const abortHeaders = new Headers(response.headers);
+      abortHeaders.delete("content-encoding");
+      abortHeaders.delete("content-length");
       return new Response(response.body, {
         status: response.status,
-        headers: response.headers,
+        headers: abortHeaders,
       });
     }
     const headers = new Headers(request.headers);
@@ -402,6 +408,18 @@ export function createProxyHandler(
     const upstreamLength = Number(response.headers.get("content-length") ?? "0");
     if (upstreamLength > env.maxResponseBytes)
       return Response.json({ error: "The sandbox response is too large." }, { status: 413 });
-    return new Response(response.body, { status: response.status, headers: response.headers });
+    // Bun's fetch already decompressed the upstream body (gzip from opencode on larger
+    // listings) — `response.body` is plaintext now. Forwarding the upstream's headers as-is
+    // kept `content-encoding: gzip` on a plaintext body, and the next bun fetch downstream
+    // obeyed the header and tried to gunzip plain JSON: ZlibError, the file tree's 500.
+    // Drop the encoding headers that no longer describe the body, and the length that
+    // described the compressed one; the proxy never re-compresses, so identity is the truth.
+    const passthroughHeaders = new Headers(response.headers);
+    passthroughHeaders.delete("content-encoding");
+    passthroughHeaders.delete("content-length");
+    return new Response(response.body, {
+      status: response.status,
+      headers: passthroughHeaders,
+    });
   };
 }
