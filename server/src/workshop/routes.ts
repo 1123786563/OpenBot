@@ -26,6 +26,7 @@ import { recordAuditEvent } from "../audit";
 import type { TurnOrchestrator } from "./orchestrator";
 import { listTree, upload, UploadLimitError } from "./files";
 import type { SandboxClient } from "../codesandbox/client";
+import type { ShareScope, ShareService } from "./sharing";
 
 /** The sandbox readiness the snapshot reports, matching F1's WorkshopSandboxStatus. */
 type SandboxStatus =
@@ -50,6 +51,13 @@ export type WorkshopRoutesDeps = {
   orchestrator: TurnOrchestrator;
   /** The Bot's sandbox client, or null where none is configured. */
   clientFor: (botId: string) => SandboxClient | null;
+  /**
+   * The share service the owner-side share endpoints ride (F8's contract). The public anonymous
+   * surface mounts its own instance in public-routes.ts; this one exists because the panel's
+   * "创建链接" button has to reach createShare/revokeShare through the same gate as everything
+   * else — sharing.ts's resolveShareActor stays the ONLY canUseBot bypass, and it is not here.
+   */
+  sharing?: ShareService;
 };
 
 export function createWorkshopRoutes(input: {
@@ -58,7 +66,8 @@ export function createWorkshopRoutes(input: {
   canUseBot: BotAccessCheck;
   deps: WorkshopRoutesDeps & { auditStore?: Parameters<typeof upload>[0]["auditStore"] };
 }): Hono<{ Variables: AppVariables }> {
-  const { store, bus, orchestrator, clientFor, auditStore } = input.deps;
+  const { store, bus, orchestrator, clientFor, auditStore, sharing } =
+    input.deps;
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", input.requireUser);
 
@@ -159,11 +168,78 @@ export function createWorkshopRoutes(input: {
       share: {
         visibility: session.visibility,
         scope: session.shareScope,
-        shareUrl: session.shareTokenHash ? "/share/pending" : null,
+        // The plaintext never exists after creation (only the hash is stored), so the aggregate
+        // can only say a link is live — the URL itself was handed out once, at mint time.
+        shareUrl: session.shareTokenHash && !session.shareRevokedAt ? "live" : null,
         shareExpiresAt: session.shareExpiresAt?.toISOString() ?? null,
         shareRevokedAt: session.shareRevokedAt?.toISOString() ?? null,
       },
     });
+  });
+
+  // ── share (owner surface: mint and revoke; F8's contract) ────────────────────
+  app.post("/:channelId/share", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const { session, actor } = gateResult;
+    if (!sharing)
+      return context.json({ error: "Sharing is not configured." }, 503);
+    const body = (await context.req.json().catch(() => undefined)) as
+      | { scope?: unknown; expiresInDays?: unknown }
+      | undefined;
+    const scope: ShareScope =
+      body?.scope === "preview_download" ? "preview_download" : "preview";
+    const expiresInDays =
+      typeof body?.expiresInDays === "number" &&
+      Number.isInteger(body.expiresInDays) &&
+      body.expiresInDays > 0
+        ? body.expiresInDays
+        : undefined;
+    const handle = await sharing.createShare({
+      channelId: session.channelId,
+      scope,
+      expiresInDays,
+      createdBy: actor.id,
+    });
+    if (auditStore) {
+      await recordAuditEvent(auditStore, {
+        eventType: "workshop.share_created",
+        targetType: "workshop_session",
+        targetId: session.id,
+        actorUserId: actor.id,
+        // The plaintext token never enters the trail (sharing.ts's rule); the handle is gone
+        // the moment this response is written, so the row says a link was minted, not what it is.
+        payload: { channel: session.channelId, scope },
+      });
+    }
+    return context.json(
+      {
+        token: handle.token,
+        shareUrl: handle.shareUrl,
+        scope: handle.scope,
+        expiresAt: handle.expiresAt?.toISOString() ?? null,
+      },
+      201,
+    );
+  });
+
+  app.delete("/:channelId/share", async (context) => {
+    const gateResult = await gate(context);
+    if (!gateResult.ok) return gateResult.response;
+    const { session, actor } = gateResult;
+    if (!sharing)
+      return context.json({ error: "Sharing is not configured." }, 503);
+    await sharing.revokeShare(session.channelId);
+    if (auditStore) {
+      await recordAuditEvent(auditStore, {
+        eventType: "workshop.share_revoked",
+        targetType: "workshop_session",
+        targetId: session.id,
+        actorUserId: actor.id,
+        payload: { channel: session.channelId },
+      });
+    }
+    return context.json({ revoked: true });
   });
 
   // ── turns ─────────────────────────────────────────────────────────────────────
