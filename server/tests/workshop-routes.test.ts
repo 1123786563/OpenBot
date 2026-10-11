@@ -97,8 +97,20 @@ function fakeStore() {
     async appendEvent() {
       throw new Error("not under test");
     },
-    async readEventsSince() {
-      return [] as never;
+    // wt_1 carries one persisted event by default — the settled-history endpoint reads it.
+    async readEventsSince(turnId: string, _seq: number, _limit?: number) {
+      return turnId === "wt_1"
+        ? ([
+            {
+              id: "we_1",
+              turnId: "wt_1",
+              seq: 1,
+              type: "message_chunk",
+              payload: { type: "message.part.delta", delta: "hi" },
+              createdAt: new Date("2026-01-01T00:00:12Z"),
+            },
+          ] as never)
+        : ([] as never);
     },
   } as unknown as WorkshopStore;
 }
@@ -388,6 +400,37 @@ describe("workshop routes: the owner share endpoints", () => {
     expect(response.status).toBe(200);
     expect((await response.json()).revoked).toBe(true);
     expect(sharing.revokes()).toBe(1);
+  });
+});
+
+describe("workshop routes: a settled turn's history", () => {
+  test("GET /turns/:id/events answers the persisted events in wire shape", async () => {
+    const { orchestrator } = fakeOrchestrator();
+    const app = createWorkshopRoutes({
+      requireUser,
+      canUseBot: (async () => true) as never,
+      deps: { store: fakeStore(), bus: fakeBus(), orchestrator, clientFor: () => fakeClient() },
+    });
+    const response = await app.request("/ch_1/turns/wt_1/events");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { turnId: string; events: Array<{ seq: number; type: string }> };
+    expect(body.turnId).toBe("wt_1");
+    expect(Array.isArray(body.events)).toBe(true);
+    body.events.forEach((event) => {
+      expect(typeof event.seq).toBe("number");
+      expect(typeof event.type).toBe("string");
+    });
+  });
+
+  test("a turn id that belongs to nobody here is 404", async () => {
+    const { orchestrator } = fakeOrchestrator();
+    const app = createWorkshopRoutes({
+      requireUser,
+      canUseBot: (async () => true) as never,
+      deps: { store: fakeStore(), bus: fakeBus(), orchestrator, clientFor: () => fakeClient() },
+    });
+    const response = await app.request("/ch_1/turns/wt_stranger/events");
+    expect(response.status).toBe(404);
   });
 });
 

@@ -207,6 +207,25 @@ export function cancelWorkshopTurn(
   ).then((response) => response.json() as Promise<CancelTurnResponse>);
 }
 
+/**
+ * A settled turn's persisted events, straight from the store (no stream): the same wire
+ * shape the SSE delivered live, so the view renders history and live identically.
+ */
+export function fetchWorkshopTurnEvents(
+  channelId: string,
+  turnId: string,
+): Promise<{ turnId: string; events: WorkshopStreamEvent[] }> {
+  return client(
+    workshopPath(channelId, `/turns/${encodeURIComponent(turnId)}/events`),
+    {
+      fallback: "The turn's events could not be loaded.",
+    },
+  ).then(
+    (response) =>
+      response.json() as Promise<{ turnId: string; events: WorkshopStreamEvent[] }>,
+  );
+}
+
 /** The file tree at a path; the root when `path` is omitted. */
 export function listWorkshopFiles(
   channelId: string,

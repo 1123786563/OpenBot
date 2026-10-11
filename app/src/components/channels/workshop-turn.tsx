@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconPlayerStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { cancelWorkshopTurn, type WorkshopStreamEvent } from "@/lib/workshop/client";
+import {
+  cancelWorkshopTurn,
+  fetchWorkshopTurnEvents,
+  type WorkshopStreamEvent,
+} from "@/lib/workshop/client";
 import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
 import { useWorkshopStream } from "@/lib/workshop/stream";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,7 +40,19 @@ export function WorkshopTurnView({
     active: running,
   });
 
-  const answer = useMemo(() => assembleAnswer(events), [events]);
+  // A settled turn still owes the reader its transcript: the live stream only runs while the
+  // turn is in flight, so once it settles the same rows are read back from the store. Same
+  // wire shape, so the view renders history and live identically (the stream's events win
+  // while it holds them; the store's take over the moment the turn settles).
+  const settledEvents = useQuery({
+    queryKey: ["workshop", "turn-events", channelId, latestTurn?.id],
+    enabled: !running && latestTurn !== undefined && latestTurn.id !== undefined,
+    staleTime: Number.POSITIVE_INFINITY,
+    queryFn: () => fetchWorkshopTurnEvents(channelId, latestTurn!.id!),
+  });
+  const shown = running ? events : (settledEvents.data?.events ?? []);
+
+  const answer = useMemo(() => assembleAnswer(shown), [shown]);
 
   const stop = async () => {
     if (!latestTurn) return;
@@ -93,12 +109,12 @@ export function WorkshopTurnView({
       </div>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-        {events.length === 0 && !running ? (
+        {shown.length === 0 && !running ? (
           <p className="text-sm text-muted-foreground">
             {latestTurn?.error ?? t("turn.noEvents")}
           </p>
         ) : null}
-        {events.map((event) => (
+        {shown.map((event) => (
           <EventLine key={event.seq} event={event} />
         ))}
         {answer ? (
