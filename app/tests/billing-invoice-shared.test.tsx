@@ -1,4 +1,11 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import {
@@ -14,11 +21,22 @@ import i18n from "@/lib/i18n";
  * components the new system still mounts.
  */
 
-beforeAll(async () => {
-  GlobalRegistrator.register();
+beforeAll(() => GlobalRegistrator.register());
+/*
+ * zh-CN per test, English restored after each one. bun runs every test file in one process,
+ * and this suite asserts Chinese strings; without giving the language back, every later file
+ * renders Chinese where its assertions expect English — the whole rest of the suite fails with
+ * "Unable to find" while each file still passes alone. beforeEach/afterEach (not
+ * beforeAll/afterAll) because an afterAll can fire after the next file's beforeAll has already
+ * rendered. Switching between bundled languages applies synchronously.
+ */
+beforeEach(async () => {
   await i18n.changeLanguage("zh-CN");
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  void i18n.changeLanguage("en");
+});
 afterAll(() => GlobalRegistrator.unregister());
 
 /**

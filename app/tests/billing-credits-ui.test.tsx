@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  mock,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
@@ -20,14 +28,48 @@ import i18n from "@/lib/i18n";
 mock.module("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: React.ReactNode }) =>
     children ?? null;
+  /*
+   * A SHAPE-COMPATIBLE passthrough, because mock.module is registry-level and OUTLIVES THIS
+   * FILE. Later files (brokered-account-row's key dialog, the transcript's lightbox) exercise
+   * the real Dialog's semantics through this mock, so the mock has to honor them:
+   * - closed renders nothing (the real portal mounts nothing until open);
+   * - open renders role="dialog" (they find it by role);
+   * - DialogContent carries the close button a real one renders (they close it by name).
+   * Children render inline instead of into a portal — the only part happy-dom cannot do, and
+   * the part this file's assertions never looked at.
+   */
+  const Dialog = ({
+    children,
+    open = false,
+  }: {
+    children?: React.ReactNode;
+    open?: boolean;
+  }) => (open ? <div role="dialog">{children}</div> : null);
+  const DialogContent = ({ children }: { children?: React.ReactNode }) => (
+    <div>
+      {children}
+      <button type="button">
+        <span className="sr-only">Close</span>
+      </button>
+    </div>
+  );
   return {
-    Dialog: pass,
-    DialogContent: pass,
+    Dialog,
+    DialogContent,
     DialogHeader: pass,
     DialogBody: pass,
     DialogFooter: pass,
     DialogTitle: pass,
     DialogDescription: pass,
+    /*
+     * EVERY export, because mock.module is process-lifetime: a later test file importing
+     * chat-transcript pulls this same mock, and a missing DialogClose/Overlay/Portal/Trigger
+     * was a SyntaxError that failed that file before its own first test ran.
+     */
+    DialogClose: pass,
+    DialogOverlay: pass,
+    DialogPortal: pass,
+    DialogTrigger: pass,
   };
 });
 
@@ -48,12 +90,17 @@ const withProvider = (ui: React.ReactElement) => (
   <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
 );
 
-beforeAll(async () => {
-  GlobalRegistrator.register();
-  // The dialog fetches the purchase catalog (channels + purchasable cycles) on open; happy-dom
-  // has no network, so the one endpoint it reads is served from a stub — the dialog's own
-  // rendering is the test's subject, not the fetch.
-  const realFetch = globalThis.fetch;
+// Module scope so afterEach can restore it; see the comment below.
+let realFetch: typeof globalThis.fetch;
+
+/*
+ * The catalog stub is (re)installed per test and restored after each one, because happy-dom has
+ * no network and the dialog fetches its purchase catalog when open. Restore AND reinstall: bun
+ * runs every file in one process, so a stub left behind sends later files' unmocked requests
+ * here, while a stub removed after the first test starves this file's own later tests.
+ */
+function installCatalogStub() {
+  realFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
     async (input: string | URL | Request) => {
       const url =
@@ -78,10 +125,22 @@ beforeAll(async () => {
     },
     { preconnect: () => undefined },
   );
-  // Written against the zh-CN bundle, matching billing-plans-usage-ui.test.tsx's convention.
+}
+
+beforeAll(() => GlobalRegistrator.register());
+/*
+ * zh-CN per test (these assertions are written against it), English and the network restored
+ * after each one — see billing-invoice-shared.test.tsx for the language half.
+ */
+beforeEach(async () => {
+  installCatalogStub();
   await i18n.changeLanguage("zh-CN");
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  void i18n.changeLanguage("en");
+  if (realFetch !== undefined) globalThis.fetch = realFetch;
+});
 afterAll(() => GlobalRegistrator.unregister());
 
 /*
