@@ -18,6 +18,7 @@ import { createConversationStore } from "../conversations/store";
 import {
   createModelBudgetService,
   reserveModelBudgetInTransaction,
+  runCeilingIdempotencyKey,
 } from "../models/budget";
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
@@ -138,7 +139,7 @@ export function createRunService(deps: RunServiceDependencies): RunService {
           },
           configuredLimitTokens,
           {
-            idempotencyKey: `run-ceiling:${created.runId}`,
+            idempotencyKey: runCeilingIdempotencyKey(created.runId),
             expiresAt: created.leaseExpiresAt,
             runCeiling: true,
           },

@@ -13,6 +13,7 @@ import type {
   PlatformScope,
 } from "../contracts";
 import { createConversationStore } from "../conversations/store";
+import { runCeilingIdempotencyKey } from "../models/budget";
 import type { DataDatabase } from "../tenancy/connections";
 import { hasActiveAttemptLease } from "./store";
 
@@ -138,6 +139,14 @@ async function loadByCapability(
       and(
         eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
         eq(
+          enterpriseModelInvocationCapabilities.workspaceId,
+          scope.workspaceId,
+        ),
+        eq(
+          enterpriseModelInvocationCapabilities.principalId,
+          scope.principalId,
+        ),
+        eq(
           enterpriseModelInvocationCapabilities.capabilityDigest,
           digestCapability(capability),
         ),
@@ -219,6 +228,14 @@ export function createModelInvocationCapabilityService(deps: {
           )
           .limit(1);
         if (!attempt) throw new ModelInvocationError("RUN_ATTEMPT_STALE", 409);
+        if (
+          !(await hasActiveAttemptLease(tx, scope, {
+            runId: run.id,
+            attemptId: attempt.id,
+            generation: attempt.generation,
+          }))
+        )
+          throw new ModelInvocationError("RUN_ATTEMPT_STALE", 409);
         if (input.maximumTokens > run.modelRouteMaximumTokens)
           throw new ModelInvocationError(
             "MODEL_ROUTE_BUDGET_EXCEEDED",
@@ -226,6 +243,7 @@ export function createModelInvocationCapabilityService(deps: {
             "The request exceeds the locked model route limit.",
           );
 
+        const now = new Date();
         const [existing] = await tx
           .select()
           .from(enterpriseModelInvocationCapabilities)
@@ -234,6 +252,14 @@ export function createModelInvocationCapabilityService(deps: {
               eq(
                 enterpriseModelInvocationCapabilities.tenantId,
                 scope.tenantId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
               ),
               eq(enterpriseModelInvocationCapabilities.runId, input.runId),
               eq(
@@ -255,8 +281,57 @@ export function createModelInvocationCapabilityService(deps: {
               409,
             );
           }
-          if (existing.expiresAt <= new Date())
-            throw new ModelInvocationError("MODEL_CAPABILITY_EXPIRED", 410);
+          if (existing.expiresAt <= now) {
+            if (existing.status !== "reserved")
+              throw new ModelInvocationError("MODEL_CAPABILITY_EXPIRED", 410);
+            const expiresAt = new Date(
+              Math.min(
+                now.getTime() + 10 * 60_000,
+                run.leaseExpiresAt.getTime(),
+                attempt.leaseExpiresAt.getTime(),
+              ),
+            );
+            if (expiresAt <= now)
+              throw new ModelInvocationError("MODEL_CAPABILITY_EXPIRED", 410);
+            const renewedCapability = createCapability(secret, {
+              ...existing,
+              expiresAt,
+            });
+            const [renewed] = await tx
+              .update(enterpriseModelInvocationCapabilities)
+              .set({
+                capabilityDigest: digestCapability(renewedCapability),
+                expiresAt,
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(
+                    enterpriseModelInvocationCapabilities.tenantId,
+                    scope.tenantId,
+                  ),
+                  eq(
+                    enterpriseModelInvocationCapabilities.workspaceId,
+                    scope.workspaceId,
+                  ),
+                  eq(
+                    enterpriseModelInvocationCapabilities.principalId,
+                    scope.principalId,
+                  ),
+                  eq(enterpriseModelInvocationCapabilities.runId, run.id),
+                  eq(enterpriseModelInvocationCapabilities.id, existing.id),
+                  eq(enterpriseModelInvocationCapabilities.status, "reserved"),
+                  sql`${enterpriseModelInvocationCapabilities.expiresAt} <= now()`,
+                ),
+              )
+              .returning();
+            if (!renewed)
+              throw new ModelInvocationError(
+                "MODEL_CAPABILITY_UNAVAILABLE",
+                409,
+              );
+            return capabilityDto(renewed, renewedCapability);
+          }
           return capabilityDto(existing, createCapability(secret, existing));
         }
 
@@ -266,10 +341,18 @@ export function createModelInvocationCapabilityService(deps: {
           .where(
             and(
               eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+              eq(
+                enterpriseModelBudgetReservations.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelBudgetReservations.principalId,
+                scope.principalId,
+              ),
               eq(enterpriseModelBudgetReservations.runId, input.runId),
               eq(
                 enterpriseModelBudgetReservations.idempotencyKey,
-                `run-ceiling:${input.runId}`,
+                runCeilingIdempotencyKey(input.runId),
               ),
               eq(enterpriseModelBudgetReservations.isRunCeiling, true),
             ),
@@ -287,6 +370,14 @@ export function createModelInvocationCapabilityService(deps: {
           .where(
             and(
               eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+              eq(
+                enterpriseModelBudgetReservations.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelBudgetReservations.principalId,
+                scope.principalId,
+              ),
               eq(enterpriseModelBudgetReservations.runId, input.runId),
               eq(enterpriseModelBudgetReservations.isRunCeiling, false),
               inArray(enterpriseModelBudgetReservations.status, [
@@ -307,6 +398,14 @@ export function createModelInvocationCapabilityService(deps: {
               eq(
                 enterpriseModelInvocationCapabilities.tenantId,
                 scope.tenantId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
               ),
               eq(enterpriseModelInvocationCapabilities.runId, input.runId),
               inArray(enterpriseModelInvocationCapabilities.status, [
@@ -339,7 +438,6 @@ export function createModelInvocationCapabilityService(deps: {
             "The configured model budget has been exceeded.",
           );
 
-        const now = new Date();
         const expiresAt = new Date(
           Math.min(
             now.getTime() + 10 * 60_000,
@@ -390,11 +488,36 @@ export function createModelInvocationCapabilityService(deps: {
       capability: string,
     ): Promise<ModelInvocationContext> {
       return store.transaction(scope, async (tx) => {
-        const row = await loadByCapability(tx, scope, capability);
-        assertCapabilityOwner(row, scope);
-        const now = new Date();
-        if (row.status !== "reserved")
-          throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(capability)) {
+          throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
+        }
+        const originalDigest = digestCapability(capability);
+        const [candidate] = await tx
+          .select()
+          .from(enterpriseModelInvocationCapabilities)
+          .where(
+            and(
+              eq(
+                enterpriseModelInvocationCapabilities.tenantId,
+                scope.tenantId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.capabilityDigest,
+                originalDigest,
+              ),
+            ),
+          )
+          .limit(1);
+        if (!candidate)
+          throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
         const [run] = await tx
           .select()
           .from(enterpriseRuns)
@@ -403,23 +526,70 @@ export function createModelInvocationCapabilityService(deps: {
               eq(enterpriseRuns.tenantId, scope.tenantId),
               eq(enterpriseRuns.workspaceId, scope.workspaceId),
               eq(enterpriseRuns.principalId, scope.principalId),
-              eq(enterpriseRuns.id, row.runId),
+              eq(enterpriseRuns.id, candidate.runId),
             ),
           )
           .for("update")
           .limit(1);
+        if (!run)
+          throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
+        const [row] = await tx
+          .select()
+          .from(enterpriseModelInvocationCapabilities)
+          .where(
+            and(
+              eq(
+                enterpriseModelInvocationCapabilities.tenantId,
+                scope.tenantId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
+              ),
+              eq(enterpriseModelInvocationCapabilities.id, candidate.id),
+              eq(enterpriseModelInvocationCapabilities.runId, candidate.runId),
+              eq(
+                enterpriseModelInvocationCapabilities.capabilityDigest,
+                originalDigest,
+              ),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!row)
+          throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
+        assertCapabilityOwner(row, scope);
         if (
-          !run ||
+          row.runId !== candidate.runId ||
+          row.attemptId !== candidate.attemptId ||
+          row.generation !== candidate.generation ||
+          row.modelRouteRef !== candidate.modelRouteRef ||
+          row.modelRequestId !== candidate.modelRequestId ||
+          row.maximumTokens !== candidate.maximumTokens
+        ) {
+          throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
+        }
+        if (
           !["queued", "running", "waiting_approval", "suspended"].includes(
             run.status,
           ) ||
-          run.attemptGeneration !== row.generation
+          run.attemptGeneration !== row.generation ||
+          run.modelRouteRef !== row.modelRouteRef ||
+          row.maximumTokens > run.modelRouteMaximumTokens
         ) {
+          throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
+        }
+        const now = new Date();
+        if (row.status !== "reserved" || row.expiresAt <= now) {
           throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
         }
         if (
           !(await hasActiveAttemptLease(tx, scope, {
-            runId: row.runId,
+            runId: run.id,
             attemptId: row.attemptId,
             generation: row.generation,
           }))
@@ -430,8 +600,44 @@ export function createModelInvocationCapabilityService(deps: {
           .set({ status: "consumed", updatedAt: now })
           .where(
             and(
-              eq(enterpriseModelInvocationCapabilities.tenantId, row.tenantId),
+              eq(
+                enterpriseModelInvocationCapabilities.tenantId,
+                scope.tenantId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
+              ),
+              eq(enterpriseModelInvocationCapabilities.runId, run.id),
               eq(enterpriseModelInvocationCapabilities.id, row.id),
+              eq(
+                enterpriseModelInvocationCapabilities.attemptId,
+                row.attemptId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.generation,
+                row.generation,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.modelRouteRef,
+                row.modelRouteRef,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.modelRequestId,
+                row.modelRequestId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.maximumTokens,
+                row.maximumTokens,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.capabilityDigest,
+                originalDigest,
+              ),
               eq(enterpriseModelInvocationCapabilities.status, "reserved"),
               sql`${enterpriseModelInvocationCapabilities.expiresAt} > now()`,
             ),
@@ -463,15 +669,11 @@ export function createModelInvocationCapabilityService(deps: {
             throw new ModelInvocationError("MODEL_USAGE_CONFLICT", 409);
           return;
         }
-        if (
-          row.status !== "reserved" &&
-          row.status !== "consumed" &&
-          row.status !== "unknown"
-        )
+        if (row.status !== "consumed")
           throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
         if (usedTokens > row.maximumTokens)
           throw new ModelInvocationError("MODEL_BUDGET_EXCEEDED", 402);
-        await tx
+        const [updated] = await tx
           .update(enterpriseModelInvocationCapabilities)
           .set({ status: "confirmed", usedTokens, updatedAt: new Date() })
           .where(
@@ -480,14 +682,22 @@ export function createModelInvocationCapabilityService(deps: {
                 enterpriseModelInvocationCapabilities.tenantId,
                 scope.tenantId,
               ),
+              eq(
+                enterpriseModelInvocationCapabilities.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelInvocationCapabilities.principalId,
+                scope.principalId,
+              ),
+              eq(enterpriseModelInvocationCapabilities.runId, row.runId),
               eq(enterpriseModelInvocationCapabilities.id, row.id),
-              inArray(enterpriseModelInvocationCapabilities.status, [
-                "reserved",
-                "consumed",
-                "unknown",
-              ]),
+              eq(enterpriseModelInvocationCapabilities.status, "consumed"),
             ),
-          );
+          )
+          .returning({ id: enterpriseModelInvocationCapabilities.id });
+        if (!updated)
+          throw new ModelInvocationError("MODEL_CAPABILITY_UNAVAILABLE", 409);
       });
     },
 

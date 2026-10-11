@@ -13,6 +13,9 @@ DECLARE
 	holder_count bigint;
 	matching_holder_count bigint;
 BEGIN
+	LOCK TABLE mastra_message_intents IN SHARE ROW EXCLUSIVE MODE;
+	LOCK TABLE mastra_message_intent_attachments IN SHARE ROW EXCLUSIVE MODE;
+
 	SELECT count(*) INTO invalid_run_count
 	FROM enterprise_runs
 	WHERE model_route_maximum_tokens <= 0;

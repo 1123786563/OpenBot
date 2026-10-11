@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createDatabase, type Database } from "../../src/db/client";
 import {
+  enterpriseConversations,
   enterpriseMemberships,
   enterpriseModelBudgetReservations,
   enterpriseModelInvocationCapabilities,
@@ -17,7 +18,12 @@ import {
 } from "../../src/db/schema";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import { createConversationService } from "../../src/enterprise/conversations/service";
-import { createModelBudgetService } from "../../src/enterprise/models/budget";
+import { createConversationStore } from "../../src/enterprise/conversations/store";
+import {
+  createModelBudgetService,
+  reserveModelBudgetInTransaction,
+  runCeilingIdempotencyKey,
+} from "../../src/enterprise/models/budget";
 import { createRunOutbox } from "../../src/enterprise/runs/outbox";
 import { createRunService } from "../../src/enterprise/runs/service";
 import { createRunStore } from "../../src/enterprise/runs/store";
@@ -113,7 +119,9 @@ beforeAll(async () => {
   scope = await resolver.resolve(request);
 
   conversations = createConversationService({ data });
-  const conversation = await conversations.getOrCreate(scope, {});
+  threadId = randomUUID();
+  await seedPlatformConversation(threadId);
+  const conversation = await conversations.getOrCreate(scope, { threadId });
   threadId = conversation.thread_id;
   await conversations.append(scope, {
     threadId,
@@ -137,7 +145,11 @@ beforeAll(async () => {
 });
 
 async function createRunInput(label: string) {
-  const conversation = await conversations.getOrCreate(scope, {});
+  const runThreadId = randomUUID();
+  await seedPlatformConversation(runThreadId);
+  const conversation = await conversations.getOrCreate(scope, {
+    threadId: runThreadId,
+  });
   const clientMessageKey = `${prefix}-${label}-message`;
   await conversations.append(scope, {
     threadId: conversation.thread_id,
@@ -151,6 +163,26 @@ async function createRunInput(label: string) {
     attachmentRefs: [],
     entrypoint: "web" as const,
   };
+}
+
+async function seedPlatformConversation(seedThreadId: string) {
+  const [seededConversation] = await createConversationStore(
+    dataDatabase!,
+  ).transaction(scope, (tx) =>
+    tx
+      .insert(enterpriseConversations)
+      .values({
+        tenantId,
+        workspaceId,
+        principalId,
+        threadId: seedThreadId,
+        storageBackend: "platform",
+        backendVersion: 1,
+        lastSeq: 0,
+      })
+      .returning(),
+  );
+  if (!seededConversation) throw new Error("RUN_PLATFORM_FIXTURE_SEED_FAILED");
 }
 
 afterAll(async () => {
@@ -288,6 +320,183 @@ test("budget reservation is idempotent, rejects changed input, and confirms exac
   await runs.cancel(scope, { runId: run.run_id, reason: "user_requested" });
 });
 
+test("Run creation and capability issue share a canonical configured ceiling", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("canonical-ceiling"),
+  );
+  expect(runCeilingIdempotencyKey(run.run_id)).toBe(
+    `run-ceiling:${run.run_id}`,
+  );
+  const [ceiling] = await dataDatabase!.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+    );
+    return tx
+      .select({
+        idempotencyKey: enterpriseModelBudgetReservations.idempotencyKey,
+      })
+      .from(enterpriseModelBudgetReservations)
+      .where(
+        and(
+          eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+          eq(enterpriseModelBudgetReservations.runId, run.run_id),
+          eq(enterpriseModelBudgetReservations.isRunCeiling, true),
+        ),
+      );
+  });
+  expect(ceiling?.idempotencyKey).toBe(runCeilingIdempotencyKey(run.run_id));
+  await expect(
+    dataDatabase!.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+      );
+      return reserveModelBudgetInTransaction(
+        tx,
+        scope,
+        {
+          runId: run.run_id,
+          modelRouteRef: "synthetic-model-route",
+          maximumTokens: 2000,
+        },
+        2000,
+        { runCeiling: true, idempotencyKey: `custom:${run.run_id}` },
+      );
+    }),
+  ).rejects.toMatchObject({
+    status: 409,
+    code: "RUN_BUDGET_CEILING_KEY_INVALID",
+  });
+  await expect(
+    dataDatabase!.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+      );
+      return reserveModelBudgetInTransaction(
+        tx,
+        scope,
+        {
+          runId: run.run_id,
+          modelRouteRef: "synthetic-model-route",
+          maximumTokens: 2001,
+        },
+        2000,
+        {
+          runCeiling: true,
+          idempotencyKey: runCeilingIdempotencyKey(run.run_id),
+        },
+      );
+    }),
+  ).rejects.toMatchObject({ status: 400, code: "RUN_BUDGET_LIMIT_EXCEEDED" });
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  await expect(
+    runs.issueModelInvocationCapability(scope, {
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: `${prefix}-canonical-ceiling`,
+      maximumTokens: 1000,
+    }),
+  ).resolves.toMatchObject({ maximum_tokens: 1000 });
+  await runs.cancel(scope, { runId: run.run_id, reason: "user_requested" });
+});
+
+test("budget reservation idempotency and mutations require exact owner scope", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("budget-owner-scope"),
+  );
+  const reservation = await runs.reserveModelBudget(scope, {
+    runId: run.run_id,
+    modelRouteRef: "synthetic-model-route",
+    maximumTokens: 100,
+  });
+  const otherPrincipal = `${prefix}-other-principal`;
+  const otherActor = `${prefix}-other-actor`;
+  const otherWorkspace = `${prefix}-other-workspace`;
+  await setupDb()
+    .insert(users)
+    .values({
+      id: otherActor,
+      email: `${otherActor}@example.invalid`,
+      name: "Synthetic other run actor",
+    });
+  await setupDb()
+    .insert(enterprisePrincipals)
+    .values({ id: otherPrincipal, userId: otherActor });
+  await setupDb().insert(enterpriseMemberships).values({
+    tenantId,
+    principalId: otherPrincipal,
+    role: "member",
+  });
+  await setupDb().insert(enterpriseWorkspaces).values({
+    tenantId,
+    id: otherWorkspace,
+    name: "Synthetic other workspace",
+  });
+  const otherScopes = createScopeResolver(directoryDatabase!, {
+    authenticate: async () => ({ actorId: otherActor, entrypoint: "web" }),
+    selectTenant: () => tenantId,
+    selectWorkspace: () => workspaceId,
+  });
+  const otherPrincipalScope = await otherScopes.resolve(
+    new Request("https://enterprise.example.invalid/runs"),
+  );
+  const otherWorkspaceScopes = createScopeResolver(directoryDatabase!, {
+    authenticate: async () => ({ actorId, entrypoint: "web" }),
+    selectTenant: () => tenantId,
+    selectWorkspace: () => otherWorkspace,
+  });
+  const otherWorkspaceScope = await otherWorkspaceScopes.resolve(
+    new Request("https://enterprise.example.invalid/runs"),
+  );
+
+  for (const foreignScope of [otherPrincipalScope, otherWorkspaceScope]) {
+    await expect(
+      runs.reserveModelBudget(foreignScope, {
+        runId: run.run_id,
+        modelRouteRef: "synthetic-model-route",
+        maximumTokens: 100,
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      budgetService().confirm(foreignScope, reservation.reservationId, 1),
+    ).rejects.toMatchObject({
+      status: 404,
+      code: "BUDGET_RESERVATION_NOT_FOUND",
+    });
+    await expect(
+      budgetService().release(foreignScope, reservation.reservationId),
+    ).rejects.toMatchObject({
+      status: 404,
+      code: "BUDGET_RESERVATION_NOT_FOUND",
+    });
+  }
+  const [stored] = await dataDatabase!.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+    );
+    return tx
+      .select()
+      .from(enterpriseModelBudgetReservations)
+      .where(
+        and(
+          eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+          eq(enterpriseModelBudgetReservations.id, reservation.reservationId),
+        ),
+      );
+  });
+  expect(stored?.status).toBe("reserved");
+  await runs.cancel(scope, { runId: run.run_id, reason: "user_requested" });
+});
+
+function budgetService() {
+  return createModelBudgetService({
+    data: dataDatabase!,
+    configuredLimitTokens: () => 2000,
+  });
+}
+
 test("model invocation claims enforce an independent cumulative ceiling per run", async () => {
   const first = await runs.start(
     scope,
@@ -324,6 +533,9 @@ test("model invocation claims enforce an independent cumulative ceiling per run"
   expect(initial.capability).toMatch(/^[A-Za-z0-9_-]{40,}$/);
   expect(initial.model_request_id).toBe(`${prefix}-request-1`);
   expect(initial.maximum_tokens).toBe(1000);
+  await expect(
+    runs.confirmModelInvocationUsage(scope, initial.capability, 1),
+  ).rejects.toMatchObject({ status: 409 });
   await expect(
     runs.resolveModelInvocationCapability(scope, initial.capability),
   ).resolves.toMatchObject({
@@ -462,6 +674,9 @@ test("model invocation claims enforce an independent cumulative ceiling per run"
     runs.releaseModelInvocation(scope, unknownAfterConsume.capability),
   ).rejects.toMatchObject({ status: 409 });
   await expect(
+    runs.confirmModelInvocationUsage(scope, unknownAfterConsume.capability, 1),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
     issue(
       second.run_id,
       secondAttempt.attemptId,
@@ -515,6 +730,489 @@ test("model invocation claims enforce an independent cumulative ceiling per run"
       independentAfterSafeRelease.capability,
     ),
   ).rejects.toMatchObject({ status: 409 });
+});
+
+test("capability renewal racing old-token resolve uses Run-before-capability locks", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("capability-renewal-resolve-lock-order"),
+  );
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  const modelRequestId = `${prefix}-lock-order-request`;
+  const request = {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId,
+    maximumTokens: 100,
+  };
+  const original = await runs.issueModelInvocationCapability(scope, request);
+  await setupDb().transaction(async (tx) => {
+    await tx
+      .update(enterpriseModelInvocationCapabilities)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(
+        and(
+          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+          eq(enterpriseModelInvocationCapabilities.runId, run.run_id),
+          eq(
+            enterpriseModelInvocationCapabilities.modelRequestId,
+            modelRequestId,
+          ),
+        ),
+      );
+    const activeUntil = new Date(Date.now() + 120_000);
+    await tx
+      .update(enterpriseRuns)
+      .set({ leaseExpiresAt: activeUntil })
+      .where(
+        and(
+          eq(enterpriseRuns.tenantId, scope.tenantId),
+          eq(enterpriseRuns.workspaceId, scope.workspaceId),
+          eq(enterpriseRuns.principalId, scope.principalId),
+          eq(enterpriseRuns.id, run.run_id),
+        ),
+      );
+    await tx
+      .update(enterpriseRunAttempts)
+      .set({ leaseExpiresAt: activeUntil })
+      .where(
+        and(
+          eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+          eq(enterpriseRunAttempts.id, attempt.attemptId),
+          eq(enterpriseRunAttempts.runId, run.run_id),
+        ),
+      );
+  });
+
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let signalLock!: (pid: number) => void;
+  const runLockReady = new Promise<number>((resolve) => {
+    signalLock = resolve;
+  });
+  const holder = setupDb().transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ id: enterpriseRuns.id })
+      .from(enterpriseRuns)
+      .where(
+        and(
+          eq(enterpriseRuns.tenantId, scope.tenantId),
+          eq(enterpriseRuns.workspaceId, scope.workspaceId),
+          eq(enterpriseRuns.principalId, scope.principalId),
+          eq(enterpriseRuns.id, run.run_id),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!locked) throw new Error("LOCK_ORDER_FIXTURE_RUN_MISSING");
+    const [backend] = (await tx.execute(
+      sql`SELECT pg_backend_pid()::int AS pid`,
+    )) as unknown as Array<{ pid: number }>;
+    if (!backend) throw new Error("LOCK_ORDER_FIXTURE_BACKEND_MISSING");
+    signalLock(backend.pid);
+    await gate;
+  });
+  const blockerPid = await runLockReady;
+  let renewal:
+    | Promise<Awaited<ReturnType<typeof runs.issueModelInvocationCapability>>>
+    | undefined;
+  let oldResolve:
+    | Promise<Awaited<ReturnType<typeof runs.resolveModelInvocationCapability>>>
+    | undefined;
+  let setupFailure: unknown;
+  try {
+    const renewalStartedAt = Date.now();
+    renewal = runs.issueModelInvocationCapability(scope, request);
+    await waitForRunLockWaiters(
+      blockerPid,
+      1,
+      "renewal waiting on Run row",
+      renewalStartedAt + 800,
+    );
+    oldResolve = runs.resolveModelInvocationCapability(
+      scope,
+      original.capability,
+    );
+    await waitForRunLockWaiters(
+      blockerPid,
+      2,
+      "renewal and old-token resolve waiting on Run row",
+      renewalStartedAt + 1_750,
+    );
+  } catch (error) {
+    setupFailure = error;
+  } finally {
+    releaseGate();
+  }
+  const outcomes = await Promise.allSettled(
+    [renewal, oldResolve].filter(
+      (promise): promise is NonNullable<typeof promise> =>
+        promise !== undefined,
+    ),
+  );
+  await holder;
+  if (setupFailure) {
+    const sqlStates = outcomes.map((outcome) =>
+      outcome.status === "rejected"
+        ? postgresSqlState(outcome.reason)
+        : undefined,
+    );
+    throw new Error(
+      `${String(setupFailure)}; operation SQLSTATEs=${JSON.stringify(sqlStates)}`,
+    );
+  }
+  expect(outcomes).toHaveLength(2);
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected")
+      expect(postgresSqlState(outcome.reason)).not.toBe("40P01");
+  }
+  const renewalOutcome = outcomes[0];
+  const oldResolveOutcome = outcomes[1];
+  expect(renewalOutcome?.status).toBe("fulfilled");
+  if (renewalOutcome?.status !== "fulfilled") return;
+  expect(oldResolveOutcome?.status).toBe("rejected");
+  if (oldResolveOutcome?.status !== "rejected") return;
+  expect(oldResolveOutcome.reason).toMatchObject({ status: 401 });
+  await expect(
+    runs.resolveModelInvocationCapability(
+      scope,
+      renewalOutcome.value.capability,
+    ),
+  ).resolves.toMatchObject({ modelRequestId });
+  await expect(
+    runs.resolveModelInvocationCapability(
+      scope,
+      renewalOutcome.value.capability,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+});
+
+async function waitForRunLockWaiters(
+  blockerPid: number,
+  expected: number,
+  description: string,
+  deadline: number,
+): Promise<void> {
+  let waiting: Array<{
+    pid: number;
+    usename: string;
+    wait_event_type: string | null;
+    wait_event: string | null;
+    query: string;
+  }> = [];
+  do {
+    waiting = (await setupDb().execute(sql`
+      WITH RECURSIVE run_waiters AS (
+        SELECT activity.pid,
+          activity.usename,
+          activity.wait_event_type,
+          activity.wait_event,
+          activity.query,
+          pg_blocking_pids(activity.pid) AS blockers
+        FROM pg_stat_activity AS activity
+        WHERE activity.datname = current_database()
+          AND activity.pid <> pg_backend_pid()
+          AND activity.usename = 'enterprise_data_login'
+          AND activity.wait_event_type = 'Lock'
+          AND activity.query ILIKE '%enterprise_runs%'
+          AND activity.query NOT ILIKE '%pg_stat_activity%'
+      ), blocker_chain(waiter_pid, blocker_pid) AS (
+        SELECT run_waiters.pid, unnest(run_waiters.blockers)
+        FROM run_waiters
+        UNION
+        SELECT blocker_chain.waiter_pid,
+          unnest(pg_blocking_pids(blocker_chain.blocker_pid))
+        FROM blocker_chain
+        WHERE blocker_chain.blocker_pid <> pg_backend_pid()
+      )
+      SELECT DISTINCT run_waiters.pid::int AS pid,
+        run_waiters.usename,
+        run_waiters.wait_event_type,
+        run_waiters.wait_event,
+        left(run_waiters.query, 180) AS query
+      FROM run_waiters
+      JOIN blocker_chain ON blocker_chain.waiter_pid = run_waiters.pid
+      WHERE blocker_chain.blocker_pid = ${blockerPid}
+    `)) as unknown as typeof waiting;
+    if (waiting.length >= expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  } while (Date.now() < deadline);
+  const activeSessions = (await setupDb().execute(sql`
+    SELECT activity.pid::int AS pid,
+      activity.usename,
+      activity.state,
+      activity.wait_event_type,
+      activity.wait_event,
+      pg_blocking_pids(activity.pid) AS blockers,
+      left(activity.query, 240) AS query
+    FROM pg_stat_activity AS activity
+    WHERE activity.datname = current_database()
+      AND activity.usename = 'enterprise_data_login'
+      AND activity.pid <> pg_backend_pid()
+  `)) as unknown as Array<Record<string, unknown>>;
+  throw new Error(
+    `LOCK_ORDER_ACTIVITY_TIMEOUT at ${new Date().toISOString()}: ${description}; expected ${expected}, observed ${waiting.length}; blocked=${JSON.stringify(waiting)}; data sessions=${JSON.stringify(activeSessions)}.`,
+  );
+}
+
+function postgresSqlState(error: unknown): string | undefined {
+  let cursor: unknown = error;
+  const seen = new Set<object>();
+  while (cursor && typeof cursor === "object" && !seen.has(cursor)) {
+    seen.add(cursor);
+    const candidate = cursor as {
+      code?: unknown;
+      errno?: unknown;
+      sqlState?: unknown;
+      sqlstate?: unknown;
+      cause?: unknown;
+    };
+    for (const value of [
+      candidate.errno,
+      candidate.sqlState,
+      candidate.sqlstate,
+      candidate.code,
+    ]) {
+      if (typeof value === "string" && /^[0-9A-Z]{5}$/.test(value))
+        return value;
+    }
+    cursor = candidate.cause;
+  }
+  return undefined;
+}
+
+test("expired reserved capability retries renew the same claim; uncertain claims stay charged", async () => {
+  const [capabilityPrivileges] = (await setupDb().execute(sql`
+    SELECT has_table_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'UPDATE') AS table_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'capability_digest', 'UPDATE') AS digest_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'expires_at', 'UPDATE') AS expiry_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'used_tokens', 'UPDATE') AS used_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'status', 'UPDATE') AS status_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'updated_at', 'UPDATE') AS updated_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'capability_nonce', 'UPDATE') AS nonce_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'maximum_tokens', 'UPDATE') AS maximum_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'tenant_id', 'UPDATE') AS tenant_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'workspace_id', 'UPDATE') AS workspace_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'principal_id', 'UPDATE') AS principal_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'run_id', 'UPDATE') AS run_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'attempt_id', 'UPDATE') AS attempt_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'generation', 'UPDATE') AS generation_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'model_route_ref', 'UPDATE') AS route_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'model_request_id', 'UPDATE') AS request_update,
+      has_column_privilege('ob_ent_data', 'public.enterprise_model_invocation_capabilities', 'created_at', 'UPDATE') AS created_update
+  `)) as unknown as Array<Record<string, boolean>>;
+  expect(capabilityPrivileges).toEqual({
+    table_update: false,
+    digest_update: true,
+    expiry_update: true,
+    used_update: true,
+    status_update: true,
+    updated_update: true,
+    nonce_update: false,
+    maximum_update: false,
+    tenant_update: false,
+    workspace_update: false,
+    principal_update: false,
+    run_update: false,
+    attempt_update: false,
+    generation_update: false,
+    route_update: false,
+    request_update: false,
+    created_update: false,
+  });
+  const run = await runs.start(
+    scope,
+    await createRunInput("capability-expiry-retry"),
+  );
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  const requestId = `${prefix}-expired-reserved-request`;
+  const original = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: requestId,
+    maximumTokens: 100,
+  });
+  const [originalRow] = await setupDb().transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(enterpriseModelInvocationCapabilities)
+      .where(
+        and(
+          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+          eq(enterpriseModelInvocationCapabilities.runId, run.run_id),
+          eq(enterpriseModelInvocationCapabilities.modelRequestId, requestId),
+        ),
+      );
+    await tx
+      .update(enterpriseModelInvocationCapabilities)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(enterpriseModelInvocationCapabilities.id, row!.id));
+    const activeUntil = new Date(Date.now() + 120_000);
+    await tx
+      .update(enterpriseRuns)
+      .set({ leaseExpiresAt: activeUntil })
+      .where(
+        and(
+          eq(enterpriseRuns.tenantId, scope.tenantId),
+          eq(enterpriseRuns.id, run.run_id),
+        ),
+      );
+    await tx
+      .update(enterpriseRunAttempts)
+      .set({ leaseExpiresAt: activeUntil })
+      .where(
+        and(
+          eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+          eq(enterpriseRunAttempts.id, attempt.attemptId),
+        ),
+      );
+    return [row!];
+  });
+  const renewed = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: requestId,
+    maximumTokens: 100,
+  });
+  expect(renewed.capability).not.toBe(original.capability);
+  expect(Date.parse(renewed.expires_at)).toBeGreaterThan(Date.now());
+  const [renewedRow] = await setupDb().transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+    );
+    return tx
+      .select()
+      .from(enterpriseModelInvocationCapabilities)
+      .where(
+        and(
+          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+          eq(enterpriseModelInvocationCapabilities.runId, run.run_id),
+          eq(enterpriseModelInvocationCapabilities.modelRequestId, requestId),
+        ),
+      );
+  });
+  expect(renewedRow).toMatchObject({
+    id: originalRow?.id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: requestId,
+    maximumTokens: 100,
+    status: "reserved",
+  });
+  expect(renewedRow?.expiresAt.getTime()).toBeGreaterThan(
+    originalRow!.expiresAt.getTime(),
+  );
+  await expect(
+    runs.resolveModelInvocationCapability(scope, renewed.capability),
+  ).resolves.toMatchObject({ modelRequestId: requestId });
+  await expect(
+    runs.resolveModelInvocationCapability(scope, original.capability),
+  ).rejects.toMatchObject({ status: 401 });
+  await setCapabilityExpired(run.run_id, requestId);
+  await expect(
+    runs.issueModelInvocationCapability(scope, {
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: requestId,
+      maximumTokens: 100,
+    }),
+  ).rejects.toMatchObject({ status: 410, code: "MODEL_CAPABILITY_EXPIRED" });
+
+  const uncertain = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: `${prefix}-expired-unknown-request`,
+    maximumTokens: 100,
+  });
+  await runs.resolveModelInvocationCapability(scope, uncertain.capability);
+  await runs.markModelInvocationUnknown(scope, uncertain.capability);
+  await setCapabilityExpired(run.run_id, `${prefix}-expired-unknown-request`);
+  await expect(
+    runs.issueModelInvocationCapability(scope, {
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: `${prefix}-expired-unknown-request`,
+      maximumTokens: 100,
+    }),
+  ).rejects.toMatchObject({ status: 410, code: "MODEL_CAPABILITY_EXPIRED" });
+  await expect(
+    runs.issueModelInvocationCapability(scope, {
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: `${prefix}-unknown-expiry-fill`,
+      maximumTokens: 1000,
+    }),
+  ).resolves.toMatchObject({ maximum_tokens: 1000 });
+  await expect(
+    runs.issueModelInvocationCapability(scope, {
+      runId: run.run_id,
+      attemptId: attempt.attemptId,
+      generation: attempt.generation,
+      modelRequestId: `${prefix}-after-unknown-expiry`,
+      maximumTokens: 801,
+    }),
+  ).rejects.toMatchObject({ status: 402, code: "MODEL_BUDGET_EXCEEDED" });
+  await runs.cancel(scope, { runId: run.run_id, reason: "user_requested" });
+});
+
+async function setCapabilityExpired(runId: string, modelRequestId: string) {
+  await setupDb().transaction(async (tx) => {
+    await tx
+      .update(enterpriseModelInvocationCapabilities)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(
+        and(
+          eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+          eq(enterpriseModelInvocationCapabilities.runId, runId),
+          eq(
+            enterpriseModelInvocationCapabilities.modelRequestId,
+            modelRequestId,
+          ),
+        ),
+      );
+  });
+}
+
+test("budget reservations and capabilities cumulatively consume one Run ceiling", async () => {
+  const run = await runs.start(
+    scope,
+    await createRunInput("mixed-budget-admission"),
+  );
+  const reservation = await runs.reserveModelBudget(scope, {
+    runId: run.run_id,
+    modelRouteRef: "synthetic-model-route",
+    maximumTokens: 1000,
+  });
+  const attempt = await runStore.currentAttempt(scope, run.run_id);
+  const capability = await runs.issueModelInvocationCapability(scope, {
+    runId: run.run_id,
+    attemptId: attempt.attemptId,
+    generation: attempt.generation,
+    modelRequestId: `${prefix}-mixed-admission-capability`,
+    maximumTokens: 1000,
+  });
+  expect(reservation.tokenLimit + capability.maximum_tokens).toBe(2000);
+  await expect(
+    budgetService().reserveModelBudget(
+      scope,
+      {
+        runId: run.run_id,
+        modelRouteRef: "synthetic-model-route",
+        maximumTokens: 1,
+      },
+      { idempotencyKey: `${prefix}-mixed-admission-over` },
+    ),
+  ).rejects.toMatchObject({ status: 402, code: "MODEL_BUDGET_EXCEEDED" });
+  await runs.cancel(scope, { runId: run.run_id, reason: "user_requested" });
 });
 
 test("each run owns its immutable configured ceiling", async () => {

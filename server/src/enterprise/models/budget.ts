@@ -15,6 +15,40 @@ import { assertTrustedScope } from "../tenancy/store";
 
 type Transaction = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
 
+async function lockOwnedReservation(
+  tx: Transaction,
+  scope: PlatformScope,
+  reservationId: string,
+) {
+  const [result] = await tx
+    .select({ reservation: enterpriseModelBudgetReservations })
+    .from(enterpriseModelBudgetReservations)
+    .innerJoin(
+      enterpriseRuns,
+      and(
+        eq(enterpriseRuns.tenantId, enterpriseModelBudgetReservations.tenantId),
+        eq(enterpriseRuns.id, enterpriseModelBudgetReservations.runId),
+        eq(enterpriseRuns.workspaceId, scope.workspaceId),
+        eq(enterpriseRuns.principalId, scope.principalId),
+      ),
+    )
+    .where(
+      and(
+        eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+        eq(enterpriseModelBudgetReservations.workspaceId, scope.workspaceId),
+        eq(enterpriseModelBudgetReservations.principalId, scope.principalId),
+        eq(enterpriseModelBudgetReservations.id, reservationId),
+      ),
+    )
+    .for("update", { of: enterpriseModelBudgetReservations })
+    .limit(1);
+  return result?.reservation;
+}
+
+export function runCeilingIdempotencyKey(runId: string): string {
+  return `run-ceiling:${runId}`;
+}
+
 export class ModelBudgetError extends Error {
   readonly status: number;
   readonly code: string;
@@ -60,7 +94,30 @@ export async function reserveModelBudgetInTransaction(
 ): Promise<BudgetReservation> {
   assertTokens(input.maximumTokens, "maximumTokens");
   assertTokens(configuredLimitTokens, "configuredLimitTokens");
-  const idempotencyKey = options.idempotencyKey ?? `run:${input.runId}`;
+  const runCeiling = options.runCeiling ?? false;
+  const canonicalCeilingKey = runCeiling
+    ? runCeilingIdempotencyKey(input.runId)
+    : undefined;
+  if (
+    runCeiling &&
+    options.idempotencyKey !== undefined &&
+    options.idempotencyKey !== canonicalCeilingKey
+  ) {
+    throw new ModelBudgetError(
+      "RUN_BUDGET_CEILING_KEY_INVALID",
+      409,
+      "A run's configured token ceiling uses its canonical key.",
+    );
+  }
+  if (runCeiling && input.maximumTokens > configuredLimitTokens) {
+    throw new ModelBudgetError(
+      "RUN_BUDGET_LIMIT_EXCEEDED",
+      400,
+      "A run's configured token ceiling cannot exceed its configured limit.",
+    );
+  }
+  const idempotencyKey =
+    canonicalCeilingKey ?? options.idempotencyKey ?? `run:${input.runId}`;
   if (!idempotencyKey.trim() || idempotencyKey.length > 200) {
     throw new ModelBudgetError(
       "INVALID_IDEMPOTENCY_KEY",
@@ -92,6 +149,9 @@ export async function reserveModelBudgetInTransaction(
     .where(
       and(
         eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+        eq(enterpriseModelBudgetReservations.workspaceId, scope.workspaceId),
+        eq(enterpriseModelBudgetReservations.principalId, scope.principalId),
+        eq(enterpriseModelBudgetReservations.runId, input.runId),
         eq(enterpriseModelBudgetReservations.idempotencyKey, idempotencyKey),
       ),
     )
@@ -101,7 +161,7 @@ export async function reserveModelBudgetInTransaction(
       existing.runId !== input.runId ||
       existing.modelRouteRef !== input.modelRouteRef ||
       existing.tokenLimit !== input.maximumTokens ||
-      existing.isRunCeiling !== (options.runCeiling ?? false)
+      existing.isRunCeiling !== runCeiling
     ) {
       throw new ModelBudgetError(
         "BUDGET_IDEMPOTENCY_CONFLICT",
@@ -112,7 +172,7 @@ export async function reserveModelBudgetInTransaction(
     return reservationDto(existing);
   }
 
-  if (options.runCeiling) {
+  if (runCeiling) {
     const [row] = await tx
       .insert(enterpriseModelBudgetReservations)
       .values({
@@ -126,8 +186,14 @@ export async function reserveModelBudgetInTransaction(
         isRunCeiling: true,
         expiresAt: options.expiresAt ?? new Date(Date.now() + 15 * 60_000),
       })
+      .onConflictDoNothing()
       .returning();
-    if (!row) throw new Error("BUDGET_RESERVATION_FAILED");
+    if (!row)
+      throw new ModelBudgetError(
+        "BUDGET_IDEMPOTENCY_CONFLICT",
+        409,
+        "Budget idempotency key was used with different inputs.",
+      );
     return reservationDto(row);
   }
 
@@ -141,6 +207,8 @@ export async function reserveModelBudgetInTransaction(
     .where(
       and(
         eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+        eq(enterpriseModelBudgetReservations.workspaceId, scope.workspaceId),
+        eq(enterpriseModelBudgetReservations.principalId, scope.principalId),
         eq(enterpriseModelBudgetReservations.runId, input.runId),
         eq(enterpriseModelBudgetReservations.isRunCeiling, false),
         inArray(enterpriseModelBudgetReservations.status, [
@@ -159,6 +227,14 @@ export async function reserveModelBudgetInTransaction(
     .where(
       and(
         eq(enterpriseModelInvocationCapabilities.tenantId, scope.tenantId),
+        eq(
+          enterpriseModelInvocationCapabilities.workspaceId,
+          scope.workspaceId,
+        ),
+        eq(
+          enterpriseModelInvocationCapabilities.principalId,
+          scope.principalId,
+        ),
         eq(enterpriseModelInvocationCapabilities.runId, input.runId),
         inArray(enterpriseModelInvocationCapabilities.status, [
           "reserved",
@@ -186,10 +262,12 @@ export async function reserveModelBudgetInTransaction(
     .where(
       and(
         eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+        eq(enterpriseModelBudgetReservations.workspaceId, scope.workspaceId),
+        eq(enterpriseModelBudgetReservations.principalId, scope.principalId),
         eq(enterpriseModelBudgetReservations.runId, input.runId),
         eq(
           enterpriseModelBudgetReservations.idempotencyKey,
-          `run-ceiling:${input.runId}`,
+          runCeilingIdempotencyKey(input.runId),
         ),
         eq(enterpriseModelBudgetReservations.isRunCeiling, true),
       ),
@@ -220,8 +298,14 @@ export async function reserveModelBudgetInTransaction(
       tokenLimit: input.maximumTokens,
       expiresAt: options.expiresAt ?? new Date(Date.now() + 15 * 60_000),
     })
+    .onConflictDoNothing()
     .returning();
-  if (!row) throw new Error("BUDGET_RESERVATION_FAILED");
+  if (!row)
+    throw new ModelBudgetError(
+      "BUDGET_IDEMPOTENCY_CONFLICT",
+      409,
+      "Budget idempotency key was used with different inputs.",
+    );
   return reservationDto(row);
 }
 
@@ -269,17 +353,7 @@ export function createModelBudgetService(deps: {
         );
       }
       await store.transaction(scope, async (tx) => {
-        const [row] = await tx
-          .select()
-          .from(enterpriseModelBudgetReservations)
-          .where(
-            and(
-              eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
-              eq(enterpriseModelBudgetReservations.id, reservationId),
-            ),
-          )
-          .for("update")
-          .limit(1);
+        const row = await lockOwnedReservation(tx, scope, reservationId);
         if (!row)
           throw new ModelBudgetError(
             "BUDGET_RESERVATION_NOT_FOUND",
@@ -314,7 +388,7 @@ export function createModelBudgetService(deps: {
             402,
             "Reported model usage exceeds its reservation.",
           );
-        await tx
+        const updated = await tx
           .update(enterpriseModelBudgetReservations)
           .set({
             status: "confirmed",
@@ -324,27 +398,39 @@ export function createModelBudgetService(deps: {
           .where(
             and(
               eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+              eq(
+                enterpriseModelBudgetReservations.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelBudgetReservations.principalId,
+                scope.principalId,
+              ),
+              eq(enterpriseModelBudgetReservations.runId, row.runId),
               eq(enterpriseModelBudgetReservations.id, reservationId),
               eq(enterpriseModelBudgetReservations.status, "reserved"),
             ),
+          )
+          .returning({ id: enterpriseModelBudgetReservations.id });
+        if (!updated.length)
+          throw new ModelBudgetError(
+            "BUDGET_RESERVATION_CLOSED",
+            409,
+            "Budget reservation is no longer active.",
           );
       });
     },
     async release(scope: PlatformScope, reservationId: string): Promise<void> {
       assertTrustedScope(scope);
       await store.transaction(scope, async (tx) => {
-        const [row] = await tx
-          .select()
-          .from(enterpriseModelBudgetReservations)
-          .where(
-            and(
-              eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
-              eq(enterpriseModelBudgetReservations.id, reservationId),
-            ),
-          )
-          .for("update")
-          .limit(1);
-        if (!row || row.status === "released") return;
+        const row = await lockOwnedReservation(tx, scope, reservationId);
+        if (!row)
+          throw new ModelBudgetError(
+            "BUDGET_RESERVATION_NOT_FOUND",
+            404,
+            "Budget reservation was not found.",
+          );
+        if (row.status === "released") return;
         if (row.isRunCeiling)
           throw new ModelBudgetError(
             "RUN_BUDGET_CEILING_IMMUTABLE",
@@ -357,15 +443,31 @@ export function createModelBudgetService(deps: {
             409,
             "Confirmed budget usage cannot be released.",
           );
-        await tx
+        const updated = await tx
           .update(enterpriseModelBudgetReservations)
           .set({ status: "released", updatedAt: new Date() })
           .where(
             and(
               eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+              eq(
+                enterpriseModelBudgetReservations.workspaceId,
+                scope.workspaceId,
+              ),
+              eq(
+                enterpriseModelBudgetReservations.principalId,
+                scope.principalId,
+              ),
+              eq(enterpriseModelBudgetReservations.runId, row.runId),
               eq(enterpriseModelBudgetReservations.id, reservationId),
               inArray(enterpriseModelBudgetReservations.status, ["reserved"]),
             ),
+          )
+          .returning({ id: enterpriseModelBudgetReservations.id });
+        if (!updated.length)
+          throw new ModelBudgetError(
+            "BUDGET_RESERVATION_CLOSED",
+            409,
+            "Budget reservation is no longer active.",
           );
       });
     },
