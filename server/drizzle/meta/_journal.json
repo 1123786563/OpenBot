@@ -449,6 +449,13 @@
       "when": 1791700501063,
       "tag": "0063_restore_schema_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1791705042000,
+      "tag": "0064_capability_renewal_grants",
+      "breakpoints": true
     }
   ]
 }
