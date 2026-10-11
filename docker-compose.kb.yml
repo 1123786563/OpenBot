@@ -1,0 +1,103 @@
+# Knowledge-base dependencies — split out of docker-compose.yml (one file per service group).
+#
+# The kb service itself no longer runs in Docker: the WeKnora knowledge domain now lives in
+# server/src/kb (HTTP `bun run kb:dev` :8082, ingest worker `bun run kb:worker`) and runs on
+# the host in local development, like the API server. What the kb domain still needs from
+# Docker is exactly these three dependencies, plus the kb_mastra database on the main stack's
+# postgres (docker/kb-mastra/init-db.sql mounts into that service).
+#
+# On the host the kb processes reach all three through the loopback ports below:
+#   qdrant    → QDRANT_URL=http://localhost:6333
+#   redis     → KB_REDIS_URL=redis://localhost:6380 (its own Redis, not the main stack's
+#               openbot-redis on 6379: the ingest queue's persistence profile is BullMQ's,
+#               and mixing it with the workshop's pure-memory cache would couple two
+#               unrelated lifecycles)
+#   docreader → DOCREADER_ADDR=localhost:50051
+# A containerized kb (or anything else on the `data` network) reaches them by service name:
+#   qdrant:6333 / kb-redis:6379 / docreader:50051.
+#
+# START THE MAIN STACK FIRST if anything here needs postgres; these three do not (no
+# depends_on anywhere), but they join the same project's `data` network so the service names
+# resolve from the main stack's containers.
+#
+# Same project name as the main file on purpose: the qdrant-data volume keeps its openbot_
+# prefix, so a stack that ran under the single file keeps its vector corpus without any
+# migration step. Do not remove the volume or `docker rm` takes the corpus with it.
+name: openbot
+
+services:
+  # The vector store. Embeddings live here and nowhere else: the last Postgres-side vector
+  # column (chunks.embedding) was dropped in migration 0010, and the knowledge service that
+  # owns embeddings talks to Qdrant over HTTP on 6333. Redis-style: one binary, no external
+  # dependencies, storage in the named volume below.
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:1.19.2}
+    restart: unless-stopped
+    # Loopback both families, like every other port in these files: a host-run kb process
+    # reaches it through the published port, nothing off the machine can.
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+      - "[::1]:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # The health endpoint answers 200 with the version once the HTTP API is up; no TCP
+      # probing, because a listening socket says nothing about the REST API being served.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:6333/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - data
+
+  # The kb domain's own Redis: the BullMQ ingest queue (kb-core), and nothing else. The main
+  # stack's openbot-redis is pure-memory by design (lock state must not survive restarts);
+  # BullMQ wants the opposite, so the two get separate instances. Persistence ON here:
+  # an in-flight document pipeline should survive a Redis restart.
+  kb-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --port 6379
+    volumes:
+      - kb-redis-data:/data
+    ports:
+      # 6380 on the host (6379 is openbot-redis's published port); loopback only.
+      - "127.0.0.1:${KB_REDIS_PORT:-6380}:6379"
+      - "[::1]:${KB_REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - data
+
+  # WeKnora's document parser, reused as-is: gRPC :50051, the heavy JVM/LibreOffice/Playwright
+  # stack that turns PDF/DOCX/PPTX/HTML into markdown + source locators. The kb docreader
+  # client dials it (DOCREADER_ADDR, localhost:50051 from the host, docreader:50051 from a
+  # container); nothing else in this stack speaks to it.
+  docreader:
+    image: ${DOCREADER_IMAGE:-wechatopenai/weknora-docreader:latest}
+    restart: unless-stopped
+    ports:
+      # Published for the host-run kb worker: loopback only, both families.
+      - "127.0.0.1:${DOCREADER_PORT:-50051}:50051"
+      - "[::1]:${DOCREADER_PORT:-50051}:50051"
+    healthcheck:
+      # gRPC health probing without grpcurl: the port accepting TCP is the best cheap signal
+      # this image offers. The kb client retries connections anyway.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/50051' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - data
+
+networks:
+  # The same `data` network docker-compose.yml declares (same project name), so containerized
+  # callers reach these three by service name.
+  data:
+
+volumes:
+  qdrant-data:
+  kb-redis-data:
