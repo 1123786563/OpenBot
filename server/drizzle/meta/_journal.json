@@ -442,6 +442,13 @@
       "when": 1791639255703,
       "tag": "0062_mastra_message_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1791700501063,
+      "tag": "0063_restore_schema_invariants",
+      "breakpoints": true
     }
   ]
 }

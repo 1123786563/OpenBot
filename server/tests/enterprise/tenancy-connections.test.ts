@@ -75,6 +75,19 @@ test("refuses superuser, BYPASSRLS, and owner-capable sessions", async () => {
   }
 });
 
+test("refuses replication-capable capability or login roles", async () => {
+  for (const field of [
+    "capability_attributes_ok",
+    "login_attributes_ok",
+  ] as const) {
+    const row = safeCatalog();
+    row[field] = false;
+    await expect(verifyDataDatabase(databaseWith(row))).rejects.toThrow(
+      "DATABASE_CAPABILITY_MISMATCH",
+    );
+  }
+});
+
 test("refuses missing capability membership and any capability escalation membership", async () => {
   for (const field of [
     "login_has_expected_capability",
@@ -106,6 +119,8 @@ test("capability SQL rejects direct LOGIN grants and ownership authority", async
   expect(queryText).toContain("pg_database target_database");
   expect(queryText).toContain("relation_acl.grantee = login.oid");
   expect(queryText).toContain("attribute_acl.grantee = login.oid");
+  expect(queryText).toContain("relation_acl.grantee = 0");
+  expect(queryText).toContain("attribute_acl.grantee = 0");
   expect(queryText).toContain("schema_acl.grantee = login.oid");
   expect(queryText).toContain("relation.relowner = login.oid");
   expect(queryText).toContain("namespace.nspowner = login.oid");
@@ -116,6 +131,8 @@ test("capability SQL rejects direct LOGIN grants and ownership authority", async
   expect(queryText).toContain("session_user");
   expect(queryText).toContain("login_has_no_enterprise_privileges");
   expect(queryText).toContain("no_protected_ownership");
+  expect(queryText).toContain("NOT capability.rolreplication");
+  expect(queryText).toContain("NOT login.rolreplication");
 });
 
 test("login membership probe permits only its own role and expected capability", async () => {
@@ -201,6 +218,13 @@ test("capability bootstrap defines only safe NOLOGIN roles and stores no passwor
     expect(definition[2]).toMatch(/\bNOBYPASSRLS\b/);
     expect(definition[2]).toMatch(/\bNOCREATEDB\b/);
     expect(definition[2]).toMatch(/\bNOCREATEROLE\b/);
+    expect(definition[2]).toMatch(/\bNOREPLICATION\b/);
   }
+  expect(roleSql).toContain("session_user <> current_user");
+  expect(roleSql).toContain("rolsuper");
+  expect(roleSql).toContain("NOT rolreplication");
+  expect(roleSql).toContain("relkind IN ('r', 'p', 'v', 'm', 'S', 'f')");
+  expect(roleSql).toContain("namespace.nspowner = capability_oid");
+  expect(roleSql).toContain("target_database.datdba = capability_oid");
   expect(roleSql).not.toMatch(/\b(?:ENCRYPTED\s+)?PASSWORD\s*=/i);
 });

@@ -12,13 +12,13 @@ export type EnterpriseRuntimeRole = keyof typeof ROLE_DATABASE_VARIABLES;
 // startup option switches current_user to that capability while session_user remains the login.
 // The capability verifier rejects the login role if it has any second membership.
 
-/** The setup URL and role URLs may target only the controller-reserved empty test database. */
+/** The setup URL is separate from TEST_DATABASE_URL and reserved for the isolated enterprise DB. */
 export function enterpriseTestDatabaseUrlFrom(
   environment: Record<string, string | undefined> = process.env,
 ): string {
   return validateEnterpriseUrl(
-    environment.TEST_DATABASE_URL,
-    "TEST_DATABASE_URL",
+    environment.ENTERPRISE_TEST_SETUP_DATABASE_URL,
+    "ENTERPRISE_TEST_SETUP_DATABASE_URL",
   );
 }
 

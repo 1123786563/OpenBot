@@ -56,12 +56,16 @@ export function createRuntimeModelAdapter(input: {
             ? { baseURL: environment.OPENAI_BASE_URL.trim() }
             : {}),
         }).chat(model.defaultModel);
-      return createAnthropic({
-        apiKey,
-        ...(environment.ANTHROPIC_BASE_URL?.trim()
-          ? { baseURL: environment.ANTHROPIC_BASE_URL.trim() }
-          : {}),
-      })(model.defaultModel);
+      if (model.provider === "anthropic") {
+        const base = environment.ANTHROPIC_BASE_URL?.trim().replace(/\/+$/, "");
+        return createAnthropic({
+          apiKey,
+          ...(base
+            ? { baseURL: /\/v\d+$/.test(base) ? base : `${base}/v1` }
+            : {}),
+        })(model.defaultModel);
+      }
+      throw new Error("UNSUPPORTED_MODEL_PROVIDER");
     },
   };
 }

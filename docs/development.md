@@ -70,6 +70,24 @@ in the composer deletes it outright, so it takes abandoned drafts rather than or
 
 ## Migrations
 
+`bash scripts/start.sh` starts the local Compose database before its migration service. That service
+uses the guarded runtime migrator with the explicit local bootstrap option, so a fresh local cluster
+creates the four `NOLOGIN` capability roles atomically before application migrations. No separate
+role command is needed for this path.
+
+The direct `bun run --filter server db:migrate` command uses the same preflight-bearing migrator but
+does not enable automatic role creation. For a separately managed development database, point
+`ENTERPRISE_SETUP_DATABASE_URL` at the target using a direct PostgreSQL superuser login, then run
+this once from the repository root before migrating:
+
+```sh
+psql --dbname "$ENTERPRISE_SETUP_DATABASE_URL" --single-transaction --set=ON_ERROR_STOP=1 --file=server/ops/enterprise/roles.sql
+```
+
+The bootstrap creates only `NOLOGIN` capability roles; create application LOGIN roles and
+credentials separately. It reads `pg_authid.rolpassword`, so `BYPASSRLS` alone cannot run it.
+`scripts/migrate.ts` always checks that all four capability roles are present and safe before SQL.
+
 After changing the Drizzle schema:
 
 ```sh

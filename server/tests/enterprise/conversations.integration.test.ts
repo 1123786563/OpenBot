@@ -12,6 +12,7 @@ import {
   channelMemberships,
   channels,
   enterpriseConversations,
+  enterpriseRuns,
   intelligenceChannelMappings,
   users,
 } from "../../src/db/schema";
@@ -72,6 +73,7 @@ const attachmentId = randomUUID();
 const rollbackAttachmentId = randomUUID();
 const directAttachmentId = randomUUID();
 const raceAttachmentId = randomUUID();
+const schemaInvariantRunId = randomUUID();
 
 let setupDatabase: Database | undefined;
 let directoryDatabase: DirectoryDatabase | undefined;
@@ -857,6 +859,72 @@ async function waitForAdvisoryLockWaiters(
   }
   return false;
 }
+
+test("Run ceilings and reservation totals are enforced by PostgreSQL", async () => {
+  const setup = setupDb();
+  const baseRun = {
+    tenantId,
+    workspaceId,
+    principalId,
+    threadId,
+    clientMessageKey: `${prefix}-schema-invariant-run`,
+    expertVersionRef: "synthetic-expert-v1",
+    modelRouteRef: "synthetic-model-route",
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+  };
+
+  await expect(setup.insert(enterpriseRuns).values(baseRun)).rejects.toThrow();
+  await expect(
+    setup
+      .insert(enterpriseRuns)
+      .values({ ...baseRun, modelRouteMaximumTokens: 0 }),
+  ).rejects.toThrow();
+
+  await setup.insert(enterpriseRuns).values({
+    ...baseRun,
+    id: schemaInvariantRunId,
+    clientMessageKey: `${prefix}-schema-invariant-valid-run`,
+    modelRouteMaximumTokens: 1,
+  });
+  await expect(
+    setup.execute(sql`
+      INSERT INTO enterprise_model_budget_reservations (
+        tenant_id, workspace_id, principal_id, run_id, idempotency_key,
+        model_route_ref, token_limit, confirmed_tokens, expires_at
+      ) VALUES (
+        ${tenantId}, ${workspaceId}, ${principalId}, ${schemaInvariantRunId},
+        ${`${prefix}-over-limit-reservation`}, 'synthetic-model-route', 1, 2,
+        now() + interval '1 hour'
+      )
+    `),
+  ).rejects.toThrow();
+});
+
+test("Bun and Drizzle persist intent attachment IDs as a JSON array", async () => {
+  const clientMessageKey = `${prefix}-json-array-intent`;
+  await setupDb()
+    .insert(mastraMessageIntents)
+    .values({
+      tenantId,
+      threadId,
+      clientMessageKey,
+      messageId: `${prefix}-json-array-message`,
+      digest: "json-array-contract",
+      reservedSeq: 2_000_000_000,
+      actorId,
+      principalId,
+      backendVersion: 1,
+      attachmentIds: [],
+    });
+  const [stored] = (await setupDb().execute(sql`
+    SELECT jsonb_typeof(attachment_ids) AS type
+    FROM mastra_message_intents
+    WHERE tenant_id = ${tenantId}
+      AND thread_id = ${threadId}
+      AND client_message_key = ${clientMessageKey}
+  `)) as unknown as Array<{ type: string }>;
+  expect(stored?.type).toBe("array");
+});
 
 afterAll(async () => {
   const failures: unknown[] = [];

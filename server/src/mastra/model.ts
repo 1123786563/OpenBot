@@ -65,20 +65,35 @@ type StreamPart =
   >["stream"] extends ReadableStream<infer T>
     ? T
     : never;
-const totalUsage = (usage: {
-  inputTokens?: { total?: number };
-  outputTokens?: { total?: number };
-}): number | undefined => {
-  const input = usage.inputTokens?.total;
-  const output = usage.outputTokens?.total;
-  if (
-    !Number.isSafeInteger(input) ||
-    !Number.isSafeInteger(output) ||
-    (input as number) < 0 ||
-    (output as number) < 0
-  )
+const totalUsage = (usage: unknown): number | undefined => {
+  try {
+    if (usage === null || typeof usage !== "object" || Array.isArray(usage))
+      return undefined;
+    const inputTokens = (usage as { inputTokens?: unknown }).inputTokens;
+    const outputTokens = (usage as { outputTokens?: unknown }).outputTokens;
+    if (
+      inputTokens === null ||
+      typeof inputTokens !== "object" ||
+      Array.isArray(inputTokens) ||
+      outputTokens === null ||
+      typeof outputTokens !== "object" ||
+      Array.isArray(outputTokens)
+    )
+      return undefined;
+    const input = (inputTokens as { total?: unknown }).total;
+    const output = (outputTokens as { total?: unknown }).total;
+    if (
+      !Number.isSafeInteger(input) ||
+      !Number.isSafeInteger(output) ||
+      (input as number) < 0 ||
+      (output as number) < 0
+    )
+      return undefined;
+    const total = (input as number) + (output as number);
+    return Number.isSafeInteger(total) ? total : undefined;
+  } catch {
     return undefined;
-  return (input as number) + (output as number);
+  }
 };
 
 function freezeRuntimeRoute(route: RuntimeModelRoute): RuntimeModelRoute {
@@ -119,18 +134,279 @@ function estimatorRouteView(
   });
 }
 
-function redact(value: unknown, secret: string): unknown {
-  if (typeof value === "string")
-    return secret ? value.split(secret).join("[redacted]") : value;
-  if (Array.isArray(value)) return value.map((part) => redact(part, secret));
+function replacementMetadataKey(
+  key: string,
+  secrets: readonly string[],
+  reserved: Set<string>,
+  emitted: Set<string>,
+  headerName: boolean,
+): string {
+  const containsSecret = secrets.some((secret) =>
+    key.toLowerCase().includes(secret.toLowerCase()),
+  );
+  const validHeaderName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key);
+  if (
+    !containsSecret &&
+    (!headerName || validHeaderName) &&
+    !emitted.has(headerName ? key.toLowerCase() : key)
+  ) {
+    emitted.add(headerName ? key.toLowerCase() : key);
+    return key;
+  }
+
+  for (let index = 0; index < 256; index += 1) {
+    const candidate = `ob-r-${index.toString(36)}`;
+    const normalizedCandidate = headerName
+      ? candidate.toLowerCase()
+      : candidate;
+    if (
+      secrets.some((secret) =>
+        normalizedCandidate.toLowerCase().includes(secret.toLowerCase()),
+      ) ||
+      reserved.has(normalizedCandidate) ||
+      emitted.has(normalizedCandidate)
+    )
+      continue;
+    emitted.add(normalizedCandidate);
+    return normalizedCandidate;
+  }
+  throw publicFailure();
+}
+
+function selectTextSentinel(secrets: readonly string[]): string | undefined {
+  const isAbsentFromCredentials = (candidate: string) =>
+    secrets.every((secret) => !secret.includes(candidate));
+  for (let codePoint = 0x2580; codePoint <= 0x259f; codePoint += 1) {
+    const candidate = String.fromCodePoint(codePoint);
+    if (isAbsentFromCredentials(candidate)) return candidate;
+  }
+  for (let codePoint = 0xe000; codePoint <= 0xf8ff; codePoint += 1) {
+    const candidate = String.fromCodePoint(codePoint);
+    if (isAbsentFromCredentials(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function selectHeaderTextSentinel(
+  secrets: readonly string[],
+): string | undefined {
+  for (let codePoint = 0x21; codePoint <= 0x7e; codePoint += 1) {
+    const candidate = String.fromCharCode(codePoint);
+    if (secrets.every((secret) => !secret.includes(candidate)))
+      return candidate;
+  }
+  return undefined;
+}
+
+function headerSafeRedactedValue(
+  original: unknown,
+  value: string,
+  secrets: readonly string[],
+): string {
+  if (typeof original !== "string" || !containsCredential(original, secrets))
+    return value;
+  const sentinel = selectHeaderTextSentinel(secrets);
+  if (!sentinel) throw publicFailure();
+  const redacted = redactStringWithSentinel(original, secrets, sentinel);
+  if (containsCredential(redacted, secrets)) throw publicFailure();
+  return redacted;
+}
+
+type TextInterval = { start: number; end: number };
+
+function credentialIntervals(
+  value: string,
+  secrets: readonly string[],
+): TextInterval[] {
+  const intervals: TextInterval[] = [];
+  for (const secret of secrets) {
+    if (!secret) continue;
+    let start = value.indexOf(secret);
+    while (start !== -1) {
+      intervals.push({ start, end: start + secret.length });
+      start = value.indexOf(secret, start + 1);
+    }
+  }
+  intervals.sort(
+    (left, right) => left.start - right.start || left.end - right.end,
+  );
+  const merged: TextInterval[] = [];
+  for (const interval of intervals) {
+    const previous = merged.at(-1);
+    if (previous && interval.start <= previous.end)
+      previous.end = Math.max(previous.end, interval.end);
+    else merged.push({ ...interval });
+  }
+  return merged;
+}
+
+function containsCredential(
+  value: string,
+  secrets: readonly string[],
+): boolean {
+  return secrets.some((secret) => secret.length > 0 && value.includes(secret));
+}
+
+function redactString(
+  value: string,
+  secrets: readonly string[],
+  leftContext = "",
+): string {
+  const selectedSecrets = secrets.filter((secret) => secret.length > 0);
+  const intervals = credentialIntervals(value, selectedSecrets);
+  if (intervals.length === 0) return value;
+  const sentinel = selectTextSentinel(selectedSecrets);
+  if (!sentinel) throw publicFailure();
+
+  const output = redactStringWithSentinel(value, selectedSecrets, sentinel);
+  if (containsCredential(output, selectedSecrets)) throw publicFailure();
+  if (containsCredential(leftContext + output, selectedSecrets))
+    throw publicFailure();
+  return output;
+}
+
+function redactStringWithSentinel(
+  value: string,
+  secrets: readonly string[],
+  sentinel: string,
+): string {
+  const intervals = credentialIntervals(value, secrets);
+  let cursor = 0;
+  let output = "";
+  for (const interval of intervals) {
+    output += value.slice(cursor, interval.start);
+    output += sentinel;
+    cursor = interval.end;
+  }
+  output += value.slice(cursor);
+  return output;
+}
+
+function redact(
+  value: unknown,
+  secrets: readonly string[],
+  rejectedStreams?: Set<ReadableStream<unknown>>,
+): unknown {
+  const selectedSecrets = secrets.filter((secret) => secret.length > 0);
+  if (value instanceof Error) return publicFailure();
+  if (typeof value === "string") return redactString(value, selectedSecrets);
+  if (Array.isArray(value))
+    return value.map((part) => redact(part, selectedSecrets, rejectedStreams));
   if (value && typeof value === "object") {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) return value;
+    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return value;
+    if (value instanceof ReadableStream) {
+      if (!rejectedStreams) throw publicFailure();
+      rejectedStreams.add(value);
+      return undefined;
+    }
+    if (value instanceof Headers) {
+      const entries = [...value.entries()];
+      const safeNames = new Set(
+        entries
+          .map(([key]) => key)
+          .filter(
+            (key) =>
+              !selectedSecrets.some((secret) =>
+                key.toLowerCase().includes(secret.toLowerCase()),
+              ),
+          ),
+      );
+      const emitted = new Set<string>();
+      const headers = new Headers();
+      for (const [key, part] of entries) {
+        const redactedPart = redact(part, selectedSecrets, rejectedStreams);
+        if (typeof redactedPart !== "string") throw publicFailure();
+        headers.set(
+          replacementMetadataKey(
+            key,
+            selectedSecrets,
+            safeNames,
+            emitted,
+            true,
+          ),
+          headerSafeRedactedValue(part, redactedPart, selectedSecrets),
+        );
+      }
+      return headers;
+    }
+    const entries = Object.entries(value);
+    const safeNames = new Set(
+      entries
+        .map(([key]) => key)
+        .filter(
+          (key) =>
+            !selectedSecrets.some((secret) =>
+              key.toLowerCase().includes(secret.toLowerCase()),
+            ),
+        ),
+    );
+    const emitted = new Set<string>();
     return Object.fromEntries(
-      Object.entries(value).map(([key, part]) => [key, redact(part, secret)]),
+      entries.map(([key, part]) => [
+        replacementMetadataKey(key, selectedSecrets, safeNames, emitted, false),
+        redact(part, selectedSecrets, rejectedStreams),
+      ]),
     );
   }
   return value;
+}
+
+function snapshotProviderStreamPart(
+  value: unknown,
+  secrets: readonly string[],
+): { type: string; part: Record<string, unknown> } {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw publicFailure();
+
+  let typeDescriptor: PropertyDescriptor | undefined;
+  try {
+    typeDescriptor = Object.getOwnPropertyDescriptor(value, "type");
+  } catch {
+    throw publicFailure();
+  }
+  if (
+    !typeDescriptor ||
+    !("value" in typeDescriptor) ||
+    typeof typeDescriptor.value !== "string" ||
+    containsCredential(typeDescriptor.value, secrets)
+  )
+    throw publicFailure();
+
+  const type = typeDescriptor.value;
+  const entries: [string, unknown][] = [];
+  let typeIncluded = false;
+  try {
+    for (const key of Object.keys(value)) {
+      if (key === "type") {
+        entries.push([key, type]);
+        typeIncluded = true;
+        continue;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor?.enumerable) throw publicFailure();
+      entries.push([
+        key,
+        "value" in descriptor ? descriptor.value : Reflect.get(value, key),
+      ]);
+    }
+  } catch {
+    throw publicFailure();
+  }
+  if (!typeIncluded) entries.push(["type", type]);
+  return { type, part: Object.fromEntries(entries) };
+}
+
+function cancelRejectedStreams(streams: Set<ReadableStream<unknown>>): void {
+  for (const stream of streams) {
+    try {
+      void stream.cancel().catch(() => {
+        // Keep provider cancellation details private and continue cleanup.
+      });
+    } catch {
+      // Keep provider cancellation details private and continue cleanup.
+    }
+  }
+  streams.clear();
 }
 
 function matchingCapability(
@@ -151,6 +427,11 @@ function matchingCapability(
   );
 }
 
+/**
+ * Create a governed model whose callers must explicitly set a positive
+ * `maxOutputTokens` cap on every generation or stream request. No cap is
+ * supplied by default.
+ */
 export async function createGovernedMastraModel(
   deps: GovernedModelDependencies,
   context: GovernedModelContext,
@@ -166,7 +447,7 @@ export async function createGovernedMastraModel(
     ) => Promise<T>,
   ): Promise<{
     value: T;
-    apiKey: string;
+    secrets: string[];
     confirmUsage(usedTokens: number): Promise<void>;
     markUnknown(): Promise<void>;
   }> => {
@@ -201,14 +482,18 @@ export async function createGovernedMastraModel(
       (outputTokens as number) + (inputUpperBound as number);
     if (!Number.isSafeInteger(maximumTokens)) throw publicFailure();
 
-    const generation = await deps.getAttemptGeneration(
-      context.scope,
-      context.runId,
-      context.attemptId,
-    );
+    let generation: number;
+    try {
+      generation = await deps.getAttemptGeneration(
+        context.scope,
+        context.runId,
+        context.attemptId,
+      );
+    } catch {
+      throw publicFailure();
+    }
     const modelRequestId = randomUUID();
     let capability: string | undefined;
-    let consumed = false;
     let settlement: Promise<void> | undefined;
     const markUnknown = async () => {
       if (!capability || settlement) return settlement;
@@ -255,7 +540,6 @@ export async function createGovernedMastraModel(
       capability = issued.capability;
       // A lost response from resolve is ambiguous: unknown safely retains the
       // maximum charge whether the database consumed the claim or not.
-      consumed = true;
       const resolved = await deps.runs.resolveModelInvocationCapability(
         context.scope,
         capability,
@@ -271,6 +555,7 @@ export async function createGovernedMastraModel(
       let model: LanguageModelV3;
       let apiKey = "";
       const selectedPlan = route.model.plan;
+      const planEndpoint = selectedPlanEndpoint;
       if (selectedPlan) {
         if (
           !runtime.plan ||
@@ -289,9 +574,8 @@ export async function createGovernedMastraModel(
               new Set(),
               signal,
             ) as LanguageModelV3);
-        const planEndpoint = selectedPlanEndpoint as string;
         model = createPlan(
-          { ...selectedPlan, endpoint: new URL(planEndpoint) },
+          { ...selectedPlan, endpoint: new URL(planEndpoint as string) },
           route.planBotId ?? context.runId,
           context.runId,
           context.signal,
@@ -321,16 +605,18 @@ export async function createGovernedMastraModel(
               ...(options.abortSignal ? [options.abortSignal] : []),
             ]);
       const value = await call(model, { ...options, abortSignal: combined });
-      return { value, apiKey, confirmUsage, markUnknown };
+      return {
+        value,
+        secrets: [apiKey, selectedPlan?.token ?? ""],
+        confirmUsage,
+        markUnknown,
+      };
     } catch {
       if (capability) {
         try {
-          if (consumed) await markUnknown();
-          else
-            await deps.runs.releaseModelInvocation(context.scope, capability);
+          await markUnknown();
         } catch {
-          // A failed release or settlement is deliberately not retried: the claim
-          // remains conservatively charged and provider diagnostics stay private.
+          // The claim remains conservatively charged and provider diagnostics stay private.
         }
       }
       throw publicFailure();
@@ -343,14 +629,30 @@ export async function createGovernedMastraModel(
     modelId: context.modelRouteRef,
     supportedUrls: {},
     async doGenerate(options) {
-      const { value, apiKey, confirmUsage, markUnknown } = await invoke(
+      const { value, secrets, confirmUsage, markUnknown } = await invoke(
         options,
         (model, callOptions) => Promise.resolve(model.doGenerate(callOptions)),
       );
       const result = value as Awaited<
         ReturnType<LanguageModelV3["doGenerate"]>
       >;
-      const used = totalUsage(result.usage);
+      let prepared: typeof result;
+      try {
+        prepared = redact(result, secrets) as typeof result;
+      } catch {
+        try {
+          await markUnknown();
+        } catch {
+          // Preserve the generic failure and keep the claim conservatively charged.
+        }
+        throw publicFailure();
+      }
+      let used: number | undefined;
+      try {
+        used = totalUsage(result.usage);
+      } catch {
+        used = undefined;
+      }
       if (used === undefined) {
         try {
           await markUnknown();
@@ -360,40 +662,230 @@ export async function createGovernedMastraModel(
       } else {
         await confirmUsage(used);
       }
-      return redact(result, apiKey) as typeof result;
+      return prepared;
     },
     async doStream(options) {
-      const { value, apiKey, confirmUsage, markUnknown } = await invoke(
+      const { value, secrets, confirmUsage, markUnknown } = await invoke(
         options,
         (model, callOptions) => Promise.resolve(model.doStream(callOptions)),
       );
       const result = value as Awaited<ReturnType<LanguageModelV3["doStream"]>>;
-      const reader = result.stream.getReader();
+      let reader: ReadableStreamDefaultReader<StreamPart>;
+      try {
+        reader = result.stream.getReader();
+      } catch {
+        try {
+          await markUnknown();
+        } catch {
+          // Keep the provider failure generic and the claim conservatively charged.
+        }
+        throw publicFailure();
+      }
       let finishSeen = false;
       let finishTokens: number | undefined;
+      const rejectedNestedStreams = new Set<ReadableStream<unknown>>();
+      const streamIds = new Map<string, string>();
+      const safeStreamId = (id: string): string => {
+        if (!streamIds.has(id)) streamIds.set(id, redactString(id, secrets));
+        return streamIds.get(id) as string;
+      };
+      const redactStreamPart = (part: StreamPart): StreamPart => {
+        const sourcePart = part as unknown as Record<string, unknown>;
+        const type = sourcePart.type;
+        const id = sourcePart.id;
+        const value =
+          typeof id === "string"
+            ? { ...sourcePart, id: safeStreamId(id) }
+            : part;
+        const sanitized = redact(
+          value,
+          secrets,
+          rejectedNestedStreams,
+        ) as StreamPart;
+        if (rejectedNestedStreams.size > 0) throw publicFailure();
+        // The fixed protocol discriminant must remain usable by stream readers;
+        // provider-controlled values, including delta text and IDs, are redacted.
+        return { ...sanitized, type } as StreamPart;
+      };
+      const lookbehind = Math.max(
+        0,
+        ...secrets
+          .filter((secret) => secret.length > 0)
+          .map((secret) => secret.length - 1),
+      );
+      let pendingText = "";
+      let pendingTextId = "";
+      let pendingTextPart: Record<string, unknown> | undefined;
+      let emittedTail = "";
+      let flushedSourceTail = "";
+      const trackEmittedText = (delta: string) => {
+        const combined = emittedTail + delta;
+        if (secrets.some((secret) => secret && combined.includes(secret)))
+          throw publicFailure();
+        emittedTail = lookbehind > 0 ? combined.slice(-lookbehind) : "";
+      };
+      const flushPendingText = () => {
+        if (!pendingText) return;
+        flushedSourceTail = pendingText.slice(-lookbehind);
+        const delta = redactString(pendingText, secrets, emittedTail);
+        trackEmittedText(delta);
+        output.push({
+          ...pendingTextPart,
+          type: "text-delta",
+          id: pendingTextId,
+          delta,
+        } as StreamPart);
+        pendingText = "";
+        pendingTextId = "";
+        pendingTextPart = undefined;
+      };
+      const output: StreamPart[] = [];
+      let safeMetadata: Omit<typeof result, "stream">;
+      try {
+        const { stream: _providerStream, ...metadata } = result;
+        safeMetadata = redact(
+          metadata,
+          secrets,
+          rejectedNestedStreams,
+        ) as typeof metadata;
+        if (rejectedNestedStreams.size > 0) throw publicFailure();
+      } catch {
+        cancelRejectedStreams(rejectedNestedStreams);
+        try {
+          void reader.cancel().catch(() => {
+            // Keep provider cancellation details private.
+          });
+        } catch {
+          // Keep provider cancellation details private.
+        }
+        try {
+          await markUnknown();
+        } catch {
+          // The maximum remains conservatively charged.
+        }
+        throw publicFailure();
+      }
       const stream = new ReadableStream<StreamPart>({
         async pull(controller) {
           try {
-            const next = await reader.read();
-            if (next.done) {
-              if (!finishSeen || finishTokens === undefined)
-                await markUnknown();
-              else await confirmUsage(finishTokens);
-              controller.close();
-              return;
-            }
-            if (next.value.type === "finish") {
+            while (output.length === 0) {
+              const next = await reader.read();
+              if (next.done) {
+                pendingText = "";
+                pendingTextPart = undefined;
+                if (!finishSeen) {
+                  await markUnknown();
+                  controller.error(publicFailure());
+                  return;
+                }
+                if (finishTokens === undefined) await markUnknown();
+                else await confirmUsage(finishTokens);
+                controller.close();
+                return;
+              }
+              const { type: partType, part } = snapshotProviderStreamPart(
+                next.value,
+                secrets,
+              );
+              if (partType === "finish") {
+                if (finishSeen) throw publicFailure();
+                finishSeen = true;
+                const used = totalUsage(part.usage);
+                const finishPart = redactStreamPart(part as StreamPart);
+                flushPendingText();
+                finishTokens = used;
+                if (used === undefined) await markUnknown();
+                else await confirmUsage(used);
+                output.push(finishPart);
+                continue;
+              }
               if (finishSeen) throw publicFailure();
-              finishSeen = true;
-              const used = totalUsage(next.value.usage);
-              finishTokens = used;
-              if (used === undefined) throw publicFailure();
-              await confirmUsage(used);
-            } else if (finishSeen) {
-              throw publicFailure();
+              if (partType === "text-delta") {
+                const { delta: sourceDelta, ...sourceFields } = part;
+                if (
+                  flushedSourceTail.length > 0 &&
+                  containsCredential(flushedSourceTail + sourceDelta, secrets)
+                )
+                  throw publicFailure();
+                flushedSourceTail = "";
+                if (typeof sourceFields.id === "string")
+                  sourceFields.id = safeStreamId(sourceFields.id);
+                const safeSourceFields = redact(
+                  sourceFields,
+                  secrets,
+                  rejectedNestedStreams,
+                ) as Record<string, unknown>;
+                if (rejectedNestedStreams.size > 0) throw publicFailure();
+                const safePart = {
+                  ...safeSourceFields,
+                  type: partType,
+                  delta: sourceDelta,
+                } as Extract<StreamPart, { type: "text-delta" }>;
+                const safeId = safePart.id;
+                // Keep this buffer in original source coordinates. Masking may
+                // change its length, so source offsets must never slice output.
+                const delta = pendingText + safePart.delta;
+                const safePartFields = safePart as unknown as Record<
+                  string,
+                  unknown
+                >;
+                let safeLength = Math.max(0, delta.length - lookbehind);
+                for (const interval of credentialIntervals(delta, secrets)) {
+                  if (
+                    interval.start < safeLength &&
+                    interval.end > safeLength
+                  ) {
+                    safeLength = interval.start;
+                    break;
+                  }
+                }
+                if (safeLength === 0 && containsCredential(delta, secrets))
+                  redactString(delta, secrets, emittedTail);
+                if (safeLength > 0) {
+                  const safeDelta = redactString(
+                    delta.slice(0, safeLength),
+                    secrets,
+                    emittedTail,
+                  );
+                  trackEmittedText(safeDelta);
+                  output.push({
+                    ...pendingTextPart,
+                    ...safePart,
+                    id: pendingText ? pendingTextId : safeId,
+                    delta: safeDelta,
+                  } as StreamPart);
+                }
+                pendingText = delta.slice(safeLength);
+                if (pendingText) {
+                  pendingTextId ||= safeId;
+                  if (!pendingTextId) pendingTextId = safeId;
+                  pendingTextPart = {
+                    ...pendingTextPart,
+                    ...safePartFields,
+                    id: pendingTextId,
+                    delta: pendingText,
+                  };
+                } else {
+                  pendingTextId = "";
+                  pendingTextPart = undefined;
+                }
+                continue;
+              }
+              flushPendingText();
+              output.push(redactStreamPart(part as StreamPart));
             }
-            controller.enqueue(redact(next.value, apiKey) as typeof next.value);
+            controller.enqueue(output.shift() as StreamPart);
           } catch {
+            pendingText = "";
+            output.length = 0;
+            cancelRejectedStreams(rejectedNestedStreams);
+            try {
+              void reader.cancel().catch(() => {
+                // Keep provider cancellation details private.
+              });
+            } catch {
+              // Keep provider cancellation details private.
+            }
             try {
               await markUnknown();
             } catch {
@@ -403,6 +895,8 @@ export async function createGovernedMastraModel(
           }
         },
         async cancel(reason) {
+          pendingText = "";
+          output.length = 0;
           try {
             await markUnknown();
           } catch {
@@ -415,7 +909,7 @@ export async function createGovernedMastraModel(
           }
         },
       });
-      return { ...result, stream };
+      return { ...safeMetadata, stream };
     },
   };
 }

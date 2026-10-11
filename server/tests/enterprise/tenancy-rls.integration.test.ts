@@ -162,6 +162,55 @@ test("RLS migration and DBA role artifacts are role-scoped", () => {
   expect(migration).not.toMatch(/GRANT [^;]+ TO ob_ent_identity_operator/i);
   expect(roleBootstrap).not.toMatch(/\b(?:ENCRYPTED\s+)?PASSWORD\s*=/i);
   expect(roleBootstrap.match(/CREATE ROLE\s+\w+/gi)).toHaveLength(4);
+  expect(roleBootstrap).toContain("session_user <> current_user");
+  expect(roleBootstrap).toContain("NOREPLICATION");
+  expect(roleBootstrap).toContain("NOT rolreplication");
+  expect(roleBootstrap).toContain("namespace.nspowner = capability_oid");
+  expect(roleBootstrap).toContain("target_database.datdba = capability_oid");
+});
+
+test("catalog verification rejects real REPLICATION and PUBLIC enterprise grants", async () => {
+  const setupDbHandle = setupDb();
+  const dataDbHandle = await dataDb();
+
+  await setupDbHandle.execute(sql`ALTER ROLE ob_ent_data REPLICATION`);
+  try {
+    await expect(verifyDataDatabase(dataDbHandle)).rejects.toThrow(
+      "DATABASE_CAPABILITY_MISMATCH",
+    );
+  } finally {
+    await setupDbHandle.execute(sql`ALTER ROLE ob_ent_data NOREPLICATION`);
+  }
+  expect(await verifyDataDatabase(dataDbHandle)).toBe(dataDbHandle);
+
+  await setupDbHandle.execute(
+    sql`GRANT SELECT ON TABLE enterprise_resources TO PUBLIC`,
+  );
+  try {
+    await expect(verifyDataDatabase(dataDbHandle)).rejects.toThrow(
+      "DATABASE_CAPABILITY_MISMATCH",
+    );
+  } finally {
+    await setupDbHandle.execute(
+      sql`REVOKE SELECT ON TABLE enterprise_resources FROM PUBLIC`,
+    );
+  }
+  expect(await verifyDataDatabase(dataDbHandle)).toBe(dataDbHandle);
+
+  await setupDbHandle.execute(
+    sql`GRANT SELECT (id) ON TABLE enterprise_resources TO PUBLIC`,
+  );
+  try {
+    await expect(verifyDataDatabase(dataDbHandle)).rejects.toThrow(
+      "DATABASE_CAPABILITY_MISMATCH",
+    );
+  } finally {
+    await setupDbHandle.execute(
+      sql`REVOKE SELECT (id) ON TABLE enterprise_resources FROM PUBLIC`,
+    );
+  }
+  await setupDbHandle.execute(sql`GRANT USAGE ON SCHEMA public TO PUBLIC`);
+  expect(await verifyDataDatabase(dataDbHandle)).toBe(dataDbHandle);
 });
 
 afterAll(async () => {

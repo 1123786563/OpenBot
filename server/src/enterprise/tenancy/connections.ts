@@ -43,12 +43,14 @@ function capabilityCatalogQuery(role: string) {
       AND NOT capability.rolsuper
       AND NOT capability.rolbypassrls
       AND NOT capability.rolcreatedb
-      AND NOT capability.rolcreaterole AS capability_attributes_ok,
+      AND NOT capability.rolcreaterole
+      AND NOT capability.rolreplication AS capability_attributes_ok,
     login.rolcanlogin
       AND NOT login.rolsuper
       AND NOT login.rolbypassrls
       AND NOT login.rolcreatedb
-      AND NOT login.rolcreaterole AS login_attributes_ok,
+      AND NOT login.rolcreaterole
+      AND NOT login.rolreplication AS login_attributes_ok,
     pg_has_role(session_user, capability.oid, 'MEMBER') AS login_has_expected_capability,
     NOT EXISTS (
       SELECT 1
@@ -110,7 +112,7 @@ function capabilityCatalogQuery(role: string) {
         AND relation.relname LIKE 'enterprise_%'
         AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
         AND relation.relowner <> login.oid
-        AND relation_acl.grantee = login.oid
+        AND (relation_acl.grantee = login.oid OR relation_acl.grantee = 0)
     )
     AND NOT EXISTS (
       SELECT 1
@@ -123,7 +125,7 @@ function capabilityCatalogQuery(role: string) {
         AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
         AND attribute.attnum > 0
         AND NOT attribute.attisdropped
-        AND attribute_acl.grantee = login.oid
+        AND (attribute_acl.grantee = login.oid OR attribute_acl.grantee = 0)
     )
     AND NOT EXISTS (
       SELECT 1

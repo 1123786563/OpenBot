@@ -12,10 +12,17 @@
  * the image, and it keeps the same `drizzle.__drizzle_migrations` journal the CLI does, so the two
  * are interchangeable and a database migrated by either is migrated.
  */
+
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import {
+  assertEnterpriseRolePreconditions,
+  type EnterpriseRoleCatalogRow,
+} from "./enterprise-role-preflight";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -33,7 +40,27 @@ if (!databaseUrl) {
 const client = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 
 try {
-  await migrate(drizzle(client), {
+  if (process.env.OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES === "on") {
+    const roleBootstrap = await readFile(
+      join(import.meta.dir, "..", "ops", "enterprise", "roles.sql"),
+      "utf8",
+    );
+    await client.unsafe(`BEGIN;\n${roleBootstrap}\nCOMMIT;`).simple();
+  }
+
+  const database = drizzle(client);
+  const roles = (await database.execute(sql`
+    SELECT rolname, rolcanlogin, rolsuper, rolbypassrls,
+      rolcreatedb, rolcreaterole, rolreplication
+    FROM pg_roles
+    WHERE rolname IN (
+      'ob_ent_directory', 'ob_ent_data',
+      'ob_ent_operator', 'ob_ent_identity_operator'
+    )
+  `)) as unknown as EnterpriseRoleCatalogRow[];
+  assertEnterpriseRolePreconditions(roles);
+
+  await migrate(database, {
     migrationsFolder: join(import.meta.dir, "..", "drizzle"),
   });
   console.info(JSON.stringify({ type: "migrations-applied", status: "ok" }));
