@@ -1,4 +1,5 @@
 import { and, count, eq, max } from "drizzle-orm";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import type { Database } from "../db/client";
 import {
   billingCustomers,
@@ -33,10 +34,19 @@ const RETRYABLE_CONNECTION_CODES = new Set([
 ]);
 
 function isRetryableDatabaseError(error: unknown): boolean {
+  const seen = new Set<DrizzleQueryError>();
+  while (error instanceof DrizzleQueryError) {
+    if (seen.has(error)) return false;
+    seen.add(error);
+    error = error.cause;
+  }
   if (error instanceof Bun.SQL.PostgresError) {
-    return (
-      error.code.startsWith("08") || RETRYABLE_POSTGRES_CODES.has(error.code)
-    );
+    // Bun 1.4 reports SQLSTATE in errno; older versions put it directly in code.
+    const sqlState =
+      typeof error.errno === "string" && /^[0-9A-Z]{5}$/.test(error.errno)
+        ? error.errno
+        : error.code;
+    return sqlState.startsWith("08") || RETRYABLE_POSTGRES_CODES.has(sqlState);
   }
   return (
     error instanceof Error &&

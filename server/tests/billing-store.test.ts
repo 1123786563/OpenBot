@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createBillingStore } from "../src/billing/store";
 import type { Database } from "../src/db/client";
 
@@ -16,6 +17,139 @@ test("a synchronous programming error from query construction is not retryable",
       name: null,
     }),
   ).rejects.toBe(failure);
+});
+
+test("Drizzle-wrapped transient PostgreSQL errno values are retryable", async () => {
+  for (const errno of ["08006", "40001", "40P01", "55P03", "57P01", "53300"]) {
+    const failure = new DrizzleQueryError(
+      "select 1",
+      [],
+      new Bun.SQL.PostgresError("transient SQL failure", {
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno,
+      }),
+    );
+    const database = {
+      transaction() {
+        return Promise.reject(failure);
+      },
+    } as unknown as Database;
+    await expect(
+      createBillingStore(database).applyWebhookProjection({
+        event: {
+          provider: "test",
+          eventId: "event-1",
+          webhookType: "invoice.created",
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: "BillingPersistenceError",
+      operation: "webhook_apply",
+    });
+  }
+});
+
+test("Drizzle-wrapped connection errors remain retryable", async () => {
+  const failure = new DrizzleQueryError(
+    "select 1",
+    [],
+    Object.assign(new Error("connection lost"), { code: "ECONNRESET" }),
+  );
+  const database = {
+    transaction() {
+      return Promise.reject(failure);
+    },
+  } as unknown as Database;
+  await expect(
+    createBillingStore(database).applyWebhookProjection({
+      event: {
+        provider: "test",
+        eventId: "event-1",
+        webhookType: "invoice.created",
+      },
+    }),
+  ).rejects.toMatchObject({ name: "BillingPersistenceError" });
+});
+
+test("wrapped constraints and unknown errors retain their original identity", async () => {
+  const cyclic = new DrizzleQueryError("select 1", [], undefined);
+  cyclic.cause = cyclic;
+  const failures = [
+    cyclic,
+    new DrizzleQueryError(
+      "select 1",
+      [],
+      new Bun.SQL.PostgresError("constraint violation", {
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno: "23503",
+      }),
+    ),
+    new DrizzleQueryError("select 1", [], new TypeError("programming failure")),
+    new DrizzleQueryError(
+      "select 1",
+      [],
+      Object.assign(new Error("not a PostgreSQL error"), { errno: "40001" }),
+    ),
+    new Error("unknown wrapper", {
+      cause: new Bun.SQL.PostgresError("not a trusted database wrapper", {
+        code: "08006",
+      }),
+    }),
+    new DrizzleQueryError(
+      "select 1",
+      [],
+      new Bun.SQL.PostgresError("unknown SQL failure", {
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno: "XX000",
+      }),
+    ),
+  ];
+  for (const failure of failures) {
+    const database = {
+      transaction() {
+        return Promise.reject(failure);
+      },
+    } as unknown as Database;
+    await expect(
+      createBillingStore(database).applyWebhookProjection({
+        event: {
+          provider: "test",
+          eventId: "event-1",
+          webhookType: "invoice.created",
+        },
+      }),
+    ).rejects.toBe(failure);
+  }
+});
+
+test("direct errno and nested Drizzle PostgreSQL failures are retryable", async () => {
+  const postgres = new Bun.SQL.PostgresError("connection lost", {
+    code: "ERR_POSTGRES_SERVER_ERROR",
+    errno: "08006",
+  });
+  for (const failure of [
+    postgres,
+    new DrizzleQueryError(
+      "select 1",
+      [],
+      new DrizzleQueryError("select 1", [], postgres),
+    ),
+  ]) {
+    const database = {
+      transaction() {
+        return Promise.reject(failure);
+      },
+    } as unknown as Database;
+    await expect(
+      createBillingStore(database).applyWebhookProjection({
+        event: {
+          provider: "test",
+          eventId: "event-1",
+          webhookType: "invoice.created",
+        },
+      }),
+    ).rejects.toMatchObject({ name: "BillingPersistenceError" });
+  }
 });
 
 test("a transient PostgreSQL connection failure is marked retryable", async () => {
