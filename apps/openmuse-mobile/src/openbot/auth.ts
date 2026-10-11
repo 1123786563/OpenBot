@@ -61,6 +61,54 @@ export async function signInSocial(provider: OpenBotProviderId): Promise<void> {
   if (result.error) throw new Error(result.error.message ?? "登录失败。");
 }
 
+/**
+ * 邮箱 + 密码登录（Better Auth emailAndPassword）。
+ * 面向无 OAuth 浏览器的场景；部署需 OPENBOT_EMAIL_PASSWORD=true。
+ * 返回服务端原始 error 供表单分层提示（凭据错误 / 未启用 / SSO 强制）。
+ */
+export async function signInWithEmail(
+  email: string,
+  password: string,
+): Promise<{ ok: true; userId: string } | { ok: false; reason: string }> {
+  const { data, error } = await authClient.signIn.email({ email, password });
+  if (error)
+    return {
+      ok: false,
+      reason:
+        error.code === "INVALID_EMAIL_OR_PASSWORD"
+          ? "邮箱或密码不正确。"
+          : error.code === "EMAIL_PASSWORD_DISABLED" ||
+              /not enabled/i.test(error.message ?? "")
+            ? "此部署未开放邮箱密码登录，请使用下方的第三方登录。"
+            : error.code === "sso_required"
+              ? "此部署要求通过企业登录（SSO）。"
+              : error.message?.slice(0, 120) || "登录失败，请稍后重试。",
+    };
+  if (!data?.user?.id) return { ok: false, reason: "登录响应异常，请重试。" };
+  return { ok: true, userId: data.user.id };
+}
+
+/** 注册（邮箱 + 密码）。密码规则与 server 一致：≥8 位。 */
+export async function signUpWithEmail(
+  email: string,
+  password: string,
+  name: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const { error } = await authClient.signUp.email({ email, password, name });
+  if (error)
+    return {
+      ok: false,
+      reason:
+        error.code === "USER_ALREADY_EXISTS"
+          ? "该邮箱已注册，请直接登录。"
+          : error.code === "INVALID_PASSWORD" ||
+              /at least/i.test(error.message ?? "")
+            ? "密码至少 8 位。"
+            : error.message?.slice(0, 120) || "注册失败，请稍后重试。",
+    };
+  return { ok: true };
+}
+
 /** 当前会话；未登录返回 null（不抛错，由调用方决定去向）。 */
 export async function currentSession(): Promise<{ userId: string } | null> {
   const { data, error } = await authClient.getSession();

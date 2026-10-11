@@ -421,6 +421,21 @@ export function createAuth(
        */
       encryptOAuthTokens: true,
     },
+    /*
+     * Email + password sign-in for the OpenMuse mobile client. Off unless
+     * OPENBOT_EMAIL_PASSWORD=true: deployments that authenticate through
+     * Casdoor/SSO keep this surface closed, and `decideSignInMethod` above
+     * still refuses these requests when a deployment mandates SSO.
+     */
+    ...(authConfig.emailPassword
+      ? {
+          emailAndPassword: {
+            enabled: true,
+            minPasswordLength: 8,
+            requireEmailVerification: false,
+          },
+        }
+      : {}),
     plugins,
     socialProviders: {
       ...(authConfig.google ? { google: authConfig.google } : {}),
