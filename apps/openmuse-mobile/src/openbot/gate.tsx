@@ -44,30 +44,52 @@ export function OpenBotGate({
   const [phase, setPhase] = useState<"checking" | "signin" | "loading">("checking");
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setPhase("checking");
-    setError("");
-    try {
-      const session = await currentSession();
-      if (!session) {
-        setPhase("signin");
-        return;
+  /**
+   * 登录后的进入链。`justSignedIn` 时跳过 currentSession() 的本地会话
+   * 查询直接问服务端（/api/me）：刚建立的会话在个别平台的客户端缓存里
+   * 尚不可见，本地查一次不仅多余还可能误判为未登录把人弹回表单。
+   */
+  const load = useCallback(
+    async (justSignedIn = false) => {
+      setPhase("checking");
+      setError("");
+      try {
+        if (!justSignedIn) {
+          const session = await currentSession();
+          if (!session) {
+            setPhase("signin");
+            return;
+          }
+        }
+        // me 是会话真实性的最终裁决：本地有会话记录但服务端 401 时清空重登。
+        await fetchMe();
+        setPhase("loading");
+        const workspace = await fetchWorkspace();
+        onReady(workspace);
+      } catch (e) {
+        if (isAuthFailure(e)) {
+          // 会话确实无效：清掉本地痕迹回登录页。刚登录成功却 401 说明
+          // 会话未能落地（如 cookie 被拦），给出明确原因而不是静默弹回。
+          await signOut();
+          setError(
+            justSignedIn
+              ? "登录已受理但会话未能建立，请重试或改用第三方登录。"
+              : "",
+          );
+          setPhase("signin");
+          return;
+        }
+        /*
+         * 非鉴权错误（网络不可达/服务重启/响应异常）：会话本身没有问题，
+         * 停留在加载态给重试，绝不把已认证用户弹回登录表单——
+         * 那正是"登录成功却不跳转"的观感来源。
+         */
+        setError(e instanceof Error ? e.message : String(e));
+        setPhase("loading");
       }
-      // me 是会话真实性的最终裁决：本地有会话记录但服务端 401 时清空重登。
-      await fetchMe();
-      setPhase("loading");
-      const workspace = await fetchWorkspace();
-      onReady(workspace);
-    } catch (e) {
-      if (isAuthFailure(e)) {
-        await signOut();
-        setPhase("signin");
-        return;
-      }
-      setError(e instanceof Error ? e.message : String(e));
-      setPhase("signin");
-    }
-  }, [onReady]);
+    },
+    [onReady],
+  );
 
   useEffect(() => {
     void load();
@@ -87,12 +109,27 @@ export function OpenBotGate({
         <Mascot size={64} />
         <ActivityIndicator color={colors.blueDark} />
         <Text style={s.muted}>
-          {phase === "checking" ? "正在检查登录状态…" : "正在打开你的 OpenBot 工作区…"}
+          {phase === "checking"
+            ? "正在检查登录状态…"
+            : error
+              ? "工作区暂时无法加载，你的登录仍然有效。"
+              : "正在打开你的 OpenBot 工作区…"}
         </Text>
         <ErrorNotice error={error} />
         {!!error && (
           <Button small onPress={() => void load()}>
             重试
+          </Button>
+        )}
+        {!!error && (
+          <Button
+            small
+            onPress={() => {
+              setError("");
+              setPhase("signin");
+            }}
+          >
+            返回登录页
           </Button>
         )}
       </SafeAreaView>
@@ -117,7 +154,7 @@ export function OpenBotGate({
         <Text style={[s.muted, { textAlign: "center" }]}>
           由 OpenBot 驱动。请使用你的 OpenBot 账号登录。
         </Text>
-        <EmailSignInForm onSignedIn={() => void load()} />
+        <EmailSignInForm onSignedIn={() => void load(true)} />
         {providers.length > 0 && (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", width: "100%", gap: 10 }}>
