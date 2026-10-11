@@ -15,6 +15,7 @@ import { rm } from "node:fs/promises";
 import type { SandboxEnv } from "./env";
 import type { BotRuntimes } from "./bot-runtimes";
 import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
+import { createSnapshot, restoreArchive } from "./snapshot";
 import { isPlainBotId } from "./bot-id";
 import { forwardEvents } from "./sse";
 import { bridgeWebSocket } from "./ws-passthrough";
@@ -57,11 +58,13 @@ const ALLOWED = new Set([
   "POST /workspace/restore",
 ]);
 
-/** Paths that are allowed but not implemented yet, each awaiting its own task. */
-const NOT_YET_IMPLEMENTED = new Set([
-  "GET /workspace/snapshot",
-  "POST /workspace/restore",
-]);
+/**
+ * Empty as of S4: every allow-listed verb is implemented. The table stays — one honest 501
+ * is still the right answer for a verb that is allowed but not yet real, and the shape that
+ * carried this surface's honesty for fifteen waves should not lose its home when it is
+ * briefly empty.
+ */
+const NOT_YET_IMPLEMENTED = new Set<string>([]);
 
 function allowedPath(method: string, pathname: string): boolean {
   if (ALLOWED.has(`${method} ${pathname}`)) return true;
@@ -255,6 +258,45 @@ export function createProxyHandler(
         status: 200,
         headers: { "content-type": file.contentType },
       });
+    }
+
+    // The snapshot pair (S4): the workspace as one stream, and its restore. A restore is
+    // refused while the Bot holds a live turn — a workspace swapped under a running serve is
+    // a serve whose memory lies about its files.
+    if (url.pathname === "/workspace/snapshot" && request.method === "GET") {
+      const archive = await createSnapshot({
+        botWorkspace: `${env.workspaceDir}/bots/${botId}`,
+        botId,
+      });
+      return new Response(archive as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          "content-type": "application/gzip",
+          "content-disposition": `attachment; filename="${botId}-workspace.tar.gz"`,
+        },
+      });
+    }
+    if (url.pathname === "/workspace/restore" && request.method === "POST") {
+      const busy = runtimes.listRuntimes().find((entry) => entry.botId === botId);
+      if (busy?.streamCount && busy.streamCount > 0) {
+        return Response.json(
+          { error: "The Bot is mid-turn; restore after it settles." },
+          { status: 409 },
+        );
+      }
+      const archive = new Uint8Array(await request.arrayBuffer());
+      await runtimes.stopBot(botId);
+      const restored = await restoreArchive(
+        archive,
+        `${env.workspaceDir}/bots/${botId}`,
+      );
+      if (!restored.ok) {
+        return Response.json(
+          { error: "That archive is not a workspace snapshot.", reason: restored.reason },
+          { status: 400 },
+        );
+      }
+      return Response.json({ ok: true, botId });
     }
 
     const runtime = await runtimes.getOrSpawn(botId);
