@@ -1,0 +1,216 @@
+# Observability: the LGTM stack plus Alloy and GlitchTip — split out of docker-compose.yml
+# (one file per service group), formerly behind the `observability` profile.
+#
+# START THE MAIN STACK FIRST if you want container logs: Alloy tails every container on the
+# machine through the docker socket, which works either way, but the `default` network it and
+# the datasources name is the main project's. Cross-file `depends_on` is not a thing Compose
+# resolves, and the single file deliberately had no depends_on between any of these anyway:
+# Alloy's loki.write retries a Loki that is not up yet, and Grafana's provisioning does not
+# need the datasources to answer at boot.
+#
+# The server points at the stack with OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+# (uncomment it in .env after the stack is up); every port below is loopback-only, like
+# every port in these files. Container-side addresses are service names on the shared
+# `default` network (http://loki:3102, http://tempo:4318); the published loopback ports are
+# the host-side contract (Grafana 3003, Loki 3102, Tempo 3200 + OTLP 4318/4317, Prometheus
+# 9090).
+#
+# Same project name as the main file on purpose: volumes keep their openbot_* names, so a
+# stack that ran under the single file keeps its data (loki-data, tempo-data, prometheus-data,
+# grafana-data, alloy-data) without any migration step.
+name: openbot
+
+services:
+  loki:
+    image: grafana/loki:3.5.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./docker/observability/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    ports:
+      # Loopback, like every other port in these files. Loki listens on 3102 inside as well, so
+      # the published port, Alloy's push URL (http://loki:3102) and Grafana's datasource all
+      # name the same port; 3100 on the host belongs to open-connector.
+      - "127.0.0.1:${LOKI_PORT:-3102}:3102"
+      - "[::1]:${LOKI_PORT:-3102}:3102"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3102/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  tempo:
+    image: grafana/tempo:2.7.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./docker/observability/tempo-config.yaml:/etc/tempo/config.yaml:ro
+      # /var/tempo, not /tempo: the tempo image's ENTRYPOINT binary lives at /tempo, so the
+      # data volume mounts beside it.
+      - tempo-data:/var/tempo
+    ports:
+      # Loopback, like every other port in these files. 3200 is the query API the browser and
+      # Grafana use; 4318/4317 are the OTLP HTTP/gRPC receivers the server points
+      # OTEL_EXPORTER_OTLP_ENDPOINT at.
+      - "127.0.0.1:${TEMPO_PORT:-3200}:3200"
+      - "[::1]:${TEMPO_PORT:-3200}:3200"
+      - "127.0.0.1:${TEMPO_OTLP_HTTP_PORT:-4318}:4318"
+      - "[::1]:${TEMPO_OTLP_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${TEMPO_OTLP_GRPC_PORT:-4317}:4317"
+      - "[::1]:${TEMPO_OTLP_GRPC_PORT:-4317}:4317"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      # Loopback, like every other port in these files. Scrapes itself here; application targets
+      # land in docker/observability/prometheus.yml when the server is containerized.
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+      - "[::1]:${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  alloy:
+    image: grafana/alloy:v1.10.0
+    restart: unless-stopped
+    # Root, so the read-only docker.sock below is openable whatever gid it carries on the host.
+    user: root
+    command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./.logs:/hostlogs
+      - ./docker/observability/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      # Positions/state for the log tails. A named volume so a container rebuild resumes where
+      # the last one stopped instead of re-reading the whole .logs history into Loki.
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      # Loopback: Alloy's own UI/HTTP port, for debugging the pipeline only. Nothing depends on it.
+      - "127.0.0.1:${ALLOY_PORT:-12345}:12345"
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    restart: unless-stopped
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Datasources and the dashboard provider are provisioned, not clicked into existence: the
+      # provider yaml is mounted alone so the sibling dashboard JSON is not mistaken for a
+      # second provider definition.
+      - ./docker/observability/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/observability/provisioning/dashboards/provider.yaml:/etc/grafana/provisioning/dashboards/provider.yaml:ro
+      - ./docker/observability/provisioning/dashboards/openbot-starter.json:/var/lib/grafana/dashboards/openbot-starter.json:ro
+    ports:
+      # Loopback, like every other port in these files. This is the address in the docs: the
+      # starter dashboard is at http://127.0.0.1:3003, 3000 inside is Grafana's own.
+      - "127.0.0.1:${GRAFANA_PORT:-3003}:3000"
+      - "[::1]:${GRAFANA_PORT:-3003}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # GlitchTip, the crash-reporting sink: a Sentry-protocol server the client SDKs (P5) point
+  # their DSNs at.
+  #
+  # Own postgres and redis rather than sharing the main stack's: GlitchTip's upgrade path is
+  # recreate-from-scratch (wipe the volume, re-register, re-issue DSNs), and neither its
+  # migration-owned schema nor its throwaway lifecycle belongs on the volume OpenBot's tables
+  # live on — docker/observability/glitchtip-init-db.sql has that argument.
+  #
+  # Tag pinned to the release verified below; `latest` moves without telling us. v6 runs web
+  # (granian) and worker (django-vtasks) as one process when GLITCHTIP_EMBED_WORKER is set, and
+  # runs its migrations itself at boot, so this is three containers and not five. The image
+  # ships neither curl nor wget, so the healthcheck is a python one-liner against `/_health/`.
+  glitchtip:
+    image: glitchtip/glitchtip:6.2.6
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      # Forced, not defaulted: Django signs sessions and password resets with it, so a
+      # placeholder would look healthy and still not be one. Generated once per deployment:
+      #   openssl rand -hex 32
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?set GLITCHTIP_SECRET_KEY in .env}
+      # The host DSNs are minted against — also what the browser UI is served on, so the
+      # browser and the SDKs see the same DSN host.
+      GLITCHTIP_DOMAIN: http://127.0.0.1:${GLITCHTIP_PORT:-8001}
+      # One process for web and worker; see the block comment above.
+      GLITCHTIP_EMBED_WORKER: "true"
+    ports:
+      # Loopback, like every other port in these files: crash reports carry stack traces and
+      # environment details, and the DSN's key is the only credential on that path. 8001
+      # because 8000 is Casdoor's and 8080 is unassigned convention.
+      - "127.0.0.1:${GLITCHTIP_PORT:-8001}:8000"
+      - "[::1]:${GLITCHTIP_PORT:-8001}:8000"
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    healthcheck:
+      # `/_health/` answers 200 once migrations have run; the start_period below absorbs the
+      # first boot's migrate on a fresh volume.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/_health/').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  glitchtip-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    volumes:
+      - glitchtip-db:/var/lib/postgresql/data
+      # Belt and braces on the fresh-volume path: the POSTGRES_* env above already creates this
+      # role and database, and the script's guards make the second attempt a no-op. Mounted the
+      # same way casdoor's and lago's are so the ownership contract is written down, not implied.
+      - ./docker/observability/glitchtip-init-db.sql:/docker-entrypoint-initdb.d/10-glitchtip.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --port 6379
+    volumes:
+      - glitchtip-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  loki-data:
+  tempo-data:
+  prometheus-data:
+  grafana-data:
+  alloy-data:
+  glitchtip-db:
+  glitchtip-redis-data:
