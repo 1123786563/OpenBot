@@ -191,10 +191,10 @@ describe("createBillingService.handleWebhook", () => {
         status: "active",
       },
     ];
-    const recordWebhookEvent = store.recordWebhookEvent.bind(store);
-    store.recordWebhookEvent = async (input) => {
-      await recordWebhookEvent(input);
-      return false;
+    const applyWebhookProjection = store.applyWebhookProjection.bind(store);
+    store.applyWebhookProjection = async (input) => {
+      await applyWebhookProjection(input);
+      return "duplicate";
     };
 
     const response = await service.handleWebhook(
@@ -207,6 +207,38 @@ describe("createBillingService.handleWebhook", () => {
     expect(stub.state.reads).toBe(1);
     expect(store.subscriptions.size).toBe(1);
     expect(store.inbox.size).toBe(1);
+  });
+
+  test("concurrent deliveries commit once in the in-memory store too", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        service.handleWebhook(
+          signedDelivery("evt-memory-race", "subscription.created", {
+            external_customer_id: "deployment-1",
+          }),
+        ),
+      ),
+    );
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    const bodies = await Promise.all(
+      responses.map((response) => response.json()),
+    );
+    expect(bodies.map((body) => body.status).sort()).toEqual([
+      "duplicate",
+      "processed",
+    ]);
+    expect(store.inbox.size).toBe(1);
+    expect(store.customers.size).toBe(1);
+    expect(store.subscriptions.size).toBe(1);
   });
 
   test("a re-read that fails transiently leaves no inbox row and is retried whole", async () => {
@@ -229,6 +261,7 @@ describe("createBillingService.handleWebhook", () => {
     expect(first.status).toBe(503); // the provider is asked to retry the delivery
     expect(store.inbox.size).toBe(0); // nothing was recorded as done
     expect([...store.subscriptions.values()]).toEqual([]);
+    expect(store.customers.size).toBe(0);
 
     const retry = await service.handleWebhook(
       signedDelivery("evt-1", "subscription.created", {
@@ -265,7 +298,7 @@ describe("createBillingService.handleWebhook", () => {
         failNext = false;
         throw new BillingPersistenceError("subscription_upsert");
       }
-      await upsertSubscription(input);
+      return upsertSubscription(input);
     };
 
     const first = await service.handleWebhook(
@@ -296,7 +329,7 @@ describe("createBillingService.handleWebhook", () => {
     ]);
   });
 
-  test("an inbox write failure leaves the event replayable after projection refresh", async () => {
+  test("an inbox write failure rolls back the projection and leaves the event replayable", async () => {
     const logged: string[] = [];
     const { stub, store, service } = webhookFixture(
       memoryBillingStore(),
@@ -327,7 +360,8 @@ describe("createBillingService.handleWebhook", () => {
     );
     expect(first.status).toBe(503);
     expect(store.inbox.size).toBe(0);
-    expect(store.subscriptions.size).toBe(1);
+    expect(store.subscriptions.size).toBe(0);
+    expect(store.customers.size).toBe(0);
 
     const retry = await service.handleWebhook(
       signedDelivery("evt-inbox-write", "subscription.created", {
@@ -351,7 +385,7 @@ describe("createBillingService.handleWebhook", () => {
         status: "active",
       },
     ];
-    store.upsertSubscription = async () => {
+    store.applyWebhookProjection = async () => {
       throw new Error("unexpected programming failure");
     };
 
@@ -415,6 +449,45 @@ describe("createBillingService.handleWebhook", () => {
     expect(store.customers.get("deployment-1")).toEqual({
       name: "Renamed Deployment",
     });
+  });
+
+  test("all authoritative reads finish before the local atomic operation starts", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.customers.set("deployment-1", "Authoritative Name");
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "terminated",
+      },
+    ];
+    const applyWebhookProjection = store.applyWebhookProjection.bind(store);
+    let applied = false;
+    store.applyWebhookProjection = async (input) => {
+      expect(stub.state.customerReads).toBe(1);
+      expect(stub.state.reads).toBe(1);
+      expect(store.customers.size).toBe(0);
+      expect(store.subscriptions.size).toBe(0);
+      expect(input).toMatchObject({
+        customer: { externalId: "deployment-1", name: "Authoritative Name" },
+        subscriptions: stub.state.list,
+        event: { provider: "lago", eventId: "evt-atomic-read" },
+      });
+      applied = true;
+      return applyWebhookProjection(input);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-atomic-read", "subscription.created", {
+        external_customer_id: "deployment-1",
+        status: "active",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(applied).toBe(true);
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe(
+      "terminated",
+    );
   });
 
   test("records the delivery's idempotency key alongside the event", async () => {

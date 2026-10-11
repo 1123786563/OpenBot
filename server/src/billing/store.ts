@@ -66,8 +66,43 @@ async function withPersistenceError<T>(
  * directly. Upserts are keyed on the local external IDs, which are deterministic, so replaying a
  * sync or a webhook converges rather than accumulating rows.
  */
-export function createBillingStore(database: Database): BillingStore {
+export function createBillingStore(
+  database: Pick<Database, "insert" | "select" | "transaction">,
+): BillingStore {
   return {
+    async applyWebhookProjection(input) {
+      const duplicate = new Error("Duplicate billing webhook.");
+      try {
+        return await withPersistenceError(
+          "webhook_apply",
+          database.transaction(async (transaction) => {
+            const local = createBillingStore(transaction);
+            if (input.customer) {
+              if (input.customer.name === undefined) {
+                await local.ensureCustomerRow(input.customer);
+              } else {
+                await local.upsertCustomer({
+                  externalId: input.customer.externalId,
+                  name: input.customer.name,
+                });
+              }
+            }
+            for (const subscription of input.subscriptions ?? []) {
+              await local.upsertSubscription(subscription);
+            }
+            if (!(await local.recordWebhookEvent(input.event))) {
+              // ON CONFLICT waits for the winner to commit. Roll back this delivery's staged
+              // projections too, so a stale concurrent duplicate cannot overwrite the winner.
+              throw duplicate;
+            }
+            return "processed" as const;
+          }),
+        );
+      } catch (error) {
+        if (error === duplicate) return "duplicate";
+        throw error;
+      }
+    },
     async upsertCustomer(input) {
       const now = new Date();
       await withPersistenceError(

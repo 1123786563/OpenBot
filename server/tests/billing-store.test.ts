@@ -72,3 +72,48 @@ test("a PostgreSQL constraint violation is not classified as retryable", async (
     }),
   ).rejects.toBe(failure);
 });
+
+test("a transient transaction boundary failure is marked retryable", async () => {
+  const failure = new Bun.SQL.PostgresError("transaction connection lost", {
+    code: "08006",
+  });
+  const database = {
+    transaction() {
+      return Promise.reject(failure);
+    },
+  } as unknown as Database;
+  await expect(
+    createBillingStore(database).applyWebhookProjection({
+      event: {
+        provider: "test",
+        eventId: "event-1",
+        webhookType: "invoice.created",
+      },
+    }),
+  ).rejects.toMatchObject({
+    name: "BillingPersistenceError",
+    operation: "webhook_apply",
+  });
+});
+
+test("unknown and non-retryable transaction failures are rethrown unchanged", async () => {
+  for (const failure of [
+    new TypeError("invalid transaction construction"),
+    new Bun.SQL.PostgresError("constraint violation", { code: "23503" }),
+  ]) {
+    const database = {
+      transaction() {
+        return Promise.reject(failure);
+      },
+    } as unknown as Database;
+    await expect(
+      createBillingStore(database).applyWebhookProjection({
+        event: {
+          provider: "test",
+          eventId: "event-1",
+          webhookType: "invoice.created",
+        },
+      }),
+    ).rejects.toBe(failure);
+  }
+});
