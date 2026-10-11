@@ -422,7 +422,7 @@ export async function persistSandboxEvent(
       type: "agent_plan_update",
       timestamp: nowIso(),
     } as Json;
-    const planMessage = await store.upsertAgentPlan(db, {
+    const planMessage = await store.upsertAgentPlan({
       sessionId,
       turnIndex: state.turnIndex,
       planMetadata: eventData,

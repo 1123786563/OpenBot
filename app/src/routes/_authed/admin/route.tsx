@@ -1,7 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
-import { MAIN_CONTENT_ID, SkipToContent } from "@/components/layout/skip-to-content";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
+import {
+  MAIN_CONTENT_ID,
+  SkipToContent,
+} from "@/components/layout/skip-to-content";
 import { currentUserQueryOptions } from "../../../lib/auth/queries";
 
 export const Route = createFileRoute("/_authed/admin")({
