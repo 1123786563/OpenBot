@@ -37,14 +37,17 @@ export type EmbedTransport = {
   protocol(): ResolvedProtocol;
 };
 
-export function createEmbedTransport(options: EmbedTransportOptions): EmbedTransport {
+export function createEmbedTransport(
+  options: EmbedTransportOptions,
+): EmbedTransport {
   const base = options.baseUrl.replace(/\/+$/, "");
   const model = options.model;
   const apiKey = options.apiKey?.trim() ?? "";
   const timeoutMs = options.timeoutMs ?? 60_000;
   const doFetch = options.fetchImpl ?? fetch;
 
-  const resolved: ResolvedProtocol | undefined = options.protocol ?? protocolCache.get(base);
+  const resolved: ResolvedProtocol | undefined =
+    options.protocol ?? protocolCache.get(base);
 
   async function post(path: string, body: unknown): Promise<unknown> {
     const controller = new AbortController();
@@ -69,7 +72,9 @@ export function createEmbedTransport(options: EmbedTransportOptions): EmbedTrans
     } catch (error) {
       if (error instanceof EmbedTransportError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
-        throw new EmbedTransportError(`embed ${path} timed out after ${timeoutMs}ms`);
+        throw new EmbedTransportError(
+          `embed ${path} timed out after ${timeoutMs}ms`,
+        );
       }
       throw new EmbedTransportError(
         `embed ${path} is unreachable: ${(error as Error).message}`,
@@ -80,9 +85,11 @@ export function createEmbedTransport(options: EmbedTransportOptions): EmbedTrans
   }
 
   function vecOfOllama(body: unknown): number[] {
-    const embedding = (body as { embeddings?: number[][]; embedding?: number[] }).embeddings?.[0]
-      ?? (body as { embedding?: number[] }).embedding;
-    if (!Array.isArray(embedding)) throw new EmbedTransportError("ollama embed response missing embedding");
+    const embedding =
+      (body as { embeddings?: number[][]; embedding?: number[] })
+        .embeddings?.[0] ?? (body as { embedding?: number[] }).embedding;
+    if (!Array.isArray(embedding))
+      throw new EmbedTransportError("ollama embed response missing embedding");
     return embedding;
   }
 
@@ -94,8 +101,10 @@ export function createEmbedTransport(options: EmbedTransportOptions): EmbedTrans
   }
 
   function vecsOfOpenAI(body: unknown): number[][] {
-    const data = (body as { data?: { index?: number; embedding?: number[] }[] }).data;
-    if (!Array.isArray(data)) throw new EmbedTransportError("openai embeddings response missing data");
+    const data = (body as { data?: { index?: number; embedding?: number[] }[] })
+      .data;
+    if (!Array.isArray(data))
+      throw new EmbedTransportError("openai embeddings response missing data");
     // 按 index 复原顺序（规范要求有序，防御性排序）。index 取响应字段而非数组
     // 位置——乱序响应时两者不同；缺 index 的行按出现位置兜底。
     const rows = data.map((row, position) => ({
@@ -106,10 +115,16 @@ export function createEmbedTransport(options: EmbedTransportOptions): EmbedTrans
     return rows.map((r) => r.embedding);
   }
 
-  async function callOnce(texts: string[], proto: ResolvedProtocol): Promise<number[][]> {
+  async function callOnce(
+    texts: string[],
+    proto: ResolvedProtocol,
+  ): Promise<number[][]> {
     if (proto === "ollama") {
       // Ollama /api/embed：单条 prompt 或批量 input。
-      const body = texts.length === 1 ? { model, prompt: texts[0] } : { model, input: texts };
+      const body =
+        texts.length === 1
+          ? { model, prompt: texts[0] }
+          : { model, input: texts };
       return vecsOfOllama(await post("/api/embed", body));
     }
     return vecsOfOpenAI(await post("/v1/embeddings", { model, input: texts }));
@@ -138,7 +153,9 @@ export function createEmbedTransport(options: EmbedTransportOptions): EmbedTrans
         `cannot reach embedding endpoint at ${base}: ${(error as Error).message}`,
       );
     }
-    throw new EmbedTransportError(`embedding endpoint at ${base} returned no vector`);
+    throw new EmbedTransportError(
+      `embedding endpoint at ${base} returned no vector`,
+    );
   }
 
   return {

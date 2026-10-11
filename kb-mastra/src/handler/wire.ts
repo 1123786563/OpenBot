@@ -33,7 +33,9 @@ export function toWireSource(internalType: string): "file" | "url" | "text" {
 }
 
 /** 入向 source：OpenBot text → WeKnora manual。 */
-export function fromWireSource(wire: "file" | "url" | "text"): "file" | "url" | "manual" {
+export function fromWireSource(
+  wire: "file" | "url" | "text",
+): "file" | "url" | "manual" {
   if (wire === "file" || wire === "url") return wire;
   return "manual";
 }
@@ -42,5 +44,7 @@ export function fromWireSource(wire: "file" | "url" | "text"): "file" | "url" | 
 export function toIso(value: Date | string | null | undefined): string {
   if (value === null || value === undefined) return new Date(0).toISOString();
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+  return Number.isNaN(date.getTime())
+    ? new Date(0).toISOString()
+    : date.toISOString();
 }

@@ -42,10 +42,7 @@ describe("fuseOrDeduplicate 三分支", () => {
 
   test("vector-only across multiple lists dedups globally", () => {
     const out = fuseOrDeduplicate(
-      [
-        [row("c1", 0.6)],
-        [row("c1", 0.9), row("c2", 0.5)],
-      ],
+      [[row("c1", 0.6)], [row("c1", 0.9), row("c2", 0.5)]],
       [],
     );
     expect(out.map((r) => r.chunkId)).toEqual(["c1", "c2"]);

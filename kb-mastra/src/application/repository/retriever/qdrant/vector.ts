@@ -6,12 +6,13 @@
  * score=1-distance 语义一致）；阈值应用侧过滤（A10：不用 score_threshold
  * 参数——融合/rerank 需要完整 score 序列）。
  */
+
+import type { QdrantClient } from "../../../../infrastructure/qdrant/client";
 import type {
   IndexWithScore,
   RetrieveEngine,
   RetrieveParams,
 } from "../../../service/retriever/engine";
-import type { QdrantClient } from "../../../../infrastructure/qdrant/client";
 
 /** expandedTopK = clamp(top_k, 100, 200)（对齐 WeKnora 检索扩展预算）。 */
 export function expandedTopK(topK: number): number {
@@ -24,7 +25,9 @@ export type QdrantVectorEngineDeps = {
   collection: string;
 };
 
-export function createQdrantVectorEngine(deps: QdrantVectorEngineDeps): RetrieveEngine {
+export function createQdrantVectorEngine(
+  deps: QdrantVectorEngineDeps,
+): RetrieveEngine {
   return {
     engineType: "qdrant",
     retrieverTypes: ["vector"],
@@ -57,13 +60,20 @@ export function createQdrantVectorEngine(deps: QdrantVectorEngineDeps): Retrieve
         if (point.score < params.scoreThreshold) continue;
         const payload = (point.payload ?? {}) as Record<string, unknown>;
         hits.push({
-          chunkId: typeof payload.chunk_id === "string" ? payload.chunk_id : String(point.id),
+          chunkId:
+            typeof payload.chunk_id === "string"
+              ? payload.chunk_id
+              : String(point.id),
           score: point.score,
           docId: typeof payload.doc_id === "string" ? payload.doc_id : "",
           kbId: typeof payload.kb_id === "string" ? payload.kb_id : "",
           content: typeof payload.content === "string" ? payload.content : "",
-          contextHeader: typeof payload.context_header === "string" ? payload.context_header : "",
-          chunkIndex: typeof payload.chunk_index === "number" ? payload.chunk_index : 0,
+          contextHeader:
+            typeof payload.context_header === "string"
+              ? payload.context_header
+              : "",
+          chunkIndex:
+            typeof payload.chunk_index === "number" ? payload.chunk_index : 0,
         });
       }
       return hits;

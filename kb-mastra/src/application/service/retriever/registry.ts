@@ -2,15 +2,18 @@
  * 引擎注册与工厂（WeKnora retriever/{factory,registry}.go 对应物，裁剪为
  * 进程内静态注册）。P1 注册两个引擎：qdrant vector + keywords no-op。
  */
+
+import { createQdrantVectorEngine } from "../../repository/retriever/qdrant/vector";
 import type { RetrieveEngine } from "./engine";
 import { createKeywordsEngine } from "./keywords";
-import { createQdrantVectorEngine } from "../../repository/retriever/qdrant/vector";
 
 export type RetrieverRegistry = {
   engines(): RetrieveEngine[];
 };
 
-export function createRetrieverRegistry(engines: RetrieveEngine[]): RetrieverRegistry {
+export function createRetrieverRegistry(
+  engines: RetrieveEngine[],
+): RetrieverRegistry {
   const live = engines.filter((e) => e !== null);
   return {
     engines() {

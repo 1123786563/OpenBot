@@ -22,14 +22,18 @@ export type CompositeRetrieveEngine = {
   retrieve(params: RetrieveParams[]): Promise<RetrieveResult[]>;
 };
 
-export function createCompositeRetrieveEngine(engines: RetrieveEngine[]): CompositeRetrieveEngine {
+export function createCompositeRetrieveEngine(
+  engines: RetrieveEngine[],
+): CompositeRetrieveEngine {
   const liveEngines = engines.filter((e) => e !== null);
 
   return {
     async retrieve(params: RetrieveParams[]): Promise<RetrieveResult[]> {
       const results = await Promise.all(
         params.map(async (param): Promise<RetrieveResult> => {
-          const engine = liveEngines.find((e) => e.retrieverTypes.includes(param.retrieverType));
+          const engine = liveEngines.find((e) =>
+            e.retrieverTypes.includes(param.retrieverType),
+          );
           if (engine === undefined) {
             // 参数级找不到引擎：该参数丢弃并带错误（其它参数照常）。
             return {

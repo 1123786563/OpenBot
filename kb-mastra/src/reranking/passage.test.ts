@@ -5,7 +5,9 @@ import { cleanPassage, fitPassages, modelPassage } from "./passage";
 
 describe("cleanPassage", () => {
   test("fenced code block unwrapped to body", () => {
-    expect(cleanPassage("```python\ndef hello():\n    return 42\n```")).toBe("def hello():\n    return 42");
+    expect(cleanPassage("```python\ndef hello():\n    return 42\n```")).toBe(
+      "def hello():\n    return 42",
+    );
   });
 
   test("latex block unwrapped", () => {
@@ -17,19 +19,27 @@ describe("cleanPassage", () => {
   });
 
   test("markdown image removed entirely (surrounding spaces stay, Go parity)", () => {
-    expect(cleanPassage("前文 ![图](https://x/img.png) 后文")).toBe("前文  后文");
+    expect(cleanPassage("前文 ![图](https://x/img.png) 后文")).toBe(
+      "前文  后文",
+    );
   });
 
   test("linked image unwrapped then removed", () => {
-    expect(cleanPassage("见 [![logo](https://x/l.png)](https://ex.com) 这里")).toBe("见  这里");
+    expect(
+      cleanPassage("见 [![logo](https://x/l.png)](https://ex.com) 这里"),
+    ).toBe("见  这里");
   });
 
   test("markdown link keeps text drops url", () => {
-    expect(cleanPassage("查看 [文档](https://x/doc) 继续")).toBe("查看 文档 继续");
+    expect(cleanPassage("查看 [文档](https://x/doc) 继续")).toBe(
+      "查看 文档 继续",
+    );
   });
 
   test("raw urls removed", () => {
-    expect(cleanPassage("访问 https://example.com/page?q=1 结束")).toBe("访问  结束");
+    expect(cleanPassage("访问 https://example.com/page?q=1 结束")).toBe(
+      "访问  结束",
+    );
   });
 
   test("table separator row removed, data rows flattened", () => {
@@ -47,7 +57,9 @@ describe("cleanPassage", () => {
   });
 
   test("bold/italic unwrapped in correct order", () => {
-    expect(cleanPassage("***重点*** 和 **粗体** 和 *斜体*")).toBe("重点 和 粗体 和 斜体");
+    expect(cleanPassage("***重点*** 和 **粗体** 和 *斜体*")).toBe(
+      "重点 和 粗体 和 斜体",
+    );
   });
 
   test("list markers stripped", () => {
@@ -94,7 +106,9 @@ describe("modelPassage", () => {
   });
 
   test("blank content yields blank passage regardless of headers", () => {
-    expect(modelPassage({ content: "  ", contextHeader: "H", knowledgeTitle: "T" })).toBe("");
+    expect(
+      modelPassage({ content: "  ", contextHeader: "H", knowledgeTitle: "T" }),
+    ).toBe("");
   });
 
   test("no headers = cleaned body only", () => {

@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { compositeScore, DEFAULT_FALLBACK_MIN_SCORE, DEFAULT_MAX_CANDIDATES, DEFAULT_THRESHOLD, rerank, type RerankRow } from "./rerank";
 import type { RankResult, Reranker } from "../models/rerank/openai-compat";
 import { DEFAULT_MMR_LAMBDA } from "./mmr";
+import {
+  compositeScore,
+  DEFAULT_MAX_CANDIDATES,
+  DEFAULT_THRESHOLD,
+  type RerankRow,
+  rerank,
+} from "./rerank";
 
 /** rerank.go 语义平移：阈值降级链、模型失败降级、composite、截断、MMR。 */
 
-const row = (chunkId: string, score: number, content = `内容-${chunkId}`): RerankRow => ({
+const row = (
+  chunkId: string,
+  score: number,
+  content = `内容-${chunkId}`,
+): RerankRow => ({
   chunkId,
   score,
   content,
@@ -15,7 +25,10 @@ const row = (chunkId: string, score: number, content = `内容-${chunkId}`): Rer
 });
 
 function stubReranker(
-  impl: (query: string, documents: string[]) => RankResult[] | Promise<RankResult[]>,
+  impl: (
+    query: string,
+    documents: string[],
+  ) => RankResult[] | Promise<RankResult[]>,
   opts: { maxPassageRunes?: number } = {},
 ): Reranker {
   return {
@@ -46,7 +59,11 @@ describe("threshold degradation chain (applyThreshold 语义)", () => {
       { index: 1, relevanceScore: 0.3 },
       { index: 2, relevanceScore: 0.05 },
     ]);
-    const out = await rerank(model, "q", [row("a", 0.8), row("b", 0.7), row("c", 0.6)]);
+    const out = await rerank(model, "q", [
+      row("a", 0.8),
+      row("b", 0.7),
+      row("c", 0.6),
+    ]);
     expect(out.outcome).toBe("ok");
     expect(out.results.map((r) => r.chunkId)).toEqual(["a", "b"]);
     expect(out.effectiveThreshold).toBe(DEFAULT_THRESHOLD);
@@ -58,7 +75,9 @@ describe("threshold degradation chain (applyThreshold 语义)", () => {
       { index: 0, relevanceScore: 0.36 },
       { index: 1, relevanceScore: 0.2 },
     ]);
-    const out = await rerank(model, "q", [row("a", 0.8), row("b", 0.7)], { threshold: 0.5 });
+    const out = await rerank(model, "q", [row("a", 0.8), row("b", 0.7)], {
+      threshold: 0.5,
+    });
     expect(out.outcome).toBe("threshold_degraded");
     expect(out.effectiveThreshold).toBeCloseTo(0.35, 6);
     expect(out.results.map((r) => r.chunkId)).toEqual(["a"]);
@@ -84,7 +103,9 @@ describe("threshold degradation chain (applyThreshold 语义)", () => {
       { index: 0, relevanceScore: 0.16 },
       { index: 1, relevanceScore: 0.05 },
     ]);
-    const out = await rerank(model, "q", [row("a", 0.8), row("b", 0.7)], { threshold: 0.5 });
+    const out = await rerank(model, "q", [row("a", 0.8), row("b", 0.7)], {
+      threshold: 0.5,
+    });
     expect(out.outcome).toBe("fallback_top1");
     expect(out.results.map((r) => r.chunkId)).toEqual(["a"]);
   });
@@ -168,9 +189,14 @@ describe("MMR topK selection", () => {
       { index: 1, relevanceScore: 0.85 },
       { index: 2, relevanceScore: 0.8 },
     ]);
-    const out = await rerank(model, "q", [row("a", 0.8), row("b", 0.7), row("c", 0.6)], {
-      topK: 2,
-    });
+    const out = await rerank(
+      model,
+      "q",
+      [row("a", 0.8), row("b", 0.7), row("c", 0.6)],
+      {
+        topK: 2,
+      },
+    );
     expect(out.results.length).toBe(2);
     expect(DEFAULT_MMR_LAMBDA).toBe(0.7);
   });

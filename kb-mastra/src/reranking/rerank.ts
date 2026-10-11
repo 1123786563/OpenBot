@@ -68,7 +68,8 @@ export async function rerank(
   options: RerankOptions = {},
 ): Promise<RerankResult> {
   const threshold = options.threshold ?? DEFAULT_THRESHOLD;
-  const fallbackMinScore = options.fallbackMinScore ?? DEFAULT_FALLBACK_MIN_SCORE;
+  const fallbackMinScore =
+    options.fallbackMinScore ?? DEFAULT_FALLBACK_MIN_SCORE;
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
 
   const result: RerankResult = {
@@ -119,7 +120,9 @@ export async function rerank(
   }
 
   // 丢弃越界 index（模型返回脏数据防御）。
-  const valid = scores.filter((s) => s.index >= 0 && s.index < candidates.length);
+  const valid = scores.filter(
+    (s) => s.index >= 0 && s.index < candidates.length,
+  );
   result.applied = true;
   const top = bestScore(valid);
   if (top !== null) result.topScore = top.relevanceScore;
@@ -147,7 +150,8 @@ export async function rerank(
   // 排序：composite 降序；并列按 pre-boost（model score）降序。
   const order = scored.map((_, i) => i);
   order.sort((a, b) => {
-    if (scored[a].score !== scored[b].score) return scored[b].score - scored[a].score;
+    if (scored[a].score !== scored[b].score)
+      return scored[b].score - scored[a].score;
     return (
       Number.parseFloat(String(scored[b].extra.model_score ?? "0")) -
       Number.parseFloat(String(scored[a].extra.model_score ?? "0"))
@@ -191,24 +195,41 @@ function applyThreshold(
   scores: RankResult[],
   threshold: number,
   fallbackMinScore: number,
-): { passing: RankResult[]; outcome: RerankOutcome; effectiveThreshold: number } {
+): {
+  passing: RankResult[];
+  outcome: RerankOutcome;
+  effectiveThreshold: number;
+} {
   let effective = threshold;
   const direct = scores.filter((s) => s.relevanceScore >= threshold);
-  if (direct.length > 0) return { passing: direct, outcome: "ok", effectiveThreshold: effective };
+  if (direct.length > 0)
+    return { passing: direct, outcome: "ok", effectiveThreshold: effective };
 
   if (threshold > DEGRADE_FLOOR) {
     effective = Math.max(threshold * DEGRADE_FACTOR, DEGRADE_FLOOR);
     const degraded = scores.filter((s) => s.relevanceScore >= effective);
     if (degraded.length > 0) {
-      return { passing: degraded, outcome: "threshold_degraded", effectiveThreshold: effective };
+      return {
+        passing: degraded,
+        outcome: "threshold_degraded",
+        effectiveThreshold: effective,
+      };
     }
   }
 
   const top = bestScore(scores);
   if (top !== null && top.relevanceScore >= fallbackMinScore) {
-    return { passing: [top], outcome: "fallback_top1", effectiveThreshold: effective };
+    return {
+      passing: [top],
+      outcome: "fallback_top1",
+      effectiveThreshold: effective,
+    };
   }
-  return { passing: [], outcome: "all_below_threshold", effectiveThreshold: effective };
+  return {
+    passing: [],
+    outcome: "all_below_threshold",
+    effectiveThreshold: effective,
+  };
 }
 
 function bestScore(scores: RankResult[]): RankResult | null {

@@ -51,7 +51,10 @@ export type ConcurrencyOptions = {
 };
 
 /** 包一层并发限流（embed/batchEmbed 各自受限）。 */
-export function withConcurrency(inner: Embedder, options: ConcurrencyOptions = {}): Embedder {
+export function withConcurrency(
+  inner: Embedder,
+  options: ConcurrencyOptions = {},
+): Embedder {
   const limit =
     options.limit !== undefined && options.limit > 0
       ? options.limit

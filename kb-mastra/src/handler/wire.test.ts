@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import {
+  type DocRow,
+  type KbRow,
+  toWireDocument,
+  toWireKB,
+  toWireTask,
+  validateCreateKbInput,
+  validateRetrieveInput,
+} from "./shared";
 import { fromWireSource, toIso, toWireParseStatus, toWireSource } from "./wire";
-import { toWireDocument, toWireTask, toWireKB, validateCreateKbInput, validateRetrieveInput, type DocRow, type KbRow } from "./shared";
 
 /** wire 投影与 handler 校验：与 Go kb-service 响应结构逐字段对照。 */
 
@@ -88,7 +96,12 @@ describe("toWireDocument（model.go Document 逐字段）", () => {
     parseStatus: "finalizing",
     chunkCount: 12,
     metadata: { author: "qa" },
-    progress: { chunksTotal: 12, chunksDone: 8, stage: "embed", updatedAt: "2026-10-11T09:00:00Z" },
+    progress: {
+      chunksTotal: 12,
+      chunksDone: 8,
+      stage: "embed",
+      updatedAt: "2026-10-11T09:00:00Z",
+    },
     errorMessage: "",
     createdAt: new Date("2026-10-11T08:00:00Z"),
     updatedAt: new Date("2026-10-11T09:00:00Z"),
@@ -137,7 +150,12 @@ describe("toWireTask（model.go Task 逐字段）", () => {
     parseStatus: "processing",
     chunkCount: 0,
     metadata: null,
-    progress: { chunksTotal: 20, chunksDone: 5, stage: "chunk", updatedAt: "x" },
+    progress: {
+      chunksTotal: 20,
+      chunksDone: 5,
+      stage: "chunk",
+      updatedAt: "x",
+    },
     errorMessage: "",
     createdAt: new Date("2026-10-11T08:00:00Z"),
     updatedAt: new Date("2026-10-11T08:30:00Z"),
@@ -166,7 +184,11 @@ describe("toWireTask（model.go Task 逐字段）", () => {
     expect(failed.error).toBe("docreader timeout");
     expect(failed.progress).toBe(0);
 
-    const completed = toWireTask({ ...doc, parseStatus: "completed", progress: null });
+    const completed = toWireTask({
+      ...doc,
+      parseStatus: "completed",
+      progress: null,
+    });
     expect(completed.status).toBe("completed");
     expect(completed.progress).toBe(100);
   });
@@ -174,8 +196,14 @@ describe("toWireTask（model.go Task 逐字段）", () => {
 
 describe("validateCreateKbInput（kb-service createKBRequest 语义）", () => {
   test("empty/missing name rejected", () => {
-    expect(validateCreateKbInput({})).toEqual({ ok: false, message: "name is required" });
-    expect(validateCreateKbInput({ name: "  " })).toEqual({ ok: false, message: "name is required" });
+    expect(validateCreateKbInput({})).toEqual({
+      ok: false,
+      message: "name is required",
+    });
+    expect(validateCreateKbInput({ name: "  " })).toEqual({
+      ok: false,
+      message: "name is required",
+    });
   });
 
   test("defaults 512/80; non-positive chunk_size falls back", () => {
@@ -185,13 +213,23 @@ describe("validateCreateKbInput（kb-service createKBRequest 语义）", () => {
       expect(out.value.chunkSize).toBe(512);
       expect(out.value.chunkOverlap).toBe(80);
     }
-    const zero = validateCreateKbInput({ name: "N", chunk_size: 0, chunk_overlap: -5 });
+    const zero = validateCreateKbInput({
+      name: "N",
+      chunk_size: 0,
+      chunk_overlap: -5,
+    });
     expect(zero.ok && zero.value.chunkSize).toBe(512);
     expect(zero.ok && zero.value.chunkOverlap).toBe(80);
   });
 
   test("explicit values kept; name trimmed", () => {
-    const out = validateCreateKbInput({ name: " N ", description: "D", chunk_size: 256, chunk_overlap: 40, rerank_model: "r" });
+    const out = validateCreateKbInput({
+      name: " N ",
+      description: "D",
+      chunk_size: 256,
+      chunk_overlap: 40,
+      rerank_model: "r",
+    });
     expect(out.ok && out.value.name).toBe("N");
     expect(out.ok && out.value.chunkSize).toBe(256);
     expect(out.ok && out.value.rerankModel).toBe("r");
@@ -200,7 +238,10 @@ describe("validateCreateKbInput（kb-service createKBRequest 语义）", () => {
 
 describe("validateRetrieveInput", () => {
   test("missing/blank query rejected 400", () => {
-    expect(validateRetrieveInput({})).toEqual({ ok: false, message: "query is required" });
+    expect(validateRetrieveInput({})).toEqual({
+      ok: false,
+      message: "query is required",
+    });
     expect(validateRetrieveInput({ query: "  " }).ok).toBe(false);
   });
 
@@ -219,7 +260,11 @@ describe("validateRetrieveInput", () => {
     const def = validateRetrieveInput({ query: "q" });
     expect(def.ok && def.value.topK).toBe(5);
     expect(def.ok && def.value.scoreThreshold).toBe(0);
-    const custom = validateRetrieveInput({ query: "q", top_k: 10, score_threshold: 0.3 });
+    const custom = validateRetrieveInput({
+      query: "q",
+      top_k: 10,
+      score_threshold: 0.3,
+    });
     expect(custom.ok && custom.value.topK).toBe(10);
     expect(custom.ok && custom.value.scoreThreshold).toBe(0.3);
   });
@@ -232,7 +277,9 @@ describe("validateRetrieveInput", () => {
 
 describe("toIso", () => {
   test("ISO 8601 UTC with milliseconds (Go time.Time JSON shape)", () => {
-    expect(toIso(new Date("2026-10-11T08:00:00Z"))).toBe("2026-10-11T08:00:00.000Z");
+    expect(toIso(new Date("2026-10-11T08:00:00Z"))).toBe(
+      "2026-10-11T08:00:00.000Z",
+    );
     expect(toIso("2026-10-11T08:00:00Z")).toBe("2026-10-11T08:00:00.000Z");
     expect(toIso(null)).toBe("1970-01-01T00:00:00.000Z");
     expect(toIso("not a date")).toBe("1970-01-01T00:00:00.000Z");

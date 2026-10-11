@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { expandedTopK, createQdrantVectorEngine } from "./vector";
 import type { QdrantClient } from "../../../../infrastructure/qdrant/client";
-import type { QueryPointsBody, QueryPointsResponse, ScoredPoint } from "../../../../infrastructure/qdrant/types";
+import type {
+  QueryPointsBody,
+  QueryPointsResponse,
+  ScoredPoint,
+} from "../../../../infrastructure/qdrant/types";
 import type { RetrieveParams } from "../../../service/retriever/engine";
+import { createQdrantVectorEngine, expandedTopK } from "./vector";
 
 /**
  * 修订 §2.4 检索实现验证：请求体三 must filter / expandedTopK clamp /
@@ -12,7 +16,10 @@ import type { RetrieveParams } from "../../../service/retriever/engine";
 
 type CapturedCall = { collection: string; body: QueryPointsBody };
 
-function makeClient(response: QueryPointsResponse): { client: QdrantClient; calls: CapturedCall[] } {
+function makeClient(response: QueryPointsResponse): {
+  client: QdrantClient;
+  calls: CapturedCall[];
+} {
   const calls: CapturedCall[] = [];
   const client = {
     queryPoints: async (collection: string, body: QueryPointsBody) => {
@@ -23,7 +30,11 @@ function makeClient(response: QueryPointsResponse): { client: QdrantClient; call
   return { client, calls };
 }
 
-function point(id: string, score: number, payload: Record<string, unknown>): ScoredPoint {
+function point(
+  id: string,
+  score: number,
+  payload: Record<string, unknown>,
+): ScoredPoint {
   return { id, score, payload };
 }
 
@@ -55,7 +66,10 @@ describe("expandedTopK clamp(100,200)", () => {
 describe("qdrant vector engine request shape", () => {
   test("filter must contain tenant_id / kb_id(any) / enabled=true — 缺一不可", async () => {
     const { client, calls } = makeClient({ result: { points: [] } });
-    const engine = createQdrantVectorEngine({ client, collection: "kb_chunks_1024" });
+    const engine = createQdrantVectorEngine({
+      client,
+      collection: "kb_chunks_1024",
+    });
     await engine.retrieve(baseParams);
     expect(calls.length).toBe(1);
     const body = calls[0].body;
@@ -66,7 +80,10 @@ describe("qdrant vector engine request shape", () => {
     const must = body.filter.must;
     expect(must.length).toBe(3);
     // tenant_id 强制隔离（值来自服务端身份，非客户端参数）
-    expect(must).toContainEqual({ key: "tenant_id", match: { value: "tenant-a" } });
+    expect(must).toContainEqual({
+      key: "tenant_id",
+      match: { value: "tenant-a" },
+    });
     // kb_id 单库 = 单元素 any
     expect(must).toContainEqual({ key: "kb_id", match: { any: ["kb-1"] } });
     // enabled=true 检索条件
@@ -75,7 +92,10 @@ describe("qdrant vector engine request shape", () => {
 
   test("multi-KB request carries any-of list", async () => {
     const { client, calls } = makeClient({ result: { points: [] } });
-    const engine = createQdrantVectorEngine({ client, collection: "kb_chunks_1024" });
+    const engine = createQdrantVectorEngine({
+      client,
+      collection: "kb_chunks_1024",
+    });
     await engine.retrieve({ ...baseParams, kbIds: ["kb-1", "kb-2", "kb-3"] });
     expect(calls[0].body.filter.must).toContainEqual({
       key: "kb_id",
@@ -87,9 +107,9 @@ describe("qdrant vector engine request shape", () => {
     const { client } = makeClient({ result: { points: [] } });
     const engine = createQdrantVectorEngine({ client, collection: "c" });
     const { queryVector: _omit, ...withoutVector } = baseParams;
-    await expect(engine.retrieve(withoutVector as RetrieveParams)).rejects.toThrow(
-      /query vector/,
-    );
+    await expect(
+      engine.retrieve(withoutVector as RetrieveParams),
+    ).rejects.toThrow(/query vector/);
   });
 });
 
@@ -98,9 +118,28 @@ describe("score semantics and app-side threshold", () => {
     const response: QueryPointsResponse = {
       result: {
         points: [
-          point("c1", 0.92, { chunk_id: "c1", doc_id: "d1", kb_id: "kb-1", content: "高相关", context_header: "标题", chunk_index: 3 }),
-          point("c2", 0.10, { chunk_id: "c2", doc_id: "d1", kb_id: "kb-1", content: "低相关", chunk_index: 4 }),
-          point("c3", 0.15, { chunk_id: "c3", doc_id: "d2", kb_id: "kb-1", content: "恰好阈值", chunk_index: 0 }),
+          point("c1", 0.92, {
+            chunk_id: "c1",
+            doc_id: "d1",
+            kb_id: "kb-1",
+            content: "高相关",
+            context_header: "标题",
+            chunk_index: 3,
+          }),
+          point("c2", 0.1, {
+            chunk_id: "c2",
+            doc_id: "d1",
+            kb_id: "kb-1",
+            content: "低相关",
+            chunk_index: 4,
+          }),
+          point("c3", 0.15, {
+            chunk_id: "c3",
+            doc_id: "d2",
+            kb_id: "kb-1",
+            content: "恰好阈值",
+            chunk_index: 0,
+          }),
         ],
       },
     };
@@ -119,7 +158,11 @@ describe("score semantics and app-side threshold", () => {
   test("all scores stay in [0,1] (cosine similarity contract)", async () => {
     const response: QueryPointsResponse = {
       result: {
-        points: [point("c1", 1.0, {}), point("c2", 0.0, {}), point("c3", 0.55, {})],
+        points: [
+          point("c1", 1.0, {}),
+          point("c2", 0.0, {}),
+          point("c3", 0.55, {}),
+        ],
       },
     };
     const { client } = makeClient(response);
@@ -133,7 +176,12 @@ describe("score semantics and app-side threshold", () => {
 
   test("threshold 0 keeps everything", async () => {
     const response: QueryPointsResponse = {
-      result: { points: [point("c1", 0.001, { chunk_id: "c1" }), point("c2", 0.999, {})] },
+      result: {
+        points: [
+          point("c1", 0.001, { chunk_id: "c1" }),
+          point("c2", 0.999, {}),
+        ],
+      },
     };
     const { client } = makeClient(response);
     const engine = createQdrantVectorEngine({ client, collection: "c" });
@@ -143,7 +191,11 @@ describe("score semantics and app-side threshold", () => {
 
   test("missing payload fields fall back to safe defaults", async () => {
     const response: QueryPointsResponse = {
-      result: { points: [{ id: "uuid-no-payload-chunk", score: 0.7, payload: undefined }] },
+      result: {
+        points: [
+          { id: "uuid-no-payload-chunk", score: 0.7, payload: undefined },
+        ],
+      },
     };
     const { client } = makeClient(response);
     const engine = createQdrantVectorEngine({ client, collection: "c" });

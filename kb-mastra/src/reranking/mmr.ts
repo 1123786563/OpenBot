@@ -24,7 +24,8 @@ export function tokenizeSimple(text: string): Set<string> {
   if (lower === "") return new Set();
   const words: string[] = [];
   if (containsChinese(lower) && typeof Intl.Segmenter !== "undefined") {
-    if (segmenter === null) segmenter = new Intl.Segmenter("zh", { granularity: "word" });
+    if (segmenter === null)
+      segmenter = new Intl.Segmenter("zh", { granularity: "word" });
     for (const seg of segmenter.segment(lower)) {
       words.push(seg.segment);
     }
@@ -88,7 +89,11 @@ export type MMRItem = {
  * 按 MMR 选至多 k 个结果，返回被选下标（选择顺序）。并列取更早者。
  * mmr = lambda*score - (1-lambda)*maxRedundancy（对已选集合的最大 Jaccard）。
  */
-export function selectMMR(items: MMRItem[], k: number, lambda: number): number[] {
+export function selectMMR(
+  items: MMRItem[],
+  k: number,
+  lambda: number,
+): number[] {
   if (k <= 0 || items.length === 0) return [];
 
   const remaining = items.map((_, i) => i);
