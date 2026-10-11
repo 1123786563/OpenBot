@@ -214,6 +214,12 @@ export type PaymentStore = {
   expireOrder(id: string, expectedVersion: number): Promise<boolean>;
   /** Record an anomaly without moving the order (late payment, duplicate paid, over-pay). */
   recordAnomaly(event: PaymentEventInput): Promise<void>;
+  /**
+   * How many anomaly rows of one word one order holds. The `amount_unreadable` ENDGAME reads
+   * this (a channel that cannot state an amount after N asks is not going to): the word is
+   * excluded from the anomaly dedup index precisely so these rows accumulate into a count.
+   */
+  countAnomalies(orderId: string, code: string): Promise<number>;
   /** Record the paid fact alone, after a window transition the confirm transaction skipped. */
   recordPaidFact(event: {
     orderId: string;

@@ -343,18 +343,22 @@ export class CraftSessionManager {
 
   /** Persistence half of a turn — see streaming.persistSandboxEvent. */
   async persistSandboxEvent(
-    db: Database,
     sessionId: string,
     state: BuildStreamingState,
     sandboxEvent: SandboxEvent | BuildPacket,
     routingMeta: Record<string, unknown> | null = null,
   ): Promise<void> {
-    await persistSandboxEvent(this.store, sessionId, state, sandboxEvent, routingMeta);
+    await persistSandboxEvent(
+      this.store,
+      sessionId,
+      state,
+      sandboxEvent,
+      routingMeta,
+    );
   }
 
   /** End-of-stream persistence — see streaming.finalizePersist. */
   async finalizePersist(
-    db: Database,
     sessionId: string,
     state: BuildStreamingState,
     routingMeta: Record<string, unknown> | null = null,
@@ -364,7 +368,6 @@ export class CraftSessionManager {
 
   /** User-visible error row so a failed turn still explains itself after reload. */
   async persistTurnError(
-    db: Database,
     sessionId: string,
     turnIndex: number,
     message: string,
