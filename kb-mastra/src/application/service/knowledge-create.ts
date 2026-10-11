@@ -7,10 +7,10 @@
  * 已归一化的输入。
  */
 
-import { and, eq, isNull } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { and, eq, isNull } from "drizzle-orm";
 import { getLogger } from "../../../../shared/logger";
 import type { Db } from "../../db/client";
 import { knowledges } from "../../db/schema";
@@ -61,7 +61,12 @@ export type CreateDeps = {
   /** local 存储根（STORAGE_LOCAL_PATH）。 */
   storageRoot: string;
   /** 覆盖默认存储路径（测试注入内存态）。 */
-  storeFile?: (kbId: string, knowledgeId: string, bytes: Uint8Array, fileName: string) => Promise<string>;
+  storeFile?: (
+    kbId: string,
+    knowledgeId: string,
+    bytes: Uint8Array,
+    fileName: string,
+  ) => Promise<string>;
 };
 
 /** 默认存储：{root}/{kbId}/{knowledgeId}/{fileName}，返回绝对路径。 */
@@ -94,7 +99,11 @@ export async function createFileKnowledge(
   },
 ): Promise<CreateResult> {
   const ext = extensionOf(input.fileName);
-  if (!ALLOWED_FILE_EXTENSIONS.includes(ext as (typeof ALLOWED_FILE_EXTENSIONS)[number])) {
+  if (
+    !ALLOWED_FILE_EXTENSIONS.includes(
+      ext as (typeof ALLOWED_FILE_EXTENSIONS)[number],
+    )
+  ) {
     throw new Error(`file type .${ext} is not allowed`);
   }
 
@@ -115,7 +124,11 @@ export async function createFileKnowledge(
     .limit(1);
   if (existing) {
     log.info(
-      { type: "kb-ingest-duplicate", knowledgeId: existing.id, kbId: input.kbId },
+      {
+        type: "kb-ingest-duplicate",
+        knowledgeId: existing.id,
+        kbId: input.kbId,
+      },
       "kb-ingest-duplicate",
     );
     return { knowledgeId: existing.id, duplicate: true };
@@ -283,7 +296,12 @@ export async function reparseKnowledge(
   const attempt = row.attempt + 1;
   await deps.db
     .update(knowledges)
-    .set({ attempt, parseStatus: "pending", errorMessage: "", updatedAt: new Date() })
+    .set({
+      attempt,
+      parseStatus: "pending",
+      errorMessage: "",
+      updatedAt: new Date(),
+    })
     .where(eq(knowledges.id, input.knowledgeId));
   await enqueueDocumentProcess({
     requestId: input.requestId,

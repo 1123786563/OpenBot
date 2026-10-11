@@ -59,7 +59,10 @@ type RawClient = {
     request: RawReadRequest,
     metadata: grpc.Metadata,
     options: { deadline: Date },
-    callback: (error: grpc.ServiceError | null, response?: RawReadResponse) => void,
+    callback: (
+      error: grpc.ServiceError | null,
+      response?: RawReadResponse,
+    ) => void,
   ): void;
   close(): void;
 };
@@ -112,35 +115,33 @@ export async function createDocReaderClient(
 
   return {
     async read(request) {
-      const response = await new Promise<RawReadResponse>(
-        (resolve, reject) => {
-          raw.read(
-            {
-              ...(request.fileContent !== undefined
-                ? { fileContent: request.fileContent }
-                : {}),
-              ...(request.fileName !== undefined
-                ? { fileName: request.fileName }
-                : {}),
-              ...(request.fileType !== undefined
-                ? { fileType: request.fileType }
-                : {}),
-              ...(request.url !== undefined ? { url: request.url } : {}),
-              ...(request.title !== undefined ? { title: request.title } : {}),
-              ...(request.requestId !== undefined
-                ? { requestId: request.requestId }
-                : {}),
-            },
-            new grpc.Metadata(),
-            { deadline: new Date(Date.now() + timeoutMs) },
-            (error, value) => {
-              if (error) return reject(error);
-              if (!value) return reject(new Error("DocReader returned nothing."));
-              resolve(value);
-            },
-          );
-        },
-      );
+      const response = await new Promise<RawReadResponse>((resolve, reject) => {
+        raw.read(
+          {
+            ...(request.fileContent !== undefined
+              ? { fileContent: request.fileContent }
+              : {}),
+            ...(request.fileName !== undefined
+              ? { fileName: request.fileName }
+              : {}),
+            ...(request.fileType !== undefined
+              ? { fileType: request.fileType }
+              : {}),
+            ...(request.url !== undefined ? { url: request.url } : {}),
+            ...(request.title !== undefined ? { title: request.title } : {}),
+            ...(request.requestId !== undefined
+              ? { requestId: request.requestId }
+              : {}),
+          },
+          new grpc.Metadata(),
+          { deadline: new Date(Date.now() + timeoutMs) },
+          (error, value) => {
+            if (error) return reject(error);
+            if (!value) return reject(new Error("DocReader returned nothing."));
+            resolve(value);
+          },
+        );
+      });
 
       // WeKnora 语义：DocReader 把解析失败折进 error 字段（HTTP 200 + error）。
       // 不在客户端抛——registry/管线的失败路径统一处理 error 字段。

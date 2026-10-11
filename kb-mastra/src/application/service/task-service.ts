@@ -16,7 +16,9 @@ import { knowledges, type ParseStatusInternal } from "../../db/schema";
 export type WireParseStatus = "pending" | "processing" | "completed" | "failed";
 
 /** 7→4 投影（v1 §6.3 表）。 */
-export function toWireParseStatus(status: ParseStatusInternal): WireParseStatus {
+export function toWireParseStatus(
+  status: ParseStatusInternal,
+): WireParseStatus {
   switch (status) {
     case "pending":
       return "pending";
@@ -58,7 +60,11 @@ export async function getTaskProjection(
     .from(knowledges)
     .where(eq(knowledges.id, input.taskId))
     .limit(1);
-  if (!row || row.tenantId !== input.tenantId || row.knowledgeBaseId !== input.kbId) {
+  if (
+    !row ||
+    row.tenantId !== input.tenantId ||
+    row.knowledgeBaseId !== input.kbId
+  ) {
     return null;
   }
 

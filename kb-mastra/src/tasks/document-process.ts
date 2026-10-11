@@ -8,27 +8,32 @@
  * 冒烟可换 mock。步骤间无隐藏状态——每步的输入输出都是显式参数。
  */
 
-import { eq } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { eq } from "drizzle-orm";
 import { getLogger } from "../../../shared/logger";
+import type {
+  ChunkPointInput,
+  IndexWriter,
+} from "../application/repository/retriever/qdrant/index-writer";
 import type { Db } from "../db/client";
-import { chunkRevisions, chunks, knowledgeBases, knowledges } from "../db/schema";
 import type { SourceLocator } from "../db/schema";
+import {
+  chunkRevisions,
+  chunks,
+  knowledgeBases,
+  knowledges,
+} from "../db/schema";
 import type { SplitterConfig } from "../infrastructure/chunker/splitter";
 import { split } from "../infrastructure/chunker/strategy";
 import type { ParserRegistry } from "../infrastructure/docparser/registry";
 import {
   cleanInvalidUTF8,
   normalizeLineEndings,
-  sanitizeForEmbedding,
   type SourceBlock,
+  sanitizeForEmbedding,
 } from "../infrastructure/sanitize";
 import type { Embedder } from "../models/embedding/embedder";
-import type {
-  ChunkPointInput,
-  IndexWriter,
-} from "../application/repository/retriever/qdrant/index-writer";
 import type { DocumentProcessPayload } from "./queue";
 
 const log = getLogger("kb-mastra");
@@ -223,9 +228,7 @@ export async function processDocument(
   if (chunksOut.length === 0) {
     // 空文档：清残留索引后直接终态 completed（0 chunk）。
     await indexWriter.deleteByDoc(payload.tenantId, payload.knowledgeId);
-    await db
-      .delete(chunks)
-      .where(eq(chunks.knowledgeId, payload.knowledgeId));
+    await db.delete(chunks).where(eq(chunks.knowledgeId, payload.knowledgeId));
     await db
       .update(knowledges)
       .set({
@@ -337,7 +340,8 @@ export async function processDocument(
   await indexWriter.upsertChunks(points, (progress) => {
     const now = Date.now();
     // 节流：200ms 一条，完成那条必发。
-    if (now - lastProgressAt < 200 && progress.upserted < progress.total) return;
+    if (now - lastProgressAt < 200 && progress.upserted < progress.total)
+      return;
     lastProgressAt = now;
     void deps.onProgress?.({
       chunksDone: progress.upserted,

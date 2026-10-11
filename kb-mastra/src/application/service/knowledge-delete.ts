@@ -31,7 +31,11 @@ export async function deleteKnowledge(
     .from(knowledges)
     .where(eq(knowledges.id, input.knowledgeId))
     .limit(1);
-  if (!row || row.tenantId !== input.tenantId || row.knowledgeBaseId !== input.kbId) {
+  if (
+    !row ||
+    row.tenantId !== input.tenantId ||
+    row.knowledgeBaseId !== input.kbId
+  ) {
     // 不存在或跨租户：幂等返回（handler 折 404）。
     return { deleted: false };
   }
@@ -42,7 +46,11 @@ export async function deleteKnowledge(
   await deps.db.delete(chunks).where(eq(chunks.knowledgeId, input.knowledgeId));
   await deps.db
     .update(knowledges)
-    .set({ deletedAt: new Date(), parseStatus: "deleting", updatedAt: new Date() })
+    .set({
+      deletedAt: new Date(),
+      parseStatus: "deleting",
+      updatedAt: new Date(),
+    })
     .where(eq(knowledges.id, input.knowledgeId));
   log.info(
     { type: "kb-document-deleted", knowledgeId: input.knowledgeId },
