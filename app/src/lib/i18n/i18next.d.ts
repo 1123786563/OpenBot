@@ -4,6 +4,7 @@ import type approvals from "../../locales/en/approvals.json";
 import type channels from "../../locales/en/channels.json";
 import type common from "../../locales/en/common.json";
 import type computer from "../../locales/en/computer.json";
+import type craft from "../../locales/en/craft.json";
 import type errors from "../../locales/en/errors.json";
 import type knowledge from "../../locales/en/knowledge.json";
 import type market from "../../locales/en/market.json";
@@ -37,6 +38,7 @@ declare module "i18next" {
       errors: typeof errors;
       tenant: typeof tenant;
       workshop: typeof workshop;
+      craft: typeof craft;
     };
   }
 }

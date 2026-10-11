@@ -11,21 +11,28 @@
 
 import { randomBytes } from "node:crypto";
 import net from "node:net";
-import { and, asc, count, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import type { CraftMessageType } from "../db/schema/craft";
-import { craftMessages, craftSessions } from "../db/schema/craft";
+import type { CraftMessageType, CraftSessionOrigin } from "../db/schema/craft";
+import {
+  craftMessages,
+  craftSessions,
+  craftSnapshots,
+} from "../db/schema/craft";
 
 /** Postgres unique-violation: a lost race on a guarded insert/update. */
 const UNIQUE_VIOLATION = "23505";
 
-/** `cs-` sessions, `cm-` messages, `csn-` snapshots — ids distinguishable at a glance. */
-export function newCraftId(prefix: "cs" | "cm" | "csn"): string {
+/** `cs-` sessions, `cm-` messages, `csn-` snapshots, `cst-` tasks, `cstr-` runs. */
+export function newCraftId(
+  prefix: "cs" | "cm" | "csn" | "cst" | "cstr",
+): string {
   return `${prefix}-${randomBytes(12).toString("hex")}`;
 }
 
 export type CraftSessionRow = typeof craftSessions.$inferSelect;
 export type CraftMessageRow = typeof craftMessages.$inferSelect;
+export type CraftSnapshotRow = typeof craftSnapshots.$inferSelect;
 
 export type CraftStore = {
   // ── sessions ────────────────────────────────────────────────────────────────
@@ -47,6 +54,8 @@ export type CraftStore = {
     name?: string | null;
     agentProvider?: string | null;
     agentModel?: string | null;
+    /** "INTERACTIVE" by default; scheduled/slack origins keep the row off the sidebar. */
+    origin?: CraftSessionOrigin;
   }): Promise<CraftSessionRow>;
   /** Update mutable display fields. */
   updateSession(
@@ -111,6 +120,24 @@ export type CraftStore = {
   }): Promise<CraftMessageRow>;
   /** Whether the session has any messages (pre-provisioned check). */
   sessionHasMessages(sessionId: string): Promise<boolean>;
+
+  // ── snapshots ───────────────────────────────────────────────────────────────
+  /** Record one packed workspace backup (the archive bytes live at storagePath, not here). */
+  createSnapshot(input: {
+    sessionId: string;
+    storagePath: string;
+    sizeBytes: number;
+  }): Promise<CraftSnapshotRow>;
+  /** The newest snapshot for a session — the only read sleep/wake makes. */
+  getLatestSnapshot(sessionId: string): Promise<CraftSnapshotRow | undefined>;
+  /** Every snapshot row for a session (oldest first) — the delete path's walk. */
+  listSnapshots(sessionId: string): Promise<CraftSnapshotRow[]>;
+  /** Delete every snapshot row, returning the deleted rows so blobs can be freed. */
+  deleteSnapshots(sessionId: string): Promise<CraftSnapshotRow[]>;
+
+  // ── idle-reaper sweep ───────────────────────────────────────────────────────
+  /** ACTIVE sessions quiet past `before` — the reaper's snapshot-and-sleep candidates. */
+  listIdleSessions(before: Date, limit?: number): Promise<CraftSessionRow[]>;
 };
 
 export function createCraftStore(db: Database): CraftStore {
@@ -176,7 +203,7 @@ export function createCraftStore(db: Database): CraftStore {
           name: input.name ?? null,
           // Born initializing: only the reconcile that builds the workspace CASes to active.
           status: "initializing",
-          origin: "INTERACTIVE",
+          origin: input.origin ?? "INTERACTIVE",
           agentProvider: input.agentProvider ?? null,
           agentModel: input.agentModel ?? null,
         })
@@ -386,6 +413,59 @@ export function createCraftStore(db: Database): CraftStore {
         .where(eq(craftMessages.sessionId, sessionId))
         .limit(1);
       return rows.length > 0;
+    },
+
+    // ── snapshots ─────────────────────────────────────────────────────────────
+    async createSnapshot(input) {
+      const rows = await db
+        .insert(craftSnapshots)
+        .values({
+          id: newCraftId("csn"),
+          sessionId: input.sessionId,
+          storagePath: input.storagePath,
+          sizeBytes: input.sizeBytes,
+        })
+        .returning();
+      return rows[0];
+    },
+
+    async getLatestSnapshot(sessionId) {
+      const rows = await db
+        .select()
+        .from(craftSnapshots)
+        .where(eq(craftSnapshots.sessionId, sessionId))
+        .orderBy(desc(craftSnapshots.createdAt))
+        .limit(1);
+      return rows[0];
+    },
+
+    async listSnapshots(sessionId) {
+      return db
+        .select()
+        .from(craftSnapshots)
+        .where(eq(craftSnapshots.sessionId, sessionId))
+        .orderBy(asc(craftSnapshots.createdAt));
+    },
+
+    async deleteSnapshots(sessionId) {
+      return db
+        .delete(craftSnapshots)
+        .where(eq(craftSnapshots.sessionId, sessionId))
+        .returning();
+    },
+
+    async listIdleSessions(before, limit = 100) {
+      return db
+        .select()
+        .from(craftSessions)
+        .where(
+          and(
+            eq(craftSessions.status, "active"),
+            lt(craftSessions.lastActivityAt, before),
+          ),
+        )
+        .orderBy(asc(craftSessions.lastActivityAt))
+        .limit(limit);
     },
   };
 }

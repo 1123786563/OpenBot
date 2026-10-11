@@ -37,7 +37,19 @@
  */
 
 export { generateAgentInstructions } from "./agent-instructions";
-export { type CraftConfig, type CraftEnv, loadCraftConfig } from "./config";
+export {
+  type CraftApprovalCandidate,
+  craftApprovalDigest,
+  createCraftApprovalRoutes,
+  listLiveApprovals,
+  openCraftApproval,
+} from "./approvals";
+export {
+  type CraftConfig,
+  type CraftEnv,
+  type CraftStorageConfig,
+  loadCraftConfig,
+} from "./config";
 export {
   SandboxProvisioningError,
   SandboxProvisioningInProgressError,
@@ -97,10 +109,49 @@ export {
   type CraftRoutesFactory,
   createCraftRoutes,
 } from "./routes";
-export { createSandboxGateway, type SandboxGateway } from "./sandbox-gateway";
+export {
+  createSandboxGateway,
+  type SandboxGateway,
+} from "./sandbox-gateway";
+export {
+  type CraftEditorMode,
+  type CraftScheduledTaskRow,
+  type CraftScheduledTaskRunRow,
+  type CraftScheduledTaskStore,
+  compileToCron,
+  computeNextRunAt,
+  createCraftScheduledTaskStore,
+  createScheduledTaskRoutes,
+  type EditorPayload,
+  fireAndForgetRun,
+  humanReadable,
+  nextNFires,
+  runScheduledTask,
+  type ScheduledTaskExecutorDeps,
+  type ScheduledTaskRoutesDeps,
+  startCraftScheduledTaskSweeper,
+  sweepScheduledTasks,
+  validateCron,
+} from "./scheduled-tasks";
+export {
+  type CraftIdleReaper,
+  type CraftIdleReaperDeps,
+  deleteSnapshots,
+  restoreLatestSnapshot,
+  type SnapshotContext,
+  snapshotStoragePath,
+  startCraftIdleReaper,
+  takeSnapshot,
+} from "./snapshot";
+export {
+  createObjectStore,
+  type ObjectStore,
+  type ObjectStoreMetadata,
+} from "./storage/object-store";
 export {
   type CraftMessageRow,
   type CraftSessionRow,
+  type CraftSnapshotRow,
   type CraftStore,
   createCraftStore,
   newCraftId,

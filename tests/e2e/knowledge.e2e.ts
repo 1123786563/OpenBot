@@ -572,7 +572,11 @@ async function runKnowledgeFlow(browser: Browser) {
     page,
     "E6 URL 文档异常：不可达内网地址→文档行最终 Failed",
     async () => {
-      const typeSelect = page
+      // Type 下拉在 Add 表单内（筛选工具栏还有同名 Type select）。
+      const addForm = page.locator("form").filter({
+        has: page.getByRole("heading", { name: "Add a document" }),
+      });
+      const typeSelect = addForm
         .locator("label")
         .filter({ hasText: /^Type/ })
         .locator("select");
@@ -618,7 +622,10 @@ async function runKnowledgeFlow(browser: Browser) {
     page,
     "E7 空内容异常：Content 留空 Add 被禁，列表不新增",
     async () => {
-      const typeSelect = page
+      const addForm = page.locator("form").filter({
+        has: page.getByRole("heading", { name: "Add a document" }),
+      });
+      const typeSelect = addForm
         .locator("label")
         .filter({ hasText: /^Type/ })
         .locator("select");
@@ -665,15 +672,33 @@ async function runKnowledgeFlow(browser: Browser) {
         .getByText(/score 0\.\d+/)
         .first()
         .innerText();
-      // 无关查询：No results 文案。
+      /*
+       * 无关查询的 miss 语义：score_threshold=0 时上游返回 top_k 条弱相关
+       * 结果（真实 embedding 对任意查询都有非零余弦），"No results" 不必然
+       * 出现。可断言的是**相关度**：无关查询的结果卡不得包含原文档关键词
+       * 片段（E5 内容与"量子物理冷聚变"无语义重叠）。
+       */
       await queryInput.fill("量子物理冷聚变");
       await page.getByRole("button", { name: "Search", exact: true }).click();
+      await page.waitForTimeout(5000); // 等 search.mutate 完成渲染
+      const missCount = await page.locator("article").count();
+      if (missCount > 0) {
+        for (let i = 0; i < missCount; i += 1) {
+          const cardText = await page.locator("article").nth(i).innerText();
+          if (cardText.includes(DOC_KEYWORD)) {
+            throw new Error(
+              `无关查询的结果卡包含了原文关键词「${DOC_KEYWORD}」`,
+            );
+          }
+        }
+        return `命中卡含「${scoreText}」；无关词 ${missCount} 条均不含原文关键词`;
+      }
       await page
         .getByText(
           "No matching chunks. Try a different query or add more documents.",
         )
         .first()
-        .waitFor({ state: "visible", timeout: 30000 });
+        .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
       return `命中卡含「${scoreText}」；无关词 No results`;
     },
   );
@@ -761,15 +786,20 @@ async function runKnowledgeFlow(browser: Browser) {
           .first()
           .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
       }
-      // shift 范围选：点首行 checkbox，shift 点末行 checkbox。
+      // 逐个点击两行 checkbox：Checkbox 范围选读原生 click 的 shiftKey
+      // （Base UI 合成事件在 Playwright modifiers click 下不触发）；批量
+      // 删除的验证点在多选聚合（2 selected）与 Delete 2，不在选区手势。
       const checkboxes = page.locator('tbody tr [role="checkbox"]');
       const total = await checkboxes.count();
       if (total < 2) throw new Error(`期望 ≥2 行，实际 ${total}`);
-      await checkboxes.first().click();
-      // shift+click 末行：Checkbox 的 onClick 读 event.shiftKey。
-      await checkboxes.nth(total - 1).click({
-        modifiers: ["Shift"],
-      });
+      for (const title of titles) {
+        await page
+          .locator("tbody tr")
+          .filter({ hasText: title })
+          .first()
+          .locator('[role="checkbox"]')
+          .click();
+      }
       await page
         .getByText("2 selected")
         .first()

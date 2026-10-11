@@ -7,6 +7,7 @@ import approvals from "../../locales/en/approvals.json";
 import channels from "../../locales/en/channels.json";
 import common from "../../locales/en/common.json";
 import computer from "../../locales/en/computer.json";
+import craft from "../../locales/en/craft.json";
 import errors from "../../locales/en/errors.json";
 import knowledge from "../../locales/en/knowledge.json";
 import market from "../../locales/en/market.json";
@@ -22,6 +23,7 @@ import zhApprovals from "../../locales/zh-CN/approvals.json";
 import zhChannels from "../../locales/zh-CN/channels.json";
 import zhCommon from "../../locales/zh-CN/common.json";
 import zhComputer from "../../locales/zh-CN/computer.json";
+import zhCraft from "../../locales/zh-CN/craft.json";
 import zhErrors from "../../locales/zh-CN/errors.json";
 import zhKnowledge from "../../locales/zh-CN/knowledge.json";
 import zhMarket from "../../locales/zh-CN/market.json";
@@ -54,6 +56,7 @@ export const NAMESPACES = [
   "errors",
   "tenant",
   "workshop",
+  "craft",
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -114,6 +117,7 @@ void i18next
         workshop,
         errors,
         tenant,
+        craft,
       },
       "zh-CN": {
         common: zhCommon,
@@ -131,6 +135,7 @@ void i18next
         workshop: zhWorkshop,
         errors: zhErrors,
         tenant: zhTenant,
+        craft: zhCraft,
       },
     },
     fallbackLng: FALLBACK_LANGUAGE,

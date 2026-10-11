@@ -15,6 +15,7 @@ import {
   IconTargetArrow,
   IconUsers,
   IconUsersGroup,
+  IconWand,
 } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
@@ -433,6 +434,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <IconBolt />
                   </div>
                   <span className="text-sm tracking-tight">{t("agents")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                {/* The autonomous build agent: a destination beside Skills, not a channel. */}
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/craft"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconWand />
+                  </div>
+                  <span className="text-sm tracking-tight">{t("craft")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

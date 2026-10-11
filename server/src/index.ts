@@ -3642,6 +3642,10 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           // Same port the workshop's locks and bus answer on: Redis when configured,
           // the in-process fallback when not — craft's turn state carries both shapes.
           redis: workshopRedisPort,
+          // Craft's decision surface reads/writes the raw approval store (not the
+          // coordination-wrapped approvalService.store) so opening/deciding never runs
+          // run-orchestration side effects.
+          approvals: storedApprovals,
           // craft_sessions rows hold no Bot relationship; every session routes to the
           // one deployment-chosen Bot workspace (validated to agent-sandbox's id rules
           // inside loadCraftConfig — an unusable configured id already fell back).

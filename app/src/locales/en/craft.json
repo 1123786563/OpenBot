@@ -1,0 +1,46 @@
+{
+  "session": {
+    "title": "Craft",
+    "new": "New session",
+    "loading": "Loading sessions…",
+    "none": "No sessions yet. Start one to ask an agent to build.",
+    "noneSelected": "Pick a session, or start a new one.",
+    "untitled": "Untitled",
+    "rename": "Rename session",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this session?",
+    "cancel": "Cancel"
+  },
+  "tabs": {
+    "preview": "Preview",
+    "files": "Files",
+    "artifacts": "Artifacts"
+  },
+  "preview": {
+    "title": "Web app preview",
+    "loading": "Checking for a web app…",
+    "empty": "No web app yet. Ask the agent to build one."
+  },
+  "files": {
+    "loading": "Reading the workspace…",
+    "error": "The file tree could not be loaded.",
+    "empty": "The workspace is empty."
+  },
+  "artifacts": {
+    "loading": "Collecting artifacts…",
+    "empty": "No artifacts yet.",
+    "word": "Word",
+    "download": "Download"
+  },
+  "chat": {
+    "loading": "Loading the conversation…",
+    "empty": "Ask the agent to build something.",
+    "usage": "{{tokens}} tokens used",
+    "compacted": "Context compacted."
+  },
+  "approvals": {
+    "waiting": "Waiting for your approval",
+    "allowOnce": "Allow once",
+    "deny": "Deny"
+  }
+}

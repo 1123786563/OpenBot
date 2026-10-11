@@ -8,9 +8,12 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
+import type { ApprovalStore } from "../approvals/types";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
+import { createCraftApprovalRoutes } from "./approvals";
+import { createArtifactRoutes } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { createInterruptFence } from "./interrupt";
 import { createSessionFlowLocks } from "./locks";
@@ -18,16 +21,29 @@ import { CraftSessionManager } from "./manager";
 import { createMessageRoutes } from "./message-routes";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import { createSandboxGateway } from "./sandbox-gateway";
+import {
+  createCraftScheduledTaskStore,
+  createScheduledTaskRoutes,
+  fireAndForgetRun,
+  startCraftScheduledTaskSweeper,
+} from "./scheduled-tasks";
 import { createSessionRoutes } from "./session-routes";
+import { createObjectStore } from "./storage/object-store";
 import { createCraftStore } from "./store";
 import { createTurnExecutor } from "./turn-executor";
 import { createTurnRoutes } from "./turn-routes";
 import { createTurnStateStore } from "./turn-state";
+import { createWebappProxyRoutes } from "./webapp-proxy";
 
 export type CraftRoutesDeps = {
   config: CraftConfig;
   db: Database;
   redis: RedisPort | null;
+  /**
+   * The raw approval store craft's decision surface reads/writes through — NOT the
+   * coordination-wrapped `approvalService.store` (its `open` runs orchestration side effects).
+   */
+  approvals: ApprovalStore;
   /** Resolves the Bot whose sandbox hosts a session (all sandbox routing flows through it). */
   botIdFor: (sessionId: string) => Promise<string | null>;
   /** Resolves a session's effective LLM config (the deployment's model catalog wiring). */
@@ -64,6 +80,7 @@ export function createCraftRoutes(input: {
 
   // ── the wiring (one assembly; everything below is dependency order) ──
   const store = createCraftStore(db);
+  const objectStore = createObjectStore(config.storage);
   const gateway = createSandboxGateway({
     config,
     connectionFor: (botId) => {
@@ -112,6 +129,9 @@ export function createCraftRoutes(input: {
       store,
       manager,
       locks,
+      gateway,
+      objectStore,
+      botIdFor: deps.botIdFor,
       generateName: deps.generateName,
       userNameFor: deps.userNameFor,
     }),
@@ -140,6 +160,57 @@ export function createCraftRoutes(input: {
       botIdFor: deps.botIdFor,
     }),
   );
+  app.route(
+    "/",
+    createArtifactRoutes(requireUser, {
+      config,
+      store,
+      gateway,
+      botIdFor: deps.botIdFor,
+    }),
+  );
+  app.route(
+    "/",
+    createCraftApprovalRoutes(requireUser, {
+      config,
+      store,
+      approvals: deps.approvals,
+    }),
+  );
+  if (config.webappProxyEnabled) {
+    app.route(
+      "/",
+      createWebappProxyRoutes(requireUser, {
+        config,
+        store,
+        gateway,
+        botIdFor: deps.botIdFor,
+        sandboxConnectionFor: deps.sandboxConnectionFor,
+      }),
+    );
+  }
+  if (config.enableScheduledTasks) {
+    // The scheduled-task seam, all assembled here (the store owns the rows, the fire-and-forget
+    // runner drives the headless turn through `manager`, and the sweeper is the single-process
+    // cron dispatcher — unref'd, owned by this boot, mirroring the idle reaper's shape).
+    const tasks = createCraftScheduledTaskStore(db);
+    const enqueueRun = fireAndForgetRun({
+      db,
+      config,
+      store,
+      tasks,
+      manager,
+      botIdFor: deps.botIdFor,
+    });
+    startCraftScheduledTaskSweeper({ tasks, enqueueRun });
+    app.route(
+      "/",
+      createScheduledTaskRoutes(requireUser, {
+        tasks,
+        enqueueRun,
+      }),
+    );
+  }
 
   return app;
 }
