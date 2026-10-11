@@ -68,7 +68,7 @@ export function createCraftRoutes(input: {
     store,
     gateway,
     llmConfigFor: async (session) => deps.llmConfigFor(session),
-    botIdFor: (session) => deps.botIdFor(session.id),
+    botIdFor: (sessionId) => deps.botIdFor(sessionId),
     organizationInstructions: deps.organizationInstructions ?? null,
   });
   const turnState = createTurnStateStore({ redis, config });

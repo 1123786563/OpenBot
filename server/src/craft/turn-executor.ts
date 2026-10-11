@@ -11,25 +11,26 @@
  * finally block are preserved exactly — they are the crash-recovery story.
  */
 
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import type { CraftConfig } from "./config";
-import type { CraftStore } from "./store";
-import type { CraftSessionManager } from "./manager";
-import type { TurnStateStore, InteractiveTurn } from "./turn-state";
-import {
-  TURN_STATUS_CANCELLED,
-  TURN_STATUS_FAILED,
-  TURN_STATUS_SUCCEEDED,
-} from "./turn-state";
-import type { InterruptFence } from "./interrupt";
-import { BuildStreamingState } from "./streaming";
+import { isBuildPacket } from "./events/packets";
 import {
   isActivityTimeout,
   isKeepalive,
   isPromptResponse,
   isSandboxError,
 } from "./events/types";
-import { isBuildPacket } from "./events/packets";
+import type { InterruptFence } from "./interrupt";
+import type { CraftSessionManager } from "./manager";
+import type { CraftStore } from "./store";
+import { BuildStreamingState } from "./streaming";
+import type { InteractiveTurn, TurnStateStore } from "./turn-state";
+import {
+  TURN_STATUS_CANCELLED,
+  TURN_STATUS_FAILED,
+  TURN_STATUS_SUCCEEDED,
+} from "./turn-state";
 
 export const MAX_TIMEOUT_CONTINUATIONS = 2;
 
@@ -153,7 +154,11 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         }))
       ) {
         ownershipLost = true;
-        return { outcome: "TERMINATED", finalEventSeen: false, cancelled: false };
+        return {
+          outcome: "TERMINATED",
+          finalEventSeen: false,
+          cancelled: false,
+        };
       }
 
       if (isKeepalive(sandboxEvent)) continue;
@@ -185,7 +190,11 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
           errorDetail: sandboxEvent.message,
           runnerId: input.runnerId,
         });
-        return { outcome: "TERMINATED", finalEventSeen: false, cancelled: false };
+        return {
+          outcome: "TERMINATED",
+          finalEventSeen: false,
+          cancelled: false,
+        };
       }
 
       if (!isBuildPacket(sandboxEvent) && isPromptResponse(sandboxEvent)) {
@@ -194,7 +203,8 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       }
     }
 
-    if (timedOut) return { outcome: "TIMED_OUT", finalEventSeen: false, cancelled: false };
+    if (timedOut)
+      return { outcome: "TIMED_OUT", finalEventSeen: false, cancelled: false };
     return {
       outcome: "COMPLETED",
       finalEventSeen,
@@ -235,15 +245,14 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       await turnState.finishTurn({
         turnId,
         status: TURN_STATUS_FAILED,
-        errorDetail: "Session is not active; retry after it finishes initializing.",
+        errorDetail:
+          "Session is not active; retry after it finishes initializing.",
         runnerId,
       });
       return;
     }
 
-    if (
-      !(await turnState.touchTurn({ turnId, runnerId }))
-    ) {
+    if (!(await turnState.touchTurn({ turnId, runnerId }))) {
       return; // ownership lost before we started
     }
 
@@ -253,7 +262,11 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
     const persistTurnError = async (message: string) => {
       // Best-effort user-visible failure row; never blocks finishTurn.
       await manager
-        .persistTurnError(sessionId, turn.turnIndex, `${message} ${TURN_ERROR_SUFFIX}`)
+        .persistTurnError(
+          sessionId,
+          turn.turnIndex,
+          `${message} ${TURN_ERROR_SUFFIX}`,
+        )
         .catch(() => undefined);
     };
 
@@ -264,7 +277,11 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         finalEventSeen: false,
         cancelled: false,
       };
-      for (let attempt = 0; attempt <= MAX_TIMEOUT_CONTINUATIONS; attempt += 1) {
+      for (
+        let attempt = 0;
+        attempt <= MAX_TIMEOUT_CONTINUATIONS;
+        attempt += 1
+      ) {
         result = await driveOnePrompt({
           turnId,
           sessionId,
@@ -313,8 +330,7 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         await turnState.finishTurn({
           turnId,
           status: TURN_STATUS_FAILED,
-          errorDetail:
-            "Turn ended before opencode returned a final response.",
+          errorDetail: "Turn ended before opencode returned a final response.",
           runnerId,
         });
         return;
@@ -376,9 +392,12 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
           if (turn === null) return;
           await driveInteractiveTurn(turn);
         } catch (error) {
-          console.error(
-            `[craft] interactive turn runner failed for turn ${turnId}`,
-            error,
+          getLogger("server").error(
+            {
+              turnId,
+              err: error instanceof Error ? error : String(error),
+            },
+            "[craft] interactive turn runner failed",
           );
           if (turn !== null) {
             await turnState

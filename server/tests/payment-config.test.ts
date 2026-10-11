@@ -362,4 +362,65 @@ describe("payments configuration", () => {
     });
     expect(on.payments?.acceptForeignCurrency).toBe(true);
   });
+
+  /*
+   * THE PRICE CROSS-CHECK (P1-2 closed at boot): the collected price (PAYMENT_PLAN_CATALOG)
+   * and the displayed monthly price (LAGO_PLAN_CATALOG) are two variables, and nothing
+   * downstream compares them — a deployment that edits one and forgets the other shows one
+   * number and collects another. The boot refusal is the fix; both directions are pinned here.
+   */
+  const DISPLAY_CATALOG = JSON.stringify({
+    pro: {
+      name: "专业版",
+      credits: 9000,
+      features: ["每月基础积分"],
+      pricing: [
+        {
+          code: "recurring_monthly",
+          label: "连续包月",
+          priceCents: 8800,
+          originalCents: null,
+          discountLabel: null,
+          unit: "month",
+        },
+      ],
+    },
+  });
+
+  test("matching monthly prices across the two catalogs build cleanly", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      ...alipay,
+      LAGO_PLAN_CATALOG: DISPLAY_CATALOG,
+    });
+    expect(config.payments?.planCatalog.get("pro")?.amountCents).toBe(8800);
+  });
+
+  test("a collected price that disagrees with the displayed monthly price stops the server", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        ...alipay,
+        LAGO_PLAN_CATALOG: DISPLAY_CATALOG,
+        // The dialog would show ¥88 while the channel collects ¥99 — the exact overcharge a
+        // reader cannot see coming, refused before the first order exists.
+        PAYMENT_PLAN_CATALOG: JSON.stringify({
+          pro: { amountCents: 9900, currency: "CNY", periodMonths: 1 },
+        }),
+      }),
+    ).toThrow(
+      /PAYMENT_PLAN_CATALOG plan "pro" amountCents \(9900\) does not match LAGO_PLAN_CATALOG's monthly price \(8800\)/,
+    );
+  });
+
+  test("a purchasable plan the display catalog never prices builds, with the warning", () => {
+    // Not itself a mismatch (the payment catalog is the collector's truth), but worth pinning
+    // that it does not refuse: an API-only plan is a legitimate shape.
+    const config = loadConfig({
+      ...baseEnvironment,
+      ...alipay,
+      // LAGO_PLAN_CATALOG unset: no displayed prices at all, nothing to disagree with.
+    });
+    expect(config.payments?.planCatalog.get("pro")?.amountCents).toBe(8800);
+  });
 });

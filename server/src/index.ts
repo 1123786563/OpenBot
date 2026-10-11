@@ -165,9 +165,11 @@ import { loadConfig } from "./config";
 import {
   type IdentifyActor,
   type IdentifyUser,
+  CreditGateError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
+  setModelUsageGate,
   setModelUsageMeter,
   type ToolSelection,
 } from "./copilot";
@@ -3085,6 +3087,14 @@ const billing =
  * (a new millisecond meant a "new" event) and merged distinct same-millisecond same-usage calls
  * into one (the provider deduplicates on the id). A usage miss is a billing miss, never a
  * product error, which is why the meter never awaits and the service never throws.
+ *
+ * THE CREDIT LEDGER'S EXCHANGE RATE (the two meters below share it): one token = one scaled
+ * credit unit (×100 ledger units per whole credit ⇒ a 9000-credit plan allowance funds 9000
+ * tokens at 1:100, i.e. ledger rows carry `tokens × 100`). This is the v1 placeholder — it
+ * aligns the local ledger's magnitude with Lago's `llm_tokens`/`code_run_tokens` units so the
+ * two books COULD reconcile — and the product-priced rate plugs in at exactly these two call
+ * sites when it exists.
+ * TODO(product): replace the 1-token = 1-credit×1/100 placeholder with configured pricing.
  */
 if (billing !== undefined) {
   const billingService = billing.service;
@@ -3106,6 +3116,42 @@ if (billing !== undefined) {
         },
       })
       .catch(() => {});
+    // The local ledger's draw, POST-PAID: the same finish that meters to Lago draws the credit
+    // balance by the actual cost (tokens × 100, the exchange rate above). Fire-and-forget for
+    // the same reason the meter is — a ledger miss must not fail a finished call — and
+    // idempotent on the same sequence-derived key, so a double-reported finish draws once.
+    void billing.creditWriter
+      .consumeCredits({
+        externalCustomerId: billing.externalCustomerKey,
+        amountCents: (input + output) * 100,
+        idempotencyKey: transactionId,
+        title: "模型调用",
+        requestId: transactionId,
+        client: "web",
+      })
+      .catch(() => {});
+  });
+
+  /*
+   * The PRE-CALL gate (P0-2's front door): a deployment whose live credit balance is zero does
+   * not get free model calls while it looks paid-for. A 10-second TTL cache in front of the
+   * balance read — a burst of calls costs one read, and a fresh grant shows through at most
+   * 10s later; the consume path above is the accuracy, this gate is only the visibility.
+   * Fail-closed: a balance read that throws refuses the call (copilot.ts wraps it into
+   * CreditGateError), because an unreadable balance is not a free pass.
+   */
+  let gateBalance: { value: number; checkedAt: number } | undefined;
+  setModelUsageGate(async () => {
+    const now = Date.now();
+    if (gateBalance && now - gateBalance.checkedAt < 10_000) {
+      if (gateBalance.value <= 0) throw new CreditGateError();
+      return;
+    }
+    const balance = await billing.creditWriter.readBalance(
+      billing.externalCustomerKey,
+    );
+    gateBalance = { value: balance, checkedAt: now };
+    if (balance <= 0) throw new CreditGateError();
   });
 }
 
@@ -3255,6 +3301,20 @@ const payments =
                 : null;
             },
           },
+          // The purchase guard's UNCACHED fact (P1-5): read the local subscription projection
+          // directly — one indexed query per purchase attempt — instead of the 10-minute TTL
+          // cache whose failure fallback answers "not active". The projection is what the sync
+          // and the webhooks both maintain; "live" matches the entitlement read's own
+          // definition (active/incomplete).
+          activePlanCodeUncached: async () => {
+            const rows = await createBillingStore(database).readSubscriptions(
+              billing.externalCustomerKey,
+            );
+            const live = rows.find(
+              (row) => row.status === "active" || row.status === "incomplete",
+            );
+            return live ? live.planCode : null;
+          },
         });
         startPaymentSweeps(paymentService);
         return {
@@ -3328,6 +3388,33 @@ const codeRunStore = createCodeRunStore(database);
 const codeRunUsageReporter = billing
   ? async (input: Parameters<typeof reportCodeRunUsage>[1]): Promise<void> => {
       await reportCodeRunUsage(billing.service, input);
+      /*
+       * The local ledger's draw, beside the Lago report: the same run's tokens × 100 (the
+       * exchange rate the LLM meter's block above spells), idempotent on the SAME run id the
+       * Lago report uses (`code-run:<runId>`) — a replayed settle is one draw here exactly as
+       * it is one event there. Fire-and-forget for the same reason: the run already finished,
+       * and a ledger miss must not fail it.
+       *
+       * No PRE-call gate on code runs, deliberately: the run has already started by the time
+       * the gateway reports usage (the sandbox's own budget governs the run), and refusing
+       * mid-run saves nothing the sandbox's timeout would not. The LLM gate (above) is where
+       * before-the-first-token refusal lives; this side keeps the ledger honest afterwards.
+       */
+      const tokens = input.inputTokens + input.outputTokens;
+      if (tokens <= 0) return;
+      await billing.creditWriter
+        .consumeCredits({
+          externalCustomerId: billing.externalCustomerKey,
+          amountCents: tokens * 100,
+          idempotencyKey: `code-run:${input.runId}`,
+          title: "代码运行",
+          requestId: input.runId,
+          model: input.modelId,
+          client: "web",
+        })
+        .catch(() => {
+          // Contained on purpose — see the comment above.
+        });
     }
   : undefined;
 const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>

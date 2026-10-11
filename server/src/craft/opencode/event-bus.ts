@@ -11,6 +11,7 @@
  * consecutive failures and self-close) is preserved exactly.
  */
 
+import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 
 type Json = Record<string, unknown>;
@@ -289,7 +290,8 @@ export class PodEventBus {
 
   private dispatch(event: Json): void {
     const eventType = event.type;
-    const props = event.properties instanceof Object ? (event.properties as Json) : null;
+    const props =
+      event.properties instanceof Object ? (event.properties as Json) : null;
     let sessionCreatedParentId: string | null = null;
 
     if (eventType === "session.created" && props) {
@@ -359,7 +361,7 @@ export class PodEventBus {
           subscription.queue.droppedCount === 1 ||
           subscription.queue.droppedCount % 50 === 0
         ) {
-          console.warn(
+          getLogger("server").warn(
             `[craft] PodEventBus dropped event for session ${logSessionId} ` +
               `(queue full; total dropped=${subscription.queue.droppedCount})`,
           );
@@ -389,7 +391,8 @@ function extractSessionId(event: Json): string | null {
 
 function isUnscopedTerminalEvent(event: Json): boolean {
   const eventType = event.type;
-  if (eventType === "session.error" || eventType === "session.idle") return true;
+  if (eventType === "session.error" || eventType === "session.idle")
+    return true;
   if (eventType !== "session.status") return false;
   const props = event.properties;
   if (!(props instanceof Object)) return false;
@@ -407,7 +410,9 @@ function parseSseBlock(block: string): Json | null {
   const payload = dataLines.join("\n");
   try {
     const parsed = JSON.parse(payload);
-    return parsed instanceof Object && parsed !== null ? (parsed as Json) : null;
+    return parsed instanceof Object && parsed !== null
+      ? (parsed as Json)
+      : null;
   } catch {
     return null;
   }

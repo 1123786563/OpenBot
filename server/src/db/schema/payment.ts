@@ -144,5 +144,15 @@ export const paymentEvents = pgTable(
       .on(table.channelTransactionId)
       .where(sql`${table.kind} = 'fact' AND ${table.state} = 'paid'`),
     index("payment_events_order_idx").on(table.orderId),
+    // One anomaly row per (order, word): the retry-storm dam (P2-2). Partial on kind so facts
+    // never touch it, and EXCLUDING `amount_unreadable` — that word's repeats are not a storm
+    // but a counter: a channel that keeps saying "paid, amount unreadable" is the signal that
+    // ends the order (settlePaidFact's exhaustion), so those rows must accumulate. Targetless
+    // ON CONFLICT DO NOTHING in recordAnomaly answers this index.
+    uniqueIndex("payment_events_anomaly_unique_idx")
+      .on(table.orderId, table.code)
+      .where(
+        sql`${table.kind} = 'anomaly' AND ${table.code} <> 'amount_unreadable'`,
+      ),
   ],
 );

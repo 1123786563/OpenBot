@@ -309,7 +309,7 @@ describe("user routes: create and cancel", () => {
       (
         await app.request("/api/billing/purchases", {
           method: "POST",
-          body: JSON.stringify({ planCode: "pro", provider: "alipay" }),
+          body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
         })
       ).status,
     ).toBe(403);
@@ -344,6 +344,47 @@ describe("user routes: create and cancel", () => {
     }
   });
 
+  test("a cycle the server cannot collect is 400 before any order exists", async () => {
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(
+        fakeService({
+          createPurchase: async () => {
+            throw new Error("must never run");
+          },
+        }),
+      ),
+    );
+    // v1 collects monthly only: the yearly spellings exist in the DISPLAY catalog, and a
+    // purchase naming one is refused at the door — the dialog hides them because this refuses
+    // them, not the other way round.
+    for (const body of [
+      JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "yearly" }),
+      JSON.stringify({
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "recurring_yearly",
+      }),
+      JSON.stringify({ planCode: "pro", provider: "alipay" }), // cycle missing
+    ]) {
+      const response = await app.request("/api/billing/purchases", {
+        method: "POST",
+        body,
+      });
+      expect(response.status).toBe(400);
+    }
+    // Both monthly spellings pass the door (the service snapshots the same monthly price).
+    const monthly = await app.request("/api/billing/purchases", {
+      method: "POST",
+      body: JSON.stringify({
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "recurring_monthly",
+      }),
+    });
+    expect(monthly.status).not.toBe(400);
+  });
+
   test("an active subscription answers 409 with the plan named", async () => {
     const app = new Hono<{ Variables: AppVariables }>().route(
       "/api/billing",
@@ -360,7 +401,7 @@ describe("user routes: create and cancel", () => {
     );
     const response = await app.request("/api/billing/purchases", {
       method: "POST",
-      body: JSON.stringify({ planCode: "pro", provider: "alipay" }),
+      body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
@@ -385,7 +426,7 @@ describe("user routes: create and cancel", () => {
       (
         await app.request("/api/billing/purchases", {
           method: "POST",
-          body: JSON.stringify({ planCode: "pro", provider: "alipay" }),
+          body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
         })
       ).status,
     ).toBe(503);
@@ -459,7 +500,7 @@ describe("user routes: create and cancel", () => {
     );
     await app.request("/api/billing/purchases", {
       method: "POST",
-      body: JSON.stringify({ planCode: "pro", provider: "alipay" }),
+      body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
     });
     await app.request("/api/billing/purchases/po-x/cancel", { method: "POST" });
     expect(events.map((event) => event.eventType)).toEqual([

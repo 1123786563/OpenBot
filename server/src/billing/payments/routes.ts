@@ -137,6 +137,14 @@ const purchaseInput = z.strictObject({
   // CONFIGURED that channel is the service's answer, graded before any order row exists —
   // the catalog's `providers` field is the disclosure clients render from.
   provider: z.enum(["alipay", "wechat"]),
+  /**
+   * The billing cycle being bought. v1 collects MONTHLY only (the Lago interval the
+   * activation creates, and the only cycle PAYMENT_PLAN_CATALOG's periodMonths=1 allows) —
+   * both spellings of monthly are accepted because the display catalog names either. A
+   * yearly code is a 400 here, on purpose: the server refusing what it cannot collect is
+   * what keeps the dialog's hidden yearly option honest.
+   */
+  cycle: z.enum(["monthly", "recurring_monthly"]),
 });
 
 /** The sentinel codes, as HTTP numbers — the same mapping the billing admin routes use. */
@@ -216,6 +224,10 @@ export function createPaymentRoutes(deps: {
     const { order } = await deps.service.createPurchase({
       planCode: input.planCode,
       provider: input.provider,
+      // v1 converges both monthly spellings to the one cycle it collects; the service's
+      // snapshot is the monthly price either way (the cross-check at boot keeps the two
+      // catalogs' monthly prices identical, so there is no second number to choose).
+      cycle: "monthly",
       createdBy: context.var.actor.id,
     });
     if (deps.audit) {

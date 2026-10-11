@@ -12,8 +12,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { CraftConfig } from "./config";
 import type { RedisPort } from "../redis";
+import type { CraftConfig } from "./config";
 import type { PromptAttachment } from "./opencode/serve-client";
 
 export type InteractiveTurnStatus =
@@ -75,11 +75,15 @@ type SerializedTurn = Omit<InteractiveTurn, "reclaimed">;
 // ── Key helpers (onyx names verbatim) ─────────────────────────────────────────
 
 const turnKey = (turnId: string) => `craft:interactive_turn:${turnId}`;
-const activeTurnKey = (sessionId: string) => `craft:session:${sessionId}:active_turn`;
+const activeTurnKey = (sessionId: string) =>
+  `craft:session:${sessionId}:active_turn`;
 const activeTurnLockKey = (sessionId: string) =>
   `craft:session:${sessionId}:active_turn_lock`;
-const requestKey = (sessionId: string, userId: string, clientRequestId: string) =>
-  `craft:session:${sessionId}:turn_request:${userId}:${clientRequestId}`;
+const requestKey = (
+  sessionId: string,
+  userId: string,
+  clientRequestId: string,
+) => `craft:session:${sessionId}:turn_request:${userId}:${clientRequestId}`;
 
 // ── The interface ─────────────────────────────────────────────────────────────
 
@@ -98,11 +102,17 @@ export type TurnStateStore = {
     userId: string;
     clientRequestId: string;
   }): Promise<InteractiveTurn | null>;
-  getActiveTurn(input: { sessionId: string; userId: string }): Promise<InteractiveTurn | null>;
+  getActiveTurn(input: {
+    sessionId: string;
+    userId: string;
+  }): Promise<InteractiveTurn | null>;
   /** CAS claim: QUEUED/stale-RUNNING → RUNNING + fresh runner_id; null when refused. */
   claimTurnForRunner(turnId: string): Promise<InteractiveTurn | null>;
   /** Refresh the heartbeat (ownership-checked). False = lost ownership. */
-  touchTurn(input: { turnId: string; runnerId?: string | null }): Promise<boolean>;
+  touchTurn(input: {
+    turnId: string;
+    runnerId?: string | null;
+  }): Promise<boolean>;
   finishTurn(input: {
     turnId: string;
     status: InteractiveTurnStatus;
@@ -153,7 +163,9 @@ function deserialize(raw: string | null): InteractiveTurn | null {
       prompt: payload.prompt,
       status: payload.status as InteractiveTurnStatus,
       turnIndex: payload.turnIndex,
-      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      attachments: Array.isArray(payload.attachments)
+        ? payload.attachments
+        : [],
       lastHeartbeatAt: payload.lastHeartbeatAt ?? null,
       errorDetail: payload.errorDetail ?? null,
       runnerId: payload.runnerId ?? null,
@@ -399,7 +411,8 @@ return 0`,
       return withRedisTurnLock(redis, turn.sessionId, async () => {
         turn = await loadTurn(input.turnId);
         if (turn === null || !turnIsActive(turn)) return false;
-        if (input.runnerId != null && turn.runnerId !== input.runnerId) return false;
+        if (input.runnerId != null && turn.runnerId !== input.runnerId)
+          return false;
         turn.lastHeartbeatAt = new Date().toISOString();
         await saveTurn(turn, config.activeTurnTtlSeconds);
         await redis.eval(
@@ -418,7 +431,8 @@ return 0`,
       return withRedisTurnLock(redis, turn.sessionId, async () => {
         turn = await loadTurn(input.turnId);
         if (turn === null) return null;
-        if (input.runnerId != null && turn.runnerId !== input.runnerId) return null;
+        if (input.runnerId != null && turn.runnerId !== input.runnerId)
+          return null;
         turn.status = input.status;
         turn.lastHeartbeatAt = new Date().toISOString();
         turn.errorDetail = input.errorDetail ?? null;
@@ -485,7 +499,10 @@ export function createInProcessTurnStateStore(
     for (;;) {
       const existing = locks.get(key);
       if (!existing || existing.expiresAt <= Date.now()) {
-        locks.set(key, { token, expiresAt: Date.now() + TURN_LOCK_LEASE_SECONDS * 1000 });
+        locks.set(key, {
+          token,
+          expiresAt: Date.now() + TURN_LOCK_LEASE_SECONDS * 1000,
+        });
         break;
       }
       if (Date.now() >= deadline) throw new InteractiveTurnLockError();
@@ -613,7 +630,8 @@ export function createInProcessTurnStateStore(
       return withLock(turn.sessionId, async () => {
         turn = getLive(input.turnId);
         if (turn === null || !turnIsActive(turn)) return false;
-        if (input.runnerId != null && turn.runnerId !== input.runnerId) return false;
+        if (input.runnerId != null && turn.runnerId !== input.runnerId)
+          return false;
         turn.lastHeartbeatAt = new Date().toISOString();
         put(turn, config.activeTurnTtlSeconds);
         activeTurns.set(turn.sessionId, {
@@ -630,7 +648,8 @@ export function createInProcessTurnStateStore(
       return withLock(turn.sessionId, async () => {
         turn = getLive(input.turnId);
         if (turn === null) return null;
-        if (input.runnerId != null && turn.runnerId !== input.runnerId) return null;
+        if (input.runnerId != null && turn.runnerId !== input.runnerId)
+          return null;
         turn.status = input.status;
         turn.lastHeartbeatAt = new Date().toISOString();
         turn.errorDetail = input.errorDetail ?? null;
@@ -649,6 +668,7 @@ export function createInProcessTurnStateStore(
 // Lazy default-config import keeps this module's test surface free of env reads at
 // import time; the value only materializes when the fallback store is built without one.
 import { loadCraftConfig } from "./config";
+
 function loadDefaultConfig() {
   return loadCraftConfig({});
 }

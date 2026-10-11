@@ -14,8 +14,8 @@
  */
 
 import type { CraftConfig } from "./config";
-import { OpencodeServeClient } from "./opencode/serve-client";
 import { PodEventBus } from "./opencode/event-bus";
+import { OpencodeServeClient } from "./opencode/serve-client";
 import type { WorkspaceApi } from "./workspace";
 
 /** The sandbox-side file surface craft needs (backed by the gateway's file endpoints). */

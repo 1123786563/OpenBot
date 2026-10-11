@@ -10,8 +10,15 @@
  * subagent SSE entry point (phase 2 — kept on the roadmap, see docs).
  */
 
-import type { Database } from "../db/client";
+import type { CraftMessageType } from "../db/schema/craft";
 import {
+  type BuildPacket,
+  type CompactionPacket,
+  type ContextUsagePacket,
+  isBuildPacket,
+} from "./events/packets";
+import {
+  isActivityTimeout,
   isAgentMessageChunk,
   isAgentPlanUpdate,
   isAgentThoughtChunk,
@@ -21,17 +28,9 @@ import {
   isSandboxError,
   isToolCallProgress,
   isToolCallStart,
-  isActivityTimeout,
   type SandboxEvent,
 } from "./events/types";
-import {
-  isBuildPacket,
-  type BuildPacket,
-  type CompactionPacket,
-  type ContextUsagePacket,
-} from "./events/packets";
 import type { CraftStore } from "./store";
-import type { CraftMessageType } from "../db/schema/craft";
 
 type Json = Record<string, unknown>;
 
@@ -199,7 +198,8 @@ function extractTextFromContent(content: unknown): string {
   if (content === null || content === undefined) return "";
   if (content instanceof Object) {
     const json = content as Json;
-    if (json.type === "text") return typeof json.text === "string" ? json.text : "";
+    if (json.type === "text")
+      return typeof json.text === "string" ? json.text : "";
     return "";
   }
   if (Array.isArray(content)) {
@@ -217,9 +217,7 @@ function extractTextFromContent(content: unknown): string {
 }
 
 /** Routing meta an event carries (or null) — the subagent tags persisted rows carry. */
-function routingMetaFromEvent(
-  event: SandboxEvent | BuildPacket,
-): Json | null {
+function routingMetaFromEvent(event: SandboxEvent | BuildPacket): Json | null {
   if (isBuildPacket(event) || isKeepalive(event)) return null;
   const meta = event._meta;
   if (!(meta instanceof Object)) return null;
@@ -355,8 +353,12 @@ export async function persistSandboxEvent(
       ...(sandboxEvent.rawOutput !== undefined
         ? { rawOutput: sandboxEvent.rawOutput }
         : {}),
-      ...(sandboxEvent.content !== undefined ? { content: sandboxEvent.content } : {}),
-      ...(sandboxEvent._meta !== undefined ? { _meta: sandboxEvent._meta } : {}),
+      ...(sandboxEvent.content !== undefined
+        ? { content: sandboxEvent.content }
+        : {}),
+      ...(sandboxEvent._meta !== undefined
+        ? { _meta: sandboxEvent._meta }
+        : {}),
       type: "tool_call_progress",
       timestamp: nowIso(),
     } as Json;
@@ -374,7 +376,11 @@ export async function persistSandboxEvent(
       rawInput.subagent_type !== undefined ||
       rawInput.subagentType !== undefined;
 
-    if (isTodoWrite || sandboxEvent.status === "completed" || sandboxEvent.status === "failed") {
+    if (
+      isTodoWrite ||
+      sandboxEvent.status === "completed" ||
+      sandboxEvent.status === "failed"
+    ) {
       await store.createMessage({
         sessionId,
         type: "assistant",
@@ -418,7 +424,9 @@ export async function persistSandboxEvent(
         ? { sessionUpdate: sandboxEvent.sessionUpdate }
         : {}),
       entries: sandboxEvent.entries,
-      ...(sandboxEvent._meta !== undefined ? { _meta: sandboxEvent._meta } : {}),
+      ...(sandboxEvent._meta !== undefined
+        ? { _meta: sandboxEvent._meta }
+        : {}),
       type: "agent_plan_update",
       timestamp: nowIso(),
     } as Json;

@@ -95,6 +95,14 @@ export type PaymentCatalog = {
    * only channels that exist here; the service refuses any other name before an order row exists.
    */
   providers: readonly PaymentProviderId[];
+  /**
+   * The billing cycles a purchase may actually name. v1 answers the two monthly spellings
+   * only: yearly exists in the DISPLAY catalog but Lago has no yearly plan to activate, so
+   * the server not offering it is what keeps the dialog honest (a hidden option cannot be
+   * bought by accident). The day Lago carries yearly plans, this list widens and the dialog
+   * follows — the contract, not the UI, is the gate.
+   */
+  cycles: readonly ("monthly" | "recurring_monthly")[];
 };
 
 /**
@@ -123,7 +131,8 @@ export type PaymentAnomalyCode =
   | "over_paid"
   | "duplicate_paid"
   | "late_payment"
-  | "amount_unreadable";
+  | "amount_unreadable"
+  | "activation_retry_exhausted";
 
 /**
  * One money event on one order.
@@ -169,8 +178,18 @@ export type PaymentStore = {
     planCode: string,
     provider: PaymentProviderId,
   ): Promise<PaymentOrderRecord | null>;
-  /** The newest paid order for one plan, any provider — the duplicate-payment check. */
-  readLatestPaidOrder(planCode: string): Promise<PaymentOrderRecord | null>;
+  /**
+   * The newest paid order for one plan, any provider — the duplicate-payment check.
+   *
+   * `excludeOrderId` takes the caller's own order out of the answer: the check runs after that
+   * order's own confirm (which stamped it the newest paid row), so without the exclusion the
+   * read can only ever answer the caller itself and the duplicate it is looking for is the one
+   * row it cannot see. Optional, so callers that want the plain "newest paid" keep the old call.
+   */
+  readLatestPaidOrder(
+    planCode: string,
+    excludeOrderId?: string,
+  ): Promise<PaymentOrderRecord | null>;
   /** The newest order still live (pending or paid) — what "current purchase" means. */
   readLatestLiveOrder(): Promise<PaymentOrderRecord | null>;
   /** Attach the checkout artifact after the channel session opens (order first, code second). */
@@ -257,8 +276,12 @@ export type PaymentStore = {
     to: Date | null;
   }): Promise<number>;
   /**
-   * Paid orders whose activation has not landed yet, for the sweeper's activation-retry pass —
-   * a paid order must never depend on somebody re-opening its page to become a subscription.
+   * Paid orders whose activation has not landed — `pending` OR `failed` — for the sweeper's
+   * activation-retry pass. `failed` included on purpose (P1-4): a rule-refused activation is a
+   * verdict about the last pass, not a terminal state, and a paid order must never sit
+   * unactivated because its first attempt hit a plan removed mid-flight. The NAME keeps its
+   * historical spelling: this is a seam other suites double against, and the widened semantics
+   * are documented here rather than costing every double a rename.
    */
   listPaidPendingActivationOrders(
     limit: number,

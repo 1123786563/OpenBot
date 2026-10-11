@@ -169,10 +169,22 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
   const turnReclaimSlackSeconds = 15 * 60;
   const turnRetentionSeconds = 15 * 60;
 
-  const disabledToolsRaw = stringEnv(env, "OPENBOT_CRAFT_OPENCODE_DISABLED_TOOLS", "question");
+  const disabledToolsRaw = stringEnv(
+    env,
+    "OPENBOT_CRAFT_OPENCODE_DISABLED_TOOLS",
+    "question",
+  );
 
-  const maxUploadFileSizeMb = intEnv(env, "OPENBOT_CRAFT_MAX_UPLOAD_FILE_SIZE_MB", 50);
-  const maxTotalUploadSizeMb = intEnv(env, "OPENBOT_CRAFT_MAX_TOTAL_UPLOAD_SIZE_MB", 200);
+  const maxUploadFileSizeMb = intEnv(
+    env,
+    "OPENBOT_CRAFT_MAX_UPLOAD_FILE_SIZE_MB",
+    50,
+  );
+  const maxTotalUploadSizeMb = intEnv(
+    env,
+    "OPENBOT_CRAFT_MAX_TOTAL_UPLOAD_SIZE_MB",
+    200,
+  );
 
   return {
     enabled: boolEnv(env, "OPENBOT_CRAFT_ENABLED", false),
@@ -200,8 +212,16 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       3600,
     ),
     sandboxHeartbeatRefreshIntervalSeconds: 60,
-    sandboxNextjsPortStart: intEnv(env, "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START", 3010),
-    sandboxNextjsPortEnd: intEnv(env, "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END", 3100),
+    sandboxNextjsPortStart: intEnv(
+      env,
+      "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START",
+      3010,
+    ),
+    sandboxNextjsPortEnd: intEnv(
+      env,
+      "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END",
+      3100,
+    ),
 
     sandboxApprovalWaitTimeoutSeconds,
     sandboxApprovalWaitMarginSeconds,
@@ -233,16 +253,29 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       60,
     ),
 
-    sandboxGatewayBaseUrl: stringEnv(env, "OPENBOT_CRAFT_SANDBOX_GATEWAY_URL", ""),
-    sandboxGatewayToken: stringEnv(env, "OPENBOT_CRAFT_SANDBOX_GATEWAY_TOKEN", ""),
+    sandboxGatewayBaseUrl: stringEnv(
+      env,
+      "OPENBOT_CRAFT_SANDBOX_GATEWAY_URL",
+      "",
+    ),
+    sandboxGatewayToken: stringEnv(
+      env,
+      "OPENBOT_CRAFT_SANDBOX_GATEWAY_TOKEN",
+      "",
+    ),
 
     // ── derived family: arithmetic over the roots, exactly onyx's ──
     runnerStaleAfterSeconds: 6 * sseKeepaliveIntervalSeconds, // 90s at the default
     interactiveTurnHardCapSeconds,
-    interactiveTurnSoftBudgetSeconds: Math.floor(0.4 * interactiveTurnHardCapSeconds), // 720s
-    activeTurnTtlSeconds: interactiveTurnHardCapSeconds + turnReclaimSlackSeconds, // 2700s
+    interactiveTurnSoftBudgetSeconds: Math.floor(
+      0.4 * interactiveTurnHardCapSeconds,
+    ), // 720s
+    activeTurnTtlSeconds:
+      interactiveTurnHardCapSeconds + turnReclaimSlackSeconds, // 2700s
     requestIdTtlSeconds:
-      interactiveTurnHardCapSeconds + turnReclaimSlackSeconds + turnRetentionSeconds, // 3600s
+      interactiveTurnHardCapSeconds +
+      turnReclaimSlackSeconds +
+      turnRetentionSeconds, // 3600s
     pollIntervalSeconds: 0.5,
     promptSlotFastFailAcquireSeconds: 10,
     promptSlotWaitOutOrphanSeconds: promptSlotLeaseSeconds + 10,

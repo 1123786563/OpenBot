@@ -118,11 +118,49 @@ export async function ensureCollection(
     return { collection: name, created: false };
   }
 
-  // 404 → 建 collection。
-  await client.createCollection(name, {
-    vectors: { size: dimension, distance: "Cosine" },
-    hnswConfig: { m: HNSW_M, ef_construct: HNSW_EF_CONSTRUCT },
-  });
+  // 404 → 建 collection。**竞态容错**：HTTP 与 worker 双进程同起（compose 的常态）
+  // 会同时走到这里，PUT 只能赢一个，输家收到 409「already exists」——那不是错误，
+  // 是别人刚建好，回落到校验路径验证维度/distance 后照常启动。
+  try {
+    await client.createCollection(name, {
+      vectors: { size: dimension, distance: "Cosine" },
+      hnswConfig: { m: HNSW_M, ef_construct: HNSW_EF_CONSTRUCT },
+    });
+  } catch (error) {
+    const message = (error as Error).message;
+    if (
+      error instanceof QdrantError &&
+      error.status === 409 &&
+      message.includes("already exists")
+    ) {
+      const raced = await client.getCollection(name);
+      const racedVectors = raced?.result?.config?.params?.vectors;
+      if (
+        racedVectors?.size !== dimension ||
+        racedVectors?.distance !== "Cosine"
+      ) {
+        throw new CollectionMismatchError(dimension, {
+          size: racedVectors?.size,
+          distance: racedVectors?.distance,
+        });
+      }
+      // 赢家建的维度一致：补声明索引后按「已存在」收场。
+      for (const { field, schema } of PAYLOAD_INDEXES) {
+        await ensurePayloadIndex(client, name, field, schema);
+      }
+      log.info(
+        {
+          type: "kb-qdrant-collection-ok",
+          collection: name,
+          dimension,
+          raced: true,
+        },
+        "kb-qdrant-collection-ok",
+      );
+      return { collection: name, created: false };
+    }
+    throw error;
+  }
   // 立即声明全部 payload 索引：建 collection 后、首次写入前（R-Q2）。
   for (const { field, schema } of PAYLOAD_INDEXES) {
     await ensurePayloadIndex(client, name, field, schema);

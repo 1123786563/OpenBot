@@ -394,6 +394,38 @@ export function setModelUsageMeter(
 }
 
 /**
+ * The pre-call credit gate, the meter's sibling: where the meter reports what a call COST after
+ * it finished, the gate refuses the call BEFORE the first token when the deployment's credit
+ * balance is gone. Same injection shape as the meter for the same reason — `copilot.ts` must
+ * not depend on a billing module a deployment may not have; `index.ts` wires the gate at
+ * assembly and the default (absent) lets every call through.
+ *
+ * Async on purpose (the gate reads the ledger), and a gate that THROWS is a gate that refuses
+ * (fail-closed): a person with credits whose gate errored is told to retry rather than
+ * silently given free tokens.
+ */
+let modelUsageGate: (() => Promise<void>) | undefined;
+
+export function setModelUsageGate(gate: (() => Promise<void>) | undefined) {
+  modelUsageGate = gate;
+}
+
+/**
+ * A gate refusal as the stream spells it: a sentinel-code error the runtime's error handling
+ * renders to the person. `credits_exhausted` is the one word the billing seam owns for this —
+ * the surface (402 semantics) is the caller's to grade.
+ */
+export class CreditGateError extends Error {
+  override name = "CreditGateError";
+  readonly code = "credits_exhausted";
+  constructor() {
+    super(
+      "This deployment has no credits left. Ask an administrator to grant credits or upgrade the plan.",
+    );
+  }
+}
+
+/**
  * A model instance carrying the usage meter, hand-rolled to the same shape AI SDK's own
  * `wrapLanguageModel` produces: `doStream` delegates to the wrapped model, the result's
  * ReadableStream is piped through a transform so the `finish` part's token counts reach the meter,
@@ -413,6 +445,22 @@ function meteredModel<T>(model: T): T {
   return {
     ...inner,
     async doStream(params: unknown) {
+      /*
+       * The credit gate, BEFORE the first token: this is the one point every built-in Bot's
+       * model call passes through (the same reason the meter lives here), and "before the
+       * call" is the only place a refusal saves the cost. The gate itself is index.ts's — it
+       * reads the credit ledger with a short TTL cache so a burst of calls costs one read, and
+       * refuses (throws CreditGateError) when the live balance is zero. A gate that THROWS for
+       * another reason is also refused: fail-closed — an unreadable balance is not a free pass.
+       */
+      if (modelUsageGate) {
+        try {
+          await modelUsageGate();
+        } catch (error) {
+          if (error instanceof CreditGateError) throw error;
+          throw new CreditGateError();
+        }
+      }
       const result = await inner.doStream(params);
       const report = new TransformStream<
         Record<string, unknown>,
@@ -448,7 +496,10 @@ function meteredModel<T>(model: T): T {
  * string form is resolved by the runtime itself, where this file cannot reach).
  */
 function withUsageMeter<T>(model: T): T {
-  if (usageMeter === undefined) return model;
+  // The gate rides the same wrapper as the meter: a deployment with neither wired (no billing)
+  // gets the model untouched, and a deployment with only the meter still meters — the two are
+  // independent injections on purpose.
+  if (usageMeter === undefined && modelUsageGate === undefined) return model;
   const candidate = model as
     | (Record<string, unknown> & { doStream?: unknown })
     | string;

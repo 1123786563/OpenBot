@@ -63,6 +63,23 @@ export function createBillingStatements(deps: {
 }): BillingStatements {
   const { service, quotas, orders } = deps;
 
+  /**
+   * The provider's current period, or null when the read refused — the bills' leading period
+   * source (see invoices). One shared helper so the page and the detail cannot disagree about
+   * which source they read.
+   */
+  const providerPeriodOf = async (): Promise<{
+    start: string | null;
+    end: string | null;
+  } | null> => {
+    const entitlements = await service.entitlements().catch(() => null);
+    if (!entitlements?.active || !entitlements.subscription) return null;
+    return {
+      start: entitlements.subscription.currentPeriodStart,
+      end: entitlements.subscription.currentPeriodEnd,
+    };
+  };
+
   return {
     async planUsage(externalCustomerId) {
       const [entitlements, usage] = await Promise.all([
@@ -162,8 +179,17 @@ export function createBillingStatements(deps: {
        * which is what a filter that matched nothing means.
        */
       const totalPages = Math.max(Math.ceil(totalCount / INVOICE_PAGE_SIZE), 1);
+      /*
+       * The PROVIDER's period is the bill's period when it answers one (P2-4's single truth):
+       * the local `period_*` columns snapshot pay-time (+1 month) while the plan card beside
+       * it reads Lago's `currentPeriod*`, and the two can disagree — the page showing
+       * "有效期至" and "下次更新" a day apart is exactly the disagreement. One entitlements
+       * read per page supplies the authoritative pair; the stored columns stay the fallback
+       * for when the provider refuses the courtesy read.
+       */
+      const providerPeriod = await providerPeriodOf();
       return {
-        invoices: rows.map(invoiceOf),
+        invoices: rows.map((order) => invoiceOf(order, providerPeriod)),
         pagination: {
           totalCount,
           totalPages,
@@ -178,7 +204,7 @@ export function createBillingStatements(deps: {
       if (!orders) return null;
       const order = await orders.readOrder(id);
       if (!order) return null;
-      const invoice = invoiceOf(order);
+      const invoice = invoiceOf(order, await providerPeriodOf());
       return {
         ...invoice,
         /*
@@ -198,13 +224,24 @@ export function createBillingStatements(deps: {
   };
 }
 
-/** One stored order as a bill. The order id IS the bill number — it is already unique and quotable. */
-function invoiceOf(order: PaymentOrderRecord): BillingInvoice {
+/**
+ * One stored order as a bill. The order id IS the bill number — it is already unique and quotable.
+ *
+ * `providerPeriod` (P2-4): the subscription's current period straight from the provider, when
+ * the entitlement read answered one — the bill shows THAT period, and the order's own
+ * `period_*` snapshot is the fallback. See the invoices() comment for why two sources exist
+ * and which one leads.
+ */
+function invoiceOf(
+  order: PaymentOrderRecord,
+  providerPeriod?: { start: string | null; end: string | null } | null,
+): BillingInvoice {
   return {
     invoiceId: order.id,
     planCode: order.planCode,
-    periodStart: order.periodStart?.toISOString() ?? null,
-    periodEnd: order.periodEnd?.toISOString() ?? null,
+    periodStart:
+      providerPeriod?.start ?? order.periodStart?.toISOString() ?? null,
+    periodEnd: providerPeriod?.end ?? order.periodEnd?.toISOString() ?? null,
     amountCents: order.amountCents,
     currency: order.currency,
     status: order.status,

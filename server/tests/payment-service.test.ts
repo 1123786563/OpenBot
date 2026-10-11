@@ -28,7 +28,7 @@ const tick = () => new Date(clockMs);
 function memoryStore(): PaymentStore {
   const orders = new Map<string, PaymentOrderRecord>();
   const paidFacts = new Set<string>();
-  const anomalies: Array<{ orderId: string; code: string }> = [];
+  const anomalies: Array<{ orderId: string; code: string; detail?: string }> = [];
   let serial = 0;
 
   const base: Omit<PaymentOrderRecord, "id"> = {
@@ -50,6 +50,9 @@ function memoryStore(): PaymentStore {
   };
 
   return {
+    // Exposed for the tests that assert which anomalies a settle wrote (the duplicate_paid
+    // contract above all): the double keeps the trail the real store writes to payment_events.
+    anomalies,
     async insertOrder(input) {
       serial += 1;
       const order: PaymentOrderRecord = {
@@ -183,7 +186,30 @@ function memoryStore(): PaymentStore {
       return true;
     },
     async recordAnomaly(event) {
-      anomalies.push({ orderId: event.orderId, code: event.code });
+      // The double honours the real store's dedup semantics (payment_events' partial unique
+      // index, migration 0074): one row per (order, word) EXCEPT `amount_unreadable`, whose
+      // repeats accumulate because their count ends the order. detail included so the
+      // duplicate-paid tests can assert WHICH order was doubled.
+      if (
+        event.code !== "amount_unreadable" &&
+        anomalies.some(
+          (anomaly) =>
+            anomaly.orderId === event.orderId && anomaly.code === event.code,
+        )
+      ) {
+        return;
+      }
+      anomalies.push({
+        orderId: event.orderId,
+        code: event.code,
+        detail: event.detail,
+      });
+    },
+    // The real store counts rows in payment_events; the double counts its own list.
+    async countAnomalies(orderId, code) {
+      return anomalies.filter(
+        (anomaly) => anomaly.orderId === orderId && anomaly.code === code,
+      ).length;
     },
     async recordPaidFact(event) {
       if (paidFacts.has(event.channelTransactionId)) return false;
@@ -202,9 +228,14 @@ function memoryStore(): PaymentStore {
       );
     },
     async listPaidPendingActivationOrders() {
+      // Mirrors the real store's widened semantics (P1-4): "failed" beside "pending",
+      // because the sweep retries both — a rule-refused activation is the provider's fact,
+      // and it can change. The seam keeps its historical name; the double the widened filter.
       return [...orders.values()].filter(
         (order) =>
-          order.status === "paid" && order.activationState === "pending",
+          order.status === "paid" &&
+          (order.activationState === "pending" ||
+            order.activationState === "failed"),
       );
     },
   };
@@ -268,6 +299,8 @@ function buildService(
     acceptForeignCurrency?: boolean;
     latePaymentWindowHours?: number;
     activePlanCode?: () => Promise<string | null>;
+    /** The uncached guard read (P1-5) — present in a test that pins its precedence. */
+    activePlanCodeUncached?: () => Promise<string | null>;
     invalidateEntitlementCache?: () => void;
     grantor?: {
       creditsFor: (planCode: string) => number | null;
@@ -303,6 +336,9 @@ function buildService(
     lago,
     externalCustomerKey: "openbot-deployment-t1",
     activePlanCode: overrides.activePlanCode ?? (async () => null),
+    ...(overrides.activePlanCodeUncached
+      ? { activePlanCodeUncached: overrides.activePlanCodeUncached }
+      : {}),
     invalidateEntitlementCache:
       overrides.invalidateEntitlementCache ?? (() => undefined),
     ...(overrides.grantor ? { grantor: overrides.grantor } : {}),
@@ -320,11 +356,13 @@ describe("purchase ordering", () => {
     const { service, store } = buildService();
     const first = await service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
     });
     const second = await service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
     });
@@ -361,6 +399,7 @@ describe("purchase ordering", () => {
     const { service } = buildService({ store: racing });
     const result = await service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
     });
@@ -377,11 +416,13 @@ describe("purchase ordering", () => {
     const { service } = buildService({ providers: [alipay, wechat] });
     const first = await service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "alipay",
       createdBy: "admin-1",
     });
     const second = await service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "wechat",
       createdBy: "admin-1",
     });
@@ -400,6 +441,7 @@ describe("purchase ordering", () => {
     await expect(
       service.createPurchase({
         planCode: "pro",
+        cycle: "monthly",
         provider: "alipay",
         createdBy: "admin-1",
       }),
@@ -413,6 +455,7 @@ describe("purchase ordering", () => {
     await expect(
       service.createPurchase({
         planCode: "ghost",
+        cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
       }),
@@ -425,6 +468,7 @@ describe("purchase ordering", () => {
     await expect(
       service.createPurchase({
         planCode: "pro",
+        cycle: "monthly",
         provider: "wechat",
         createdBy: "a",
       }),
@@ -458,6 +502,7 @@ describe("purchase ordering", () => {
     await expect(
       service.createPurchase({
         planCode: "pro",
+        cycle: "monthly",
         provider: "alipay",
         createdBy: "a",
       }),
@@ -470,6 +515,7 @@ describe("purchase ordering", () => {
     const second = buildService({ providers: [recoverable], store });
     const replayed = await second.service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "alipay",
       createdBy: "a",
     });
@@ -970,6 +1016,7 @@ describe("cancel", () => {
     const { service } = buildService({ providers: [alipay] });
     const { order } = await service.createPurchase({
       planCode: "pro",
+      cycle: "monthly",
       provider: "alipay",
       createdBy: "a",
     });
@@ -1122,6 +1169,156 @@ describe("activation gate", () => {
     await service.handleCallback("alipay", new Headers(), "x");
     expect((await store.readOrder(order.id))?.status).toBe("paid");
     expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+  });
+
+  test("a rule-refused (failed) activation is retried by the sweep until the rule changes (P1-4)", async () => {
+    const store = memoryStore();
+    const { order, alipay } = await pendingWithPaidDelivery(store);
+    // The refusing rule: the plan bills yearly — a verdict that used to be terminal, stranding
+    // the paid order forever. The sweep now retries it.
+    const refusing = fakeLago({
+      getPlan: async () => ({ found: true, interval: "yearly", currency: "CNY" }),
+    });
+    const { service } = buildService({ store, lago: refusing, providers: [alipay] });
+    await service.handleCallback("alipay", new Headers(), "x");
+    expect((await store.readOrder(order.id))?.activationState).toBe("failed");
+
+    // The rule changes at the provider (corrected to monthly): the SAME failed order retries
+    // on the next sweep pass and lands.
+    const fixed = fakeLago();
+    const { service: fixing } = buildService({ store, lago: fixed, providers: [alipay] });
+    await fixing.sweepActivations();
+    const settled = await store.readOrder(order.id);
+    expect(settled?.activationState).toBe("applied");
+    expect(fixed.state.subscriptions).toHaveLength(1);
+  });
+
+  test("an activation failing the same rule pass after pass raises activation_retry_exhausted once", async () => {
+    const store = memoryStore();
+    const { order, alipay } = await pendingWithPaidDelivery(store);
+    const refusing = fakeLago({
+      getPlan: async () => ({ found: false }),
+    });
+    const { service } = buildService({ store, lago: refusing, providers: [alipay] });
+    await service.handleCallback("alipay", new Headers(), "x");
+    // Three passes, each refused the same way: the alarm fires on the third, exactly once —
+    // the anomaly is one alarm, not a log.
+    await service.sweepActivations();
+    await service.sweepActivations();
+    const alarms = () =>
+      store.anomalies.filter(
+        (anomaly) =>
+          anomaly.orderId === order.id &&
+          anomaly.code === "activation_retry_exhausted",
+      );
+    expect(alarms()).toHaveLength(0);
+    await service.sweepActivations();
+    expect(alarms()).toHaveLength(1);
+    await service.sweepActivations();
+    expect(alarms()).toHaveLength(1);
+  });
+
+  test("the uncached projection read overrides the TTL cache when both are wired (P1-5)", async () => {
+    // The stale window the uncached read exists to close: the cached answer still says "no
+    // plan" while the projection already holds a live subscription. The guard must answer
+    // from the fresher source.
+    const { service } = buildService({
+      activePlanCode: async () => null, // the cached, lagging answer
+      activePlanCodeUncached: async () => "pro", // the projection's live row
+    });
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "alipay",
+        cycle: "monthly",
+        createdBy: "admin-1",
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "active-subscription", activePlanCode: "pro" },
+    });
+  });
+
+  test("a no-amount delivery on a BLOCKED order adds no further strike row (B3's closed tail)", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const unreadable = () =>
+      fakeProvider("alipay", {
+        verifyNotification: async () => ({
+          ok: true,
+          fact: {
+            outTradeNo: order.id,
+            state: "paid" as const,
+            channelTransactionId: "tx-tail",
+            // amountCents deliberately absent — the unreadable shape.
+          },
+        }),
+      });
+    const deliver = async () => {
+      const { service } = buildService({ store, providers: [unreadable()] });
+      await service.handleCallback("alipay", new Headers(), "x");
+    };
+    // Three strikes: the endgame blocks on the third, three rows accumulated.
+    await deliver();
+    await deliver();
+    await deliver();
+    expect((await store.readOrder(order.id))?.status).toBe("blocked");
+    expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(3);
+    // The fourth (and fifth) delivery on the terminal order: acknowledged, but NO new row —
+    // the blocked state already carries the story and a dead order's evidence is complete.
+    // (The qa-batch2-fourth probe pinned the OLD accumulating behaviour; this pins the fix.)
+    await deliver();
+    await deliver();
+    expect((await store.readOrder(order.id))?.status).toBe("blocked");
+    expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(3);
+  });
+
+  test("a channel that never states an amount: the third unreadable strike blocks the order (P2-3)", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const unreadable = () =>
+      fakeProvider("alipay", {
+        verifyNotification: async () => ({
+          ok: true,
+          fact: {
+            outTradeNo: order.id,
+            state: "paid" as const,
+            channelTransactionId: "tx-silent",
+            // amountCents deliberately absent — the unreadable shape.
+          },
+        }),
+      });
+    const deliver = async () => {
+      const { service } = buildService({ store, providers: [unreadable()] });
+      await service.handleCallback("alipay", new Headers(), "x");
+    };
+    // Strikes 1 and 2: the order stays pending (never grant on an unverifiable amount), and
+    // each delivery leaves one amount_unreadable row — the word accumulates by design.
+    await deliver();
+    await deliver();
+    expect((await store.readOrder(order.id))?.status).toBe("pending");
+    expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(2);
+    // Strike 3: the endgame — the order moves to blocked, the sweep stops re-asking.
+    await deliver();
+    const settled = await store.readOrder(order.id);
+    expect(settled?.status).toBe("blocked");
+    expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(3);
   });
 
   test("the activation sweep retries a paid order the poll left pending, without a page open", async () => {

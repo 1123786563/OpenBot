@@ -50,6 +50,34 @@ const withProvider = (ui: React.ReactElement) => (
 
 beforeAll(async () => {
   GlobalRegistrator.register();
+  // The dialog fetches the purchase catalog (channels + purchasable cycles) on open; happy-dom
+  // has no network, so the one endpoint it reads is served from a stub — the dialog's own
+  // rendering is the test's subject, not the fetch.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.includes("/api/billing/purchases/catalog")) {
+        return new Response(
+          JSON.stringify({
+            plans: [],
+            canPurchase: true,
+            activePlanCode: null,
+            providers: ["alipay"],
+            cycles: ["monthly", "recurring_monthly"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return realFetch(input as never);
+    },
+    { preconnect: () => undefined },
+  );
   // Written against the zh-CN bundle, matching billing-plans-usage-ui.test.tsx's convention.
   await i18n.changeLanguage("zh-CN");
 });
@@ -170,7 +198,7 @@ test("PlanCard without an upgrade callback hides the button, not the card", () =
   expect(view.getByText("体验版")).toBeTruthy();
 });
 
-test("UpgradeDialog draws every catalog tier, its cycles and its discount labels from config alone", () => {
+test("UpgradeDialog draws every catalog tier, its cycles and its discount labels from config alone", async () => {
   const view = render(
     withProvider(
       <UpgradeDialog
@@ -191,22 +219,37 @@ test("UpgradeDialog draws every catalog tier, its cycles and its discount labels
   expect(view.getByText("高级版")).toBeTruthy();
   expect(view.getByText("旗舰版")).toBeTruthy();
 
-  // The selected plan's (standard, first key) four cycles with prices and discount tags.
-  expect(view.getByText("连续包月")).toBeTruthy();
-  expect(view.getByText("1个月")).toBeTruthy();
-  expect(view.getByText("连续包年")).toBeTruthy();
-  expect(view.getByText("1年")).toBeTruthy();
-  // Discount tags: "7折" rides several cycles and tiers, so the assertion is "it is present",
-  // not "exactly once".
+  /*
+   * The cycles now come from the PURCHASE catalog the dialog fetches (the server's contract:
+   * v1 offers the monthly spellings only), so they arrive asynchronously. What renders is the
+   * display catalog's label for the codes the server offered — and, just as deliberately,
+   * NOT the yearly cycles the display catalog also carries: the server not offering a cycle
+   * is what keeps the un-collectible option off the page.
+   */
+  await waitFor(() => {
+    expect(view.getByText("连续包月")).toBeTruthy();
+  });
+  // The offered cycle's price and its unit render as separate nodes (the design's price row:
+  // "¥49" in one span, "/" and "月" as sibling text inside the unit span), so the price is
+  // matched on its own node and the unit on the container's joined text.
+  expect(view.getByText("¥49")).toBeTruthy();
+  expect(view.container.textContent).toContain("¥49");
+  expect(view.container.textContent).toContain("/月");
+  // The yearly cycle exists in the display catalog but the server did not offer it.
+  expect(view.queryByText("连续包年")).toBeNull();
+  // Discount tags ride the offered cycles.
   expect(view.getAllByText("7折").length).toBeGreaterThan(0);
-  expect(view.getByText("5.6折")).toBeTruthy();
 
   // The standard plan's credits allowance, drawn from the catalog's own number.
   expect(view.getByText("4,000")).toBeTruthy();
 
-  // The plan-compare link the design shows under the cycles, and the validity line.
-  expect(view.getByText(/查看套餐对比/)).toBeTruthy();
+  // The validity line. The plan-compare link is gone by design: it had no destination
+  // (P3-6's dead button), and an unclickable affordance is worse than none.
   expect(view.getByText(/有效期至/)).toBeTruthy();
+  expect(view.queryByText(/查看套餐对比/)).toBeNull();
+  // Settle straggler React work before cleanup unregisters happy-dom's window (an environment
+  // race, not a product behaviour — see the gate test's identical note).
+  await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
 test("UpgradeDialog gates the pay button behind the agreement, and the tick releases it", async () => {
@@ -215,16 +258,27 @@ test("UpgradeDialog gates the pay button behind the agreement, and the tick rele
       <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
     ),
   );
+  // The cycles arrive from the fetched purchase catalog; the pay button needs BOTH a cycle and
+  // the agreement, so the button starts disabled for the cycle alone and stays disabled after
+  // the tick until the fetch lands (then the tick alone gates it).
   const pay = view.getByRole("button", {
     name: "同意协议",
   }) as HTMLButtonElement;
   expect(pay.disabled).toBe(true);
 
   fireEvent.click(view.container.querySelector('input[type="checkbox"]')!);
-  await waitFor(() => expect(pay.disabled).toBe(false));
+  await waitFor(() => {
+    // The fetched catalog has landed (a cycle is selectable), so the agreement alone gates.
+    expect(view.getByText("连续包月")).toBeTruthy();
+    expect(pay.disabled).toBe(false);
+  });
+  // Let any straggler React work settle before cleanup unregisters the DOM — happy-dom's
+  // window goes away with the suite's global, and a scheduled callback landing after it is
+  // an environment race, not a product behaviour.
+  await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
-test("UpgradeDialog with an empty catalog opens with nothing to sell", () => {
+test("UpgradeDialog with an empty catalog opens with nothing to sell", async () => {
   const view = render(
     withProvider(<UpgradeDialog open onOpenChange={() => {}} catalog={{}} />),
   );
@@ -238,6 +292,9 @@ test("UpgradeDialog with an empty catalog opens with nothing to sell", () => {
   }) as HTMLButtonElement;
   fireEvent.click(view.container.querySelector('input[type="checkbox"]')!);
   expect(pay.disabled).toBe(true);
+  // The empty catalog still fires the purchase-catalog fetch; settle its state work before the
+  // suite unregisters happy-dom's window (same environment race as the two cases above).
+  await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
 test("the page's purchase entry: a catalog-backed button is enabled, an absent catalog disables it", () => {

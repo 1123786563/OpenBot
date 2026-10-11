@@ -1,9 +1,9 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createDatabase } from "../src/db/client";
-import { creditGrants } from "../src/db/schema/credits";
+import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -17,6 +17,9 @@ const writer = createCreditWriter(database);
 const prefix = `cgtest-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
+  await database.execute(
+    sql`DELETE FROM credit_ledger WHERE external_customer_id LIKE ${`${prefix}%`}`,
+  );
   await database.execute(
     sql`DELETE FROM credit_grants WHERE external_customer_id LIKE ${`${prefix}%`}`,
   );
@@ -109,4 +112,153 @@ test("a fractional or negative amount is refused before any insert", async () =>
       expiresAt: new Date("2026-12-01T00:00:00Z"),
     }),
   ).rejects.toThrow(TypeError);
+});
+
+
+/*
+ * The withdrawal half. The spec's four states, each pinned against real SQL: the split across
+ * grants, the idempotent retry, the honest shortfall, and the concurrent draws. Grants are
+ * seeded through grantCredits so each test owns exact balances on its own customer.
+ */
+describe("consumeCredits", () => {
+  async function seedGrant(
+    customer: string,
+    total: number,
+    tag: string,
+    expiresAt = new Date(Date.now() + 24 * 3600_000),
+  ) {
+    const { grant } = await writer.grantCredits({
+      externalCustomerId: customer,
+      source: "promo",
+      totalCents: total,
+      expiresAt,
+      reason: tag,
+      idempotencyKey: `${prefix}-seed-${tag}-${randomUUID().slice(0, 8)}`,
+    });
+    return grant.id;
+  }
+
+  test("a draw within one grant applies in full and reports the remainder", async () => {
+    const customer = `${prefix}-c1`;
+    await seedGrant(customer, 1_000, "one");
+    const result = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 300,
+      idempotencyKey: `${prefix}-draw-1`,
+      title: "模型调用",
+    });
+    expect(result.inserted).toBe(true);
+    expect(result.applied).toBe(300);
+    expect(result.remaining).toBe(700);
+    expect(await writer.readBalance(customer)).toBe(700);
+  });
+
+  test("a draw spanning two grants splits soonest-expiry-first", async () => {
+    const customer = `${prefix}-c2`;
+    // The LATER-expiring grant is bigger; the draw must eat the SOONER one dry first.
+    await seedGrant(customer, 400, "soon", new Date(Date.now() + 1 * 3600_000));
+    await seedGrant(customer, 2_000, "late", new Date(Date.now() + 24 * 3600_000));
+    const result = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 600,
+      idempotencyKey: `${prefix}-draw-2`,
+      title: "模型调用",
+    });
+    expect(result.applied).toBe(600);
+    expect(result.remaining).toBe(1_800);
+    const [row] = await database
+      .select({ grantId: creditLedger.grantId, credits: creditLedger.credits })
+      .from(creditLedger)
+      .where(eq(creditLedger.idempotencyKey, `${prefix}-draw-2`));
+    expect(row?.credits).toBe(600);
+    expect(row?.grantId).not.toBeNull();
+  });
+
+  test("a retried report of the same key is the first answer, never a second draw", async () => {
+    const customer = `${prefix}-c3`;
+    await seedGrant(customer, 1_000, "idem");
+    const first = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 200,
+      idempotencyKey: `${prefix}-draw-3`,
+      title: "模型调用",
+    });
+    expect(first.inserted).toBe(true);
+    const retry = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 200,
+      idempotencyKey: `${prefix}-draw-3`,
+      title: "模型调用",
+    });
+    expect(retry.inserted).toBe(false);
+    expect(retry.applied).toBe(200);
+    expect(await writer.readBalance(customer)).toBe(800);
+  });
+
+  test("a cost beyond the balance: the ledger keeps the whole truth, grants draw to zero", async () => {
+    const customer = `${prefix}-c4`;
+    await seedGrant(customer, 250, "short");
+    const result = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 1_000,
+      idempotencyKey: `${prefix}-draw-4`,
+      title: "模型调用",
+    });
+    expect(result.inserted).toBe(true);
+    expect(result.applied).toBe(250);
+    expect(result.remaining).toBe(0);
+    const [row] = await database
+      .select({ credits: creditLedger.credits, applied: creditLedger.applied })
+      .from(creditLedger)
+      .where(eq(creditLedger.idempotencyKey, `${prefix}-draw-4`));
+    expect(row).toEqual({ credits: 1_000, applied: 250 });
+  });
+
+  test("a zero-balance draw is still recorded — consumption facts stand without funding", async () => {
+    const customer = `${prefix}-c5`;
+    const result = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 500,
+      idempotencyKey: `${prefix}-draw-5`,
+      title: "模型调用",
+    });
+    expect(result.inserted).toBe(true);
+    expect(result.applied).toBe(0);
+    const [row] = await database
+      .select({ credits: creditLedger.credits, applied: creditLedger.applied })
+      .from(creditLedger)
+      .where(eq(creditLedger.idempotencyKey, `${prefix}-draw-5`));
+    expect(row).toEqual({ credits: 500, applied: 0 });
+  });
+
+  test("an expired grant funds nothing", async () => {
+    const customer = `${prefix}-c6`;
+    await seedGrant(customer, 1_000, "expired", new Date(Date.now() - 1_000));
+    const result = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 100,
+      idempotencyKey: `${prefix}-draw-6`,
+      title: "模型调用",
+    });
+    expect(result.applied).toBe(0);
+    expect(await writer.readBalance(customer)).toBe(0);
+  });
+
+  test("concurrent draws never overdraw: racing draws absorb at most the grant's total", async () => {
+    const customer = `${prefix}-c7`;
+    await seedGrant(customer, 1_000, "race");
+    const draws = await Promise.all(
+      [1, 2, 3, 4].map((n) =>
+        writer.consumeCredits({
+          externalCustomerId: customer,
+          amountCents: 400, // 4 × 400 = 1600 > 1000: the row lock must hold.
+          idempotencyKey: `${prefix}-draw-7-${n}`,
+          title: "模型调用",
+        }),
+      ),
+    );
+    const applied = draws.reduce((sum, draw) => sum + draw.applied, 0);
+    expect(applied).toBe(1_000);
+    expect(await writer.readBalance(customer)).toBe(0);
+  });
 });

@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import type { Database } from "../../db/client";
 import { paymentEvents, paymentOrders } from "../../db/schema/payment";
 import { BillingError } from "../types";
@@ -152,16 +152,27 @@ export function createPaymentStore(database: Database): PaymentStore {
       return readPendingRow(database, planCode, provider);
     },
 
-    async readLatestPaidOrder(planCode) {
+    async readLatestPaidOrder(planCode, excludeOrderId) {
+      // The conditions are built FLAT, not spread from an array inside and(): this drizzle
+      // version's `and()` takes its conditions as direct arguments, and a spread array among
+      // them silently degrades the whole predicate (the exclusion vanished exactly that way
+      // once — the caller's own confirm kept answering itself and duplicate_paid never fired).
+      const conditions = [
+        eq(paymentOrders.planCode, planCode),
+        eq(paymentOrders.status, "paid"),
+      ];
+      // The duplicate check runs AFTER the caller's own confirm, and that confirm stamps
+      // the caller's terminalAt with now() — without the exclusion the newest paid row is
+      // always the caller itself, and the anomaly can never fire (the sequential
+      // cross-provider double payment, where exactly this happened, is pinned by
+      // qa-batch1-duplicate-paid.integration.test.ts).
+      if (excludeOrderId !== undefined) {
+        conditions.push(ne(paymentOrders.id, excludeOrderId));
+      }
       const [row] = await database
         .select()
         .from(paymentOrders)
-        .where(
-          and(
-            eq(paymentOrders.planCode, planCode),
-            eq(paymentOrders.status, "paid"),
-          ),
-        )
+        .where(and(...conditions))
         .orderBy(sql`${paymentOrders.terminalAt} DESC NULLS LAST`)
         .limit(1);
       return row ? rowOf(row) : null;
@@ -401,7 +412,10 @@ export function createPaymentStore(database: Database): PaymentStore {
         .where(
           and(
             eq(paymentOrders.status, "paid"),
-            eq(paymentOrders.activationState, "pending"),
+            // `failed` beside `pending`: the sweep retries both (P1-4 — a rule-refused
+            // activation is the provider's fact, and it can change). See the seam's docblock
+            // for why the name keeps its historical spelling.
+            inArray(paymentOrders.activationState, ["pending", "failed"]),
           ),
         )
         .orderBy(asc(paymentOrders.createdAt))
@@ -410,15 +424,17 @@ export function createPaymentStore(database: Database): PaymentStore {
     },
 
     async listOrdersInWindow({ from, to, limit, offset }) {
+      // Flat condition construction (see readLatestPaidOrder's note): this drizzle version's
+      // `and()` takes conditions as direct arguments, and a spread array among them silently
+      // degrades the whole predicate — an optional-end window must degrade to "no bound", not
+      // to a broken filter.
+      const conditions = [];
+      if (from) conditions.push(gte(paymentOrders.createdAt, from));
+      if (to) conditions.push(lte(paymentOrders.createdAt, to));
       const rows = await database
         .select()
         .from(paymentOrders)
-        .where(
-          and(
-            ...(from ? [gte(paymentOrders.createdAt, from)] : []),
-            ...(to ? [lte(paymentOrders.createdAt, to)] : []),
-          ),
-        )
+        .where(and(...conditions))
         .orderBy(sql`${paymentOrders.createdAt} DESC`)
         .limit(limit)
         .offset(offset);
@@ -426,15 +442,15 @@ export function createPaymentStore(database: Database): PaymentStore {
     },
 
     async countOrdersInWindow({ from, to }) {
+      // Same flat construction as listOrdersInWindow above; the two must filter identically
+      // or the pager and the page disagree.
+      const conditions = [];
+      if (from) conditions.push(gte(paymentOrders.createdAt, from));
+      if (to) conditions.push(lte(paymentOrders.createdAt, to));
       const [row] = await database
         .select({ value: count() })
         .from(paymentOrders)
-        .where(
-          and(
-            ...(from ? [gte(paymentOrders.createdAt, from)] : []),
-            ...(to ? [lte(paymentOrders.createdAt, to)] : []),
-          ),
-        );
+        .where(and(...conditions));
       return row?.value ?? 0;
     },
   };
