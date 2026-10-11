@@ -153,7 +153,12 @@ export class QdrantClient {
         },
       );
       req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error(`timeout after ${timeoutMs}ms`));
+        // 超时必须以 AbortError 之名 destroy：request() 的 catch 按 error.name
+        // 分类——AbortError→504（超时），其余→503（不可达）。用普通 Error 会让
+        // 超时与连接拒绝混进同一分支，调用方就失去了「重试有意义/无意义」的判据。
+        const timeout = new Error(`timeout after ${timeoutMs}ms`);
+        timeout.name = "AbortError";
+        req.destroy(timeout);
       });
       req.on("error", reject);
       if (payload !== undefined) req.write(payload);
