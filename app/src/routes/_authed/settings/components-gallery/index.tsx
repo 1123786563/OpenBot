@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ComponentPreview } from "@/components/component-preview";
 import { PageShell } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { SettingsItemBackground } from "@/components/settings/background";
 import {
   Empty,
@@ -34,7 +35,9 @@ function RouteComponent() {
       description={t("gallery.description")}
       title={t("gallery.title")}
     >
-      {components.isPending ? null : components.error ? (
+      {components.isPending ? (
+        <PageRowsSkeleton />
+      ) : components.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
           {t("gallery.loadError")}
         </p>

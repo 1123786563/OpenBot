@@ -28,6 +28,8 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
 import {
   connectionsQueryOptions,
@@ -36,8 +38,6 @@ import {
   personalConnections,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
-import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
-import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
  * Whether this server is reached through a BROKER as this person.

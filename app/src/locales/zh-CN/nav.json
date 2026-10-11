@@ -35,5 +35,6 @@
   "retryOlder": "重试加载更早的对话",
   "loadOlder": "加载更早的对话",
   "hideSidebar": "隐藏侧边栏",
-  "showSidebar": "显示侧边栏"
+  "showSidebar": "显示侧边栏",
+  "unreadBadge": "有未读消息"
 }

@@ -1,5 +1,5 @@
-import { Component, type ReactNode } from "react";
 import i18next from "i18next";
+import { Component, type ReactNode } from "react";
 
 /**
  * A component that throws must not take the conversation with it.

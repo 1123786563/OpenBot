@@ -1,0 +1,6 @@
+{
+  "_comment": "示例 fixtures：真实项目中账号由 CI Secrets 注入环境变量，模板文件不含真实密码",
+  "p0Login": { "email": "e2e.p0.login@test.com", "password": "${E2E_P0_PASSWORD}" },
+  "orderUser": { "email": "e2e.order@test.com", "password": "${E2E_ORDER_PASSWORD}" },
+  "dirtyUser": { "email": "e2e.dirty@test.com", "password": "${E2E_DIRTY_PASSWORD}" }
+}

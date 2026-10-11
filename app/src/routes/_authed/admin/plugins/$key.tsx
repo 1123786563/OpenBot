@@ -5,9 +5,9 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
 import * as React from "react";
 import { useState } from "react";
-import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,

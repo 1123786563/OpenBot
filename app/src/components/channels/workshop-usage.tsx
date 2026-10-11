@@ -9,7 +9,11 @@ import type { WorkshopSnapshot, WorkshopTurn } from "@/lib/workshop/client";
  * that streamed and was never billed, not a zero to silently average over — and the empty
  * state is a sentence, never a NaN or a blank.
  */
-export function WorkshopUsageView({ snapshot }: { snapshot: WorkshopSnapshot }) {
+export function WorkshopUsageView({
+  snapshot,
+}: {
+  snapshot: WorkshopSnapshot;
+}) {
   const { t } = useTranslation("workshop");
   const turns = snapshot.turns;
   const totals = snapshot.usage.total;
@@ -22,9 +26,7 @@ export function WorkshopUsageView({ snapshot }: { snapshot: WorkshopSnapshot }) 
   ).length;
 
   const empty =
-    turns.length === 0 &&
-    totals.inputTokens === 0 &&
-    totals.outputTokens === 0;
+    turns.length === 0 && totals.inputTokens === 0 && totals.outputTokens === 0;
 
   if (empty) {
     return (
@@ -44,15 +46,9 @@ export function WorkshopUsageView({ snapshot }: { snapshot: WorkshopSnapshot }) 
           value={formatTokens(totals.outputTokens)}
         />
         <Stat label={t("usage.turns")} value={String(turns.length)} />
-        <Stat
-          label={t("usage.succeeded")}
-          value={String(finished)}
-        />
+        <Stat label={t("usage.succeeded")} value={String(finished)} />
         <Stat label={t("usage.failed")} value={String(failed)} />
-        <Stat
-          label={t("usage.cost")}
-          value={formatCost(totals.cost)}
-        />
+        <Stat label={t("usage.cost")} value={formatCost(totals.cost)} />
       </dl>
       <p className="text-xs text-muted-foreground">{t("usage.note")}</p>
     </div>
@@ -70,7 +66,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 /** Thousands separators; "0" for zero, never NaN from a null that slipped through. */
 function formatTokens(tokens: number | undefined | null): string {
-  const value = typeof tokens === "number" && Number.isFinite(tokens) ? tokens : 0;
+  const value =
+    typeof tokens === "number" && Number.isFinite(tokens) ? tokens : 0;
   return value.toLocaleString();
 }
 

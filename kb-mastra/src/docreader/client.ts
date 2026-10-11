@@ -13,7 +13,7 @@
 
 import * as grpc from "@grpc/grpc-js";
 import { load, type PackageDefinition } from "@grpc/proto-loader";
-import { getLogger } from "../../shared/logger";
+import { getLogger } from "../../../shared/logger";
 import type { DocReaderClient } from "../infrastructure/docparser/registry";
 
 const log = getLogger("kb-mastra");
@@ -28,8 +28,7 @@ const LOADER_OPTIONS = {
 } as const;
 
 /** proto 文件路径（kb-mastra/proto/docreader.proto，随包分发）。 */
-const PROTO_PATH = new URL("../../proto/docreader.proto", import.meta.url)
-  .pathname;
+const PROTO_PATH = `${import.meta.dir}/../../proto/docreader.proto`;
 
 /** DocReader.Read 的请求/响应（camelCase 投影）。 */
 type RawReadRequest = {

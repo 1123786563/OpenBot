@@ -57,7 +57,8 @@
     "colUpdated": "Updated",
     "colActions": "Actions",
     "chunks": "{{count}} chunks",
-    "taskProgress": "{{progress}}% · {{done}}/{{total}} chunks"
+    "taskProgress": "{{progress}}% · {{done}}/{{total}} chunks",
+    "tableAria": "Documents"
   },
   "filter": {
     "keyword": "Keyword",

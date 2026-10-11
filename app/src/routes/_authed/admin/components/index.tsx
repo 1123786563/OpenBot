@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AdminComponentPreview } from "@/components/component-preview";
 import { PageShell } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { SettingsItemBackground } from "@/components/settings/background";
 import {
   Empty,
@@ -36,7 +37,9 @@ function RouteComponent() {
        * placeholder, and it has to come first: the empty sentence would otherwise stand there
        * asserting there are no components for as long as the fetch takes.
        */}
-      {components.isPending ? null : components.error ? (
+      {components.isPending ? (
+        <PageRowsSkeleton />
+      ) : components.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
           {t("components.loadError")}
         </p>

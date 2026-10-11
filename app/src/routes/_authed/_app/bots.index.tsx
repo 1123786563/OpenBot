@@ -9,6 +9,7 @@ import {
   needsInput,
 } from "@/components/bot-profile/attention";
 import { PageEmpty, PageRows, PageShell } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import {
   Item,
   ItemActions,
@@ -33,7 +34,9 @@ function BotsPage() {
   const byId = new Map((attention.data ?? []).map((bot) => [bot.agentId, bot]));
   return (
     <PageShell description={t("bots.description")} title={t("bots.title")}>
-      {agents.isPending ? null : agents.error ? (
+      {agents.isPending ? (
+        <PageRowsSkeleton />
+      ) : agents.error ? (
         <p className="mt-6 text-destructive text-sm" role="alert">
           {t("bots.loadError")}
         </p>
@@ -70,7 +73,7 @@ function BotsPage() {
                   </ItemContent>
                   <ItemActions>
                     {state && needsInput(state) > 0 ? (
-                      <span className="rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums">
+                      <span className="rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums">
                         {needsInput(state)}
                       </span>
                     ) : null}

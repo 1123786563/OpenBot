@@ -4,20 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   MessageContent,
   MessageHeader,
   Message as MessageRow,
 } from "@/components/ui/message";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   addGroupMemberMutationOptions,
-  type GroupPerson,
-  removeGroupMemberMutationOptions,
   type GroupMessage,
+  type GroupPerson,
   groupQueryOptions,
+  removeGroupMemberMutationOptions,
   sendGroupMessageMutationOptions,
 } from "@/lib/groups";
 import { markdownComponents } from "@/lib/markdown";

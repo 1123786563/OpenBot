@@ -1,19 +1,19 @@
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconCalendarPlus,
   IconPlayerPause,
   IconPlayerPlay,
   IconTrash,
 } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   createWorkshopSchedule,
   deleteWorkshopSchedule,
   listWorkshopSchedules,
-  toggleWorkshopSchedule,
   type ScheduleMode,
+  toggleWorkshopSchedule,
   type WorkshopSchedule,
 } from "@/lib/workshop/client";
 
@@ -73,7 +73,9 @@ export function WorkshopSchedulesView({ channelId }: { channelId: string }) {
       </section>
 
       <section aria-label={t("schedules.history.aria")}>
-        <h3 className="text-sm font-medium">{t("schedules.history.heading")}</h3>
+        <h3 className="text-sm font-medium">
+          {t("schedules.history.heading")}
+        </h3>
         {schedules.data && schedules.data.runs.length > 0 ? (
           <ol className="mt-2 space-y-1.5">
             {schedules.data.runs.map((run) => (
@@ -127,7 +129,12 @@ function ScheduleRow({
 }) {
   const { t } = useTranslation("workshop");
   const toggle = useMutation({
-    mutationFn: () => toggleWorkshopSchedule(channelId, schedule.id, schedule.status !== "enabled"),
+    mutationFn: () =>
+      toggleWorkshopSchedule(
+        channelId,
+        schedule.id,
+        schedule.status !== "enabled",
+      ),
     onSuccess: onChanged,
   });
   const remove = useMutation({
@@ -141,11 +148,11 @@ function ScheduleRow({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{schedule.prompt}</p>
-          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
             {schedule.rrule}
             {schedule.timezone ? ` · ${schedule.timezone}` : ""}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {enabled && schedule.nextRunAt
               ? t("schedules.row.nextRun", {
                   time: new Date(schedule.nextRunAt).toLocaleString(),
@@ -153,7 +160,7 @@ function ScheduleRow({
               : t("schedules.row.paused")}
           </p>
           {schedule.preapproved && schedule.preapproved.tools.length > 0 ? (
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {t("schedules.row.preapproved", {
                 tools: schedule.preapproved.tools.join(", "),
                 max: schedule.preapproved.maxTurnsPerRun,
@@ -165,7 +172,9 @@ function ScheduleRow({
           <Button
             size="sm"
             variant="ghost"
-            aria-label={enabled ? t("schedules.row.pause") : t("schedules.row.resume")}
+            aria-label={
+              enabled ? t("schedules.row.pause") : t("schedules.row.resume")
+            }
             onClick={() => toggle.mutate()}
             disabled={toggle.isPending}
           >
@@ -199,7 +208,9 @@ function CreateScheduleForm({
 }) {
   const { t } = useTranslation("workshop");
   const [prompt, setPrompt] = useState("");
-  const [modeKind, setModeKind] = useState<"interval" | "daily" | "advanced">("interval");
+  const [modeKind, setModeKind] = useState<"interval" | "daily" | "advanced">(
+    "interval",
+  );
   const [every, setEvery] = useState(30);
   const [unit, setUnit] = useState<"minutes" | "hours" | "days">("minutes");
   const [time, setTime] = useState("09:00");
@@ -220,7 +231,12 @@ function CreateScheduleForm({
         mode,
         preapproval: {
           ...(tools.trim()
-            ? { tools: tools.split(",").map((entry) => entry.trim()).filter(Boolean) }
+            ? {
+                tools: tools
+                  .split(",")
+                  .map((entry) => entry.trim())
+                  .filter(Boolean),
+              }
             : {}),
           maxTurnsPerRun: maxTurns,
         },
@@ -234,7 +250,10 @@ function CreateScheduleForm({
   });
 
   return (
-    <section className="rounded-md border border-border p-3" aria-label={t("schedules.form.aria")}>
+    <section
+      className="rounded-md border border-border p-3"
+      aria-label={t("schedules.form.aria")}
+    >
       <h3 className="text-sm font-medium">{t("schedules.form.heading")}</h3>
       <textarea
         className="mt-2 min-h-16 w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
@@ -307,7 +326,10 @@ function CreateScheduleForm({
           value={tools}
           onChange={(event) => setTools(event.target.value)}
         />
-        <label className="ml-1 text-xs text-muted-foreground" htmlFor="sched-max">
+        <label
+          className="ml-1 text-xs text-muted-foreground"
+          htmlFor="sched-max"
+        >
           {t("schedules.form.maxTurns")}
         </label>
         <input
@@ -320,7 +342,7 @@ function CreateScheduleForm({
           onChange={(event) => setMaxTurns(Number(event.target.value))}
         />
       </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
+      <p className="mt-1 text-xs text-muted-foreground">
         {t("schedules.form.clampHint")}
       </p>
 
@@ -328,7 +350,11 @@ function CreateScheduleForm({
         size="sm"
         className="mt-2"
         onClick={() => create.mutate()}
-        disabled={create.isPending || !prompt.trim() || (modeKind === "advanced" && !cron.trim())}
+        disabled={
+          create.isPending ||
+          !prompt.trim() ||
+          (modeKind === "advanced" && !cron.trim())
+        }
       >
         <IconCalendarPlus className="size-3.5" />
         {t("schedules.form.submit")}

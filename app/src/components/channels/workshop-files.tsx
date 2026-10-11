@@ -1,9 +1,17 @@
+import {
+  IconFile,
+  IconFolder,
+  IconRefresh,
+  IconUpload,
+} from "@tabler/icons-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconFile, IconFolder, IconRefresh, IconUpload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { uploadWorkshopFiles, type WorkshopFileNode } from "@/lib/workshop/client";
+import {
+  uploadWorkshopFiles,
+  type WorkshopFileNode,
+} from "@/lib/workshop/client";
 import { workshopFilesQueryOptions } from "@/lib/workshop/queries";
 
 /**
@@ -20,9 +28,10 @@ export function WorkshopFilesView({ channelId }: { channelId: string }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
-  const [notice, setNotice] = useState<
-    { kind: "ok" | "refused"; text: string } | null
-  >(null);
+  const [notice, setNotice] = useState<{
+    kind: "ok" | "refused";
+    text: string;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const root = useQuery(workshopFilesQueryOptions(channelId, ""));
 
@@ -59,7 +68,10 @@ export function WorkshopFilesView({ channelId }: { channelId: string }) {
     setUploading(true);
     try {
       const result = await uploadWorkshopFiles(channelId, files);
-      setNotice({ kind: "ok", text: t("files.uploadDone", { count: result.uploaded }) });
+      setNotice({
+        kind: "ok",
+        text: t("files.uploadDone", { count: result.uploaded }),
+      });
       await refresh();
     } catch (error) {
       // The server's refusal text verbatim: a 413 with a reason is a sentence to show.
@@ -175,9 +187,7 @@ function TreeNode({
   const isDirectory = node.type === "directory";
   const open = expanded.has(node.path);
   // Lazy: a directory's children are fetched when it opens, cached under its own key.
-  const children = useQuery(
-    workshopFilesQueryOptions(channelId, node.path),
-  );
+  const children = useQuery(workshopFilesQueryOptions(channelId, node.path));
 
   return (
     <div>

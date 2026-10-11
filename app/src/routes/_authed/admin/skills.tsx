@@ -10,6 +10,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -110,7 +111,9 @@ function RouteComponent() {
         title={t("skills.installed.title")}
       >
         {/* A read that failed says so; `isPending` goes false on it too, and it is not "none". */}
-        {plugins.isPending ? null : !plugins.data ? (
+        {plugins.isPending ? (
+          <PageRowsSkeleton />
+        ) : !plugins.data ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("skills.installed.loadError")}
           </p>

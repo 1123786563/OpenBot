@@ -1,4 +1,3 @@
-import { useTranslation } from "react-i18next";
 import {
   IconChartHistogram,
   IconCode,
@@ -8,6 +7,7 @@ import {
   IconFileText,
   IconWorld,
 } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import type {
   WorkshopArtifact,
@@ -85,13 +85,19 @@ function ArtifactCard({
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{artifact.name}</p>
             <p className="text-xs text-muted-foreground">
-              {t(typeLabelKey(artifact.type))} · {formatBytes(artifact.sizeBytes)}
+              {t(typeLabelKey(artifact.type))} ·{" "}
+              {formatBytes(artifact.sizeBytes)}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 gap-1">
           {artifact.type === "webapp" ? (
-            <Button size="sm" variant="outline" disabled title={t("artifacts.webappPending")}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled
+              title={t("artifacts.webappPending")}
+            >
               {t("artifacts.preview")}
             </Button>
           ) : null}

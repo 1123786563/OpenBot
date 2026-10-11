@@ -1,7 +1,7 @@
 import { IconBolt, IconRefresh } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import {
   WbAddButton,
   WbCard,
@@ -46,7 +46,13 @@ function SkillCard({
   action,
   footer,
 }: {
-  skill: { slug: string; title: string; summary: string; icon?: string | null; category?: string | null };
+  skill: {
+    slug: string;
+    title: string;
+    summary: string;
+    icon?: string | null;
+    category?: string | null;
+  };
   onOpen: () => void;
   action?: React.ReactNode;
   footer?: React.ReactNode;
@@ -82,7 +88,9 @@ function SkillCard({
         {skill.category ? <WbTag>{skill.category}</WbTag> : null}
       </div>
       {footer ? (
-        <div className="mt-auto flex items-center gap-1.5 text-sm text-foreground/50">{footer}</div>
+        <div className="mt-auto flex items-center gap-1.5 text-sm text-foreground/50">
+          {footer}
+        </div>
       ) : null}
     </WbCard>
   );
@@ -146,7 +154,11 @@ export function SkillDialogWb({
                 <Button
                   onClick={(event) => event.stopPropagation()}
                   render={(props) => (
-                    <Link {...props} search={{ edit: skill.slug }} to="/skills" />
+                    <Link
+                      {...props}
+                      search={{ edit: skill.slug }}
+                      to="/skills"
+                    />
                   )}
                   size="sm"
                   variant="outline"
@@ -156,13 +168,17 @@ export function SkillDialogWb({
                 </Button>
               ) : null}
               <WbTag>
-                <code className="font-mono text-foreground/60">/{skill.slug}</code>
+                <code className="font-mono text-foreground/60">
+                  /{skill.slug}
+                </code>
               </WbTag>
             </div>
           </div>
         </div>
         {skill.summary ? (
-          <p className="mt-4 text-sm leading-relaxed text-foreground/80">{skill.summary}</p>
+          <p className="mt-4 text-sm leading-relaxed text-foreground/80">
+            {skill.summary}
+          </p>
         ) : null}
         {category ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -188,7 +204,9 @@ export function SkillDialogWb({
                 </p>
                 <div className="mt-3">
                   <WbQuoteRow>
-                    <span className="line-clamp-6 whitespace-pre-wrap">{skill.instructions}</span>
+                    <span className="line-clamp-6 whitespace-pre-wrap">
+                      {skill.instructions}
+                    </span>
                   </WbQuoteRow>
                 </div>
               </>
@@ -268,8 +286,16 @@ export function SkillsPane({
         }}
         tabs={[
           { key: "market", label: t("wb.segment.market") },
-          { key: "mine", label: t("wb.segment.mineSkills"), count: mineSkills.length },
-          { key: "deployment", label: t("wb.segment.deployment"), count: deploymentSkills.length },
+          {
+            key: "mine",
+            label: t("wb.segment.mineSkills"),
+            count: mineSkills.length,
+          },
+          {
+            key: "deployment",
+            label: t("wb.segment.deployment"),
+            count: deploymentSkills.length,
+          },
         ]}
         value={shelf}
       />
@@ -283,7 +309,9 @@ export function SkillsPane({
                   <button
                     className="flex items-center gap-1 text-sm text-foreground/50 transition-colors hover:text-foreground"
                     onClick={() =>
-                      setOffset((held) => (held + featuredCount) % marketSkills.length)
+                      setOffset(
+                        (held) => (held + featuredCount) % marketSkills.length,
+                      )
                     }
                     type="button"
                   >
@@ -318,7 +346,8 @@ export function SkillsPane({
               category === "all"
                 ? marketSkills
                 : marketSkills.filter((skill) => skill.category === category);
-            if (filtered.length === 0) return <WbEmpty glyph="🧩" title={t("empty.skills")} />;
+            if (filtered.length === 0)
+              return <WbEmpty glyph="🧩" title={t("empty.skills")} />;
             return (
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {filtered.map((skill) => (
@@ -344,7 +373,9 @@ export function SkillsPane({
             title={t("wb.empty.skillsMine")}
             action={
               <Button
-                render={(props) => <Link {...props} search={{ new: true }} to="/skills" />}
+                render={(props) => (
+                  <Link {...props} search={{ new: true }} to="/skills" />
+                )}
                 size="sm"
               >
                 {t("wb.addSkill")}
@@ -359,7 +390,11 @@ export function SkillsPane({
                   <Button
                     onClick={(event) => event.stopPropagation()}
                     render={(props) => (
-                      <Link {...props} search={{ edit: skill.slug }} to="/skills" />
+                      <Link
+                        {...props}
+                        search={{ edit: skill.slug }}
+                        to="/skills"
+                      />
                     )}
                     size="xs"
                     variant="ghost"

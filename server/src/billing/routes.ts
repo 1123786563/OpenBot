@@ -327,8 +327,8 @@ export function createBillingAdminRoutes(deps: {
       expiresAt,
       reason: input.reason ?? null,
       // Keyless on purpose: two presses of the promo button mean two grants (a campaign paid
-      // out twice is a decision, not a retry), which is why the writer's unique index is
-      // partial over NULL keys.
+      // out twice is a decision, not a retry). The writer derives a random `auto:` key so the
+      // column stays NOT NULL while each press stays its own grant.
       idempotencyKey: null,
     });
     if (deps.audit) {

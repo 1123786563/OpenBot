@@ -59,7 +59,7 @@ function SceneCard({
   index: number;
 }) {
   return (
-    <div className="w-[340px] shrink-0 overflow-hidden rounded-2xl border border-border bg-card shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
+    <div className="w-[340px] shrink-0 overflow-hidden rounded-2xl border border-border bg-card shadow-card">
       <div
         className={cn(
           "relative flex h-24 items-end bg-gradient-to-r p-4",
@@ -118,7 +118,9 @@ function ExpertCardBody({
       </div>
       <div className="flex flex-wrap gap-1.5">{tags}</div>
       {footer ? (
-        <div className="mt-auto flex items-center gap-1.5 text-sm text-foreground/50">{footer}</div>
+        <div className="mt-auto flex items-center gap-1.5 text-sm text-foreground/50">
+          {footer}
+        </div>
       ) : null}
     </>
   );
@@ -151,15 +153,21 @@ export function AgentCardWb({
     >
       <ExpertCardBody
         desc={agent.roleDescription || agent.title}
-        footer={agent.title ? <span className="truncate">{agent.title}</span> : null}
-        icon={<AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={48} />}
+        footer={
+          agent.title ? <span className="truncate">{agent.title}</span> : null
+        }
+        icon={
+          <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={48} />
+        }
         name={agent.name}
         tags={
           <>
             {agent.systemOwned ? <WbTag>{t("wb.badge.system")}</WbTag> : null}
             {agent.assignedToMe ? <WbTag>{t("wb.badge.team")}</WbTag> : null}
             <WbTag>
-              {agent.visibility === "public" ? t("wb.stats.public") : t("wb.stats.private")}
+              {agent.visibility === "public"
+                ? t("wb.stats.public")
+                : t("wb.stats.private")}
             </WbTag>
           </>
         }
@@ -179,7 +187,12 @@ function TemplateCard({
   pending: boolean;
   onInstall: () => void;
   onOpen: (expert: MarketExpert) => void;
-  label: { install: string; pending: string; installed: string; skills: (n: number) => string };
+  label: {
+    install: string;
+    pending: string;
+    installed: string;
+    skills: (n: number) => string;
+  };
 }) {
   return (
     <WbCard
@@ -277,7 +290,9 @@ export function AgentDialogWb({
                 {agent.name}
               </span>
               {agent.title ? (
-                <span className="truncate text-base text-foreground/40">{agent.title}</span>
+                <span className="truncate text-base text-foreground/40">
+                  {agent.title}
+                </span>
               ) : null}
             </div>
             <div className="mt-2.5">
@@ -301,7 +316,9 @@ export function AgentDialogWb({
         ) : null}
         <div className="mt-3 flex flex-wrap gap-1.5">
           <WbTag>
-            {agent.visibility === "public" ? t("wb.stats.public") : t("wb.stats.private")}
+            {agent.visibility === "public"
+              ? t("wb.stats.public")
+              : t("wb.stats.private")}
           </WbTag>
           {agent.systemOwned ? <WbTag>{t("wb.badge.system")}</WbTag> : null}
           {agent.assignedToMe ? <WbTag>{t("wb.badge.team")}</WbTag> : null}
@@ -311,11 +328,16 @@ export function AgentDialogWb({
           <WbStatsRow
             stats={[
               {
-                value: agent.visibility === "public" ? t("wb.stats.public") : t("wb.stats.private"),
+                value:
+                  agent.visibility === "public"
+                    ? t("wb.stats.public")
+                    : t("wb.stats.private"),
                 label: t("wb.stats.visibility"),
               },
               {
-                value: agent.builtIn ? t("wb.stats.builtin") : t("wb.stats.selfHosted"),
+                value: agent.builtIn
+                  ? t("wb.stats.builtin")
+                  : t("wb.stats.selfHosted"),
                 label: t("wb.stats.runsOn"),
               },
               { value: kind, label: t("wb.stats.kind") },
@@ -370,7 +392,9 @@ export function TemplateDialogWb({
               <span className="truncate text-xl leading-7 font-semibold text-foreground">
                 {expert.name}
               </span>
-              <span className="text-base text-foreground/40">{t("wb.sourceMarket")}</span>
+              <span className="text-base text-foreground/40">
+                {t("wb.sourceMarket")}
+              </span>
             </div>
             <div className="mt-2.5 flex items-center gap-2">
               {canChat ? (
@@ -394,18 +418,29 @@ export function TemplateDialogWb({
                   disabled={pending}
                   onClick={() => onInstall(expert)}
                 >
-                  {pending ? label.installing : expert.installed ? label.installed : label.install}
+                  {pending
+                    ? label.installing
+                    : expert.installed
+                      ? label.installed
+                      : label.install}
                 </WbPrimaryButton>
               )}
               {expert.installed && !canChat ? (
-                <Button disabled={pending} onClick={() => onInstall(expert)} size="sm" variant="ghost">
+                <Button
+                  disabled={pending}
+                  onClick={() => onInstall(expert)}
+                  size="sm"
+                  variant="ghost"
+                >
                   {label.uninstall}
                 </Button>
               ) : null}
             </div>
           </div>
         </div>
-        <p className="mt-4 text-sm leading-relaxed text-foreground/80">{expert.description}</p>
+        <p className="mt-4 text-sm leading-relaxed text-foreground/80">
+          {expert.description}
+        </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {expert.tags.map((tag) => (
             <WbTag key={tag}>{tag}</WbTag>
@@ -418,7 +453,9 @@ export function TemplateDialogWb({
               { value: expert.category, label: t("wb.stats.category") },
               { value: expert.skills.length, label: t("wb.stats.skillsCount") },
               {
-                value: expert.installed ? t("installed") : t("wb.stats.notInstalled"),
+                value: expert.installed
+                  ? t("installed")
+                  : t("wb.stats.notInstalled"),
                 label: t("wb.stats.status"),
               },
             ]}
@@ -484,7 +521,9 @@ export function ExpertsPane({
     .slice(0, 6);
 
   const filtered =
-    category === "all" ? experts : experts.filter((expert) => expert.category === category);
+    category === "all"
+      ? experts
+      : experts.filter((expert) => expert.category === category);
 
   return (
     <div className="space-y-8">
@@ -553,7 +592,9 @@ export function ExpertsPane({
                   skills: (n) => t("wb.skillsCountN", { count: n }),
                 }}
                 onInstall={() =>
-                  expert.installed ? onUninstall(expert.slug) : onInstall(expert.slug)
+                  expert.installed
+                    ? onUninstall(expert.slug)
+                    : onInstall(expert.slug)
                 }
                 onOpen={onOpenTemplate}
                 pending={pendingInstall}

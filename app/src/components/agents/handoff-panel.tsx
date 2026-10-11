@@ -69,7 +69,7 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
   return (
     <section className="grid gap-2">
       <header className="flex items-baseline justify-between gap-2">
-        <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+        <h2 className="font-medium text-muted-foreground text-xs">
           {t("handoff.title")}
         </h2>
         {/* The current answer at a glance, so the list below is detail rather than homework. */}

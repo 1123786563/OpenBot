@@ -9,8 +9,8 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ZodType } from "zod";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { CallbackTokenPanel } from "@/components/agents/callback-token-panel";
@@ -691,7 +691,7 @@ function ConnectionSection({
   return (
     <>
       <section className="grid gap-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-xs font-medium text-muted-foreground">
           {t("connection.endpoint")}
         </h2>
         <p className="break-all font-mono text-sm">{profile.endpoint}</p>

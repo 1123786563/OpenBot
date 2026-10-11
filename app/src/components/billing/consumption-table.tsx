@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { BillingPager } from "@/components/billing/pager";
 import { Button } from "@/components/ui/button";
-import { credits } from "@/lib/billing/format";
 import type { CreditConsumptionEntry } from "@/lib/billing/credits";
+import { credits } from "@/lib/billing/format";
 import { cn } from "@/lib/utils";
 
 /** The three quick windows the consumption table offers, mapping to from/to in the page. */
@@ -61,12 +61,21 @@ export function ConsumptionTable({
       </div>
 
       {/* Five columns, the request one widest; a phone gives up the model and client first. */}
-      <div className="mt-3 overflow-x-auto rounded-lg border border-border bg-card">
+      <section
+        aria-label={t("creditsPage.consumptionTable")}
+        className="mt-3 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name.
+        tabIndex={0}
+      >
         <table className="w-full text-left text-sm">
-          <thead className="text-muted-foreground text-xs uppercase">
+          <thead className="text-muted-foreground text-xs">
             <tr className="border-border border-b">
-              <th className="px-4 py-2 font-medium">{t("creditsPage.columnTime")}</th>
-              <th className="px-4 py-2 font-medium">{t("creditsPage.columnRequest")}</th>
+              <th className="px-4 py-2 font-medium">
+                {t("creditsPage.columnTime")}
+              </th>
+              <th className="px-4 py-2 font-medium">
+                {t("creditsPage.columnRequest")}
+              </th>
               <th className="px-4 py-2 text-right font-medium">
                 {t("creditsPage.columnCredits")}
               </th>
@@ -106,7 +115,7 @@ export function ConsumptionTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
 
       <BillingPager
         page={pagination.currentPage}

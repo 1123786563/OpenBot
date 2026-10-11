@@ -7,6 +7,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { TableSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -79,9 +80,14 @@ function TenantChannelsPage() {
   });
 
   return (
-    <PageShell description={t("channels.description")} title={t("channels.title")}>
+    <PageShell
+      description={t("channels.description")}
+      title={t("channels.title")}
+    >
       <PageSection title={t("channels.tenant.label")}>
-        {chooser.isPending ? null : chooser.error ? (
+        {chooser.isPending ? (
+          <TableSkeleton />
+        ) : chooser.error ? (
           <PageEmpty>{(chooser.error as Error).message}</PageEmpty>
         ) : chooser.data.items.length === 0 ? (
           <PageEmpty>{t("channels.tenant.empty")}</PageEmpty>
@@ -154,7 +160,9 @@ function ChannelsSection({
       description={t("channels.list.description")}
       title={t("channels.list.title")}
     >
-      {channels.isPending ? null : channels.error ? (
+      {channels.isPending ? (
+        <TableSkeleton />
+      ) : channels.error ? (
         <PageEmpty>{(channels.error as Error).message}</PageEmpty>
       ) : channels.data.items.length === 0 ? (
         <PageEmpty>{t("channels.list.empty")}</PageEmpty>
@@ -165,10 +173,7 @@ function ChannelsSection({
               <Item
                 key={row.channelId}
                 render={
-                  <button
-                    onClick={() => select(row.channelId)}
-                    type="button"
-                  />
+                  <button onClick={() => select(row.channelId)} type="button" />
                 }
                 size="sm"
               >
@@ -236,7 +241,9 @@ function ChannelRecord({
       description={t("channels.detail.description")}
       title={t("channels.detail.title")}
     >
-      {record.isPending ? null : record.error ? (
+      {record.isPending ? (
+        <TableSkeleton />
+      ) : record.error ? (
         <PageEmpty>{(record.error as Error).message}</PageEmpty>
       ) : (
         <PageRows>

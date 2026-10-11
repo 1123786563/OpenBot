@@ -210,7 +210,8 @@ itself on one of these layers; "one more hue" is not a layer.
 
 **The Controls-Take-the-Brand Rule.** A control's ON state is teal; a button's resting state is
 black. If a switch, checkbox, radio, or progress fill needs a color, it takes `--brand` — never
-`--primary` — so a column of settings doesn't read as a column of black pills.
+`--primary` — so a column of settings doesn't read as a column of black pills. The glyph on a
+brand fill is `--brand-foreground` (ink, 7.84:1 on teal), never white (2.29:1).
 
 **The Tinted Destruction Rule.** Destructive surfaces are `bg-destructive/10` (hover `/20`) with
 solid-red text, never a solid-red fill. Danger reads as a warning label, not an alarm.

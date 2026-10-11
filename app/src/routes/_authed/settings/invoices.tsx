@@ -243,9 +243,14 @@ function RouteComponent() {
           </Empty>
         ) : (
           <>
-            <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
+            <section
+              aria-label={t("invoicesPage.title")}
+              className="mt-4 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name.
+              tabIndex={0}
+            >
               <table className="w-full text-left text-sm">
-                <thead className="text-muted-foreground text-xs uppercase">
+                <thead className="text-muted-foreground text-xs">
                   <tr className="border-border border-b">
                     <th className="px-4 py-2 font-medium">
                       {t("invoicesPage.columnPeriod")}
@@ -277,7 +282,7 @@ function RouteComponent() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </section>
             <BillingPager
               page={page}
               totalPages={invoices.data.pagination.totalPages}

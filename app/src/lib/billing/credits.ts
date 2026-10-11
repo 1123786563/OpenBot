@@ -79,9 +79,9 @@ export type ConsumptionWindow = { from?: string; to?: string };
 
 export const creditsKeys = {
   all: ["billing", "credits"] as const,
-  summary: [...["billing", "credits"] as const, "summary"] as const,
-  grants: [...["billing", "credits"] as const, "grants"] as const,
-  catalog: [...["billing", "credits"] as const, "catalog"] as const,
+  summary: [...(["billing", "credits"] as const), "summary"] as const,
+  grants: [...(["billing", "credits"] as const), "grants"] as const,
+  catalog: [...(["billing", "credits"] as const), "catalog"] as const,
   consumption: (window: ConsumptionWindow, page: number) =>
     [
       ...(["billing", "credits"] as const),

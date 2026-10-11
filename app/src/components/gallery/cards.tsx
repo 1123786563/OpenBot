@@ -161,7 +161,7 @@ export function ChecklistCard({
           <li className="flex items-start gap-2.5 text-sm" key={item.text}>
             <span
               aria-hidden="true"
-              className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[5px] border text-[10px] ${
+              className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[5px] border text-xs ${
                 item.done
                   ? "border-transparent bg-emerald-500 text-white"
                   : "border-border"

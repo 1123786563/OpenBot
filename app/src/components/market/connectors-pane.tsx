@@ -7,7 +7,6 @@ import {
 } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { PluginLogo } from "@/components/plugins/plugin-logo";
 import {
   WbAddButton,
   WbCard,
@@ -22,9 +21,14 @@ import {
   WbStatsRow,
   WbTag,
 } from "@/components/market/wb";
+import { PluginLogo } from "@/components/plugins/plugin-logo";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import type { CatalogueItem, ComposioApp, PluginServer } from "@/lib/plugins/queries";
+import type {
+  CatalogueItem,
+  ComposioApp,
+  PluginServer,
+} from "@/lib/plugins/queries";
 
 /**
  * The 连接器 shelf in WorkBuddy's connector layout: a flat three-column grid of icon cards, one
@@ -84,7 +88,9 @@ function ConnectorCard({
       </div>
       {tags ? <div className="flex flex-wrap gap-1.5">{tags}</div> : null}
       {footer ? (
-        <div className="mt-auto flex items-center gap-1.5 text-sm text-foreground/50">{footer}</div>
+        <div className="mt-auto flex items-center gap-1.5 text-sm text-foreground/50">
+          {footer}
+        </div>
       ) : null}
     </WbCard>
   );
@@ -103,7 +109,12 @@ export function ConnectorDialogWb({
   pending: boolean;
   onInstall: (subject: ConnectorSubject) => void;
   onClose: () => void;
-  label: { install: string; installing: string; installed: string; connect: string };
+  label: {
+    install: string;
+    installing: string;
+    installed: string;
+    connect: string;
+  };
 }) {
   const { t } = useTranslation("market");
   if (!subject) return null;
@@ -113,7 +124,9 @@ export function ConnectorDialogWb({
     const needsAccount =
       server.accountMode === "shared" && !server.sharedVendorConnected;
     const source =
-      server.provenance === "first-party" ? t("wb.stats.sourceBuiltin") : t("wb.stats.sourceCustom");
+      server.provenance === "first-party"
+        ? t("wb.stats.sourceBuiltin")
+        : t("wb.stats.sourceCustom");
     return (
       <Dialog onOpenChange={(open) => !open && onClose()} open={!!subject}>
         <DialogContent className="max-w-[640px] gap-0 rounded-2xl p-6">
@@ -126,7 +139,9 @@ export function ConnectorDialogWb({
                 <span className="truncate text-xl leading-7 font-semibold text-foreground">
                   {server.title}
                 </span>
-                <span className="truncate text-base text-foreground/40">{server.vendor}</span>
+                <span className="truncate text-base text-foreground/40">
+                  {server.vendor}
+                </span>
               </div>
               <div className="mt-2.5 flex items-center gap-2">
                 {needsAccount ? (
@@ -142,7 +157,11 @@ export function ConnectorDialogWb({
                 ) : isAdmin ? (
                   <Button
                     render={(props) => (
-                      <Link {...props} params={{ key: server.id }} to="/admin/plugins/$key" />
+                      <Link
+                        {...props}
+                        params={{ key: server.id }}
+                        to="/admin/plugins/$key"
+                      />
                     )}
                     size="sm"
                     variant="outline"
@@ -160,7 +179,9 @@ export function ConnectorDialogWb({
               </div>
             </div>
           </div>
-          <p className="mt-4 text-sm leading-relaxed text-foreground/80">{server.summary}</p>
+          <p className="mt-4 text-sm leading-relaxed text-foreground/80">
+            {server.summary}
+          </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             <WbTag>{source}</WbTag>
             {server.authScheme ? <WbTag>{server.authScheme}</WbTag> : null}
@@ -170,7 +191,9 @@ export function ConnectorDialogWb({
               stats={[
                 { value: server.tools.length, label: t("wb.stats.tools") },
                 {
-                  value: server.hasCredential ? t("wb.stats.configured") : t("wb.stats.notConfigured"),
+                  value: server.hasCredential
+                    ? t("wb.stats.configured")
+                    : t("wb.stats.notConfigured"),
                   label: t("wb.stats.credential"),
                 },
                 { value: source, label: t("wb.stats.origin") },
@@ -205,7 +228,9 @@ export function ConnectorDialogWb({
                 <span className="truncate text-xl leading-7 font-semibold text-foreground">
                   {item.title}
                 </span>
-                <span className="truncate text-base text-foreground/40">{item.vendor}</span>
+                <span className="truncate text-base text-foreground/40">
+                  {item.vendor}
+                </span>
               </div>
               {isAdmin ? (
                 <div className="mt-2.5">
@@ -220,13 +245,20 @@ export function ConnectorDialogWb({
               ) : null}
             </div>
           </div>
-          <p className="mt-4 text-sm leading-relaxed text-foreground/80">{item.summary}</p>
+          <p className="mt-4 text-sm leading-relaxed text-foreground/80">
+            {item.summary}
+          </p>
           <div className="mt-5 border-t border-border pt-5">
             <WbStatsRow
               stats={[
-                { value: t(`wb.auth.${item.auth}`), label: t("wb.stats.credential") },
                 {
-                  value: item.perInstance ? t("wb.perInstance.yes") : t("wb.perInstance.no"),
+                  value: t(`wb.auth.${item.auth}`),
+                  label: t("wb.stats.credential"),
+                },
+                {
+                  value: item.perInstance
+                    ? t("wb.perInstance.yes")
+                    : t("wb.perInstance.no"),
                   label: t("wb.stats.perInstance"),
                 },
                 { value: t("section.builtin"), label: t("wb.stats.origin") },
@@ -243,18 +275,28 @@ export function ConnectorDialogWb({
 
   const { app, source } = subject;
   const sourceLabel =
-    source === "open-connector" ? t("section.openConnector") : t("section.composio");
+    source === "open-connector"
+      ? t("section.openConnector")
+      : t("section.composio");
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open={!!subject}>
       <DialogContent className="max-w-[640px] gap-0 rounded-2xl p-6">
         <div className="flex items-start gap-4">
-          <WbIconSlot>{app.logo ? <PluginLogo logo={app.logo} /> : <IconPlug className="size-5 text-foreground/70" />}</WbIconSlot>
+          <WbIconSlot>
+            {app.logo ? (
+              <PluginLogo logo={app.logo} />
+            ) : (
+              <IconPlug className="size-5 text-foreground/70" />
+            )}
+          </WbIconSlot>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="truncate text-xl leading-7 font-semibold text-foreground">
                 {app.name}
               </span>
-              <span className="text-base text-foreground/40">{sourceLabel}</span>
+              <span className="text-base text-foreground/40">
+                {sourceLabel}
+              </span>
             </div>
             <div className="mt-2.5 flex items-center gap-2">
               {app.enabled ? (
@@ -271,12 +313,16 @@ export function ConnectorDialogWb({
                   {pending ? label.installing : label.install}
                 </WbPrimaryButton>
               ) : (
-                <span className="text-sm text-foreground/50">{t("contactAdmin")}</span>
+                <span className="text-sm text-foreground/50">
+                  {t("contactAdmin")}
+                </span>
               )}
             </div>
           </div>
         </div>
-        <p className="mt-4 text-sm leading-relaxed text-foreground/80">{app.description}</p>
+        <p className="mt-4 text-sm leading-relaxed text-foreground/80">
+          {app.description}
+        </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {app.categories.slice(0, 4).map((category) => (
             <WbTag key={category}>{category}</WbTag>
@@ -286,7 +332,10 @@ export function ConnectorDialogWb({
           <WbStatsRow
             stats={[
               { value: app.actionCount, label: t("wb.stats.actions") },
-              { value: app.categories.length, label: t("wb.stats.categoriesCount") },
+              {
+                value: app.categories.length,
+                label: t("wb.stats.categoriesCount"),
+              },
               { value: sourceLabel, label: t("wb.stats.origin") },
             ]}
           />
@@ -308,14 +357,17 @@ function ServerCard({
   onOpen: () => void;
   label: { installed: string; connect: string; tools: (n: number) => string };
 }) {
-  const needsAccount = server.accountMode === "shared" && !server.sharedVendorConnected;
+  const needsAccount =
+    server.accountMode === "shared" && !server.sharedVendorConnected;
   return (
     <ConnectorCard
       action={
         needsAccount ? (
           <Button
             onClick={(event) => event.stopPropagation()}
-            render={(props) => <Link {...props} to="/settings/connected-accounts" />}
+            render={(props) => (
+              <Link {...props} to="/settings/connected-accounts" />
+            )}
             size="xs"
             variant="outline"
           >
@@ -381,7 +433,9 @@ function CatalogueCard({
             pending={pending}
           />
         ) : (
-          <span className="text-xs text-foreground/40">{label.contactAdmin}</span>
+          <span className="text-xs text-foreground/40">
+            {label.contactAdmin}
+          </span>
         )
       }
       desc={item.summary}
@@ -412,7 +466,12 @@ function BrokerCard({
   pending: boolean;
   onInstall: () => void;
   onOpen: () => void;
-  label: { install: string; pending: string; installed: string; contactAdmin: string };
+  label: {
+    install: string;
+    pending: string;
+    installed: string;
+    contactAdmin: string;
+  };
 }) {
   return (
     <ConnectorCard
@@ -434,7 +493,9 @@ function BrokerCard({
             pending={pending}
           />
         ) : (
-          <span className="text-xs text-foreground/40">{label.contactAdmin}</span>
+          <span className="text-xs text-foreground/40">
+            {label.contactAdmin}
+          </span>
         )
       }
       desc={app.description}
@@ -483,7 +544,9 @@ function Section({
       <WbSectionTitle>
         {title}
         {count !== undefined ? (
-          <span className="text-sm font-normal text-foreground/40">{count}</span>
+          <span className="text-sm font-normal text-foreground/40">
+            {count}
+          </span>
         ) : null}
       </WbSectionTitle>
       {chips ? <div className="mt-3">{chips}</div> : null}
@@ -598,8 +661,16 @@ export function ConnectorsPane({
                     isAdmin={isAdmin}
                     key={`open-connector-${app.slug}`}
                     label={cardLabel}
-                    onInstall={() => onInstall({ kind: "broker", app, source: "open-connector" })}
-                    onOpen={() => onOpen({ kind: "broker", app, source: "open-connector" })}
+                    onInstall={() =>
+                      onInstall({
+                        kind: "broker",
+                        app,
+                        source: "open-connector",
+                      })
+                    }
+                    onOpen={() =>
+                      onOpen({ kind: "broker", app, source: "open-connector" })
+                    }
                     pending={pending}
                     source="open-connector"
                   />
@@ -616,8 +687,12 @@ export function ConnectorsPane({
                     isAdmin={isAdmin}
                     key={`composio-${app.slug}`}
                     label={cardLabel}
-                    onInstall={() => onInstall({ kind: "broker", app, source: "composio" })}
-                    onOpen={() => onOpen({ kind: "broker", app, source: "composio" })}
+                    onInstall={() =>
+                      onInstall({ kind: "broker", app, source: "composio" })
+                    }
+                    onOpen={() =>
+                      onOpen({ kind: "broker", app, source: "composio" })
+                    }
                     pending={pending}
                     source="composio"
                   />
@@ -627,9 +702,10 @@ export function ConnectorsPane({
           ) : null}
         </>
       ) : (
-        <p className="text-sm text-foreground/50">{t("connectors.adminHint")}</p>
+        <p className="text-sm text-foreground/50">
+          {t("connectors.adminHint")}
+        </p>
       )}
     </div>
   );
 }
-

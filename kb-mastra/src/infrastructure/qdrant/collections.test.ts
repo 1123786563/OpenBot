@@ -53,8 +53,9 @@ describe.skipIf(!up)("ensureCollection against a live Qdrant", () => {
     expect(vectors?.size).toBe(TEST_DIM);
     expect(vectors?.distance).toBe("Cosine");
 
-    // payload 索引声明齐全。索引构建是后台任务：轮询至多 5s 直到 8 个都出现。
-    const declared = await waitForPayloadSchema(TEST_COLLECTION, 8, 5_000);
+    // payload 索引声明齐全。索引构建是后台任务：轮询至多 15s 直到 8 个都出现
+    // （套件全量并发跑时宿主机忙，构建显著变慢）。
+    const declared = await waitForPayloadSchema(TEST_COLLECTION, 8, 15_000);
     for (const field of [
       "tenant_id",
       "kb_id",

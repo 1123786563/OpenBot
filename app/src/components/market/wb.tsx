@@ -25,9 +25,9 @@ export function WbCard({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col gap-3 self-start rounded-2xl border border-border bg-card p-5 shadow-[0_4px_12px_rgba(0,0,0,0.03)] transition-[box-shadow,border-color] duration-200",
+        "flex min-w-0 flex-col gap-3 self-start rounded-2xl border border-border bg-card p-5 shadow-card transition-[box-shadow,border-color] duration-200",
         interactive &&
-          "cursor-pointer hover:border-foreground/20 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]",
+          "cursor-pointer hover:border-foreground/20 hover:shadow-card-hover",
         className,
       )}
       {...props}
@@ -58,25 +58,53 @@ export function WbIconSlot({
 }
 
 /** Card title. WB: 16px/24px, weight 500, single line. */
-export function WbName({ className, children }: { className?: string; children: React.ReactNode }) {
+export function WbName({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span className={cn("block truncate text-base font-medium leading-6 text-foreground", className)}>
+    <span
+      className={cn(
+        "block truncate text-base font-medium leading-6 text-foreground",
+        className,
+      )}
+    >
       {children}
     </span>
   );
 }
 
 /** Card description. WB: 14px/22px at 70% foreground, single line. */
-export function WbDesc({ className, children }: { className?: string; children: React.ReactNode }) {
+export function WbDesc({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span className={cn("block truncate text-sm leading-[22px] text-foreground/70", className)}>
+    <span
+      className={cn(
+        "block truncate text-sm leading-[22px] text-foreground/70",
+        className,
+      )}
+    >
       {children}
     </span>
   );
 }
 
 /** A small factual chip on a card (tags, categories). WB: 4%-black pill, 12px text. */
-export function WbTag({ children, className }: { children: React.ReactNode; className?: string }) {
+export function WbTag({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <span
       className={cn(
@@ -151,7 +179,9 @@ export function WbSegmentTabs<T extends string>({
         >
           {entry.label}
           {entry.count !== undefined ? (
-            <span className="text-sm font-normal text-foreground/40">{entry.count}</span>
+            <span className="text-sm font-normal text-foreground/40">
+              {entry.count}
+            </span>
           ) : null}
         </button>
       ))}
@@ -283,11 +313,16 @@ export function WbStatsRow({
   return (
     <div className="grid grid-cols-3 gap-2 py-1">
       {stats.map((stat) => (
-        <div className="flex min-w-0 flex-col items-center gap-1 text-center" key={stat.label}>
+        <div
+          className="flex min-w-0 flex-col items-center gap-1 text-center"
+          key={stat.label}
+        >
           <span className="max-w-full truncate text-base leading-6 font-semibold text-foreground">
             {stat.value}
           </span>
-          <span className="text-xs leading-4 text-foreground/50">{stat.label}</span>
+          <span className="text-xs leading-4 text-foreground/50">
+            {stat.label}
+          </span>
         </div>
       ))}
     </div>
@@ -306,7 +341,9 @@ export function WbQuoteRow({
     <div className="relative rounded-xl bg-foreground/[0.03] p-3.5 pr-11 text-sm leading-relaxed text-foreground/80">
       {children}
       {action ? (
-        <div className="absolute top-1/2 right-2.5 -translate-y-1/2">{action}</div>
+        <div className="absolute top-1/2 right-2.5 -translate-y-1/2">
+          {action}
+        </div>
       ) : null}
     </div>
   );
@@ -340,7 +377,9 @@ export function WbEmpty({
         {glyph}
       </span>
       <p className="mt-2 text-sm text-foreground/40">{title}</p>
-      {hint ? <p className="max-w-sm text-xs leading-5 text-foreground/35">{hint}</p> : null}
+      {hint ? (
+        <p className="max-w-sm text-xs leading-5 text-foreground/35">{hint}</p>
+      ) : null}
       {action ? <div className="mt-3">{action}</div> : null}
     </div>
   );

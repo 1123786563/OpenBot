@@ -1,7 +1,7 @@
 import { z } from "zod";
+import { callCodeSandbox } from "@/lib/codesandbox/call";
 import { useActiveBotHolder } from "./active-bot";
 import { useFrontendTool } from "./approval-tools";
-import { callCodeSandbox } from "@/lib/codesandbox/call";
 
 /**
  * The run_code tool, offered to the model whenever the person is chatting with a Bot. The server
@@ -31,9 +31,7 @@ export function CodeSandboxTools() {
         .min(1)
         .max(600)
         .optional()
-        .describe(
-          "Execution budget in seconds. Default 120, maximum 600.",
-        ),
+        .describe("Execution budget in seconds. Default 120, maximum 600."),
     }),
     handler: async (
       { task, timeoutSeconds }: { task: string; timeoutSeconds?: number },

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   issueCallbackTokenMutationOptions,
@@ -38,7 +38,7 @@ export function CallbackTokenPanel({
 
   return (
     <section className="mt-6 grid gap-2">
-      <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+      <h2 className="font-medium text-muted-foreground text-xs">
         {t("callback.title")}
       </h2>
 

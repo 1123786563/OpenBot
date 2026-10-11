@@ -168,7 +168,7 @@ function SkillsPage() {
                         ) : null}
                         {skill.title}
                         {skill.category ? (
-                          <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 align-middle text-muted-foreground text-[11px]">
+                          <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 align-middle text-muted-foreground text-xs">
                             {skill.category}
                           </span>
                         ) : null}
@@ -259,7 +259,7 @@ function SkillsPage() {
                         ) : null}
                         {skill.title}
                         {skill.category ? (
-                          <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 align-middle text-muted-foreground text-[11px]">
+                          <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 align-middle text-muted-foreground text-xs">
                             {skill.category}
                           </span>
                         ) : null}

@@ -14,8 +14,8 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import type { TFunction } from "i18next";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -23,6 +23,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { TableSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -138,7 +139,9 @@ function EnterprisePage() {
           {failure.message}
         </p>
       ) : null}
-      {overview.isPending ? null : overview.error ? (
+      {overview.isPending ? (
+        <TableSkeleton />
+      ) : overview.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {t("enterprise.loadError")}
         </p>

@@ -9,6 +9,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
 import {
@@ -118,7 +119,9 @@ function IdentityProvidersPage() {
             {failure.message}
           </p>
         ) : null}
-        {providers.isPending ? null : providers.error ? (
+        {providers.isPending ? (
+          <PageRowsSkeleton />
+        ) : providers.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("identityProviders.loadError")}
           </p>

@@ -105,7 +105,7 @@ function KnowledgeIndexPage() {
                           {kb.name}
                         </Link>
                         {/* doc_count 徽标化（bots.index.tsx 先例）。 */}
-                        <span className="ml-2 rounded-full bg-muted px-1.5 text-[11px] text-muted-foreground">
+                        <span className="ml-2 rounded-full bg-muted px-1.5 text-xs text-muted-foreground">
                           {t("list.docCount", { count: kb.doc_count })}
                         </span>
                       </ItemTitle>

@@ -94,10 +94,14 @@ export function createEmbedTransport(options: EmbedTransportOptions): EmbedTrans
   }
 
   function vecsOfOpenAI(body: unknown): number[][] {
-    const data = (body as { data?: { embedding?: number[] }[] }).data;
+    const data = (body as { data?: { index?: number; embedding?: number[] }[] }).data;
     if (!Array.isArray(data)) throw new EmbedTransportError("openai embeddings response missing data");
-    // 按 index 复原顺序（规范要求有序，防御性排序）。
-    const rows = data.map((row, index) => ({ index, embedding: row.embedding ?? [] }));
+    // 按 index 复原顺序（规范要求有序，防御性排序）。index 取响应字段而非数组
+    // 位置——乱序响应时两者不同；缺 index 的行按出现位置兜底。
+    const rows = data.map((row, position) => ({
+      index: typeof row.index === "number" ? row.index : position,
+      embedding: row.embedding ?? [],
+    }));
     rows.sort((a, b) => a.index - b.index);
     return rows.map((r) => r.embedding);
   }

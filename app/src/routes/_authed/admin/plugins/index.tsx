@@ -6,8 +6,8 @@ import {
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import * as React from "react";
 import type { TFunction } from "i18next";
+import * as React from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -15,6 +15,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { RowMark } from "@/components/layout/row-mark";
 import {
   Item,
@@ -126,7 +127,9 @@ function RouteComponent() {
       title={t("plugins.title")}
     >
       {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
-      {plugins.isPending ? null : plugins.error ? (
+      {plugins.isPending ? (
+        <PageRowsSkeleton />
+      ) : plugins.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
           {t("plugins.loadError")}
         </p>

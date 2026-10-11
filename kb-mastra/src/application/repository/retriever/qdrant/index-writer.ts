@@ -8,7 +8,7 @@
  */
 
 import pLimit from "p-limit";
-import { getLogger } from "../../../../shared/logger";
+import { getLogger } from "../../../../../../shared/logger";
 import type { QdrantClient } from "../../../../infrastructure/qdrant/client";
 import type { PointStruct } from "../../../../infrastructure/qdrant/types";
 
@@ -42,11 +42,22 @@ export type UpsertProgress = {
   total: number;
 };
 
+export type IndexWriter = {
+  upsertChunks: (
+    inputs: readonly ChunkPointInput[],
+    onProgress?: (progress: UpsertProgress) => void,
+  ) => Promise<void>;
+  /** 清旧索引（修订 A15 铁律：先 Qdrant 后 SQL——本函数只是 Qdrant 半边）。 */
+  deleteByDoc: (tenantId: string, docId: string) => Promise<void>;
+  /** KB 级联删除（删库时清整个知识库的 points）。 */
+  deleteByKb: (tenantId: string, kbId: string) => Promise<void>;
+};
+
 export function createIndexWriter(
   client: QdrantClient,
   collection: string,
   options?: IndexWriterOptions,
-) {
+): IndexWriter {
   const batchSize = options?.batchSize ?? 40;
   const concurrency = options?.concurrency ?? 5;
 

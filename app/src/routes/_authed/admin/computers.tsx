@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
 import type { TFunction } from "i18next";
+import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -29,15 +29,15 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { setComputerStateMutationOptions } from "@/lib/computers/mutations";
 import {
+  type HostAccessPendingOperation,
+  type HostFolderGrant,
   hostAccessQueryOptions,
   requestHostFolderGrantMutationOptions,
   revokeHostFolderGrantMutationOptions,
   stopHostAccessMutationOptions,
-  type HostFolderGrant,
-  type HostAccessPendingOperation,
 } from "@/lib/computers/host-access";
+import { setComputerStateMutationOptions } from "@/lib/computers/mutations";
 import { computerFleetQueryOptions } from "@/lib/computers/queries";
 import { useDateTime } from "@/lib/i18n/datetime";
 

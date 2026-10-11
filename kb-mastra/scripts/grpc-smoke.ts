@@ -121,7 +121,16 @@ async function main(): Promise<number> {
         config: { parser_engine: "builtin" },
         request_id: "kb-grpc-smoke",
       },
-      (error, response) => (error ? reject(error) : resolve(response)),
+      (error, response) =>
+        error
+          ? reject(error)
+          : resolve(
+              response as {
+                error?: string;
+                markdown_content?: string;
+                source_blocks?: unknown[];
+              },
+            ),
       Date.now() + 60_000,
     );
   });
