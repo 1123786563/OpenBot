@@ -280,7 +280,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   {...props}
                   to="/channel/new"
                   activeProps={{
-                    className: "bg-foreground/5",
+                    className:
+                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
                   }}
                 />
               )}
@@ -296,7 +297,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   {...props}
                   to="/group/new"
                   activeProps={{
-                    className: "bg-foreground/5",
+                    className:
+                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
                   }}
                 />
               )}
@@ -323,6 +325,239 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </InputGroup>
             </SidebarMenuItem>
             <div className="w-full h-2" />
+            {/*
+             * Destinations first, lists after — WorkBuddy's sidebar order. These used to sit
+             * in the footer; in WorkBuddy the fixed destinations (新建任务/助理/专家·技能·连接器…)
+             * open the sidebar and the conversation lists run underneath them, so the same order
+             * applies here. They scroll with the content exactly as WorkBuddy's own list does.
+             */}
+            <SidebarGroup className="gap-px">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/bots"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconRobot />
+                  </div>
+                  <span className="text-sm">{t("bots")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                {/* Beside Agents rather than inside Admin: writing a skill is something anybody does. */}
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/skills"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconBox />
+                  </div>
+                  <span className="text-sm trackint-tight">{t("skills")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                {/* Beside Skills: the marketplace is where a person goes to find one to install. */}
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/market"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconShoppingBag />
+                  </div>
+                  <span className="text-sm trackint-tight">{t("market")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/agents"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconBolt />
+                  </div>
+                  <span className="text-sm trackint-tight">{t("agents")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/team-bots"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconUsers />
+                  </div>
+                  <span className="text-sm">{t("teamBots")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* Team Bots an administrator assigned to this person: always here, never hidden. */}
+              {assignedTeamBots.map((bot) => (
+                <SidebarMenuItem key={bot.id}>
+                  <SidebarMenuButton
+                    className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                    render={(props) => (
+                      <Link
+                        {...props}
+                        search={{ agent: bot.id }}
+                        to="/channel/new"
+                      />
+                    )}
+                  >
+                    <div className="size-[28px] flex items-center justify-center">
+                      <ChannelAvatar participantIds={[bot.id]} size={22} />
+                    </div>
+                    <span className="text-sm">{bot.name}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/reachability"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconDeviceMobile />
+                  </div>
+                  <span className="text-sm">{t("reachability")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* Routines live on each coworker's own dialog now, not as a nav destination: the
+                question "what does this Bot do on a schedule" is asked while looking at the Bot.
+                The /routines route still answers a direct link. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/responsibilities"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconTargetArrow />
+                  </div>
+                  <span className="text-sm">{t("responsibilities")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/knowledge"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconBook2 />
+                  </div>
+                  <span className="text-sm">{t("knowledge")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/memory"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconBrain />
+                  </div>
+                  <span className="text-sm">{t("memory")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
+                  render={(props) => (
+                    <Link
+                      {...props}
+                      to="/approvals"
+                      activeProps={{
+                        className:
+                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                      }}
+                    />
+                  )}
+                >
+                  <div className="size-[28px] flex items-center justify-center">
+                    <IconChecks />
+                  </div>
+                  <span className="text-sm">{t("approvals")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarGroup>
             {/* Bots that need you, or that you paused. See bot-profile/attention.tsx. */}
             <BotAttentionList />
             {/*
@@ -384,211 +619,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <SidebarMenu className="gap-px">
           <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/bots"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconRobot />
-              </div>
-              <span className="text-sm">{t("bots")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            {/* Beside Agents rather than inside Admin: writing a skill is something anybody does. */}
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/skills"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBox />
-              </div>
-              <span className="text-sm trackint-tight">{t("skills")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            {/* Beside Skills: the marketplace is where a person goes to find one to install. */}
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/market"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconShoppingBag />
-              </div>
-              <span className="text-sm trackint-tight">{t("market")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/agents"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBolt />
-              </div>
-              <span className="text-sm trackint-tight">{t("agents")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/team-bots"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconUsers />
-              </div>
-              <span className="text-sm">{t("teamBots")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          {/* Team Bots an administrator assigned to this person: always here, never hidden. */}
-          {assignedTeamBots.map((bot) => (
-            <SidebarMenuItem key={bot.id}>
-              <SidebarMenuButton
-                className="hover:bg-foreground/5 h-10"
-                render={(props) => (
-                  <Link
-                    {...props}
-                    search={{ agent: bot.id }}
-                    to="/channel/new"
-                  />
-                )}
-              >
-                <div className="size-[28px] flex items-center justify-center">
-                  <ChannelAvatar participantIds={[bot.id]} size={22} />
-                </div>
-                <span className="text-sm">{bot.name}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/reachability"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconDeviceMobile />
-              </div>
-              <span className="text-sm">{t("reachability")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          {/* Routines live on each coworker's own dialog now, not as a nav destination: the
-              question "what does this Bot do on a schedule" is asked while looking at the Bot.
-              The /routines route still answers a direct link. */}
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/responsibilities"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconTargetArrow />
-              </div>
-              <span className="text-sm">{t("responsibilities")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/knowledge"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBook2 />
-              </div>
-              <span className="text-sm">{t("knowledge")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/memory"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconBrain />
-              </div>
-              <span className="text-sm">{t("memory")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="hover:bg-foreground/5 h-10"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/approvals"
-                  activeProps={{ className: "bg-foreground/5" }}
-                />
-              )}
-            >
-              <div className="size-[28px] flex items-center justify-center">
-                <IconChecks />
-              </div>
-              <span className="text-sm">{t("approvals")}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <SidebarMenuButton className="hover:bg-foreground/5 h-10" />
+                  <SidebarMenuButton className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-10" />
                 }
               >
                 <UserAvatar />

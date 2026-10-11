@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import type { PlanCatalogCycle, PlanCatalogEntry } from "@/lib/billing/credits";
 import { credits } from "@/lib/billing/format";
-import { createPurchase, type PurchaseOrderView } from "@/lib/billing/payments";
+import {
+  createPurchase,
+  type PurchaseOrderView,
+  purchaseOrderQueryOptions,
+} from "@/lib/billing/payments";
 import { cn } from "@/lib/utils";
 
 /**
@@ -83,6 +88,39 @@ export function UpgradeDialog({
       setPaying(false);
     }
   };
+
+  /*
+   * The settlement poll: the sandbox channel's callback cannot reach this deployment (and even in
+   * production a callback can be missed), so the order's own read — which asks the channel as its
+   * side effect — is the recovery path. While a pending order is showing, re-read it every few
+   * seconds until it settles, expires or the dialog closes. This is exactly what the subscribe
+   * page's PurchaseFlow does (POLL_INTERVAL_MS there); without it a reader who paid sees
+   * "订单待支付" forever until somebody else asks the channel.
+   */
+  const queryClient = useQueryClient();
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  useEffect(() => {
+    if (!open || !order || order.status !== "pending") return;
+    const timer = setInterval(() => {
+      const current = orderRef.current;
+      if (!current || current.status !== "pending") return;
+      void queryClient
+        .fetchQuery(purchaseOrderQueryOptions(current.orderId))
+        .then(({ order: fresh }) => {
+          if (
+            fresh.status !== current.status ||
+            fresh.activationState !== current.activationState
+          ) {
+            setOrder(fresh);
+          }
+        })
+        .catch(() => {
+          /* A failed poll is just the next poll's problem. */
+        });
+    }, 5_000);
+    return () => clearInterval(timer);
+  }, [open, order?.orderId, order?.status, queryClient]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

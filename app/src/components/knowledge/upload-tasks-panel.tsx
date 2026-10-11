@@ -158,7 +158,7 @@ function ActiveTaskRow({ task }: { task: UploadTaskView }) {
         aria-valuenow={Math.round(ratio * 100)}
       >
         <div
-          className="h-full bg-primary transition-[width] duration-150"
+          className="h-full bg-brand transition-[width] duration-150"
           style={{ width: `${Math.round(ratio * 100)}%` }}
         />
       </div>

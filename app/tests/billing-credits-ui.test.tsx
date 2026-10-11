@@ -34,6 +34,20 @@ mock.module("@/components/ui/dialog", () => {
 const { PlanCard } = await import("@/components/billing/plan-card");
 const { UpgradeDialog } = await import("@/components/billing/upgrade-dialog");
 
+/*
+ * The dialog now polls its pending order through React Query (the settlement recovery path), so
+ * every UpgradeDialog render sits inside a QueryClientProvider the way the page provides one.
+ */
+const { QueryClient, QueryClientProvider } = await import(
+  "@tanstack/react-query"
+);
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+const withProvider = (ui: React.ReactElement) => (
+  <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+);
+
 beforeAll(async () => {
   GlobalRegistrator.register();
   // Written against the zh-CN bundle, matching billing-plans-usage-ui.test.tsx's convention.
@@ -158,12 +172,14 @@ test("PlanCard without an upgrade callback hides the button, not the card", () =
 
 test("UpgradeDialog draws every catalog tier, its cycles and its discount labels from config alone", () => {
   const view = render(
-    <UpgradeDialog
-      open
-      onOpenChange={() => {}}
-      catalog={CATALOG}
-      currentPlanName="体验版"
-    />,
+    withProvider(
+      <UpgradeDialog
+        open
+        onOpenChange={() => {}}
+        catalog={CATALOG}
+        currentPlanName="体验版"
+      />,
+    ),
   );
   // The dialog's title and the current plan line. The shell is a pass-through, so the title text
   // rides the container directly — matched on the container, not on a wrapping element.
@@ -195,7 +211,9 @@ test("UpgradeDialog draws every catalog tier, its cycles and its discount labels
 
 test("UpgradeDialog gates the pay button behind the agreement, and the tick releases it", async () => {
   const view = render(
-    <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
   );
   const pay = view.getByRole("button", {
     name: "同意协议",
@@ -208,7 +226,7 @@ test("UpgradeDialog gates the pay button behind the agreement, and the tick rele
 
 test("UpgradeDialog with an empty catalog opens with nothing to sell", () => {
   const view = render(
-    <UpgradeDialog open onOpenChange={() => {}} catalog={{}} />,
+    withProvider(<UpgradeDialog open onOpenChange={() => {}} catalog={{}} />),
   );
   // The title mounts; no tier does, because there is no tier to draw.
   expect(view.container.textContent).toContain("Buddy AI 套餐");
