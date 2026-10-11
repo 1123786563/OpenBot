@@ -17,6 +17,7 @@ import type { BotRuntimes } from "./bot-runtimes";
 import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
 import { isPlainBotId } from "./bot-id";
 import { forwardEvents } from "./sse";
+import { bridgeWebSocket } from "./ws-passthrough";
 
 export function tokenMatches(presented: string | undefined, expected: string): boolean {
   if (!presented) return false;
@@ -50,6 +51,8 @@ const ALLOWED = new Set([
   "POST /webapp/stop",
   "GET /webapp/file",
   "GET /runtimes",
+  // The WS passthrough (B15b): the dev road's live half, gated like every other verb.
+  "GET /preview/ws",
   "GET /workspace/snapshot",
   "POST /workspace/restore",
 ]);
@@ -92,8 +95,11 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export function createProxyHandler(
   env: SandboxEnv,
   runtimes: BotRuntimes,
-): (request: Request) => Promise<Response> {
-  return async (request: Request): Promise<Response> => {
+): (
+  request: Request,
+  bunServer?: { upgrade(request: Request, options?: { data?: unknown }): boolean },
+) => Promise<Response> {
+  return async (request: Request, bunServer): Promise<Response> => {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true });
 
@@ -136,6 +142,45 @@ export function createProxyHandler(
     // per-bot resolution, which it does not need.
     if (request.method === "GET" && url.pathname === "/runtimes") {
       return Response.json({ bots: runtimes.listRuntimes() });
+    }
+
+    // The WS passthrough (B15b): only for a Bot whose dev server is up, and only through
+    // Bun's own upgrade — the pipe never opens for a caller that failed either gate above.
+    if (url.pathname === "/preview/ws") {
+      if (request.method !== "GET")
+        return Response.json({ error: "Use GET." }, { status: 405 });
+      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        return Response.json(
+          { error: "This endpoint is a websocket upgrade." },
+          { status: 426 },
+        );
+      }
+      const devTarget = runtimes.listDevServers().find((entry) => entry.botId === botId);
+      if (!devTarget) {
+        return Response.json(
+          { error: "This Bot's dev server is not running." },
+          { status: 503 },
+        );
+      }
+      if (!bunServer) {
+        // A caller without the runtime's upgrade hook (tests, odd deployments): honest 501,
+        // never a half-open pipe.
+        return Response.json(
+          { error: "This deployment cannot upgrade websockets." },
+          { status: 501 },
+        );
+      }
+      const subprotocol =
+        request.headers.get("sec-websocket-protocol") ?? null;
+      const path = url.searchParams.get("path") ?? "/";
+      const upgraded = bunServer.upgrade(request, {
+        data: { botId, port: devTarget.port, subprotocol, path },
+      });
+      if (upgraded) return new Response(null, { status: 101 });
+      return Response.json(
+        { error: "The upgrade was refused." },
+        { status: 500 },
+      );
     }
 
     // The dev server verbs (S8): a Bot's live webapp, started lazily in its workspace. The

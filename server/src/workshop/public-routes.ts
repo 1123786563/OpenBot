@@ -2,38 +2,186 @@ import { Hono } from "hono";
 import { DEV_CSP_ALLOW_LISTED, STATIC_CSP } from "./preview";
 
 /**
- * The workshop's ANONYMOUS surface: what a share token reaches (B14's half of the door).
+ * The workshop's ANONYMOUS surface: what a share token reaches.
  *
- * B14's tokens mint a scoped actor; this file is where that actor meets HTTP without a
- * session. This batch ships the skeleton — the routes exist, the CSP contract is pinned, and
- * the handlers deliberately answer "not yet" (503 with a sentence) so B14's wiring lands into
- * a shape that already holds its security posture, not into a void it has to invent.
+ * THE ONE DOOR IN is B14's resolveShareActor — the only read path in the repository that
+ * bypasses canUseBot, guarded harder than the rule it excepts (see sharing.ts's head). The
+ * routes here hold the HTTP half of that contract:
  *
- * NOTHING HERE BYPASSES OWNERSHIP BY ACCIDENT: the resolve-actor step (B14) is the only door
- * in, and it is not mounted yet — see sharing.ts's "the ONLY read path that bypasses
- * canUseBot" contract, which these routes are the HTTP half of.
+ * - NO INDEXING, NO REFERRERS: every answer carries X-Robots-Tag: noindex and
+ *   Referrer-Policy: no-referrer — a share link is a person's front door, not a search
+ *   engine's, and the pages behind it must not leak where a visitor came from.
+ * - NO LIVE SURFACES: the WS upgrade is refused outright for anonymous callers. HMR is a
+ *   development tool; a share is a finished thing. The static road (built files, tight CSP)
+ *   is all an anonymous visitor ever sees.
+ * - THE UNIFORM MISS: a wrong token, an expired link, and a revoked one all answer 404 —
+ *   the same page, the same shape, nothing about which it was (B14's contract, kept here at
+ *   the HTTP layer rather than leaked through a 410-vs-404 distinction).
+ * - RATE LIMITED at the token's hash (B14's limiter): an enumeration probe gets slowed
+ *   before it gets told anything.
  */
-export function createWorkshopPublicRoutes(): Hono {
+export type PublicWorkshopInput = {
+  /** B14's service: the one door in, and the signed artifact URLs. */
+  sharing: {
+    resolveShareActor(token: string): Promise<
+      | { channelId: string; botId: string; scope: "preview" | "preview_download" }
+      | null
+    >;
+    underRateLimit(token: string): Promise<boolean>;
+    signArtifactUrl(input: {
+      channelId: string;
+      artifactId: string;
+      scope: "preview" | "preview_download";
+    }): string;
+  };
+  /** The shared channel's artifacts, read-only — the owner's gallery minus the owner. */
+  listArtifacts(
+    channelId: string,
+  ): Promise<
+    Array<{ id: string; name: string; type: string; sizeBytes: number }>
+  >;
+  /** The static preview's file source (the artifact snapshot road; never the dev road). */
+  readArtifactFile: (
+    channelId: string,
+    path: string,
+  ) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
+  /** Optional audit tap for share views and reports (B7's vocabulary). */
+  audit?: (event: {
+    eventType: string;
+    targetId: string;
+    payload: Record<string, unknown>;
+  }) => Promise<void>;
+};
+
+export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
   const app = new Hono();
 
-  app.get("/:channelId/public/preview/*", (context) => {
-    // B14 wires this: token → scoped actor → the same static road the owner sees, CSP and all.
-    return context.json(
-      { error: "Public previews arrive with the share batch (B14)." },
-      503,
+  /** The two headers every public answer carries, applied once. */
+  const publicHeaders = (headers: Headers): Headers => {
+    headers.set("x-robots-tag", "noindex");
+    headers.set("referrer-policy", "no-referrer");
+    return headers;
+  };
+
+  app.get("/:channelId/public/preview/*", async (context) => {
+    // An anonymous upgrade is refused before anything else: the share is static, full stop.
+    if (context.req.header("upgrade")?.toLowerCase() === "websocket") {
+      return context.json(
+        { error: "Live previews are not part of a share." },
+        { status: 403, headers: publicHeaders(new Headers()) },
+      );
+    }
+    const token = context.req.query("t") ?? "";
+    if (!(await input.sharing.underRateLimit(token))) {
+      return context.json(
+        { error: "Too many requests." },
+        { status: 429, headers: publicHeaders(new Headers()) },
+      );
+    }
+    const actor = await input.sharing.resolveShareActor(token);
+    if (!actor || actor.channelId !== context.req.param("channelId")) {
+      // The uniform miss: wrong, expired, revoked, and not-this-channel all look alike.
+      return context.notFound();
+    }
+    const path = context.req.path.replace(
+      new RegExp(`^/api/workshop/[^/]+/public/preview/`),
+      "",
+    );
+    const file = await input.readArtifactFile(actor.channelId, path || "index.html");
+    if (!file) return context.notFound();
+    const headers = publicHeaders(new Headers());
+    headers.set("content-type", file.contentType);
+    headers.set("content-security-policy", STATIC_CSP);
+    return new Response(file.bytes as BodyInit, { status: 200, headers });
+  });
+
+  app.get("/:channelId/public/artifacts", async (context) => {
+    const token = context.req.query("t") ?? "";
+    if (!(await input.sharing.underRateLimit(token))) {
+      return context.json(
+        { error: "Too many requests." },
+        { status: 429, headers: publicHeaders(new Headers()) },
+      );
+    }
+    const actor = await input.sharing.resolveShareActor(token);
+    if (!actor || actor.channelId !== context.req.param("channelId")) {
+      return context.notFound();
+    }
+    const artifacts = await input.listArtifacts(actor.channelId);
+    const headers = publicHeaders(new Headers());
+    headers.set("content-type", "application/json");
+    return new Response(
+      JSON.stringify({
+        scope: actor.scope,
+        artifacts: artifacts.map((artifact) => ({
+          ...artifact,
+          // The download URL is signed for THIS share's scope — a preview-only share gets a
+          // URL the download route will refuse, rather than a URL that upgrades itself.
+          downloadUrl:
+            actor.scope === "preview_download"
+              ? input.sharing.signArtifactUrl({
+                  channelId: actor.channelId,
+                  artifactId: artifact.id,
+                  scope: actor.scope,
+                })
+              : null,
+        })),
+      }),
+      { status: 200, headers },
     );
   });
 
-  app.get("/:channelId/public/artifacts/:artifactId", (context) => {
-    // B14 wires this: the signed artifact URL's verifier and the download it unlocks.
-    return context.json(
-      { error: "Public artifact downloads arrive with the share batch (B14)." },
-      503,
+  app.get("/:channelId/public/artifacts/:artifactId", async (context) => {
+    const token = context.req.query("t") ?? "";
+    const signature = context.req.query("s") ?? "";
+    const scope = context.req.query("scope") ?? "";
+    if (!(await input.sharing.underRateLimit(token))) {
+      return context.json(
+        { error: "Too many requests." },
+        { status: 429, headers: publicHeaders(new Headers()) },
+      );
+    }
+    const actor = await input.sharing.resolveShareActor(token);
+    if (
+      !actor ||
+      actor.channelId !== context.req.param("channelId") ||
+      actor.scope !== "preview_download"
+    ) {
+      // A preview-only share asking for a download: the uniform miss, not a 403 that names
+      // what it is missing.
+      return context.notFound();
+    }
+    // The signature binds channel + artifact + scope; a reshaped URL fails here.
+    const expected = new URL(
+      `http://x${input.sharing.signArtifactUrl({
+        channelId: actor.channelId,
+        artifactId: context.req.param("artifactId"),
+        scope: "preview_download",
+      })}`,
+    ).searchParams.get("s");
+    if (!expected || signature !== expected || scope !== "preview_download") {
+      return context.notFound();
+    }
+    const artifacts = await input.listArtifacts(actor.channelId);
+    const artifact = artifacts.find(
+      (row) => row.id === context.req.param("artifactId"),
+    );
+    if (!artifact) return context.notFound();
+    const headers = publicHeaders(new Headers());
+    headers.set("content-type", "application/json");
+    headers.set("content-security-policy", DEV_CSP_ALLOW_LISTED);
+    return new Response(
+      JSON.stringify({
+        artifact,
+        signedUrl: input.sharing.signArtifactUrl({
+          channelId: actor.channelId,
+          artifactId: artifact.id,
+          scope: "preview_download",
+        }),
+      }),
+      { status: 200, headers },
     );
   });
 
   return app;
 }
-
-/** Re-exported for B14's wiring: both roads' CSP, one source of truth. */
-export { STATIC_CSP, DEV_CSP_ALLOW_LISTED };
