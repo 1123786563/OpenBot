@@ -4,10 +4,20 @@
   "back": "知识库",
   "create": {
     "title": "创建知识库",
+    "dialogDescription": "起个名字，描述它的覆盖范围；需要时再调整高级设置。",
     "name": "名称",
     "namePlaceholder": "例如：产品手册",
     "description": "描述",
     "descriptionPlaceholder": "这个知识库覆盖什么内容（可选）",
+    "cancel": "取消",
+    "showAdvanced": "高级设置",
+    "hideAdvanced": "收起高级设置",
+    "embedder": "向量模型",
+    "embedderPlaceholder": "留空使用部署默认",
+    "chunkSize": "分块大小",
+    "chunkOverlap": "分块重叠",
+    "rerankModel": "重排模型",
+    "rerankPlaceholder": "留空则不重排",
     "submit": "创建",
     "creating": "创建中…"
   },
@@ -18,6 +28,8 @@
     "noDescription": "暂无描述",
     "docCount": "{{count}} 份文档",
     "delete": "删除",
+    "deleteConfirm": "确认删除知识库「{{name}}」及其全部文档？",
+    "deleteIrreversible": "删除后不可恢复。",
     "emptyTitle": "还没有知识库",
     "emptyDescription": "在上方创建一个知识库，开始添加文档。"
   },
@@ -31,7 +43,42 @@
     "emptyTitle": "还没有文档",
     "emptyDescription": "在下方添加一份文档以建立索引。",
     "delete": "删除",
-    "chunks": "{{count}} 个分块"
+    "deleteConfirm": "从知识库删除这份文档？",
+    "select": "选择",
+    "selectRow": "选择 {{title}}",
+    "selectedCount": "已选 {{count}} 项",
+    "clearSelection": "清除",
+    "bulkDelete": "删除 {{count}} 项",
+    "bulkDeleting": "删除中…",
+    "bulkError": "{{count}} 份文档删除失败。",
+    "colTitle": "标题",
+    "colMeta": "状态",
+    "colCreated": "创建时间",
+    "colUpdated": "更新时间",
+    "colActions": "操作",
+    "chunks": "{{count}} 个分块",
+    "taskProgress": "{{progress}}% · {{done}}/{{total}} 块"
+  },
+  "filter": {
+    "keyword": "关键字",
+    "keywordPlaceholder": "按标题或文件名筛选…",
+    "type": "类型",
+    "status": "状态",
+    "all": "全部"
+  },
+  "upload": {
+    "panelUploading": "正在上传 {{done}}/{{total}}",
+    "panelDone": "全部上传完成",
+    "panelDoneWithIssues": "{{ok}} 个完成，{{bad}} 个未成功",
+    "hint": "上传完成前请不要关闭或刷新页面。",
+    "phaseWaiting": "等待上传",
+    "phaseSaving": "正在保存…",
+    "phaseFailed": "上传失败",
+    "cancel": "取消",
+    "retry": "重试",
+    "retryFailed": "重试 {{count}} 个",
+    "collapse": "收起",
+    "expand": "展开"
   },
   "add": {
     "title": "添加文档",
@@ -44,7 +91,7 @@
     "contentPlaceholder": "粘贴文档文本…",
     "url": "链接",
     "urlPlaceholder": "https://…",
-    "file": "选择文件",
+    "file": "选择文件（可多选）",
     "submit": "添加",
     "adding": "添加中…"
   },
@@ -59,9 +106,20 @@
     "description": "查看你的 Bot 对某个问题会检索到什么内容。",
     "query": "问题",
     "placeholder": "输入一个问题…",
+    "topK": "返回条数 Top K",
+    "threshold": "分数阈值",
+    "hybrid": "混合检索",
+    "hybridOn": "开",
+    "hybridOff": "关",
     "submit": "搜索",
     "searching": "搜索中…",
     "noResults": "没有匹配的分块。换个问题试试，或添加更多文档。",
     "score": "得分 {{score}}"
+  },
+  "delete": {
+    "title": "删除确认",
+    "cancel": "取消",
+    "confirm": "删除",
+    "deleting": "删除中…"
   }
 }

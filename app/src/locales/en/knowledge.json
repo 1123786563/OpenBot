@@ -4,10 +4,20 @@
   "back": "Knowledge",
   "create": {
     "title": "Create a knowledge base",
+    "dialogDescription": "Name it, describe what it covers, and tune the advanced settings if you need to.",
     "name": "Name",
     "namePlaceholder": "e.g. Product handbook",
     "description": "Description",
     "descriptionPlaceholder": "What this knowledge base covers (optional)",
+    "cancel": "Cancel",
+    "showAdvanced": "Advanced settings",
+    "hideAdvanced": "Hide advanced settings",
+    "embedder": "Embedding model",
+    "embedderPlaceholder": "Leave empty for the deployment default",
+    "chunkSize": "Chunk size",
+    "chunkOverlap": "Chunk overlap",
+    "rerankModel": "Rerank model",
+    "rerankPlaceholder": "Leave empty to skip reranking",
     "submit": "Create",
     "creating": "Creating…"
   },
@@ -18,6 +28,8 @@
     "noDescription": "No description",
     "docCount": "{{count}} docs",
     "delete": "Delete",
+    "deleteConfirm": "Delete the knowledge base “{{name}}” and all of its documents?",
+    "deleteIrreversible": "This cannot be undone.",
     "emptyTitle": "No knowledge bases yet",
     "emptyDescription": "Create one above to start adding documents."
   },
@@ -31,7 +43,42 @@
     "emptyTitle": "No documents yet",
     "emptyDescription": "Add a document below to index it.",
     "delete": "Delete",
-    "chunks": "{{count}} chunks"
+    "deleteConfirm": "Delete the document below from this knowledge base?",
+    "select": "Select",
+    "selectRow": "Select {{title}}",
+    "selectedCount": "{{count}} selected",
+    "clearSelection": "Clear",
+    "bulkDelete": "Delete {{count}}",
+    "bulkDeleting": "Deleting…",
+    "bulkError": "{{count}} documents could not be deleted.",
+    "colTitle": "Title",
+    "colMeta": "Status",
+    "colCreated": "Created",
+    "colUpdated": "Updated",
+    "colActions": "Actions",
+    "chunks": "{{count}} chunks",
+    "taskProgress": "{{progress}}% · {{done}}/{{total}} chunks"
+  },
+  "filter": {
+    "keyword": "Keyword",
+    "keywordPlaceholder": "Filter by title or file name…",
+    "type": "Type",
+    "status": "Status",
+    "all": "All"
+  },
+  "upload": {
+    "panelUploading": "Uploading {{done}}/{{total}}",
+    "panelDone": "All uploads finished",
+    "panelDoneWithIssues": "{{ok}} done, {{bad}} not finished",
+    "hint": "Keep this page open until uploads finish.",
+    "phaseWaiting": "Waiting",
+    "phaseSaving": "Saving…",
+    "phaseFailed": "Upload failed",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "retryFailed": "Retry {{count}}",
+    "collapse": "Collapse",
+    "expand": "Expand"
   },
   "add": {
     "title": "Add a document",
@@ -44,7 +91,7 @@
     "contentPlaceholder": "Paste the document text…",
     "url": "URL",
     "urlPlaceholder": "https://…",
-    "file": "Choose a file",
+    "file": "Choose files",
     "submit": "Add",
     "adding": "Adding…"
   },
@@ -59,9 +106,20 @@
     "description": "See what your bots would get back for a query.",
     "query": "Query",
     "placeholder": "Ask a question…",
+    "topK": "Top K",
+    "threshold": "Score threshold",
+    "hybrid": "Hybrid",
+    "hybridOn": "On",
+    "hybridOff": "Off",
     "submit": "Search",
     "searching": "Searching…",
     "noResults": "No matching chunks. Try a different query or add more documents.",
     "score": "score {{score}}"
+  },
+  "delete": {
+    "title": "Delete confirmation",
+    "cancel": "Cancel",
+    "confirm": "Delete",
+    "deleting": "Deleting…"
   }
 }
