@@ -11,7 +11,8 @@
  * names, and cannot reach any upstream at all without naming one.
  */
 import { timingSafeEqual } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { SandboxEnv } from "./env";
 import type { BotRuntimes } from "./bot-runtimes";
 import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
@@ -229,6 +230,27 @@ export function createProxyHandler(
     if (url.pathname === "/devserver/stop" && request.method === "POST") {
       await runtimes.stopDevServer(botId);
       return Response.json({ ok: true, botId });
+    }
+
+    // POST /file (B5's writeFile verb): the PROXY writes the file, contained. There is no
+    // upstream verb for this — forwarding it answers the SPA's 200-from-nothing, which a
+    // caller reads as success while nothing lands (the isolation smoke caught exactly this).
+    if (url.pathname === "/file" && request.method === "POST") {
+      const path = url.searchParams.get("path") ?? "";
+      if (!path || path.startsWith("/") || path.split("/").includes("..")) {
+        return Response.json(
+          { error: "The path must be a plain relative path inside the workspace." },
+          { status: 400 },
+        );
+      }
+      const body = new Uint8Array(await request.arrayBuffer());
+      if (body.byteLength > env.maxResponseBytes) {
+        return Response.json({ error: "The file is too large." }, { status: 413 });
+      }
+      const target = join(env.workspaceDir, "bots", botId, path);
+      await mkdir(join(target, ".."), { recursive: true });
+      await writeFile(target, body);
+      return Response.json({ path, size: body.byteLength }, { status: 201 });
     }
 
     // The static webapp road (S3): files that were built, no process. Start verifies the

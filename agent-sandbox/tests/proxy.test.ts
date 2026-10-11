@@ -218,15 +218,26 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(typeof mine?.lastActivityAtMs).toBe("number");
   });
 
-  test("POST /file is allowed (B5's writeFile verb) and reaches the upstream", async () => {
+  test("POST /file (B5's writeFile verb) writes contained and answers 201 (S7's fix)", async () => {
+    // The verb is the proxy's own: forwarding it to the upstream answered the SPA's
+    // 200-from-nothing while nothing landed — the live isolation smoke caught it. Now the
+    // file is written inside the Bot's workspace and the answer names what landed.
     const response = await call("/file?path=data.csv", {
       method: "POST",
       headers: { ...botHeaders, "content-type": "text/plain" },
       body: "a,b\n1,2\n",
     });
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { echo?: string };
-    expect(body.echo).toBe("/file");
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { path?: string; size?: number };
+    expect(body.path).toBe("data.csv");
+    expect(body.size).toBe(8); // "a,b\n1,2\n" — count the bytes, not the lines.
+    // And an escaping path is refused before any write.
+    const escape = await call("/file?path=../x.csv", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "x",
+    });
+    expect(escape.status).toBe(400);
   });
 });
 
