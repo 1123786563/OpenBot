@@ -11,6 +11,7 @@ import {
   type BillingEntitlementSubscriptionContext,
   type BillingEntitlements,
   BillingError,
+  BillingPersistenceError,
   type BillingService,
   type BillingSnapshot,
   type BillingStore,
@@ -62,12 +63,13 @@ export function deploymentExternalCustomerId(tenantId: string): string {
  * overwrite.
  *
  * handleWebhook order, fixed deliberately: verify (401) → inbox check (a known event is already
- * fully applied, 200) → fresh read of the authoritative object (a retryable failure answers 5xx
- * with nothing recorded, so the provider retries the whole delivery) → refresh the projections →
- * write the inbox row → 200. An inbox row therefore always means "the work it names is done", which
- * is the one property that keeps a crash mid-delivery from losing an event. (The Go implementation
- * this descends from wrote the inbox before acting, so a delivery that failed afterwards was never
- * retried; that gap is not inherited, and this comment is the record of the divergence.)
+ * fully applied, 200) → fresh read of the authoritative object → refresh the projections → write
+ * the inbox row → 200. Retryable provider and typed persistence failures answer 503 without writing
+ * the inbox, so the provider retries the whole delivery. An inbox row therefore always means "the
+ * work it names is done", which is the one property that keeps a crash mid-delivery from losing an
+ * event. (The Go implementation this descends from wrote the inbox before acting, so a delivery
+ * that failed afterwards was never retried; that gap is not inherited, and this comment is the
+ * record of the divergence.)
  *
  * Events about objects this deployment does not project (invoices, wallets, …) have nothing to
  * refresh, which is also finished work: they are recorded and answered 200.
@@ -335,29 +337,33 @@ export function createBillingService(deps: {
       }
       const delivery = verified.delivery;
 
-      if (await store.hasWebhookEvent(LAGO_PROVIDER_ID, delivery.eventId)) {
-        // Already fully applied; the inbox row is the proof, and no re-read happens.
-        return json(200, { status: "duplicate" });
-      }
-
       try {
+        if (await store.hasWebhookEvent(LAGO_PROVIDER_ID, delivery.eventId)) {
+          // Already fully applied; the inbox row is the proof, and no re-read happens.
+          return json(200, { status: "duplicate" });
+        }
+
         await refreshFor(delivery);
+        const inserted = await store.recordWebhookEvent({
+          provider: LAGO_PROVIDER_ID,
+          eventId: delivery.eventId,
+          uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
+          webhookType: delivery.webhookType,
+          ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
+        });
+        return json(200, { status: inserted ? "processed" : "duplicate" });
       } catch (error) {
+        if (error instanceof BillingPersistenceError) {
+          (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
+          return json(503, { error: "Billing webhook could not be applied." });
+        }
         if (error instanceof BillingError && error.retryable) {
+          (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
           // Nothing recorded: the provider retries the whole delivery, re-read included.
           return json(503, { error: "Billing webhook could not be applied." });
         }
         return json(400, { error: "Billing webhook could not be applied." });
       }
-
-      const inserted = await store.recordWebhookEvent({
-        provider: LAGO_PROVIDER_ID,
-        eventId: delivery.eventId,
-        uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
-        webhookType: delivery.webhookType,
-        ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
-      });
-      return json(200, { status: inserted ? "processed" : "duplicate" });
     },
 
     entitlements(externalCustomerId) {

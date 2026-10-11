@@ -39,6 +39,26 @@ export class BillingError extends Error {
   }
 }
 
+export type BillingPersistenceOperation =
+  | "customer_upsert"
+  | "customer_ensure"
+  | "subscription_upsert"
+  | "subscription_read"
+  | "webhook_lookup"
+  | "webhook_record"
+  | "snapshot";
+
+/** A database operation failed after the request reached the billing store. */
+export class BillingPersistenceError extends Error {
+  override name = "BillingPersistenceError";
+  readonly code = "persistence_failure";
+  readonly retryable = true;
+
+  constructor(readonly operation: BillingPersistenceOperation) {
+    super(`Billing persistence failed (${operation}).`);
+  }
+}
+
 /** A customer that exists remotely. Echoes the local, deterministic external ID only. */
 export type CustomerReceipt = { externalId: string };
 
