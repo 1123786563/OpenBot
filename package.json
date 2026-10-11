@@ -27,8 +27,7 @@
     "test:live-sandbox-isolation": "bun --env-file=.env -e \"if (!process.env.SANDBOX_TOKEN?.trim()) { console.error('SANDBOX_TOKEN is empty or unset. Bring the sandbox up (docker compose up -d agent-sandbox) and set SANDBOX_TOKEN in .env first.'); process.exit(1) }\" && bun --env-file=.env scripts/sandbox-isolation-smoke.ts",
     "test:live-workshop": "bun --env-file=.env -e \"if (!process.env.SANDBOX_TOKEN?.trim()) { console.error('SANDBOX_TOKEN is empty or unset. Bring the sandbox up (docker compose up -d agent-sandbox) and set SANDBOX_TOKEN in .env first, and have the server running (see WORKSHOP_SMOKE_SERVER_URL).'); process.exit(1) }\" && bun --env-file=.env scripts/workshop-smoke.ts",
     "diagram": "bun scripts/architecture-diagram.ts",
-    "composio:smoke": "bun scripts/composio-smoke.ts",
-    "mock:knowledge": "bun scripts/mock-knowledge-mcp.ts"
+    "composio:smoke": "bun scripts/composio-smoke.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
