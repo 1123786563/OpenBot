@@ -13,8 +13,8 @@ import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { and, asc, count, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { craftMessages, craftSessions } from "../db/schema/craft";
 import type { CraftMessageType } from "../db/schema/craft";
+import { craftMessages, craftSessions } from "../db/schema/craft";
 
 /** Postgres unique-violation: a lost race on a guarded insert/update. */
 const UNIQUE_VIOLATION = "23505";
@@ -30,7 +30,10 @@ export type CraftMessageRow = typeof craftMessages.$inferSelect;
 export type CraftStore = {
   // ── sessions ────────────────────────────────────────────────────────────────
   /** The session by id, ownership-checked; bumps lastActivityAt (onyx update_session_activity). */
-  getSession(sessionId: string, userId: string): Promise<CraftSessionRow | undefined>;
+  getSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<CraftSessionRow | undefined>;
   /** Sessions for the sidebar: user's INTERACTIVE rows, newest first. */
   listUserSessions(
     userId: string,
@@ -70,7 +73,10 @@ export type CraftStore = {
     mcpConfigHash?: string | null;
   }): Promise<boolean>;
   /** Write a freshly resolved opencode_session_id back (stale-404 remint). */
-  persistOpencodeSessionId(sessionId: string, opencodeSessionId: string): Promise<void>;
+  persistOpencodeSessionId(
+    sessionId: string,
+    opencodeSessionId: string,
+  ): Promise<void>;
   /** Reserve a webapp port on the row; retries on unique-index collision. */
   reserveNextjsPort(input: {
     userId: string;
@@ -113,7 +119,12 @@ export function createCraftStore(db: Database): CraftStore {
       const rows = await db
         .select()
         .from(craftSessions)
-        .where(and(eq(craftSessions.id, sessionId), eq(craftSessions.userId, userId)))
+        .where(
+          and(
+            eq(craftSessions.id, sessionId),
+            eq(craftSessions.userId, userId),
+          ),
+        )
         .limit(1);
       if (rows.length === 0) return undefined;
       await this.updateSessionActivity(sessionId);
@@ -194,7 +205,8 @@ export function createCraftStore(db: Database): CraftStore {
         .update(craftSessions)
         .set({
           status: input.toStatus,
-          ...(input.opencodeSessionId !== undefined && input.opencodeSessionId !== null
+          ...(input.opencodeSessionId !== undefined &&
+          input.opencodeSessionId !== null
             ? { opencodeSessionId: input.opencodeSessionId }
             : {}),
           ...(input.skillsHash !== undefined && input.skillsHash !== null
@@ -277,7 +289,12 @@ export function createCraftStore(db: Database): CraftStore {
     async deleteSession(sessionId, userId) {
       const rows = await db
         .delete(craftSessions)
-        .where(and(eq(craftSessions.id, sessionId), eq(craftSessions.userId, userId)))
+        .where(
+          and(
+            eq(craftSessions.id, sessionId),
+            eq(craftSessions.userId, userId),
+          ),
+        )
         .returning({ id: craftSessions.id });
       return rows.length === 1;
     },
@@ -301,7 +318,10 @@ export function createCraftStore(db: Database): CraftStore {
         .select({ value: count() })
         .from(craftMessages)
         .where(
-          and(eq(craftMessages.sessionId, sessionId), eq(craftMessages.type, "user")),
+          and(
+            eq(craftMessages.sessionId, sessionId),
+            eq(craftMessages.type, "user"),
+          ),
         );
       return Number(rows[0]?.value ?? 0);
     },
@@ -384,7 +404,7 @@ function isPortAvailable(port: number): Promise<boolean> {
         server.close(() => resolveProbe(true));
       });
     });
-  return probe("0.0.0.0").then(
-    (ipv4Open) => (ipv4Open ? probe("::") : Promise.resolve(false)),
+  return probe("0.0.0.0").then((ipv4Open) =>
+    ipv4Open ? probe("::") : Promise.resolve(false),
   );
 }

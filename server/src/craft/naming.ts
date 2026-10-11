@@ -41,7 +41,7 @@ function extractText(metadata: unknown): string {
 
 /** The text of the first USER message, or null when there is none. */
 export async function firstUserMessageText(
-  db: Database,
+  _db: Database,
   store: CraftStore,
   sessionId: string,
 ): Promise<string | null> {
@@ -59,10 +59,7 @@ export type NamingDeps = {
    * One-shot generation (system + user → text). Omit to always take the deterministic
    * fallback — the naming path must never break a session.
    */
-  generateName?: (
-    system: string,
-    user: string,
-  ) => Promise<string>;
+  generateName?: (system: string, user: string) => Promise<string>;
 };
 
 /**
@@ -74,7 +71,11 @@ export async function generateSessionName(
   deps: NamingDeps,
   sessionId: string,
 ): Promise<string> {
-  const userMessage = await firstUserMessageText(deps.db, deps.store, sessionId);
+  const userMessage = await firstUserMessageText(
+    deps.db,
+    deps.store,
+    sessionId,
+  );
   if (!userMessage) return fallbackName(sessionId);
 
   if (deps.generateName) {

@@ -203,7 +203,9 @@ export function buildProviderOpencodeConfig(
 ): Record<string, unknown> {
   if (
     llmProviderConfig.models !== null &&
-    !llmProviderConfig.models.some((model) => model.id === llmProviderConfig.modelName)
+    !llmProviderConfig.models.some(
+      (model) => model.id === llmProviderConfig.modelName,
+    )
   ) {
     throw new Error(
       `default model '${llmProviderConfig.modelName}' is not in the provider catalog`,

@@ -174,8 +174,6 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
         bizContent,
       });
     } catch (error) {
-      // TEMP DIAGNOSTIC (sandbox debugging): the SDK's real error before normalisation.
-      console.warn("[alipay-diag] exec raised:", String(error).slice(0, 220));
       // The SDK raises business failures as errors whose fields carry the verdict; a network
       // raise carries none. Both normalise: a typed business answer is returned for the caller
       // to classify, anything else is the retryable transport sentinel.

@@ -34,8 +34,10 @@ function titleCase(value: string): string {
     .join(" ");
 }
 
-function buildOrganizationInstructionsSection(instructions: string | null): string {
-  if (!instructions || !instructions.trim()) return "";
+function buildOrganizationInstructionsSection(
+  instructions: string | null,
+): string {
+  if (!instructions?.trim()) return "";
   return (
     "\n## Organization instructions\n\n" +
     "Your organization's admins set these workspace-wide instructions. " +
@@ -82,7 +84,10 @@ export function generateAgentInstructions(
     "{{LLM_PROVIDER_NAME}}",
     providerDisplay ?? "Unknown",
   );
-  content = content.replaceAll("{{LLM_MODEL_NAME}}", input.modelName ?? "Unknown");
+  content = content.replaceAll(
+    "{{LLM_MODEL_NAME}}",
+    input.modelName ?? "Unknown",
+  );
   content = content.replaceAll(
     "{{APPROVAL_WAIT_TIMEOUT_SECONDS}}",
     String(input.config.sandboxApprovalWaitTimeoutSeconds),
@@ -94,11 +99,16 @@ export function generateAgentInstructions(
         input.config.sandboxApprovalWaitMarginSeconds,
     ),
   );
-  content = content.replaceAll("{{DISABLED_TOOLS_SECTION}}", disabledToolsSection);
+  content = content.replaceAll(
+    "{{DISABLED_TOOLS_SECTION}}",
+    disabledToolsSection,
+  );
   // Last, so admin-authored text containing literal {{...}} tokens is never expanded.
   content = content.replaceAll(
     "{{ORGANIZATION_INSTRUCTIONS_SECTION}}",
-    buildOrganizationInstructionsSection(input.organizationInstructions ?? null),
+    buildOrganizationInstructionsSection(
+      input.organizationInstructions ?? null,
+    ),
   );
   return content;
 }

@@ -10,7 +10,10 @@
  * is preserved: `parseAgentSelection` decodes, callers re-check against the live catalog.
  */
 
-import type { CraftLLMProviderConfig, CraftModelDescriptor } from "./opencode-config";
+import type {
+  CraftLLMProviderConfig,
+  CraftModelDescriptor,
+} from "./opencode-config";
 
 /**
  * A gateway model pick: a specific accessible provider + model name. Its `wireId` is the id

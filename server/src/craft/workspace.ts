@@ -9,10 +9,13 @@
  * every operation here is a mkdir/write that converges on the same completed workspace.
  */
 
+import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
 import type { CraftLLMProviderConfig } from "./opencode-config";
-import { opencodeConfigJson, buildProviderOpencodeConfig } from "./opencode-config";
-import { generateAgentInstructions } from "./agent-instructions";
+import {
+  buildProviderOpencodeConfig,
+  opencodeConfigJson,
+} from "./opencode-config";
 import type { AgentSandboxFileApi } from "./sandbox-gateway";
 
 export const SESSIONS_ROOT = "/workspace/sessions";
@@ -76,7 +79,7 @@ export async function setupSessionWorkspace(
  * half-written workspace has attachments but not outputs, mirroring onyx's sentinel logic).
  */
 export async function sessionWorkspaceExists(
-  api: AgentSandboxFileApi,
+  api: Pick<AgentSandboxFileApi, "listFiles">,
   sessionId: string,
 ): Promise<boolean> {
   const root = sessionDirectory(sessionId);

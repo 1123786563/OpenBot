@@ -3,8 +3,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LLMock } from "@copilotkit/aimock";
 import {
+  CreditGateError,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
+  setModelUsageGate,
   setModelUsageMeter,
 } from "../src/copilot";
 import { loadTenantPackage } from "../src/tenant-package";
@@ -138,6 +140,68 @@ describe("the model usage meter", () => {
         content: "Unmetered fixture completed.",
       });
     } finally {
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await recorder.stop();
+    }
+  });
+
+  test("a refusing gate fails the run with the credit sentinel before any token streams", async () => {
+    const environment = {
+      ...testEnvironment(),
+      OPENAI_API_KEY: STUB_MODEL_KEY,
+    };
+    const tenantPackage = await loadTenantPackage(packagePath);
+    const model = runtimeModelForEnvironment(tenantPackage.model, environment);
+    const recorder = new LLMock();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    let gateCalls = 0;
+    try {
+      process.env.OPENAI_BASE_URL = await recorder.start();
+      // The gate refuses every call — the shape index.ts wires when the balance is zero.
+      setModelUsageGate(async () => {
+        gateCalls += 1;
+        throw new CreditGateError();
+      });
+      const agents = await resolveRuntimeAgents(
+        () => [
+          {
+            id: "general-assistant",
+            name: "General Assistant",
+            type: "built_in" as const,
+            systemPrompt: "Be helpful.",
+          },
+        ],
+        model,
+        async () => STUB_MODEL_KEY,
+      );
+      const agent = agents["general-assistant"]?.clone();
+      if (!agent) throw new Error("Expected General Assistant.");
+      agent.addMessage({
+        id: "gate-refusal-request",
+        role: "user",
+        content: "This call must be refused by the gate.",
+      });
+      // The run fails (the stream never starts) with OUR sentinel in the chain — not a
+      // generic transport error the reader cannot act on.
+      let refusal: unknown;
+      try {
+        await agent.runAgent();
+      } catch (error) {
+        refusal = error;
+      }
+      expect(gateCalls).toBeGreaterThanOrEqual(1);
+      expect(refusal).toBeDefined();
+      const chain: string[] = [];
+      for (let e = refusal; e instanceof Error && chain.length < 5; ) {
+        chain.push(`${e.name}: ${e.message}`);
+        e = (e.cause ?? e) as Error;
+      }
+      expect(chain.join(" | ")).toMatch(
+        /CreditGateError|credits_exhausted|no credits left/,
+      );
+    } finally {
+      setModelUsageGate(undefined);
       if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = originalBase;
       await recorder.stop();

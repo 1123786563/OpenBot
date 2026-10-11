@@ -88,7 +88,9 @@ export function activityTimeoutError(message: string): ActivityTimeoutError {
   };
 }
 
-export function isActivityTimeout(event: unknown): event is ActivityTimeoutError {
+export function isActivityTimeout(
+  event: unknown,
+): event is ActivityTimeoutError {
   return (
     event !== null &&
     typeof event === "object" &&
@@ -107,10 +109,16 @@ export type ToolCallBase = {
   kind: "execute" | "read" | "edit" | "search" | "fetch" | "other";
   status: ToolCallStatus;
   rawInput?: unknown;
-  rawOutput?: { output?: unknown; metadata?: unknown } & Record<string, unknown>;
+  rawOutput?: { output?: unknown; metadata?: unknown } & Record<
+    string,
+    unknown
+  >;
   content?: Array<
     | { type: "diff"; path: string; oldText: string; newText: string }
-    | { type: "content"; content: { type: string; text?: string } & Record<string, unknown> }
+    | {
+        type: "content";
+        content: { type: string; text?: string } & Record<string, unknown>;
+      }
   >;
   /** Carries the raw opencode tool name so the frontend resolves a precise title. */
   _meta?: Record<string, unknown>;
@@ -144,14 +152,18 @@ export function isKeepalive(event: unknown): event is SSEKeepalive {
   return event instanceof SSEKeepalive;
 }
 
-export function isAgentMessageChunk(event: unknown): event is AgentMessageChunk {
+export function isAgentMessageChunk(
+  event: unknown,
+): event is AgentMessageChunk {
   return (
     !(event instanceof SSEKeepalive) &&
     (event as AgentMessageChunk).sessionUpdate === "agent_message_chunk"
   );
 }
 
-export function isAgentThoughtChunk(event: unknown): event is AgentThoughtChunk {
+export function isAgentThoughtChunk(
+  event: unknown,
+): event is AgentThoughtChunk {
   return (
     !(event instanceof SSEKeepalive) &&
     (event as AgentThoughtChunk).sessionUpdate === "agent_thought_chunk"
@@ -173,12 +185,17 @@ export function isToolCallProgress(event: unknown): event is ToolCallProgress {
 }
 
 export function isAgentPlanUpdate(event: unknown): event is AgentPlanUpdate {
-  return !(event instanceof SSEKeepalive) && "entries" in (event as AgentPlanUpdate);
+  return (
+    !(event instanceof SSEKeepalive) && "entries" in (event as AgentPlanUpdate)
+  );
 }
 
-export function isCurrentModeUpdate(event: unknown): event is CurrentModeUpdate {
+export function isCurrentModeUpdate(
+  event: unknown,
+): event is CurrentModeUpdate {
   return (
-    !(event instanceof SSEKeepalive) && "currentMode" in (event as CurrentModeUpdate)
+    !(event instanceof SSEKeepalive) &&
+    "currentMode" in (event as CurrentModeUpdate)
   );
 }
 

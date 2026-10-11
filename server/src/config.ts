@@ -2058,6 +2058,28 @@ function paymentsConfig(
         `PAYMENT_PLAN_CATALOG plan "${planCode}" periodMonths must be 1 (monthly): that is the Lago interval the activation creates`,
       );
     }
+    // THE PRICE CROSS-CHECK (P1-2's root cause, closed at boot): the collected price and the
+    // displayed price are two configs, and nothing else compares them — a deployment that
+    // raises LAGO_PLAN_CATALOG's monthly price but forgets PAYMENT_PLAN_CATALOG shows one
+    // number and collects another, which is the exact failure a person reads as being
+    // overcharged. Refuse to start; the monthly cycle is the only cycle v1 collects.
+    const displayed =
+      billing.planCatalog.get(planCode)?.pricing.find(
+        (cycle) =>
+          cycle.code === "monthly" || cycle.code === "recurring_monthly",
+      );
+    if (displayed && displayed.priceCents !== amountCents) {
+      throw new Error(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match LAGO_PLAN_CATALOG's monthly price (${displayed.priceCents}): the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
+      );
+    }
+    if (!displayed) {
+      // Not a mismatch (the payment catalog is the collector's truth), but the upgrade dialog
+      // cannot offer it — say so at boot rather than discovering a plan nobody can click.
+      log.warn(
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" has no monthly cycle in LAGO_PLAN_CATALOG: it is purchasable through the API but the upgrade dialog will not show it`,
+      );
+    }
     planCatalog.set(planCode, {
       amountCents,
       currency: "CNY",

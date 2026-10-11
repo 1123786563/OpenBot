@@ -43,14 +43,25 @@ export type SessionFlowLocks = {
    * Run `body` holding the user's session-flow lock; throws
    * {@link SessionCreationLockAcquisitionError} past the wait budget.
    */
-  withSessionCreationLock<T>(userId: string, body: () => Promise<T>): Promise<T>;
+  withSessionCreationLock<T>(
+    userId: string,
+    body: () => Promise<T>,
+  ): Promise<T>;
   /** Non-blocking probe: true when the lock is free (the restore endpoint 409s otherwise). */
-  trySessionCreationLock<T>(userId: string, body: () => Promise<T>): Promise<T | null>;
+  trySessionCreationLock<T>(
+    userId: string,
+    body: () => Promise<T>,
+  ): Promise<T | null>;
   readonly mode: "redis" | "memory";
 };
 
-export function createRedisSessionFlowLocks(redis: RedisPort): SessionFlowLocks {
-  const acquire = async (userId: string, waitSeconds: number): Promise<string | null> => {
+export function createRedisSessionFlowLocks(
+  redis: RedisPort,
+): SessionFlowLocks {
+  const acquire = async (
+    userId: string,
+    waitSeconds: number,
+  ): Promise<string | null> => {
     const token = randomUUID();
     const key = lockKey(userId);
     const deadline = Date.now() + waitSeconds * 1000;
@@ -69,7 +80,9 @@ export function createRedisSessionFlowLocks(redis: RedisPort): SessionFlowLocks 
     }
   };
   const release = async (userId: string, token: string) => {
-    await redis.eval(RELEASE_SCRIPT, 1, lockKey(userId), token).catch(() => undefined);
+    await redis
+      .eval(RELEASE_SCRIPT, 1, lockKey(userId), token)
+      .catch(() => undefined);
   };
   const run = async <T>(
     userId: string,
@@ -89,7 +102,8 @@ export function createRedisSessionFlowLocks(redis: RedisPort): SessionFlowLocks 
     mode: "redis" as const,
     async withSessionCreationLock(userId, body) {
       const result = await run(userId, SESSION_FLOW_LOCK_WAIT_SECONDS, body);
-      if (result === null) throw new SessionCreationLockAcquisitionError(userId);
+      if (result === null)
+        throw new SessionCreationLockAcquisitionError(userId);
       return result;
     },
     trySessionCreationLock(userId, body) {
@@ -100,7 +114,10 @@ export function createRedisSessionFlowLocks(redis: RedisPort): SessionFlowLocks 
 
 export function createInProcessSessionFlowLocks(): SessionFlowLocks {
   const held = new Map<string, { token: string; expiresAt: number }>();
-  const acquire = async (userId: string, waitSeconds: number): Promise<string | null> => {
+  const acquire = async (
+    userId: string,
+    waitSeconds: number,
+  ): Promise<string | null> => {
     const token = randomUUID();
     const deadline = Date.now() + waitSeconds * 1000;
     for (;;) {
@@ -138,7 +155,8 @@ export function createInProcessSessionFlowLocks(): SessionFlowLocks {
     mode: "memory" as const,
     async withSessionCreationLock(userId, body) {
       const result = await run(userId, SESSION_FLOW_LOCK_WAIT_SECONDS, body);
-      if (result === null) throw new SessionCreationLockAcquisitionError(userId);
+      if (result === null)
+        throw new SessionCreationLockAcquisitionError(userId);
       return result;
     },
     trySessionCreationLock(userId, body) {
@@ -147,7 +165,9 @@ export function createInProcessSessionFlowLocks(): SessionFlowLocks {
   };
 }
 
-export function createSessionFlowLocks(redis: RedisPort | null): SessionFlowLocks {
+export function createSessionFlowLocks(
+  redis: RedisPort | null,
+): SessionFlowLocks {
   return redis
     ? createRedisSessionFlowLocks(redis)
     : createInProcessSessionFlowLocks();

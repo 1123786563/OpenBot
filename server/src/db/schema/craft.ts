@@ -22,8 +22,8 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { jsonb } from "./json";
 import { users } from "./core";
+import { jsonb } from "./json";
 
 const stamp = (name: string) =>
   timestamp(name, { withTimezone: true }).notNull().defaultNow();

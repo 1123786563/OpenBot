@@ -8,7 +8,7 @@
  * (ApprovalRequested, ConnectAppRequest) keep their types so the union and the SSE serializer
  * are already shaped for them.
  */
-import { SSEKeepalive, type SandboxEvent } from "./types";
+import { type SandboxEvent, SSEKeepalive } from "./types";
 
 export type BasePacket = {
   timestamp: string;

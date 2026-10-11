@@ -121,8 +121,23 @@ export const creditLedger = pgTable(
     title: text("title").notNull(),
     /** The request id, to be truncated by the client. */
     requestId: text("request_id"),
-    /** Cost of this call, in scaled credit units (×100). */
+    /**
+     * What makes a retried draw one draw: the caller's stable key for the consumption (the
+     * same ids the Lago meter reports under — `llm:<seq>`, `code-run:<runId>`). NOT NULL and
+     * unique; the writer derives one when the caller has none, which is what lets the index
+     * be plain (ON CONFLICT cannot infer a partial index). Distinct from `request_id`, which
+     * stays the display copy the consumption table truncates.
+     */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** Cost of this call, in scaled credit units (×100). Always the ACTUAL cost in full. */
     credits: integer("credits").notNull(),
+    /**
+     * What the grants actually absorbed of `credits`. Equal except when the balance came up
+     * short (a post-paid draw the pre-call gate missed): the ledger keeps the whole truth,
+     * this column records how much of it the balance could fund — `credits - applied` is the
+     * overdraw, visible instead of rounded away.
+     */
+    applied: integer("applied").notNull().default(0),
     model: text("model"),
     /** The surface that made the call (web/api/cli). */
     client: text("client"),
@@ -132,11 +147,21 @@ export const creditLedger = pgTable(
   },
   (table) => [
     check("credit_ledger_credits_check", sql`${table.credits} >= 0`),
+    // The absorbed share of the cost: never negative, never more than the cost itself.
+    check(
+      "credit_ledger_applied_check",
+      sql`${table.applied} >= 0 AND ${table.applied} <= ${table.credits}`,
+    ),
     // The consumption read walks a customer's ledger newest-first.
     index("credit_ledger_customer_created_idx").on(
       table.externalCustomerId,
       table.createdAt,
     ),
     index("credit_ledger_grant_idx").on(table.grantId),
+    // One draw per consumption occurrence: a retried report is a no-op, never a second
+    // deduction (the same shape credit_grants uses). Plain unique because never null.
+    uniqueIndex("credit_ledger_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
+    ),
   ],
 );

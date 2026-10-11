@@ -11,16 +11,15 @@
  */
 
 import type { Database } from "../db/client";
-import type { CraftStore } from "./store";
+import type { CraftConfig } from "./config";
+import { StaleProvisioningAttemptError } from "./errors";
 import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
+import type { CraftSessionRow, CraftStore } from "./store";
 import {
   sessionDirectory,
   sessionWorkspaceExists,
   setupSessionWorkspace,
 } from "./workspace";
-import type { CraftSessionRow } from "./store";
-import { StaleProvisioningAttemptError } from "./errors";
-import type { CraftConfig } from "./config";
 
 /** The AGENTS.md template, read once per process (the port of onyx's file-read-at-import). */
 let agentsTemplateCache: string | null = null;
@@ -55,9 +54,9 @@ export type EnsureSessionReadyInput = {
   userName?: string | null;
   organizationInstructions?: string | null;
   /** Resolves the LLM config for the workspace's opencode.json. */
-  llmConfigFor: (session: CraftSessionRow) => Promise<
-    import("./opencode-config").CraftLLMProviderConfig
-  >;
+  llmConfigFor: (
+    session: CraftSessionRow,
+  ) => Promise<import("./opencode-config").CraftLLMProviderConfig>;
   /** The craft runtime config — workspace generation reads it (explicit DI, no globals). */
   config: CraftConfig;
 };
@@ -76,7 +75,10 @@ export async function ensureSessionReady(
   const directory = sessionDirectory(session.id);
 
   if (
-    await sessionWorkspaceExists(gateway.fileApiFor(botId) ?? nullApi, session.id)
+    await sessionWorkspaceExists(
+      gateway.fileApiFor(botId) ?? nullApi,
+      session.id,
+    )
   ) {
     if (session.status !== "active") {
       await store.updateSession(session.id, { status: "active" });
@@ -140,17 +142,8 @@ export async function ensureSessionReady(
 }
 
 /** A null-object file API: every probe fails, so "workspace exists" answers false. */
-const nullApi: AgentSandboxFileApi = {
+const nullApi: Pick<AgentSandboxFileApi, "listFiles"> = {
   async listFiles() {
-    throw new Error("no sandbox file api");
-  },
-  async writeFile() {
-    throw new Error("no sandbox file api");
-  },
-  async deletePath() {
-    throw new Error("no sandbox file api");
-  },
-  async readFile() {
     throw new Error("no sandbox file api");
   },
 };

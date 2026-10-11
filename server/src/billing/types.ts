@@ -459,6 +459,14 @@ export type BillingService = {
     externalCustomerId?: string;
   }): Promise<void>;
   snapshot(): Promise<BillingSnapshot>;
-  /** Not built yet, and refusing rather than half-working. */
-  reconcile(): Promise<never>;
+  /**
+   * The reconciliation pass (T7's skeleton): a READ-ONLY audit of the books' two invariants —
+   * the payment three-way agreement (paid orders ↔ paid facts ↔ a live subscription in the
+   * Lago projection) and the credit identity (Σ grants.used = Σ ledger.applied, per
+   * customer) — answering a structured report; findings name their category/code/subject,
+   * and an empty list is the books agreeing. Never repairs: reconciliation that fixes what
+   * it finds erases the evidence. The pass is injected (see createBillingService's deps) and
+   * absent keeps the honest refusal.
+   */
+  reconcile(): Promise<ReconcileReport>;
 };

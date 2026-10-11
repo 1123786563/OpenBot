@@ -113,6 +113,8 @@ export type PaymentService = {
   createPurchase(input: {
     planCode: string;
     provider: PaymentProviderId;
+    /** The billing cycle, already normalized to `monthly` by the routes (v1's only cycle). */
+    cycle: "monthly";
     createdBy: string | null;
   }): Promise<{ order: PaymentOrderView }>;
   /** One order as its creator may see it. A pending order's channel is asked once (the poll). */
@@ -162,6 +164,15 @@ export function createPaymentService(deps: {
   externalCustomerKey: string;
   /** The plan active at the provider right now — the single-subscription guard's fact. */
   activePlanCode(): Promise<string | null>;
+  /**
+   * The same guard's UNCACHED fact, read straight from the local subscription projection
+   * (P1-5). `activePlanCode` above rides a 10-minute TTL cache whose failure fallback answers
+   * "not active" — two windows the purchase guard must not inherit: a cache that lags a sync
+   * or a provider blip would let a duplicate purchase through (money collected, activation
+   * refused) or refuse a legitimate one for minutes. One indexed local read per purchase
+   * attempt is cheap; absent falls back to the cached read (back-compat).
+   */
+  activePlanCodeUncached?(): Promise<string | null>;
   /** Called the moment activation lands, so the entitlement read never lags behind a payment. */
   invalidateEntitlementCache(): void;
   /**
@@ -176,6 +187,22 @@ export function createPaymentService(deps: {
   // The shared server logger satisfies the narrow `{ warn }` shape, so the fallback is a
   // plain injection default — warnings route through the one logger, never bare stdout.
   const log = deps.log ?? getLogger("server");
+
+  /*
+   * Consecutive failed activation verdicts per paid order, this process. The exhaustion ALARM
+   * (see sweepActivations) reads it; a restart simply re-arms it, because the anomaly the
+   * alarm writes is idempotent per order anyway. Not a column, deliberately: it is alarm
+   * bookkeeping, not money state.
+   */
+  const activationStrikes = new Map<string, number>();
+  const ACTIVATION_ALARM_AFTER = 3;
+  /*
+   * How many "paid, but no amount" answers end the order (P2-3). Three balances two failure
+   * shapes: a transient gateway hiccup (one bad answer) never blocks, and a channel that
+   * genuinely cannot state amounts is ended within one poll interval's worth of sweeps rather
+   * than asked forever.
+   */
+  const AMOUNT_UNREADABLE_LIMIT = 3;
 
   function notifyUrlFor(provider: PaymentProviderId): string {
     return `${deps.notifyBaseUrl}/api/payments/callbacks/${provider}`;
@@ -361,6 +388,16 @@ export function createPaymentService(deps: {
     const transactionId = fact.channelTransactionId ?? order.id;
 
     if (fact.amountCents === undefined) {
+      /*
+       * A TERMINAL order needs no more evidence (B3): the endgame below moved past-pending
+       * no-amount orders to `blocked` and that verdict is final — every further redelivery of
+       * the same unreadable notification used to append another strike row to a dead order,
+       * a tail that grows forever for nobody. (The blocked-status branch above never ran,
+       * because THIS amount gate precedes it.) Terminal here answers `claimed: false` in
+       * silence: the ack still quiets the delivery, the blocked state already carries the
+       * story, and the existing strike rows keep the evidence.
+       */
+      if (order.status === "blocked") return { claimed: false };
       // The channel says paid but states no amount: keep the order pending (never grant on an
       // unverified amount), keep the evidence, and let the next query — which carries the
       // amount — decide. The ack still quiets this delivery.
@@ -371,6 +408,28 @@ export function createPaymentService(deps: {
         amountCents: null,
         detail: "paid fact carried no comparable amount",
       });
+      /*
+       * The ENDGAME (P2-3): a channel that cannot state an amount after N asks is not going
+       * to, and every ask is a poll or a sweep pass this order makes forever. After the Nth
+       * `amount_unreadable` the order moves to `blocked` — the terminal state for "the money
+       * and the order disagree on evidence" — so the sweeper stops re-asking and an operator
+       * sees a single terminal row instead of an immortal pending one. The word is excluded
+       * from the anomaly dedup index precisely so these rows count.
+       */
+      const strikes = await deps.store
+        .countAnomalies(order.id, "amount_unreadable")
+        .catch(() => 0);
+      if (strikes >= AMOUNT_UNREADABLE_LIMIT && order.status === "pending") {
+        await deps.store
+          .blockOrder({
+            id: order.id,
+            expectedVersion: order.version,
+            channelTransactionId: fact.channelTransactionId ?? null,
+            amountCents: null,
+            detail: `channel stated no amount ${strikes} times; blocked to end the sweep`,
+          })
+          .catch(() => {});
+      }
       return { claimed: false };
     }
     if (fact.amountCents !== order.amountCents) {
@@ -475,7 +534,7 @@ export function createPaymentService(deps: {
     // anomaly fires for whichever side of the pair lands second, which is exactly the one that
     // doubled the first.
     const latestPaid = await deps.store
-      .readLatestPaidOrder(order.planCode)
+      .readLatestPaidOrder(order.planCode, order.id)
       .catch(() => null);
     if (latestPaid && latestPaid.id !== order.id) {
       await recordAnomalyQuietly({
@@ -505,7 +564,15 @@ export function createPaymentService(deps: {
       plans.sort((a, b) => a.planCode.localeCompare(b.planCode));
       // The configured channels, in a stable order the UI can render and a purchase must name.
       const providers = [...deps.providers.keys()].sort();
-      return { plans, canPurchase, activePlanCode, providers };
+      return {
+        plans,
+        canPurchase,
+        activePlanCode,
+        providers,
+        // v1's purchasable cycles: the two monthly spellings (see PaymentCatalog.cycles). The
+        // routes' zod enum accepts exactly these; widening either side widens the other.
+        cycles: ["monthly", "recurring_monthly"],
+      };
     },
 
     async createPurchase(input) {
@@ -520,7 +587,11 @@ export function createPaymentService(deps: {
       if (!provider) {
         throw new PurchaseError({ reason: "unknown-provider" });
       }
-      const active = await deps.activePlanCode();
+      // The single-subscription guard, on the UNCACHED read when the assembly wired one (the
+      // projection is one indexed query; the cached read lags syncs by its TTL and its failure
+      // fallback answers "not active" — either window lets a duplicate purchase through, which
+      // is money collected against an activation the service will refuse).
+      const active = await (deps.activePlanCodeUncached ?? deps.activePlanCode)();
       if (active !== null) {
         // One subscription at a time: the guard that also blocks the admin sync's other-plan
         // route, so an upgrade cannot bypass the front door.
@@ -757,10 +828,34 @@ export function createPaymentService(deps: {
         .catch(() => [] as const);
       for (const order of orders) {
         try {
-          await activateOrder(order);
+          const outcome = await activateOrder(order);
+          /*
+           * The exhaustion alarm (T5-2): a `failed` verdict is no longer terminal (the store
+           * pass retries both pending AND failed — P1-4), but a paid order failing the SAME
+           * gate for days is a fact an operator needs to see. After ACTIVATION_ALARM_AFTER
+           * consecutive failed verdicts, one anomaly row names the order; the (order_id,
+           * code) business key keeps it one row however long the order stays stuck, and a
+           * success clears the counter.
+           */
+          if (outcome === "failed") {
+            const strikes = activationStrikes.get(order.id) ?? 0;
+            const next = strikes + 1;
+            activationStrikes.set(order.id, next);
+            if (next === ACTIVATION_ALARM_AFTER) {
+              await recordAnomalyQuietly({
+                orderId: order.id,
+                code: "activation_retry_exhausted",
+                channelTransactionId: order.channelTransactionId,
+                amountCents: order.amountCents,
+                detail: `activation refused ${next} passes in a row (plan ${order.planCode}); money collected, entitlement not landing — needs an operator`,
+              });
+            }
+          } else {
+            activationStrikes.delete(order.id);
+          }
         } catch {
-          // One order's failure is not the batch's: the next pass re-asks. A non-retryable
-          // refusal already recorded `failed` inside; anything thrown here is transport.
+          // One order's failure is not the batch's: the next pass re-asks. Anything thrown
+          // here is transport; the retryable verdict already left the order pending.
         }
       }
     },

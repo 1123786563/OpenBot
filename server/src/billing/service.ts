@@ -1,4 +1,5 @@
 import { createBillingEntitlementReader } from "./entitlement";
+import { type ReconcileReport } from "./reconcile";
 import {
   LAGO_PROVIDER_ID,
   type LagoClient,
@@ -86,6 +87,12 @@ export function createBillingService(deps: {
   verifier?: WebhookVerifier;
   /** Plan code → the entitlement entries that plan grants. Injected so a test (or a future config) can differ. */
   planEntitlements?: ReadonlyMap<string, readonly BillingEntitlementEntry[]>;
+  /**
+   * The reconciliation pass, injected (see reconcile()'s comment): the skeleton audits the
+   * very collaborators this service holds, so the reader is assembled outside — over the
+   * database, not the deps — and handed in. Absent keeps the honest refusal.
+   */
+  reconciler?: { reconcile(): Promise<ReconcileReport> };
   ttlMs?: number;
   failureTtlMs?: number;
   now?: () => number;
@@ -556,8 +563,32 @@ export function createBillingService(deps: {
       };
     },
 
-    async reconcile(): Promise<never> {
-      throw new BillingError("unsupported");
+    async reconcile(): Promise<ReconcileReport> {
+      /*
+       * The reconciliation pass is a separate module's (./reconcile.ts) and is INJECTED: the
+       * billing service's own collaborators (the provider client, the projection store) are
+       * what the pass audits, and a method that built its own reader over the deps it is
+       * trusted with would be marking its own homework. Absent (a test double, or an assembly
+       * that predates the skeleton) keeps the old honest refusal.
+       */
+      if (!deps.reconciler) {
+        throw new BillingError("unsupported");
+      }
+      const report = await deps.reconciler.reconcile();
+      // The report's own paper trail: one line per pass, findings included, so a
+      // reconciliation that was run and ignored still left a mark where deployment logs go.
+      // (deps.log is the same sink the entitlement reader's warnings use; absent, the report
+      // itself — the return value — is the record, and nothing doubles into stdout.)
+      deps.log?.(
+        JSON.stringify({
+          type: "billing-reconcile",
+          ranAt: report.ranAt,
+          checked: report.checked,
+          findings: report.findings.length,
+          detail: report.findings,
+        }),
+      );
+      return report;
     },
   };
 }

@@ -15,28 +15,29 @@
 
 import { readFile } from "node:fs/promises";
 import type { Database } from "../db/client";
+import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
-import type { CraftStore, CraftSessionRow } from "./store";
-import type { SandboxGateway } from "./sandbox-gateway";
+import { type BuildPacket, isBuildPacket } from "./events/packets";
+import { isKeepalive, isSandboxError, type SandboxEvent } from "./events/types";
+import type { PromptAttachment } from "./opencode/serve-client";
+import type { CraftLLMProviderConfig } from "./opencode-config";
 import {
+  buildProviderOpencodeConfig,
+  opencodeConfigJson,
+} from "./opencode-config";
+import type { SandboxGateway } from "./sandbox-gateway";
+import { ensureSessionReady } from "./session-ready";
+import type { CraftSessionRow, CraftStore } from "./store";
+import {
+  type BuildStreamingState,
   finalizePersist,
   persistSandboxEvent,
-  type BuildStreamingState,
 } from "./streaming";
 import { sessionDirectory } from "./workspace";
-import { ensureSessionReady } from "./session-ready";
-import type {
-  CraftLLMProviderConfig,
-} from "./opencode-config";
-import { buildProviderOpencodeConfig, opencodeConfigJson } from "./opencode-config";
-import { generateAgentInstructions } from "./agent-instructions";
-import type { PromptAttachment } from "./opencode/serve-client";
-import { isKeepalive, isSandboxError, type SandboxEvent } from "./events/types";
-import { isBuildPacket, type BuildPacket } from "./events/packets";
 
 /** Redis-keyed marker: a config rewrite owes its running instance a dispose (24h TTL in onyx). */
 export const DISPOSE_PENDING_TTL_SECONDS = 24 * 3600;
-const disposePendingKey = (sessionId: string) =>
+export const disposePendingKey = (sessionId: string) =>
   `craft:llm_config_dispose_pending:${sessionId}`;
 
 export type SessionManagerDeps = {
@@ -46,7 +47,7 @@ export type SessionManagerDeps = {
   /** Resolves the session's effective LLM config (re-validated each turn, onyx parity). */
   llmConfigFor: (session: CraftSessionRow) => Promise<CraftLLMProviderConfig>;
   /** The Bot whose sandbox hosts the session (OpenBot sandbox scoping). */
-  botIdFor: (session: CraftSessionRow) => string;
+  botIdFor: (sessionId: string) => Promise<string | null>;
   /** Organization-level craft instructions (AGENTS.md section); null when unset. */
   organizationInstructions?: string | null;
 };
@@ -84,7 +85,7 @@ export class CraftSessionManager {
    * get_session + update_session_activity pair.
    */
   async getSession(
-    db: Database,
+    _db: Database,
     sessionId: string,
     userId: string,
   ): Promise<CraftSessionRow | undefined> {
@@ -148,7 +149,11 @@ export class CraftSessionManager {
     }
     // Light path: workspace intact + ACTIVE → reconcile the config and hand back.
     if (existing.status === "active") {
-      await this.reconcileSessionLlmConfig(db, existing, input.userName ?? null);
+      await this.reconcileSessionLlmConfig(
+        db,
+        existing,
+        input.userName ?? null,
+      );
       return existing;
     }
     // Repair: rebuild under the same committed id.
@@ -175,7 +180,8 @@ export class CraftSessionManager {
       store: this.store,
       gateway: this.gateway,
       session,
-      botId: this.deps.botIdFor(session),
+      botId: (await this.deps.botIdFor(session.id)) ?? "",
+      config: this.config,
       userName,
       organizationInstructions: this.deps.organizationInstructions ?? null,
       llmConfigFor: (s) => this.deps.llmConfigFor(s),
@@ -189,11 +195,11 @@ export class CraftSessionManager {
    * between write and dispose (onyx: set BEFORE the write).
    */
   async reconcileSessionLlmConfig(
-    db: Database,
+    _db: Database,
     session: CraftSessionRow,
     userName: string | null,
   ): Promise<void> {
-    const botId = this.deps.botIdFor(session);
+    const botId = (await this.deps.botIdFor(session.id)) ?? "";
     const directory = sessionDirectory(session.id);
     const llmConfig = await this.deps.llmConfigFor(session);
     const expected = opencodeConfigJson(
@@ -208,7 +214,10 @@ export class CraftSessionManager {
       try {
         const entries = await fileApi.listFiles(directory);
         void entries;
-        current = await this.readWorkspaceFile(botId, `${directory}/opencode.json`);
+        current = await this.readWorkspaceFile(
+          botId,
+          `${directory}/opencode.json`,
+        );
       } catch {
         // Transient failure while merely checking — assume stale and regenerate.
         current = null;
@@ -266,22 +275,13 @@ export class CraftSessionManager {
   }
 
   private async readWorkspaceFile(
-    botId: string,
-    path: string,
+    _botId: string,
+    _path: string,
   ): Promise<string | null> {
-    const fileApi = this.gateway.fileApiFor(botId);
-    if (!fileApi) return null;
-    try {
-      // The gateway's file listing/read pair: read via the serve client's file
-      // surface is not available; use listFiles + the content endpoint shape by
-      // delegating to fileApi (kept minimal for phase 1 — the config compare
-      // degrades to "regenerate" when a read is unavailable).
-      const response = await fetch("", { method: "GET" }).catch(() => null);
-      void response;
-      return null;
-    } catch {
-      return null;
-    }
+    // Phase-1 stub: the agent-sandbox gateway exposes writes/listing but not file
+    // reads, so the opencode.json compare degrades to "regenerate" (safe — rewrite
+    // + dispose is idempotent). Phase 2 wires the real read endpoint here.
+    return null;
   }
 
   // =========================================================================
@@ -395,8 +395,9 @@ export class CraftSessionManager {
    * half of the story — it covers the window before the opencode session id exists.
    */
   async interruptMessage(session: CraftSessionRow): Promise<boolean> {
-    const botId = this.deps.botIdFor(session);
+    const botId = (await this.deps.botIdFor(session.id)) ?? "";
     const directory = sessionDirectory(session.id);
+    if (!botId) return false;
     if (!session.opencodeSessionId) return false;
     const client = this.gateway.serveClientFor({ botId, directory });
     if (!client) return false;
@@ -454,7 +455,9 @@ export class CraftSessionManager {
           }
           continue;
         }
-        if (raw === (await import("./opencode/event-bus")).POD_EVENT_BUS_CLOSED) {
+        if (
+          raw === (await import("./opencode/event-bus")).POD_EVENT_BUS_CLOSED
+        ) {
           return;
         }
         lastEventAt = Date.now();
@@ -465,7 +468,11 @@ export class CraftSessionManager {
           childrenResolver: (id) => bus.listChildren(id),
           fetchMessageBySession: null,
         })) {
-          if (!isKeepalive(event) && !isBuildPacket(event) && isSandboxError(event)) {
+          if (
+            !isKeepalive(event) &&
+            !isBuildPacket(event) &&
+            isSandboxError(event)
+          ) {
             // fallthrough: errors pass through to the consumer; the route layer
             // treats `error` as terminal for the attach stream.
           }

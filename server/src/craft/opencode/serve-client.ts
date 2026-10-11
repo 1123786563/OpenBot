@@ -15,30 +15,30 @@
 
 import type { CraftConfig } from "../config";
 import {
+  type CompactionPacket,
+  type ContextUsagePacket,
   compactionPacket,
   contextUsagePacket,
   isBuildPacket,
-  type CompactionPacket,
-  type ContextUsagePacket,
   type SubagentStartedPacket,
 } from "../events/packets";
 import {
-  SSEKeepalive,
-  TURN_ERROR_CODE_SESSION,
-  TURN_ERROR_CODE_TIMEOUT,
-  TURN_ERROR_CODE_TRANSPORT,
+  type AgentMessageChunk,
+  type AgentThoughtChunk,
   activityTimeoutError,
   isActivityTimeout,
   isPromptResponse,
   isSandboxError,
-  type AgentMessageChunk,
-  type AgentThoughtChunk,
   type PromptResponse,
   type SandboxError,
   type SandboxEvent,
+  SSEKeepalive,
   type ToolCallProgress,
   type ToolCallStart,
   type ToolCallStatus,
+  TURN_ERROR_CODE_SESSION,
+  TURN_ERROR_CODE_TIMEOUT,
+  TURN_ERROR_CODE_TRANSPORT,
 } from "../events/types";
 import {
   POD_EVENT_BUS_CLOSED,
@@ -185,7 +185,8 @@ function wrapRawOutput(state: Json): ToolCallStart["rawOutput"] | undefined {
   if (typeof out === "string") {
     const wrapped: Record<string, unknown> = { output: out };
     const metadata = state.metadata;
-    if (metadata !== undefined && metadata !== null) wrapped.metadata = metadata;
+    if (metadata !== undefined && metadata !== null)
+      wrapped.metadata = metadata;
     return wrapped as ToolCallStart["rawOutput"];
   }
   if (typeof out === "object") return out as ToolCallStart["rawOutput"];
@@ -476,7 +477,10 @@ function* reconcileReasoningPart(
 }
 
 /** Emit ToolCallStart (first sighting) and/or ToolCallProgress for a tool part update. */
-function* emitToolEvents(part: Json, state: TurnState): Generator<SandboxEvent> {
+function* emitToolEvents(
+  part: Json,
+  state: TurnState,
+): Generator<SandboxEvent> {
   const callId = part.callID;
   const tool = part.tool;
   if (typeof callId !== "string" || typeof tool !== "string") return;
@@ -521,7 +525,10 @@ function* emitToolEvents(part: Json, state: TurnState): Generator<SandboxEvent> 
       } satisfies ToolCallProgress;
     }
   } else {
-    yield { sessionUpdate: "tool_call_update", ...common } satisfies ToolCallProgress;
+    yield {
+      sessionUpdate: "tool_call_update",
+      ...common,
+    } satisfies ToolCallProgress;
   }
 }
 
@@ -548,7 +555,9 @@ function* emitTerminator(
     }
     if (!message) {
       message =
-        typeof error.name === "string" && error.name ? error.name : "session error";
+        typeof error.name === "string" && error.name
+          ? error.name
+          : "session error";
     }
     yield { code: TURN_ERROR_CODE_SESSION, message } satisfies SandboxError;
     return;
@@ -586,9 +595,13 @@ export function* translateOpencodeEvent(
     fetchMessage?: FetchMessage | null;
     parentResolver?: ParentResolver | null;
     childrenResolver?: ChildrenResolver | null;
-    fetchMessageBySession?: ((sessionId: string, messageId: string) => Json | null) | null;
+    fetchMessageBySession?:
+      | ((sessionId: string, messageId: string) => Json | null)
+      | null;
   } = {},
-): Generator<SandboxEvent | SubagentStartedPacket | ContextUsagePacket | CompactionPacket> {
+): Generator<
+  SandboxEvent | SubagentStartedPacket | ContextUsagePacket | CompactionPacket
+> {
   const fetchMessage = options.fetchMessage ?? null;
   const parentResolver = options.parentResolver ?? null;
   const childrenResolver = options.childrenResolver ?? null;
@@ -673,10 +686,12 @@ export function* translateOpencodeEvent(
 
     let events: Generator<SandboxEvent>;
     if (partType === "reasoning") {
-      if (!isAssistantMessage(childState, part.messageID, childFetchMessage)) return;
+      if (!isAssistantMessage(childState, part.messageID, childFetchMessage))
+        return;
       events = reconcileReasoningPart(part, childState);
     } else if (partType === "text") {
-      if (!isAssistantMessage(childState, part.messageID, childFetchMessage)) return;
+      if (!isAssistantMessage(childState, part.messageID, childFetchMessage))
+        return;
       events = reconcileTextPart(part, childState);
     } else if (partType === "tool") {
       events = emitToolEvents(part, childState);
@@ -747,10 +762,7 @@ export function* translateOpencodeEvent(
         }
       }
       for (const event of emitToolEvents(part, state)) {
-        if (
-          subagentSessionId !== null &&
-          !(event instanceof SSEKeepalive)
-        ) {
+        if (subagentSessionId !== null && !(event instanceof SSEKeepalive)) {
           mergeFieldMeta(event, { subagentSessionId });
         }
         yield event;
@@ -821,7 +833,10 @@ export function* translateOpencodeEvent(
   // session.next.*.switched, …) is informational — ignored.
 }
 
-function subagentPacket(childId: string, parentId: string): SubagentStartedPacket {
+function subagentPacket(
+  childId: string,
+  parentId: string,
+): SubagentStartedPacket {
   return {
     packetKind: "subagent_started",
     type: "subagent_started",
@@ -910,11 +925,16 @@ export class OpencodeServeClient {
     const init: RequestInit = {
       method,
       headers: this.buildHeaders(
-        options.body === undefined ? undefined : { "content-type": "application/json" },
+        options.body === undefined
+          ? undefined
+          : { "content-type": "application/json" },
       ),
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(options.body === undefined
+        ? {}
+        : { body: JSON.stringify(options.body) }),
       signal: AbortSignal.timeout(
-        (options.timeoutMs ?? this.config.opencodeServeRequestTimeoutSeconds * 1000),
+        options.timeoutMs ??
+          this.config.opencodeServeRequestTimeoutSeconds * 1000,
       ),
     };
 
@@ -1110,7 +1130,9 @@ export class OpencodeServeClient {
       directory: string;
     },
   ): Promise<void> {
-    const parts: Array<Record<string, string>> = [{ type: "text", text: message }];
+    const parts: Array<Record<string, string>> = [
+      { type: "text", text: message },
+    ];
     for (const attachment of options.attachments ?? []) {
       parts.push({
         type: "file",
@@ -1158,7 +1180,9 @@ export class OpencodeServeClient {
       shouldInterrupt?: (() => boolean) | null;
       shouldAbortOnTeardown?: (() => boolean) | null;
     },
-  ): AsyncGenerator<SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket> {
+  ): AsyncGenerator<
+    SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket
+  > {
     if (this.bus === null) {
       throw new Error(
         "OpencodeServeClient.sendMessage requires eventBus; construct the client with one",
@@ -1283,7 +1307,10 @@ export class OpencodeServeClient {
       const waitMs = Math.min(remainingMs, 1000);
       const raw = await sub.queue.shift({ timeoutMs: waitMs });
       if (raw === undefined) {
-        if (Date.now() - lastKeepaliveAt >= this.config.sseKeepaliveIntervalSeconds * 1000) {
+        if (
+          Date.now() - lastKeepaliveAt >=
+          this.config.sseKeepaliveIntervalSeconds * 1000
+        ) {
           yield new SSEKeepalive();
           lastKeepaliveAt = Date.now();
         }
@@ -1311,7 +1338,9 @@ export class OpencodeServeClient {
       absoluteDeadlineMs: number | null;
       shouldInterrupt: (() => boolean) | null;
     },
-  ): AsyncGenerator<SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket> {
+  ): AsyncGenerator<
+    SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket
+  > {
     const { state, directory } = options;
     const bus = this.bus;
     const translateOne = (raw: Json) =>
@@ -1361,7 +1390,10 @@ export class OpencodeServeClient {
         timeoutMs: Math.min(remainingMs, 1000),
       });
       if (raw === undefined) {
-        if (Date.now() - lastKeepaliveAt >= this.config.sseKeepaliveIntervalSeconds * 1000) {
+        if (
+          Date.now() - lastKeepaliveAt >=
+          this.config.sseKeepaliveIntervalSeconds * 1000
+        ) {
           yield new SSEKeepalive();
           lastKeepaliveAt = Date.now();
         }
@@ -1383,7 +1415,8 @@ export class OpencodeServeClient {
       lastActivityAt = Date.now();
 
       for (const sandboxEvent of translateOne(raw)) {
-        const isError = !isBuildPacket(sandboxEvent) && isSandboxError(sandboxEvent);
+        const isError =
+          !isBuildPacket(sandboxEvent) && isSandboxError(sandboxEvent);
         const isTerminator =
           (!isBuildPacket(sandboxEvent) && isPromptResponse(sandboxEvent)) ||
           (isError && !isActivityTimeout(sandboxEvent));
@@ -1455,7 +1488,9 @@ function isColdPodError(error: unknown): boolean {
   }
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code?: unknown }).code;
-    return code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EHOSTUNREACH";
+    return (
+      code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EHOSTUNREACH"
+    );
   }
   return false;
 }
@@ -1463,7 +1498,8 @@ function isColdPodError(error: unknown): boolean {
 /** "Server disconnected without sending a response" — retryable only for idempotent calls. */
 function isPrematureClose(error: unknown): boolean {
   return (
-    error instanceof Error && /closed|truncated|reset|premature|abort/i.test(error.message)
+    error instanceof Error &&
+    /closed|truncated|reset|premature|abort/i.test(error.message)
   );
 }
 

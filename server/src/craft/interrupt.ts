@@ -76,5 +76,7 @@ export function createInProcessInterruptFence(): InterruptFence {
 }
 
 export function createInterruptFence(redis: RedisPort | null): InterruptFence {
-  return redis ? createRedisInterruptFence(redis) : createInProcessInterruptFence();
+  return redis
+    ? createRedisInterruptFence(redis)
+    : createInProcessInterruptFence();
 }
