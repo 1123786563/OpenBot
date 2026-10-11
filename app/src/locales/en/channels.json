@@ -43,7 +43,8 @@
     "description": "What each of your Bots is doing, what it needs from you, and whether it is paused.",
     "loadError": "Could not load your Bots.",
     "empty": "You have no Bots yet.",
-    "paused": "Paused"
+    "paused": "Paused",
+    "createFirst": "Create your first Bot"
   },
   "browser": {
     "browsing": "Browsing…",

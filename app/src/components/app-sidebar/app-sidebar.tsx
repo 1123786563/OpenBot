@@ -49,6 +49,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -56,6 +57,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { approvalInboxOptions } from "@/lib/approvals";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -246,6 +248,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const searching = search.trim().length > 0;
   const visibleChannels = pinnedFirst(matchingChannels(channels.data, search));
   /*
+   * Approvals waiting on this person, for the sidebar badge. Reads the same cached query the
+   * /approvals page renders from; the query's own 10s poll keeps it fresh, and this component
+   * adds no request beyond that.
+   */
+  const pendingApprovals =
+    useQuery(approvalInboxOptions()).data?.requests.filter(
+      (request) => request.status === "pending",
+    ).length ?? 0;
+  /*
    * FILTERING DOES NOT ANIMATE. Rows exit and relayout on every keystroke otherwise, which is a
    * list thrashing under somebody who is still typing — and the moving target is the very thing
    * they are trying to read. Order animation is for a channel that was just spoken in, which is
@@ -331,6 +342,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
              * in the footer; in WorkBuddy the fixed destinations (新建任务/助理/专家·技能·连接器…)
              * open the sidebar and the conversation lists run underneath them, so the same order
              * applies here. They scroll with the content exactly as WorkBuddy's own list does.
+             *
+             * GROUPED, not flat: eleven peers ask somebody to know which one is the one they
+             * want (the admin rail says this about its own ten, and it groups them). Bots is the
+             * primary destination and stands alone; the rest sort by the question they answer —
+             * "what can we build/install" (capabilities) vs "what is running and needs me"
+             * (oversight). The conversation roster follows, unlabelled, exactly as before.
              */}
             <SidebarGroup className="gap-px">
               <SidebarMenuItem>
@@ -353,6 +370,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <span className="text-sm">{t("bots")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+            </SidebarGroup>
+            <SidebarGroup className="gap-px">
+              <SidebarGroupLabel>{t("groupCapabilities")}</SidebarGroupLabel>
               <SidebarMenuItem>
                 {/* Beside Agents rather than inside Admin: writing a skill is something anybody does. */}
                 <SidebarMenuButton
@@ -455,6 +475,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+            </SidebarGroup>
+            <SidebarGroup className="gap-px">
+              <SidebarGroupLabel>{t("groupGovernance")}</SidebarGroupLabel>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
@@ -556,11 +579,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <IconChecks />
                   </div>
                   <span className="text-sm">{t("approvals")}</span>
+                  {/*
+                   * The waiting count, so a Bot blocked on an approval is visible from wherever
+                   * the person is — not only inside the conversation that asked. Same query (same
+                   * key, same 10s poll) the /approvals page reads, so the number cannot disagree
+                   * with the page it opens.
+                   */}
+                  {pendingApprovals > 0 ? (
+                    <span className="ml-auto rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums">
+                      {pendingApprovals}
+                    </span>
+                  ) : null}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarGroup>
-            {/* Bots that need you, or that you paused. See bot-profile/attention.tsx. */}
-            <BotAttentionList />
+            {/* The roster itself: unlabelled, below the destinations, exactly where it was. */}
+            <SidebarGroup className="gap-px">
+              {/* Bots that need you, or that you paused. See bot-profile/attention.tsx. */}
+              <BotAttentionList />
             {/*
              * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
              * used yet needs telling how to start. A roster that simply does not match what is in
@@ -609,11 +645,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 />
               ))}
             </AnimatePresence>
-            <ChannelPagination
-              query={channels}
-              scrollRoot={scrollRoot}
-              searching={searching}
-            />
+              <ChannelPagination
+                query={channels}
+                scrollRoot={scrollRoot}
+                searching={searching}
+              />
+            </SidebarGroup>
           </SidebarGroup>
         </SidebarMenu>
       </SidebarContent>

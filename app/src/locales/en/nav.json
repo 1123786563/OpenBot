@@ -36,5 +36,8 @@
   "loadOlder": "Load older conversations",
   "hideSidebar": "Hide sidebar",
   "showSidebar": "Show sidebar",
-  "unreadBadge": "Unread messages"
+  "unreadBadge": "Unread messages",
+  "skipToContent": "Skip to content",
+  "groupCapabilities": "Capabilities",
+  "groupGovernance": "Oversight"
 }

@@ -27,7 +27,7 @@ import type { AppEnv } from "./app";
 export type BuildRoutesDeps = {
   db: Db;
   search: KbHandlerDeps["search"];
-  /** 文档创建/删除（T03 摄取管线的入口；T04 阶段返回 501 引导位）。 */
+  /** 文档创建/删除（T03 摄取管线的入口；null = 501 引导位，测试用）。 */
   documentIngest: {
     createFromJson(
       kb: KbRow,
@@ -38,6 +38,21 @@ export type BuildRoutesDeps = {
       form: FormData,
     ): Promise<{ status: number; body: unknown }>;
     deleteDocument(doc: DocRow): Promise<void>;
+  } | null;
+  /** KB 建/删（T03 接线点亮；null = 501 引导位，测试用）。 */
+  kbAdmin: {
+    createKb(
+      identity: { tenantId: string },
+      input: {
+        name: string;
+        description: string;
+        embedder: string;
+        chunkSize: number;
+        chunkOverlap: number;
+        rerankModel: string | null;
+      },
+    ): Promise<{ status: number; body: unknown }>;
+    deleteKb(kb: KbRow): Promise<void>;
   } | null;
   /** 查询层覆写（测试注入桩；生产留空走 makeDbQueries(db)）。 */
   dbQueriesOverride?: KbHandlerDeps["dbQueries"];
@@ -180,15 +195,25 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
         400,
       );
     }
-    // T03 前的引导位：建库依赖 T01 骨架的 service 层写路径；此处返回明确 501。
-    return context.json(
-      errorBody(
-        requestIdOf(context),
-        "not_implemented",
-        "KB creation arrives with T03 ingest wiring",
-      ),
-      501,
-    );
+    if (deps.kbAdmin === null) {
+      return context.json(
+        errorBody(
+          requestIdOf(context),
+          "not_implemented",
+          "KB creation is not wired in this build",
+        ),
+        501,
+      );
+    }
+    // embedder 在 shared 校验面之外（可选、缺省走部署默认）：createKb 直读原始体。
+    const created = await deps.kbAdmin.createKb(identity, {
+      ...validated.value,
+      embedder:
+        typeof (body as Record<string, unknown>).embedder === "string"
+          ? String((body as Record<string, unknown>).embedder)
+          : "",
+    });
+    return context.json(created.body, created.status as never);
   });
 
   // 2. GET /kb — 列表（read）
@@ -254,14 +279,18 @@ export function buildRoutes(app: Hono<AppEnv>, deps: BuildRoutesDeps): void {
       context.req.param("kbId"),
     );
     if (kb === null) return notFound(context, "knowledge base not found");
-    return context.json(
-      errorBody(
-        requestIdOf(context),
-        "not_implemented",
-        "KB deletion arrives with T03 ingest wiring",
-      ),
-      501,
-    );
+    if (deps.kbAdmin === null) {
+      return context.json(
+        errorBody(
+          requestIdOf(context),
+          "not_implemented",
+          "KB deletion is not wired in this build",
+        ),
+        501,
+      );
+    }
+    await deps.kbAdmin.deleteKb(kb);
+    return context.json({ deleted: true });
   });
 
   // 5. POST /kb/:kbId/documents — 上传（write；multipart file / url / text JSON）

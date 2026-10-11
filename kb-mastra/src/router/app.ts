@@ -32,6 +32,9 @@ export type AppEnv = {
  * 构建 kb-mastra 的 Hono 应用。中间件链与设计 §2 一致：
  * requestId（生成/透传 x-request-id + 访问日志 + panic 兜底）→ Bearer 鉴权
  * （/health 豁免）→ 路由。错误体统一 {code, message, request_id}。
+ *
+ * routes 装配由调用方决定：index.ts 传 buildRoutes（十条路由全量），
+ * 测试可只挂中间件自己注册路由。
  */
 export function createApp(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -44,7 +47,7 @@ export function createApp(): Hono<AppEnv> {
     context.json({ ok: true, service: "kb-mastra" }),
   );
 
-  // T04 挂十条 /kb 路由（handler 层 import 本函数追加）；404 兜底带契约错误体。
+  // 404 兜底带契约错误体（十条路由由调用方经 buildRoutes 挂载）。
   app.notFound((context) => {
     const requestId = context.get("kbRequestId") ?? "";
     return context.json(

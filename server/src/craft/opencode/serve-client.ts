@@ -17,6 +17,8 @@ import type { CraftConfig } from "../config";
 import {
   compactionPacket,
   contextUsagePacket,
+  isBuildPacket,
+  type CompactionPacket,
   type ContextUsagePacket,
   type SubagentStartedPacket,
 } from "../events/packets";
@@ -27,6 +29,8 @@ import {
   TURN_ERROR_CODE_TRANSPORT,
   activityTimeoutError,
   isActivityTimeout,
+  isPromptResponse,
+  isSandboxError,
   type AgentMessageChunk,
   type AgentThoughtChunk,
   type PromptResponse,
@@ -435,8 +439,7 @@ export type ChildrenResolver = (sessionId: string) => string[];
 function* reconcilePartText(
   part: Json,
   state: TurnState,
-  emitThought: boolean,
-  sessionUpdate: "agent_message_chunk" | "agent_thought_chunk",
+  build: (text: string) => AgentMessageChunk | AgentThoughtChunk,
 ): Generator<SandboxEvent> {
   const partId = part.id;
   if (typeof partId !== "string") return;
@@ -446,12 +449,7 @@ function* reconcilePartText(
   if (expected.length > local.length) {
     const tail = expected.slice(local.length);
     state.localText.set(partId, expected);
-    if (tail) {
-      yield {
-        sessionUpdate,
-        content: { type: "text", text: tail },
-      } satisfies AgentMessageChunk;
-    }
+    if (tail) yield build(tail);
   }
   // Server-side rewind (expected < local): trust the longer local accumulator —
   // it has already been streamed (onyx logs a warning here; output parity kept).
@@ -461,14 +459,20 @@ function* reconcileTextPart(
   part: Json,
   state: TurnState,
 ): Generator<SandboxEvent> {
-  yield* reconcilePartText(part, state, false, "agent_message_chunk");
+  yield* reconcilePartText(part, state, (text) => ({
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text },
+  }));
 }
 
 function* reconcileReasoningPart(
   part: Json,
   state: TurnState,
 ): Generator<SandboxEvent> {
-  yield* reconcilePartText(part, state, true, "agent_thought_chunk");
+  yield* reconcilePartText(part, state, (text) => ({
+    sessionUpdate: "agent_thought_chunk",
+    content: { type: "text", text },
+  }));
 }
 
 /** Emit ToolCallStart (first sighting) and/or ToolCallProgress for a tool part update. */
@@ -584,7 +588,7 @@ export function* translateOpencodeEvent(
     childrenResolver?: ChildrenResolver | null;
     fetchMessageBySession?: ((sessionId: string, messageId: string) => Json | null) | null;
   } = {},
-): Generator<SandboxEvent | SubagentStartedPacket | ContextUsagePacket> {
+): Generator<SandboxEvent | SubagentStartedPacket | ContextUsagePacket | CompactionPacket> {
   const fetchMessage = options.fetchMessage ?? null;
   const parentResolver = options.parentResolver ?? null;
   const childrenResolver = options.childrenResolver ?? null;
@@ -1154,7 +1158,7 @@ export class OpencodeServeClient {
       shouldInterrupt?: (() => boolean) | null;
       shouldAbortOnTeardown?: (() => boolean) | null;
     },
-  ): AsyncGenerator<SandboxEvent | ContextUsagePacket | SubagentStartedPacket> {
+  ): AsyncGenerator<SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket> {
     if (this.bus === null) {
       throw new Error(
         "OpencodeServeClient.sendMessage requires eventBus; construct the client with one",
@@ -1307,7 +1311,7 @@ export class OpencodeServeClient {
       absoluteDeadlineMs: number | null;
       shouldInterrupt: (() => boolean) | null;
     },
-  ): AsyncGenerator<SandboxEvent | ContextUsagePacket | SubagentStartedPacket> {
+  ): AsyncGenerator<SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket> {
     const { state, directory } = options;
     const bus = this.bus;
     const translateOne = (raw: Json) =>
@@ -1379,10 +1383,11 @@ export class OpencodeServeClient {
       lastActivityAt = Date.now();
 
       for (const sandboxEvent of translateOne(raw)) {
-        if (
-          (isSandboxError(sandboxEvent) && !isActivityTimeout(sandboxEvent)) ||
-          isPromptResponse(sandboxEvent)
-        ) {
+        const isError = !isBuildPacket(sandboxEvent) && isSandboxError(sandboxEvent);
+        const isTerminator =
+          (!isBuildPacket(sandboxEvent) && isPromptResponse(sandboxEvent)) ||
+          (isError && !isActivityTimeout(sandboxEvent));
+        if (isTerminator) {
           terminatedLocally = true;
         }
         yield sandboxEvent;

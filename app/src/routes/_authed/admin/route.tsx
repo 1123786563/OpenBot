@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
+import { MAIN_CONTENT_ID, SkipToContent } from "@/components/layout/skip-to-content";
 import { SidebarShell } from "@/components/layout/sidebar-shell";
 import { currentUserQueryOptions } from "../../../lib/auth/queries";
 
@@ -18,8 +19,9 @@ export const Route = createFileRoute("/_authed/admin")({
 function RouteComponent() {
   return (
     <SidebarShell width="300px">
+      <SkipToContent />
       <AdminSidebar />
-      <main className="flex-1">
+      <main id={MAIN_CONTENT_ID} className="flex-1">
         <Outlet />
       </main>
     </SidebarShell>

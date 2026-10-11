@@ -1,0 +1,390 @@
+/**
+ * Reads and writes for craft's three tables — the deliberate-boring store layer, workshop
+ * store style: the manager owns decisions, this file owns rows.
+ *
+ * Method names map to onyx's db/build_session.py functions (`getOrCreateEmptySession` ←
+ * get_empty_session_for_user + the create path, `reserveNextjsPort` ←
+ * reserve_nextjs_port__no_commit, …). Guarded updates resolve races by row state: the
+ * finalize-session-initialization CAS succeeds only while the row is still `initializing`, and
+ * the port reservation retries on the partial unique index's violation.
+ */
+
+import { randomBytes } from "node:crypto";
+import net from "node:net";
+import { and, asc, count, desc, eq, isNotNull, sql } from "drizzle-orm";
+import type { Database } from "../db/client";
+import { craftMessages, craftSessions } from "../db/schema/craft";
+import type { CraftMessageType } from "../db/schema/craft";
+
+/** Postgres unique-violation: a lost race on a guarded insert/update. */
+const UNIQUE_VIOLATION = "23505";
+
+/** `cs-` sessions, `cm-` messages, `csn-` snapshots — ids distinguishable at a glance. */
+export function newCraftId(prefix: "cs" | "cm" | "csn"): string {
+  return `${prefix}-${randomBytes(12).toString("hex")}`;
+}
+
+export type CraftSessionRow = typeof craftSessions.$inferSelect;
+export type CraftMessageRow = typeof craftMessages.$inferSelect;
+
+export type CraftStore = {
+  // ── sessions ────────────────────────────────────────────────────────────────
+  /** The session by id, ownership-checked; bumps lastActivityAt (onyx update_session_activity). */
+  getSession(sessionId: string, userId: string): Promise<CraftSessionRow | undefined>;
+  /** Sessions for the sidebar: user's INTERACTIVE rows, newest first. */
+  listUserSessions(
+    userId: string,
+    limit?: number,
+  ): Promise<Array<Omit<CraftSessionRow, never>>>;
+  /** The user's empty (pre-provisioned) INTERACTIVE session, if one exists. */
+  getEmptySessionForUser(userId: string): Promise<CraftSessionRow | undefined>;
+  /** Insert an INITIALIZING row (reservation phase). */
+  createSession(input: {
+    userId: string;
+    name?: string | null;
+    agentProvider?: string | null;
+    agentModel?: string | null;
+  }): Promise<CraftSessionRow>;
+  /** Update mutable display fields. */
+  updateSession(
+    sessionId: string,
+    patch: {
+      name?: string | null;
+      sharingScope?: "private" | "public_org";
+      agentProvider?: string | null;
+      agentModel?: string | null;
+      opencodeSessionId?: string | null;
+      skillsHash?: string | null;
+      mcpConfigHash?: string | null;
+      status?: "initializing" | "active" | "idle" | "failed";
+    },
+  ): Promise<CraftSessionRow | undefined>;
+  /** Bump lastActivityAt — onyx did this with an ORM onupdate hook; here it's explicit. */
+  updateSessionActivity(sessionId: string): Promise<void>;
+  /** The CAS core: initializing → active|failed, with the resolved runtime ids. */
+  finalizeSessionInitialization(input: {
+    sessionId: string;
+    toStatus: "active" | "failed";
+    opencodeSessionId?: string | null;
+    skillsHash?: string | null;
+    mcpConfigHash?: string | null;
+  }): Promise<boolean>;
+  /** Write a freshly resolved opencode_session_id back (stale-404 remint). */
+  persistOpencodeSessionId(sessionId: string, opencodeSessionId: string): Promise<void>;
+  /** Reserve a webapp port on the row; retries on unique-index collision. */
+  reserveNextjsPort(input: {
+    userId: string;
+    sessionId: string;
+    portStart: number;
+    portEnd: number;
+  }): Promise<number>;
+  deleteSession(sessionId: string, userId: string): Promise<boolean>;
+
+  // ── messages ────────────────────────────────────────────────────────────────
+  createMessage(input: {
+    sessionId: string;
+    type: CraftMessageType;
+    turnIndex: number;
+    messageMetadata: Record<string, unknown>;
+  }): Promise<CraftMessageRow>;
+  /** Count persisted user messages — the next turn's turnIndex. */
+  countUserMessages(sessionId: string): Promise<number>;
+  /** The transcript read: one session ordered by (turn, time). */
+  getMessages(sessionId: string): Promise<CraftMessageRow[]>;
+  /** Update one message's metadata (plan upserts). */
+  updateMessage(
+    messageId: string,
+    messageMetadata: Record<string, unknown>,
+  ): Promise<CraftMessageRow | undefined>;
+  /** Upsert the turn's agent_plan_update row: latest plan only, one row per turn. */
+  upsertAgentPlan(input: {
+    sessionId: string;
+    turnIndex: number;
+    planMetadata: Record<string, unknown>;
+    existingPlanId?: string | null;
+  }): Promise<CraftMessageRow>;
+  /** Whether the session has any messages (pre-provisioned check). */
+  sessionHasMessages(sessionId: string): Promise<boolean>;
+};
+
+export function createCraftStore(db: Database): CraftStore {
+  return {
+    async getSession(sessionId, userId) {
+      const rows = await db
+        .select()
+        .from(craftSessions)
+        .where(and(eq(craftSessions.id, sessionId), eq(craftSessions.userId, userId)))
+        .limit(1);
+      if (rows.length === 0) return undefined;
+      await this.updateSessionActivity(sessionId);
+      return rows[0];
+    },
+
+    async listUserSessions(userId, limit = 100) {
+      return db
+        .select()
+        .from(craftSessions)
+        .where(
+          and(
+            eq(craftSessions.userId, userId),
+            eq(craftSessions.origin, "INTERACTIVE"),
+          ),
+        )
+        .orderBy(desc(craftSessions.createdAt))
+        .limit(limit);
+    },
+
+    async getEmptySessionForUser(userId) {
+      // "Empty" = no messages yet. Only INTERACTIVE sessions — non-interactive
+      // origins skip port allocation and must not be handed to the craft UI.
+      const rows = await db
+        .select({ session: craftSessions })
+        .from(craftSessions)
+        .where(
+          and(
+            eq(craftSessions.userId, userId),
+            eq(craftSessions.origin, "INTERACTIVE"),
+            sql`NOT EXISTS (${db
+              .select({ one: sql`1` })
+              .from(craftMessages)
+              .where(eq(craftMessages.sessionId, craftSessions.id))
+              .limit(1)})`,
+          ),
+        )
+        .limit(1);
+      return rows[0]?.session;
+    },
+
+    async createSession(input) {
+      const id = newCraftId("cs");
+      const rows = await db
+        .insert(craftSessions)
+        .values({
+          id,
+          userId: input.userId,
+          name: input.name ?? null,
+          // Born initializing: only the reconcile that builds the workspace CASes to active.
+          status: "initializing",
+          origin: "INTERACTIVE",
+          agentProvider: input.agentProvider ?? null,
+          agentModel: input.agentModel ?? null,
+        })
+        .returning();
+      return rows[0];
+    },
+
+    async updateSession(sessionId, patch) {
+      const rows = await db
+        .update(craftSessions)
+        .set({ ...patch, lastActivityAt: new Date() })
+        .where(eq(craftSessions.id, sessionId))
+        .returning();
+      return rows[0];
+    },
+
+    async updateSessionActivity(sessionId) {
+      await db
+        .update(craftSessions)
+        .set({ lastActivityAt: new Date() })
+        .where(eq(craftSessions.id, sessionId));
+    },
+
+    async finalizeSessionInitialization(input) {
+      const rows = await db
+        .update(craftSessions)
+        .set({
+          status: input.toStatus,
+          ...(input.opencodeSessionId !== undefined && input.opencodeSessionId !== null
+            ? { opencodeSessionId: input.opencodeSessionId }
+            : {}),
+          ...(input.skillsHash !== undefined && input.skillsHash !== null
+            ? { skillsHash: input.skillsHash }
+            : {}),
+          ...(input.mcpConfigHash !== undefined && input.mcpConfigHash !== null
+            ? { mcpConfigHash: input.mcpConfigHash }
+            : {}),
+        })
+        .where(
+          and(
+            eq(craftSessions.id, input.sessionId),
+            eq(craftSessions.status, "initializing"),
+          ),
+        )
+        .returning({ id: craftSessions.id });
+      // False when the session already left initializing (a concurrent repair
+      // finished first) — the caller's runtime state must not be recorded.
+      return rows.length === 1;
+    },
+
+    async persistOpencodeSessionId(sessionId, opencodeSessionId) {
+      await db
+        .update(craftSessions)
+        .set({ opencodeSessionId, lastActivityAt: new Date() })
+        .where(
+          and(
+            eq(craftSessions.id, sessionId),
+            sql`${craftSessions.opencodeSessionId} IS DISTINCT FROM ${opencodeSessionId}`,
+          ),
+        );
+    },
+
+    async reserveNextjsPort(input) {
+      // Ports only collide within one user's sandbox, so both the scan and the
+      // partial unique index are per-user. The OS bind probe filters ports in use
+      // outside the database; the index is the durable half under concurrency.
+      const allocated = new Set(
+        (
+          await db
+            .select({ port: craftSessions.nextjsPort })
+            .from(craftSessions)
+            .where(
+              and(
+                eq(craftSessions.userId, input.userId),
+                isNotNull(craftSessions.nextjsPort),
+              ),
+            )
+        )
+          .map((row) => row.port)
+          .filter((port): port is number => port !== null),
+      );
+
+      for (let port = input.portStart; port < input.portEnd; port += 1) {
+        if (allocated.has(port) || !(await isPortAvailable(port))) continue;
+        try {
+          const rows = await db
+            .update(craftSessions)
+            .set({ nextjsPort: port })
+            .where(eq(craftSessions.id, input.sessionId))
+            .returning({ port: craftSessions.nextjsPort });
+          if (rows.length === 1) return port;
+        } catch (error) {
+          if (
+            error !== null &&
+            typeof error === "object" &&
+            "code" in error &&
+            (error as { code?: unknown }).code === UNIQUE_VIOLATION
+          ) {
+            continue; // concurrent reservation won this port — next
+          }
+          throw error;
+        }
+      }
+      throw new Error(
+        `No available ports in range [${input.portStart}, ${input.portEnd})`,
+      );
+    },
+
+    async deleteSession(sessionId, userId) {
+      const rows = await db
+        .delete(craftSessions)
+        .where(and(eq(craftSessions.id, sessionId), eq(craftSessions.userId, userId)))
+        .returning({ id: craftSessions.id });
+      return rows.length === 1;
+    },
+
+    async createMessage(input) {
+      const rows = await db
+        .insert(craftMessages)
+        .values({
+          id: newCraftId("cm"),
+          sessionId: input.sessionId,
+          turnIndex: input.turnIndex,
+          type: input.type,
+          messageMetadata: input.messageMetadata,
+        })
+        .returning();
+      return rows[0];
+    },
+
+    async countUserMessages(sessionId) {
+      const rows = await db
+        .select({ value: count() })
+        .from(craftMessages)
+        .where(
+          and(eq(craftMessages.sessionId, sessionId), eq(craftMessages.type, "user")),
+        );
+      return Number(rows[0]?.value ?? 0);
+    },
+
+    async getMessages(sessionId) {
+      return db
+        .select()
+        .from(craftMessages)
+        .where(eq(craftMessages.sessionId, sessionId))
+        .orderBy(asc(craftMessages.turnIndex), asc(craftMessages.createdAt));
+    },
+
+    async updateMessage(messageId, messageMetadata) {
+      const rows = await db
+        .update(craftMessages)
+        .set({ messageMetadata })
+        .where(eq(craftMessages.id, messageId))
+        .returning();
+      return rows[0];
+    },
+
+    async upsertAgentPlan(input) {
+      if (input.existingPlanId) {
+        const updated = await this.updateMessage(
+          input.existingPlanId,
+          input.planMetadata,
+        );
+        if (updated) return updated;
+      }
+      // Find this turn's existing plan row by packet type (the custom jsonb
+      // keeps `->>` working — the reason that column type was chosen).
+      const existing = await db
+        .select({ id: craftMessages.id })
+        .from(craftMessages)
+        .where(
+          and(
+            eq(craftMessages.sessionId, input.sessionId),
+            eq(craftMessages.turnIndex, input.turnIndex),
+            sql`${craftMessages.messageMetadata}->>'type' = 'agent_plan_update'`,
+          ),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        const updated = await this.updateMessage(
+          existing[0].id,
+          input.planMetadata,
+        );
+        if (updated) return updated;
+      }
+      return this.createMessage({
+        sessionId: input.sessionId,
+        type: "assistant",
+        turnIndex: input.turnIndex,
+        messageMetadata: input.planMetadata,
+      });
+    },
+
+    async sessionHasMessages(sessionId) {
+      const rows = await db
+        .select({ one: sql<number>`1` })
+        .from(craftMessages)
+        .where(eq(craftMessages.sessionId, sessionId))
+        .limit(1);
+      return rows.length > 0;
+    },
+  };
+}
+
+/**
+ * OS bind probe for the port reservation. Checks IPv4 and IPv6 wildcards so any listener on
+ * the port is detected regardless of family — the dev server binds one or the other.
+ */
+function isPortAvailable(port: number): Promise<boolean> {
+  const probe = (host: string) =>
+    new Promise<boolean>((resolveProbe) => {
+      const server = net.createServer();
+      server.unref();
+      server.once("error", () => resolveProbe(false));
+      server.listen(port, host, () => {
+        server.close(() => resolveProbe(true));
+      });
+    });
+  return probe("0.0.0.0").then(
+    (ipv4Open) => (ipv4Open ? probe("::") : Promise.resolve(false)),
+  );
+}

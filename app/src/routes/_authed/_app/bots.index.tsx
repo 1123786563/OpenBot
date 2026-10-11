@@ -1,4 +1,4 @@
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Fragment } from "react";
@@ -10,6 +10,7 @@ import {
 } from "@/components/bot-profile/attention";
 import { PageEmpty, PageRows, PageShell } from "@/components/layout/page-shell";
 import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemActions,
@@ -41,7 +42,22 @@ function BotsPage() {
           {t("bots.loadError")}
         </p>
       ) : agents.data.length === 0 ? (
-        <PageEmpty>{t("bots.empty")}</PageEmpty>
+        /*
+         * Not a dead end: the empty roster is exactly the person who does not know yet that
+         * creating a Bot lives on the Agents screen. The verb takes them straight into its
+         * create dialog (same search-param contract the Agents page's own button uses).
+         */
+        <div className="mt-4 flex flex-col items-start gap-3">
+          <PageEmpty>{t("bots.empty")}</PageEmpty>
+          <Button
+            render={(props) => (
+              <Link to="/agents" search={{ new: true }} {...props} />
+            )}
+          >
+            <IconPlus />
+            {t("bots.createFirst")}
+          </Button>
+        </div>
       ) : (
         <PageRows className="mt-6">
           {agents.data.map((agent, index) => {
