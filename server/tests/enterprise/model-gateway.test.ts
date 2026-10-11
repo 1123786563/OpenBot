@@ -19,6 +19,21 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 function req(body: unknown, signal?: AbortSignal) {
+  const withDefaultCap =
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    !("max_tokens" in body)
+      ? { ...body, max_tokens: 32 }
+      : body;
+  return new Request("https://runtime.example/model", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(withDefaultCap),
+    signal,
+  });
+}
+function rawReq(body: unknown, signal?: AbortSignal) {
   return new Request("https://runtime.example/model", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -52,6 +67,47 @@ function deps(overrides: Record<string, unknown> = {}) {
       })) as typeof fetch,
     environment: { OPENAI_BASE_URL: "https://gateway.example/v1" },
     ...overrides,
+  };
+}
+function manualTimer() {
+  let now = 0;
+  const waiters: Array<{ count: number; resolve: () => void }> = [];
+  const pending: Array<{
+    callback: () => void;
+    at: number;
+    active: boolean;
+  }> = [];
+  return {
+    timer: {
+      schedule(callback: () => void, milliseconds: number) {
+        const handle = { callback, at: now + milliseconds, active: true };
+        pending.push(handle);
+        for (const waiter of waiters.splice(0)) {
+          if (pending.length >= waiter.count) waiter.resolve();
+          else waiters.push(waiter);
+        }
+        return handle;
+      },
+      cancel(handle: unknown) {
+        (handle as (typeof pending)[number]).active = false;
+      },
+      activeCount() {
+        return pending.filter((item) => item.active).length;
+      },
+    },
+    waitForCount(count: number) {
+      if (pending.length >= count) return Promise.resolve();
+      return new Promise<void>((resolve) => waiters.push({ count, resolve }));
+    },
+    advanceBy(milliseconds: number) {
+      now += milliseconds;
+      for (const item of pending) {
+        if (item.active && item.at <= now) {
+          item.active = false;
+          item.callback();
+        }
+      }
+    },
   };
 }
 
@@ -102,6 +158,121 @@ test("trusted route and token ceiling ignore caller substitution; usage settles"
   expect(valid.status).toBe(200);
   expect(route).toBe("trusted-route");
   expect(confirmed).toBe(5);
+});
+
+test("missing, invalid and over-ceiling output caps reject before route or credentials", async () => {
+  let touched = 0;
+  const gateway = createModelGateway(
+    deps({
+      selectModel: async () => {
+        touched++;
+        return null;
+      },
+      resolveApiKey: async () => {
+        touched++;
+        return null;
+      },
+      fetch: (async () => {
+        touched++;
+        return Response.json({});
+      }) as typeof fetch,
+    }) as never,
+  );
+  for (const value of [
+    undefined,
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    "5",
+    null,
+  ]) {
+    const body: Record<string, unknown> = {
+      messages: [{ role: "user", content: "hi" }],
+    };
+    if (value !== undefined) body.max_tokens = value;
+    const response = await gateway.handle(rawReq(body));
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain("secret");
+  }
+  const above = await gateway.handle(
+    req({ max_tokens: 65, messages: [{ role: "user", content: "hi" }] }),
+  );
+  expect(above.status).toBe(400);
+  expect(touched).toBe(0);
+});
+
+test("confirmation rejection falls back to exactly one unknown settlement", async () => {
+  let confirmed = 0,
+    unknown = 0;
+  const gateway = createModelGateway(
+    deps({
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {
+          confirmed++;
+          throw new Error("private settlement secret");
+        },
+        markUnknown: async () => {
+          unknown++;
+          throw new Error("private unknown secret");
+        },
+      }),
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({ messages: [{ role: "user", content: "hi" }] }),
+  );
+  expect(response.status).toBe(502);
+  expect(await response.text()).not.toContain("secret");
+  expect(confirmed).toBe(1);
+  expect(unknown).toBe(1);
+});
+
+test("SSE confirmation rejection falls back once and exposes only a generic body error", async () => {
+  let confirmed = 0,
+    unknown = 0;
+  const source = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
+        ),
+      );
+      controller.enqueue(
+        new TextEncoder().encode(
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}\n\n',
+        ),
+      );
+      controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+  const gateway = createModelGateway(
+    deps({
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {
+          confirmed++;
+          throw new Error("private confirmation detail");
+        },
+        markUnknown: async () => {
+          unknown++;
+          throw new Error("private unknown detail");
+        },
+      }),
+      fetch: (async () =>
+        new Response(source, {
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+  );
+  await expect(response.text()).rejects.toThrow("MODEL_STREAM_FAILED");
+  expect(confirmed).toBe(1);
+  expect(unknown).toBe(1);
 });
 
 test("resolver rejection precedes route and credential access and returns a safe error", async () => {
@@ -644,7 +815,213 @@ test("Anthropic stream confirms only authoritative usage and normalizes prompt/c
   }
 });
 
+test("PlanModel stream header wait is bounded while its live body outlives header deadline", async () => {
+  const clock = manualTimer();
+  let unknown = 0;
+  let signal!: AbortSignal;
+  const g = createModelGateway(
+    deps({
+      environment: {
+        CHATGPT_AUTH_FILE: "/private/auth",
+        PICKED_HARNESS_IMAGE: "agent-langgraph-agui:latest",
+        PICKED_HARNESS_URL: "http://127.0.0.1:9988",
+        MANAGED_AGENT_TOKEN: "harness-secret",
+      },
+      requestTimeoutMs: 5,
+      streamTimeoutMs: 20,
+      timer: clock.timer,
+      selectModel: async () => ({
+        model: {
+          provider: "openai",
+          defaultModel: "gpt-fixed",
+          plan: {
+            provider: "chatgpt",
+            endpoint: new URL("http://127.0.0.1:9988"),
+            token: "harness-secret",
+          },
+        },
+        credentialSecretRef: "",
+        planBotId: "bot",
+      }),
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {},
+        markUnknown: async () => {
+          unknown++;
+        },
+      }),
+      createPlanModel: (
+        _c: unknown,
+        _b: string,
+        _t: string,
+        s: AbortSignal,
+      ) => {
+        signal = s;
+        return {
+          doGenerate: async () => ({
+            content: [],
+            finishReason: "stop",
+            usage: {},
+          }),
+          doStream: async () =>
+            await new Promise<never>((_resolve, reject) => {
+              if (s.aborted) reject(s.reason);
+              else
+                s.addEventListener("abort", () => reject(s.reason), {
+                  once: true,
+                });
+            }),
+        };
+      },
+    }) as never,
+  );
+  const pending = g.handle(
+    req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+  );
+  await clock.waitForCount(2);
+  clock.advanceBy(5);
+  const abortedAtHeaderDeadline = signal.aborted;
+  clock.advanceBy(20);
+  expect((await pending).status).toBe(502);
+  expect(abortedAtHeaderDeadline).toBe(true);
+  expect(unknown).toBe(1);
+
+  const healthyClock = manualTimer();
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let confirmed = 0;
+  const healthy = createModelGateway(
+    deps({
+      environment: {
+        CHATGPT_AUTH_FILE: "/private/auth",
+        PICKED_HARNESS_IMAGE: "agent-langgraph-agui:latest",
+        PICKED_HARNESS_URL: "http://127.0.0.1:9988",
+        MANAGED_AGENT_TOKEN: "harness-secret",
+      },
+      requestTimeoutMs: 5,
+      streamTimeoutMs: 20,
+      timer: healthyClock.timer,
+      selectModel: async () => ({
+        model: {
+          provider: "openai",
+          defaultModel: "gpt-fixed",
+          plan: {
+            provider: "chatgpt",
+            endpoint: new URL("http://127.0.0.1:9988"),
+            token: "harness-secret",
+          },
+        },
+        credentialSecretRef: "",
+        planBotId: "bot",
+      }),
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {
+          confirmed++;
+        },
+        markUnknown: async () => {},
+      }),
+      createPlanModel: () => ({
+        doGenerate: async () => ({
+          content: [],
+          finishReason: "stop",
+          usage: {},
+        }),
+        doStream: async () => ({
+          stream: new ReadableStream({
+            async pull(c) {
+              await delayed;
+              c.enqueue({
+                type: "finish",
+                finishReason: { unified: "stop" },
+                usage: {},
+              });
+              c.close();
+            },
+          }),
+        }),
+      }),
+    }) as never,
+  );
+  const responsePromise = healthy.handle(
+    req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+  );
+  await healthyClock.waitForCount(2);
+  const response = await responsePromise;
+  const body = response.text();
+  healthyClock.advanceBy(5);
+  release();
+  expect(await body).toContain("[DONE]");
+  expect(confirmed).toBe(0);
+});
+
+test("PlanModel non-stream completion and early configuration failure clear request timers", async () => {
+  const clock = manualTimer();
+  const base = {
+    environment: {
+      CHATGPT_AUTH_FILE: "/private/auth",
+      PICKED_HARNESS_IMAGE: "agent-langgraph-agui:latest",
+      PICKED_HARNESS_URL: "http://127.0.0.1:9988",
+      MANAGED_AGENT_TOKEN: "harness-secret",
+    },
+    timer: clock.timer,
+    selectModel: async () => ({
+      model: {
+        provider: "openai",
+        defaultModel: "gpt-fixed",
+        plan: {
+          provider: "chatgpt",
+          endpoint: new URL("http://127.0.0.1:9988"),
+          token: "harness-secret",
+        },
+      },
+      credentialSecretRef: "",
+      planBotId: "bot",
+    }),
+    createPlanModel: () => ({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "ok" }],
+        finishReason: "stop",
+        usage: {},
+      }),
+    }),
+  };
+  const success = createModelGateway(deps(base) as never);
+  expect(
+    (await success.handle(req({ messages: [{ role: "user", content: "hi" }] })))
+      .status,
+  ).toBe(200);
+  expect((clock.timer as { activeCount(): number }).activeCount()).toBe(0);
+  const earlyClock = manualTimer();
+  const early = createModelGateway(
+    deps({
+      ...base,
+      timer: earlyClock.timer,
+      selectModel: async () => ({
+        model: {
+          provider: "openai",
+          defaultModel: "gpt-fixed",
+          plan: {
+            provider: "chatgpt",
+            endpoint: new URL("http://127.0.0.1:9988"),
+            token: "harness-secret",
+          },
+        },
+        credentialSecretRef: "",
+      }),
+    }) as never,
+  );
+  expect(
+    (await early.handle(req({ messages: [{ role: "user", content: "hi" }] })))
+      .status,
+  ).toBe(503);
+  expect((earlyClock.timer as { activeCount(): number }).activeCount()).toBe(0);
+});
+
 test("PlanModel timeout uses its shared signal and settlement is attempted once", async () => {
+  const clock = manualTimer();
   let captured: AbortSignal | undefined,
     unknown = 0;
   const g = createModelGateway(
@@ -655,7 +1032,8 @@ test("PlanModel timeout uses its shared signal and settlement is attempted once"
         PICKED_HARNESS_URL: "http://127.0.0.1:9988",
         MANAGED_AGENT_TOKEN: "harness-secret",
       },
-      timeoutMs: 5,
+      requestTimeoutMs: 5,
+      timer: clock.timer,
       selectModel: async () => ({
         model: {
           provider: "openai",
@@ -699,12 +1077,166 @@ test("PlanModel timeout uses its shared signal and settlement is attempted once"
       },
     }) as never,
   );
-  expect(
-    (await g.handle(req({ messages: [{ role: "user", content: "hi" }] })))
-      .status,
-  ).toBe(502);
+  const pending = g.handle(
+    req({ messages: [{ role: "user", content: "hi" }] }),
+  );
+  await clock.waitForCount(1);
+  clock.advanceBy(5);
+  expect((await pending).status).toBe(502);
   expect(captured?.aborted).toBe(true);
   expect(unknown).toBe(1);
+});
+
+test("HTTP credential and Anthropic mapping errors clear the request timer", async () => {
+  const missingKeyClock = manualTimer();
+  const missingKey = createModelGateway(
+    deps({
+      timer: missingKeyClock.timer,
+      resolveApiKey: async () => null,
+    }) as never,
+  );
+  expect(
+    (
+      await missingKey.handle(
+        req({ messages: [{ role: "user", content: "hi" }] }),
+      )
+    ).status,
+  ).toBe(503);
+  expect(missingKeyClock.timer.activeCount()).toBe(0);
+
+  const mappingClock = manualTimer();
+  const invalidMapping = createModelGateway(
+    deps({
+      timer: mappingClock.timer,
+      selectModel: async () => ({
+        model: { provider: "anthropic", defaultModel: "claude-fixed" },
+        credentialSecretRef: "credential-1",
+      }),
+    }) as never,
+  );
+  expect(
+    (
+      await invalidMapping.handle(
+        req({
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: "https://example.com/image.jpg",
+                },
+              ],
+            },
+          ],
+        }),
+      )
+    ).status,
+  ).toBe(400);
+  expect(mappingClock.timer.activeCount()).toBe(0);
+});
+
+test("invalid credential header returns safe error without timer or dispatch", async () => {
+  const clock = manualTimer();
+  let fetchCalls = 0;
+  const gateway = createModelGateway(
+    deps({
+      timer: clock.timer,
+      resolveApiKey: async () => "synthetic\nsecret",
+      fetch: (async () => {
+        fetchCalls++;
+        return Response.json({});
+      }) as typeof fetch,
+    }) as never,
+  );
+
+  const response = await gateway.handle(
+    req({ messages: [{ role: "user", content: "hi" }] }),
+  );
+
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({
+    error: { code: "MODEL_CREDENTIAL_UNAVAILABLE" },
+  });
+  expect(clock.timer.activeCount()).toBe(0);
+  expect(fetchCalls).toBe(0);
+});
+
+test("PlanModel request deadline resolves when doStream ignores abort", async () => {
+  const clock = manualTimer();
+  let resolveHandle!: (handle: unknown) => void;
+  let cancelled = 0;
+  let unknown = 0;
+  let resolveLateCancel!: () => void;
+  const lateCancel = new Promise<void>((resolve) => {
+    resolveLateCancel = resolve;
+  });
+  const lateStream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled++;
+      resolveLateCancel();
+    },
+  });
+  const gateway = createModelGateway(
+    deps({
+      timer: clock.timer,
+      requestTimeoutMs: 5,
+      streamTimeoutMs: 20,
+      environment: {
+        CHATGPT_AUTH_FILE: "/private/auth",
+        PICKED_HARNESS_IMAGE: "agent-langgraph-agui:latest",
+        PICKED_HARNESS_URL: "http://127.0.0.1:9988",
+        MANAGED_AGENT_TOKEN: "harness-secret",
+      },
+      selectModel: async () => ({
+        model: {
+          provider: "openai",
+          defaultModel: "gpt-fixed",
+          plan: {
+            provider: "chatgpt",
+            endpoint: new URL("http://127.0.0.1:9988"),
+            token: "harness-secret",
+          },
+        },
+        credentialSecretRef: "",
+        planBotId: "bot",
+      }),
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {},
+        markUnknown: async () => {
+          unknown++;
+        },
+      }),
+      createPlanModel: () => ({
+        doStream: () =>
+          new Promise((resolve) => {
+            resolveHandle = resolve;
+          }),
+      }),
+    }) as never,
+  );
+
+  const pending = gateway.handle(
+    req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+  );
+  await clock.waitForCount(2);
+  clock.advanceBy(5);
+  const response = await Promise.race([
+    pending,
+    new Promise<undefined>((resolve) =>
+      setTimeout(() => resolve(undefined), 50),
+    ),
+  ]);
+  expect(response?.status).toBe(502);
+  expect(unknown).toBe(1);
+  expect(clock.timer.activeCount()).toBe(0);
+  resolveHandle({
+    stream: lateStream,
+    usage: Promise.resolve({}),
+  });
+  await lateCancel;
+  expect(cancelled).toBe(1);
 });
 
 test("request rejects malformed nested content and non-object tool arguments before dispatch", async () => {
@@ -861,7 +1393,7 @@ test("Anthropic partial tool JSON is redacted across events and malformed blocks
   expect(out).toContain("[redacted]");
 });
 
-test("a rejected confirmation is attempted once and is never followed by unknown settlement", async () => {
+test("a rejected confirmation is attempted once and falls back to unknown settlement", async () => {
   let confirmed = 0,
     unknown = 0;
   const g = createModelGateway(
@@ -883,7 +1415,373 @@ test("a rejected confirmation is attempted once and is never followed by unknown
       .status,
   ).toBe(502);
   expect(confirmed).toBe(1);
-  expect(unknown).toBe(0);
+  expect(unknown).toBe(1);
+});
+
+test("PlanModel receives the caller's exact output cap for JSON and streams", async () => {
+  const seen: number[] = [];
+  const gateway = createModelGateway(
+    deps({
+      environment: {
+        CHATGPT_AUTH_FILE: "/private/auth",
+        PICKED_HARNESS_IMAGE: "agent-langgraph-agui:latest",
+        PICKED_HARNESS_URL: "http://127.0.0.1:9988",
+        MANAGED_AGENT_TOKEN: "harness-secret",
+      },
+      selectModel: async () => ({
+        model: {
+          provider: "openai",
+          defaultModel: "gpt-fixed",
+          plan: {
+            provider: "chatgpt",
+            endpoint: new URL("http://127.0.0.1:9988"),
+            token: "harness-secret",
+          },
+        },
+        credentialSecretRef: "",
+        planBotId: "bot",
+      }),
+      createPlanModel: () => ({
+        doGenerate: async (options: { maxOutputTokens?: number }) => {
+          seen.push(options.maxOutputTokens);
+          return { content: [], finishReason: "stop", usage: {} };
+        },
+        doStream: async (options: { maxOutputTokens?: number }) => {
+          seen.push(options.maxOutputTokens);
+          return {
+            stream: new ReadableStream({
+              start(c) {
+                c.enqueue({
+                  type: "finish",
+                  finishReason: { unified: "stop" },
+                  usage: {},
+                });
+                c.close();
+              },
+            }),
+          };
+        },
+      }),
+    }) as never,
+  );
+  for (const stream of [false, true]) {
+    const response = await gateway.handle(
+      req({
+        stream,
+        max_tokens: 17,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+    if (stream) await response.body?.cancel();
+    else await response.text();
+  }
+  expect(seen).toEqual([17, 17]);
+});
+
+test("stream total deadline cancels a pending reader and settles unknown once", async () => {
+  const clock = manualTimer();
+  let cancelled = 0,
+    unknown = 0;
+  const source = new ReadableStream<Uint8Array>({
+    pull() {
+      return new Promise<void>(() => {});
+    },
+    cancel() {
+      cancelled++;
+    },
+  });
+  const gateway = createModelGateway(
+    deps({
+      requestTimeoutMs: 100,
+      streamTimeoutMs: 10,
+      timer: clock.timer,
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {
+          throw new Error("must not confirm");
+        },
+        markUnknown: async () => {
+          unknown++;
+        },
+      }),
+      fetch: (async () =>
+        new Response(source, {
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+  );
+  await clock.waitForCount(2);
+  const body = response.text();
+  clock.advanceBy(10);
+  await expect(body).rejects.toThrow();
+  expect(cancelled).toBe(1);
+  expect(unknown).toBe(1);
+});
+
+test("caller abort after provider headers cancels the reader and settles unknown once", async () => {
+  const controller = new AbortController();
+  let cancelled = 0,
+    unknown = 0;
+  const source = new ReadableStream<Uint8Array>({
+    pull() {
+      return new Promise<void>(() => {});
+    },
+    cancel() {
+      cancelled++;
+    },
+  });
+  const gateway = createModelGateway(
+    deps({
+      requestTimeoutMs: 1000,
+      streamTimeoutMs: 1000,
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {},
+        markUnknown: async () => {
+          unknown++;
+        },
+      }),
+      fetch: (async () =>
+        new Response(source, {
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req(
+      { stream: true, messages: [{ role: "user", content: "hi" }] },
+      controller.signal,
+    ),
+  );
+  const reading = response.text();
+  controller.abort();
+  await expect(reading).rejects.toThrow();
+  expect(cancelled).toBe(1);
+  expect(unknown).toBe(1);
+});
+
+test("request header deadline ends after headers while a healthy stream completes", async () => {
+  const clock = manualTimer();
+  let confirmed = 0;
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const frame =
+    'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n' +
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}\n\n' +
+    "data: [DONE]\n\n";
+  const source = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      await delayed;
+      controller.enqueue(new TextEncoder().encode(frame));
+      controller.close();
+    },
+  });
+  const gateway = createModelGateway(
+    deps({
+      requestTimeoutMs: 5,
+      streamTimeoutMs: 100,
+      timer: clock.timer,
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {
+          confirmed++;
+        },
+        markUnknown: async () => {},
+      }),
+      fetch: (async () =>
+        new Response(source, {
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+  );
+  await clock.waitForCount(2);
+  expect(response.status).toBe(200);
+  const body = response.text();
+  clock.advanceBy(5); // the header timer was cleared when the response arrived
+  release();
+  expect(await body).toContain("[DONE]");
+  expect(confirmed).toBe(1);
+});
+
+test("malformed or credential-bearing Anthropic runtime types cancel and never confirm", async () => {
+  for (const type of [7, "synthetic-secret-message_start"]) {
+    let cancelled = 0,
+      unknown = 0,
+      confirmed = 0;
+    const frames = [
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"m","usage":{"input_tokens":1}}}\n\n',
+      `event: message_delta\ndata: ${JSON.stringify({ type, delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } })}\n\n`,
+    ];
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        frames.forEach((frame) => {
+          controller.enqueue(new TextEncoder().encode(frame));
+        });
+      },
+      cancel() {
+        cancelled++;
+      },
+    });
+    const gateway = createModelGateway(
+      deps({
+        selectModel: async () => ({
+          model: { provider: "anthropic", defaultModel: "claude-fixed" },
+          credentialSecretRef: "c",
+        }),
+        resolveInvocation: async () => ({
+          context,
+          confirmUsage: async () => {
+            confirmed++;
+          },
+          markUnknown: async () => {
+            unknown++;
+          },
+        }),
+        fetch: (async () =>
+          new Response(source, {
+            headers: { "content-type": "text/event-stream" },
+          })) as typeof fetch,
+      }) as never,
+    );
+    const response = await gateway.handle(
+      req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+    );
+    await expect(response.text()).rejects.toThrow();
+    expect(cancelled).toBe(1);
+    expect(unknown).toBe(1);
+    expect(confirmed).toBe(0);
+  }
+});
+
+test("OpenAI SSE validates optional top-level type before provider normalization", async () => {
+  for (const type of [7, "synthetic-secret-invalid"]) {
+    let cancelled = 0,
+      unknown = 0,
+      confirmed = 0;
+    let resolveCancelled!: () => void;
+    const cancelledPromise = new Promise<void>((resolve) => {
+      resolveCancelled = resolve;
+    });
+    const clock = manualTimer();
+    const source = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(
+          new TextEncoder().encode(
+            `data: ${JSON.stringify({ type, choices: [{ delta: { content: "hi" }, finish_reason: null }] })}\n\n`,
+          ),
+        );
+      },
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel() {
+        cancelled++;
+        resolveCancelled();
+      },
+    });
+    const g = createModelGateway(
+      deps({
+        requestTimeoutMs: 10,
+        streamTimeoutMs: 5,
+        timer: clock.timer,
+        resolveInvocation: async () => ({
+          context,
+          confirmUsage: async () => {
+            confirmed++;
+          },
+          markUnknown: async () => {
+            unknown++;
+          },
+        }),
+        fetch: (async () =>
+          new Response(source, {
+            headers: { "content-type": "text/event-stream" },
+          })) as typeof fetch,
+      }) as never,
+    );
+    const response = await g.handle(
+      req({ stream: true, messages: [{ role: "user", content: "hi" }] }),
+    );
+    await clock.waitForCount(2);
+    const body = response.text();
+    await expect(body).rejects.toThrow();
+    await cancelledPromise;
+    expect(cancelled).toBe(1);
+    expect(unknown).toBe(1);
+    expect(confirmed).toBe(0);
+    clock.advanceBy(5);
+  }
+});
+
+test("abort after OpenAI terminal frame cancels instead of confirming usage", async () => {
+  const controller = new AbortController();
+  let cancelled = 0,
+    unknown = 0,
+    confirmed = 0,
+    release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const frame =
+    'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n' +
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}\n\n' +
+    "data: [DONE]\n\n";
+  let reads = 0,
+    nextRead!: () => void;
+  const readingNext = new Promise<void>((resolve) => {
+    nextRead = resolve;
+  });
+  const source = new ReadableStream<Uint8Array>({
+    async pull(c) {
+      if (reads++ === 0) c.enqueue(new TextEncoder().encode(frame));
+      else {
+        nextRead();
+        await held;
+      }
+    },
+    cancel() {
+      cancelled++;
+    },
+  });
+  const g = createModelGateway(
+    deps({
+      resolveInvocation: async () => ({
+        context,
+        confirmUsage: async () => {
+          confirmed++;
+        },
+        markUnknown: async () => {
+          unknown++;
+        },
+      }),
+      fetch: (async () =>
+        new Response(source, {
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    }) as never,
+  );
+  const response = await g.handle(
+    req(
+      { stream: true, messages: [{ role: "user", content: "hi" }] },
+      controller.signal,
+    ),
+  );
+  const body = response.text();
+  await readingNext;
+  controller.abort();
+  release();
+  await expect(body).rejects.toThrow();
+  expect(cancelled).toBe(1);
+  expect(unknown).toBe(1);
+  expect(confirmed).toBe(0);
 });
 
 test("Anthropic maps supported image and system content blocks faithfully", async () => {

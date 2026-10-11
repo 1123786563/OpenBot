@@ -27,6 +27,12 @@ export type ModelGatewayDependencies = {
   environment?: Record<string, string | undefined>;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  requestTimeoutMs?: number;
+  streamTimeoutMs?: number;
+  timer?: {
+    schedule(callback: () => void, milliseconds: number): unknown;
+    cancel(handle: unknown): void;
+  };
   createPlanModel?(
     config: NonNullable<RuntimeModel["plan"]>,
     botId: string,
@@ -38,7 +44,7 @@ export type ModelGatewayDependencies = {
 type Message = Record<string, unknown> & { role: string; content: unknown };
 type Input = {
   messages: Message[];
-  maxTokens?: number;
+  maxTokens: number;
   stream: boolean;
   model?: string;
   tools?: unknown[];
@@ -232,10 +238,7 @@ function parseInput(value: unknown): Input | null {
       return null;
     messages.push(raw as Message);
   }
-  if (
-    value.max_tokens !== undefined &&
-    (!Number.isSafeInteger(value.max_tokens) || Number(value.max_tokens) <= 0)
-  )
+  if (!Number.isSafeInteger(value.max_tokens) || Number(value.max_tokens) <= 0)
     return null;
   if (value.stream !== undefined && typeof value.stream !== "boolean")
     return null;
@@ -266,9 +269,7 @@ function parseInput(value: unknown): Input | null {
   if (!safeToolChoice(value.tool_choice)) return null;
   return {
     messages,
-    ...(typeof value.max_tokens === "number"
-      ? { maxTokens: value.max_tokens }
-      : {}),
+    maxTokens: value.max_tokens as number,
     stream: value.stream === true,
     ...(typeof value.model === "string" ? { model: value.model } : {}),
     ...(Array.isArray(value.tools) ? { tools: value.tools } : {}),
@@ -567,6 +568,7 @@ function redactStream(
   secret: string,
   settle: (total: number | null) => Promise<void>,
   anthropic: boolean,
+  signal?: AbortSignal,
 ) {
   const reader = source.getReader();
   const encoder = new TextEncoder();
@@ -589,6 +591,12 @@ function redactStream(
   const finishedChoices = new Set<number>();
   const openAnthropicBlocks = new Set<number>();
   const tails = new Map<string, string>();
+  const abortReader = () => {
+    void reader.cancel().catch(() => {});
+  };
+  const removeAbortListener = () =>
+    signal?.removeEventListener("abort", abortReader);
+  signal?.addEventListener("abort", abortReader, { once: true });
   const openAiPending = new Map<
     string,
     {
@@ -678,6 +686,12 @@ function redactStream(
       throw new Error("malformed-sse-json");
     }
     if (!object(value)) throw new Error("malformed-sse-object");
+    if (
+      Object.hasOwn(value, "type") &&
+      (typeof value.type !== "string" ||
+        (secret.length > 0 && value.type.includes(secret)))
+    )
+      throw new Error("invalid-runtime-discriminator");
     if (!anthropic) {
       if (
         Object.hasOwn(value, "error") ||
@@ -1073,6 +1087,7 @@ function redactStream(
             continue;
           }
           const next = await reader.read();
+          if (signal?.aborted) throw new Error("MODEL_STREAM_ABORTED");
           if (next.done) {
             ended = true;
             if (byteLength > 0) throw new Error("truncated-sse-event");
@@ -1088,6 +1103,7 @@ function redactStream(
                     Number.isSafeInteger(inputUsage + outputUsage)
                   ? inputUsage + outputUsage
                   : null;
+            if (signal?.aborted) throw new Error("MODEL_STREAM_ABORTED");
             if (!settled) {
               settled = true;
               await settle(total);
@@ -1095,6 +1111,8 @@ function redactStream(
             if (terminalOutput) {
               controller.enqueue(encoder.encode(terminalOutput));
               terminalOutput = "";
+              removeAbortListener();
+              controller.close();
               return;
             }
             break;
@@ -1106,6 +1124,7 @@ function redactStream(
           settled = true;
           await settle(null);
         }
+        removeAbortListener();
         controller.close();
       } catch {
         if (!settled) {
@@ -1113,6 +1132,7 @@ function redactStream(
           await settle(null).catch(() => {});
         }
         await reader.cancel().catch(() => {});
+        removeAbortListener();
         controller.error(new Error("MODEL_STREAM_FAILED"));
       }
     },
@@ -1122,6 +1142,7 @@ function redactStream(
         await settle(null).catch(() => {});
       }
       await reader.cancel(reason);
+      removeAbortListener();
     },
   });
 }
@@ -1138,8 +1159,26 @@ function planArguments(value: unknown): string {
 export function createModelGateway(
   deps: ModelGatewayDependencies,
 ): ModelGateway {
+  const requestTimeoutMs = deps.requestTimeoutMs ?? deps.timeoutMs ?? 120_000;
+  const streamTimeoutMs = deps.streamTimeoutMs ?? 300_000;
+  if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs <= 0)
+    throw new Error("Invalid model request timeout configuration");
+  if (
+    !Number.isSafeInteger(streamTimeoutMs) ||
+    streamTimeoutMs <= 0 ||
+    streamTimeoutMs > 900_000
+  )
+    throw new Error("Invalid model stream timeout configuration");
   const environment = deps.environment ?? process.env;
   const fetcher = deps.fetch ?? fetch;
+  const schedule =
+    deps.timer?.schedule ??
+    ((callback: () => void, milliseconds: number) =>
+      setTimeout(callback, milliseconds));
+  const cancelTimer =
+    deps.timer?.cancel ??
+    ((handle: unknown) =>
+      clearTimeout(handle as ReturnType<typeof setTimeout>));
   return {
     async handle(request) {
       if (request.method !== "POST") return error(405, "METHOD_NOT_ALLOWED");
@@ -1191,21 +1230,25 @@ export function createModelGateway(
       }
       if (!input) return error(400, "UNSUPPORTED_MODEL_REQUEST");
       const context = invocation.context;
-      const signal = AbortSignal.any([
-        request.signal,
-        AbortSignal.timeout(deps.timeoutMs ?? 120_000),
-      ]);
+      let streamTimer: unknown;
+      let requestTimer: unknown;
       let settlementAttempted = false;
       const settle = async (total: number | null) => {
         if (settlementAttempted) return;
         settlementAttempted = true;
-        if (total === null) await invocation.markUnknown();
-        else await invocation.confirmUsage(total);
+        if (streamTimer !== undefined) cancelTimer(streamTimer);
+        if (total !== null) {
+          try {
+            await invocation.confirmUsage(total);
+            return;
+          } catch {
+            // A failed authoritative confirmation leaves dispatched usage ambiguous.
+          }
+        }
+        await invocation.markUnknown();
+        if (total !== null) throw new Error("MODEL_SETTLEMENT_FAILED");
       };
-      if (
-        input.maxTokens !== undefined &&
-        input.maxTokens > context.maximumTokens
-      )
+      if (input.maxTokens > context.maximumTokens)
         return error(400, "TOKEN_LIMIT_EXCEEDED");
       let route: RuntimeModelRoute | null;
       try {
@@ -1222,9 +1265,19 @@ export function createModelGateway(
       }
       if (input.model && input.model !== model.defaultModel)
         return error(400, "MODEL_HINT_MISMATCH");
-      const maxTokens = input.maxTokens ?? context.maximumTokens;
+      const maxTokens = input.maxTokens;
+      const abortController = new AbortController();
+      const signal = AbortSignal.any([request.signal, abortController.signal]);
       if (model.plan) {
-        if (!route.planBotId) return error(503, "MODEL_ROUTE_UNAVAILABLE");
+        requestTimer = schedule(
+          () => abortController.abort(new Error("request-timeout")),
+          requestTimeoutMs,
+        );
+        const planConfig = model.plan;
+        if (!route.planBotId) {
+          if (requestTimer !== undefined) cancelTimer(requestTimer);
+          return error(503, "MODEL_ROUTE_UNAVAILABLE");
+        }
         try {
           const adapter =
             deps.createPlanModel?.(
@@ -1300,14 +1353,43 @@ export function createModelGateway(
             };
           });
           if (input.stream) {
-            if (!adapter.doStream)
-              throw new Error("stream-adapter-unavailable");
-            const generated = await adapter.doStream({
-              prompt,
-              tools,
-              abortSignal: signal,
-            } as never);
+            const doStream = adapter.doStream;
+            if (!doStream) throw new Error("stream-adapter-unavailable");
+            streamTimer = schedule(
+              () => abortController.abort(new Error("stream-timeout")),
+              streamTimeoutMs,
+            );
+            const adapterPromise = Promise.resolve().then(() =>
+              doStream.call(adapter, {
+                prompt,
+                tools,
+                maxOutputTokens: maxTokens,
+                abortSignal: signal,
+              } as never),
+            );
+            let onAbort: (() => void) | undefined;
+            const aborted = new Promise<never>((_resolve, reject) => {
+              onAbort = () =>
+                reject(signal.reason ?? new Error("request-aborted"));
+              if (signal.aborted) onAbort();
+              else signal.addEventListener("abort", onAbort, { once: true });
+            });
+            let generated: Awaited<typeof adapterPromise>;
+            try {
+              generated = await Promise.race([adapterPromise, aborted]);
+            } catch (cause) {
+              if (signal.aborted) {
+                void adapterPromise
+                  .then((late) => late?.stream.cancel())
+                  .catch(() => {});
+              }
+              throw cause;
+            } finally {
+              if (onAbort) signal.removeEventListener("abort", onAbort);
+            }
+            if (requestTimer !== undefined) cancelTimer(requestTimer);
             let cancelPlanStream: (() => Promise<void>) | undefined;
+            let streamAbort: (() => void) | undefined;
             const source = new ReadableStream<Uint8Array>({
               start(controller) {
                 void (async () => {
@@ -1335,9 +1417,20 @@ export function createModelGateway(
                     cancelPlanStream = async () => {
                       await reader.cancel();
                     };
+                    streamAbort = () => {
+                      void reader.cancel().catch(() => {});
+                    };
+                    signal.addEventListener("abort", streamAbort, {
+                      once: true,
+                    });
                     while (true) {
                       const { done, value: part } = await reader.read();
                       if (done) break;
+                      if (
+                        typeof part.type !== "string" ||
+                        part.type.includes(planConfig.token)
+                      )
+                        throw new Error("invalid-plan-stream-type");
                       if (part.type === "text-delta")
                         emit({
                           id: context.modelRequestId,
@@ -1401,11 +1494,17 @@ export function createModelGateway(
                     );
                     controller.close();
                   } catch {
+                    await cancelPlanStream?.().catch(() => {});
                     controller.error(new Error("MODEL_STREAM_FAILED"));
+                  } finally {
+                    if (streamAbort)
+                      signal.removeEventListener("abort", streamAbort);
                   }
                 })();
               },
               async cancel() {
+                if (streamAbort)
+                  signal.removeEventListener("abort", streamAbort);
                 await cancelPlanStream?.();
               },
             });
@@ -1414,6 +1513,7 @@ export function createModelGateway(
               model.plan.token,
               async () => settle(null),
               false,
+              signal,
             );
             return new Response(body, {
               headers: {
@@ -1425,8 +1525,10 @@ export function createModelGateway(
           const result = await adapter.doGenerate({
             prompt,
             tools,
+            maxOutputTokens: maxTokens,
             abortSignal: signal,
           } as never);
+          if (requestTimer !== undefined) cancelTimer(requestTimer);
           await settle(null);
           const text = result.content
             .filter((p) => p.type === "text")
@@ -1463,6 +1565,7 @@ export function createModelGateway(
             ),
           );
         } catch {
+          if (requestTimer !== undefined) cancelTimer(requestTimer);
           await settle(null).catch(() => {});
           return error(502, "MODEL_UPSTREAM_UNAVAILABLE");
         }
@@ -1531,14 +1634,29 @@ export function createModelGateway(
       const url = anthropic
         ? anthropicMessagesUrl(environment)
         : chatCompletionsUrl(environment);
-      const headers = new Headers({ "content-type": "application/json" });
-      if (anthropic) {
-        headers.set("x-api-key", key);
-        headers.set("anthropic-version", "2023-06-01");
-      } else headers.set("authorization", `Bearer ${key}`);
+      let headers: Headers;
+      try {
+        headers = new Headers({ "content-type": "application/json" });
+        if (anthropic) {
+          headers.set("x-api-key", key);
+          headers.set("anthropic-version", "2023-06-01");
+        } else headers.set("authorization", `Bearer ${key}`);
+      } catch {
+        return error(503, "MODEL_CREDENTIAL_UNAVAILABLE");
+      }
+      requestTimer = schedule(
+        () => abortController.abort(new Error("request-timeout")),
+        requestTimeoutMs,
+      );
       const controller = signal;
       let dispatched = false;
       try {
+        streamTimer = input.stream
+          ? schedule(
+              () => abortController.abort(new Error("stream-timeout")),
+              streamTimeoutMs,
+            )
+          : undefined;
         dispatched = true;
         const upstream = await fetcher(url, {
           method: "POST",
@@ -1546,6 +1664,8 @@ export function createModelGateway(
           body: JSON.stringify(payload),
           signal: controller,
         });
+        if (input.stream && requestTimer !== undefined)
+          cancelTimer(requestTimer);
         if (!upstream.ok) {
           await settle(null);
           return error(502, "MODEL_UPSTREAM_UNAVAILABLE");
@@ -1566,6 +1686,7 @@ export function createModelGateway(
               else await settle(total);
             },
             anthropic,
+            signal,
           );
           return new Response(body, {
             status: 200,
@@ -1597,6 +1718,10 @@ export function createModelGateway(
       } catch {
         if (dispatched) await settle(null).catch(() => {});
         return safeJson(502, "MODEL_UPSTREAM_UNAVAILABLE");
+      } finally {
+        if (requestTimer !== undefined) cancelTimer(requestTimer);
+        if (!input.stream && streamTimer !== undefined)
+          cancelTimer(streamTimer);
       }
     },
   };

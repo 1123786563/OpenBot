@@ -69,6 +69,71 @@ async function migrationFolderThrough62() {
   return temporaryMigrationDirectory;
 }
 
+async function migrationFolderThrough64WithoutIntentLocks() {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-r2-legacy-0063-"));
+  temporaryMigrationDirectories.push(directory);
+  const entries = await readdir(migrationsRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && /^\d{4}_.*\.sql$/.test(entry.name)) {
+      const index = Number(entry.name.slice(0, 4));
+      if (index <= 64)
+        await cp(join(migrationsRoot, entry.name), join(directory, entry.name));
+    }
+  }
+  const journal = JSON.parse(
+    await readFile(join(migrationsRoot, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number }> };
+  journal.entries = journal.entries.filter((entry) => entry.idx <= 64);
+  await mkdir(join(directory, "meta"), { recursive: true });
+  await writeFile(
+    join(directory, "meta/_journal.json"),
+    JSON.stringify(journal),
+  );
+  const migrationPath = join(directory, "0063_restore_schema_invariants.sql");
+  const migrationSql = await readFile(migrationPath, "utf8");
+  await writeFile(
+    migrationPath,
+    migrationSql.replaceAll(
+      "\tLOCK TABLE mastra_message_intents IN SHARE ROW EXCLUSIVE MODE;\n\tLOCK TABLE mastra_message_intent_attachments IN SHARE ROW EXCLUSIVE MODE;\n",
+      "",
+    ),
+  );
+  return directory;
+}
+
+async function expectInvariantLocksBeforePreflightCounts() {
+  for (const migrationName of [
+    "0063_restore_schema_invariants.sql",
+    "0065_restore_schema_invariant_guards.sql",
+  ]) {
+    const sql = await readFile(join(migrationsRoot, migrationName), "utf8");
+    const runCount = sql.indexOf("SELECT count(*) INTO invalid_run_count");
+    const reservationCount = sql.indexOf(
+      "SELECT count(*) INTO invalid_reservation_count",
+    );
+    const runLock = sql.indexOf(
+      "LOCK TABLE enterprise_runs IN SHARE ROW EXCLUSIVE MODE",
+    );
+    const reservationLock = sql.indexOf(
+      "LOCK TABLE enterprise_model_budget_reservations IN SHARE ROW EXCLUSIVE MODE",
+    );
+    const intentLock = sql.indexOf("LOCK TABLE mastra_message_intents");
+    const attachmentLock = sql.indexOf(
+      "LOCK TABLE mastra_message_intent_attachments",
+    );
+    const intentScan = sql.indexOf("FOR intent IN");
+    const backfill = sql.indexOf("UPDATE mastra_message_intents");
+    expect(runLock).toBeGreaterThanOrEqual(0);
+    expect(reservationLock).toBeGreaterThan(runLock);
+    expect(runCount).toBeGreaterThan(reservationLock);
+    expect(reservationCount).toBeGreaterThan(runCount);
+    expect(intentLock).toBeGreaterThan(reservationCount);
+    expect(attachmentLock).toBeGreaterThan(intentLock);
+    expect(intentScan).toBeGreaterThan(attachmentLock);
+    expect(backfill).toBeGreaterThan(intentScan);
+  }
+}
+
 async function migrationFolderWithWindowBarrier(advisoryKey: number) {
   const directory = await mkdtemp(join(tmpdir(), "openbot-r2-window-"));
   temporaryMigrationDirectories.push(directory);
@@ -81,9 +146,13 @@ async function migrationFolderWithWindowBarrier(advisoryKey: number) {
     }
   }
   await mkdir(join(directory, "meta"), { recursive: true });
-  await cp(
-    join(migrationsRoot, "meta/_journal.json"),
+  const journal = JSON.parse(
+    await readFile(join(migrationsRoot, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number }> };
+  journal.entries = journal.entries.filter((entry) => entry.idx <= 63);
+  await writeFile(
     join(directory, "meta/_journal.json"),
+    JSON.stringify(journal),
   );
   const migrationPath = join(directory, "0063_restore_schema_invariants.sql");
   const migrationSql = await readFile(migrationPath, "utf8");
@@ -92,6 +161,57 @@ async function migrationFolderWithWindowBarrier(advisoryKey: number) {
   if (!migrationSql.includes(postflight))
     throw new Error(
       "Could not locate the 0063 post-preflight migration barrier point.",
+    );
+  await writeFile(
+    migrationPath,
+    migrationSql.replace(
+      postflight,
+      `END\n$migration$;--> statement-breakpoint\n\nSELECT pg_advisory_lock(${advisoryKey});--> statement-breakpoint\nSELECT pg_advisory_unlock(${advisoryKey});--> statement-breakpoint\n\nUPDATE mastra_message_intents`,
+    ),
+  );
+  return directory;
+}
+
+test("0063 window fixture journal matches its copied migration files", async () => {
+  const directory = await migrationFolderWithWindowBarrier(202610110063);
+  const files = await readdir(directory);
+  const copiedIndexes = files
+    .filter((name) => /^\d{4}_.*\.sql$/.test(name))
+    .map((name) => Number(name.slice(0, 4)))
+    .sort((left, right) => left - right);
+  const journal = JSON.parse(
+    await readFile(join(directory, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number }> };
+
+  expect(journal.entries.map((entry) => entry.idx)).toEqual(copiedIndexes);
+});
+
+async function migrationFolderWithForwardWindowBarrier(advisoryKey: number) {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-r2-forward-window-"));
+  temporaryMigrationDirectories.push(directory);
+  const entries = await readdir(migrationsRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && /^\d{4}_.*\.sql$/.test(entry.name)) {
+      const index = Number(entry.name.slice(0, 4));
+      if (index <= 65)
+        await cp(join(migrationsRoot, entry.name), join(directory, entry.name));
+    }
+  }
+  await mkdir(join(directory, "meta"), { recursive: true });
+  await cp(
+    join(migrationsRoot, "meta/_journal.json"),
+    join(directory, "meta/_journal.json"),
+  );
+  const migrationPath = join(
+    directory,
+    "0065_restore_schema_invariant_guards.sql",
+  );
+  const migrationSql = await readFile(migrationPath, "utf8");
+  const postflight =
+    "END\n$migration$;--> statement-breakpoint\n\nUPDATE mastra_message_intents";
+  if (!migrationSql.includes(postflight))
+    throw new Error(
+      "Could not locate the 0065 post-preflight migration barrier point.",
     );
   await writeFile(
     migrationPath,
@@ -301,6 +421,158 @@ async function expectConstraintFailure(
   }
 }
 
+async function seedValidRunAndReservation(databaseUrl: string, prefix: string) {
+  const client = postgres(databaseUrl, { max: 1 });
+  const runId = crypto.randomUUID();
+  const tenant = `${prefix}-tenant`;
+  const workspace = `${prefix}-workspace`;
+  const principal = `${prefix}-principal`;
+  try {
+    await client.begin(async (transaction) => {
+      await transaction`SET LOCAL session_replication_role = 'replica'`;
+      await transaction`
+        INSERT INTO enterprise_runs (
+          id, tenant_id, workspace_id, principal_id, thread_id,
+          client_message_key, expert_version_ref, model_route_ref,
+          model_route_maximum_tokens, lease_expires_at
+        ) VALUES (
+          ${runId}, ${tenant}, ${workspace}, ${principal}, ${`${prefix}-thread`},
+          ${`${prefix}-run-key`}, 'writer-window-expert', 'writer-window-route',
+          400, now() + interval '1 hour'
+        )
+      `;
+      await transaction`
+        INSERT INTO enterprise_model_budget_reservations (
+          tenant_id, workspace_id, principal_id, run_id, idempotency_key,
+          model_route_ref, token_limit, confirmed_tokens, expires_at
+        ) VALUES (
+          ${tenant}, ${workspace}, ${principal}, ${runId},
+          ${`${prefix}-reservation-key`}, 'writer-window-route', 300, 120,
+          now() + interval '1 hour'
+        )
+      `;
+    });
+    return {
+      runId,
+      reservationKey: `${prefix}-reservation-key`,
+    };
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+}
+
+async function startInvalidRunAndReservationWriters(
+  databaseUrl: string,
+  control: ReturnType<typeof postgres>,
+  migrationPid: number,
+  rows: Awaited<ReturnType<typeof seedValidRunAndReservation>>,
+) {
+  const runWriter = postgres(databaseUrl, { max: 1 });
+  const reservationWriter = postgres(databaseUrl, { max: 1 });
+  let runSettled = false;
+  let reservationSettled = false;
+  const runPromise = runWriter
+    .begin(
+      (transaction) => transaction`
+        UPDATE enterprise_runs
+        SET model_route_maximum_tokens = 0
+        WHERE id = ${rows.runId}
+      `,
+    )
+    .then(
+      () => ({ code: undefined, constraint_name: undefined }),
+      (error: { code?: string; constraint_name?: string }) => ({
+        code: error.code,
+        constraint_name: error.constraint_name,
+      }),
+    )
+    .finally(() => {
+      runSettled = true;
+    });
+  const reservationPromise = reservationWriter
+    .begin(
+      (transaction) => transaction`
+        UPDATE enterprise_model_budget_reservations
+        SET token_limit = 0
+        WHERE idempotency_key = ${rows.reservationKey}
+      `,
+    )
+    .then(
+      () => ({ code: undefined, constraint_name: undefined }),
+      (error: { code?: string; constraint_name?: string }) => ({
+        code: error.code,
+        constraint_name: error.constraint_name,
+      }),
+    )
+    .finally(() => {
+      reservationSettled = true;
+    });
+
+  try {
+    const writerActivities = await waitForActivity(async () => {
+      const activities = await control<{ pid: number; query: string }[]>`
+        SELECT pid, query
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND pid <> ${migrationPid}
+          AND wait_event_type = 'Lock'
+          AND (
+            query ILIKE '%UPDATE enterprise_runs%'
+            OR query ILIKE '%UPDATE enterprise_model_budget_reservations%'
+          )
+      `;
+      return activities.length === 2 ? activities[0] : undefined;
+    }, "Run and reservation writers blocked by migration locks");
+    expect(writerActivities.pid).not.toBe(migrationPid);
+    expect(runSettled).toBe(false);
+    expect(reservationSettled).toBe(false);
+    const blockedWriters = await control<{ pid: number; query: string }[]>`
+      SELECT pid, query
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND pid <> ${migrationPid}
+        AND wait_event_type = 'Lock'
+        AND (
+          query ILIKE '%UPDATE enterprise_runs%'
+          OR query ILIKE '%UPDATE enterprise_model_budget_reservations%'
+        )
+    `;
+    expect(blockedWriters).toHaveLength(2);
+    return {
+      async expectRejected() {
+        const [runResult, reservationResult] = await Promise.all([
+          runPromise,
+          reservationPromise,
+        ]);
+        expect(runResult).toEqual({
+          code: "23514",
+          constraint_name: "enterprise_runs_model_route_maximum_tokens_check",
+        });
+        expect(reservationResult).toEqual({
+          code: "23514",
+          constraint_name: "enterprise_budget_reservation_tokens_check",
+        });
+      },
+      async close() {
+        await Promise.all([
+          runWriter.end({ timeout: 5 }),
+          reservationWriter.end({ timeout: 5 }),
+        ]);
+      },
+    };
+  } catch (error) {
+    await Promise.all([
+      runPromise,
+      reservationPromise,
+      runWriter.end({ timeout: 5 }),
+      reservationWriter.end({ timeout: 5 }),
+    ]);
+    throw error;
+  }
+}
+
 async function exerciseMigrationWriterWindow(
   setup: ReturnType<typeof postgres>,
   setupUrl: string,
@@ -308,10 +580,17 @@ async function exerciseMigrationWriterWindow(
 ) {
   const databaseName = await createDatabaseFrom(setup, template);
   const databaseUrl = fixtureUrl(setupUrl, databaseName);
+  const invariantRows = await seedValidRunAndReservation(
+    databaseUrl,
+    "0063-window",
+  );
   const barrierKey = 202610110063;
   const migrationFolder = await migrationFolderWithWindowBarrier(barrierKey);
   const control = postgres(databaseUrl, { max: 1 });
   const writer = postgres(databaseUrl, { max: 1 });
+  let invariantWriters:
+    | Awaited<ReturnType<typeof startInvalidRunAndReservationWriters>>
+    | undefined;
   let migrationPromise: ReturnType<typeof runMigration> | undefined;
   let writerPromise:
     | Promise<{ committed: boolean; message: string }>
@@ -343,11 +622,26 @@ async function exerciseMigrationWriterWindow(
       WHERE lock.pid = ${migrationActivity.pid}
         AND lock.granted
         AND relation.relname IN (
+          'enterprise_runs', 'enterprise_model_budget_reservations',
           'mastra_message_intents', 'mastra_message_intent_attachments'
         )
     `;
+    invariantWriters = await startInvalidRunAndReservationWriters(
+      databaseUrl,
+      control,
+      migrationActivity.pid,
+      invariantRows,
+    );
     expect(relationLocks).toEqual(
       expect.arrayContaining([
+        {
+          relation_name: "enterprise_runs",
+          mode: "ShareRowExclusiveLock",
+        },
+        {
+          relation_name: "enterprise_model_budget_reservations",
+          mode: "ShareRowExclusiveLock",
+        },
         {
           relation_name: "mastra_message_intents",
           mode: "ShareRowExclusiveLock",
@@ -413,6 +707,7 @@ async function exerciseMigrationWriterWindow(
     expect(writerResult.message).toContain(
       "mastra_message_intents_attachment_ids_array_check",
     );
+    await invariantWriters.expectRejected();
 
     const [lateIntent] = await control<{ count: number }[]>`
       SELECT count(*)::int AS count FROM mastra_message_intents
@@ -432,6 +727,183 @@ async function exerciseMigrationWriterWindow(
     await Promise.all([
       control.end({ timeout: 5 }),
       writer.end({ timeout: 5 }),
+      invariantWriters?.close(),
+    ]);
+  }
+}
+
+async function exerciseForwardMigrationWriterWindow(databaseUrl: string) {
+  const invariantRows = await seedValidRunAndReservation(
+    databaseUrl,
+    "0065-window",
+  );
+  const barrierKey = 202610110065;
+  const migrationFolder =
+    await migrationFolderWithForwardWindowBarrier(barrierKey);
+  const control = postgres(databaseUrl, { max: 1 });
+  const writer = postgres(databaseUrl, { max: 1 });
+  let invariantWriters:
+    | Awaited<ReturnType<typeof startInvalidRunAndReservationWriters>>
+    | undefined;
+  let migrationPromise: ReturnType<typeof runMigration> | undefined;
+  let writerPromise:
+    | Promise<{ committed: boolean; message: string }>
+    | undefined;
+  let barrierHeld = false;
+  try {
+    await control`SELECT pg_advisory_lock(${barrierKey})`;
+    barrierHeld = true;
+    migrationPromise = runMigration(databaseUrl, migrationFolder);
+
+    const migrationActivity = await waitForActivity(async () => {
+      const [activity] = await control<{ pid: number }[]>`
+        SELECT pid FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND query ILIKE ${`%pg_advisory_lock(${barrierKey})%`}
+          AND wait_event_type = 'Lock'
+          AND wait_event = 'advisory'
+      `;
+      return activity;
+    }, "0065 waiting at the post-preflight barrier");
+
+    const relationLocks = await control<
+      { relation_name: string; mode: string }[]
+    >`
+      SELECT relation.relname AS relation_name, lock.mode
+      FROM pg_locks lock
+      JOIN pg_class relation ON relation.oid = lock.relation
+      WHERE lock.pid = ${migrationActivity.pid}
+        AND lock.granted
+        AND relation.relname IN (
+          'enterprise_runs', 'enterprise_model_budget_reservations',
+          'mastra_message_intents', 'mastra_message_intent_attachments'
+        )
+    `;
+    invariantWriters = await startInvalidRunAndReservationWriters(
+      databaseUrl,
+      control,
+      migrationActivity.pid,
+      invariantRows,
+    );
+    expect(relationLocks).toEqual(
+      expect.arrayContaining([
+        {
+          relation_name: "enterprise_runs",
+          mode: "ShareRowExclusiveLock",
+        },
+        {
+          relation_name: "enterprise_model_budget_reservations",
+          mode: "ShareRowExclusiveLock",
+        },
+        {
+          relation_name: "mastra_message_intents",
+          mode: "ShareRowExclusiveLock",
+        },
+        {
+          relation_name: "mastra_message_intent_attachments",
+          mode: "ShareRowExclusiveLock",
+        },
+      ]),
+    );
+
+    let writerSettled = false;
+    const writerIntent = {
+      tenant: "forward-window-tenant",
+      thread: "forward-window-thread",
+      key: "forward-window-client-key",
+      message: "forward-window-message",
+      attachmentId: "88888888-8888-4888-8888-888888888888",
+    };
+    writerPromise = writer
+      .begin(async (transaction) => {
+        await transaction`SET LOCAL session_replication_role = 'replica'`;
+        await transaction`
+          INSERT INTO mastra_message_intents (
+            tenant_id, thread_id, client_message_key, message_id, digest,
+            reserved_seq, actor_id, principal_id, backend_version, attachment_ids
+          ) VALUES (
+            ${writerIntent.tenant}, ${writerIntent.thread}, ${writerIntent.key},
+            ${writerIntent.message}, 'forward-window', 1,
+            'forward-window-actor', 'forward-window-principal', 1,
+            ${JSON.stringify([writerIntent.attachmentId])}::text::jsonb
+          )
+        `;
+        await transaction`
+          INSERT INTO mastra_message_intent_attachments (
+            tenant_id, thread_id, client_message_key, attachment_id
+          ) VALUES (
+            ${writerIntent.tenant}, ${writerIntent.thread}, ${writerIntent.key},
+            ${writerIntent.attachmentId}::uuid
+          )
+        `;
+      })
+      .then(
+        () => ({ committed: true, message: "writer committed" }),
+        (error) => ({ committed: false, message: String(error) }),
+      )
+      .finally(() => {
+        writerSettled = true;
+      });
+
+    const writerActivity = await waitForActivity(async () => {
+      const [activity] = await control<{ pid: number }[]>`
+        SELECT pid FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND query ILIKE '%INSERT INTO mastra_message_intents%'
+          AND wait_event_type = 'Lock'
+      `;
+      return activity;
+    }, "valid intent/attachment writer blocked by 0065 locks");
+    expect(writerActivity.pid).not.toBe(migrationActivity.pid);
+    expect(writerSettled).toBe(false);
+
+    await control`SELECT pg_advisory_unlock(${barrierKey})`;
+    barrierHeld = false;
+    const migrationResult = await migrationPromise;
+    expect(migrationResult).toEqual({ failed: false, message: "" });
+    const writerResult = await writerPromise;
+    expect(writerResult.committed).toBe(true);
+    await invariantWriters.expectRejected();
+
+    const [written] = await control<{ intents: number; attachments: number }[]>`
+      SELECT
+        (SELECT count(*)::int FROM mastra_message_intents
+          WHERE tenant_id = ${writerIntent.tenant}
+            AND thread_id = ${writerIntent.thread}
+            AND client_message_key = ${writerIntent.key}) AS intents,
+        (SELECT count(*)::int FROM mastra_message_intent_attachments
+          WHERE tenant_id = ${writerIntent.tenant}
+            AND thread_id = ${writerIntent.thread}
+            AND client_message_key = ${writerIntent.key}) AS attachments
+    `;
+    expect(written).toEqual({ intents: 1, attachments: 1 });
+    const [storedIntent] = await control<
+      { attachment_ids: string[]; attachment_ids_type: string }[]
+    >`
+      SELECT attachment_ids, jsonb_typeof(attachment_ids) AS attachment_ids_type
+      FROM mastra_message_intents
+      WHERE tenant_id = ${writerIntent.tenant}
+        AND thread_id = ${writerIntent.thread}
+        AND client_message_key = ${writerIntent.key}
+    `;
+    expect(storedIntent).toEqual({
+      attachment_ids: [writerIntent.attachmentId],
+      attachment_ids_type: "array",
+    });
+  } finally {
+    if (barrierHeld) {
+      await control`SELECT pg_advisory_unlock(${barrierKey})`.catch(() => {});
+    }
+    await Promise.all([
+      migrationPromise?.then(() => undefined),
+      writerPromise?.then(() => undefined),
+    ]);
+    await Promise.all([
+      control.end({ timeout: 5 }),
+      writer.end({ timeout: 5 }),
+      invariantWriters?.close(),
     ]);
   }
 }
@@ -723,6 +1195,39 @@ test.skipIf(!enabled)(
       }
 
       await exerciseMigrationWriterWindow(setup, setupUrl, template);
+      await expectInvariantLocksBeforePreflightCounts();
+
+      const recordedName = await createDatabaseFrom(setup, template);
+      const recordedUrl = fixtureUrl(setupUrl, recordedName);
+      await migrateDatabase(
+        recordedUrl,
+        await migrationFolderThrough64WithoutIntentLocks(),
+      );
+      await exerciseForwardMigrationWriterWindow(recordedUrl);
+      const forwardClient = postgres(recordedUrl, { max: 1 });
+      try {
+        const [journal] = await forwardClient<{ applied: string[] }[]>`
+          SELECT array_agg(hash ORDER BY created_at) AS applied
+          FROM drizzle.__drizzle_migrations
+        `;
+        expect(journal?.applied).toHaveLength(66);
+        const [constraints] = await forwardClient<{ names: string[] }[]>`
+          SELECT array_agg(conname ORDER BY conname) AS names
+          FROM pg_constraint
+          WHERE conname IN (
+            'mastra_message_intents_attachment_ids_array_check',
+            'enterprise_budget_reservation_tokens_check',
+            'enterprise_runs_model_route_maximum_tokens_check'
+          )
+        `;
+        expect(constraints?.names).toEqual([
+          "enterprise_budget_reservation_tokens_check",
+          "enterprise_runs_model_route_maximum_tokens_check",
+          "mastra_message_intents_attachment_ids_array_check",
+        ]);
+      } finally {
+        await forwardClient.end({ timeout: 5 });
+      }
     } finally {
       await setup.end({ timeout: 5 });
       const cleanup = postgres(setupUrl, { max: 1 });

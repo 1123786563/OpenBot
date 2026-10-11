@@ -219,7 +219,18 @@ export async function createRunInTransaction(
   return { run: toRunDTO(row), runId, attemptId, generation, leaseExpiresAt };
 }
 
-export function createRunStore(data: DataDatabase) {
+export function createRunStore(
+  data: DataDatabase,
+  options: { leaseMilliseconds?: number } = {},
+) {
+  const leaseMilliseconds = options.leaseMilliseconds ?? 30_000;
+  if (
+    !Number.isSafeInteger(leaseMilliseconds) ||
+    leaseMilliseconds < 1_000 ||
+    leaseMilliseconds > 900_000
+  ) {
+    throw new RangeError("RUN_LEASE_DURATION_INVALID");
+  }
   const scopeStore = createConversationStore(data);
   return {
     transaction<T>(
@@ -318,11 +329,21 @@ export function createRunStore(data: DataDatabase) {
     async currentAttempt(scope: PlatformScope, runId: string) {
       const [row] = await this.transaction(scope, (tx) =>
         tx
-          .select()
+          .select({ attempt: enterpriseRunAttempts })
           .from(enterpriseRunAttempts)
+          .innerJoin(
+            enterpriseRuns,
+            and(
+              eq(enterpriseRuns.tenantId, enterpriseRunAttempts.tenantId),
+              eq(enterpriseRuns.id, enterpriseRunAttempts.runId),
+            ),
+          )
           .where(
             and(
-              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
               eq(enterpriseRunAttempts.runId, runId),
               eq(enterpriseRunAttempts.status, "active"),
             ),
@@ -330,12 +351,13 @@ export function createRunStore(data: DataDatabase) {
           .limit(1),
       );
       if (!row) throw new RunDomainError("RUN_ATTEMPT_NOT_FOUND", 404);
+      const attempt = row.attempt;
       return {
-        attemptId: row.id,
-        turnId: row.turnId,
-        generation: row.generation,
-        fencingToken: row.fencingToken,
-        leaseExpiresAt: row.leaseExpiresAt,
+        attemptId: attempt.id,
+        turnId: attempt.turnId,
+        generation: attempt.generation,
+        fencingToken: attempt.fencingToken,
+        leaseExpiresAt: attempt.leaseExpiresAt,
       };
     },
     async expireLease(scope: PlatformScope, runId: string, now = new Date()) {
@@ -346,6 +368,8 @@ export function createRunStore(data: DataDatabase) {
           .where(
             and(
               eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
               eq(enterpriseRuns.id, runId),
             ),
           )
@@ -374,7 +398,7 @@ export function createRunStore(data: DataDatabase) {
           .returning();
         if (!oldAttempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
         const generation = run.attemptGeneration + 1;
-        const leaseExpiresAt = new Date(now.getTime() + 30_000);
+        const leaseExpiresAt = new Date(now.getTime() + leaseMilliseconds);
         const [updated] = await tx
           .update(enterpriseRuns)
           .set({
@@ -385,6 +409,8 @@ export function createRunStore(data: DataDatabase) {
           .where(
             and(
               eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
               eq(enterpriseRuns.id, runId),
               eq(enterpriseRuns.attemptGeneration, run.attemptGeneration),
             ),
