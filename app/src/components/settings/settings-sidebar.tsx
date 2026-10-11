@@ -123,7 +123,7 @@ export function SettingsSidebar({
                     <Link
                       {...option.linkOptions}
                       activeOptions={{ exact: option.exact ?? false }}
-                      activeProps={{ className: "bg-foreground/5" }}
+                      activeProps={{ className: "bg-sidebar-accent font-medium text-sidebar-accent-foreground" }}
                       {...props}
                     >
                       <option.icon className="mr-2 h-4 w-4" />

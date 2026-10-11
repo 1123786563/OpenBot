@@ -100,13 +100,13 @@ export function BotAttentionList() {
               aria-label={`${bot.name}: ${
                 bot.paused ? t("attention.paused") : attentionSummary(bot)
               }`}
-              className="hover:bg-foreground/5 h-9 flex-1"
+              className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9 flex-1"
               render={(props) => (
                 <Link
                   {...props}
                   to="/bots/$agentId"
                   params={{ agentId: bot.agentId }}
-                  activeProps={{ className: "bg-foreground/5" }}
+                  activeProps={{ className: "bg-sidebar-accent font-medium text-sidebar-accent-foreground" }}
                 />
               )}
             >

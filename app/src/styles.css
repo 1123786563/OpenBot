@@ -20,75 +20,96 @@ html {
 
 :root {
   color-scheme: light;
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.6 0.118 184.704);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.55rem;
-  --sidebar: oklch(0.97 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.5 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /*
+   * WorkBuddy's own palette, extracted from its desktop bundle (renderer/assets/tokens-*.css) and
+   * confirmed against the running app: it is a WHITE-dominant application — near-white panes on a
+   * #f2f2f2 list ground, white cards raised by hairlines and a whisper of shadow, teal brand
+   * (#00c29a) reserved for identity marks, black-90 primary buttons, an 8px control radius. Token
+   * NAMES are unchanged from the shadcn contract so every existing utility keeps working.
+   *
+   * Layer map: --primary is the interactive layer (black buttons like WorkBuddy's own), --brand is
+   * the teal identity layer (unread dots, running marks, chart-1), and destructive/success stay
+   * semantic. WorkBuddy puts blue #1470b4 on hyperlinks and teal on brand text; OpenBot's "link"
+   * buttons are actions, so they ride --primary like WorkBuddy's own text buttons.
+   */
+  --background: #ffffff;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #171717;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #404040;
+  --muted: #f2f2f2;
+  --muted-foreground: #5c5c5c;
+  --accent: #f4f5f5;
+  --accent-foreground: #171717;
+  --destructive: #b42c3f;
+  --success: #0a7d47;
+  --brand: #00c29a;
+  --border: #ebebeb;
+  --input: #d9d9d9;
+  --ring: #171717;
+  --chart-1: #00c29a;
+  --chart-2: #4a90d9;
+  --chart-3: #0cbf5b;
+  --chart-4: #ff9540;
+  --chart-5: #9d7bfa;
+  --radius: 0.6rem;
+  --shadow-card: 0 4px 12px rgb(0 0 0 / 3%);
+  --sidebar: #f2f2f2;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #171717;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6e6e6;
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: #e6e6e6;
+  --sidebar-ring: #171717;
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --success: oklch(0.704 0.14 182.503);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /*
+   * WorkBuddy dark: a near-black canvas (#141414 home secondary) with #1f1f1f panels and #242424
+   * cards, white primary buttons, and white at 10-16% for hairlines. Brand teal lifts to a mint
+   * tone to hold contrast against the dark ground, mirroring WorkBuddy's brand-3/brand-5 ladder.
+   */
+  --background: #141414;
+  --foreground: #f2f2f2;
+  --card: #222222;
+  --card-foreground: #f2f2f2;
+  --popover: #242424;
+  --popover-foreground: #f2f2f2;
+  --primary: #f5f5f5;
+  --primary-foreground: #171717;
+  --secondary: #2a2a2a;
+  --secondary-foreground: #f2f2f2;
+  --muted: #2a2a2a;
+  --muted-foreground: #a1a1a1;
+  --accent: #2f2f33;
+  --accent-foreground: #f2f2f2;
+  --destructive: #f09595;
+  --success: #5dcaa5;
+  --brand: #3dd9b6;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #f5f5f5;
+  --chart-1: #3dd9b6;
+  --chart-2: #85b7eb;
+  --chart-3: #5dcaa5;
+  --chart-4: #ffa760;
+  --chart-5: #b79df5;
+  --shadow-card: 0 4px 12px rgb(0 0 0 / 20%);
+  --sidebar: #1f1f1f;
+  --sidebar-foreground: #f2f2f2;
+  --sidebar-primary: #f5f5f5;
+  --sidebar-primary-foreground: #171717;
+  --sidebar-accent: #333333;
+  --sidebar-accent-foreground: #f2f2f2;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #f5f5f5;
 }
 
 * {
@@ -102,7 +123,7 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 /*
@@ -140,6 +161,7 @@ body {
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
+  --color-brand: var(--brand);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -161,11 +183,13 @@ body {
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* WorkBuddy's resting card shadow (`0 4px 12px #00000008`), as the `shadow-card` utility. */
+  --shadow-card: var(--shadow-card);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/60;
   }
   body {
     @apply bg-background text-foreground;

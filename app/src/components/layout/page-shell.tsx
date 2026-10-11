@@ -78,7 +78,7 @@ export function PageShell({
   return (
     <>
       {bar ? (
-        <div className="max-w-7xl w-full h-14 flex items-center gap-1 px-3">
+        <div className="max-w-7xl w-full h-14 flex items-center gap-1 px-6">
           {showToggle ? <SidebarToggle /> : null}
           {!!backButton && (
             <Button
@@ -113,7 +113,7 @@ export function PageShell({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div
           className={cn(
-            "mx-auto flex w-full flex-col px-4 pb-12",
+            "mx-auto flex w-full flex-col px-6 pb-12",
             // Without a bar above it the heading keeps the full original space.
             bar ? "pt-8" : "pt-12",
             WIDTHS[width],
@@ -122,7 +122,8 @@ export function PageShell({
         >
           <header className="flex flex-col gap-2">
             <div className="flex flex-row items-center justify-between gap-4">
-              <h1 className="font-bold text-2xl">{title}</h1>
+              {/* 1.333rem = 20px at the 15px root — WorkBuddy's page-title tier. */}
+              <h1 className="font-semibold text-[1.333rem]">{title}</h1>
               {action}
             </div>
             {description ? (
@@ -162,7 +163,7 @@ export function PageSection({
     <section className={cn("mt-12", className)}>
       {title ? (
         <div className="flex min-h-8 flex-row items-center justify-between gap-4">
-          <h2 className="font-bold text-lg">{title}</h2>
+          <h2 className="font-semibold text-lg">{title}</h2>
           {action}
         </div>
       ) : null}
@@ -195,10 +196,15 @@ export function PageRows({
      * The rows are squared off and the card clips them. `Item` carries `rounded-lg` of its own, which
      * inside a card of divided rows painted a hover as a floating pill: a middle row has no corners,
      * and the first and last cannot be concentric with the card while sitting a border inside it.
+     *
+     * The card itself is WorkBuddy's recipe: 16px radius (rounded-2xl at this root) and its resting
+     * shadow — `0 4px 12px` at 3% black — so a white card reads as raised off the gray canvas
+     * without the border doing all the work. Dark mode drops the shadow: surface lightness steps
+     * already do the separating there.
      */
     <div
       className={cn(
-        "mt-4 overflow-hidden rounded-lg border border-border bg-card dark:border-transparent",
+        "mt-4 overflow-hidden rounded-2xl border border-border bg-card shadow-card dark:border-transparent dark:shadow-none",
         "[&_[data-slot=item]]:rounded-none",
         className,
       )}

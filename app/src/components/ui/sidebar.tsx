@@ -26,9 +26,13 @@ import {
 } from "@/components/ui/tooltip";
 import { IconLayoutSidebar } from "@tabler/icons-react";
 
-const SIDEBAR_WIDTH = "16rem";
+/*
+ * WorkBuddy's conversation list measures 264px expanded and 48px collapsed (extracted from its
+ * desktop bundle); 17.5rem/3.2rem at this 15px root land on exactly those widths.
+ */
+const SIDEBAR_WIDTH = "17.5rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
+const SIDEBAR_WIDTH_ICON = "3.2rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type SidebarContextProps = {

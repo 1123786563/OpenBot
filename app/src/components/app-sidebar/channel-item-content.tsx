@@ -50,7 +50,8 @@ export function ChannelItemContent({
             {lastMessageAt}
           </span>
           {unread ? (
-            <span className="size-2 shrink-0 rounded-full bg-primary" />
+            // WorkBuddy's unread accent is the brand teal, not the interactive black.
+            <span className="size-2 shrink-0 rounded-full bg-brand" />
           ) : null}
           {pinned ? (
             <IconPinFilled className="size-3 shrink-0 text-muted-foreground/70" />
