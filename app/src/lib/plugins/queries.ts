@@ -365,7 +365,7 @@ export function connectionsQueryOptions() {
     queryKey: pluginKeys.connections(),
     queryFn: async (): Promise<PluginConnections> => {
       const response = await client("/api/plugins/connections", {
-        fallback: "Your connected accounts could not be loaded.",
+        fallbackKey: "plugins.loadAccounts",
       });
       return response.json();
     },
@@ -377,7 +377,7 @@ export function pluginsPageQueryOptions() {
     queryKey: pluginKeys.page(),
     queryFn: async (): Promise<PluginsPage> => {
       const response = await client("/api/plugins", {
-        fallback: "Plugins could not be loaded.",
+        fallbackKey: "plugins.loadPlugins",
       });
       return response.json();
     },
@@ -396,7 +396,7 @@ export function composioAppsQueryOptions(query: string) {
     queryFn: async (): Promise<{ apps: ComposioApp[] }> => {
       const response = await client(
         `/api/plugins/composio/apps?q=${encodeURIComponent(query)}`,
-        { fallback: "Composio's app directory could not be read." },
+        { fallbackKey: "plugins.loadComposio" },
       );
       return response.json();
     },
@@ -416,7 +416,7 @@ export function openConnectorAppsQueryOptions(query: string) {
     queryFn: async (): Promise<{ apps: ComposioApp[] }> => {
       const response = await client(
         `/api/plugins/openconnector/apps?q=${encodeURIComponent(query)}`,
-        { fallback: "OpenConnector's app directory could not be read." },
+        { fallbackKey: "plugins.loadOpenConnector" },
       );
       return response.json();
     },
@@ -434,7 +434,7 @@ export function agentPluginsQueryOptions(agentId: string) {
     queryFn: async (): Promise<GrantedPlugins> => {
       const response = await client(
         `/api/plugins/for/${encodeURIComponent(agentId)}`,
-        { fallback: "This Bot's plugins could not be read." },
+        { fallbackKey: "plugins.loadForBot" },
       );
       return response.json();
     },

@@ -111,7 +111,7 @@ export function enterpriseOverviewQueryOptions() {
     queryFn: async (): Promise<EnterpriseOverview> =>
       (
         await client("/api/admin/enterprise", {
-          fallback: "Could not load enterprise controls",
+          fallbackKey: "enterprise.loadControls",
         })
       ).json(),
   });
@@ -126,7 +126,7 @@ export function modelUsageQueryOptions(days = 30) {
     }> =>
       (
         await client(`/api/admin/enterprise/models/usage?days=${days}`, {
-          fallback: "Could not load model usage",
+          fallbackKey: "enterprise.loadModelUsage",
         })
       ).json(),
   });
@@ -137,7 +137,7 @@ export function actionRecordsQueryOptions() {
     queryKey: enterpriseKeys.actions(),
     queryFn: (): Promise<ActionRecord[]> =>
       client("/api/admin/enterprise/actions?limit=50", "actions", {
-        fallback: "Could not load recorded actions",
+        fallbackKey: "enterprise.loadActions",
       }),
   });
 }

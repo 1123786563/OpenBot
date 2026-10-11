@@ -63,12 +63,23 @@ export type PurchaseCatalog = {
    * channel the server would refuse.
    */
   providers: PurchaseProvider[];
+  /**
+   * The billing cycles a purchase may name — v1 answers the monthly spellings only. The
+   * dialog renders its cycle choice from this list (a cycle the server does not offer is not
+   * shown, so a reader cannot select something the checkout would refuse); yearly widens this
+   * list when the provider can activate it.
+   */
+  cycles: PurchaseCycle[];
 };
 
-/** A purchase request: one plan from the catalog, one configured channel, nothing else. */
+/** One purchasable billing cycle. The server's v1 set; not the display catalog's wider set. */
+export type PurchaseCycle = "monthly" | "recurring_monthly";
+
+/** A purchase request: one plan, one configured channel, one offered cycle. */
 export type CreatePurchaseInput = {
   planCode: string;
   provider: PurchaseProvider;
+  cycle: PurchaseCycle;
 };
 
 export const purchaseKeys = {
@@ -112,7 +123,7 @@ export const currentPurchaseQueryOptions = queryOptions({
   staleTime: 0,
   queryFn: async (): Promise<{ order: PurchaseOrderView | null }> => {
     const response = await client("/api/billing/purchases/current", {
-      fallback: "Your latest purchase could not be loaded.",
+      fallbackKey: "billing.loadLatestPurchase",
     });
     return response.json();
   },
@@ -129,7 +140,7 @@ export const purchaseOrderQueryOptions = (orderId: string) =>
     staleTime: 0,
     queryFn: async (): Promise<{ order: PurchaseOrderView }> => {
       const response = await client(`/api/billing/purchases/${orderId}`, {
-        fallback: "That purchase could not be loaded.",
+        fallbackKey: "billing.loadPurchase",
       });
       return response.json();
     },

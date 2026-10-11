@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SharedUseRequests } from "@/components/approvals/shared-use-requests";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -550,11 +551,10 @@ function RuleForm({
   const { t } = useTranslation("approvals");
   const [rule, setRule] = useState<ApprovalRuleInput>(EMPTY_RULE);
   const field = (key: keyof ApprovalRuleInput, title: string, hint: string) => (
-    <label className="grid gap-1 text-sm">
+    <label className="grid gap-1 text-sm" htmlFor={`rule-${key}`}>
       <span>{title}</span>
-      <input
-        aria-label={title}
-        className="h-9 rounded-md border bg-background px-2"
+      <Input
+        id={`rule-${key}`}
         placeholder={hint}
         value={rule[key]}
         onChange={(event) => {

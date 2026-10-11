@@ -92,9 +92,9 @@ function ScheduleSkill({
         <Link to="/routines" className="underline">
           {t("demonstration.seeRoutines")}
         </Link>{" "}
-        <button type="button" className="underline" onClick={onDone}>
+        <Button variant="link" size="sm" onClick={onDone}>
           {t("demonstration.close")}
-        </button>
+        </Button>
       </p>
     );
   return (
@@ -161,7 +161,7 @@ function ScheduleSkill({
         />
       </label>
       {schedule.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {schedule.error.message}
         </p>
       )}

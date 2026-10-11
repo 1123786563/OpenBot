@@ -9,12 +9,6 @@ import { type ActionPolicy, computerKeys } from "./queries";
  */
 export type ComputerAction = "stop" | "reset" | "update";
 
-const PAST: Record<ComputerAction, string> = {
-  stop: "stopped",
-  reset: "reset",
-  update: "updated",
-};
-
 function invalidateComputers(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: computerKeys.all });
 }
@@ -29,7 +23,7 @@ export function setComputerStateMutationOptions(queryClient: QueryClient) {
         `/api/computers/${encodeURIComponent(variables.botId)}/computers/${variables.action}`,
         {
           method: "POST",
-          fallback: `The computer could not be ${PAST[variables.action]}.`,
+          fallbackKey: `computers.stateWithAction.${variables.action}`,
         },
       );
     },
@@ -54,7 +48,7 @@ export function saveActionPolicyMutationOptions(queryClient: QueryClient) {
       client("/api/computers/policy", "policy", {
         method: "PUT",
         body: next,
-        fallback: "The boundary could not be saved.",
+        fallbackKey: "computers.saveBoundary",
       }),
     onSuccess: () => invalidateComputers(queryClient),
   });

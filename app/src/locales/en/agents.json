@@ -265,7 +265,8 @@
       "disable": "Disable",
       "enable": "Enable",
       "remove": "Remove"
-    }
+    },
+    "loadError": "Your memories could not be loaded."
   },
   "reachability": {
     "title": "Reachability",
@@ -468,7 +469,8 @@
       "signingSecret": "Signing secret (can be added later)",
       "adding": "Adding…",
       "addKind": "Add {{kind}} trigger"
-    }
+    },
+    "loadError": "Your responsibilities could not be loaded."
   },
   "teamBots": {
     "title": "Team Bots",

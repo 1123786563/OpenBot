@@ -57,7 +57,7 @@ export function deploymentCapabilitiesQueryOptions() {
        */
       const body = (await (
         await client("/api/capabilities", {
-          fallback: "This deployment's capabilities could not be loaded.",
+          fallbackKey: "deployment.loadCapabilities",
         })
       ).json()) as {
         generativeUi?: boolean;

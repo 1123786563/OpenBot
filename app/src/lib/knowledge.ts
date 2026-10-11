@@ -87,7 +87,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   const response = await client(path, {
     method: "POST",
     body,
-    fallback: "The knowledge service failed.",
+    fallbackKey: "knowledge.service",
   });
   return (await response.json()) as T;
 }
@@ -95,7 +95,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
 async function deleteJSON(path: string): Promise<{ deleted: boolean }> {
   const response = await client(path, {
     method: "DELETE",
-    fallback: "The knowledge service failed.",
+    fallbackKey: "knowledge.service",
   });
   return (await response.json()) as { deleted: boolean };
 }

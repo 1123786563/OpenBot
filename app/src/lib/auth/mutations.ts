@@ -5,7 +5,7 @@ import { authKeys } from "./queries";
 async function signOut() {
   await client("/api/auth/sign-out", {
     method: "POST",
-    fallback: "Could not sign out",
+    fallbackKey: "auth.signOut",
   });
 }
 

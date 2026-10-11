@@ -8,7 +8,12 @@ import {
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { IconWaveform } from "@/components/icons/waveform";
@@ -57,6 +62,17 @@ export function VoiceCallWidget({
   useEffect(() => {
     if (visible && !minimized) hangup.current?.focus();
   }, [visible, minimized]);
+  /*
+   * Escape collapses the card instead of hunting for the small control: one key for "get this off
+   * my screen" while the call keeps running. The keydown lands on the section (tabIndex below)
+   * because the card holds the focus after the hangup button's autofocus above.
+   */
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape" && !minimized) {
+      event.stopPropagation();
+      setMinimized(true);
+    }
+  };
   if (!visible) return null;
   const connecting = state.phase === "connecting";
   const failed = state.phase === "error";
@@ -81,6 +97,8 @@ export function VoiceCallWidget({
   return (
     <motion.section
       aria-label={t("voice.callAria", { name })}
+      onKeyDown={onKeyDown}
+      tabIndex={-1}
       initial={{ opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={transition}
@@ -273,7 +291,7 @@ export function VoiceCallWidget({
           </AnimatePresence>
           {failed && (
             <div className="mt-3 text-xs">
-              <p className="text-destructive" role="alert">
+              <p className="mt-2 text-destructive text-sm" role="alert">
                 {state.error}
               </p>
               <Button

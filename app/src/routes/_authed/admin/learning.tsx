@@ -129,7 +129,7 @@ export function LearningPage() {
           <p role="status">{t("learning.loading")}</p>
         )}
         {settingsQuery.error && (
-          <p role="alert" className="text-destructive">
+          <p role="alert" className="mt-4 text-destructive text-sm">
             {settingsQuery.error.message}
           </p>
         )}
@@ -166,7 +166,7 @@ export function LearningPage() {
                 {t("learning.participation.perBot")}
               </legend>
               {(agents.error || hiddenAgents.error) && (
-                <p role="alert" className="text-destructive">
+                <p role="alert" className="mt-4 text-destructive text-sm">
                   {t("learning.participation.rosterError")}
                 </p>
               )}
@@ -243,7 +243,7 @@ export function LearningPage() {
               )}
             </div>
             {save.error && (
-              <p role="alert" className="text-destructive">
+              <p role="alert" className="mt-4 text-destructive text-sm">
                 {save.error.message}
               </p>
             )}
@@ -274,7 +274,7 @@ export function LearningPage() {
             <p role="status">{t("learning.review.checking")}</p>
           )}
           {overview.error && (
-            <p role="alert" className="text-destructive">
+            <p role="alert" className="mt-4 text-destructive text-sm">
               {overview.error.message}
             </p>
           )}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { readControl } from "@/lib/computers/control";
 import {
   forgetHandoff,
@@ -101,22 +102,22 @@ export function HandoffResumeNotice({
           (busy ? t("handoff.waitingFinish") : t("handoff.pausedNotice"))}
       </span>
       {busy ? (
-        <button
-          type="button"
-          className="underline"
+        <Button
+          variant="link"
+          size="sm"
           onClick={() => controller.current?.abort()}
         >
           {t("handoff.stopWaiting")}
-        </button>
+        </Button>
       ) : (
-        <button
-          type="button"
-          className="underline"
+        <Button
+          variant="link"
+          size="sm"
           disabled={!pending || agent.isRunning}
           onClick={() => void resume()}
         >
           {t("handoff.resumeTask")}
-        </button>
+        </Button>
       )}
     </div>
   );

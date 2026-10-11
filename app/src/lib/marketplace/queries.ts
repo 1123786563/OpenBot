@@ -53,7 +53,7 @@ export function marketplaceQueryOptions() {
     queryKey: marketplaceKeys.catalogue(),
     queryFn: async (): Promise<MarketplacePayload> => {
       const response = await client("/api/marketplace", {
-        fallback: "The marketplace could not be loaded.",
+        fallbackKey: "marketplace.load",
       });
       return response.json();
     },

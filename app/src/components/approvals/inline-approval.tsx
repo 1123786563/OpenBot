@@ -63,7 +63,7 @@ export function InlineApproval({
         <p className="text-muted-foreground">{request.action.policy.reason}</p>
       ) : null}
       {decision.error ? (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {decision.error.message}
         </p>
       ) : null}

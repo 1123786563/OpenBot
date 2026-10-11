@@ -15,7 +15,7 @@ export function learningSettingsQueryOptions() {
     queryKey: learningKeys.settings,
     queryFn: (): Promise<LearningSettings> =>
       client("/api/admin/learning/settings", "settings", {
-        fallback: "Learning settings could not be loaded.",
+        fallbackKey: "learning.loadSettings",
       }),
   });
 }
@@ -27,7 +27,7 @@ export function learningOverviewQueryOptions(agentId?: string) {
       client(
         `/api/admin/learning/overview${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ""}`,
         "overview",
-        { fallback: "Learning status could not be loaded." },
+        { fallbackKey: "learning.loadStatus" },
       ),
   });
 }
@@ -40,7 +40,7 @@ export function learningDeliveryQueryOptions(agentId: string) {
       client(
         `/api/admin/learning/status/${encodeURIComponent(agentId)}`,
         "status",
-        { fallback: "Skill delivery status could not be loaded." },
+        { fallbackKey: "learning.loadDelivery" },
       ),
   });
 }
@@ -50,6 +50,6 @@ export function saveLearningSettings(
   return client("/api/admin/learning/settings", "settings", {
     method: "PUT",
     body: settings,
-    fallback: "Learning settings could not be saved.",
+    fallbackKey: "learning.saveSettings",
   });
 }

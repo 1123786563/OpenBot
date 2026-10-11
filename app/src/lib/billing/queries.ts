@@ -50,7 +50,7 @@ export const entitlementsQueryOptions = queryOptions({
   staleTime: 30_000,
   queryFn: async (): Promise<BillingEntitlements> => {
     const response = await client("/api/billing/entitlements", {
-      fallback: "Your entitlements could not be loaded.",
+      fallbackKey: "billing.loadEntitlements",
     });
     return response.json();
   },

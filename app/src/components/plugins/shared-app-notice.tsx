@@ -75,7 +75,7 @@ export function SharedAppNotice({
         ),
       )}
       {ask.error ? (
-        <p className="text-destructive" role="alert">
+        <p className="mt-2 text-destructive text-sm" role="alert">
           {ask.error.message}
         </p>
       ) : null}

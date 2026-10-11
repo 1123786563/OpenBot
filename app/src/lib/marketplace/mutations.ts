@@ -23,7 +23,7 @@ export function installExpertMutationOptions(queryClient: QueryClient) {
     mutationFn: async (slug: string): Promise<{ agentId: string }> => {
       const response = await client(
         `/api/marketplace/experts/${encodeURIComponent(slug)}/install`,
-        { method: "POST", body: {}, fallback: "安装失败，请重试。" },
+        { method: "POST", body: {}, fallbackKey: "marketplace.install" },
       );
       return response.json();
     },
@@ -41,7 +41,7 @@ export function uninstallExpertMutationOptions(queryClient: QueryClient) {
     mutationFn: async (slug: string) => {
       await client(
         `/api/marketplace/experts/${encodeURIComponent(slug)}/install`,
-        { method: "DELETE", fallback: "卸载失败，请重试。" },
+        { method: "DELETE", fallbackKey: "marketplace.uninstall" },
       );
     },
     onSettled: async () => {
@@ -58,7 +58,7 @@ export function installMarketSkillMutationOptions(queryClient: QueryClient) {
     mutationFn: async (slug: string) => {
       await client(
         `/api/marketplace/skills/${encodeURIComponent(slug)}/install`,
-        { method: "POST", body: {}, fallback: "安装失败，请重试。" },
+        { method: "POST", body: {}, fallbackKey: "marketplace.install" },
       );
     },
     onSettled: async () => {
@@ -75,7 +75,7 @@ export function uninstallMarketSkillMutationOptions(queryClient: QueryClient) {
     mutationFn: async (slug: string) => {
       await client(
         `/api/marketplace/skills/${encodeURIComponent(slug)}/install`,
-        { method: "DELETE", fallback: "卸载失败，请重试。" },
+        { method: "DELETE", fallbackKey: "marketplace.uninstall" },
       );
     },
     onSettled: async () => {

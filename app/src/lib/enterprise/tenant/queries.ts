@@ -132,7 +132,7 @@ export function tenantsQueryOptions(userId: string) {
         await client("/api/enterprise/v1/tenants", {
           // The chooser is answered before the scope middleware: naming a tenant here would be
           // circular, and the server reads no header for it.
-          fallback: "Could not load your tenants",
+          fallbackKey: "enterpriseTenant.loadTenants",
         })
       ).json(),
   });
@@ -158,7 +158,7 @@ export function channelsQueryOptions(
         const response = await client(channelPagePath(cursor), {
           tenantId,
           signal,
-          fallback: "Could not load your channels",
+          fallbackKey: "enterpriseTenant.loadChannels",
         });
         return (await response.json()) as ChannelPage;
       }),
@@ -181,7 +181,7 @@ export function channelQueryOptions(
           {
             tenantId,
             signal,
-            fallback: "Could not load that channel",
+            fallbackKey: "enterpriseTenant.loadChannel",
           },
         );
         return (await response.json()) as PersonalConversation;

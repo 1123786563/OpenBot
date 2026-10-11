@@ -265,7 +265,8 @@
       "disable": "禁用",
       "enable": "启用",
       "remove": "移除"
-    }
+    },
+    "loadError": "无法加载你的记忆。"
   },
   "reachability": {
     "title": "触达方式",
@@ -468,7 +469,8 @@
       "signingSecret": "签名密钥（可稍后添加）",
       "adding": "添加中…",
       "addKind": "添加 {{kind}} 触发器"
-    }
+    },
+    "loadError": "无法加载你的职责。"
   },
   "teamBots": {
     "title": "团队 Bots",

@@ -91,7 +91,7 @@ export function botAttentionQueryOptions() {
     queryKey: botLifecycleKeys.attention,
     queryFn: (): Promise<BotAttention[]> =>
       client("/api/bots/attention", "bots", {
-        fallback: "Could not load what your Bots need",
+        fallbackKey: "botLifecycle.loadNeeds",
       }),
     // Questions and approvals arrive from headless work nobody is watching, so this polls.
     refetchInterval: 15_000,
@@ -103,7 +103,7 @@ export function botLifecycleQueryOptions(agentId: string) {
     queryKey: botLifecycleKeys.lifecycle(agentId),
     queryFn: (): Promise<BotLifecycle> =>
       client(`${botPath(agentId)}/lifecycle`, "lifecycle", {
-        fallback: "Could not load this Bot's state",
+        fallbackKey: "botLifecycle.loadState",
       }),
   });
 }
@@ -113,7 +113,7 @@ export function botActivityQueryOptions(agentId: string) {
     queryKey: botLifecycleKeys.activity(agentId),
     queryFn: (): Promise<BotActivity> =>
       client(`${botPath(agentId)}/activity`, "activity", {
-        fallback: "Could not load this Bot's activity",
+        fallbackKey: "botLifecycle.loadActivity",
       }),
     refetchInterval: 10_000,
   });
@@ -124,7 +124,7 @@ export function botResetPlanQueryOptions(agentId: string) {
     queryKey: botLifecycleKeys.resetPlan(agentId),
     queryFn: (): Promise<ResetPlan> =>
       client(`${botPath(agentId)}/reset`, "plan", {
-        fallback: "Could not count what a reset would delete",
+        fallbackKey: "botLifecycle.countReset",
       }),
     // A notice about what will be deleted must be current, not cached.
     staleTime: 0,
@@ -136,7 +136,7 @@ export function updateRoutingQueryOptions() {
     queryKey: botLifecycleKeys.routing,
     queryFn: (): Promise<UpdateRouting> =>
       client("/api/bots/routing", "routing", {
-        fallback: "Could not load where your updates go",
+        fallbackKey: "botLifecycle.loadUpdates",
       }),
   });
 }

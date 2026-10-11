@@ -1,1 +1,249 @@
-{}
+{
+  "generic": {
+    "requestFailed": "That request failed."
+  },
+  "agents": {
+    "load": "Could not load coworkers",
+    "loadOne": "Could not load this coworker",
+    "loadSupport": "Could not load what this deployment supports",
+    "loadDelegation": "Could not load which Bots this one may ask",
+    "change": "That Agent could not be changed."
+  },
+  "approvals": {
+    "load": "Your approvals could not be loaded.",
+    "saveDecision": "Your decision could not be saved.",
+    "revoke": "The permission could not be revoked.",
+    "savePreference": "Your approval preference could not be saved.",
+    "saveRule": "The rule could not be saved.",
+    "changeRule": "The rule could not be changed.",
+    "saveTeamSetting": "The team setting could not be saved.",
+    "saveTeamRule": "The team rule could not be saved.",
+    "changeTeamRule": "The team rule could not be changed.",
+    "removeTeamRule": "The team rule could not be removed."
+  },
+  "audit": {
+    "load": "Could not load audit events"
+  },
+  "auth": {
+    "loadSignIn": "Could not load sign-in",
+    "signOut": "Could not sign out"
+  },
+  "billing": {
+    "loadEntitlements": "Your entitlements could not be loaded.",
+    "loadBill": "That bill could not be loaded.",
+    "loadPurchase": "That purchase could not be loaded.",
+    "loadLatestPurchase": "Your latest purchase could not be loaded."
+  },
+  "botLifecycle": {
+    "loadNeeds": "Could not load what your Bots need",
+    "loadState": "Could not load this Bot's state",
+    "loadActivity": "Could not load this Bot's activity",
+    "countReset": "Could not count what a reset would delete",
+    "loadUpdates": "Could not load where your updates go",
+    "saveUpdates": "Could not save where updates go",
+    "reset": "Could not reset this Bot",
+    "stopDelegated": "Could not stop the delegated task",
+    "cancelFollowUp": "Could not cancel the follow-up"
+  },
+  "channels": {
+    "load": "Could not load channels",
+    "loadOne": "Could not load this channel",
+    "start": "Could not start a channel",
+    "pin": "Could not pin this channel",
+    "markRead": "Could not mark this channel read",
+    "delete": "Could not delete this channel"
+  },
+  "components": {
+    "load": "The components could not be loaded.",
+    "loadForBot": "This Bot's components could not be loaded.",
+    "loadDataFunctions": "The data functions could not be loaded."
+  },
+  "computers": {
+    "list": "The computers could not be listed.",
+    "readBoundary": "The boundary could not be read.",
+    "testBoundary": "The rule could not be tested against history.",
+    "saveBoundary": "The boundary could not be saved.",
+    "loadFolderAccess": "Folder access could not be loaded.",
+    "openFolderChooser": "The desktop app could not open the folder chooser.",
+    "revokeFolder": "The host folder grant could not be revoked.",
+    "stopFolder": "Host folder access could not be stopped.",
+    "stateWithAction": {
+      "stop": "The computer could not be stopped.",
+      "reset": "The computer could not be reset.",
+      "update": "The computer could not be updated."
+    }
+  },
+  "credentials": {
+    "load": "Could not load credentials",
+    "operation": "Credential operation failed",
+    "store": "The token could not be stored."
+  },
+  "delivery": {
+    "load": "Could not load reachability",
+    "verifyPhone": "Could not verify this phone",
+    "confirmPhone": "Could not confirm this phone",
+    "disconnect": "Could not disconnect",
+    "removeDevice": "Could not remove this device"
+  },
+  "demonstrations": {
+    "load": "Could not load demonstrations",
+    "start": "Could not start recording",
+    "stop": "Could not stop recording",
+    "draft": "Could not draft a skill",
+    "link": "The skill was saved, but its demonstration could not be linked",
+    "delete": "Could not delete the demonstration",
+    "schedule": "Could not schedule this skill"
+  },
+  "deployment": {
+    "loadCapabilities": "This deployment's capabilities could not be loaded."
+  },
+  "enterprise": {
+    "loadControls": "Could not load enterprise controls",
+    "loadModelUsage": "Could not load model usage",
+    "loadActions": "Could not load recorded actions",
+    "stopComputers": "Could not stop that person's computers",
+    "sweep": "Could not sweep inactive computers",
+    "saveControl": "Could not save that enterprise control"
+  },
+  "enterpriseTenant": {
+    "loadTenants": "Could not load your tenants",
+    "loadChannels": "Could not load your channels",
+    "loadChannel": "Could not load that channel",
+    "openChannel": "Could not open that channel",
+    "archiveChannel": "Could not archive that channel"
+  },
+  "groups": {
+    "load": "This group conversation could not be loaded.",
+    "send": "Your message could not be sent to the group.",
+    "start": "The group could not be started.",
+    "addPerson": "That person could not be added.",
+    "removePerson": "That person could not be removed."
+  },
+  "identityProviders": {
+    "load": "Could not load identity providers"
+  },
+  "knowledge": {
+    "service": "The knowledge service failed."
+  },
+  "learning": {
+    "loadSettings": "Learning settings could not be loaded.",
+    "loadStatus": "Learning status could not be loaded.",
+    "loadDelivery": "Skill delivery status could not be loaded.",
+    "saveSettings": "Learning settings could not be saved."
+  },
+  "marketplace": {
+    "load": "The marketplace could not be loaded.",
+    "install": "Install failed, please try again.",
+    "uninstall": "Uninstall failed, please try again."
+  },
+  "memory": {
+    "load": "Could not load memory",
+    "loadSources": "Could not load memory sources",
+    "loadActions": "Could not load connected app actions",
+    "remember": "Could not remember this fact",
+    "update": "Could not update memory",
+    "forget": "Could not forget this memory",
+    "addSource": "Could not add this source",
+    "changeSource": "Could not change this source"
+  },
+  "package": {
+    "loadActive": "Could not load the active package"
+  },
+  "passwords": {
+    "loadRequest": "Could not load this sign-in request",
+    "load": "Could not load your passwords",
+    "delete": "Could not delete that password",
+    "complete": "The sign-in could not be completed"
+  },
+  "people": {
+    "load": "Could not load people"
+  },
+  "plugins": {
+    "loadAccounts": "Your connected accounts could not be loaded.",
+    "loadPlugins": "Plugins could not be loaded.",
+    "loadComposio": "Composio's app directory could not be read.",
+    "loadOpenConnector": "OpenConnector's app directory could not be read.",
+    "loadForBot": "This Bot's plugins could not be read.",
+    "readSwitch": "What the switch would change could not be read.",
+    "switchFailed": "The switch did not finish, and nothing was changed.",
+    "saveSkill": "The skill could not be saved.",
+    "registerOAuth": "That OAuth client could not be registered.",
+    "confirm": "That connection could not be confirmed.",
+    "disconnect": "That account could not be disconnected.",
+    "needs": "That app could not be asked what it needs.",
+    "check": "That connection could not be checked.",
+    "addApp": "That app could not be added.",
+    "connectAccount": "That account could not be connected.",
+    "generic": "That did not work."
+  },
+  "proactive": {
+    "loadResearch": "Could not load background research",
+    "loadSuggestions": "Could not load suggestions",
+    "turnOn": "Could not turn on background research",
+    "change": "Could not change background research",
+    "start": "Could not start background research",
+    "remove": "Could not remove background research"
+  },
+  "responsibilities": {
+    "load": "Could not load responsibilities",
+    "loadRuns": "Could not load responsibility runs",
+    "loadSources": "Could not load GitHub event sources",
+    "create": "Could not create responsibility",
+    "update": "Could not update responsibility",
+    "change": "Could not change responsibility",
+    "connect": "Could not connect GitHub events",
+    "disconnect": "Could not disconnect GitHub events",
+    "loadTriggers": "Could not load triggers",
+    "addTrigger": "Could not add the trigger",
+    "changeTriggerSecret": "Could not change the trigger secret",
+    "readTriggerSecret": "Could not read the trigger secret",
+    "removeTrigger": "Could not remove the trigger",
+    "changeTrigger": "Could not change the trigger"
+  },
+  "routines": {
+    "load": "Your routines could not be loaded.",
+    "loadRuns": "This routine's runs could not be loaded.",
+    "start": "That routine could not be started."
+  },
+  "sandboxed": {
+    "loadPlayground": "The playground's components could not be loaded.",
+    "loadPublished": "The published components could not be loaded."
+  },
+  "settings": {
+    "loadInstructions": "Could not load your standing instructions",
+    "loadPreferences": "Could not load your preferences",
+    "saveInstructions": "Your standing instructions could not be saved",
+    "savePreferences": "Could not save your preferences"
+  },
+  "teamBots": {
+    "load": "Team Bots could not be loaded.",
+    "publish": "The Bot could not be published.",
+    "unpublish": "The Bot could not be unpublished.",
+    "saveAssignment": "The assignment could not be saved.",
+    "clearPreferences": "Your connector preferences could not be cleared.",
+    "saveAnswer": "Your answer could not be saved."
+  },
+  "voice": {
+    "loadChats": "Could not load voice chats."
+  },
+  "workshop": {
+    "load": "The workshop could not be loaded.",
+    "startTurn": "The turn could not be started.",
+    "stopTurn": "The turn could not be stopped.",
+    "loadEvents": "The turn's events could not be loaded.",
+    "loadFiles": "The files could not be listed.",
+    "createShare": "The share link could not be created.",
+    "revokeShare": "The share link could not be revoked.",
+    "loadSchedules": "The schedules could not be loaded.",
+    "createSchedule": "The schedule could not be created.",
+    "toggleSchedule": "The schedule could not be toggled.",
+    "deleteSchedule": "The schedule could not be deleted.",
+    "reset": "The workspace could not be reset."
+  },
+  "pluginSharedUse": {
+    "loadRequests": "Shared account requests could not be loaded.",
+    "loadForBot": "This Bot's shared apps could not be loaded.",
+    "saveDecision": "That decision could not be saved.",
+    "send": "The request could not be sent."
+  }
+}

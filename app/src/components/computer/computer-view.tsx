@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { supplySecret } from "@/lib/computers/control";
 import {
   readPageFrame,
@@ -522,14 +524,14 @@ export function ComputerView({
 
         {!settled && control?.requested ? (
           <div className="px-3 pb-2 text-sm">
-            <button
-              type="button"
-              className="underline"
+            <Button
+              variant="link"
+              size="sm"
               disabled={changingControl}
               onClick={() => void changeControl?.("cancel")}
             >
               {t("view.cancelRequest")}
-            </button>
+            </Button>
           </div>
         ) : null}
         {!settled && control?.transitioning ? (
@@ -568,7 +570,7 @@ export function ComputerView({
               <span>{control.secretWanted}</span>
             </label>
             <div className="mt-1.5 flex gap-2">
-              <input
+              <Input
                 id="openbot-secret"
                 type="password"
                 value={secret}
@@ -577,15 +579,16 @@ export function ComputerView({
                 autoCorrect="off"
                 spellCheck={false}
                 placeholder={t("view.secretPlaceholder")}
-                className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
+                className="min-w-0 flex-1"
               />
-              <button
+              <Button
                 type="submit"
+                size="sm"
                 disabled={!secret || sendingSecret}
-                className="shrink-0 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                className="shrink-0"
               >
                 {sendingSecret ? t("view.sending") : t("view.sendToPage")}
-              </button>
+              </Button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {t("view.secretNote")}
@@ -683,16 +686,16 @@ export function ComputerView({
                       {streamProblem ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/85 p-4 text-center text-sm text-muted-foreground">
                           <span>{streamProblem}</span>
-                          <button
-                            type="button"
-                            className="underline"
+                          <Button
+                            variant="link"
+                            size="sm"
                             onClick={() => {
                               setStreamProblem(null);
                               setRetryKey((value) => value + 1);
                             }}
                           >
                             {t("view.retry")}
-                          </button>
+                          </Button>
                         </div>
                       ) : null}
                     </div>
