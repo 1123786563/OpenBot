@@ -171,7 +171,7 @@ async function main() {
 }
 
 /** 最小合法 PDF（1 页一行文本，docreader builtin 可解析）。 */
-function minimalPdf(): Uint8Array {
+function minimalPdf(): Uint8Array<ArrayBuffer> {
   const content = `%PDF-1.4
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
@@ -183,10 +183,12 @@ endobj
 5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
 trailer<</Root 1 0 R>>
 `;
-  return new TextEncoder().encode(content);
+  return new TextEncoder().encode(content) as Uint8Array<ArrayBuffer>;
 }
 
 main().catch((error) => {
   console.error("smoke crashed:", (error as Error).message);
   process.exit(1);
 });
+
+export {};

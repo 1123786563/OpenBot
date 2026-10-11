@@ -10,6 +10,7 @@ import {
 } from "../middleware/auth";
 import type { AppEnv } from "../router/app";
 import { toIso, toWireParseStatus, toWireSource } from "./wire";
+export { toWireSource };
 
 // ---- 仓储薄层（handler 直查 DB；复杂检索走 kb-search service）----
 

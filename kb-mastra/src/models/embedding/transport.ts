@@ -61,6 +61,11 @@ export function createEmbedTransport(
         },
         body: JSON.stringify(body),
         signal: controller.signal,
+        // Bun 的 fetch 读 HTTP_PROXY 且不认 NO_PROXY（实测 1.4.2）：开发机
+        // 代理把 127.0.0.1 折成 404。`proxy: ""` 逐请求禁用（Node 无此字段）。
+        ...(typeof (Bun as { fetch?: unknown }) !== "undefined"
+          ? { proxy: "" }
+          : {}),
       });
       if (!response.ok) {
         const text = await response.text().catch(() => "");

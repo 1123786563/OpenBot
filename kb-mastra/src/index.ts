@@ -8,9 +8,10 @@
  *   search         —— hybridSearch（embedder + qdrant composite + keywords no-op）
  */
 
-import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { and, eq, isNull } from "drizzle-orm";
 import { getLogger } from "../../shared/logger";
+import { createIndexWriter } from "./application/repository/retriever/qdrant/index-writer";
 import { hybridSearch } from "./application/service/kb-search";
 import {
   createFileKnowledge,
@@ -18,23 +19,36 @@ import {
   createUrlKnowledge,
   DuplicateDocumentError,
 } from "./application/service/knowledge-create";
-import { deleteKnowledge, deleteKnowledgeBase } from "./application/service/knowledge-delete";
+import {
+  deleteKnowledge,
+  deleteKnowledgeBase,
+} from "./application/service/knowledge-delete";
 import { createCompositeRetrieveEngine } from "./application/service/retriever/composite";
 import { createDefaultRegistry } from "./application/service/retriever/registry";
-import { createIndexWriter } from "./application/repository/retriever/qdrant/index-writer";
 import { loadConfig } from "./config";
 import { getDb } from "./db/client";
 import { knowledgeBases } from "./db/schema";
 import { QdrantClient } from "./infrastructure/qdrant/client";
-import { collectionName, ensureCollection } from "./infrastructure/qdrant/collections";
+import {
+  collectionName,
+  ensureCollection,
+} from "./infrastructure/qdrant/collections";
 import { createBatchEmbedder } from "./models/embedding/batch";
 import { withConcurrency } from "./models/embedding/concurrency";
 import { createOllamaEmbedder } from "./models/embedding/ollama";
 import { createApp } from "./router/app";
 import { buildRoutes } from "./router/routes";
-import { enqueueDocumentProcess } from "./tasks/queue";
 
 const log = getLogger("kb-mastra");
+
+// 本进程的网络出口全是内网依赖（postgres/qdrant/redis/ollama/docreader），
+// 绝不经系统代理：开发机的 HTTP_PROXY 会把 127.0.0.1 请求劫持成代理 404，
+// 且 Bun 1.4.2 的 fetch 读环境代理、NO_PROXY 逐请求开关（proxy:""）对带
+// body 的 POST 实测不生效——最稳的出口是直接摘掉本进程的代理变量。
+delete process.env.HTTP_PROXY;
+delete process.env.http_proxy;
+delete process.env.HTTPS_PROXY;
+delete process.env.https_proxy;
 
 const config = loadConfig();
 
@@ -124,7 +138,9 @@ buildRoutes(app, {
           strategy: "auto",
         },
         embeddingModelId: input.embedder || config.embedModel,
-        ...(input.rerankModel !== null ? { rerankModel: input.rerankModel } : {}),
+        ...(input.rerankModel !== null
+          ? { rerankModel: input.rerankModel }
+          : {}),
       });
       const [row] = await db
         .select()
@@ -187,10 +203,16 @@ buildRoutes(app, {
             url: parsed.url.trim(),
             ...(title !== undefined ? { title } : {}),
           });
-          return { status: 202, body: { task_id: result.knowledgeId, doc_id: result.knowledgeId } };
+          return {
+            status: 202,
+            body: { task_id: result.knowledgeId, doc_id: result.knowledgeId },
+          };
         }
         if (type === "text") {
-          if (typeof parsed.content !== "string" || parsed.content.trim() === "") {
+          if (
+            typeof parsed.content !== "string" ||
+            parsed.content.trim() === ""
+          ) {
             return { status: 400, body: { error: "content is required" } };
           }
           const result = await createTextKnowledge(createDeps, {
@@ -198,12 +220,18 @@ buildRoutes(app, {
             content: parsed.content,
             ...(title !== undefined ? { title } : {}),
           });
-          return { status: 202, body: { task_id: result.knowledgeId, doc_id: result.knowledgeId } };
+          return {
+            status: 202,
+            body: { task_id: result.knowledgeId, doc_id: result.knowledgeId },
+          };
         }
         return { status: 400, body: { error: "type must be url or text" } };
       } catch (error) {
         if (error instanceof DuplicateDocumentError) {
-          return { status: 409, body: { error: "duplicate", doc_id: error.existingId } };
+          return {
+            status: 409,
+            body: { error: "duplicate", doc_id: error.existingId },
+          };
         }
         return { status: 500, body: { error: (error as Error).message } };
       }
@@ -236,10 +264,16 @@ buildRoutes(app, {
           ...(title !== undefined ? { title } : {}),
           fileContent: new Uint8Array(await file.arrayBuffer()),
         });
-        return { status: 202, body: { task_id: result.knowledgeId, doc_id: result.knowledgeId } };
+        return {
+          status: 202,
+          body: { task_id: result.knowledgeId, doc_id: result.knowledgeId },
+        };
       } catch (error) {
         if (error instanceof DuplicateDocumentError) {
-          return { status: 409, body: { error: "duplicate", doc_id: error.existingId } };
+          return {
+            status: 409,
+            body: { error: "duplicate", doc_id: error.existingId },
+          };
         }
         return { status: 500, body: { error: (error as Error).message } };
       }
