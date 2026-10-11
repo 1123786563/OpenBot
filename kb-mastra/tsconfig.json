@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.base.json",
+  // kb-mastra 的 TS 编译范围：src/ 与 scripts/（proto 生成器是产品工具，随包发布）。
+  // `../shared` 通过相对路径引入（agent-mastra 同款做法），不加 paths 映射。
+  "include": ["src", "scripts"],
+  "compilerOptions": {
+    "types": ["bun"]
+  }
+}
