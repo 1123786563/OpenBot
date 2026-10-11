@@ -46,16 +46,10 @@ export function createBillingWebhookRoutes(deps: { service: BillingService }) {
  * What a signed-in person may ask about their deployment's billing state.
  *
  * The entitlements answer carries the plan code, the plan's entries and the subscription's own
- * status and period — the facts a settings page renders — and the usage answer carries only period,
- * amounts and charges: the provider's operational vocabulary stops at the service. It is useful
- * there, for the sync and for a log line, but it is not this deployment's own word for anything and
- * does not belong on the HTTP surface a client codes against.
+ * status and period — the facts 套餐与积分 renders. The provider's metered-usage reads that used to
+ * ride beside it (`/usage`, `/usage/events`, `/usage/daily`) went with the old 用量 screens: no
+ * page asks them any more, so the surface does not carry them.
  */
-/** Which page of the metered-event log to read. One bounded integer, defaulting to the first. */
-const eventsPageInput = z.object({
-  page: z.coerce.number().int().min(1).max(10_000),
-});
-
 export function createBillingRoutes(deps: {
   service: BillingService;
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
@@ -72,45 +66,6 @@ export function createBillingRoutes(deps: {
       codes: entitlements.codes,
       subscription: entitlements.subscription ?? null,
     });
-  });
-  routes.get("/usage", async (context) => {
-    const usage = await deps.service.usage();
-    if (usage === null) {
-      return context.json({ active: false, charges: [] });
-    }
-    return context.json({ active: true, ...usage });
-  });
-  routes.get("/usage/events", async (context) => {
-    const parsed = eventsPageInput.safeParse({
-      page: context.req.query("page") ?? "1",
-    });
-    if (!parsed.success) {
-      return context.json({ error: "Supply a valid page." }, 400);
-    }
-    // Page size is ours, not the caller's: one fixed window keeps the answer bounded and the
-    // pager simple. The page number is the caller's.
-    const eventsPage = await deps.service.usageEvents(50, parsed.data.page);
-    return context.json({
-      events: eventsPage.events.map((event) => ({
-        timestamp: event.timestamp,
-        metricCode: event.metricCode,
-        inputTokens: event.inputTokens,
-        outputTokens: event.outputTokens,
-        tokens: event.tokens,
-      })),
-      pagination: {
-        totalCount: eventsPage.totalCount,
-        totalPages: eventsPage.totalPages,
-        currentPage: eventsPage.currentPage,
-        nextPage: eventsPage.nextPage,
-      },
-    });
-  });
-  // The daily buckets are the provider's event log re-read and regrouped, so they answer from the
-  // service's short cache (see service.ts) rather than re-walking it per page load. `truncated`
-  // travels with the days so a chart can say honestly when the answer is a prefix of the truth.
-  routes.get("/usage/daily", async (context) => {
-    return context.json(await deps.service.usageDaily());
   });
   return routes;
 }

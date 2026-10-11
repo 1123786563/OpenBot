@@ -38,7 +38,6 @@ import { Route as AuthedAdminPeopleRouteImport } from './routes/_authed/admin/pe
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
-import { Route as AuthedSettingsBillingRouteImport } from './routes/_authed/settings/billing'
 import { Route as AuthedSettingsInvoicesRouteImport } from './routes/_authed/settings/invoices'
 import { Route as AuthedSettingsPasswordsRouteImport } from './routes/_authed/settings/passwords'
 import { Route as AuthedSettingsUsageRouteImport } from './routes/_authed/settings/usage'
@@ -59,7 +58,6 @@ import { Route as AuthedAdminPluginsIndexRouteImport } from './routes/_authed/ad
 import { Route as AuthedAdminPluginsKeyRouteImport } from './routes/_authed/admin/plugins/$key'
 import { Route as AuthedAdminPluginsComposioRouteImport } from './routes/_authed/admin/plugins/composio'
 import { Route as AuthedAdminPluginsOpenConnectorRouteImport } from './routes/_authed/admin/plugins/open-connector'
-import { Route as AuthedSettingsBillingSubscribeRouteImport } from './routes/_authed/settings/billing_.subscribe'
 import { Route as AuthedSettingsComponentsGalleryIndexRouteImport } from './routes/_authed/settings/components-gallery/index'
 import { Route as AuthedSettingsComponentsGalleryNameRouteImport } from './routes/_authed/settings/components-gallery/$name'
 import { Route as AuthedSettingsConnectedAccountsIndexRouteImport } from './routes/_authed/settings/connected-accounts/index'
@@ -212,11 +210,6 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
-const AuthedSettingsBillingRoute = AuthedSettingsBillingRouteImport.update({
-  id: '/billing',
-  path: '/billing',
-  getParentRoute: () => AuthedSettingsRouteRoute,
-} as any)
 const AuthedSettingsInvoicesRoute = AuthedSettingsInvoicesRouteImport.update({
   id: '/invoices',
   path: '/invoices',
@@ -322,12 +315,6 @@ const AuthedAdminPluginsOpenConnectorRoute =
     path: '/plugins/open-connector',
     getParentRoute: () => AuthedAdminRouteRoute,
   } as any)
-const AuthedSettingsBillingSubscribeRoute =
-  AuthedSettingsBillingSubscribeRouteImport.update({
-    id: '/billing_/subscribe',
-    path: '/billing/subscribe',
-    getParentRoute: () => AuthedSettingsRouteRoute,
-  } as any)
 const AuthedSettingsComponentsGalleryIndexRoute =
   AuthedSettingsComponentsGalleryIndexRouteImport.update({
     id: '/components-gallery/',
@@ -391,7 +378,6 @@ export interface FileRoutesByFullPath {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
-  '/settings/billing': typeof AuthedSettingsBillingRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
@@ -409,7 +395,6 @@ export interface FileRoutesByFullPath {
   '/admin/plugins/$key': typeof AuthedAdminPluginsKeyRoute
   '/admin/plugins/composio': typeof AuthedAdminPluginsComposioRoute
   '/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
-  '/settings/billing/subscribe': typeof AuthedSettingsBillingSubscribeRoute
   '/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
@@ -446,7 +431,6 @@ export interface FileRoutesByTo {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
-  '/settings/billing': typeof AuthedSettingsBillingRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/settings/usage': typeof AuthedSettingsUsageRoute
@@ -464,7 +448,6 @@ export interface FileRoutesByTo {
   '/admin/plugins/$key': typeof AuthedAdminPluginsKeyRoute
   '/admin/plugins/composio': typeof AuthedAdminPluginsComposioRoute
   '/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
-  '/settings/billing/subscribe': typeof AuthedSettingsBillingSubscribeRoute
   '/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
@@ -505,7 +488,6 @@ export interface FileRoutesById {
   '/_authed/admin/people': typeof AuthedAdminPeopleRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
-  '/_authed/settings/billing': typeof AuthedSettingsBillingRoute
   '/_authed/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/_authed/settings/passwords': typeof AuthedSettingsPasswordsRoute
   '/_authed/settings/usage': typeof AuthedSettingsUsageRoute
@@ -524,7 +506,6 @@ export interface FileRoutesById {
   '/_authed/admin/plugins/$key': typeof AuthedAdminPluginsKeyRoute
   '/_authed/admin/plugins/composio': typeof AuthedAdminPluginsComposioRoute
   '/_authed/admin/plugins/open-connector': typeof AuthedAdminPluginsOpenConnectorRoute
-  '/_authed/settings/billing_/subscribe': typeof AuthedSettingsBillingSubscribeRoute
   '/_authed/settings/components-gallery/$name': typeof AuthedSettingsComponentsGalleryNameRoute
   '/_authed/settings/connected-accounts/$key': typeof AuthedSettingsConnectedAccountsKeyRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
@@ -565,7 +546,6 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
-    | '/settings/billing'
     | '/settings/invoices'
     | '/settings/passwords'
     | '/settings/usage'
@@ -583,7 +563,6 @@ export interface FileRouteTypes {
     | '/admin/plugins/$key'
     | '/admin/plugins/composio'
     | '/admin/plugins/open-connector'
-    | '/settings/billing/subscribe'
     | '/settings/components-gallery/$name'
     | '/settings/connected-accounts/$key'
     | '/agents/'
@@ -620,7 +599,6 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
-    | '/settings/billing'
     | '/settings/invoices'
     | '/settings/passwords'
     | '/settings/usage'
@@ -638,7 +616,6 @@ export interface FileRouteTypes {
     | '/admin/plugins/$key'
     | '/admin/plugins/composio'
     | '/admin/plugins/open-connector'
-    | '/settings/billing/subscribe'
     | '/settings/components-gallery/$name'
     | '/settings/connected-accounts/$key'
     | '/agents'
@@ -678,7 +655,6 @@ export interface FileRouteTypes {
     | '/_authed/admin/people'
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
-    | '/_authed/settings/billing'
     | '/_authed/settings/invoices'
     | '/_authed/settings/passwords'
     | '/_authed/settings/usage'
@@ -697,7 +673,6 @@ export interface FileRouteTypes {
     | '/_authed/admin/plugins/$key'
     | '/_authed/admin/plugins/composio'
     | '/_authed/admin/plugins/open-connector'
-    | '/_authed/settings/billing_/subscribe'
     | '/_authed/settings/components-gallery/$name'
     | '/_authed/settings/connected-accounts/$key'
     | '/_authed/_app/agents/'
@@ -922,13 +897,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
-    '/_authed/settings/billing': {
-      id: '/_authed/settings/billing'
-      path: '/billing'
-      fullPath: '/settings/billing'
-      preLoaderRoute: typeof AuthedSettingsBillingRouteImport
-      parentRoute: typeof AuthedSettingsRouteRoute
-    }
     '/_authed/settings/invoices': {
       id: '/_authed/settings/invoices'
       path: '/invoices'
@@ -1069,13 +1037,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminPluginsOpenConnectorRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
     }
-    '/_authed/settings/billing_/subscribe': {
-      id: '/_authed/settings/billing_/subscribe'
-      path: '/billing/subscribe'
-      fullPath: '/settings/billing/subscribe'
-      preLoaderRoute: typeof AuthedSettingsBillingSubscribeRouteImport
-      parentRoute: typeof AuthedSettingsRouteRoute
-    }
     '/_authed/settings/components-gallery/': {
       id: '/_authed/settings/components-gallery/'
       path: '/components-gallery'
@@ -1169,12 +1130,10 @@ const AuthedAdminRouteRouteWithChildren =
   AuthedAdminRouteRoute._addFileChildren(AuthedAdminRouteRouteChildren)
 
 interface AuthedSettingsRouteRouteChildren {
-  AuthedSettingsBillingRoute: typeof AuthedSettingsBillingRoute
   AuthedSettingsInvoicesRoute: typeof AuthedSettingsInvoicesRoute
   AuthedSettingsPasswordsRoute: typeof AuthedSettingsPasswordsRoute
   AuthedSettingsUsageRoute: typeof AuthedSettingsUsageRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
-  AuthedSettingsBillingSubscribeRoute: typeof AuthedSettingsBillingSubscribeRoute
   AuthedSettingsComponentsGalleryNameRoute: typeof AuthedSettingsComponentsGalleryNameRoute
   AuthedSettingsConnectedAccountsKeyRoute: typeof AuthedSettingsConnectedAccountsKeyRoute
   AuthedSettingsComponentsGalleryIndexRoute: typeof AuthedSettingsComponentsGalleryIndexRoute
@@ -1182,12 +1141,10 @@ interface AuthedSettingsRouteRouteChildren {
 }
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
-  AuthedSettingsBillingRoute: AuthedSettingsBillingRoute,
   AuthedSettingsInvoicesRoute: AuthedSettingsInvoicesRoute,
   AuthedSettingsPasswordsRoute: AuthedSettingsPasswordsRoute,
   AuthedSettingsUsageRoute: AuthedSettingsUsageRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
-  AuthedSettingsBillingSubscribeRoute: AuthedSettingsBillingSubscribeRoute,
   AuthedSettingsComponentsGalleryNameRoute:
     AuthedSettingsComponentsGalleryNameRoute,
   AuthedSettingsConnectedAccountsKeyRoute:
