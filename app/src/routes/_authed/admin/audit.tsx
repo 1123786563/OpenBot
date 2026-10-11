@@ -8,6 +8,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { TableSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import {
@@ -110,16 +111,23 @@ function AuditPage() {
           ))}
         </div>
 
-        {events.isPending ? null : events.isError ? (
+        {events.isPending ? (
+          <TableSkeleton />
+        ) : events.isError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("audit.loadError")}
           </p>
         ) : rows.length === 0 ? (
           <PageEmpty>{t("audit.noMatches")}</PageEmpty>
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
+          <section
+            aria-label={t("audit.title")}
+            className="mt-4 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name.
+            tabIndex={0}
+          >
             <table className="w-full text-left text-sm">
-              <thead className="text-muted-foreground text-xs uppercase">
+              <thead className="text-muted-foreground text-xs">
                 <tr className="border-border border-b">
                   <th className="px-4 py-2 font-medium">{t("audit.when")}</th>
                   <th className="px-4 py-2 font-medium">{t("audit.what")}</th>
@@ -139,7 +147,7 @@ function AuditPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
         )}
       </PageSection>
     </PageShell>

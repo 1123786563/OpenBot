@@ -8,6 +8,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import {
   Item,
@@ -44,7 +45,9 @@ function PasswordsPage() {
       description={t("passwords.description")}
     >
       <PageSection title={t("passwords.savedLogins")}>
-        {logins.isPending ? null : logins.error ? (
+        {logins.isPending ? (
+          <PageRowsSkeleton />
+        ) : logins.error ? (
           <p className="text-destructive text-sm" role="alert">
             {t("passwords.loadError")}
           </p>

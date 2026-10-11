@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { credits, dateTime } from "@/lib/billing/format";
 import type { CreditGrantEntry } from "@/lib/billing/credits";
+import { credits, dateTime } from "@/lib/billing/format";
 import { cn } from "@/lib/utils";
 import { CreditBar } from "./credit-bar";
 
@@ -62,7 +62,11 @@ export function CreditGrantList({
               </span>
             </div>
 
-            <CreditBar total={grant.total} used={grant.used} className="mt-2.5" />
+            <CreditBar
+              total={grant.total}
+              used={grant.used}
+              className="mt-2.5"
+            />
 
             {grant.reason ? (
               <p className="text-muted-foreground mt-2 text-xs">

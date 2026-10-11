@@ -1,7 +1,7 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { IconFlag } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { workshopApi } from "@/lib/workshop/public-client";
 
@@ -41,7 +41,9 @@ function SharePage() {
     return (
       <main className="flex min-h-svh items-center justify-center p-6">
         <div className="max-w-sm space-y-2 text-center">
-          <p className="text-base font-medium">{t("sharePublic.missing.title")}</p>
+          <p className="text-base font-medium">
+            {t("sharePublic.missing.title")}
+          </p>
           <p className="text-sm text-muted-foreground">
             {t("sharePublic.missing.hint")}
           </p>
@@ -72,7 +74,9 @@ function SharePage() {
       ) : null}
 
       <section aria-label={t("sharePublic.artifacts.aria")}>
-        <h2 className="text-sm font-medium">{t("sharePublic.artifacts.heading")}</h2>
+        <h2 className="text-sm font-medium">
+          {t("sharePublic.artifacts.heading")}
+        </h2>
         {artifacts.length === 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {t("sharePublic.artifacts.empty")}
@@ -85,9 +89,12 @@ function SharePage() {
                 className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">{artifact.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {artifact.type} · {(artifact.sizeBytes / 1024).toFixed(1)} KB
+                  <p className="truncate text-xs font-medium">
+                    {artifact.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {artifact.type} · {(artifact.sizeBytes / 1024).toFixed(1)}{" "}
+                    KB
                   </p>
                 </div>
                 {scope === "preview_download" && artifact.downloadUrl ? (
@@ -106,7 +113,7 @@ function SharePage() {
       </section>
 
       <footer className="flex items-center justify-between border-t border-border pt-3">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {t("sharePublic.footer")}
         </p>
         <Button
@@ -116,7 +123,9 @@ function SharePage() {
           disabled={report.isPending || report.isSuccess}
         >
           <IconFlag className="size-3.5" />
-          {report.isSuccess ? t("sharePublic.reported") : t("sharePublic.report")}
+          {report.isSuccess
+            ? t("sharePublic.reported")
+            : t("sharePublic.report")}
         </Button>
       </footer>
     </main>
@@ -129,7 +138,9 @@ export const Route = createFileRoute("/share/$token")({
     const { t } = useTranslation("workshop");
     return (
       <main className="flex min-h-svh items-center justify-center p-6">
-        <p className="text-base font-medium">{t("sharePublic.missing.title")}</p>
+        <p className="text-base font-medium">
+          {t("sharePublic.missing.title")}
+        </p>
       </main>
     );
   },

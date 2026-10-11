@@ -1,13 +1,10 @@
 "use client";
 
-import * as React from "react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
+import { IconLayoutSidebar } from "@tabler/icons-react";
 import { cva, type VariantProps } from "class-variance-authority";
-
-import { useIsMobile } from "@/hooks/use-mobile";
-import { keyOf } from "@/lib/hotkeys/hotkeys";
-import { cn } from "@/lib/utils";
+import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -24,7 +21,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { IconLayoutSidebar } from "@tabler/icons-react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { keyOf } from "@/lib/hotkeys/hotkeys";
+import { cn } from "@/lib/utils";
 
 /*
  * WorkBuddy's conversation list measures 264px expanded and 48px collapsed (extracted from its
@@ -241,7 +240,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear motion-reduce:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"

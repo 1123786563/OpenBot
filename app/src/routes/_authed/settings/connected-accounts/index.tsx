@@ -14,6 +14,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { RowMark } from "@/components/layout/row-mark";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
 import {
@@ -28,13 +29,13 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { isBrokeredProvenance } from "@/lib/brokered-provenance";
 import {
   connectionsQueryOptions,
   type PluginServer,
   personalConnections,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
-import { isBrokeredProvenance } from "@/lib/brokered-provenance";
 
 /**
  * The services a Bot reads as you.
@@ -96,7 +97,8 @@ export function sharedAccountsListedOn(
   return servers.filter(
     (server) =>
       // The same shared list, for the same reason as `brokeredAccountsListedOn` above.
-      isBrokeredProvenance(server.provenance) && server.accountMode === "shared",
+      isBrokeredProvenance(server.provenance) &&
+      server.accountMode === "shared",
   );
 }
 
@@ -254,8 +256,9 @@ function RouteComponent() {
        * this page could not be loaded, and what it would otherwise draw is not shown rather than
        * drawn wrong.
        */}
-      {plugins.isPending || connections.isPending ? null : plugins.error ||
-        connections.error ? (
+      {plugins.isPending || connections.isPending ? (
+        <PageRowsSkeleton />
+      ) : plugins.error || connections.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
           {t("connectedAccounts.loadError")}
         </p>

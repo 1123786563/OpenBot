@@ -265,7 +265,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem className="flex flex-row gap-1.5">
             <SidebarMenuButton
-              className="font-semibold text-[14px] tracking-tighter h-full leading-tight"
+              className="font-semibold text-sm tracking-tighter h-full leading-tight"
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   {appConfig.brand.productName}
@@ -273,6 +273,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               )}
             />
             <Button
+              aria-label={t("newConversation")}
               size="icon"
               variant="ghost"
               render={(props) => (
@@ -370,7 +371,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <div className="size-[28px] flex items-center justify-center">
                     <IconBox />
                   </div>
-                  <span className="text-sm trackint-tight">{t("skills")}</span>
+                  <span className="text-sm tracking-tight">{t("skills")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -391,7 +392,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <div className="size-[28px] flex items-center justify-center">
                     <IconShoppingBag />
                   </div>
-                  <span className="text-sm trackint-tight">{t("market")}</span>
+                  <span className="text-sm tracking-tight">{t("market")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -411,7 +412,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <div className="size-[28px] flex items-center justify-center">
                     <IconBolt />
                   </div>
-                  <span className="text-sm trackint-tight">{t("agents")}</span>
+                  <span className="text-sm tracking-tight">{t("agents")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -626,7 +627,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 }
               >
                 <UserAvatar />
-                <span className="text-sm trackint-tight">
+                <span className="text-sm tracking-tight">
                   {currentUser?.name || currentUser?.email}
                 </span>
               </DropdownMenuTrigger>

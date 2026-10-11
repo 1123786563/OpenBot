@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { ChannelAvatar } from "@/components/channels/avatar";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
+import { ChannelAvatar } from "@/components/channels/avatar";
 import { GroupChat } from "@/components/channels/group-chat";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { channelQueryOptions } from "@/lib/channels/queries";

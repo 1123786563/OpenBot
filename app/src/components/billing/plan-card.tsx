@@ -32,7 +32,9 @@ export function PlanCard({
         <div>
           <p className="font-medium">{planName}</p>
           {planDescription ? (
-            <p className="text-muted-foreground mt-1 text-sm">{planDescription}</p>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {planDescription}
+            </p>
           ) : null}
         </div>
         <div className="flex items-center gap-2">
@@ -50,7 +52,9 @@ export function PlanCard({
       </div>
 
       <div className="mt-4">
-        <p className="text-muted-foreground text-sm">{t("planCard.usageTitle")}</p>
+        <p className="text-muted-foreground text-sm">
+          {t("planCard.usageTitle")}
+        </p>
         <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <span className="text-sm tabular-nums">
             {credits(planCredits.used)}/{credits(planCredits.total)}
@@ -64,7 +68,11 @@ export function PlanCard({
             {t("creditsPage.remaining")}
           </span>
         </div>
-        <CreditBar total={planCredits.total} used={planCredits.used} className="mt-2" />
+        <CreditBar
+          total={planCredits.total}
+          used={planCredits.used}
+          className="mt-2"
+        />
         {resetsAt ? (
           <p className="text-muted-foreground mt-2 text-xs tabular-nums">
             {t("planCard.resetsAt", { time: dateTime(resetsAt) })}

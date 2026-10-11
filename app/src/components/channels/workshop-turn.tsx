@@ -1,6 +1,7 @@
+import { IconPlayerStop } from "@tabler/icons-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { IconPlayerStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   cancelWorkshopTurn,
@@ -9,7 +10,6 @@ import {
 } from "@/lib/workshop/client";
 import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
 import { useWorkshopStream } from "@/lib/workshop/stream";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 /**
  * The turn as it happens: the five event families, assembled into what a person reads.
@@ -46,7 +46,8 @@ export function WorkshopTurnView({
   // while it holds them; the store's take over the moment the turn settles).
   const settledEvents = useQuery({
     queryKey: ["workshop", "turn-events", channelId, latestTurn?.id],
-    enabled: !running && latestTurn !== undefined && latestTurn.id !== undefined,
+    enabled:
+      !running && latestTurn !== undefined && latestTurn.id !== undefined,
     staleTime: Number.POSITIVE_INFINITY,
     queryFn: () => fetchWorkshopTurnEvents(channelId, latestTurn!.id!),
   });
@@ -151,7 +152,9 @@ function EventLine({ event }: { event: WorkshopStreamEvent }) {
       return (
         <p className="rounded-md bg-muted/50 px-2 py-1 text-xs">
           <span className="font-medium">{t("turn.tool")}</span>{" "}
-          <code className="rounded bg-background px-1">{event.tool || "?"}</code>
+          <code className="rounded bg-background px-1">
+            {event.tool || "?"}
+          </code>
         </p>
       );
     case "progress":

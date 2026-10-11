@@ -2,19 +2,19 @@
  * passage 清洗与构建：WeKnora reranking/passage.go 直译。
  * CleanPassage 剥 Markdown/结构噪音；ModelPassage = 标题 + 面包屑 + 清洗后正文。
  */
-import { runeLen } from "../../infrastructure/chunker/splitter";
+import { runeLen } from "../infrastructure/chunker/splitter";
 
-// Go 内联标志转 JS：(?s)→[\s\S]，(?m)→m。
-const RE_CODE_BLOCK = /```[^\r\n]*\r?\n([\s\S]*?)\r?\n?```/;
-const RE_LATEX_BLOCK = /\$\$([\s\S]*?)\$\$/;
-const RE_HTML_TAG = /<\/?[a-zA-Z][^>]*>/;
+// Go 内联标志转 JS：(?s)→[\s\S]，(?m)→m；ReplaceAllString 全替换 → g 标志。
+const RE_CODE_BLOCK = /```[^\r\n]*\r?\n([\s\S]*?)\r?\n?```/g;
+const RE_LATEX_BLOCK = /\$\$([\s\S]*?)\$\$/g;
+const RE_HTML_TAG = /<\/?[a-zA-Z][^>]*>/g;
 const RE_LINKED_IMAGE =
   /\[!\[([^\]]*)\]\(([^()\s]*(?:\([^)]*\)[^()\s]*)*)\)\]\([^()\s]*(?:\([^)]*\)[^()\s]*)*\)/g;
 const RE_MARKDOWN_IMAGE = /!\[[^\]]*\]\([^()\s]*(?:\([^)]*\)[^()\s]*)*\)/g;
 const RE_MARKDOWN_LINK = /\[([^\]]+)\]\([^()\s]*(?:\([^)]*\)[^()\s]*)*\)/g;
 const RE_RAW_URL = /https?:\/\/[^\s)\]>]+/g;
-const RE_TABLE_SEP = /^[ \t]*\|[ \t:|-]+\|[ \t]*$/m;
-const RE_TABLE_ROW = /^[ \t]*\|(.+?)\|[ \t]*$/m;
+const RE_TABLE_SEP = /^[ \t]*\|[ \t:|-]+\|[ \t]*$/gm;
+const RE_TABLE_ROW = /^[ \t]*\|(.+?)\|[ \t]*$/gm;
 const RE_HEADING_PREFIX = /^#{1,6}\s+/gm;
 const RE_BLOCKQUOTE = /^>\s?/gm;
 const RE_BOLD_ITALIC_3 = /\*{3}(.+?)\*{3}/g;

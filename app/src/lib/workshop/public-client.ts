@@ -23,7 +23,9 @@ export type PublicShareData = {
  * Resolve a token to its share view. Every failure — wrong, expired, revoked, offline —
  * rejects identically; the page renders one miss page for all of them (see its head).
  */
-export async function fetchPublicShare(token: string): Promise<PublicShareData> {
+export async function fetchPublicShare(
+  token: string,
+): Promise<PublicShareData> {
   const listResponse = await fetch(
     `/api/public/workshop/share/${encodeURIComponent(token)}/artifacts`,
     { credentials: "omit" },

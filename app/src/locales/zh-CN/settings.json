@@ -261,7 +261,8 @@
     "columnCredits": "积分消耗",
     "columnModel": "模型",
     "columnClient": "使用端",
-    "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条"
+    "pagerStatus": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
+    "consumptionTable": "用量明细"
   },
   "welcomeBanner": {
     "badge": "限时加赠 10/31截止",

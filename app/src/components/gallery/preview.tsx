@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import {
-  type GalleryKind,
   GALLERY_COMPONENTS,
+  type GalleryKind,
 } from "@/lib/copilot/gallery-registry";
 
 /**
@@ -93,7 +93,7 @@ export function GalleryPreview({
         >
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="font-medium text-sm">{component.title}</h3>
-            <span className="shrink-0 text-[11px] text-muted-foreground uppercase tracking-wider">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {t(KIND_LABEL[component.kind])}
             </span>
           </div>

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
 import { type ReactNode, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { AgentDialog } from "@/components/agents/agent-dialog";
 import { Button } from "@/components/ui/button";
@@ -96,7 +96,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
       </header>
 
       <section className="grid gap-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-xs font-medium text-muted-foreground">
           {t("fields.role")}
         </h2>
         <p className="text-sm whitespace-pre-wrap text-pretty">

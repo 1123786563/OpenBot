@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Trans, useTranslation } from "react-i18next";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { AgentCard } from "@/components/agents/agent-card";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
@@ -49,7 +49,7 @@ function RouteComponent() {
       <SidebarToggleBar />
       <div className="flex-1 flex flex-col items-center justify-center w-full p-4 mt-8">
         <div className="flex flex-col items-center">
-          <h2 className="text-sm uppercase text-muted-foreground font-medium tracking-tight text-center">
+          <h2 className="text-sm text-muted-foreground font-medium tracking-tight text-center">
             {appConfig.brand.productName}
           </h2>
           <h1 className="text-2xl font-bold tracking-tight mt-1.5 text-center">

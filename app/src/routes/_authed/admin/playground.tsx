@@ -1,8 +1,8 @@
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useId, useState } from "react";
 import type { TFunction } from "i18next";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";

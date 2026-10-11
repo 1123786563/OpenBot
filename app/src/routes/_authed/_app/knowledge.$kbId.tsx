@@ -400,7 +400,7 @@ function DocumentList({ kbId }: { kbId: string }) {
   const sortHeader = (label: string, column: DocumentSortField) => (
     <button
       type="button"
-      className="inline-flex items-center gap-1 uppercase hover:text-foreground"
+      className="inline-flex items-center gap-1 font-medium hover:text-foreground"
       onClick={() => setSort((current) => nextSortValue(current, column))}
     >
       {label}
@@ -506,23 +506,30 @@ function DocumentList({ kbId }: { kbId: string }) {
           {docs.error.message}
         </p>
       ) : visible.length > 0 ? (
-        <div className="mt-2 overflow-x-auto">
+        <section
+          aria-label={t("docs.tableAria")}
+          className="mt-2 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name.
+          tabIndex={0}
+        >
           {/* 裸 table 惯例（audit.tsx/consumption-table.tsx 先例）。 */}
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="w-8 py-2 pr-2" aria-label={t("docs.select")} />
-                <th className="py-2 pr-2">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="border-border border-b">
+                <th className="w-8 px-4 py-2" aria-label={t("docs.select")} />
+                <th className="px-4 py-2 font-medium">
                   {sortHeader(t("docs.colTitle"), "title")}
                 </th>
-                <th className="py-2 pr-2">{t("docs.colMeta")}</th>
-                <th className="py-2 pr-2">
+                <th className="px-4 py-2 font-medium">{t("docs.colMeta")}</th>
+                <th className="px-4 py-2 font-medium">
                   {sortHeader(t("docs.colCreated"), "created_at")}
                 </th>
-                <th className="py-2 pr-2">
+                <th className="px-4 py-2 font-medium">
                   {sortHeader(t("docs.colUpdated"), "updated_at")}
                 </th>
-                <th className="py-2 pr-2 text-right">{t("docs.colActions")}</th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t("docs.colActions")}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -540,7 +547,7 @@ function DocumentList({ kbId }: { kbId: string }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       ) : docs.isPending ? null : (
         <Empty className="mt-4 border border-dashed">
           <EmptyHeader>
@@ -620,7 +627,7 @@ function DocumentRow({
           {/* 状态徽标（bots.index.tsx 先例）+ task 级 chunks 进度。 */}
           <span className="flex items-center gap-1.5">
             <span
-              className={`rounded-full px-1.5 text-[11px] ${
+              className={`rounded-full px-1.5 text-xs ${
                 finished
                   ? doc.parse_status === "completed"
                     ? "bg-primary text-primary-foreground"

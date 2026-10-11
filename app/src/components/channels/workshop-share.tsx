@@ -1,7 +1,7 @@
+import { IconCopy, IconLink, IconLinkOff } from "@tabler/icons-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IconCopy, IconLinkOff, IconLink } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   createWorkshopShare,
@@ -68,20 +68,30 @@ export function WorkshopShareView({
         <p className="mt-1 text-xs text-muted-foreground">{t("share.hint")}</p>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="text-xs text-muted-foreground" htmlFor="share-scope">
+          <label
+            className="text-xs text-muted-foreground"
+            htmlFor="share-scope"
+          >
             {t("share.scopeLabel")}
           </label>
           <select
             id="share-scope"
             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
             value={scope}
-            onChange={(event) => setScope(event.target.value as WorkshopShareScope)}
+            onChange={(event) =>
+              setScope(event.target.value as WorkshopShareScope)
+            }
             disabled={create.isPending}
           >
             <option value="preview">{t("share.scope.preview")}</option>
-            <option value="preview_download">{t("share.scope.previewDownload")}</option>
+            <option value="preview_download">
+              {t("share.scope.previewDownload")}
+            </option>
           </select>
-          <label className="ml-2 text-xs text-muted-foreground" htmlFor="share-days">
+          <label
+            className="ml-2 text-xs text-muted-foreground"
+            htmlFor="share-days"
+          >
             {t("share.daysLabel")}
           </label>
           <select
@@ -119,7 +129,9 @@ export function WorkshopShareView({
           aria-label={t("share.minted.aria")}
         >
           <p className="text-sm font-medium">{t("share.minted.title")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t("share.minted.once")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("share.minted.once")}
+          </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 text-xs">
               {minted.shareUrl}
@@ -127,7 +139,9 @@ export function WorkshopShareView({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void navigator.clipboard?.writeText(minted.shareUrl)}
+              onClick={() =>
+                void navigator.clipboard?.writeText(minted.shareUrl)
+              }
             >
               <IconCopy className="size-3.5" />
               {t("share.copy")}
@@ -164,7 +178,9 @@ export function WorkshopShareView({
             </p>
             {confirmingRevoke ? (
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-destructive">{t("share.revoke.confirm")}</span>
+                <span className="text-xs text-destructive">
+                  {t("share.revoke.confirm")}
+                </span>
                 <Button
                   size="sm"
                   variant="destructive"
@@ -194,7 +210,9 @@ export function WorkshopShareView({
             )}
           </>
         ) : (
-          <p className="mt-1 text-xs text-muted-foreground">{t("share.state.none")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("share.state.none")}
+          </p>
         )}
       </section>
     </div>

@@ -44,12 +44,19 @@ export function createLimiter(limit: number): Limiter {
 }
 
 export type ConcurrencyOptions = {
+  /** 并发上限（A 线 worker.ts 使用的字段名）。 */
+  limit?: number;
+  /** 并发上限（maxConcurrency 的别名；两者取先出现者）。 */
   maxConcurrency?: number;
 };
 
 /** 包一层并发限流（embed/batchEmbed 各自受限）。 */
 export function withConcurrency(inner: Embedder, options: ConcurrencyOptions = {}): Embedder {
-  const limiter = createLimiter(options.maxConcurrency ?? DEFAULT_EMBED_MAX_CONCURRENCY);
+  const limit =
+    options.limit !== undefined && options.limit > 0
+      ? options.limit
+      : (options.maxConcurrency ?? DEFAULT_EMBED_MAX_CONCURRENCY);
+  const limiter = createLimiter(limit);
   return {
     async embed(text) {
       return limiter.run(() => inner.embed(text));

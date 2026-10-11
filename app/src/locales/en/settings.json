@@ -261,7 +261,8 @@
     "columnCredits": "Credits",
     "columnModel": "Model",
     "columnClient": "Client",
-    "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries"
+    "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
+    "consumptionTable": "Usage details"
   },
   "welcomeBanner": {
     "badge": "Bonus until 10/31",

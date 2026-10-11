@@ -10,7 +10,7 @@ import { getLogger } from "../../../shared/logger";
 
 const log = getLogger("kb-mastra");
 
-export const QUEUE_NAME = "kb:core";
+export const QUEUE_NAME = "kb-core";
 
 /** 摄取任务名（P1 唯一 job name）。 */
 export const JOB_DOCUMENT_PROCESS = "document:process";

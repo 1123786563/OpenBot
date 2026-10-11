@@ -163,7 +163,10 @@ export function AdminSidebar({
                   <Link
                     {...adminLinkOptions}
                     activeOptions={{ exact: true }}
-                    activeProps={{ className: "bg-sidebar-accent font-medium text-sidebar-accent-foreground" }}
+                    activeProps={{
+                      className:
+                        "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                    }}
                     {...props}
                   >
                     {t("sidebar.overview")}
@@ -183,7 +186,10 @@ export function AdminSidebar({
                     render={(props) => (
                       <Link
                         {...item.linkOptions}
-                        activeProps={{ className: "bg-sidebar-accent font-medium text-sidebar-accent-foreground" }}
+                        activeProps={{
+                          className:
+                            "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                        }}
                         {...props}
                       >
                         <item.icon className="mr-2 h-4 w-4" />

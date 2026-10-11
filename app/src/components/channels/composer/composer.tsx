@@ -8,6 +8,7 @@ import {
   IconPlayerStopFilled,
   IconPlus,
 } from "@tabler/icons-react";
+import type { TFunction } from "i18next";
 import { PromptArea, type PromptAreaHandle } from "prompt-area";
 import {
   isSegmentsEmpty,
@@ -25,7 +26,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { attachmentModality } from "@/components/channels/chat-messages";
 import { IconWaveform } from "@/components/icons/waveform";

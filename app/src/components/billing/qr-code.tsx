@@ -34,7 +34,7 @@ export function QrCode({ payload }: { payload: string }) {
   if (dataUrl === null) {
     // Same footprint as the code, so the layout does not jump when it arrives.
     return (
-      <div className="mt-4 size-64 animate-pulse rounded-lg border bg-muted" />
+      <div className="mt-4 size-64 animate-pulse rounded-lg border bg-muted motion-reduce:animate-none" />
     );
   }
   return (

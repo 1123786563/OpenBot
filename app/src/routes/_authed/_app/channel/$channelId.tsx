@@ -12,12 +12,12 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { hasUnseenActivity } from "@/components/app-sidebar/app-sidebar";
-import { ChannelAvatar } from "@/components/channels/avatar";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
+import { ChannelAvatar } from "@/components/channels/avatar";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import { WorkshopPanel } from "@/components/channels/workshop-panel";
 import { ComputerChatControls } from "@/components/computer/computer-controls";
 import { ComputerViewPanel } from "@/components/computer/computer-panel";
-import { WorkshopPanel } from "@/components/channels/workshop-panel";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
@@ -131,8 +131,13 @@ function RouteComponent() {
   return (
     <DetailPanel
       onClose={() => show(null)}
-      open={(isSettingsOpen || isWatching || isWorkshopOpen) && agentId !== undefined}
-      detailWidth={isWatching || isWorkshopOpen ? WORKSHOP_PANEL_WIDTH : undefined}
+      open={
+        (isSettingsOpen || isWatching || isWorkshopOpen) &&
+        agentId !== undefined
+      }
+      detailWidth={
+        isWatching || isWorkshopOpen ? WORKSHOP_PANEL_WIDTH : undefined
+      }
       title={
         isWatching
           ? t("channelDetail.computer")

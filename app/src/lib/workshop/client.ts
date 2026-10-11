@@ -222,7 +222,10 @@ export function fetchWorkshopTurnEvents(
     },
   ).then(
     (response) =>
-      response.json() as Promise<{ turnId: string; events: WorkshopStreamEvent[] }>,
+      response.json() as Promise<{
+        turnId: string;
+        events: WorkshopStreamEvent[];
+      }>,
   );
 }
 
@@ -256,9 +259,9 @@ export async function uploadWorkshopFiles(
     body,
   });
   if (!response.ok) {
-    const reason = (await response
-      .json()
-      .catch(() => null)) as { error?: string } | null;
+    const reason = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
     throw new Error(reason?.error ?? "The upload was refused.");
   }
   return (await response.json()) as { uploaded: number };
@@ -269,7 +272,10 @@ export function workshopArtifactDownloadUrl(
   channelId: string,
   artifactId: string,
 ): string {
-  return workshopPath(channelId, `/artifacts/${encodeURIComponent(artifactId)}/download`);
+  return workshopPath(
+    channelId,
+    `/artifacts/${encodeURIComponent(artifactId)}/download`,
+  );
 }
 
 /**
@@ -304,7 +310,11 @@ export type WorkshopSchedule = {
   rrule: string;
   timezone: string | null;
   status: "enabled" | "paused" | "deleted";
-  preapproved: { paths: string[]; tools: string[]; maxTurnsPerRun: number } | null;
+  preapproved: {
+    paths: string[];
+    tools: string[];
+    maxTurnsPerRun: number;
+  } | null;
   lastRunAt: string | null;
   nextRunAt: string | null;
   createdAt: string;
@@ -348,14 +358,20 @@ export function createWorkshopSchedule(
     prompt: string;
     mode: ScheduleMode;
     timezone?: string;
-    preapproval?: { paths?: string[]; tools?: string[]; maxTurnsPerRun?: number };
+    preapproval?: {
+      paths?: string[];
+      tools?: string[];
+      maxTurnsPerRun?: number;
+    };
   },
 ): Promise<{ id: string; rrule: string }> {
   return client(workshopPath(channelId, "/schedules"), {
     method: "POST",
     body: input,
     fallback: "The schedule could not be created.",
-  }).then((response) => response.json() as Promise<{ id: string; rrule: string }>);
+  }).then(
+    (response) => response.json() as Promise<{ id: string; rrule: string }>,
+  );
 }
 
 export function toggleWorkshopSchedule(
@@ -363,21 +379,29 @@ export function toggleWorkshopSchedule(
   id: string,
   enabled: boolean,
 ): Promise<{ id: string; status: string }> {
-  return client(workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`), {
-    method: "PATCH",
-    body: { enabled },
-    fallback: "The schedule could not be toggled.",
-  }).then((response) => response.json() as Promise<{ id: string; status: string }>);
+  return client(
+    workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`),
+    {
+      method: "PATCH",
+      body: { enabled },
+      fallback: "The schedule could not be toggled.",
+    },
+  ).then(
+    (response) => response.json() as Promise<{ id: string; status: string }>,
+  );
 }
 
 export function deleteWorkshopSchedule(
   channelId: string,
   id: string,
 ): Promise<{ ok: boolean }> {
-  return client(workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`), {
-    method: "DELETE",
-    fallback: "The schedule could not be deleted.",
-  }).then((response) => response.json() as Promise<{ ok: boolean }>);
+  return client(
+    workshopPath(channelId, `/schedules/${encodeURIComponent(id)}`),
+    {
+      method: "DELETE",
+      fallback: "The schedule could not be deleted.",
+    },
+  ).then((response) => response.json() as Promise<{ ok: boolean }>);
 }
 
 /** Wipe the workspace and start the session over. Artifacts and turns are kept as history. */

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
-import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge, GalleryFrame } from "@/components/gallery/frame";
 import { Button } from "@/components/ui/button";
 import type { AgentFormValues } from "@/lib/agents/form";

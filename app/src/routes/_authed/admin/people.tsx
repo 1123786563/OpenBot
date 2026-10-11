@@ -1,8 +1,8 @@
 import { IconLock, IconShieldCheck, IconUser } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import type { TFunction } from "i18next";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -10,6 +10,7 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
+import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { StaggerItem } from "@/components/layout/stagger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,12 +26,12 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { terminateMemberComputersMutationOptions } from "@/lib/enterprise/mutations";
+import { useDateTime } from "@/lib/i18n/datetime";
 import {
   setPersonAccessMutationOptions,
   setPersonRoleMutationOptions,
 } from "@/lib/people/mutations";
 import { type Person, peopleListQueryOptions } from "@/lib/people/queries";
-import { useDateTime } from "@/lib/i18n/datetime";
 import { queryClient } from "@/query-client";
 
 export const Route = createFileRoute("/_authed/admin/people")({
@@ -140,7 +141,9 @@ function PeoplePage() {
           value={search}
         />
 
-        {people.isPending ? null : people.error ? (
+        {people.isPending ? (
+          <PageRowsSkeleton />
+        ) : people.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("people.loadError")}
           </p>

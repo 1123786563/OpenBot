@@ -12,6 +12,7 @@ import {
   IconFile,
   IconX,
 } from "@tabler/icons-react";
+import type { TFunction } from "i18next";
 import { motion, useReducedMotion } from "motion/react";
 import {
   memo,
@@ -21,7 +22,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -50,7 +50,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import { readResponsibilityTurn } from "@/lib/channels/responsibility-turn";
 import { readFiring } from "@/lib/channels/routine-firing";
-import { splitChatOrigin } from "./chat-origin";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { readToolName } from "@/lib/plugins/tool-name";
@@ -73,6 +72,7 @@ import {
   type SentAttachment,
   toVisibleChatItems,
 } from "./chat-messages";
+import { splitChatOrigin } from "./chat-origin";
 import type { QueuedMessage } from "./composer";
 import { TeamBotConsentCard } from "./team-bot-consent";
 import { ToolRenderBoundary } from "./tool-boundary";

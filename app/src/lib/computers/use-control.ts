@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 import i18n from "@/lib/i18n";
 import {
-  cancelControl,
   type ControlState,
+  cancelControl,
   readControl,
   releaseControl,
   takeControl,

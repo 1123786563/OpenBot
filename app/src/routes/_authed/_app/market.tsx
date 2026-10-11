@@ -10,7 +10,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { ConnectorDialogWb, ConnectorsPane, type ConnectorSubject } from "@/components/market/connectors-pane";
+import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
+import {
+  ConnectorDialogWb,
+  type ConnectorSubject,
+  ConnectorsPane,
+} from "@/components/market/connectors-pane";
 import {
   AgentDialogWb,
   ExpertsPane,
@@ -19,13 +24,12 @@ import {
 import { MyExpertsView } from "@/components/market/my-experts-view";
 import {
   SkillDialogWb,
-  SkillsPane,
   type SkillSubject,
+  SkillsPane,
 } from "@/components/market/skills-pane";
 import { WbCardSkeleton, WbSecondaryButton } from "@/components/market/wb";
-import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   installExpertMutationOptions,
   installMarketSkillMutationOptions,
@@ -46,8 +50,8 @@ import {
   openConnectorAppsQueryOptions,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
-import { queryClient } from "@/query-client";
 import { cn } from "@/lib/utils";
+import { queryClient } from "@/query-client";
 
 /**
  * The marketplace, drawn in the WorkBuddy client's 专家·技能·连接器 layout (v5.7.7): one sticky
@@ -169,11 +173,14 @@ function MarketPage() {
   const term = search.trim().toLowerCase();
   const searching = term.length > 0;
   const matches = (...fields: (string | null | undefined)[]) =>
-    !searching || fields.some((field) => (field ?? "").toLowerCase().includes(term));
+    !searching ||
+    fields.some((field) => (field ?? "").toLowerCase().includes(term));
 
   const experts = (marketplace.data?.experts ?? [])
     .filter((expert) => !installedOnly || expert.installed)
-    .filter((expert) => matches(expert.name, expert.tagline, expert.description, ...expert.tags));
+    .filter((expert) =>
+      matches(expert.name, expert.tagline, expert.description, ...expert.tags),
+    );
 
   const skills = (marketplace.data?.skills ?? [])
     .filter((skill) => !installedOnly || skill.installed)
@@ -193,7 +200,9 @@ function MarketPage() {
     matches(server.title, server.summary, server.vendor),
   );
   const catalogue = (plugins.data?.catalogue ?? [])
-    .filter((entry) => !installedOnly || servers.some((s) => s.id === entry.key))
+    .filter(
+      (entry) => !installedOnly || servers.some((s) => s.id === entry.key),
+    )
     .filter((entry) => matches(entry.title, entry.summary, entry.vendor));
   const filterBroker = (apps: ComposioApp[] | undefined) =>
     (apps ?? [])
@@ -221,23 +230,41 @@ function MarketPage() {
   ).length;
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: "experts", label: t("tab.experts"), icon: <IconSparkles className="size-5" /> },
-    { key: "skills", label: t("tab.skills"), icon: <IconBolt className="size-5" /> },
-    { key: "connectors", label: t("tab.connectors"), icon: <IconPlug className="size-5" /> },
+    {
+      key: "experts",
+      label: t("tab.experts"),
+      icon: <IconSparkles className="size-5" />,
+    },
+    {
+      key: "skills",
+      label: t("tab.skills"),
+      icon: <IconBolt className="size-5" />,
+    },
+    {
+      key: "connectors",
+      label: t("tab.connectors"),
+      icon: <IconPlug className="size-5" />,
+    },
   ];
 
   // Dialog subjects: one per card kind, held so the dialog survives the re-render a mutation
   // triggers (the card's data updates underneath, the dialog reads the fresh record).
   const [agentSubject, setAgentSubject] = React.useState<string | null>(null);
-  const [templateSubject, setTemplateSubject] = React.useState<string | null>(null);
-  const [skillSubject, setSkillSubject] = React.useState<SkillSubject | null>(null);
-  const [connectorSubject, setConnectorSubject] = React.useState<
-    Parameters<typeof ConnectorDialogWb>[0]["subject"]
-  >(null);
+  const [templateSubject, setTemplateSubject] = React.useState<string | null>(
+    null,
+  );
+  const [skillSubject, setSkillSubject] = React.useState<SkillSubject | null>(
+    null,
+  );
+  const [connectorSubject, setConnectorSubject] =
+    React.useState<Parameters<typeof ConnectorDialogWb>[0]["subject"]>(null);
 
-  const agentOpen = agentList.find((agent) => agent.id === agentSubject) ?? null;
+  const agentOpen =
+    agentList.find((agent) => agent.id === agentSubject) ?? null;
   const templateOpen =
-    marketplace.data?.experts.find((expert) => expert.slug === templateSubject) ?? null;
+    marketplace.data?.experts.find(
+      (expert) => expert.slug === templateSubject,
+    ) ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -416,7 +443,11 @@ function MarketPage() {
         pending={busy.has("expert")}
       />
       <SkillDialogWb
-        label={{ install: t("install"), installing: t("installing"), installed: t("installed") }}
+        label={{
+          install: t("install"),
+          installing: t("installing"),
+          installed: t("installed"),
+        }}
         onClose={() => setSkillSubject(null)}
         onInstall={(slug) => installSkill.mutate(slug)}
         pendingInstall={skillBusy}

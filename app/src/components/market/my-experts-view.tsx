@@ -1,12 +1,8 @@
 import { IconArrowLeft, IconPlus, IconSearch } from "@tabler/icons-react";
-import { useTranslation } from "react-i18next";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { AgentCardWb } from "@/components/market/experts-pane";
-import {
-  WbEmpty,
-  WbPrimaryLink,
-  WbSegmentTabs,
-} from "@/components/market/wb";
+import { WbEmpty, WbPrimaryLink, WbSegmentTabs } from "@/components/market/wb";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { isSharedWithYou } from "@/lib/agents/queries";
 
@@ -39,7 +35,9 @@ export function MyExpertsView({
     );
 
   const mine = agents.filter((agent) => agent.mine && matches(agent));
-  const shared = agents.filter((agent) => isSharedWithYou(agent) && matches(agent));
+  const shared = agents.filter(
+    (agent) => isSharedWithYou(agent) && matches(agent),
+  );
   const list = roster === "mine" ? mine : shared;
 
   return (
@@ -53,7 +51,9 @@ export function MyExpertsView({
         >
           <IconArrowLeft className="size-5" />
         </button>
-        <h1 className="text-xl leading-7 font-semibold text-foreground">{t("wb.myExperts")}</h1>
+        <h1 className="text-xl leading-7 font-semibold text-foreground">
+          {t("wb.myExperts")}
+        </h1>
         <div className="relative ml-auto">
           <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground/40" />
           <input

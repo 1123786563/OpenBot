@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { workshopEventsUrl, type WorkshopStreamEvent } from "./client";
+import { type WorkshopStreamEvent, workshopEventsUrl } from "./client";
 import { createStreamMachine } from "./stream-machine";
 
 /**

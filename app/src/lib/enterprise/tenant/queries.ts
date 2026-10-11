@@ -1,6 +1,9 @@
-import { queryOptions, type QueryClient } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { client } from "@/lib/client";
-import type { PersonalConversation, TenantSummary } from "../../../../../shared/enterprise/mobile-schemas";
+import type {
+  PersonalConversation,
+  TenantSummary,
+} from "../../../../../shared/enterprise/mobile-schemas";
 
 /**
  * The tenant member surface's reads, per plan F02 step 6: the tenant chooser, the personal
@@ -47,7 +50,8 @@ export const tenantKeys = {
   /** The membership list, scoped to the person — the one read that needs no tenant. */
   chooser: (userId: string) => [...tenantKeys.all, userId, CHOOSER] as const,
   /** The selection's generation. Read by the guard, advanced by {@link selectTenant}. */
-  generation: (userId: string) => [...tenantKeys.all, userId, GENERATION] as const,
+  generation: (userId: string) =>
+    [...tenantKeys.all, userId, GENERATION] as const,
   /** Everything one tenant answers for, the prefix removal targets. */
   scope: (userId: string, tenantId: string) =>
     [...tenantKeys.all, userId, tenantId] as const,

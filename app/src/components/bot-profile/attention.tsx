@@ -106,14 +106,17 @@ export function BotAttentionList() {
                   {...props}
                   to="/bots/$agentId"
                   params={{ agentId: bot.agentId }}
-                  activeProps={{ className: "bg-sidebar-accent font-medium text-sidebar-accent-foreground" }}
+                  activeProps={{
+                    className:
+                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                  }}
                 />
               )}
             >
               <span className="truncate text-sm">{bot.name}</span>
               {waiting > 0 ? (
                 <span
-                  className="ml-auto rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums"
+                  className="ml-auto rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums"
                   title={attentionSummary(bot)}
                 >
                   {waiting}

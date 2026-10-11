@@ -4,12 +4,12 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { workshopSnapshotQueryOptions } from "@/lib/workshop/queries";
-import { WorkshopTurnView } from "./workshop-turn";
-import { WorkshopFilesView } from "./workshop-files";
 import { WorkshopArtifactsView } from "./workshop-artifacts";
-import { WorkshopUsageView } from "./workshop-usage";
-import { WorkshopShareView } from "./workshop-share";
+import { WorkshopFilesView } from "./workshop-files";
 import { WorkshopSchedulesView } from "./workshop-schedules";
+import { WorkshopShareView } from "./workshop-share";
+import { WorkshopTurnView } from "./workshop-turn";
+import { WorkshopUsageView } from "./workshop-usage";
 
 /**
  * The workshop tab: one channel's working surface in four panes.

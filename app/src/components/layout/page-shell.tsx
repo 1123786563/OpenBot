@@ -122,8 +122,8 @@ export function PageShell({
         >
           <header className="flex flex-col gap-2">
             <div className="flex flex-row items-center justify-between gap-4">
-              {/* 1.333rem = 20px at the 15px root — WorkBuddy's page-title tier. */}
-              <h1 className="font-semibold text-[1.333rem]">{title}</h1>
+              {/* The Display tier — WorkBuddy's page-title size (20px at the 15px root). */}
+              <h1 className="font-semibold text-display">{title}</h1>
               {action}
             </div>
             {description ? (

@@ -57,7 +57,8 @@
     "colUpdated": "更新时间",
     "colActions": "操作",
     "chunks": "{{count}} 个分块",
-    "taskProgress": "{{progress}}% · {{done}}/{{total}} 块"
+    "taskProgress": "{{progress}}% · {{done}}/{{total}} 块",
+    "tableAria": "文档列表"
   },
   "filter": {
     "keyword": "关键字",

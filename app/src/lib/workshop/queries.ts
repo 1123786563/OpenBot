@@ -1,9 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
 import {
   listWorkshopFiles,
-  workshopSnapshot,
   type WorkshopFileNode,
   type WorkshopSnapshot,
+  workshopSnapshot,
 } from "./client";
 
 /**

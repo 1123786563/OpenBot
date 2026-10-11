@@ -35,5 +35,6 @@
   "retryOlder": "Retry loading older conversations",
   "loadOlder": "Load older conversations",
   "hideSidebar": "Hide sidebar",
-  "showSidebar": "Show sidebar"
+  "showSidebar": "Show sidebar",
+  "unreadBadge": "Unread messages"
 }
