@@ -22,12 +22,21 @@ mock.module("@/components/ui/dialog", () => {
     children ?? null;
   return {
     Dialog: pass,
-    DialogContent: pass,
-    DialogHeader: pass,
     DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: pass,
+    DialogClose: pass,
+    DialogContent: pass,
     DialogDescription: pass,
+    DialogFooter: pass,
+    DialogHeader: pass,
+    DialogTitle: pass,
+    /*
+     * EVERY export, because mock.module is process-lifetime: a later test file importing
+     * chat-transcript pulls this same mock, and a missing DialogClose/Overlay/Portal/Trigger
+     * was a SyntaxError that failed that file before its own first test ran.
+     */
+    DialogOverlay: pass,
+    DialogPortal: pass,
+    DialogTrigger: pass,
   };
 });
 
@@ -48,12 +57,15 @@ const withProvider = (ui: React.ReactElement) => (
   <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
 );
 
+// Module scope so afterAll can restore it; see the comment there.
+let realFetch: typeof globalThis.fetch;
+
 beforeAll(async () => {
   GlobalRegistrator.register();
   // The dialog fetches the purchase catalog (channels + purchasable cycles) on open; happy-dom
   // has no network, so the one endpoint it reads is served from a stub — the dialog's own
   // rendering is the test's subject, not the fetch.
-  const realFetch = globalThis.fetch;
+  realFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
     async (input: string | URL | Request) => {
       const url =
@@ -82,7 +94,17 @@ beforeAll(async () => {
   await i18n.changeLanguage("zh-CN");
 });
 afterEach(cleanup);
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(() => {
+  // Give the language back — see billing-invoice-shared.test.tsx for why this is not optional.
+  // No await: an async afterAll resolves after bun has moved on to the next file, whose own
+  // register() then finds this file's DOM still mounted ("already been globally registered").
+  void i18n.changeLanguage("en");
+  // And the network with it: this suite swaps globalThis.fetch in beforeAll and never gave it
+  // back, so every later file's unmocked request hit this stub instead of its own mock or the
+  // real transport — one more way a file passes alone and fails in the suite.
+  globalThis.fetch = realFetch;
+  GlobalRegistrator.unregister();
+});
 
 /*
  * What these cover: the two entries this page's money questions hang on — the upgrade button and

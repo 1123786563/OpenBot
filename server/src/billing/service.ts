@@ -1,5 +1,5 @@
 import { createBillingEntitlementReader } from "./entitlement";
-import { type ReconcileReport } from "./reconcile";
+import type { ReconcileReport } from "./types";
 import {
   LAGO_PROVIDER_ID,
   type LagoClient,

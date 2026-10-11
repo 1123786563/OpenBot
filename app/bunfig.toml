@@ -1,0 +1,12 @@
+[test]
+# Wiring that already existed as `tests/preload.ts` but was never attached: bun test did not load
+# it, so its two jobs were silently not done in any run —
+#
+# 1. Base UI's isomorphic layout effect resolved against NO document (bun loads every test file
+#    into one process; the first import won), so portals/dialogs mounted nothing and every test
+#    asserting against them failed with "Unable to find role=dialog", only when run in the suite.
+# 2. i18n was never initialized, so every component that now renders `t(...)` keys (commit dc70ca1)
+#    showed raw keys where tests assert English sentences.
+#
+# `bun test` reads this file automatically; the preload runs once before any test file.
+preload = ["./tests/preload.ts"]
