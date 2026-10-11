@@ -16,7 +16,7 @@ export function saveInstructionsMutationOptions(queryClient: QueryClient) {
       client("/api/settings/instructions", "instructions", {
         method: "PUT",
         body: { instructions },
-        fallback: "Your standing instructions could not be saved",
+        fallbackKey: "settings.saveInstructions",
       }),
     onSuccess: (saved) =>
       queryClient.setQueryData(settingsKeys.instructions(), saved),

@@ -8,7 +8,7 @@ import {
   type NetworkMode,
 } from "./queries";
 
-const FALLBACK = "Could not save that enterprise control";
+const FALLBACK_KEY = "enterprise.saveControl";
 
 function invalidateEnterprise(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: enterpriseKeys.all });
@@ -26,7 +26,7 @@ export function setCapabilityMutationOptions(queryClient: QueryClient) {
       await client("/api/admin/enterprise/capabilities", {
         method: "PUT",
         body: variables,
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSuccess: () => invalidateEnterprise(queryClient),
@@ -42,7 +42,7 @@ export function setEnterpriseSettingMutationOptions(queryClient: QueryClient) {
       await client(`/api/admin/enterprise/settings/${variables.key}`, {
         method: "PUT",
         body: { value: variables.value },
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSuccess: () => invalidateEnterprise(queryClient),
@@ -61,7 +61,7 @@ export function setNetworkPolicyMutationOptions(queryClient: QueryClient) {
       await client("/api/admin/enterprise/network", {
         method: "PUT",
         body: variables,
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSuccess: () => invalidateEnterprise(queryClient),
@@ -82,7 +82,7 @@ export function removeNetworkPolicyMutationOptions(queryClient: QueryClient) {
         `/api/admin/enterprise/network/${variables.scopeKind}${query}`,
         {
           method: "DELETE",
-          fallback: FALLBACK,
+          fallbackKey: FALLBACK_KEY,
         },
       );
     },
@@ -104,7 +104,7 @@ export function terminateMemberComputersMutationOptions() {
           `/api/admin/enterprise/people/${userId}/terminate-computers`,
           {
             method: "POST",
-            fallback: "Could not stop that person's computers",
+            fallbackKey: "enterprise.stopComputers",
           },
         )
       ).json(),
@@ -117,7 +117,7 @@ export function terminateInactiveComputersMutationOptions() {
       (
         await client("/api/admin/enterprise/computers/terminate-inactive", {
           method: "POST",
-          fallback: "Could not sweep inactive computers",
+          fallbackKey: "enterprise.sweep",
         })
       ).json(),
   });

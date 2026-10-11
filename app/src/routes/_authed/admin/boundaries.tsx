@@ -294,7 +294,7 @@ function BoundariesPage() {
 
       <p className="mt-8 text-muted-foreground text-xs">
         {problem ? (
-          <span className="text-destructive" role="alert">
+          <span className="mt-4 text-destructive text-sm" role="alert">
             {problem}
           </span>
         ) : saved ? (

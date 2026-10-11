@@ -65,8 +65,8 @@ function ResponsibilitiesPage() {
         {goals.isPending ? (
           <p>{t("responsibilities.loading")}</p>
         ) : goals.error ? (
-          <p role="alert" className="text-destructive">
-            {goals.error.message}
+          <p role="alert" className="mt-4 text-destructive text-sm">
+            {t("responsibilities.loadError")}
           </p>
         ) : goals.data?.length ? (
           goals.data.map((goal) => <GoalCard key={goal.id} goal={goal} />)
@@ -175,7 +175,7 @@ function NewResponsibility() {
         </Button>
       )}
       {(channels.error || bots.error) && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {channels.error?.message ?? bots.error?.message}
         </p>
       )}
@@ -262,7 +262,7 @@ function NewResponsibility() {
         )}
       </div>
       {create.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {create.error.message}
         </p>
       )}
@@ -453,16 +453,23 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
             ? t("responsibilities.card.hideRuns")
             : t("responsibilities.card.viewRuns")}
         </Button>
-        <Link
-          to="/channel/$channelId"
-          params={{ channelId: goal.channelId }}
-          className="self-center text-sm underline"
+        <Button
+          variant="link"
+          size="sm"
+          className="self-center"
+          render={(props) => (
+            <Link
+              to="/channel/$channelId"
+              params={{ channelId: goal.channelId }}
+              {...props}
+            />
+          )}
         >
           {t("responsibilities.card.openConversation")}
-        </Link>
+        </Button>
       </div>
       {(action.error || edit.error) && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {action.error?.message ?? edit.error?.message}
         </p>
       )}
@@ -481,13 +488,19 @@ function GoalCard({ goal }: { goal: ResponsibilityRecord }) {
                     {t(RUN_LABEL[run.status])}
                   </span>{" "}
                   · {formatDateTime(run.createdAt)} ·{" "}
-                  <Link
-                    to="/channel/$channelId"
-                    params={{ channelId: goal.channelId }}
-                    className="underline"
+                  <Button
+                    variant="link"
+                    size="sm"
+                    render={(props) => (
+                      <Link
+                        to="/channel/$channelId"
+                        params={{ channelId: goal.channelId }}
+                        {...props}
+                      />
+                    )}
                   >
                     {t("responsibilities.runs.openThread")}
-                  </Link>
+                  </Button>
                 </p>
                 {run.waiting && (
                   <p>
@@ -587,7 +600,7 @@ function GithubSources() {
         </Button>
       </form>
       {(bindings.error || create.error || remove.error) && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {bindings.error?.message ??
             create.error?.message ??
             remove.error?.message}

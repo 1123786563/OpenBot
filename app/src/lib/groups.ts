@@ -51,7 +51,7 @@ export function groupQueryOptions(channelId: string) {
     queryFn: async (): Promise<GroupConversation> => {
       const response = await client(
         `/api/groups/${encodeURIComponent(channelId)}`,
-        { fallback: "This group conversation could not be loaded." },
+        { fallbackKey: "groups.load" },
       );
       return (await response.json()) as GroupConversation;
     },
@@ -91,7 +91,7 @@ export function sendGroupMessageMutationOptions(
       await client(`/api/groups/${encodeURIComponent(channelId)}`, {
         method: "POST",
         body: input,
-        fallback: "Your message could not be sent to the group.",
+        fallbackKey: "groups.send",
       });
     },
     onSettled: () =>
@@ -106,7 +106,7 @@ export function createGroupMutationOptions(queryClient: QueryClient) {
       const response = await client("/api/groups", {
         method: "POST",
         body: { agentIds },
-        fallback: "The group could not be started.",
+        fallbackKey: "groups.start",
       });
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
@@ -122,7 +122,7 @@ export function addGroupMemberMutationOptions(channelId: string) {
       await client(`/api/groups/${encodeURIComponent(channelId)}/members`, {
         method: "POST",
         body: { email },
-        fallback: "That person could not be added.",
+        fallbackKey: "groups.addPerson",
       });
     },
   });
@@ -137,7 +137,7 @@ export function removeGroupMemberMutationOptions(
     mutationFn: async (userId: string) => {
       await client(
         `/api/groups/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`,
-        { method: "DELETE", fallback: "That person could not be removed." },
+        { method: "DELETE", fallbackKey: "groups.removePerson" },
       );
     },
     onSettled: () =>

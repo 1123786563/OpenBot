@@ -318,7 +318,7 @@ function People({
         );
       })}
       {remove.error ? (
-        <span className="text-destructive" role="alert">
+        <span className="mt-2 text-destructive text-sm" role="alert">
           {remove.error.message}
         </span>
       ) : null}

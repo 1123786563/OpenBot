@@ -152,10 +152,7 @@ function ComputersPage() {
 
       <PageSection title={t("computers.fleet.title")}>
         {setState.error ? (
-          <p
-            className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
-            role="alert"
-          >
+          <p className="mb-3 text-sm text-destructive" role="alert">
             {setState.error.message}
           </p>
         ) : null}

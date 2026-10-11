@@ -298,8 +298,13 @@
       "expired": "已过期"
     },
     "validUntil": "有效期至 {{date}}",
-    "autoRenew": "到期前一天自动续费，随时可取消",
+    "autoRenew": "本月到期后如需续费请再次购买（自动续费尚未开通）",
     "agreement": "我已阅读并同意《服务协议》",
-    "pay": "同意协议"
+    "pay": "同意协议",
+    "payWith": "支付方式",
+    "provider": {
+      "alipay": "支付宝",
+      "wechat": "微信支付"
+    }
   }
 }

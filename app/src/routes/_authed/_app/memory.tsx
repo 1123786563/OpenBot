@@ -78,7 +78,7 @@ function MemoryPage() {
             {t("memory.remember")}
           </Button>
           {remember.error && (
-            <p role="alert" className="text-destructive">
+            <p role="alert" className="mt-4 text-destructive text-sm">
               {remember.error.message}
             </p>
           )}
@@ -90,8 +90,8 @@ function MemoryPage() {
           {memories.isPending ? (
             <p>{t("memory.loadingMemories")}</p>
           ) : memories.error ? (
-            <p role="alert" className="text-destructive">
-              {memories.error.message}
+            <p role="alert" className="mt-4 text-destructive text-sm">
+              {t("memory.loadError")}
             </p>
           ) : memories.data?.length ? (
             memories.data.map((memory) => (
@@ -203,7 +203,7 @@ function MemoryCard({ memory }: { memory: MemoryRecord }) {
         </Button>
       </div>
       {(save.error || forget.error) && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {save.error?.message || forget.error?.message}
         </p>
       )}
@@ -421,13 +421,13 @@ function Sources() {
             : t("memory.sources.addAndSync")}
         </Button>
         {(error || add.error || tools.error) && (
-          <p role="alert" className="text-destructive">
+          <p role="alert" className="mt-4 text-destructive text-sm">
             {error || add.error?.message || tools.error?.message}
           </p>
         )}
       </form>
       {sources.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {sources.error.message}
         </p>
       )}
@@ -451,7 +451,7 @@ function Sources() {
             </p>
           )}
           {source.syncError && (
-            <p role="alert" className="text-destructive">
+            <p role="alert" className="mt-4 text-destructive text-sm">
               {source.syncError}
             </p>
           )}
@@ -493,7 +493,7 @@ function Sources() {
         </article>
       ))}
       {action.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {action.error.message}
         </p>
       )}

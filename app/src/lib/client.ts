@@ -18,10 +18,28 @@ export type ClientOptions = {
   /** Serialised as JSON, which is also what sets the content type. */
   body?: unknown;
   /**
-   * What a person reads when the server sent no message of its own.
+   * What a person reads when the server sent no message of its own, as a key in the `errors`
+   * namespace — `"agents.load"` for "Could not load coworkers".
    *
-   * Name the entity in it — "Could not load coworkers" rather than "Request failed" — because this
-   * is the sentence that reaches the screen when the server is the one that broke.
+   * This is the form every call site should use: the sentence is a person-facing string, the
+   * person has a language, and lib code cannot know it at module scope. Translated at throw time
+   * (see `fallbackText`), so the active language at the moment of failure is the one that speaks.
+   * A plain `fallback` string still works for the callers not yet migrated, and wins over the
+   * key so a migration can never change the words a screen was already showing.
+   */
+  fallbackKey?: string;
+  /**
+   * Interpolation values for `fallbackKey`, when the sentence has a variable part ("The computer
+   * could not be {{action}}."). Values are plain strings; i18next interpolates them at read time,
+   * which keeps the translated sentence out of the module graph just like the key does.
+   */
+  fallbackVars?: Record<string, string>;
+  /**
+   * What a person reads when the server sent no message of its own, as literal English.
+   *
+   * Superseded by `fallbackKey` for anything a person can see; kept because lib modules are also
+   * imported by tests and by code paths that run before i18n has initialized, where a literal is
+   * the honest value.
    */
   fallback?: string;
   /** For the calls a Bot makes on a person's behalf, which are abandoned when the turn is. */
@@ -36,6 +54,51 @@ export type ClientOptions = {
    */
   tenantId?: string;
 };
+
+/**
+ * The sentence a failed request carries, resolved from whichever fallback the caller gave.
+ *
+ * The i18n import is dynamic and lazy on purpose: `client.ts` sits at the bottom of the module
+ * graph (everything in `lib/` imports it), while `lib/i18n` imports every locale bundle. A static
+ * import here would drag the bundles into every module that makes a request before the app has
+ * decided anything about language, and a cycle would be one renamed import away. Resolved at
+ * throw time instead — a module-level handle would capture the language at import time, which is
+ * exactly the stale-translation bug this refactor exists to remove.
+ *
+ * When i18n has not initialized (unit tests importing a lib module directly), `t` returns the
+ * key itself; the key losing to a missing translation is a fact about the test environment, and
+ * the caller's English `fallback` — or the generic sentence — speaks instead.
+ */
+async function fallbackText(options: ClientOptions): Promise<string> {
+  if (options.fallback !== undefined) return options.fallback;
+  if (options.fallbackKey !== undefined) {
+    const i18n = (await import("./i18n")).default;
+    const vars = options.fallbackVars;
+    const read = (lng?: string): string => {
+      const opts: {
+        ns: "errors";
+        defaultValue: string;
+        lng?: string;
+        replace?: Record<string, string>;
+      } = {
+        ns: "errors",
+        defaultValue: "",
+      };
+      if (lng !== undefined) opts.lng = lng;
+      if (vars !== undefined) opts.replace = vars;
+      return i18n.t(options.fallbackKey as string, opts);
+    };
+    if (i18n.isInitialized) {
+      const translated = read();
+      // An empty result means the key is missing from the bundle — a wiring mistake worth
+      // seeing in dev, but a person should still get a sentence.
+      if (translated !== "") return translated;
+    }
+    const english = read("en");
+    return english !== "" ? english : "That request failed.";
+  }
+  return "That request failed.";
+}
 
 /** The header the enterprise scope middleware reads the tenant selector from. */
 const TENANT_HEADER = "x-openbot-tenant";
@@ -73,7 +136,7 @@ function tenantSelection(
  */
 async function refusalMessage(
   response: Response,
-  fallback: string | undefined,
+  options: ClientOptions,
 ): Promise<string> {
   const body = (await response.json().catch(() => null)) as {
     error?: unknown;
@@ -85,7 +148,7 @@ async function refusalMessage(
       if (typeof field === "string" && field.length > 0) return field;
     }
   }
-  return fallback ?? "That request failed.";
+  return fallbackText(options);
 }
 
 /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
@@ -158,7 +221,7 @@ export async function client<T>(
      * The server's message is the useful one: it names the field or the permission that failed. The
      * fallback is only for the cases where it sent none, or sent something that is not JSON.
      */
-    throw new Error(await refusalMessage(response, options.fallback));
+    throw new Error(await refusalMessage(response, options));
   }
 
   if (key === undefined) return response;
@@ -167,7 +230,7 @@ export async function client<T>(
   // a TypeError on property access. Malformed success is a failed request with the fallback.
   const body = (await response.json().catch(() => null)) as unknown;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error(options.fallback ?? "That request failed.");
+    throw new Error(await fallbackText(options));
   }
   return (body as Record<string, T>)[key];
 }

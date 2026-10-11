@@ -54,7 +54,7 @@ export function resetBotMutationOptions(queryClient: QueryClient) {
       client(`${botPath(agentId)}/reset`, "deleted", {
         method: "POST",
         body: { confirm: true },
-        fallback: "Could not reset this Bot",
+        fallbackKey: "botLifecycle.reset",
       }),
     onSuccess: async () => {
       await invalidateLifecycle(queryClient);
@@ -70,7 +70,7 @@ export function stopHandoffMutationOptions(queryClient: QueryClient) {
       await client(`${botPath(variables.agentId)}/activity/handoffs/stop`, {
         method: "POST",
         body: { id: variables.id },
-        fallback: "Could not stop the delegated task",
+        fallbackKey: "botLifecycle.stopDelegated",
       });
     },
     onSuccess: () => invalidateLifecycle(queryClient),
@@ -83,7 +83,7 @@ export function cancelFollowUpMutationOptions(queryClient: QueryClient) {
       await client(`${botPath(variables.agentId)}/follow-ups/cancel`, {
         method: "POST",
         body: { id: variables.id },
-        fallback: "Could not cancel the follow-up",
+        fallbackKey: "botLifecycle.cancelFollowUp",
       });
     },
     onSuccess: () => invalidateLifecycle(queryClient),
@@ -99,7 +99,7 @@ export function setUpdateRoutingMutationOptions(queryClient: QueryClient) {
       await client(`/api/bots/routing/${variables.kind}`, {
         method: "PUT",
         body: { transports: variables.transports },
-        fallback: "Could not save where updates go",
+        fallbackKey: "botLifecycle.saveUpdates",
       });
     },
     onSuccess: () => invalidateLifecycle(queryClient),

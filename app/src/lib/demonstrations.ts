@@ -45,7 +45,7 @@ export const demonstrationsQueryOptions = (botId: string) =>
       client(
         `/api/demonstrations?botId=${encodeURIComponent(botId)}`,
         "demonstrations",
-        { fallback: "Could not load demonstrations" },
+        { fallbackKey: "demonstrations.load" },
       ),
     refetchInterval: 2000,
   });
@@ -56,28 +56,28 @@ export const startDemonstration = (
   client("/api/demonstrations", "demonstration", {
     method: "POST",
     body: { botId, title },
-    fallback: "Could not start recording",
+    fallbackKey: "demonstrations.start",
   });
 export const stopDemonstration = (id: string) =>
   client(`/api/demonstrations/${encodeURIComponent(id)}/stop`, {
     method: "POST",
-    fallback: "Could not stop recording",
+    fallbackKey: "demonstrations.stop",
   });
 export const draftDemonstration = (id: string): Promise<DemonstrationDraft> =>
   client(`/api/demonstrations/${encodeURIComponent(id)}/draft`, "draft", {
     method: "POST",
-    fallback: "Could not draft a skill",
+    fallbackKey: "demonstrations.draft",
   });
 export const publishDemonstration = (id: string, slug: string) =>
   client(`/api/demonstrations/${encodeURIComponent(id)}/published`, {
     method: "POST",
     body: { slug },
-    fallback: "The skill was saved, but its demonstration could not be linked",
+    fallbackKey: "demonstrations.link",
   });
 export const deleteDemonstration = (id: string) =>
   client(`/api/demonstrations/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    fallback: "Could not delete the demonstration",
+    fallbackKey: "demonstrations.delete",
   });
 /** Run the demonstration's saved skill on a schedule, as an ordinary routine. */
 export const scheduleDemonstration = (
@@ -92,5 +92,5 @@ export const scheduleDemonstration = (
   client(`/api/demonstrations/${encodeURIComponent(id)}/schedule`, "routine", {
     method: "POST",
     body: input,
-    fallback: "Could not schedule this skill",
+    fallbackKey: "demonstrations.schedule",
   });

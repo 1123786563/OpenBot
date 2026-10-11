@@ -61,7 +61,9 @@ test("purchase keys nest under the billing purchases family", () => {
 
 test("createPurchase returns the created order", async () => {
   serve(200, { order });
-  await expect(createPurchase({ planCode: "pro", provider: "alipay" })).resolves.toEqual(
+  await expect(
+    createPurchase({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+  ).resolves.toEqual(
     order,
   );
 });
@@ -74,6 +76,7 @@ test("the one-subscription refusal keeps the server's activePlanCode", async () 
   const error = await createPurchase({
     planCode: "pro",
     provider: "wechat",
+    cycle: "monthly",
   }).then(
     () => null,
     (e: unknown) => e,
@@ -88,6 +91,7 @@ test("a plan the catalog does not know carries no activePlanCode", async () => {
   const error = await createPurchase({
     planCode: "nope",
     provider: "alipay",
+    cycle: "monthly",
   }).then(
     () => null,
     (e: unknown) => e,
@@ -126,6 +130,7 @@ describe("purchaseCatalogQueryOptions", () => {
       canPurchase: true,
       activePlanCode: null,
       providers: ["alipay", "wechat"],
+      cycles: ["monthly", "recurring_monthly"],
     });
     await expect(
       queryClient.fetchQuery(purchaseCatalogQueryOptions),
@@ -136,6 +141,7 @@ describe("purchaseCatalogQueryOptions", () => {
       canPurchase: true,
       activePlanCode: null,
       providers: ["alipay", "wechat"],
+      cycles: ["monthly", "recurring_monthly"],
     });
   });
 });

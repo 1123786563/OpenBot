@@ -54,7 +54,7 @@ export function SuggestionsInbox() {
       {suggestions.isPending ? (
         <p>{t("proactive.loading")}</p>
       ) : suggestions.error ? (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {suggestions.error.message}
         </p>
       ) : suggestions.data?.length ? (
@@ -80,7 +80,7 @@ export function SuggestionsInbox() {
                   <>
                     {" · "}
                     <a
-                      className="underline"
+                      className="text-sm underline-offset-4 hover:underline"
                       href={suggestion.sourceLink}
                       target="_blank"
                       rel="noreferrer"
@@ -118,7 +118,7 @@ export function SuggestionsInbox() {
         <p className="text-muted-foreground">{t("proactive.none")}</p>
       )}
       {act.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {act.error.message}
         </p>
       )}
@@ -229,13 +229,13 @@ export function ProactiveResearchSettings() {
           {t("proactive.turnOnResearch")}
         </Button>
         {add.error && (
-          <p role="alert" className="text-destructive">
+          <p role="alert" className="mt-2 text-destructive text-sm">
             {add.error.message}
           </p>
         )}
       </form>
       {settings.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {settings.error.message}
         </p>
       )}
@@ -306,7 +306,7 @@ function SettingRow({
         </p>
       )}
       {setting.lastError && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {setting.lastError}
         </p>
       )}
@@ -354,7 +354,7 @@ function SettingRow({
         </Button>
       </div>
       {change.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-2 text-destructive text-sm">
           {change.error.message}
         </p>
       )}

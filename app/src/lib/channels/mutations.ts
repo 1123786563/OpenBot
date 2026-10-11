@@ -17,7 +17,7 @@ export function createChannelMutationOptions(queryClient: QueryClient) {
       const response = await client("/api/channels", {
         method: "POST",
         body: { agentIds },
-        fallback: "Could not start a channel",
+        fallbackKey: "channels.start",
       });
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
@@ -83,7 +83,7 @@ export function setChannelPinnedMutationOptions(queryClient: QueryClient) {
       await client(`/api/channels/${variables.channelId}/pin`, {
         method: "PUT",
         body: { pinned: variables.pinned },
-        fallback: "Could not pin this channel",
+        fallbackKey: "channels.pin",
       });
     },
     onSuccess: () =>
@@ -104,7 +104,7 @@ export function markChannelReadMutationOptions(queryClient: QueryClient) {
     mutationFn: async (channelId: string) => {
       await client(`/api/channels/${channelId}/read`, {
         method: "PUT",
-        fallback: "Could not mark this channel read",
+        fallbackKey: "channels.markRead",
       });
     },
     onMutate: (channelId) => {
@@ -145,7 +145,7 @@ export function deleteChannelMutationOptions(queryClient: QueryClient) {
     mutationFn: async (channelId: string) => {
       await client(`/api/channels/${channelId}`, {
         method: "DELETE",
-        fallback: "Could not delete this channel",
+        fallbackKey: "channels.delete",
       });
     },
     // The roster only. The open channel's detail query would refetch into the fresh 404 and

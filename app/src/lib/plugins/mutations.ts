@@ -55,7 +55,7 @@ export type CustomServerInput = {
 /** Which kinds of plugin a grant can be about. */
 export type PluginKind = "mcp" | "skill";
 
-const FALLBACK = "That did not work.";
+const FALLBACK_KEY = "plugins.generic";
 
 /**
  * Refetch everything the plugin screens read.
@@ -126,7 +126,7 @@ export function grantPlugin(variables: {
       agentId: variables.agentId,
       ...(variables.approval ? { approval: variables.approval } : {}),
     },
-    fallback: "That Agent could not be changed.",
+    fallbackKey: "agents.change",
   });
 }
 
@@ -161,7 +161,7 @@ export async function accountModePreview(
     {
       method: "PUT",
       body: { mode, confirm: false },
-      fallback: "What the switch would change could not be read.",
+      fallbackKey: "plugins.readSwitch",
     },
   );
   return ((await response.json()) as { preview: AccountModePreview }).preview;
@@ -189,7 +189,7 @@ export function setAccountModeMutationOptions(queryClient: QueryClient) {
             confirm: true,
             ...(variables.approvals ? { approvals: variables.approvals } : {}),
           },
-          fallback: "The switch did not finish, and nothing was changed.",
+          fallbackKey: "plugins.switchFailed",
         },
       );
     },
@@ -217,7 +217,7 @@ export function setPluginGrantMutationOptions(queryClient: QueryClient) {
       }
       await client(
         `/api/plugins/grants?kind=${variables.kind}&ref=${encodeURIComponent(variables.ref)}&agentId=${encodeURIComponent(variables.agentId)}`,
-        { method: "DELETE", fallback: "That Agent could not be changed." },
+        { method: "DELETE", fallbackKey: "agents.change" },
       );
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -230,7 +230,7 @@ export function addCuratedServerMutationOptions(queryClient: QueryClient) {
       await client("/api/plugins/servers", {
         method: "POST",
         body: input,
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -243,7 +243,7 @@ export function addCustomServerMutationOptions(queryClient: QueryClient) {
       await client("/api/plugins/servers/custom", {
         method: "POST",
         body: input,
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -262,7 +262,7 @@ export function enableComposioAppMutationOptions(queryClient: QueryClient) {
       await client("/api/plugins/composio/apps", {
         method: "POST",
         body: input,
-        fallback: "That app could not be added.",
+        fallbackKey: "plugins.addApp",
       });
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -285,7 +285,7 @@ export function enableOpenConnectorAppMutationOptions(
       await client("/api/plugins/openconnector/apps", {
         method: "POST",
         body: input,
-        fallback: "That app could not be added.",
+        fallbackKey: "plugins.addApp",
       });
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -308,7 +308,7 @@ export function refreshPluginServerMutationOptions(queryClient: QueryClient) {
         {
           method: "POST",
           body: {},
-          fallback: FALLBACK,
+          fallbackKey: FALLBACK_KEY,
         },
       );
     },
@@ -321,7 +321,7 @@ export function removePluginServerMutationOptions(queryClient: QueryClient) {
     mutationFn: async (serverId: string) => {
       await client(`/api/plugins/servers/${encodeURIComponent(serverId)}`, {
         method: "DELETE",
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -344,7 +344,7 @@ export function saveSkillMutationOptions(queryClient: QueryClient) {
          * The server refuses for reasons a form cannot check — a slug somebody else already owns is
          * the common one — and paraphrasing that would throw away the only part worth reading.
          */
-        fallback: "The skill could not be saved.",
+        fallbackKey: "plugins.saveSkill",
       }),
     onSettled: () => invalidatePlugins(queryClient),
   });
@@ -376,7 +376,7 @@ export function registerOAuthClientMutationOptions(queryClient: QueryClient) {
         {
           method: "POST",
           body: { clientId: input.clientId, clientSecret: input.clientSecret },
-          fallback: "That OAuth client could not be registered.",
+          fallbackKey: "plugins.registerOAuth",
         },
       );
     },
@@ -433,7 +433,7 @@ export function connectAccountMutationOptions(
       const authorizationUrl = await client<string | undefined>(
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connect?returnTo=${returnTo}`,
         "authorizationUrl",
-        { method: "POST", fallback: "That account could not be connected." },
+        { method: "POST", fallbackKey: "plugins.connectAccount" },
       );
       return authorizationUrl ?? null;
     },
@@ -476,7 +476,7 @@ export function confirmBrokeredConnectionMutationOptions(
     ): Promise<BrokeredConnectionConfirmation> => {
       const response = await client(
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connection/confirm`,
-        { method: "POST", fallback: "That connection could not be confirmed." },
+        { method: "POST", fallbackKey: "plugins.confirm" },
       );
       return response.json();
     },
@@ -498,7 +498,7 @@ export function disconnectBrokeredMutationOptions(queryClient: QueryClient) {
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connection`,
         {
           method: "DELETE",
-          fallback: "That account could not be disconnected.",
+          fallbackKey: "plugins.disconnect",
         },
       );
     },
@@ -511,7 +511,7 @@ export function removeSkillMutationOptions(queryClient: QueryClient) {
     mutationFn: async (slug: string) => {
       await client(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
         method: "DELETE",
-        fallback: FALLBACK,
+        fallbackKey: FALLBACK_KEY,
       });
     },
     onSettled: () => invalidatePlugins(queryClient),
@@ -560,7 +560,7 @@ export function brokeredConnectionFieldsMutationOptions() {
         "fields",
         {
           method: "POST",
-          fallback: "That app could not be asked what it needs.",
+          fallbackKey: "plugins.needs",
         },
       );
       return fields ?? null;
@@ -623,7 +623,7 @@ export function connectBrokeredWithFieldsMutationOptions(
           {
             method: "POST",
             body: { values: variables.values },
-            fallback: "That account could not be connected.",
+            fallbackKey: "plugins.connectAccount",
           },
         );
         return response.json();
@@ -675,7 +675,7 @@ export function recheckBrokeredConnectionMutationOptions(
     mutationFn: async (serverId: string): Promise<BrokeredKeyCheck> => {
       const response = await client(
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connection/recheck`,
-        { method: "POST", fallback: "That connection could not be checked." },
+        { method: "POST", fallbackKey: "plugins.check" },
       );
       return response.json();
     },

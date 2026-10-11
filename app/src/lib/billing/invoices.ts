@@ -119,7 +119,7 @@ export const invoiceDetailQueryOptions = (invoiceId: string | null) =>
       return client(
         `/api/billing/invoices/${encodeURIComponent(invoiceId ?? "")}`,
         "invoice",
-        { fallback: "That bill could not be loaded." },
+        { fallbackKey: "billing.loadBill" },
       );
     },
   });

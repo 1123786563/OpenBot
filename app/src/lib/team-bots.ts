@@ -37,7 +37,7 @@ export function teamBotsQueryOptions() {
     queryKey: teamBotKeys.all,
     queryFn: async (): Promise<TeamBotsData> => {
       const response = await client("/api/team-bots", {
-        fallback: "Team Bots could not be loaded.",
+        fallbackKey: "teamBots.load",
       });
       return (await response.json()) as TeamBotsData;
     },
@@ -71,7 +71,7 @@ export function publishTeamBotMutationOptions(queryClient: QueryClient) {
       await client(path(botId, "/publication"), {
         method: "PUT",
         body,
-        fallback: "The Bot could not be published.",
+        fallbackKey: "teamBots.publish",
       });
     },
     /* Publishing can widen who reaches a shared app, so the request inbox may now hold a
@@ -89,7 +89,7 @@ export function unpublishTeamBotMutationOptions(queryClient: QueryClient) {
     mutationFn: async (botId: string) => {
       await client(path(botId, "/publication"), {
         method: "DELETE",
-        fallback: "The Bot could not be unpublished.",
+        fallbackKey: "teamBots.unpublish",
       });
     },
     onSettled: () => refresh(queryClient),
@@ -110,7 +110,7 @@ export function assignTeamBotMutationOptions(queryClient: QueryClient) {
         {
           method: input.remove ? "DELETE" : "POST",
           ...(input.remove ? {} : { body: { group: input.group } }),
-          fallback: "The assignment could not be saved.",
+          fallbackKey: "teamBots.saveAssignment",
         },
       );
     },
@@ -134,7 +134,7 @@ export function teamBotConsentMutationOptions() {
       await client(path(input.botId, "/consents"), {
         method: "POST",
         body: { serverId: input.serverId, decision: input.decision },
-        fallback: "Your answer could not be saved.",
+        fallbackKey: "teamBots.saveAnswer",
       });
     },
   });
@@ -145,7 +145,7 @@ export function clearTeamBotConsentsMutationOptions() {
     mutationFn: async () => {
       await client("/api/team-bots/consents", {
         method: "DELETE",
-        fallback: "Your connector preferences could not be cleared.",
+        fallbackKey: "teamBots.clearPreferences",
       });
     },
   });

@@ -298,8 +298,13 @@
       "expired": "Expired"
     },
     "validUntil": "Valid until {{date}}",
-    "autoRenew": "Auto-renews the day before expiry; cancel anytime",
+    "autoRenew": "To continue after this period ends, purchase again (auto-renewal is not available yet)",
     "agreement": "I have read and agree to the Terms of Service",
-    "pay": "Agree"
+    "pay": "Agree",
+    "payWith": "Pay with",
+    "provider": {
+      "alipay": "Alipay",
+      "wechat": "WeChat Pay"
+    }
   }
 }

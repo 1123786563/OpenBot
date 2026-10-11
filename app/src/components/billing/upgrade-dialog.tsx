@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,18 +16,27 @@ import type { PlanCatalogCycle, PlanCatalogEntry } from "@/lib/billing/credits";
 import { credits } from "@/lib/billing/format";
 import {
   createPurchase,
+  type PurchaseCycle,
   type PurchaseOrderView,
+  type PurchaseProvider,
+  purchaseCatalogQueryOptions,
   purchaseOrderQueryOptions,
 } from "@/lib/billing/payments";
 import { cn } from "@/lib/utils";
 
 /**
- * The upgrade dialog: three plan cards, a four-way billing-cycle choice, a price summary and the
- * scan-to-pay block with the agreement gate.
+ * The upgrade dialog: three plan cards, the billing-cycle choice, the channel choice, a price
+ * summary and the scan-to-pay block with the agreement gate.
  *
- * The QR is a placeholder in this pass — the payment link (phase three) is what fills it. What this
- * component owns now is the selection the checkout will act on: a plan, a cycle, and whether the
- * agreement has been ticked, which is the whole state a purchase request needs.
+ * EVERYTHING THE READER CAN CHOOSE IS SERVER-DRIVEN: the channels render from the purchase
+ * catalog's `providers` (the configured channels and nothing else — the old hardcoded alipay
+ * sent readers of a wechat-only deployment into a 400), and the cycle choice renders from the
+ * catalog's `cycles` (v1 offers the monthly spellings only; a yearly cycle the server cannot
+ * activate is not shown at all rather than shown and refused).
+ *
+ * The QR renders LOCALLY (`qrcode`, already a dependency): the payload is a payment credential
+ * (merchant, order, amount) and used to be shipped to a public third-party image service to be
+ * drawn — a data egress nobody accepted, fixed by drawing it in this tab.
  */
 export function UpgradeDialog({
   open,
@@ -49,8 +59,6 @@ export function UpgradeDialog({
   const { t } = useTranslation("settings");
   const entries = Object.entries(catalog);
   const [selected, setSelected] = useState<string>(entries[0]?.[0] ?? "");
-  const [cycle, setCycle] =
-    useState<PlanCatalogCycle["code"]>("recurring_monthly");
   const [agreed, setAgreed] = useState(false);
   /*
    * The catalog can arrive after mount (React Query), and `useState` above captured the empty
@@ -61,6 +69,50 @@ export function UpgradeDialog({
   if (entries.length > 0 && !catalog[selected]) {
     setSelected(entries[0][0]);
   }
+
+  /*
+   * The purchase catalog (channels + purchasable cycles). Fetched here rather than threaded from
+   * the page because the dialog is its only consumer: a page that never opens the dialog never
+   * pays for the read.
+   */
+  const queryClient = useQueryClient();
+  const [purchaseCatalog, setPurchaseCatalog] = useState<{
+    providers: PurchaseProvider[];
+    cycles: PurchaseCycle[];
+  } | null>(null);
+  const [provider, setProvider] = useState<PurchaseProvider | null>(null);
+  const [cycle, setCycle] = useState<PurchaseCycle | null>(null);
+  useEffect(() => {
+    if (!open || purchaseCatalog) return;
+    void queryClient
+      .fetchQuery(purchaseCatalogQueryOptions)
+      .then((catalogAnswer) => {
+        setPurchaseCatalog({
+          providers: catalogAnswer.providers,
+          cycles: catalogAnswer.cycles,
+        });
+        // First-listed channel and cycle preselect; a single-option deployment shows no chooser.
+        setProvider((current) => current ?? catalogAnswer.providers[0] ?? null);
+        setCycle((current) => current ?? catalogAnswer.cycles[0] ?? null);
+      })
+      .catch(() => {
+        /* A failed catalog read leaves the choosers empty and the pay button disabled — the
+         * reader sees nothing to click rather than a choice the server would refuse. */
+      });
+  }, [open, purchaseCatalog, queryClient]);
+
+  const plan = catalog[selected];
+  /*
+   * The cycle the summary prices: the PURCHASE cycle chosen above (what the checkout will send),
+   * matched into the display catalog's pricing for its label and price. A display-only cycle the
+   * server does not offer never reaches `cycle`, so this always finds its pricing entry.
+   */
+  const cycleEntry =
+    plan && cycle
+      ? plan.pricing.find((c) => c.code === cycle)
+      : plan?.pricing.find((c) => c.code === "recurring_monthly") ??
+        plan?.pricing.find((c) => c.code === "monthly");
+
   /*
    * The checkout state: once an order exists the QR block shows the channel's real code and this
    * dialog polls the order (the page reads it back; see the poll below) until the money lands or
@@ -69,17 +121,40 @@ export function UpgradeDialog({
   const [order, setOrder] = useState<PurchaseOrderView | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
-
-  const plan = catalog[selected];
-  const cycleEntry = plan?.pricing.find((c) => c.code === cycle);
+  // The QR drawn locally: the payload rendered to a data URL the <img> can show.
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (order?.checkout?.kind !== "qrcode") {
+      setQrDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void QRCode.toDataURL(order.checkout.payload, {
+      margin: 1,
+      width: 280,
+      color: { dark: "#000000", light: "#ffffff" },
+    })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.checkout?.kind, order?.checkout]);
 
   const startCheckout = async () => {
+    if (!provider || !cycle) return;
     setPayError(null);
     setPaying(true);
     try {
+      // The contract the server validates: plan, the CONFIGURED channel, an OFFERED cycle.
       const created = await createPurchase({
         planCode: selected,
-        provider: "alipay",
+        provider,
+        cycle,
       });
       setOrder(created);
     } catch (error) {
@@ -97,7 +172,6 @@ export function UpgradeDialog({
    * page's PurchaseFlow does (POLL_INTERVAL_MS there); without it a reader who paid sees
    * "订单待支付" forever until somebody else asks the channel.
    */
-  const queryClient = useQueryClient();
   const orderRef = useRef(order);
   orderRef.current = order;
   useEffect(() => {
@@ -165,65 +239,87 @@ export function UpgradeDialog({
             ))}
           </div>
 
-          {/* The four billing cycles; the chosen one is ringed. */}
-          {plan ? (
+          {/* The billing cycles the SERVER offers (not the display catalog's wider set): v1
+              shows the monthly spellings; yearly is absent until the provider can activate it. */}
+          {purchaseCatalog && purchaseCatalog.cycles.length > 0 ? (
             <div className="grid grid-cols-2 gap-2">
-              {plan.pricing.map((c) => (
-                <button
-                  key={c.code}
-                  type="button"
-                  onClick={() => setCycle(c.code)}
-                  className={cn(
-                    "flex flex-col gap-0.5 rounded-xl border p-3 text-left transition-colors",
-                    cycle === c.code
-                      ? "border-primary ring-2 ring-primary/50"
-                      : "border-border hover:border-muted-foreground",
-                  )}
-                >
-                  <span className="flex items-center gap-2 text-sm font-medium">
-                    {c.label}
-                    {c.discountLabel ? (
-                      <span className="text-success text-xs">
-                        {c.discountLabel}
+              {purchaseCatalog.cycles.map((code) => {
+                const pricing = plan?.pricing.find((c) => c.code === code);
+                if (!pricing) return null;
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setCycle(code)}
+                    className={cn(
+                      "flex flex-col gap-0.5 rounded-xl border p-3 text-left transition-colors",
+                      cycle === code
+                        ? "border-primary ring-2 ring-primary/50"
+                        : "border-border hover:border-muted-foreground",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      {pricing.label}
+                      {pricing.discountLabel ? (
+                        <span className="text-success text-xs">
+                          {pricing.discountLabel}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="tabular-nums">
+                      {yuan(pricing.priceCents)}
+                      <span className="text-muted-foreground text-xs">
+                        /{t(`upgradeDialog.unit.${pricing.unit}`)}
+                      </span>
+                    </span>
+                    {pricing.originalCents ? (
+                      <span className="text-muted-foreground text-xs line-through tabular-nums">
+                        {yuan(pricing.originalCents)}
                       </span>
                     ) : null}
-                  </span>
-                  <span className="tabular-nums">
-                    {yuan(c.priceCents)}
-                    <span className="text-muted-foreground text-xs">
-                      /{t(`upgradeDialog.unit.${c.unit}`)}
-                    </span>
-                  </span>
-                  {c.originalCents ? (
-                    <span className="text-muted-foreground text-xs line-through tabular-nums">
-                      {yuan(c.originalCents)}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
 
-          {/* The plan-compare entry the design shows under the cycles. Links out in phase three;
-              present now so the layout matches. */}
-          <button
-            type="button"
-            className="text-muted-foreground hover:text-foreground self-start text-sm hover:underline"
-            onClick={() => {
-              /* Phase three: the comparison page/route. */
-            }}
-          >
-            {t("upgradeDialog.comparePlans")} &gt;
-          </button>
+          {/* The channel choice, from the configured channels only. A one-channel deployment
+              renders one row (a fact, not a broken chooser); the purchase names what it shows. */}
+          {purchaseCatalog && purchaseCatalog.providers.length > 0 ? (
+            <div className="space-y-1">
+              <p className="text-muted-foreground text-xs">
+                {t("upgradeDialog.payWith")}
+              </p>
+              <div className="flex gap-2">
+                {purchaseCatalog.providers.map((channel) => (
+                  <button
+                    key={channel}
+                    type="button"
+                    onClick={() => setProvider(channel)}
+                    className={cn(
+                      "rounded-xl border px-4 py-2 text-sm transition-colors",
+                      provider === channel
+                        ? "border-primary ring-2 ring-primary/50"
+                        : "border-border hover:border-muted-foreground",
+                    )}
+                  >
+                    {t(`upgradeDialog.provider.${channel}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {/* The checkout summary and the scan-to-pay block. Once an order exists the block shows
               the channel's real QR payload; before that it is the design's placeholder. */}
           {cycleEntry ? (
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              {order?.checkout?.kind === "qrcode" ? (
+              {qrDataUrl ? (
                 <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-lg border bg-card p-2 text-center">
+                  {/* Drawn locally from the payload — the payment credential never leaves this
+                      tab (the old public QR-render service was an egress nobody accepted). */}
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=280&data=${encodeURIComponent(order.checkout.payload)}`}
+                    src={qrDataUrl}
                     alt={t("upgradeDialog.qrPlaceholder")}
                     className="h-full w-full object-contain"
                   />
@@ -250,6 +346,8 @@ export function UpgradeDialog({
                     date: formatDate(validUntilOf(cycleEntry.code)),
                   })}
                 </p>
+                {/* The renewal line says what v1 DOES: renewal is another purchase. The old
+                    "到期前一天自动续费" promised a scheduler that does not exist. */}
                 <p className="text-muted-foreground text-xs">
                   {t("upgradeDialog.autoRenew")}
                 </p>
@@ -298,7 +396,14 @@ export function UpgradeDialog({
             {t("billing.cancel")}
           </Button>
           <Button
-            disabled={!agreed || !cycleEntry || paying || purchaseBlocked}
+            disabled={
+              !agreed ||
+              !cycleEntry ||
+              !provider ||
+              !cycle ||
+              paying ||
+              purchaseBlocked
+            }
             onClick={() => void startCheckout()}
           >
             {paying ? t("upgradeDialog.paying") : t("upgradeDialog.pay")}
@@ -318,7 +423,8 @@ function yuan(cents: number): string {
 
 /**
  * When the period being bought ends: one cycle from today, the same date the design's summary
- * shows ("有效期至 2026-11-11"). A local fact until checkout exists; the order will carry its own.
+ * shows ("有效期至 2026-11-11"). The settled order carries its own period; this is the
+ * pre-checkout estimate the summary shows beside it.
  */
 function validUntilOf(code: PlanCatalogCycle["code"]): Date {
   const end = new Date();

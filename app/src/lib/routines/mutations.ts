@@ -49,7 +49,7 @@ export function runRoutineNowMutationOptions(queryClient: QueryClient) {
     mutationFn: (id: string) =>
       client(`/api/routines/${encodeURIComponent(id)}/run`, {
         method: "POST",
-        fallback: "That routine could not be started.",
+        fallbackKey: "routines.start",
       }),
     onSuccess: () => invalidateRoutines(queryClient),
   });

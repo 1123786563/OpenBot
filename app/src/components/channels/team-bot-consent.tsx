@@ -81,7 +81,7 @@ export function TeamBotConsentCard({
         </div>
       )}
       {answer.error ? (
-        <p className="text-destructive" role="alert">
+        <p className="mt-2 text-destructive text-sm" role="alert">
           {answer.error.message}
         </p>
       ) : null}

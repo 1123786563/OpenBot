@@ -58,7 +58,7 @@ export function peopleListQueryOptions(search = "") {
       const suffix = query.size > 0 ? `?${query}` : "";
 
       return client(`/api/admin/people${suffix}`, {
-        fallback: "Could not load people",
+        fallbackKey: "people.load",
       }).then((response) => response.json() as Promise<PeoplePage>);
     },
     getNextPageParam: (page: PeoplePage) => page.nextCursor ?? undefined,

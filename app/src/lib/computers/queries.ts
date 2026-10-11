@@ -57,7 +57,7 @@ export function computerFleetQueryOptions() {
     queryKey: computerKeys.fleet(),
     queryFn: async (): Promise<ComputerFleet> => {
       const response = await client(FLEET_PATH, {
-        fallback: "The computers could not be listed.",
+        fallbackKey: "computers.list",
       });
       return response.json();
     },
@@ -69,7 +69,7 @@ export function actionPolicyQueryOptions() {
     queryKey: computerKeys.policy(),
     queryFn: (): Promise<ActionPolicy> =>
       client("/api/computers/policy", "policy", {
-        fallback: "The boundary could not be read.",
+        fallbackKey: "computers.readBoundary",
       }),
   });
 }
@@ -111,6 +111,6 @@ export async function dryRunActionPolicy(
   return client("/api/computers/policy-dry-run", "report", {
     method: "POST",
     body: { policy: candidate },
-    fallback: "The rule could not be tested against history.",
+    fallbackKey: "computers.testBoundary",
   });
 }

@@ -106,7 +106,7 @@ function ReachabilityPage() {
     >
       <div className="grid gap-5">
         {error && (
-          <p role="alert" className="text-destructive">
+          <p role="alert" className="mt-4 text-destructive text-sm">
             {error.message}
           </p>
         )}

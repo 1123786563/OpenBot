@@ -18,7 +18,7 @@ export function userPreferencesQueryOptions(userId: string | undefined) {
     queryFn: ({ signal }): Promise<UserPreferences> =>
       client("/api/settings/preferences", "preferences", {
         signal,
-        fallback: "Could not load your preferences",
+        fallbackKey: "settings.loadPreferences",
       }),
   });
 }
@@ -53,7 +53,7 @@ export function dismissSelfHostBannerMutationOptions(
       return client("/api/settings/preferences", "preferences", {
         method: "PATCH",
         body: { selfHostBannerDismissed: true },
-        fallback: "Could not save your preferences",
+        fallbackKey: "settings.savePreferences",
       });
     },
     onMutate: () => {
@@ -86,7 +86,7 @@ export function saveUserPreferencesMutationOptions(
       return client("/api/settings/preferences", "preferences", {
         method: "PATCH",
         body: preferences,
-        fallback: "Could not save your preferences",
+        fallbackKey: "settings.savePreferences",
       });
     },
     onSuccess: (preferences) =>

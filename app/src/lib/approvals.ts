@@ -71,7 +71,7 @@ export const approvalInboxOptions = () =>
     queryKey: ["approvals"],
     queryFn: async (): Promise<ApprovalInboxData> => {
       const response = await client("/api/approvals", {
-        fallback: "Your approvals could not be loaded.",
+        fallbackKey: "approvals.load",
       });
       return response.json();
     },
@@ -81,12 +81,12 @@ export const decideApproval = (id: string, decision: ApprovalDecision) =>
   client(`/api/approvals/${encodeURIComponent(id)}/decision`, {
     method: "POST",
     body: { decision },
-    fallback: "Your decision could not be saved.",
+    fallbackKey: "approvals.saveDecision",
   });
 export const revokeApprovalRule = (id: string) =>
   client(`/api/approvals/rules/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    fallback: "The permission could not be revoked.",
+    fallbackKey: "approvals.revoke",
   });
 export const setApprovalEnabled = (enabled: boolean) =>
   setApprovalPreferences({ enabled });
@@ -98,13 +98,13 @@ export const setApprovalPreferences = (input: {
   client("/api/approvals/preferences", {
     method: "PATCH",
     body: input,
-    fallback: "Your approval preference could not be saved.",
+    fallbackKey: "approvals.savePreference",
   });
 export const createApprovalRule = (input: ApprovalRuleInput) =>
   client("/api/approvals/rules", {
     method: "POST",
     body: input,
-    fallback: "The rule could not be saved.",
+    fallbackKey: "approvals.saveRule",
   });
 export const setTeamApprovalSettings = (input: {
   enforceAutoReview?: boolean;
@@ -114,24 +114,24 @@ export const setTeamApprovalSettings = (input: {
   client("/api/approvals/team", {
     method: "PATCH",
     body: input,
-    fallback: "The team setting could not be saved.",
+    fallbackKey: "approvals.saveTeamSetting",
   });
 export const createTeamApprovalRule = (input: ApprovalRuleInput) =>
   client("/api/approvals/team/rules", {
     method: "POST",
     body: input,
-    fallback: "The team rule could not be saved.",
+    fallbackKey: "approvals.saveTeamRule",
   });
 export const revokeTeamApprovalRule = (id: string) =>
   client(`/api/approvals/team/rules/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    fallback: "The team rule could not be removed.",
+    fallbackKey: "approvals.removeTeamRule",
   });
 export const answerPersonQuestion = (id: string, response: string) =>
   client(`/api/approvals/questions/${encodeURIComponent(id)}/respond`, {
     method: "POST",
     body: { response },
-    fallback: "Your answer could not be saved.",
+    fallbackKey: "teamBots.saveAnswer",
   });
 export const updateApprovalRule = (
   id: string,
@@ -140,7 +140,7 @@ export const updateApprovalRule = (
   client(`/api/approvals/rules/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
-    fallback: "The rule could not be changed.",
+    fallbackKey: "approvals.changeRule",
   });
 export const updateTeamApprovalRule = (
   id: string,
@@ -149,5 +149,5 @@ export const updateTeamApprovalRule = (
   client(`/api/approvals/team/rules/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
-    fallback: "The team rule could not be changed.",
+    fallbackKey: "approvals.changeTeamRule",
   });

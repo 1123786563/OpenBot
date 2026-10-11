@@ -8,6 +8,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createWorkshopSchedule,
   deleteWorkshopSchedule,
@@ -255,8 +264,8 @@ function CreateScheduleForm({
       aria-label={t("schedules.form.aria")}
     >
       <h3 className="text-sm font-medium">{t("schedules.form.heading")}</h3>
-      <textarea
-        className="mt-2 min-h-16 w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+      <Textarea
+        className="mt-2 min-h-16 w-full text-xs"
         placeholder={t("schedules.form.prompt")}
         value={prompt}
         onChange={(event) => setPrompt(event.target.value)}
@@ -277,37 +286,50 @@ function CreateScheduleForm({
 
       {modeKind === "interval" ? (
         <div className="mt-2 flex items-center gap-2">
-          <input
+          <Input
             type="number"
             min={1}
-            className="h-8 w-20 rounded-md border border-input bg-background px-2 text-xs"
+            className="h-8 w-20 text-xs"
             value={every}
             onChange={(event) => setEvery(Number(event.target.value))}
             aria-label={t("schedules.form.every")}
           />
-          <select
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          <Select
             value={unit}
-            onChange={(event) => setUnit(event.target.value as typeof unit)}
-            aria-label={t("schedules.form.unitLabel")}
+            onValueChange={(value) => setUnit(value as typeof unit)}
           >
-            <option value="minutes">{t("schedules.form.unit.minutes")}</option>
-            <option value="hours">{t("schedules.form.unit.hours")}</option>
-            <option value="days">{t("schedules.form.unit.days")}</option>
-          </select>
+            <SelectTrigger
+              size="sm"
+              className="h-8 w-auto text-xs"
+              aria-label={t("schedules.form.unitLabel")}
+            >
+              <SelectValue>{t(`schedules.form.unit.${unit}`)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="minutes">
+                {t("schedules.form.unit.minutes")}
+              </SelectItem>
+              <SelectItem value="hours">
+                {t("schedules.form.unit.hours")}
+              </SelectItem>
+              <SelectItem value="days">
+                {t("schedules.form.unit.days")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       ) : modeKind === "daily" ? (
-        <input
+        <Input
           type="time"
-          className="mt-2 h-8 rounded-md border border-input bg-background px-2 text-xs"
+          className="mt-2 h-8 w-24 text-xs"
           value={time}
           onChange={(event) => setTime(event.target.value)}
           aria-label={t("schedules.form.time")}
         />
       ) : (
-        <input
+        <Input
           type="text"
-          className="mt-2 h-8 w-full rounded-md border border-input bg-background px-2 font-mono text-xs"
+          className="mt-2 w-full font-mono text-xs"
           placeholder={t("schedules.form.cron")}
           value={cron}
           onChange={(event) => setCron(event.target.value)}
@@ -318,10 +340,10 @@ function CreateScheduleForm({
         <label className="text-xs text-muted-foreground" htmlFor="sched-tools">
           {t("schedules.form.tools")}
         </label>
-        <input
+        <Input
           id="sched-tools"
           type="text"
-          className="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+          className="h-8 w-40 text-xs"
           placeholder="python, bash"
           value={tools}
           onChange={(event) => setTools(event.target.value)}
@@ -332,12 +354,12 @@ function CreateScheduleForm({
         >
           {t("schedules.form.maxTurns")}
         </label>
-        <input
+        <Input
           id="sched-max"
           type="number"
           min={1}
           max={20}
-          className="h-8 w-16 rounded-md border border-input bg-background px-2 text-xs"
+          className="h-8 w-16 text-xs"
           value={maxTurns}
           onChange={(event) => setMaxTurns(Number(event.target.value))}
         />

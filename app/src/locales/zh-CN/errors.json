@@ -1,1 +1,249 @@
-{}
+{
+  "generic": {
+    "requestFailed": "请求失败。"
+  },
+  "agents": {
+    "load": "无法加载同事",
+    "loadOne": "无法加载这位同事",
+    "loadSupport": "无法加载此部署支持的能力",
+    "loadDelegation": "无法加载这位 Bot 可以求助哪些 Bot",
+    "change": "无法更改这位 Agent。"
+  },
+  "approvals": {
+    "load": "无法加载你的审批。",
+    "saveDecision": "无法保存你的决定。",
+    "revoke": "无法撤销该权限。",
+    "savePreference": "无法保存你的审批偏好。",
+    "saveRule": "无法保存该规则。",
+    "changeRule": "无法更改该规则。",
+    "saveTeamSetting": "无法保存该团队设置。",
+    "saveTeamRule": "无法保存该团队规则。",
+    "changeTeamRule": "无法更改该团队规则。",
+    "removeTeamRule": "无法移除该团队规则。"
+  },
+  "audit": {
+    "load": "无法加载审计事件"
+  },
+  "auth": {
+    "loadSignIn": "无法加载登录信息",
+    "signOut": "无法退出登录"
+  },
+  "billing": {
+    "loadEntitlements": "无法加载你的权益。",
+    "loadBill": "无法加载该账单。",
+    "loadPurchase": "无法加载该购买记录。",
+    "loadLatestPurchase": "无法加载你最近的一次购买。"
+  },
+  "botLifecycle": {
+    "loadNeeds": "无法加载你的 Bots 需要什么",
+    "loadState": "无法加载这位 Bot 的状态",
+    "loadActivity": "无法加载这位 Bot 的活动",
+    "countReset": "无法统计重置将删除的内容",
+    "loadUpdates": "无法加载你的通知去向",
+    "saveUpdates": "无法保存通知去向",
+    "reset": "无法重置这位 Bot",
+    "stopDelegated": "无法停止已委托的任务",
+    "cancelFollowUp": "无法取消该跟进"
+  },
+  "channels": {
+    "load": "无法加载频道",
+    "loadOne": "无法加载此频道",
+    "start": "无法开始对话",
+    "pin": "无法置顶此频道",
+    "markRead": "无法将此频道标为已读",
+    "delete": "无法删除此频道"
+  },
+  "components": {
+    "load": "无法加载组件。",
+    "loadForBot": "无法加载这位 Bot 的组件。",
+    "loadDataFunctions": "无法加载数据函数。"
+  },
+  "computers": {
+    "list": "无法列出计算机。",
+    "readBoundary": "无法读取边界。",
+    "testBoundary": "无法针对历史测试该规则。",
+    "saveBoundary": "无法保存边界。",
+    "loadFolderAccess": "无法加载文件夹访问权限。",
+    "openFolderChooser": "桌面应用无法打开文件夹选择器。",
+    "revokeFolder": "无法撤销主机文件夹授权。",
+    "stopFolder": "无法停止主机文件夹访问。",
+    "stateWithAction": {
+      "stop": "无法停止该计算机。",
+      "reset": "无法重置该计算机。",
+      "update": "无法更新该计算机。"
+    }
+  },
+  "credentials": {
+    "load": "无法加载凭据",
+    "operation": "凭据操作失败",
+    "store": "无法保存令牌。"
+  },
+  "delivery": {
+    "load": "无法加载触达方式",
+    "verifyPhone": "无法验证此手机号",
+    "confirmPhone": "无法确认此手机号",
+    "disconnect": "无法断开连接",
+    "removeDevice": "无法移除此设备"
+  },
+  "demonstrations": {
+    "load": "无法加载演示记录",
+    "start": "无法开始录制",
+    "stop": "无法停止录制",
+    "draft": "无法起草技能",
+    "link": "技能已保存，但无法关联其演示",
+    "delete": "无法删除该演示",
+    "schedule": "无法为该技能设置定时"
+  },
+  "deployment": {
+    "loadCapabilities": "无法加载此部署的能力。"
+  },
+  "enterprise": {
+    "loadControls": "无法加载企业控制项",
+    "loadModelUsage": "无法加载模型用量",
+    "loadActions": "无法加载已记录的操作",
+    "stopComputers": "无法停止此人的计算机",
+    "sweep": "无法清理闲置计算机",
+    "saveControl": "无法保存该企业控制项"
+  },
+  "enterpriseTenant": {
+    "loadTenants": "无法加载你的租户",
+    "loadChannels": "无法加载你的频道",
+    "loadChannel": "无法加载该频道",
+    "openChannel": "无法打开该频道",
+    "archiveChannel": "无法归档该频道"
+  },
+  "groups": {
+    "load": "无法加载此群组对话。",
+    "send": "无法向群组发送你的消息。",
+    "start": "无法创建该群组。",
+    "addPerson": "无法添加此人。",
+    "removePerson": "无法移除此人。"
+  },
+  "identityProviders": {
+    "load": "无法加载身份提供方"
+  },
+  "knowledge": {
+    "service": "知识服务出错。"
+  },
+  "learning": {
+    "loadSettings": "无法加载学习设置。",
+    "loadStatus": "无法加载学习状态。",
+    "loadDelivery": "无法加载技能下发状态。",
+    "saveSettings": "无法保存学习设置。"
+  },
+  "marketplace": {
+    "load": "无法加载市场。",
+    "install": "安装失败，请重试。",
+    "uninstall": "卸载失败，请重试。"
+  },
+  "memory": {
+    "load": "无法加载记忆",
+    "loadSources": "无法加载记忆来源",
+    "loadActions": "无法加载已连接应用的操作",
+    "remember": "无法记住该事实",
+    "update": "无法更新记忆",
+    "forget": "无法忘记该记忆",
+    "addSource": "无法添加该来源",
+    "changeSource": "无法更改该来源"
+  },
+  "package": {
+    "loadActive": "无法加载当前套餐"
+  },
+  "passwords": {
+    "loadRequest": "无法加载此登录请求",
+    "load": "无法加载你的密码",
+    "delete": "无法删除该密码",
+    "complete": "无法完成登录"
+  },
+  "people": {
+    "load": "无法加载人员"
+  },
+  "plugins": {
+    "loadAccounts": "无法加载你的已连接账号。",
+    "loadPlugins": "无法加载插件。",
+    "loadComposio": "无法读取 Composio 的应用目录。",
+    "loadOpenConnector": "无法读取 OpenConnector 的应用目录。",
+    "loadForBot": "无法读取这位 Bot 的插件。",
+    "readSwitch": "无法读取切换会产生的影响。",
+    "switchFailed": "切换未完成，未做任何更改。",
+    "saveSkill": "无法保存该技能。",
+    "registerOAuth": "无法注册该 OAuth 客户端。",
+    "confirm": "无法确认该连接。",
+    "disconnect": "无法断开该账号。",
+    "needs": "无法询问该应用需要什么。",
+    "check": "无法检查该连接。",
+    "addApp": "无法添加该应用。",
+    "connectAccount": "无法连接该账号。",
+    "generic": "操作失败。"
+  },
+  "proactive": {
+    "loadResearch": "无法加载后台研究",
+    "loadSuggestions": "无法加载建议",
+    "turnOn": "无法开启后台研究",
+    "change": "无法更改后台研究",
+    "start": "无法开始后台研究",
+    "remove": "无法移除后台研究"
+  },
+  "responsibilities": {
+    "load": "无法加载职责",
+    "loadRuns": "无法加载职责运行记录",
+    "loadSources": "无法加载 GitHub 事件来源",
+    "create": "无法创建职责",
+    "update": "无法更新职责",
+    "change": "无法更改职责",
+    "connect": "无法连接 GitHub 事件",
+    "disconnect": "无法断开 GitHub 事件",
+    "loadTriggers": "无法加载触发器",
+    "addTrigger": "无法添加该触发器",
+    "changeTriggerSecret": "无法更改触发器密钥",
+    "readTriggerSecret": "无法读取触发器密钥",
+    "removeTrigger": "无法移除该触发器",
+    "changeTrigger": "无法更改该触发器"
+  },
+  "routines": {
+    "load": "无法加载你的例程。",
+    "loadRuns": "无法加载此例程的运行记录。",
+    "start": "无法启动该例程。"
+  },
+  "sandboxed": {
+    "loadPlayground": "无法加载 Playground 的组件。",
+    "loadPublished": "无法加载已发布的组件。"
+  },
+  "settings": {
+    "loadInstructions": "无法加载你的常用指令",
+    "loadPreferences": "无法加载你的偏好",
+    "saveInstructions": "无法保存你的常用指令",
+    "savePreferences": "无法保存你的偏好"
+  },
+  "teamBots": {
+    "load": "无法加载团队 Bots。",
+    "publish": "无法发布该 Bot。",
+    "unpublish": "无法取消发布该 Bot。",
+    "saveAssignment": "无法保存该指派。",
+    "clearPreferences": "无法清除你的连接器偏好。",
+    "saveAnswer": "无法保存你的回答。"
+  },
+  "voice": {
+    "loadChats": "无法加载语音对话。"
+  },
+  "workshop": {
+    "load": "无法加载工作台。",
+    "startTurn": "无法开始该轮对话。",
+    "stopTurn": "无法停止该轮对话。",
+    "loadEvents": "无法加载该轮对话的事件。",
+    "loadFiles": "无法列出文件。",
+    "createShare": "无法创建分享链接。",
+    "revokeShare": "无法撤销分享链接。",
+    "loadSchedules": "无法加载定时任务。",
+    "createSchedule": "无法创建该定时任务。",
+    "toggleSchedule": "无法启停该定时任务。",
+    "deleteSchedule": "无法删除该定时任务。",
+    "reset": "无法重置工作区。"
+  },
+  "pluginSharedUse": {
+    "loadRequests": "无法加载共享账号请求。",
+    "loadForBot": "无法加载这位 Bot 的共享应用。",
+    "saveDecision": "无法保存该决定。",
+    "send": "无法发送该请求。"
+  }
+}

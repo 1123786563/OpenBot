@@ -260,7 +260,7 @@ function AddDocument({ kbId }: { kbId: string }) {
         </Button>
       ) : null}
       {add.error && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {add.error.message}
         </p>
       )}

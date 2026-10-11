@@ -1,6 +1,7 @@
 import { IconCheck, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import type * as React from "react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -195,26 +196,24 @@ export function WbPrimaryButton({
   children,
   ...props
 }: React.ComponentProps<"button">) {
+  /*
+   * Delegates to the system Button for states (hover 80%, ring-3 focus, 1px press, disabled) and
+   * keeps only the WB sizing (px-3.5) here — the states were the drift: opacity-85 hover and no
+   * focus ring read as a different product next to every other button on a market page.
+   */
   return (
-    <button
-      className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85 disabled:pointer-events-none disabled:opacity-50",
-        className,
-      )}
-      type="button"
-      {...props}
-    >
+    <Button className={cn("px-3.5", className)} {...props}>
       {children}
-    </button>
+    </Button>
   );
 }
 
 /** The same black verb as a router link (a button cannot nest one). */
 export function WbPrimaryLink(props: LinkProps) {
   return (
-    <Link
-      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
-      {...props}
+    <Button
+      className="px-3.5"
+      render={(buttonProps) => <Link {...props} {...buttonProps} />}
     />
   );
 }
@@ -226,16 +225,9 @@ export function WbSecondaryButton({
   ...props
 }: React.ComponentProps<"button">) {
   return (
-    <button
-      className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.03] disabled:pointer-events-none disabled:opacity-50",
-        className,
-      )}
-      type="button"
-      {...props}
-    >
+    <Button variant="outline" className={cn("px-3", className)} {...props}>
       {children}
-    </button>
+    </Button>
   );
 }
 

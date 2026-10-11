@@ -37,7 +37,7 @@ export function voiceSessionQueryOptions(channelId: string) {
         if (cursor) params.set("cursor", cursor);
         const response = await client(`/api/voice/sessions?${params}`, {
           signal,
-          fallback: "Could not load voice chats.",
+          fallbackKey: "voice.loadChats",
         });
         const page = (await response.json()) as VoiceSessionPage;
         sessions.push(...page.sessions);

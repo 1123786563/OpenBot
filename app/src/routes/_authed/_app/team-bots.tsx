@@ -328,7 +328,7 @@ function Assignments({ bot }: { bot: TeamBot }) {
         </Button>
       </form>
       {assign.error ? (
-        <span className="text-destructive" role="alert">
+        <span className="mt-4 text-destructive text-sm" role="alert">
           {assign.error.message}
         </span>
       ) : null}

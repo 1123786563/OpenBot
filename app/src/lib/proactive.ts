@@ -33,7 +33,7 @@ export const proactiveSettingsQueryOptions = () =>
     queryKey: proactiveKeys.settings,
     queryFn: (): Promise<ProactiveSetting[]> =>
       client("/api/proactive/settings", "settings", {
-        fallback: "Could not load background research",
+        fallbackKey: "proactive.loadResearch",
       }),
     refetchInterval: 30_000,
   });
@@ -42,7 +42,7 @@ export const proactiveSuggestionsQueryOptions = () =>
     queryKey: proactiveKeys.suggestions,
     queryFn: (): Promise<ProactiveSuggestion[]> =>
       client("/api/proactive/suggestions", "suggestions", {
-        fallback: "Could not load suggestions",
+        fallbackKey: "proactive.loadSuggestions",
       }),
     refetchInterval: 30_000,
   });
@@ -56,7 +56,7 @@ export const createProactiveSetting = (input: {
   client("/api/proactive/settings", {
     method: "POST",
     body: input,
-    fallback: "Could not turn on background research",
+    fallbackKey: "proactive.turnOn",
   });
 export const updateProactiveSetting = (
   id: string,
@@ -65,17 +65,17 @@ export const updateProactiveSetting = (
   client(`/api/proactive/settings/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
-    fallback: "Could not change background research",
+    fallbackKey: "proactive.change",
   });
 export const runProactiveNow = (id: string) =>
   client(`/api/proactive/settings/${encodeURIComponent(id)}/run`, {
     method: "POST",
-    fallback: "Could not start background research",
+    fallbackKey: "proactive.start",
   });
 export const removeProactiveSetting = (id: string) =>
   client(`/api/proactive/settings/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    fallback: "Could not remove background research",
+    fallbackKey: "proactive.remove",
   });
 export const resolveSuggestion = (id: string, action: "start" | "dismiss") =>
   client(`/api/proactive/suggestions/${encodeURIComponent(id)}/${action}`, {

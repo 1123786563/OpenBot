@@ -22,7 +22,7 @@ export function instructionsQueryOptions() {
     queryKey: settingsKeys.instructions(),
     queryFn: async (): Promise<string> =>
       client("/api/settings/instructions", "instructions", {
-        fallback: "Could not load your standing instructions",
+        fallbackKey: "settings.loadInstructions",
       }),
   });
 }

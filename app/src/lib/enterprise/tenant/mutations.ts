@@ -46,7 +46,7 @@ export function createChannelMutationOptions(
         method: "POST",
         body: { botId: variables.botId, clientRequestId: crypto.randomUUID() },
         tenantId,
-        fallback: "Could not open that channel",
+        fallbackKey: "enterpriseTenant.openChannel",
       });
       return (await response.json()) as PersonalConversation;
     },
@@ -69,7 +69,7 @@ export function archiveChannelMutationOptions(
         {
           method: "POST",
           tenantId,
-          fallback: "Could not archive that channel",
+          fallbackKey: "enterpriseTenant.archiveChannel",
         },
       );
       return (await response.json()) as PersonalConversation;
