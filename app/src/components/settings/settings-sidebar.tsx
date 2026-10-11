@@ -6,8 +6,6 @@ import {
   IconPlug,
   IconReceipt,
   IconSettings,
-  IconShieldCheck,
-  IconShoppingCart,
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
@@ -59,26 +57,8 @@ const ITEMS = [
   },
   {
     /*
-     * What the deployment's plan unlocks. The plan's own name is the provider's word, not this UI's.
-     * Now `exact`: `/settings/billing` prefixes the subscribe page beneath it, and a non-exact entry
-     * would stay lit there — the same reason General above is exact.
-     */
-    title: "sidebar.entitlements",
-    icon: IconShieldCheck,
-    exact: true,
-    linkOptions: { to: "/settings/billing" },
-  },
-  {
-    /* Buying the plan itself: catalog, QR payment, and the order until it settles. */
-    title: "sidebar.subscribe",
-    icon: IconShoppingCart,
-    exact: false,
-    linkOptions: { to: "/settings/billing/subscribe" },
-  },
-  {
-    /*
-     * What has been used of that plan, and how much of each resource is left — the screen a person
-     * opens when something stops and they want to know whether they ran out.
+     * 套餐与积分: the plan, its base credits, reward credits and every spend — the new system
+     * that replaced the old entitlements and subscribe screens.
      */
     title: "sidebar.plansUsage",
     icon: IconChartBar,

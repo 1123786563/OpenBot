@@ -38,5 +38,87 @@
     "search": "没有匹配“{{query}}”的内容。"
   },
   "loadError": "市场加载失败。",
-  "loading": "加载中…"
+  "loading": "加载中…",
+  "wb": {
+    "myExperts": "我的专家",
+    "createExpert": "创建专家",
+    "addSkill": "添加技能",
+    "customConnector": "自定义连接器",
+    "installedCount": "已安装 ({{count}})",
+    "featured": "精选场景",
+    "featuredSkills": "精选技能",
+    "shuffle": "换一批",
+    "expertCenter": "专家中心",
+    "viewAll": "查看全部",
+    "backToList": "返回",
+    "searchMine": "搜索我的专家",
+    "countExperts": "专家",
+    "countTeams": "专家团",
+    "segmentMine": "我创建的",
+    "segmentShared": "共享给我的",
+    "segmentMarket": "市场",
+    "segmentMineSkills": "我创建的",
+    "segmentDeployment": "部署提供",
+    "sourceMarket": "市场",
+    "summon": "去对话",
+    "edit": "编辑",
+    "manage": "管理",
+    "helpTitle": "这个专家能做什么",
+    "helpHint": "打开对话即可召唤这位专家：它会带着自己的角色与工具进入频道，与你协作完成任务。",
+    "skillsTitle": "携带的技能",
+    "instructionsTitle": "技能指令",
+    "grantedN": "已授权 {{count}} 个 Bot",
+    "skillsCountN": "{{count}} 项技能",
+    "toolsN": "{{count}} 个工具",
+    "withdrawn": "有 {{count}} 个已授权的工具当前未被该连接器提供；恢复提供后会自动回到可用状态。",
+    "perInstance": {
+      "yes": "专属实例",
+      "no": "共享实例"
+    },
+    "auth": {
+      "none": "无需凭据",
+      "deployment-bearer": "部署凭据",
+      "user-oauth": "用户 OAuth",
+      "builtin": "内置"
+    },
+    "badge": {
+      "system": "系统内置",
+      "team": "团队分配",
+      "pinned": "已置顶"
+    },
+    "stats": {
+      "visibility": "可见性",
+      "runsOn": "运行于",
+      "kind": "类型",
+      "public": "公开",
+      "private": "私有",
+      "builtin": "内置运行时",
+      "selfHosted": "自托管",
+      "kindSystem": "系统内置",
+      "kindTeam": "团队分配",
+      "kindMine": "我创建的",
+      "kindShared": "共享给我",
+      "grantedBots": "授权 Bot",
+      "tools": "工具",
+      "origin": "来源",
+      "category": "分类",
+      "categoriesCount": "分类数",
+      "status": "状态",
+      "credential": "凭据",
+      "configured": "已配置",
+      "notConfigured": "未配置",
+      "notInstalled": "未安装",
+      "sourceBuiltin": "内置目录",
+      "sourceCustom": "自定义",
+      "actions": "可用动作",
+      "perInstance": "实例"
+    },
+    "empty": {
+      "mine": "还没有创建任何专家",
+      "mineHint": "创建一个 Agent，它就会以专家卡的形式出现在这里。",
+      "shared": "暂时没有共享给你的专家。",
+      "skillsMine": "还没有创建任何技能。",
+      "skillsDeployment": "部署没有提供共享技能。"
+    }
+  }
 }

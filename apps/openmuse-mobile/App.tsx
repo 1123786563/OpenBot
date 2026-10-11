@@ -37,6 +37,9 @@ import { ChatScreen, WorkspaceTools } from "./src/chat";
 import { ComputerEntry } from "./src/computer";
 import { ComputerDraftProvider } from "./src/computer-drafts";
 import { Details } from "./src/details";
+import { OpenBotGate, toMuseWorkspace } from "./src/openbot/gate";
+import { openbotBackend, openbotUrl } from "./src/openbot/config";
+import type { OpenBotWorkspace } from "./src/openbot/types";
 import { BrowserScreen, CalendarScreen, FilesScreen, MailScreen } from "./src/screens";
 import { ThreadsProvider, ThreadsSheet, useMuseThread } from "./src/threads";
 import { Button, Card, colors, ErrorNotice, Field, IconButton, Mascot, s } from "./src/ui";
@@ -67,6 +70,64 @@ const titles: Partial<Record<Section, { title: string; subtitle: string }>> = {
   files: { title: "文件", subtitle: "文档、表单与填写好的副本。" },
 };
 export default function App() {
+  // OpenBot 模式：登录与数据源全部走 OpenBot（src/openbot/）；
+  // openmuse 模式（默认）：维持原有本地链路，保证可随时回退。
+  if (openbotBackend === "openbot") return <OpenBotApp />;
+  return <OpenMuseApp />;
+}
+
+/** OpenBot 数据源外壳：登录门 → 工作区适配 → 复用既有 WorkspaceApp 骨架。 */
+function OpenBotApp() {
+  const [snapshot, setSnapshot] = useState<OpenBotWorkspace>();
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
+      {snapshot ? (
+        <OpenBotWorkspaceApp snapshot={snapshot} />
+      ) : (
+        <OpenBotGate onReady={setSnapshot} />
+      )}
+    </SafeAreaProvider>
+  );
+}
+
+function OpenBotWorkspaceApp({ snapshot }: { snapshot: OpenBotWorkspace }) {
+  const shim = useMemo(() => toMuseWorkspace(snapshot, snapshot.user.id), [snapshot]);
+  return (
+    <WorkspaceContext.Provider
+      value={{
+        workspace: shim as unknown as Workspace,
+        api: { request: async () => ({}) } as unknown as MuseApi,
+        section: "chat",
+        navigate: () => {},
+        refresh: async () => {},
+        open: () => {},
+        close: () => {},
+        notify: () => {},
+        ask: () => {},
+      }}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={["top", "bottom"]}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 14 }}>
+          <Mascot size={64} />
+          <Text style={{ fontSize: 22, color: colors.text, fontWeight: "600" }}>
+            已连接 OpenBot
+          </Text>
+          <Text style={[s.muted, { textAlign: "center" }]}>
+            {openbotUrl} · {snapshot.agents.length} 个 Bot · {snapshot.channels.length} 个会话
+          </Text>
+          <Text style={[s.small, { textAlign: "center", maxWidth: 320 }]}>
+            登录、工作区与会话标识（OpenBotSession）已打通；聊天运行时接入
+            （CopilotKit Runtime）为下一阶段联调项。
+          </Text>
+        </View>
+      </SafeAreaView>
+    </WorkspaceContext.Provider>
+  );
+}
+
+/** 原有 openmuse 本地链路，保持不变。 */
+function OpenMuseApp() {
   const [token, setToken] = useState("");
   const [accessKey, setAccessKey] = useState("");
   const [busy, setBusy] = useState(true);

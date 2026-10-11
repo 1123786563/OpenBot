@@ -1,32 +1,41 @@
 import {
-  IconCheck,
-  IconMessage,
+  IconBolt,
+  IconPencil,
   IconPlug,
-  IconPlus,
   IconSearch,
-  IconShoppingBag,
-  IconTrash,
+  IconSparkles,
+  IconUser,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { PageShell } from "@/components/layout/page-shell";
-import { PluginLogo } from "@/components/plugins/plugin-logo";
-import { Button } from "@/components/ui/button";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import { ConnectorDialogWb, ConnectorsPane, type ConnectorSubject } from "@/components/market/connectors-pane";
+import {
+  AgentDialogWb,
+  ExpertsPane,
+  TemplateDialogWb,
+} from "@/components/market/experts-pane";
+import { MyExpertsView } from "@/components/market/my-experts-view";
+import {
+  SkillDialogWb,
+  SkillsPane,
+  type SkillSubject,
+} from "@/components/market/skills-pane";
+import { WbCardSkeleton, WbSecondaryButton } from "@/components/market/wb";
+import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   installExpertMutationOptions,
   installMarketSkillMutationOptions,
+  invalidateMarketplace,
   uninstallExpertMutationOptions,
   uninstallMarketSkillMutationOptions,
 } from "@/lib/marketplace/mutations";
 import {
   type MarketExpert,
   marketplaceQueryOptions,
-  type MarketSkill,
 } from "@/lib/marketplace/queries";
 import {
   addCuratedServerMutationOptions,
@@ -40,23 +49,24 @@ import {
   openConnectorAppsQueryOptions,
   pluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
-import { invalidateMarketplace } from "@/lib/marketplace/mutations";
 import { queryClient } from "@/query-client";
+import { cn } from "@/lib/utils";
 
 /**
- * The marketplace: packaged experts, skills and connectors on cards, installed with one press.
+ * The marketplace, drawn in the WorkBuddy client's 专家·技能·连接器 layout (v5.7.7): one sticky
+ * top bar with the three shelves as tabs, a search box and at most one verb on the right, and
+ * each shelf carrying WorkBuddy's own sections — featured scenario cards and an expert centre for
+ * 专家, a featured pair and shelf sub-tabs for 技能, a flat icon-card grid for 连接器 — with
+ * WorkBuddy's detail dialog presenting whichever card was opened.
  *
- * Three shelves in one page because they answer one question — "what can I add to make my Bots more
- * capable" — and because the alternative is three near-identical pages. Each shelf draws from where
- * its truth lives: experts and skills from the catalogue endpoint (which knows what this person has
- * installed), connectors from the plugin screens' own sources, so an install made anywhere shows as
- * installed here.
+ * THE MAPPING THE PAGE EXISTS TO SHOW: an OpenBot Agent is a WB expert (「我的专家」 renders the
+ * roster), an OpenBot skill is a WB skill, an OpenBot plugin is a WB connector. Every card draws
+ * only fields the rest of the app already shows.
  *
- * THE CONNECTOR SHELF KEEPS THE GOVERNANCE THE PLUGIN SCREENS ALREADY PUT AROUND CONNECTORS. Adding
- * one is an administrative act — it carries a credential for the deployment — so the install
- * buttons and the broker directories are drawn for an administrator only; everybody else sees what
- * the deployment has and who to ask. Experts and skills are prose and stay per-person installs, the
- * same split the skills page's comment states.
+ * THE CONNECTOR SHELF KEEPS THE GOVERNANCE THE PLUGIN SCREENS ALREADY PUT AROUND CONNECTORS.
+ * Adding one is an administrative act — it carries a credential for the deployment — so install
+ * affordances and the broker directories draw for an administrator only; everybody else sees what
+ * the deployment has and who to ask.
  */
 
 export const Route = createFileRoute("/_authed/_app/market")({
@@ -65,418 +75,13 @@ export const Route = createFileRoute("/_authed/_app/market")({
 
 type Tab = "experts" | "skills" | "connectors";
 
-type ConnectorCardData = {
-  key: string;
-  title: string;
-  description: string;
-  categories: string[];
-  logo: string | null;
-  installed: boolean;
-  source: "catalogue" | "open-connector" | "composio";
-  /** Enabled but with no connected account yet, which is what 去连接 is for. */
-  needsAccount: boolean;
-};
-
-/** The card shell every shelf draws, so the three grids read as one marketplace. */
-function MarketCard({
-  icon,
-  title,
-  subtitle,
-  description,
-  tags,
-  actions,
-  footer,
-}: {
-  icon: React.ReactNode;
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
-  description: React.ReactNode;
-  tags?: React.ReactNode;
-  actions: React.ReactNode;
-  footer?: React.ReactNode;
-}) {
-  return (
-    <div className="group flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-ring/50">
-      <div className="flex items-start gap-3">
-        {icon}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center font-medium leading-tight">
-            <span className="truncate">{title}</span>
-          </div>
-          {subtitle ? (
-            <p className="mt-0.5 truncate text-muted-foreground text-xs">
-              {subtitle}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
-      </div>
-      <p className="line-clamp-2 min-h-10 text-muted-foreground text-sm">
-        {description}
-      </p>
-      <div className="flex flex-wrap gap-1.5 empty:hidden">{tags}</div>
-      {/*
-       * The footer row has the card's full width to itself, which is where the two-button actions
-       * live: in the header they fought the title for width and on a three-column grid the title
-       * lost — squeezed to an ellipsis nobody could read.
-       */}
-      {footer ? (
-        <div className="-mt-1 flex items-center justify-end gap-1.5">{footer}</div>
-      ) : null}
-    </div>
-  );
-}
-
-function TagChip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground text-xs">
-      {children}
-    </span>
-  );
-}
-
-function MarkIcon() {
-  return (
-    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-      <IconPlug className="size-5" />
-    </div>
-  );
-}
-
-function EmojiMark({ glyph }: { glyph: string }) {
-  return (
-    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-xl">
-      {glyph}
-    </div>
-  );
-}
-
-/** The 安装 button and its states, shared by every card that has one. */
-function InstallButton({
-  pending,
-  onClick,
-  label,
-}: {
-  pending: boolean;
-  onClick: () => void;
-  label: { install: string; pending: string };
-}) {
-  return (
-    <Button
-      aria-label={pending ? label.pending : label.install}
-      disabled={pending}
-      onClick={onClick}
-      size="icon-sm"
-      title={pending ? label.pending : label.install}
-      variant="outline"
-    >
-      <IconPlus className="size-4" />
-    </Button>
-  );
-}
-
-function InstalledMark({ label }: { label: string }) {
-  return (
-    <span
-      aria-label={label}
-      className="flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground"
-      title={label}
-    >
-      <IconCheck className="size-4" />
-    </span>
-  );
-}
-
-function UninstallButton({
-  pending,
-  onClick,
-  label,
-}: {
-  pending: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <Button
-      aria-label={label}
-      disabled={pending}
-      onClick={onClick}
-      size="icon-sm"
-      title={label}
-      variant="ghost"
-    >
-      <IconTrash className="size-4 text-muted-foreground" />
-    </Button>
-  );
-}
-
-function ExpertCard({
-  expert,
-  install,
-  uninstall,
-  pending,
-  label,
-}: {
-  expert: MarketExpert;
-  install: () => void;
-  uninstall: () => void;
-  pending: boolean;
-  label: {
-    install: string;
-    installed: string;
-    pending: string;
-    uninstall: string;
-    chat: string;
-  };
-}) {
-  const tags = (
-    <>
-      {expert.tags.map((tag) => (
-        <TagChip key={tag}>{tag}</TagChip>
-      ))}
-      <TagChip>{expert.category}</TagChip>
-    </>
-  );
-  const icon = <EmojiMark glyph={expert.avatar} />;
-  if (expert.installed && expert.agentId) {
-    return (
-      <MarketCard
-        actions={<InstalledMark label={label.installed} />}
-        description={expert.description}
-        footer={
-          <>
-            <Button
-              disabled={pending}
-              onClick={uninstall}
-              size="sm"
-              variant="ghost"
-            >
-              {label.uninstall}
-            </Button>
-            <Button
-              render={(props) => (
-                <Link
-                  {...props}
-                  search={{ agent: expert.agentId ?? undefined }}
-                  to="/agents"
-                />
-              )}
-              size="sm"
-              variant="outline"
-            >
-              <IconMessage className="size-4" />
-              {label.chat}
-            </Button>
-          </>
-        }
-        icon={icon}
-        subtitle={expert.tagline}
-        tags={tags}
-        title={expert.name}
-      />
-    );
-  }
-  return (
-    <MarketCard
-      actions={
-        <InstallButton
-          label={{ install: label.install, pending: label.pending }}
-          onClick={install}
-          pending={pending}
-        />
-      }
-      description={expert.description}
-      icon={icon}
-      subtitle={expert.tagline}
-      tags={tags}
-      title={expert.name}
-    />
-  );
-}
-
-function SkillCard({
-  skill,
-  install,
-  uninstall,
-  pending,
-  label,
-}: {
-  skill: MarketSkill;
-  install: () => void;
-  uninstall: () => void;
-  pending: boolean;
-  label: {
-    install: string;
-    installed: string;
-    pending: string;
-    uninstall: string;
-  };
-}) {
-  return (
-    <MarketCard
-      actions={
-        skill.installed ? (
-          skill.mine ? (
-            <UninstallButton
-              label={label.uninstall}
-              onClick={uninstall}
-              pending={pending}
-            />
-          ) : (
-            <InstalledMark label={label.installed} />
-          )
-        ) : (
-          <InstallButton
-            label={{ install: label.install, pending: label.pending }}
-            onClick={install}
-            pending={pending}
-          />
-        )
-      }
-      description={skill.summary}
-      icon={<EmojiMark glyph={skill.icon} />}
-      tags={
-        <>
-          {/*
-           * The slug is how the skill is invoked, so it sits with the tags where there is room
-           * for it — beside the title it fought the actions for width and every long name lost.
-           */}
-          <TagChip>
-            <code className="font-mono text-foreground/60">/{skill.slug}</code>
-          </TagChip>
-          <TagChip>{skill.category}</TagChip>
-        </>
-      }
-      title={skill.title}
-    />
-  );
-}
-
-function ConnectorCard({
-  entry,
-  install,
-  pending,
-  isAdmin,
-  label,
-}: {
-  entry: ConnectorCardData;
-  install: () => void;
-  pending: boolean;
-  isAdmin: boolean;
-  label: {
-    install: string;
-    installed: string;
-    pending: string;
-    connect: string;
-    contactAdmin: string;
-  };
-}) {
-  const icon = entry.logo ? (
-    <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-      <PluginLogo logo={entry.logo} />
-    </div>
-  ) : (
-    <MarkIcon />
-  );
-  const actions = entry.installed ? (
-    entry.needsAccount ? (
-      <Button
-        render={(props) => (
-          <Link {...props} to="/settings/connected-accounts" />
-        )}
-        size="sm"
-        variant="outline"
-      >
-        {label.connect}
-      </Button>
-    ) : (
-      <InstalledMark label={label.installed} />
-    )
-  ) : isAdmin ? (
-    <InstallButton
-      label={{ install: label.install, pending: label.pending }}
-      onClick={install}
-      pending={pending}
-    />
-  ) : (
-    <span className="text-muted-foreground text-xs">
-      {label.contactAdmin}
-    </span>
-  );
-  return (
-    <MarketCard
-      actions={actions}
-      description={entry.description}
-      icon={icon}
-      tags={entry.categories.slice(0, 3).map((category) => (
-        <TagChip key={category}>{category}</TagChip>
-      ))}
-      title={entry.title}
-    />
-  );
-}
-
-function ConnectorSection({
-  title,
-  cards,
-  install,
-  pending,
-  isAdmin,
-  label,
-}: {
-  title: string;
-  cards: ConnectorCardData[];
-  install: (entry: ConnectorCardData) => void;
-  pending: boolean;
-  isAdmin: boolean;
-  label: {
-    install: string;
-    installed: string;
-    pending: string;
-    connect: string;
-    contactAdmin: string;
-    empty: string;
-  };
-}) {
-  return (
-    <section>
-      <h2 className="font-medium text-sm">{title}</h2>
-      {cards.length === 0 ? (
-        <p className="mt-2 text-muted-foreground text-sm">{label.empty}</p>
-      ) : (
-        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {cards.map((entry) => (
-            <ConnectorCard
-              entry={entry}
-              install={() => install(entry)}
-              isAdmin={isAdmin}
-              key={`${entry.source}-${entry.key}`}
-              label={label}
-              pending={pending}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function GridEmpty({ label }: { label: string }) {
-  return (
-    <Empty className="mt-4 h-[220px] border border-dashed">
-      <EmptyHeader>
-        <EmptyTitle className="text-muted-foreground">{label}</EmptyTitle>
-      </EmptyHeader>
-    </Empty>
-  );
-}
-
 function MarketPage() {
   const { t } = useTranslation("market");
   const [tab, setTab] = React.useState<Tab>("experts");
+  const [view, setView] = React.useState<"hub" | "mine">("hub");
   const [search, setSearch] = React.useState("");
-  const [installedOnly, setInstalledOnly] = React.useState(false);
   const [category, setCategory] = React.useState<string>("all");
+  const [installedOnly, setInstalledOnly] = React.useState(false);
   // Broker directories take the term server-side; it follows debounce like the admin picker, one
   // round trip per settled term rather than per keystroke.
   const [brokerQuery, setBrokerQuery] = React.useState("");
@@ -487,6 +92,7 @@ function MarketPage() {
 
   const marketplace = useQuery(marketplaceQueryOptions());
   const plugins = useQuery(pluginsPageQueryOptions());
+  const agents = useQuery(agentListQueryOptions());
   const me = useQuery(currentUserQueryOptions());
   const isAdmin = me.data?.role === "admin";
   const connectorsTab = tab === "connectors";
@@ -500,24 +106,24 @@ function MarketPage() {
   });
 
   const [actionError, setActionError] = React.useState<string | null>(null);
-  // Which keys are mid-request, tracked beside one shared mutation per kind — the same shape the
+  // Which kinds are mid-request, tracked beside one shared mutation per kind — the same shape the
   // admin picker uses, because one observer cannot describe more than the most recent press.
   //
   // THE SETTLED HANDLER HERE IS THE WHOLE REFETCH, NOT ONLY THE BOOKKEEPING. Spreading `track()`
-  // over mutation options replaces their `onSettled` rather than running beside it (the exact trap
-  // the admin picker's comment warns about), so the refetch the factories carry has to happen
-  // HERE: without it, a press succeeded at the server and the card never heard about it.
+  // over mutation options replaces their `onSettled` rather than running beside it, so the refetch
+  // the factories carry has to happen HERE: without it, a press succeeded at the server and the
+  // card never heard about it.
   const [busy, setBusy] = React.useState<ReadonlySet<string>>(new Set());
-  const track = (key: string) => ({
+  const track = (kind: string) => ({
     onMutate: () => {
       setActionError(null);
-      setBusy((held) => new Set(held).add(key));
+      setBusy((held) => new Set(held).add(kind));
     },
     onError: (thrown: Error) => setActionError(thrown.message),
     onSettled: async () => {
       setBusy((held) => {
         const left = new Set(held);
-        left.delete(key);
+        left.delete(kind);
         return left;
       });
       await invalidateMarketplace(queryClient);
@@ -564,279 +170,273 @@ function MarketPage() {
     : [];
 
   const term = search.trim().toLowerCase();
+  const searching = term.length > 0;
   const matches = (...fields: (string | null | undefined)[]) =>
-    term.length === 0 ||
-    fields.some((field) => (field ?? "").toLowerCase().includes(term));
+    !searching || fields.some((field) => (field ?? "").toLowerCase().includes(term));
 
   const experts = (marketplace.data?.experts ?? [])
     .filter((expert) => !installedOnly || expert.installed)
-    .filter((expert) => category === "all" || expert.category === category)
-    .filter((expert) =>
-      matches(expert.name, expert.tagline, expert.description, ...expert.tags),
-    );
+    .filter((expert) => matches(expert.name, expert.tagline, expert.description, ...expert.tags));
 
   const skills = (marketplace.data?.skills ?? [])
     .filter((skill) => !installedOnly || skill.installed)
-    .filter((skill) => category === "all" || skill.category === category)
     .filter((skill) => matches(skill.title, skill.summary, skill.slug));
 
-  const addedServers = new Set((plugins.data?.servers ?? []).map((s) => s.id));
-  const catalogueCards: ConnectorCardData[] = (
-    plugins.data?.catalogue ?? []
-  )
-    .filter((entry) => !installedOnly || addedServers.has(entry.key))
-    .filter((entry) => matches(entry.title, entry.summary, entry.vendor))
-    .map((entry) => ({
-      key: entry.key,
-      title: entry.title,
-      description: entry.summary,
-      categories: [],
-      logo: null,
-      installed: addedServers.has(entry.key),
-      needsAccount: false,
-      source: "catalogue" as const,
-    }));
+  const allSkills = plugins.data?.skills ?? [];
+  const mineSkills = allSkills
+    .filter((skill) => skill.ownerUserId === me.data?.id)
+    .filter((skill) => matches(skill.title, skill.summary, skill.slug));
+  const deploymentSkills = allSkills
+    .filter((skill) => skill.ownerUserId === null)
+    .filter((skill) => matches(skill.title, skill.summary, skill.slug));
 
-  const brokerCards = (
-    apps: ComposioApp[] | undefined,
-    source: "open-connector" | "composio",
-  ): ConnectorCardData[] =>
+  const agentList = (agents.data ?? []).filter((agent) => !agent.hidden);
+
+  const servers = (plugins.data?.servers ?? []).filter((server) =>
+    matches(server.title, server.summary, server.vendor),
+  );
+  const catalogue = (plugins.data?.catalogue ?? [])
+    .filter((entry) => !installedOnly || servers.some((s) => s.id === entry.key))
+    .filter((entry) => matches(entry.title, entry.summary, entry.vendor));
+  const filterBroker = (apps: ComposioApp[] | undefined) =>
     (apps ?? [])
       .filter((app) => !installedOnly || app.enabled)
-      .filter((app) => category === "all" || app.categories.includes(category))
-      .filter((app) => matches(app.name, app.description))
-      .map((app) => ({
-        key: app.slug,
-        title: app.name,
-        description: app.description,
-        categories: app.categories,
-        logo: app.logo,
-        installed: app.enabled,
-        needsAccount: false,
-        source,
-      }));
+      .filter((app) => matches(app.name, app.description));
 
-  const openConnectorCards = brokerCards(
-    openConnector.data?.apps,
-    "open-connector",
-  );
-  const composioCards = brokerCards(composio.data?.apps, "composio");
-
-  const installConnector = (entry: ConnectorCardData) => {
-    if (entry.source === "catalogue") {
-      addCurated.mutate({ key: entry.key });
+  const installConnector = (entry: ConnectorSubject) => {
+    if (entry.kind === "catalogue") {
+      addCurated.mutate({ key: entry.item.key });
       return;
     }
-    if (entry.source === "open-connector") {
-      enableOpenConnector.mutate({ slug: entry.key });
-      return;
+    if (entry.kind === "broker") {
+      if (entry.source === "open-connector") {
+        enableOpenConnector.mutate({ slug: entry.app.slug });
+        return;
+      }
+      enableComposio.mutate({ slug: entry.app.slug });
     }
-    enableComposio.mutate({ slug: entry.key });
   };
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "experts", label: t("tab.experts") },
-    { key: "skills", label: t("tab.skills") },
-    { key: "connectors", label: t("tab.connectors") },
+  const pending = marketplace.isPending || plugins.isPending;
+  const skillBusy = busy.has("skill");
+  const installedSkillCount = (marketplace.data?.skills ?? []).filter(
+    (skill) => skill.installed,
+  ).length;
+
+  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: "experts", label: t("tab.experts"), icon: <IconSparkles className="size-5" /> },
+    { key: "skills", label: t("tab.skills"), icon: <IconBolt className="size-5" /> },
+    { key: "connectors", label: t("tab.connectors"), icon: <IconPlug className="size-5" /> },
   ];
 
-  const cardLabel = {
-    install: t("install"),
-    installed: t("installed"),
-    pending: t("installing"),
-    uninstall: t("uninstall"),
-    connect: t("connect"),
-    contactAdmin: t("contactAdmin"),
-  };
-  const pending = marketplace.isPending || plugins.isPending;
+  // Dialog subjects: one per card kind, held so the dialog survives the re-render a mutation
+  // triggers (the card's data updates underneath, the dialog reads the fresh record).
+  const [agentSubject, setAgentSubject] = React.useState<string | null>(null);
+  const [templateSubject, setTemplateSubject] = React.useState<string | null>(null);
+  const [skillSubject, setSkillSubject] = React.useState<SkillSubject | null>(null);
+  const [connectorSubject, setConnectorSubject] = React.useState<
+    Parameters<typeof ConnectorDialogWb>[0]["subject"]
+  >(null);
+
+  const agentOpen = agentList.find((agent) => agent.id === agentSubject) ?? null;
+  const templateOpen =
+    marketplace.data?.experts.find((expert) => expert.slug === templateSubject) ?? null;
 
   return (
-    <PageShell description={t("description")} title={t("title")}>
-      {actionError ? (
-        <p className="text-destructive text-sm" role="alert">
-          {actionError}
-        </p>
-      ) : null}
-
-      {/*
-       * The shelf switcher, the search and the installed filter on one row, the way the reference
-       * marketplace draws them: the tabs are the page's primary navigation and the two narrowing
-       * controls sit at the far edge where a mouse already is.
-       */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1">
-          {tabs.map((entry) => (
-            <button
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                tab === entry.key
-                  ? "bg-background font-medium text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              key={entry.key}
-              onClick={() => {
-                setTab(entry.key);
-                setSearch("");
-                setCategory("all");
-              }}
-              type="button"
-            >
-              {entry.key === "connectors" ? (
-                <IconPlug className="size-4" />
-              ) : (
-                <IconShoppingBag className="size-4" />
-              )}
-              {entry.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative ml-auto">
-          <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label={t("searchAria")}
-            className="w-56 pl-8"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={
-              tab === "experts"
-                ? t("search.experts")
-                : tab === "skills"
-                  ? t("search.skills")
-                  : t("search.connectors")
-            }
-            value={search}
-          />
-        </div>
-        <Button
-          onClick={() => setInstalledOnly((held) => !held)}
-          size="sm"
-          variant={installedOnly ? "default" : "outline"}
-        >
-          {t("installedOnly")}
-        </Button>
-      </div>
-
-      {activeCategories.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <button
-            className={`rounded-full px-3 py-1 text-sm transition-colors ${
-              category === "all"
-                ? "bg-foreground font-medium text-background"
-                : "border border-border text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setCategory("all")}
-            type="button"
-          >
-            {t("category.all")}
-          </button>
-          {activeCategories.map((entry) => (
-            <button
-              className={`rounded-full px-3 py-1 text-sm transition-colors ${
-                category === entry
-                  ? "bg-foreground font-medium text-background"
-                  : "border border-border text-muted-foreground hover:text-foreground"
-              }`}
-              key={entry}
-              onClick={() => setCategory(entry)}
-              type="button"
-            >
-              {entry}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {pending ? null : marketplace.error ? (
-        <p className="mt-6 text-destructive text-sm" role="alert">
-          {marketplace.error.message || t("loadError")}
-        </p>
-      ) : (
-        <div className="mt-5">
-          {tab === "experts" ? (
-            experts.length === 0 ? (
-              <GridEmpty label={t("empty.experts")} />
-            ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {experts.map((expert) => (
-                  <ExpertCard
-                    expert={expert}
-                    install={() => installExpert.mutate(expert.slug)}
-                    key={expert.slug}
-                    label={{
-                      ...cardLabel,
-                      chat: t("chat"),
-                    }}
-                    pending={busy.has("expert")}
-                    uninstall={() => uninstallExpert.mutate(expert.slug)}
-                  />
-                ))}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SidebarToggleBar />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/*
+         * The WorkBuddy top bar: the three shelf tabs at the left, search and the one verb at the
+         * right edge. Sticky, because it is the page's primary navigation and the shelves scroll
+         * under it.
+         */}
+        <div className="sticky top-0 z-20 border-border/60 border-b bg-background/95 backdrop-blur">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3">
+            <nav aria-label={t("title")} className="flex items-center gap-6">
+              {tabs.map((entry) => (
+                <button
+                  className={cn(
+                    "flex items-center gap-1.5 text-base leading-6 font-semibold transition-colors",
+                    tab === entry.key
+                      ? "text-foreground"
+                      : "text-foreground/50 hover:text-foreground",
+                  )}
+                  key={entry.key}
+                  onClick={() => {
+                    setTab(entry.key);
+                    setView("hub");
+                    setSearch("");
+                    setCategory("all");
+                    setInstalledOnly(false);
+                  }}
+                  type="button"
+                >
+                  {entry.icon}
+                  {entry.label}
+                </button>
+              ))}
+            </nav>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground/40" />
+                <input
+                  aria-label={t("searchAria")}
+                  className="h-9 w-56 rounded-lg border border-transparent bg-foreground/[0.04] pr-3 pl-8 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus-visible:border-foreground/20 focus-visible:bg-card"
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={
+                    tab === "experts"
+                      ? t("search.experts")
+                      : tab === "skills"
+                        ? t("search.skills")
+                        : t("search.connectors")
+                  }
+                  value={search}
+                />
               </div>
+              {tab === "experts" && view === "hub" ? (
+                <WbSecondaryButton onClick={() => setView("mine")}>
+                  <IconUser className="size-4" />
+                  {t("wb.myExperts")}
+                </WbSecondaryButton>
+              ) : null}
+              {tab === "skills" ? (
+                <WbSecondaryButton
+                  aria-pressed={installedOnly}
+                  className={cn(
+                    installedOnly &&
+                      "bg-primary text-primary-foreground hover:opacity-85 hover:bg-primary",
+                  )}
+                  onClick={() => setInstalledOnly((held) => !held)}
+                >
+                  {t("wb.installedCount", { count: installedSkillCount })}
+                </WbSecondaryButton>
+              ) : null}
+              {tab === "connectors" && isAdmin ? (
+                <Link
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+                  to="/admin/plugins"
+                >
+                  <IconPencil className="size-4" />
+                  {t("wb.customConnector")}
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 pt-5 pb-12">
+          {actionError ? (
+            <p className="mb-4 text-destructive text-sm" role="alert">
+              {actionError}
+            </p>
+          ) : null}
+
+          {pending ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }, (_, i) => (
+                <WbCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : marketplace.error && tab !== "connectors" ? (
+            <p className="text-destructive text-sm" role="alert">
+              {marketplace.error.message || t("loadError")}
+            </p>
+          ) : tab === "experts" ? (
+            view === "mine" ? (
+              <MyExpertsView
+                agents={agentList}
+                onBack={() => setView("hub")}
+                onOpenAgent={(agent) => setAgentSubject(agent.id)}
+              />
+            ) : (
+              <ExpertsPane
+                agents={agentList}
+                category={category}
+                categories={activeCategories}
+                experts={experts}
+                onCategory={setCategory}
+                onInstall={(slug) => installExpert.mutate(slug)}
+                onOpenAgent={(agent) => setAgentSubject(agent.id)}
+                onOpenMine={() => setView("mine")}
+                onOpenTemplate={(expert) => setTemplateSubject(expert.slug)}
+                onUninstall={(slug) => uninstallExpert.mutate(slug)}
+                pendingInstall={busy.has("expert")}
+                searching={searching}
+              />
             )
           ) : tab === "skills" ? (
-            skills.length === 0 ? (
-              <GridEmpty label={t("empty.skills")} />
-            ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {skills.map((skill) => (
-                  <SkillCard
-                    install={() => installSkill.mutate(skill.slug)}
-                    key={skill.slug}
-                    label={cardLabel}
-                    pending={busy.has("skill")}
-                    skill={skill}
-                    uninstall={() => uninstallSkill.mutate(skill.slug)}
-                  />
-                ))}
-              </div>
-            )
+            <SkillsPane
+              categories={activeCategories}
+              category={category}
+              deploymentSkills={deploymentSkills}
+              marketSkills={skills}
+              mineSkills={mineSkills}
+              onCategory={setCategory}
+              onOpen={setSkillSubject}
+              onToggle={(skill) =>
+                skill.installed && skill.mine
+                  ? uninstallSkill.mutate(skill.slug)
+                  : installSkill.mutate(skill.slug)
+              }
+              pendingInstall={skillBusy}
+              searching={searching}
+            />
           ) : (
-            <div className="space-y-6">
-              {catalogueCards.length > 0 ? (
-                <ConnectorSection
-                  cards={catalogueCards}
-                  install={installConnector}
-                  isAdmin={isAdmin === true}
-                  label={{ ...cardLabel, empty: t("empty.connectors") }}
-                  pending={busy.has("connector")}
-                  title={t("section.builtin")}
-                />
-              ) : null}
-              {isAdmin ? (
-                <>
-                  <ConnectorSection
-                    cards={openConnectorCards}
-                    install={installConnector}
-                    isAdmin
-                    label={{
-                      ...cardLabel,
-                      empty: openConnector.isPending
-                        ? t("loading")
-                        : t("empty.search", { query: brokerQuery.trim() }),
-                    }}
-                    pending={busy.has("connector")}
-                    title={t("section.openConnector")}
-                  />
-                  <ConnectorSection
-                    cards={composioCards}
-                    install={installConnector}
-                    isAdmin
-                    label={{
-                      ...cardLabel,
-                      empty: composio.isPending
-                        ? t("loading")
-                        : t("empty.search", { query: brokerQuery.trim() }),
-                    }}
-                    pending={busy.has("connector")}
-                    title={t("section.composio")}
-                  />
-                </>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  {t("connectors.adminHint")}
-                </p>
-              )}
-            </div>
+            <ConnectorsPane
+              catalogue={catalogue}
+              categories={activeCategories}
+              category={category}
+              composioApps={filterBroker(composio.data?.apps)}
+              isAdmin={isAdmin === true}
+              onCategory={setCategory}
+              onInstall={installConnector}
+              onOpen={setConnectorSubject}
+              openConnectorApps={filterBroker(openConnector.data?.apps)}
+              servers={servers}
+            />
           )}
         </div>
-      )}
-    </PageShell>
+      </div>
+
+      <AgentDialogWb agent={agentOpen} onClose={() => setAgentSubject(null)} />
+      <TemplateDialogWb
+        expert={templateOpen}
+        label={{
+          install: t("install"),
+          installing: t("installing"),
+          installed: t("installed"),
+          chat: t("chat"),
+          uninstall: t("uninstall"),
+        }}
+        onClose={() => setTemplateSubject(null)}
+        onInstall={(expert) =>
+          expert.installed
+            ? uninstallExpert.mutate(expert.slug)
+            : installExpert.mutate(expert.slug)
+        }
+        pending={busy.has("expert")}
+      />
+      <SkillDialogWb
+        label={{ install: t("install"), installing: t("installing"), installed: t("installed") }}
+        onClose={() => setSkillSubject(null)}
+        onInstall={(slug) => installSkill.mutate(slug)}
+        pendingInstall={skillBusy}
+        subject={skillSubject}
+      />
+      <ConnectorDialogWb
+        isAdmin={isAdmin === true}
+        label={{
+          install: t("install"),
+          installing: t("installing"),
+          installed: t("installed"),
+          connect: t("connect"),
+        }}
+        onClose={() => setConnectorSubject(null)}
+        onInstall={installConnector}
+        pending={busy.has("connector")}
+        subject={connectorSubject}
+      />
+    </div>
   );
 }
