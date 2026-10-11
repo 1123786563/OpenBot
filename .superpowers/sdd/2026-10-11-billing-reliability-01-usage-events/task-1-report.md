@@ -34,3 +34,26 @@ Result: could not start because `TEST_DATABASE_URL` is unset. The test guard rep
 ## Limitation
 
 PostgreSQL integration assertions remain unverified until a dedicated `TEST_DATABASE_URL` is available. The application `DATABASE_URL` was not used.
+
+## Review fix — late delivery failures (2026-10-11)
+
+Commit subject: `fix(billing): preserve delivered usage outbox targets`.
+
+- Made failure recording an atomic `UPDATE ... WHERE event_id = ... AND <target>_status = 'pending'`. It no longer writes target status. A late failure is a no-op after delivery, preserving the delivery state, error code, and update timestamp.
+- Retained the typed missing-event error by checking existence only when the conditional update affects no row.
+- Added regressions for both Lago and credits: complete delivery, report a late failure, assert the persisted row is unchanged, and verify it is absent from pending work.
+- The first database run exposed existing cross-test contamination: pending assertions saw earlier tests' unfinished rows (`4 pass, 2 fail`). Moved prefix-scoped cleanup to `afterEach`, retaining pool closure in `afterAll`. No application rows are deleted.
+
+### Verification evidence
+
+Before a dedicated database was supplied, both pre-fix and post-fix attempts of `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-usage-outbox.integration.test.ts` stopped at the missing `TEST_DATABASE_URL` guard (`0 pass, 1 fail, 1 error`).
+
+The user then supplied an isolated, migrated PostgreSQL database at `127.0.0.1:55432/billing_test`; no application `DATABASE_URL` was used.
+
+- **Red:** With the original unconditional update temporarily restored, `bun test server/tests/billing-usage-outbox.integration.test.ts -t 'a late'` against that dedicated database failed: `0 pass, 4 filtered out, 2 fail`. Both regressions observed changed rows: delivered status reset to pending, the late error written, and the update timestamp changed.
+- **Green:** After restoring the conditional fix, `bun test server/tests/billing-usage-outbox.integration.test.ts` against the same database passed: `6 pass, 0 fail, 20 expect() calls`.
+- `bun run --filter server typecheck` — `server typecheck: Exited with code 0`.
+- `bunx biome check server/src/billing/usage-outbox.ts server/tests/billing-usage-outbox.integration.test.ts` — `Checked 2 files. No fixes applied.` (exit 0).
+- `git diff --check` — passed (exit 0).
+
+The initial database-verification limitation above is now resolved for this focused integration suite.
