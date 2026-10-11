@@ -38,6 +38,8 @@ function makeApp(input: {
       botId === "bot_dev" && input.devPort !== null
         ? { port: input.devPort ?? 4600 }
         : null,
+    // No webapp builds in these tests: the static road always answers from the snapshot.
+    webappBuilt: async () => false,
   };
   const routes = createPreviewRoutes({
     requireUser,
@@ -47,6 +49,14 @@ function makeApp(input: {
     allowedDevOrigins: input.origins ?? parseAllowedDevOrigins("http://localhost:5173"),
     sandbox,
     readArtifactFile: async (_channelId, path) => files[path] ?? null,
+    readWebappFile: async () => null,
+    // The B15b forwarder: the upgrade now forwards; a stub that records and answers as the
+    // sandbox would (101-shaped) keeps the WS case's contract pinned without a live socket.
+    forwardPreviewWebSocket: async (forward) =>
+      new Response(null, {
+        status: 101,
+        headers: { "x-forwarded-bot": forward.botId },
+      }),
   });
   // The mount the app itself performs: /api/workshop → the preview routes.
   const mounted = new Hono();
@@ -103,14 +113,15 @@ describe("the workshop preview door (B15)", () => {
     expect(response.status).toBe(403);
   });
 
-  test("a websocket upgrade on the dev road answers 426, honestly, not half-upgraded", async () => {
+  test("a websocket upgrade on the dev road forwards to the sandbox passthrough (B15b)", async () => {
     const app = makeApp({ mode: "devserver", devPort: 4600, origins: ["http://app.test"] });
     const response = await app.request(
       new Request(`http://x${PREVIEW}bot_dev`, {
         headers: { origin: "http://app.test", upgrade: "websocket" },
       }),
     );
-    expect(response.status).toBe(426);
+    expect(response.status).toBe(101);
+    expect(response.headers.get("x-forwarded-bot")).toBe("bot_dev");
   });
 
   test("auto falls back to the static road when the sandbox has no dev server", async () => {

@@ -56,6 +56,11 @@ export const DEV_CSP_ALLOW_LISTED =
 export type PreviewSandbox = {
   /** The dev road's target, when the sandbox is ready and its dev server runs. */
   devServerFor(botId: string): Promise<{ port: number } | null>;
+  /**
+   * The webapp build's presence (S3's static road): "is there a built webapp for this Bot."
+   * Auto mode probes it when deciding between the dev road and the static one.
+   */
+  webappBuilt(botId: string): Promise<boolean>;
 };
 
 export type PreviewRoutesInput = {
@@ -64,13 +69,36 @@ export type PreviewRoutesInput = {
   mode: PreviewMode;
   /** The allow-list the dev road's CSP and origin check share. */
   allowedDevOrigins: string[];
-  /** The static road's file reader: the artifact's bytes, keyed by its path under the build. */
+  /**
+   * The static road's PRIMARY source: the artifact snapshot the gallery indexed (F1's bytes).
+   * WORKSHOP_PREVIEW_MODE=static serves from here; auto falls back to it.
+   */
   readArtifactFile: (
     channelId: string,
     path: string,
   ) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
+  /**
+   * The static road's SECOND source (S3): the Bot workspace's webapp build, when one exists.
+   * Auto probes it (a built webapp outranks a bare artifact snapshot for preview purposes);
+   * pinned static mode stays on the artifact snapshot — the deployment asked for the
+   * session's own files, not whatever the workspace last built.
+   */
+  readWebappFile: (
+    botId: string,
+    path: string,
+  ) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
   /** The dev road's supervisor probe (S8's state through the sandbox client). */
   sandbox: PreviewSandbox;
+  /**
+   * The WS forwarder (B15b): hand the upgraded connection to the sandbox's passthrough.
+   * Login-state only — HMR never reaches the public routes, which do not inject this.
+   */
+  forwardPreviewWebSocket: (input: {
+    botId: string;
+    path: string;
+    subprotocol: string | null;
+    upgradeHeaders: Headers;
+  }) => Promise<Response>;
 };
 
 export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
@@ -132,12 +160,16 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
           503,
         );
       }
-      // The HTTP proxy: this batch's shape. The WS upgrade answers 426 (B15's completion).
+      // The WS upgrade (B15b): forwarded to the sandbox's passthrough, never half-handled
+      // here. The origin allow-list above already judged this caller; the forward carries
+      // the sandbox token and bot id the passthrough re-checks.
       if (context.req.header("upgrade")?.toLowerCase() === "websocket") {
-        return context.json(
-          { error: "Websocket previews arrive with the dev-road completion." },
-          426,
-        );
+        return input.forwardPreviewWebSocket({
+          botId,
+          path,
+          subprotocol: context.req.header("sec-websocket-protocol") ?? null,
+          upgradeHeaders: context.req.raw.headers,
+        });
       }
       const upstream = await fetch(
         `http://127.0.0.1:${target.port}/${path}`,
@@ -160,8 +192,14 @@ export function createPreviewRoutes(input: PreviewRoutesInput): Hono<{
       return context.json({ error: "The dev preview is not available." }, 503);
     }
 
-    // The static road: the artifact's bytes, with the tight CSP.
-    const file = await input.readArtifactFile(channelId, path || "index.html");
+    // The static road, two sources: auto prefers the workspace's built webapp (S3) when one
+    // exists — it is the artifact the session was building — and falls back to the artifact
+    // snapshot; pinned static mode serves the snapshot only, per the deployment's ask.
+    let file: { bytes: Uint8Array; contentType: string } | null = null;
+    if (mode === "auto" && (await input.sandbox.webappBuilt(botId))) {
+      file = await input.readWebappFile(botId, path || "index.html");
+    }
+    file ??= await input.readArtifactFile(channelId, path || "index.html");
     if (!file) return context.notFound();
     const headers = new Headers();
     headers.set("content-type", file.contentType);
