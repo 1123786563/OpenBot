@@ -7,6 +7,7 @@ import { openbotUrl } from "./config";
 import { isAuthFailure, OpenBotError } from "./errors";
 import type { OpenBotWorkspace } from "./types";
 import { Button, Card, colors, ErrorNotice, Mascot, s } from "../ui";
+import { EmailSignInForm } from "./email-signin";
 
 export type OpenBotProviderId = "casdoor" | "google" | "microsoft" | "okta";
 
@@ -116,24 +117,34 @@ export function OpenBotGate({
         <Text style={[s.muted, { textAlign: "center" }]}>
           由 OpenBot 驱动。请使用你的 OpenBot 账号登录。
         </Text>
-        <Card style={{ width: "100%", gap: 10 }}>
-          <ErrorNotice error={error} />
-          {providers.map((provider) => (
-            <Button
-              key={provider}
-              onPress={() =>
-                void signInSocial(provider).catch((e) =>
-                  setError(e instanceof Error ? e.message : String(e)),
-                )
-              }
-            >
-              {providerLabels[provider]}
-            </Button>
-          ))}
-          <Text style={[s.small, { marginTop: 6 }]}>
-            登录将跳转至 {openbotUrl} 完成认证，随后自动返回。
-          </Text>
-        </Card>
+        <EmailSignInForm onSignedIn={() => void load()} />
+        {providers.length > 0 && (
+          <>
+            <View style={{ flexDirection: "row", alignItems: "center", width: "100%", gap: 10 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: colors.line }} />
+              <Text style={s.small}>或</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: colors.line }} />
+            </View>
+            <Card style={{ width: "100%", gap: 10 }}>
+              <ErrorNotice error={error} />
+              {providers.map((provider) => (
+                <Button
+                  key={provider}
+                  onPress={() =>
+                    void signInSocial(provider).catch((e) =>
+                      setError(e instanceof Error ? e.message : String(e)),
+                    )
+                  }
+                >
+                  {providerLabels[provider]}
+                </Button>
+              ))}
+              <Text style={[s.small, { marginTop: 6 }]}>
+                登录将跳转至 {openbotUrl} 完成认证，随后自动返回。
+              </Text>
+            </Card>
+          </>
+        )}
         <Pressable onPress={() => void load()}>
           <Text style={[s.small, { color: colors.blueDark }]}>我已在外部完成登录，刷新会话</Text>
         </Pressable>

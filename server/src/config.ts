@@ -126,6 +126,14 @@ export type AuthConfig = {
    * authorization, token and userinfo endpoints.
    */
   casdoor?: OAuthClient & { issuer: string };
+  /**
+   * Email + password sign-in (Better Auth's `emailAndPassword`), for clients
+   * without a browser to run OAuth in — the OpenMuse mobile app. Off by
+   * default: deployments that authenticate through a provider keep this
+   * surface closed. `decideSignInMethod` still refuses it on SSO-mandatory
+   * deployments even when this is on.
+   */
+  emailPassword?: boolean;
 };
 
 /**
@@ -888,6 +896,7 @@ function authConfig(
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
     ...(casdoor ? { casdoor } : {}),
+    emailPassword: optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true",
   };
 }
 
