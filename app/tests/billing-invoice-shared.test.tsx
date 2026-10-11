@@ -19,20 +19,7 @@ beforeAll(async () => {
   await i18n.changeLanguage("zh-CN");
 });
 afterEach(cleanup);
-afterAll(() => {
-  /*
-   * Give the language back. bun runs every test file in one process, and this suite sets the
-   * global i18n instance to zh-CN for its own assertions; without restoring it, every file that
-   * runs after this one renders Chinese where its assertions expect English — the entire rest of
-   * the suite fails with "Unable to find" while each file still passes alone.
-   *
-   * No await: an async afterAll resolves after bun has moved to the next file, whose register()
-   * then finds this file's DOM still mounted ("already been globally registered"). The switch
-   * settles before any later render reads a string.
-   */
-  void i18n.changeLanguage("en");
-  GlobalRegistrator.unregister();
-});
+afterAll(() => GlobalRegistrator.unregister());
 
 /**
  * The pager's one real job is the clamp: a filter that shrank the list under a pager already on
