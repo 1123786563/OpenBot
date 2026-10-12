@@ -673,6 +673,11 @@ describe("the admin routes", () => {
           pending: { lago: 0, credits: 2 },
           blocked: { lago: 1, credits: 0 },
         },
+        usageFindings: {
+          limit: 2,
+          emitted: 2,
+          omitted: 3,
+        },
       },
       findings: [
         {
@@ -688,6 +693,13 @@ describe("the admin routes", () => {
           subject: "usage-event-2",
           detail:
             "target=lago state=blocked attempt_age_seconds=7200 last_failure_code=invalid_response",
+        },
+        {
+          category: "usage",
+          code: "usage_findings_omitted",
+          subject: "usage_outbox",
+          detail:
+            "omitted=3 pending_lago=0 pending_credits=2 blocked_lago=1 blocked_credits=0",
         },
       ],
     };
@@ -709,7 +721,11 @@ describe("the admin routes", () => {
       eventType: "billing.reconciled",
       payload: {
         checked: report.checked,
-        findings: ["usage_target_pending", "usage_target_blocked"],
+        findingCounts: {
+          usage_target_pending: 1,
+          usage_target_blocked: 1,
+          usage_findings_omitted: 1,
+        },
       },
     });
   });
