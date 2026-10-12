@@ -113,15 +113,26 @@ async function readPendingPurchaseRow(
 }
 
 function isOrderIdConflict(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const postgresError = error as {
-    code?: unknown;
-    constraint_name?: unknown;
-  };
-  return (
-    postgresError.code === "23505" &&
-    postgresError.constraint_name === "payment_orders_pkey"
-  );
+  const visited = new Set<object>();
+  while (error && typeof error === "object" && !visited.has(error)) {
+    visited.add(error);
+    const postgresError = error as {
+      code?: unknown;
+      errno?: unknown;
+      constraint?: unknown;
+      constraint_name?: unknown;
+      cause?: unknown;
+    };
+    if (
+      (postgresError.errno ?? postgresError.code) === "23505" &&
+      (postgresError.constraint ?? postgresError.constraint_name) ===
+        "payment_orders_pkey"
+    ) {
+      return true;
+    }
+    error = postgresError.cause;
+  }
+  return false;
 }
 
 export function createPaymentStore(database: Database): PaymentStore {

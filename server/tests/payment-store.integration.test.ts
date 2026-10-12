@@ -1,6 +1,7 @@
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import * as paymentCrypto from "../src/billing/payments/crypto";
 import { createPaymentStore } from "../src/billing/payments/store";
 import { createDatabase } from "../src/db/client";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
@@ -57,6 +58,28 @@ function orderInput() {
     checkoutPayload: "qr-payload",
   };
 }
+
+test("insertOrder retries a real primary-key collision with a fresh order id", async () => {
+  const collisionId = `po-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const freshId = `po-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  await database.insert(paymentOrders).values({
+    id: collisionId,
+    ...orderInput(),
+    status: "canceled",
+  });
+  const generate = spyOn(paymentCrypto, "generateOutTradeNo")
+    .mockReturnValueOnce(collisionId)
+    .mockReturnValueOnce(freshId);
+  try {
+    const result = await store.insertOrder(orderInput());
+    expect(result.conflict).toBeNull();
+    expect(result.order.id).toBe(freshId);
+    expect((await store.readOrder(collisionId))?.status).toBe("canceled");
+    expect((await store.readPendingPurchase())?.id).toBe(freshId);
+  } finally {
+    generate.mockRestore();
+  }
+});
 
 test("insertOrder generates short ids and terminal orders leave the purchase slot free", async () => {
   const { order } = await store.insertOrder(orderInput());
