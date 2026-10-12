@@ -166,6 +166,14 @@ export function createMessageRoutes(
             };
           }
 
+          // The interrupt fence belongs to the turn that WAS running; the
+          // check above just proved none is. Any still-set fence is stale (a
+          // crashed runner never ran its finally, or the teardown raced it) —
+          // clear it BEFORE admitting, or the leak cancels this turn within
+          // its first second. This is the fence's documented start-of-turn
+          // clear (interrupt.ts: "cleared at the start and end of each turn").
+          await deps.fence.clearInterrupt(sessionId).catch(() => undefined);
+
           // Attachments: validate paths under attachments/; only image/* ride
           // the prompt.
           const rawAttachments = Array.isArray(body.attachments)

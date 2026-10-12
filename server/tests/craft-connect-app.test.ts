@@ -1,28 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import type { MiddlewareHandler } from "hono";
 import { readFile } from "node:fs/promises";
+import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import type { CraftConfig } from "../src/craft/config";
 import { loadCraftConfig } from "../src/craft/config";
-import { createConnectAppRoutes } from "../src/craft/connect-app-routes";
 import {
   CONNECT_APP_PERMISSION,
-  createInProcessConnectAppSignals,
   type CraftConnectAppSignals,
+  createInProcessConnectAppSignals,
   parseConnectAppAsk,
   stashAndAnnounce,
 } from "../src/craft/connect-app";
+import { createConnectAppRoutes } from "../src/craft/connect-app-routes";
 import { connectAppRequestPacket } from "../src/craft/events/packets";
-import { eventToSse } from "../src/craft/streaming";
+import { CraftSessionManager } from "../src/craft/manager";
 import {
   type PodEventBus,
   type PodSubscription,
   SubscriberQueue,
 } from "../src/craft/opencode/event-bus";
 import { OpencodeServeClient } from "../src/craft/opencode/serve-client";
-import { CraftSessionManager } from "../src/craft/manager";
 import type { SandboxGateway } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
+import { eventToSse } from "../src/craft/streaming";
 
 /**
  * Fixture F4 B/C/D — the connect_app handshake: the no-op tool's ask is
@@ -347,6 +347,63 @@ describe("connect_app timeout", () => {
 
     await turn.finish();
   }, 15000);
+
+  test("decided out-of-band BEFORE expiry: the timeout adds no second reject, KV cleared", async () => {
+    const signals = createInProcessConnectAppSignals();
+    const posts: Posted[] = [];
+    const turn = await startTurn(
+      fastConfig,
+      { sessionId: "cs-sess", signals },
+      posts,
+    );
+
+    turn.bus.sub.queue.push(
+      connectAppAsk("perm_decided", { external_app_id: 7, reason: "x" }),
+    );
+    await waitFor(() => signals.peekAnnouncements("cs-sess").length === 1);
+    const [card] = signals.peekAnnouncements("cs-sess").map(JSON.parse);
+    // The decision endpoint answered (allow) and cleared the pending record —
+    // the ONLY answer opencode may ever see for this permission.
+    await signals.clearPending(card.request_id);
+
+    // Window (1s) passes: the loop must NOT send its redundant reject after
+    // the user already connected (OCR r2: the deletion-path gap).
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const answers = posts.filter((post) =>
+      post.url.includes("/permissions/perm_decided"),
+    );
+    expect(answers).toHaveLength(0);
+
+    await turn.finish();
+  }, 15000);
+
+  test("timeout rejected: the pending record is cleared so a late card click is a 200 no-op", async () => {
+    const signals = createInProcessConnectAppSignals();
+    const posts: Posted[] = [];
+    const turn = await startTurn(
+      fastConfig,
+      { sessionId: "cs-sess", signals },
+      posts,
+    );
+
+    turn.bus.sub.queue.push(
+      connectAppAsk("perm_late", { external_app_id: 7, reason: "x" }),
+    );
+    await waitFor(() =>
+      posts.some((post) => post.url.includes("/permissions/perm_late")),
+    );
+    // The timeout rejected; the KV pending must not linger until TTL — the
+    // user's still-visible card must land in the endpoint's no-op branch
+    // (200 ok, no second answer), not 502-retry against a dead permission.
+    const pendingId = signals
+      .peekAnnouncements("cs-sess")
+      .map((payload) => JSON.parse(payload) as { request_id: string })
+      .find((card) => card.request_id)?.request_id;
+    expect(pendingId).toBeDefined();
+    expect(await signals.loadPending(pendingId!)).toBeNull();
+
+    await turn.finish();
+  }, 15000);
 });
 
 // ---------------------------------------------------------------------------
@@ -510,6 +567,31 @@ describe("POST /apps/connect/:requestId/decision", () => {
         body: JSON.stringify({ decision: "declined" }),
       },
     );
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(200);
+    expect(h.posts).toHaveLength(1);
+    expect(h.auditEvents).toHaveLength(1);
+  });
+
+  test("concurrent duplicate decisions: exactly one answer, one audit row (atomic take)", async () => {
+    const h = await decisionHarness({ session: sessionRow() });
+    // Double-click / two tabs: both POSTs in flight at once. The take is
+    // atomic — only one caller can win the pending record; the loser lands in
+    // the no-op branch. Pre-fix, both read the still-present record and each
+    // answers opencode (the second possibly 404-ing into a phantom 502) with
+    // two audit rows.
+    const [first, replay] = await Promise.all([
+      h.app.request(`/apps/connect/${h.requestId}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "connected" }),
+      }),
+      h.app.request(`/apps/connect/${h.requestId}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "declined" }),
+      }),
+    ]);
     expect(first.status).toBe(200);
     expect(replay.status).toBe(200);
     expect(h.posts).toHaveLength(1);

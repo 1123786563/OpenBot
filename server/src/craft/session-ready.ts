@@ -191,6 +191,18 @@ export async function ensureSessionReady(
             session.nextjsPort,
           );
         }
+        // The config rewrite owed any running instance a dispose: instances
+        // cache the directory config at creation, and the hash ack below marks
+        // the row synced — without this, an instance minted before a crashed
+        // provisioning attempt keeps serving the pre-rewrite config while
+        // every later reconcile/reload sees "not stale" and never corrects it
+        // (manager.regenerateSessionConfig's contract; OCR r2's medium).
+        if (session.opencodeSessionId) {
+          await gateway
+            .serveClientFor({ botId, directory })
+            ?.disposeInstance({ directory })
+            .catch(() => undefined);
+        }
         await store.updateSession(session.id, {
           ...(session.status !== "active" ? { status: "active" } : {}),
           mcpConfigHash: managedContent.mcpConfigHash,

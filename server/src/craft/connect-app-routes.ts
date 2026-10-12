@@ -9,14 +9,15 @@
  * | pending expired/answered/missing | 200 no-op (silent)                            |
  * | session not the caller's own     | 404 "Connect request not found."              |
  * | session's sandbox not running    | 503 "Sandbox is not running."                 |
- * | sandbox answer fails             | 502 "...please try again.", pending RETAINED  |
- * | success                          | clear pending + the one audit row             |
+ * | sandbox answer fails             | 502 "...please try again.", pending RESTORED  |
+ * | success                          | the one audit row (the take already cleared)  |
  *
- * Idempotency is structural, onyx's way: clearing the pending record on success
- * makes a replay hit the no-op branch — one approval attempt, one answer to
- * opencode, ever. And unlike the gated-tool approvals, the handshake keeps NO
- * approval row (onyx parity: two KV records, no DB), so the audit write below
- * is the decision's one durable record.
+ * Idempotency is structural, onyx's way, and now also race-proof: the pending
+ * record is TAKEN atomically (GET+DEL), so even two concurrent replays of the
+ * same requestId produce exactly one answer to opencode and one audit row —
+ * one approval attempt, one answer, ever. And unlike the gated-tool approvals,
+ * the handshake keeps NO approval row (onyx parity: two KV records, no DB), so
+ * the audit write below is the decision's one durable record.
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
@@ -26,8 +27,8 @@ import type { AppVariables } from "../auth/guards";
 import type { CraftConfig } from "./config";
 import type { CraftConnectAppSignals } from "./connect-app";
 import type { SandboxGateway } from "./sandbox-gateway";
-import { sessionDirectory } from "./workspace";
 import type { CraftStore } from "./store";
+import { sessionDirectory } from "./workspace";
 
 const logger = getLogger("server");
 
@@ -62,8 +63,11 @@ export function createConnectAppRoutes(
       );
     }
 
-    // Branch 1: expired / already answered / unknown → 200 no-op, silent.
-    const pending = await deps.signals.loadPending(requestId).catch(() => null);
+    // Branch 1: expired / already answered / unknown / LOST THE RACE → 200
+    // no-op, silent. The take (atomic GET+DEL) is the idempotency itself: of
+    // two concurrent replays of the same requestId only one caller ever sees
+    // the record, so only one answer to opencode and one audit row can exist.
+    const pending = await deps.signals.takePending(requestId).catch(() => null);
     if (pending === null) {
       return context.json({ ok: true });
     }
@@ -106,7 +110,16 @@ export function createConnectAppRoutes(
         )
       : false;
     if (!answered) {
-      // Leave the pending record intact (TTL) so the user can retry.
+      // The take already removed the record; put it back so the user can
+      // retry (the pre-take posture: a failed answer retains its pending).
+      await deps.signals
+        .stashPending(requestId, pending)
+        .catch((error: unknown) => {
+          logger.warn(
+            { err: error instanceof Error ? error.message : String(error) },
+            "[craft] connect_app pending re-stash failed",
+          );
+        });
       return context.json(
         {
           error:
@@ -116,12 +129,8 @@ export function createConnectAppRoutes(
       );
     }
 
-    await deps.signals.clearPending(requestId).catch((error: unknown) => {
-      logger.warn(
-        { err: error instanceof Error ? error.message : String(error) },
-        "[craft] connect_app pending clear failed",
-      );
-    });
+    // Success needs no explicit clear — the take removed the record the moment
+    // this caller won it, so any replay lands in the no-op branch above.
     await deps.audit
       ?.insert({
         eventType: "craft.connect_app_decided",

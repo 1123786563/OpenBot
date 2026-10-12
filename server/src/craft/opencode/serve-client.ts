@@ -26,9 +26,9 @@ import {
   approvalRequestedPacket,
   type CompactionPacket,
   type ConnectAppRequestPacket,
-  connectAppRequestPacket,
   type ContextUsagePacket,
   compactionPacket,
+  connectAppRequestPacket,
   contextUsagePacket,
   isBuildPacket,
   type SubagentStartedPacket,
@@ -1609,7 +1609,10 @@ export class OpencodeServeClient {
     // serve_client.py:1809-1827). Like the gated set, a parked ask raises the
     // inactivity floor so the window — not the timeout — cuts the wait.
     const connectApp = options.connectApp;
-    const pendingConnectApp = new Map<string, number>();
+    const pendingConnectApp = new Map<
+      string,
+      { requestId: string; deadline: number }
+    >();
 
     const answerResolvedPermissions = async (): Promise<void> => {
       if (gate === null || pendingPermissions.size === 0) return;
@@ -1646,15 +1649,33 @@ export class OpencodeServeClient {
       // Timeout fallback for connect-app asks nobody decided: one reject each,
       // exactly like the gated expiry — the plugin's catch block turns it into
       // the declined string, so the turn continues rather than hanging.
+      // Reconciled against the out-of-band decide through the KV record: a
+      // cleared pending means the decision endpoint already answered (skip —
+      // a second answer would contradict the user's choice), and after this
+      // side rejects, the pending is cleared so a late card click lands in
+      // the endpoint's 200 no-op branch instead of retrying a dead permission.
       if (pendingConnectApp.size > 0) {
         const now = Date.now();
-        for (const [permissionId, deadline] of pendingConnectApp) {
-          if (deadline > now) continue;
+        for (const [permissionId, entry] of pendingConnectApp) {
+          if (entry.deadline > now) continue;
           pendingConnectApp.delete(permissionId);
-          await this.answerPermission(options.opencodeSessionId, permissionId, {
-            allow: false,
-            directory,
-          });
+          // Entries only exist when the connectApp rendezvous does — its
+          // handler is the sole writer of this map.
+          const signals = connectApp?.signals ?? null;
+          if (signals !== null) {
+            const stillPending = await signals
+              .loadPending(entry.requestId)
+              .catch(() => null);
+            if (stillPending === null) continue;
+          }
+          const rejected = await this.answerPermission(
+            options.opencodeSessionId,
+            permissionId,
+            { allow: false, directory },
+          );
+          if (rejected && signals !== null) {
+            await signals.clearPending(entry.requestId).catch(() => undefined);
+          }
         }
       }
 
@@ -1779,10 +1800,11 @@ export class OpencodeServeClient {
                   externalAppId: ask.externalAppId,
                   reason: ask.reason,
                 });
-                pendingConnectApp.set(
-                  info.permissionId,
-                  Date.now() + this.config.approvalWaitTimeoutSeconds * 1000,
-                );
+                pendingConnectApp.set(info.permissionId, {
+                  requestId,
+                  deadline:
+                    Date.now() + this.config.approvalWaitTimeoutSeconds * 1000,
+                });
                 // The card rides the announce list (the attach stream's drain)
                 // AND this turn's stream — the same dual emission the approval
                 // card has, so whichever surface the client reads sees it once.
