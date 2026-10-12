@@ -265,6 +265,21 @@ export function createPaymentService(deps: {
     }
   }
 
+  async function recordDuplicatePaidEvidence(
+    order: PaymentOrderRecord,
+    ownerOrder: PaymentOrderRecord,
+    transactionId: string,
+    amountCents: number,
+  ): Promise<boolean> {
+    return recordAnomalyQuietly({
+      orderId: order.id,
+      code: "duplicate_paid",
+      channelTransactionId: transactionId,
+      amountCents,
+      detail: `overlaps entitlement owned by ${ownerOrder.id} via ${ownerOrder.channelTransactionId ?? "unknown-transaction"}`,
+    });
+  }
+
   /**
    * The plan allowance payout, run inside activation after the subscription exists and before
    * `applied` is written. Idempotency: the grant's idempotency key is `plan:<orderId>`, so an
@@ -335,8 +350,27 @@ export function createPaymentService(deps: {
    */
   async function activateOrder(
     order: PaymentOrderRecord,
-  ): Promise<"applied" | "failed" | "pending"> {
+  ): Promise<"applied" | "failed" | "pending" | "duplicate"> {
     if (order.activationState === "applied") return "applied";
+    let ownership: Awaited<
+      ReturnType<PaymentStore["resolveActivationOwnership"]>
+    >;
+    try {
+      ownership = await deps.store.resolveActivationOwnership(order.id);
+    } catch {
+      return "pending";
+    }
+    if (ownership.outcome === "duplicate") {
+      await recordDuplicatePaidEvidence(
+        ownership.order,
+        ownership.ownerOrder,
+        order.channelTransactionId ?? order.id,
+        order.amountCents,
+      );
+      return "duplicate";
+    }
+    if (ownership.outcome !== "owner") return "pending";
+    order = ownership.order;
     try {
       const plan = await deps.lago.getPlan(order.planCode);
       if (!plan.found) {
@@ -396,9 +430,6 @@ export function createPaymentService(deps: {
     const transactionId = fact.channelTransactionId ?? order.id;
 
     if (fact.amountCents === undefined) {
-      if (order.status === "blocked") {
-        return { kind: "refused", reason: "blocked" };
-      }
       const recorded = await recordAnomalyQuietly({
         orderId: order.id,
         code: "amount_unreadable",
@@ -407,6 +438,9 @@ export function createPaymentService(deps: {
         detail: "paid fact carried no comparable amount",
       });
       if (!recorded) return { kind: "retryable-failure" };
+      if (order.status === "blocked") {
+        return { kind: "refused", reason: "blocked" };
+      }
       let strikes: number;
       try {
         strikes = await deps.store.countAnomalies(
@@ -463,6 +497,17 @@ export function createPaymentService(deps: {
 
     if (order.status === "paid") {
       if (order.channelTransactionId === transactionId) {
+        const ownership = await deps.store
+          .resolveActivationOwnership(order.id)
+          .catch(() => null);
+        if (ownership?.outcome === "duplicate") {
+          await recordDuplicatePaidEvidence(
+            ownership.order,
+            ownership.ownerOrder,
+            transactionId,
+            fact.amountCents,
+          );
+        }
         return { kind: "duplicate" };
       }
       const recorded = await recordAnomalyQuietly({
@@ -545,23 +590,6 @@ export function createPaymentService(deps: {
     // plan already holding another paid order while this money lands means double collection for
     // one entitlement. The confirm STANDS — the money is real and the payer bought something —
     // the anomaly is what makes it visible to reconciliation instead of hiding inside a second
-    // paid row nobody compares. `readLatestPaidOrder` answers the newest paid row, which after
-    // our own confirm is US unless an older confirm raced inside this same window — so the
-    // anomaly fires for whichever side of the pair lands second, which is exactly the one that
-    // doubled the first.
-    const latestPaid = await deps.store
-      .readLatestPaidOrder(order.planCode, order.id)
-      .catch(() => null);
-    if (latestPaid && latestPaid.id !== order.id) {
-      await recordAnomalyQuietly({
-        orderId: order.id,
-        code: "duplicate_paid",
-        channelTransactionId: transactionId,
-        amountCents: fact.amountCents,
-        detail: `plan already paid by ${latestPaid.id}`,
-      });
-    }
-
     const fresh = await deps.store.readOrder(order.id).catch(() => null);
     if (fresh) await activateOrder(fresh);
     return { kind: "claimed" };
@@ -806,9 +834,12 @@ export function createPaymentService(deps: {
         return { kind: "not-success" };
       }
 
-      const order = await deps.store
-        .readOrder(fact.outTradeNo)
-        .catch(() => null);
+      let order: PaymentOrderRecord | null;
+      try {
+        order = await deps.store.readOrder(fact.outTradeNo);
+      } catch {
+        return { kind: "store-failure" };
+      }
       if (!order) {
         return { kind: "unknown-order" };
       }

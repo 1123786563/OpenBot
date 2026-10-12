@@ -56,6 +56,47 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
   };
 }
 
+type PaymentOrderLockedRow = {
+  id: string;
+  deploymentScope: string;
+  planCode: string;
+  provider: PaymentProviderId;
+  amountCents: number;
+  currency: string;
+  status: PaymentOrderStatus;
+  activationState: PaymentOrderRecord["activationState"];
+  channelTransactionId: string | null;
+  checkoutPayload: string | null;
+  expiresAt: Date;
+  periodStart: Date | null;
+  periodEnd: Date | null;
+  terminalAt: Date | null;
+  createdBy: string | null;
+  createdAt: Date;
+  version: number;
+};
+
+function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
+  return {
+    id: row.id,
+    planCode: row.planCode,
+    provider: row.provider,
+    amountCents: row.amountCents,
+    currency: "CNY",
+    status: row.status,
+    activationState: row.activationState,
+    channelTransactionId: row.channelTransactionId,
+    checkoutPayload: row.checkoutPayload,
+    expiresAt: row.expiresAt,
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    terminalAt: row.terminalAt,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    version: row.version,
+  };
+}
+
 function eventInput(input: PaymentEventInput & { state?: string }) {
   return {
     id: generateOutTradeNo().replace("po-", "pe-"),
@@ -441,6 +482,69 @@ export function createPaymentStore(database: Database): PaymentStore {
         .update(paymentOrders)
         .set({ activationState })
         .where(eq(paymentOrders.id, id));
+    },
+
+    async resolveActivationOwnership(orderId) {
+      return database.transaction(async (tx) => {
+        const [anchor] = await tx
+          .select()
+          .from(paymentOrders)
+          .where(eq(paymentOrders.id, orderId))
+          .limit(1);
+        if (!anchor) return { outcome: "unknown" as const };
+        if (anchor.status !== "paid") return { outcome: "not-paid" as const };
+        if (!anchor.periodStart || !anchor.periodEnd) {
+          return { outcome: "not-paid" as const };
+        }
+
+        const locked = await tx.execute(sql`
+          select
+            "id",
+            "deployment_scope" as "deploymentScope",
+            "plan_code" as "planCode",
+            "provider",
+            "amount_cents" as "amountCents",
+            "currency",
+            "status",
+            "activation_state" as "activationState",
+            "channel_transaction_id" as "channelTransactionId",
+            "checkout_payload" as "checkoutPayload",
+            "expires_at" as "expiresAt",
+            "period_start" as "periodStart",
+            "period_end" as "periodEnd",
+            "terminal_at" as "terminalAt",
+            "created_by" as "createdBy",
+            "created_at" as "createdAt",
+            "version"
+          from "payment_orders"
+          where "deployment_scope" = ${anchor.deploymentScope}
+            and "plan_code" = ${anchor.planCode}
+            and "status" = 'paid'
+            and "period_start" is not null
+            and "period_end" is not null
+            and "period_start" < ${anchor.periodEnd}
+            and "period_end" > ${anchor.periodStart}
+          order by "period_start" asc, "created_at" asc, "id" asc
+          for update
+        `);
+        const rows = (
+          Array.isArray(locked)
+            ? locked
+            : ((locked as { rows?: unknown[] }).rows ?? [])
+        ) as PaymentOrderLockedRow[];
+        const lockedOrders = rows.map(lockedRowOf);
+        const current = lockedOrders.find((row) => row.id === orderId);
+        const owner = lockedOrders[0];
+        if (!current || !owner) return { outcome: "unknown" as const };
+        if (owner.id === current.id) {
+          return { outcome: "owner" as const, order: current };
+        }
+        return {
+          outcome: "duplicate" as const,
+          order: current,
+          ownerOrder: owner,
+        };
+      });
     },
 
     async listExpiredPendingOrders(now, limit) {

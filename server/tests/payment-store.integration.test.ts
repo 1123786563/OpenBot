@@ -199,6 +199,64 @@ test("a paid fact claims its channel transaction exactly once (the race)", async
   expect(unchanged?.status).toBe("pending");
 });
 
+test("resolveActivationOwnership serializes overlapping paid orders to one entitlement owner", async () => {
+  const sharedPlan = `pro-${randomUUID().slice(0, 8)}`;
+  const first = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+  });
+  const firstPeriodStart = new Date();
+  const firstPeriodEnd = new Date(firstPeriodStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: first.order.id,
+      expectedVersion: first.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-owner`,
+      amountCents: 8800,
+      periodStart: firstPeriodStart,
+      periodEnd: firstPeriodEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+
+  const second = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+    provider: "wechat",
+  });
+  const secondPeriodStart = new Date(firstPeriodStart.getTime() + 5 * 60_000);
+  const secondPeriodEnd = new Date(secondPeriodStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: second.order.id,
+      expectedVersion: second.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-duplicate`,
+      amountCents: 8800,
+      periodStart: secondPeriodStart,
+      periodEnd: secondPeriodEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+
+  const [owner, duplicate] = await Promise.all([
+    store.resolveActivationOwnership(first.order.id),
+    store.resolveActivationOwnership(second.order.id),
+  ]);
+
+  expect(owner).toMatchObject({
+    outcome: "owner",
+    order: { id: first.order.id },
+  });
+  expect(duplicate).toMatchObject({
+    outcome: "duplicate",
+    order: { id: second.order.id },
+    ownerOrder: {
+      id: first.order.id,
+      channelTransactionId: `${prefix}-tx-owner`,
+    },
+  });
+});
+
 test("CAS version moves reject a stale writer", async () => {
   const { order } = await store.insertOrder(orderInput());
   const expired = await store.expireOrder(order.id, order.version);
