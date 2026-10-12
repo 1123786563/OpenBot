@@ -32,7 +32,6 @@
 
 import { Hono } from "hono";
 import { getLogger } from "../../../shared/logger";
-import type { CraftConfig } from "./config";
 import { craftMcpServerIdOfRelayUrl } from "./mcp-servers";
 import { MCP_SESSION_TAG_HEADER } from "./opencode-config";
 import type { CraftSessionRow, CraftStore } from "./store";
@@ -53,7 +52,6 @@ export type CraftMcpConnectionResolver = (
 ) => Promise<{ url: string; token: string | null } | null>;
 
 export type CraftMcpRelayDeps = {
-  config: CraftConfig;
   /** Session reads without the activity bump (relay polling must not feed the idle clock). */
   store: Pick<CraftStore, "findSessionById">;
   /** The session's resolved MCP set (the relay's membership check). */

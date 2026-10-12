@@ -3643,15 +3643,13 @@ const craftEffectiveConfig = sandboxUrl
   : craftConfig;
 /*
  * Craft's managed content (AGENTS.md app guidance + skill fileset + fingerprints), answered
- * for the session's user — never the deployment-wide Bot id. Two legs are deliberately
- * absent:
- *
- * - the company-search skill: onyx backs it with an in-sandbox CLI over the permissioned
- *   corpus; OpenBot's knowledge domain has no path the craft sandbox can call (credentials
- *   stay out of agent-readable workspace files), so the adapter ships no such file and the
- *   AGENTS.md Company-knowledge section stays out until a backed implementation lands;
- * - the per-user craft MCP set: Task 3's seam (resolve against the plugins catalogue's
- *   user-oauth servers); an empty set keeps mcp_config_hash a live fingerprint of "none".
+ * for the session's user — never the deployment-wide Bot id. Both live legs resolve below:
+ * the connectable-apps list (personal servers not yet connected) and the per-user craft MCP
+ * set (the personal servers that ARE connected, each entry stamped with the relay url), so
+ * mcp_config_hash fingerprints the resolved set. The one leg still absent is the
+ * company-search skill: OpenBot's knowledge domain has no path the craft sandbox can call
+ * (credentials stay out of agent-readable workspace files), so no such file ships and the
+ * AGENTS.md Company-knowledge section stays out until a backed implementation lands.
  */
 /*
  * The relay origin the per-user MCP set stamps into session opencode.json: the

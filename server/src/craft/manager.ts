@@ -522,6 +522,16 @@ export class CraftSessionManager {
     content: ResolvedCraftManagedContent | null,
     hashes: { skillsHash: string | null; mcpConfigHash: string | null } | null,
   ): Promise<boolean> {
+    // A wired resolver that answered null must not drive the regenerate: the
+    // rewrite would carry no managed face (the mcp block stripped, AGENTS.md
+    // without its sections) while the resolver is merely down, and with the
+    // hashes seam fresh the degraded bytes would ack as current. Skip — the
+    // row honestly stays stale and the next pass self-heals once the resolver
+    // answers again. (A hashes-only wiring has no resolver to fail and still
+    // takes its contentless regenerate below.)
+    if (content === null && this.deps.managedContentFor) {
+      return true;
+    }
     const llmConfig = await this.deps.llmConfigFor(session);
     let skillsHydrated: boolean | null = null;
     if (content) {

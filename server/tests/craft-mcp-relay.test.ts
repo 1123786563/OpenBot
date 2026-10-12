@@ -145,7 +145,6 @@ type RelayInput = {
 
 function relayApp(input: RelayInput = {}) {
   return createCraftMcpRelayApp({
-    config,
     store: {
       findSessionById: async (id: string) => {
         const row = input.session === undefined ? sessionRow() : input.session;
