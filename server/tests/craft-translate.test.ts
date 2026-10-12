@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { MiddlewareHandler } from "hono";
 import { loadCraftConfig } from "../src/craft/config";
-import {
-  approvalRequestedPacket,
-  type BuildPacket,
-  isBuildPacket,
-} from "../src/craft/events/packets";
+import { type BuildPacket, isBuildPacket } from "../src/craft/events/packets";
 import {
   isAgentMessageChunk,
   isAgentThoughtChunk,
