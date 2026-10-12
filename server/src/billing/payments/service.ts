@@ -25,6 +25,7 @@ import type {
   PaymentOrderView,
   PaymentPlanEntry,
   PaymentProviderId,
+  PaymentSettlementResult,
   PaymentStore,
 } from "./types";
 
@@ -71,9 +72,13 @@ export class PurchaseError extends Error {
   }
 }
 
-/** How a callback was answered; the routes translate this to the channel's wire shapes. */
+/** How a callback was answered; only a durable claim/duplicate earns the channel's success ack. */
 export type CallbackOutcome =
   | { kind: "success" }
+  | {
+      kind: "settlement-refused";
+      settlement: Extract<PaymentSettlementResult, { kind: "refused" }>;
+    }
   | { kind: "unknown-provider" }
   | { kind: "unverified"; refusal?: NotificationRefusal }
   | { kind: "not-success" }
@@ -251,12 +256,12 @@ export function createPaymentService(deps: {
     channelTransactionId: string | null;
     amountCents: number | null;
     detail: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     try {
       await deps.store.recordAnomaly({ ...input, kind: "anomaly" });
+      return true;
     } catch {
-      // An anomaly that cannot be written is a logging miss, not a failed delivery: the caller
-      // is answering a channel, and the ack must not hinge on the trail.
+      return false;
     }
   }
 
@@ -380,119 +385,123 @@ export function createPaymentService(deps: {
 
   /**
    * One paid fact against one order, shared by the callback, the poll and the sweep: the amount
-   * gate, the replay verdicts, the window, and the single confirm transaction.
-   * Answers whether money moved (`claimed`), so only that caller activates.
+   * gate, the replay verdicts, the window, and the single confirm transaction. A callback may
+   * acknowledge only a claimed fact or a duplicate the store has confirmed.
    */
   async function settlePaidFact(
     order: PaymentOrderRecord,
     fact: { channelTransactionId?: string; amountCents?: number },
-  ): Promise<{ claimed: boolean }> {
+  ): Promise<PaymentSettlementResult> {
     const at = now();
     const transactionId = fact.channelTransactionId ?? order.id;
 
     if (fact.amountCents === undefined) {
-      /*
-       * A TERMINAL order needs no more evidence (B3): the endgame below moved past-pending
-       * no-amount orders to `blocked` and that verdict is final — every further redelivery of
-       * the same unreadable notification used to append another strike row to a dead order,
-       * a tail that grows forever for nobody. (The blocked-status branch above never ran,
-       * because THIS amount gate precedes it.) Terminal here answers `claimed: false` in
-       * silence: the ack still quiets the delivery, the blocked state already carries the
-       * story, and the existing strike rows keep the evidence.
-       */
-      if (order.status === "blocked") return { claimed: false };
-      // The channel says paid but states no amount: keep the order pending (never grant on an
-      // unverified amount), keep the evidence, and let the next query — which carries the
-      // amount — decide. The ack still quiets this delivery.
-      await recordAnomalyQuietly({
+      if (order.status === "blocked") {
+        return { kind: "refused", reason: "blocked" };
+      }
+      const recorded = await recordAnomalyQuietly({
         orderId: order.id,
         code: "amount_unreadable",
         channelTransactionId: fact.channelTransactionId ?? null,
         amountCents: null,
         detail: "paid fact carried no comparable amount",
       });
-      /*
-       * The ENDGAME (P2-3): a channel that cannot state an amount after N asks is not going
-       * to, and every ask is a poll or a sweep pass this order makes forever. After the Nth
-       * `amount_unreadable` the order moves to `blocked` — the terminal state for "the money
-       * and the order disagree on evidence" — so the sweeper stops re-asking and an operator
-       * sees a single terminal row instead of an immortal pending one. The word is excluded
-       * from the anomaly dedup index precisely so these rows count.
-       */
-      const strikes = await deps.store
-        .countAnomalies(order.id, "amount_unreadable")
-        .catch(() => 0);
+      if (!recorded) return { kind: "retryable-failure" };
+      let strikes: number;
+      try {
+        strikes = await deps.store.countAnomalies(
+          order.id,
+          "amount_unreadable",
+        );
+      } catch {
+        return { kind: "retryable-failure" };
+      }
       if (strikes >= AMOUNT_UNREADABLE_LIMIT && order.status === "pending") {
-        await deps.store
-          .blockOrder({
+        let blocked: boolean;
+        try {
+          blocked = await deps.store.blockOrder({
             id: order.id,
             expectedVersion: order.version,
             channelTransactionId: fact.channelTransactionId ?? null,
             amountCents: null,
             detail: `channel stated no amount ${strikes} times; blocked to end the sweep`,
-          })
-          .catch(() => {});
+          });
+        } catch {
+          return { kind: "retryable-failure" };
+        }
+        if (!blocked) return { kind: "retryable-failure" };
       }
-      return { claimed: false };
+      return { kind: "refused", reason: "amount-mismatch" };
     }
     if (fact.amountCents !== order.amountCents) {
       if (order.status === "pending") {
-        await deps.store
-          .blockOrder({
+        let blocked: boolean;
+        try {
+          blocked = await deps.store.blockOrder({
             id: order.id,
             expectedVersion: order.version,
             channelTransactionId: fact.channelTransactionId ?? null,
             amountCents: fact.amountCents,
             detail: `channel reports ${fact.amountCents}, order says ${order.amountCents}`,
-          })
-          .catch(() => {});
+          });
+        } catch {
+          return { kind: "retryable-failure" };
+        }
+        if (!blocked) return { kind: "retryable-failure" };
       } else {
-        await recordAnomalyQuietly({
+        const recorded = await recordAnomalyQuietly({
           orderId: order.id,
           code: "amount_mismatch",
           channelTransactionId: fact.channelTransactionId ?? null,
           amountCents: fact.amountCents,
           detail: `report after ${order.status}`,
         });
+        if (!recorded) return { kind: "retryable-failure" };
       }
-      return { claimed: false };
+      return { kind: "refused", reason: "amount-mismatch" };
     }
 
     if (order.status === "paid") {
       if (order.channelTransactionId === transactionId) {
-        return { claimed: false }; // The same money, delivered again: silence.
+        return { kind: "duplicate" };
       }
-      await recordAnomalyQuietly({
+      const recorded = await recordAnomalyQuietly({
         orderId: order.id,
         code: "over_paid",
         channelTransactionId: transactionId,
         amountCents: fact.amountCents,
         detail: `a second transaction landed on a paid order`,
       });
-      return { claimed: false };
+      return recorded
+        ? { kind: "refused", reason: "blocked" }
+        : { kind: "retryable-failure" };
     }
     if (order.status === "blocked") {
-      await recordAnomalyQuietly({
+      const recorded = await recordAnomalyQuietly({
         orderId: order.id,
         code: "paid_after_blocked",
         channelTransactionId: transactionId,
         amountCents: fact.amountCents,
         detail: "money arrived for an order already blocked on amount",
       });
-      return { claimed: false };
+      return recorded
+        ? { kind: "refused", reason: "blocked" }
+        : { kind: "retryable-failure" };
     }
     if (
       (order.status === "expired" || order.status === "canceled") &&
       !withinLateWindow(order, at)
     ) {
-      await recordAnomalyQuietly({
+      const recorded = await recordAnomalyQuietly({
         orderId: order.id,
         code: "late_payment",
         channelTransactionId: transactionId,
         amountCents: fact.amountCents,
         detail: `outside the ${deps.latePaymentWindowHours}h window anchored at terminalAt`,
       });
-      return { claimed: false };
+      return recorded
+        ? { kind: "refused", reason: "late" }
+        : { kind: "retryable-failure" };
     }
 
     let result: { claimed: boolean; alreadyKnown: boolean };
@@ -508,21 +517,24 @@ export function createPaymentService(deps: {
         periodEnd: addMonths(at, 1),
       });
     } catch {
-      return { claimed: false };
+      return { kind: "retryable-failure" };
     }
     if (!result.claimed) {
       if (result.alreadyKnown) {
         // This transaction's paid fact is held by another order: an anomaly about the data, and
         // no migration here — the first claim stands.
-        await recordAnomalyQuietly({
+        const recorded = await recordAnomalyQuietly({
           orderId: order.id,
           code: "duplicate_paid",
           channelTransactionId: transactionId,
           amountCents: fact.amountCents,
           detail: "transaction already settled against another order",
         });
+        return recorded ? { kind: "duplicate" } : { kind: "retryable-failure" };
       }
-      return { claimed: false };
+      // A stale CAS is not proof that this paid fact is already committed. Let a replay re-read
+      // the order and establish either the winning fact or a durable duplicate.
+      return { kind: "retryable-failure" };
     }
 
     // A cross-order duplicate is worth one more look on EVERY confirm, not only a canceled order
@@ -551,7 +563,7 @@ export function createPaymentService(deps: {
 
     const fresh = await deps.store.readOrder(order.id).catch(() => null);
     if (fresh) await activateOrder(fresh);
-    return { claimed: true };
+    return { kind: "claimed" };
   }
 
   return {
@@ -800,12 +812,21 @@ export function createPaymentService(deps: {
         return { kind: "unknown-order" };
       }
 
+      let settlement: PaymentSettlementResult;
       try {
-        await settlePaidFact(order, fact);
+        settlement = await settlePaidFact(order, fact);
       } catch {
         return { kind: "store-failure" };
       }
-      return { kind: "success" };
+      switch (settlement.kind) {
+        case "claimed":
+        case "duplicate":
+          return { kind: "success" };
+        case "refused":
+          return { kind: "settlement-refused", settlement };
+        case "retryable-failure":
+          return { kind: "store-failure" };
+      }
     },
 
     async sweepExpired() {

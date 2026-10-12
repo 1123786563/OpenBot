@@ -176,6 +176,27 @@ describe("callback routes", () => {
     }
   });
 
+  test("a durable settlement refusal is not a provider success acknowledgement", async () => {
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/payments/callbacks",
+      createPaymentCallbackRoutes({
+        service: fakeService({
+          handleCallback: async () => ({
+            kind: "settlement-refused",
+            settlement: { kind: "refused", reason: "amount-mismatch" },
+          }),
+        }),
+      }),
+    );
+    const response = await app.request("/api/payments/callbacks/alipay", {
+      method: "POST",
+      body: "x=1",
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.text()).not.toBe("success");
+  });
+
   test("success answers with each channel's own ack, byte for byte", async () => {
     const app = new Hono<{ Variables: AppVariables }>().route(
       "/api/payments/callbacks",
