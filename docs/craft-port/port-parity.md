@@ -270,7 +270,7 @@
 
 ---
 
-## ⑥ Remediation Delta(2026-10-13,验证检查点 `6c7c0d16`)
+## ⑥ Remediation Delta(2026-10-13,验证检查点 `fe169d20`)
 
 > 增量基线:六能力恢复计划(`docs/plans/2026-10-12-craft-parity-remediation.md`,提交 `bf81d741..6c7c0d16`)。契约事实源:`onyx-contract.md` + `fixtures/`;终审证据:`remediation-verification.md`(真实 agent-sandbox 冒烟 + finding 全录)。**本节只记增量,与 §①–⑤ 冲突处以本节 + `onyx-contract.md` §6 勘误为准。**
 
@@ -281,11 +281,11 @@
 | C1 Connectable apps 段 | 模板裁剪 | **restore**:`{{CONNECTABLE_APPS_LIST}}` 段 + 逐用户倒置过滤(已连接不出、共享部署账号不出) | ✅ live(段落渲染 + 倒置实证) |
 | C2 Managed skills + 双哈希 | 接缝缺失 | **restore**:resolver 接缝 + AGENTS.md 先渲染后 ack + reload 走真 resolver | ✅ live(空源哈希照算;reload 短路按哈希) |
 | C3 Per-user MCP servers | 无 mcp block | **restore**:mcp block(键名/权限/指纹逐 onyx)+ 服务器侧中继(逐调用凭证解密) | ✅ live(工具调用全链:`FIXTURE_ECHO` 回程,中继附挂 Bearer) |
-| C4 connect_app 工具 | 裁剪 | **restore**:插件文本逐字节 + ask/announce/decide/超时 + decide 端点限定 | **✅ live(round 2)**:工具注册 + 真实调用 + `context.ask` 停车;decide/超时回绝闭环仍缺 — **F-G**(停车期 attach SSE 无 connect_app_request 卡/无 keepalive,request_id 无出口) |
+| C4 connect_app 工具 | 裁剪 | **restore**:插件文本逐字节 + ask/announce/decide/超时 + decide 端点限定 | **✅ live(round 3)**:工具注册 + 真实调用 + `context.ask` 停车 + **decide/超时回绝闭环**(live:attach SSE 承载完整回合含 connect_app_request 帧 + keepalive;decision declined → 200 → 回合以 declined 工具结果收尾,无非活性 abort、无重试)— F-G 已修(`fe169d20`) |
 | C5 webapp 工具 + 托管启动 | 裁剪(一期经 /devserver) | **restore**:工具 + 预留端口 start-webapp.sh(flock/pid cwd 守卫)+ attach-not-spawn 预览 | **✅ live(round 2)**:工具真实执行(observation 逐字节);脚本初装在场;`ready:true` + 预览 200 + host 发布端口通 |
 | C6 ZIP 输出 | tar.gz | **restore**:两路由 `application/zip`(deflate、仅文件条目、sanitize、RFC 5987);tar.gz 从 craft HTTP 面移除 | **✅ live(round 2)**:嵌套树递归收集 + 隐藏剪除;真空 dir=零条目 zip;缺失 404 |
 
-**配置/依赖:零变更**(`package.json`/`bun.lock`/db schema 在 `3c690410..6c7c0d16` 无 diff;zip-archive.ts 为仓库内实现)。测试:425 craft + 72 agent-sandbox + 双 typecheck 全绿。
+**配置/依赖:零变更**(`package.json`/`bun.lock`/db schema 在 `3c690410..fe169d20` 无 diff;zip-archive.ts 为仓库内实现)。测试(round 3,`fe169d20`):446 craft(31 文件)+ 77 agent-sandbox + 双 typecheck 全绿(round 1 基线 425/28 文件、72)。
 
 ### 勘误(转移项 (iv)(v)(vi),Onyx/实现事实胜出先前文档)
 
@@ -299,12 +299,14 @@ company-search(组织知识技能)维持 BLOCKED:OpenBot 知识域无可供沙�
 
 ### 真实现场 finding 摘要(详见 remediation-verification.md §4/§0)
 
-**Round 2(检查点 `6488eab2`,修复 `ff7d18ab`+`0aae4340`+`6488eab2`)后状态:F-A…F-F 全部 FIXED(live 证据);OCR 同族 bug FIXED(套件)。新增:**
+**Round 2(检查点 `6488eab2`,修复 `ff7d18ab`+`0aae4340`+`6488eab2`):F-A…F-F 全部 FIXED(live 证据);OCR 同族 bug FIXED(套件);新增 F-G/F-H。Round 3(检查点 `fe169d20`):F-G/F-H + OCR round-2 mediums 全部 FIXED — F 系列 finding 清零。**
 
 | # | 级别 | 一句话 | 状态 |
 |---|---|---|---|
-| F-G | Medium | connect_app 停车期间 attach SSE 0 字节(无 connect_app_request 卡、无 keepalive),request_id 无其他出口;窗口到期未见 decline 落为工具结果(步骤以非活性 abort 收场)→ decide/超时半段无法现场闭环 | **OPEN(回流控制器)** |
-| F-H | Low(待确认) | `POST /interrupt` 后的后续 turn admit 后即刻清除、无 prompt 送出/无落库/无错误行(同会话两次复现)——疑 interrupt fence 跨 turn 残留 | **OPEN(随 F-G 流转)** |
+| F-G | Medium | connect_app 停车期间 attach SSE 0 字节(无 connect_app_request 卡、无 keepalive),request_id 无其他出口;窗口到期未见 decline 落为工具结果(步骤以非活性 abort 收场)→ decide/超时半段无法现场闭环 | **FIXED(`fe169d20`,live round 3)**:根因 = 五处仅现场可达的断层叠加(网关 family filter 丢 permission.asked、/events 剥 `?directory=` 作用域、`POST /session/:id/permissions/:pid` 被 allow-list 404、boot idle-timeout 豁免漏 `/api/craft/*/events`、executor 每趟 null 重铸 opencode 会话);live:attach 承载完整回合含 connect_app_request 帧 + keepalive,decision declined → 200 → declined 工具结果收尾,无非活性 abort、无重试(详见 remediation-verification Round 3) |
+| F-H | Low | `POST /interrupt` 后的后续 turn admit 后即刻清除、无 prompt 送出/无落库/无错误行(同会话两次复现)——interrupt fence 跨 turn 残留 | **CONFIRMED + FIXED(`fe169d20`)**:机制 = finally 守卫在自身 finishTurn 清 active 指针后必假 → end-of-turn 清 fence 永不执行,且 admit 路径从未接线 start-of-turn 清除;泄漏 fence 于 TTL 600s 内逐个取消后续 turn。live:interrupt 后续 turn admit 并跑完(同上) |
+
+**OCR round-2 mediums**(pendingConnectApp 删除路径单一、决策路径非原子、轻路径 ack 未 dispose 旧实例)随 `fe169d20` 全修(原子 takePending + 502 re-stash、超时与带外 decide 对账、dispose 先于哈希 ack — remediation-verification Round 3)。
 
 (round 1 的 F-A…F-F 行已按修复提交归档,见 remediation-verification §4 原始记录与 §0.2 复验证据。)
 
