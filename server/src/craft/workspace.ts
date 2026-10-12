@@ -11,15 +11,17 @@
 
 import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
+import { writeWebappBootstrapScript } from "./nextjs-dev";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import {
   buildProviderOpencodeConfig,
   opencodeConfigJson,
 } from "./opencode-config";
-import { writeConnectAppPlugin } from "./connect-app-plugin";
 import type { AgentSandboxFileApi } from "./sandbox-gateway";
 import { SESSION_PLUGINS } from "./session-plugins";
 import { writeTurnBudgetPlugin } from "./turn-budget";
+import { writeWebappPlugin } from "./webapp-plugin";
 
 export const SESSIONS_ROOT = "/workspace/sessions";
 
@@ -58,6 +60,13 @@ export type SetupSessionWorkspaceInput = {
     /** The session owner's craft MCP set — same snapshot the reconcile compares against. */
     mcpServers?: readonly import("./opencode-config").CraftMCPServerConfig[];
   } | null;
+  /**
+   * The session's reserved webapp port (`craft_sessions.nextjs_port`). Non-null →
+   * the protected `start-webapp.sh` lands at the session root (the webapp tool's
+   * target). Null (headless sessions, onyx parity) → no script; the tool answers
+   * the unavailable observation. The plugin ships either way.
+   */
+  webappPort?: number | null;
 };
 
 export type WorkspaceApi = {
@@ -103,6 +112,19 @@ export async function setupSessionWorkspace(
   // cannot carry them); the opencode.json below points opencode at them.
   await writeTurnBudgetPlugin(api, input.sessionId, input.config);
   await writeConnectAppPlugin(api, input.sessionId, input.config);
+  await writeWebappPlugin(api, input.sessionId, input.config);
+  // The webapp tool's protected bootstrap script — written BEFORE opencode.json
+  // so the workspace never carries a config referencing an absent tool target.
+  // Headless sessions (no reserved port) get no script (onyx parity: the tool
+  // answers the unavailable observation there).
+  if (input.webappPort != null) {
+    await writeWebappBootstrapScript(
+      api,
+      input.sessionId,
+      input.config,
+      input.webappPort,
+    );
+  }
 
   const opencodeJson = opencodeConfigJson(
     buildProviderOpencodeConfig(input.llmConfig, {

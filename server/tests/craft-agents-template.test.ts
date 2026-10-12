@@ -143,6 +143,49 @@ describe("AGENTS.template.md calibration", () => {
     );
   });
 
+  // ── fixture F5 + contract §4.1 #3/#4/#7: the webapp tool entry (Task 4 restore) ─
+
+  test("Hard rule 5 directs at the webapp tool with the fallback script", () => {
+    const rendered = render();
+    // onyx's restored shape: the tool call first, both documented fallbacks,
+    // and the no-own-server tail verbatim.
+    expect(rendered).toContain("call the `webapp`");
+    expect(rendered).toContain('tool with `action: "start"`');
+    expect(rendered).toContain("safe to call repeatedly, and `status`/`logs`");
+    expect(rendered).toContain(
+      "(If the tool is unavailable, run `bash start-webapp.sh` from the session",
+    );
+    expect(rendered).toContain(
+      "Never run `bun run dev` or start your own server.",
+    );
+  });
+
+  test("environment substitution, enumerated: the agent scaffolds before start (no image template)", () => {
+    const rendered = render();
+    // onyx's "It scaffolds outputs/web" is FALSE here — the sandbox image ships
+    // no outputs template, so scaffold ownership is the agent's and the rule
+    // says so explicitly.
+    expect(rendered).toContain("scaffold it under");
+    expect(rendered).toContain("`outputs/web` FIRST, then call the `webapp`");
+    expect(rendered).not.toContain("It scaffolds `outputs/web`");
+  });
+
+  test("workspace layout names start-webapp.sh as the tool's fallback", () => {
+    expect(render()).toContain(
+      '├── start-webapp.sh    # fallback: use the `webapp` tool (action: "start") instead',
+    );
+  });
+
+  test("the Outputs paragraph routes web apps through the tool + fallback", () => {
+    const rendered = render();
+    expect(rendered).toContain("calling the `webapp` tool with");
+    expect(rendered).toContain("(fallback: `bash start-webapp.sh`)");
+    expect(rendered).toContain("Once running, it renders live");
+    // The tool does not scaffold here either — same enumerated substitution.
+    expect(rendered).not.toContain("It\nscaffolds `outputs/web`");
+    expect(rendered).toContain("scaffolding `outputs/web`");
+  });
+
   test("keeps the onyx turn-budget notice marker verbatim", () => {
     expect(render()).toContain("`[Onyx turn budget]` notices to tool results");
   });

@@ -48,7 +48,9 @@ function parseConnectAppAnnounce(
     return null;
   }
 }
+
 import type { CraftConfig } from "./config";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
 import {
   approvalRequestedPacket,
   type BuildPacket,
@@ -62,6 +64,7 @@ import {
   materializeManagedContent,
   type ResolvedCraftManagedContent,
 } from "./managed-content";
+import { writeWebappBootstrapScript } from "./nextjs-dev";
 import type { PromptAttachment } from "./opencode/serve-client";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import {
@@ -69,6 +72,7 @@ import {
   opencodeConfigJson,
 } from "./opencode-config";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { SESSION_PLUGINS } from "./session-plugins";
 import { ensureSessionReady } from "./session-ready";
 import { sessionRuntimeStale } from "./skills";
 import type { CraftSessionRow, CraftStore } from "./store";
@@ -77,9 +81,8 @@ import {
   finalizePersist,
   persistSandboxEvent,
 } from "./streaming";
-import { SESSION_PLUGINS } from "./session-plugins";
 import { writeTurnBudgetPlugin } from "./turn-budget";
-import { writeConnectAppPlugin } from "./connect-app-plugin";
+import { writeWebappPlugin } from "./webapp-plugin";
 import { sessionDirectory } from "./workspace";
 
 /** Redis-keyed marker: a config rewrite owes its running instance a dispose (24h TTL in onyx). */
@@ -456,6 +459,19 @@ export class CraftSessionManager {
       // whose workspace predates them (onyx's image bake, workspace-born).
       await writeTurnBudgetPlugin(workspaceApi, session.id, this.config);
       await writeConnectAppPlugin(workspaceApi, session.id, this.config);
+      // The webapp tool refreshes the same way: plugin always, the protected
+      // bootstrap script when the session holds a reserved port (the plugin
+      // list change flips the byte-compare, so this regenerate is exactly the
+      // dispose-on-tool-change ride-along).
+      await writeWebappPlugin(workspaceApi, session.id, this.config);
+      if (session.nextjsPort != null) {
+        await writeWebappBootstrapScript(
+          workspaceApi,
+          session.id,
+          this.config,
+          session.nextjsPort,
+        );
+      }
     }
     if (session.opencodeSessionId) {
       await this.gateway

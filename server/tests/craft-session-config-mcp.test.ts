@@ -4,16 +4,16 @@ import type { ResolvedCraftManagedContent } from "../src/craft/managed-content";
 import { CraftSessionManager } from "../src/craft/manager";
 import {
   buildProviderOpencodeConfig,
-  opencodeConfigJson,
   type CraftLLMProviderConfig,
+  opencodeConfigJson,
 } from "../src/craft/opencode-config";
+import type { SandboxGateway } from "../src/craft/sandbox-gateway";
 import {
   computeSkillRuntimeHash,
   craftMcpFingerprint,
 } from "../src/craft/skills";
-import type { SandboxGateway } from "../src/craft/sandbox-gateway";
-import { setupSessionWorkspace } from "../src/craft/workspace";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
+import { setupSessionWorkspace } from "../src/craft/workspace";
 
 /**
  * The per-session config snapshot rule (the plan's binding constraint): the
@@ -74,6 +74,7 @@ function expectedConfigBytes(
       plugins: [
         "./.opencode/plugin/turn-budget.ts",
         "./.opencode/plugin/connect-app.ts",
+        "./.opencode/plugin/webapp.ts",
       ],
       mcpServers,
       sessionId: SESSION_ID,

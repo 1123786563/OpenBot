@@ -9,9 +9,11 @@
  *
  * onyx points a Next.js dev server at a backend-reserved port and proxies to it with header
  * hygiene (hop-by-hop + credentials stripped, no set-cookie forwarding) and a relaxed CSP for
- * dev tooling. OpenBot reaches the agent-sandbox dev server pool (`POST /devserver/start`) and
- * streams through the same hygiene — the workspace-preview's two-tier CSP is reused word for
- * word so the dev road and this one can't drift.
+ * dev tooling. OpenBot's restored webapp tool runs the same shape: the session's dev server
+ * is the script-managed process bound to the reserved `craft_sessions.nextjs_port` (see
+ * nextjs-dev.ts), and this proxy ATTACHES to that port — status and preview report the same
+ * port by construction, and a down server is an honest 503 (onyx's webapp_proxy refuses too)
+ * rather than a second spawned process beside the managed one.
  */
 
 import { gzipSync } from "node:zlib";
@@ -19,7 +21,7 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
 import type { CraftConfig } from "./config";
-import { startNextjsDevServer } from "./nextjs-dev";
+import { webappDevServerReady } from "./nextjs-dev";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
@@ -35,8 +37,9 @@ export type WebappProxyRoutesDeps = {
   ) => { baseUrl: string; token: string | null } | null;
 };
 
-const WEBAPP_COMMAND = "bun run dev";
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
+/** The headless refusal: no reserved port, no webapp support (onyx parity). */
+const WEBAPP_NO_SUPPORT_ERROR = "This session has no web-app support.";
 
 /**
  * Request headers never forwarded to the LLM-authored app, matched by lowercase key — onyx's
@@ -262,11 +265,19 @@ export function createWebappProxyRoutes(
     const hasWebapp =
       (listing?.length ?? 0) > 0 && hasWebappScaffold(listing ?? []);
 
+    // onyx's ready judgment (manager.py:1570-1593): any answer on the managed
+    // port counts — the same port the webapp tool reports and the proxy below
+    // routes to, so status and preview can never disagree.
+    const ready =
+      hasWebapp &&
+      session.nextjsPort !== null &&
+      (await webappDevServerReady(session.nextjsPort as number));
+
     return context.json({
       has_webapp: hasWebapp,
       webapp_url: `/api/craft/sessions/${sessionId}/webapp`,
       status: "running",
-      ready: false, // the iframe's first fetch lazily starts the dev server
+      ready,
     });
   });
 
@@ -289,26 +300,25 @@ export function createWebappProxyRoutes(
       return context.json({ error: "The sandbox is not available." }, 503);
     }
 
-    const directory = sessionDirectory(
-      sessionId,
-      deps.config.sessionDirectoryMode,
-    );
-    // For agent-sandbox the dev-server dir must be Bot-relative (it refuses absolutes);
-    // in absolute mode the same segment arithmetic still stays inside the workspace.
-    const devDir = `${directory}/outputs/web`;
-    const started = await startNextjsDevServer({
-      botId,
-      baseUrl: conn.baseUrl,
-      token: conn.token,
-      dir: devDir,
-      command: WEBAPP_COMMAND,
-    });
-    if (!started.ok) {
-      return context.json({ error: started.error }, 503);
+    // Attach, never spawn: the session's reserved port is the managed process's
+    // routing contract — the webapp tool's start-webapp.sh owns the one process
+    // per session, and the preview refuses rather than double-spawning beside it.
+    const port = session.nextjsPort;
+    if (port === null) {
+      return context.json({ error: WEBAPP_NO_SUPPORT_ERROR }, 503);
+    }
+    if (!(await webappDevServerReady(port))) {
+      return context.json(
+        {
+          error:
+            "The web app is not running. Ask the agent to call the webapp tool with action 'start'.",
+        },
+        503,
+      );
     }
 
     const result = await proxyWebappRequest({
-      upstreamBaseUrl: `http://127.0.0.1:${started.port}`,
+      upstreamBaseUrl: `http://127.0.0.1:${port}`,
       path: rel,
       query: context.req.url.includes("?")
         ? context.req.url.slice(context.req.url.indexOf("?"))
