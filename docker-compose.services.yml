@@ -1,0 +1,83 @@
+# Casdoor + OpenConnector — split out of docker-compose.yml (one file per service group).
+#
+# START THE MAIN STACK FIRST: both services share the `data` network and reach postgres by
+# service name, and postgres lives in docker-compose.yml. Cross-file `depends_on` is not a
+# thing Compose resolves, so the postgres health dependencies the single file used to carry
+# are gone; `restart: unless-stopped` absorbs the gap instead (a container that starts before
+# postgres is ready crash-loops briefly and then comes up).
+#
+# Same project name as the main file on purpose: volumes keep their openbot_* names, so a
+# stack that ran under the single file keeps its data (open-connector-data) without any
+# migration step.
+name: openbot
+
+services:
+  # The identity provider OpenBot signs in through, when CASDOOR_OAUTH_* is configured.
+  #
+  # On the `data` network beside the database it shares: Casdoor holds sign-in credentials
+  # rather than running anything a Bot asks for, so it is a service the deployment trusts with
+  # its own data, and it reaches `postgres` by name rather than through the published port.
+  #
+  # Its own database on that postgres, through the dedicated `casdoor` login role
+  # (casdoor/init-db.sql, mounted into the main stack's postgres): its tables, users and
+  # application registrations cannot see OpenBot's, and OpenBot's migrations cannot see
+  # Casdoor's. Stateless: recreating this container loses nothing, because everything it owns
+  # lives in the postgres volume.
+  casdoor:
+    image: casbin/casdoor:latest
+    restart: unless-stopped
+    ports:
+      # Loopback, like every other port in these files. This is the address in
+      # CASDOOR_OAUTH_ISSUER and the one browsers are sent to for the sign-in page; the
+      # server on the host reaches it the same way.
+      - "127.0.0.1:${CASDOOR_PORT:-8000}:8000"
+      - "[::1]:${CASDOOR_PORT:-8000}:8000"
+    volumes:
+      - ./casdoor/app.conf:/conf/app.conf:ro
+    networks:
+      - data
+
+  # OpenConnector, the self-hosted broker behind this deployment's own app catalogue. Unlike every
+  # other broker here it is a container of this deployment's: the credentials people type stay in
+  # the volume below, encrypted by the container when OPENCONNECTOR_ENCRYPTION_KEY is set, and
+  # reachable by nobody outside this machine.
+  open-connector:
+    image: ghcr.io/oomol-lab/open-connector:latest   # pin to a digest when cutting a release
+    restart: unless-stopped
+    environment:
+      OOMOL_CONNECT_ADMIN_TOKEN: ${OPENCONNECTOR_ADMIN_TOKEN:-}
+      OOMOL_CONNECT_RUNTIME_TOKEN: ${OPENCONNECTOR_RUNTIME_TOKEN:-}
+      OOMOL_CONNECT_ENCRYPTION_KEY: ${OPENCONNECTOR_ENCRYPTION_KEY:-}
+      # Escape hatch for a proxy/VPN whose fake-IP DNS maps public domains into reserved ranges
+      # (198.18.0.0/15, fc00::/7). Empty keeps OpenConnector's egress protection at full strength.
+      OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS: ${OPENCONNECTOR_EGRESS_TRUSTED_HOSTS:-}
+      # This deployment's own `openconnector` database on the shared postgres
+      # (docker/openconnector/init-db.sql, mounted into the main stack's postgres), the same
+      # dedicated-database arrangement as Casdoor's and Lago's. A deployment points this at its
+      # own external Postgres by setting OPENCONNECTOR_DATABASE_URL in .env instead. PostgreSQL
+      # mode needs an explicit migrate before first start on a fresh database:
+      # `docker compose -f docker-compose.services.yml run --rm open-connector npm run runtime:migrate`.
+      OOMOL_CONNECT_DATABASE_URL: ${OPENCONNECTOR_DATABASE_URL:-postgres://openconnector:openconnector@postgres:5432/openconnector}
+    volumes:
+      - open-connector-data:/app/data
+    networks:
+      # The broker dials Postgres by service name, so it rides the same network the main
+      # stack's migrate and agent-computer use to reach it. Nothing else needs it — the API
+      # server reaches this container over loopback, not over the compose network.
+      - data
+    ports:
+      # Loopback, like every other port in these files. The API server runs on the host and reaches
+      # the broker at OPENCONNECTOR_URL, http://localhost:3100 by default; the two tokens are the
+      # boundary against everything else on this machine. Both loopback families, for the reason
+      # postgres gives in the main file: `localhost` is not one address, and a host-run Bun server
+      # does not fall back from the family it tried first.
+      - "127.0.0.1:3100:3000"
+      - "[::1]:3100:3000"
+
+networks:
+  # The same `data` network docker-compose.yml declares (same project name), so these
+  # services reach the main stack's postgres by service name.
+  data:
+
+volumes:
+  open-connector-data:

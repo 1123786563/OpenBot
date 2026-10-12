@@ -1,0 +1,369 @@
+/**
+ * The craft webapp surface — ported from onyx `webapp_proxy.py` + the `webapp-info` /
+ * `webapp-download` endpoints in `session/api.py`, Hono-shaped.
+ *
+ * Three endpoints:
+ * - GET /sessions/:id/webapp-info    — has_webapp / webapp_url / status / ready
+ * - GET /sessions/:id/webapp/*        — reverse-proxy the session's dev server
+ * - GET /sessions/:id/webapp-download — the scaffolded webapp as a tar.gz
+ *
+ * onyx points a Next.js dev server at a backend-reserved port and proxies to it with header
+ * hygiene (hop-by-hop + credentials stripped, no set-cookie forwarding) and a relaxed CSP for
+ * dev tooling. OpenBot reaches the agent-sandbox dev server pool (`POST /devserver/start`) and
+ * streams through the same hygiene — the workspace-preview's two-tier CSP is reused word for
+ * word so the dev road and this one can't drift.
+ */
+
+import { gzipSync } from "node:zlib";
+import { Hono, type MiddlewareHandler } from "hono";
+import type { AppVariables } from "../auth/guards";
+import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
+import type { CraftConfig } from "./config";
+import { startNextjsDevServer } from "./nextjs-dev";
+import type { SandboxGateway } from "./sandbox-gateway";
+import type { CraftStore } from "./store";
+import { sessionDirectory } from "./workspace";
+
+export type WebappProxyRoutesDeps = {
+  config: CraftConfig;
+  store: CraftStore;
+  gateway: SandboxGateway;
+  botIdFor: (sessionId: string) => Promise<string | null>;
+  /** Connection facts for a Bot's sandbox gateway (baseUrl + token). */
+  sandboxConnectionFor: (
+    botId: string,
+  ) => { baseUrl: string; token: string | null } | null;
+};
+
+const WEBAPP_COMMAND = "bun run dev";
+const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * Request headers never forwarded to the LLM-authored app, matched by lowercase key — onyx's
+ * `EXCLUDED_REQUEST_HEADERS`, plus the header the gateway itself uses for auth. Prefix
+ * exclusions (sec-fetch-*, x-forwarded-*, …) keep browser context and ingress identity out.
+ */
+const EXCLUDED_REQUEST_HEADERS = new Set([
+  "host",
+  "content-length",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "cookie",
+  "authorization",
+  "x-api-key",
+  "x-auth-token",
+  "x-csrf-token",
+  "x-xsrf-token",
+  "x-sandbox-token",
+  "x-openbot-bot-id",
+  "origin",
+  "forwarded",
+]);
+
+const EXCLUDED_REQUEST_HEADER_PREFIXES = [
+  "x-forwarded-",
+  "x-real-ip",
+  "x-client-ip",
+  "cf-",
+  "true-client-ip",
+  "sec-fetch-",
+  "x-onyx-",
+];
+
+/** Response headers never forwarded back: hop-by-hop, and set-cookie (an app must not set
+ * cookies on the parent domain). */
+const EXCLUDED_RESPONSE_HEADERS = new Set([
+  "content-encoding",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "set-cookie",
+]);
+
+function stripRequestHeaders(source: Headers): Headers {
+  const headers = new Headers();
+  for (const [key, value] of source.entries()) {
+    const lowered = key.toLowerCase();
+    if (EXCLUDED_REQUEST_HEADERS.has(lowered)) continue;
+    if (
+      EXCLUDED_REQUEST_HEADER_PREFIXES.some((prefix) =>
+        lowered.startsWith(prefix),
+      )
+    ) {
+      continue;
+    }
+    headers.set(key, value);
+  }
+  return headers;
+}
+
+export type ProxyWebappResult = {
+  status: number;
+  headers: Headers;
+  body: BodyInit | null;
+};
+
+/**
+ * One proxied request to a dev-server upstream. Returns a 504 on upstream timeout, 502 on a
+ * connection failure, 503 when the upstream is not running — mirroring onyx's `_proxy_request`.
+ */
+export async function proxyWebappRequest(input: {
+  upstreamBaseUrl: string;
+  path: string;
+  query: string;
+  requestHeaders: Headers;
+  fetchImpl?: typeof fetch;
+}): Promise<ProxyWebappResult> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const path = input.path.replace(/^\/+/, "");
+  const target = `${input.upstreamBaseUrl}/${path}${input.query}`;
+  const headers = stripRequestHeaders(input.requestHeaders);
+
+  let upstream: Response;
+  try {
+    upstream = await fetchImpl(target, {
+      method: "GET",
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(WEBAPP_PROBE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return timedOut
+      ? { status: 504, headers: new Headers(), body: null }
+      : { status: 502, headers: new Headers(), body: null };
+  }
+
+  const responseHeaders = new Headers();
+  for (const [key, value] of upstream.headers.entries()) {
+    if (EXCLUDED_RESPONSE_HEADERS.has(key.toLowerCase())) continue;
+    responseHeaders.set(key, value);
+  }
+  responseHeaders.set(
+    "content-type",
+    upstream.headers.get("content-type") ?? "text/html",
+  );
+  responseHeaders.set("content-security-policy", DEV_CSP_ALLOW_LISTED);
+  return {
+    status: upstream.status,
+    headers: responseHeaders,
+    body: upstream.body,
+  };
+}
+
+/**
+ * A minimal POSIX-ustar writer + gzip — enough for the webapp-download tar.gz. There is no
+ * tar dependency in the tree, and the archive's contract is "a browser can open it", which an
+ * 8.3-name, single-pass, no-longpath writer satisfies for a scaffolded webapp.
+ */
+export function tarGzip(
+  entries: { path: string; bytes: Uint8Array }[],
+): Uint8Array {
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  const push = (buf: Uint8Array) => chunks.push(buf);
+
+  const octal = (value: number, width: number): string =>
+    `${value
+      .toString(8)
+      .padStart(width - 1, "0")
+      .slice(0, width - 1)} `;
+
+  for (const entry of entries) {
+    const header = new Uint8Array(512);
+    const write = (offset: number, value: string) =>
+      header.set(encoder.encode(value).slice(0, 512 - offset), offset);
+
+    write(0, entry.path.slice(0, 100));
+    write(100, "0000644"); // mode
+    write(108, "0000000"); // uid
+    write(116, "0000000"); // gid
+    write(124, octal(entry.bytes.length, 12)); // size (octal, 11 digits + space)
+    write(136, "00000000000"); // mtime
+    header[156] = "0".charCodeAt(0); // typeflag: regular file
+    write(257, "ustar");
+    write(263, "00");
+
+    // checksum: spaces first, then the sum-of-bytes in octal.
+    let sum = 0;
+    for (let i = 0; i < 512; i++) sum += header[i];
+    write(148, `${sum.toString(8).padStart(6, "0")}\0 `);
+
+    push(header);
+    push(entry.bytes);
+    const padding = (512 - (entry.bytes.length % 512)) % 512;
+    if (padding > 0) push(new Uint8Array(padding));
+  }
+  push(new Uint8Array(1024)); // two zero blocks: end of archive
+
+  const total = chunks.reduce((n, chunk) => n + chunk.length, 0);
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new Uint8Array(gzipSync(joined));
+}
+
+function hasWebappScaffold(paths: string[]): boolean {
+  return paths.some(
+    (path) => path.endsWith("/package.json") || path.endsWith("package.json"),
+  );
+}
+
+export function createWebappProxyRoutes(
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  deps: WebappProxyRoutesDeps,
+): Hono<{ Variables: AppVariables }> {
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", requireUser);
+
+  /** Ownership-checked session + its sandbox connection facts. */
+  const resolve = async (sessionId: string, userId: string) => {
+    const session = await deps.store.getSession(sessionId, userId);
+    if (!session) return { session: null, botId: null, conn: null };
+    const botId = await deps.botIdFor(sessionId);
+    const conn = botId ? deps.sandboxConnectionFor(botId) : null;
+    return { session, botId, conn };
+  };
+
+  // ── GET /sessions/:id/webapp-info ───────────────────────────────────────────
+  app.get("/sessions/:sessionId/webapp-info", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const { session, botId, conn } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+
+    if (!botId || !conn) {
+      // Sandbox unavailable: existence cannot be inspected — onyx's `status: no_sandbox`.
+      return context.json({
+        has_webapp: null,
+        webapp_url: null,
+        status: "no_sandbox",
+        ready: false,
+      });
+    }
+
+    const directory = sessionDirectory(
+      sessionId,
+      deps.config.sessionDirectoryMode,
+    );
+    const fileApi = deps.gateway.fileApiFor(botId);
+    const listing = await fileApi
+      ?.listFiles(`${directory}/outputs/web`)
+      .catch(() => [] as string[]);
+    const hasWebapp =
+      (listing?.length ?? 0) > 0 && hasWebappScaffold(listing ?? []);
+
+    return context.json({
+      has_webapp: hasWebapp,
+      webapp_url: `/api/craft/sessions/${sessionId}/webapp`,
+      status: "running",
+      ready: false, // the iframe's first fetch lazily starts the dev server
+    });
+  });
+
+  // ── GET /sessions/:id/webapp/* — the reverse proxy ──────────────────────────
+  app.get("/sessions/:sessionId/webapp/*", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const rel = context.req.param("*") ?? "";
+    const { session, botId, conn } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!botId || !conn) {
+      return context.json({ error: "The sandbox is not available." }, 503);
+    }
+
+    const directory = sessionDirectory(
+      sessionId,
+      deps.config.sessionDirectoryMode,
+    );
+    // For agent-sandbox the dev-server dir must be Bot-relative (it refuses absolutes);
+    // in absolute mode the same segment arithmetic still stays inside the workspace.
+    const devDir = `${directory}/outputs/web`;
+    const started = await startNextjsDevServer({
+      botId,
+      baseUrl: conn.baseUrl,
+      token: conn.token,
+      dir: devDir,
+      command: WEBAPP_COMMAND,
+    });
+    if (!started.ok) {
+      return context.json({ error: started.error }, 503);
+    }
+
+    const result = await proxyWebappRequest({
+      upstreamBaseUrl: `http://127.0.0.1:${started.port}`,
+      path: rel,
+      query: context.req.url.includes("?")
+        ? context.req.url.slice(context.req.url.indexOf("?"))
+        : "",
+      requestHeaders: context.req.raw.headers,
+    });
+    return new Response(result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
+  });
+
+  // ── GET /sessions/:id/webapp-download — the scaffolded webapp as tar.gz ─────
+  app.get("/sessions/:sessionId/webapp-download", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const { session, botId } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!botId) return context.json({ error: "Webapp not found" }, 404);
+
+    const directory = sessionDirectory(
+      sessionId,
+      deps.config.sessionDirectoryMode,
+    );
+    const fileApi = deps.gateway.fileApiFor(botId);
+    if (!fileApi) return context.json({ error: "Webapp not found" }, 404);
+
+    const root = `${directory}/outputs/web`;
+    const listing = await fileApi.listFiles(root).catch(() => [] as string[]);
+    const prefix = root.endsWith("/") ? root : `${root}/`;
+
+    const entries: { path: string; bytes: Uint8Array }[] = [];
+    for (const path of listing) {
+      if (path.startsWith("/") || path.includes("/../")) continue;
+      if (isHiddenSegment(path)) continue;
+      const relPath = path.startsWith(prefix)
+        ? path.slice(prefix.length)
+        : path;
+      if (!relPath) continue;
+      const bytes = await fileApi.readFileBytes(path).catch(() => null);
+      if (bytes === null) continue;
+      entries.push({ path: relPath, bytes });
+    }
+    if (entries.length === 0) {
+      return context.json({ error: "Webapp not found" }, 404);
+    }
+
+    const archive = tarGzip(entries);
+    return new Response(archive as unknown as BodyInit, {
+      status: 200,
+      headers: {
+        "content-type": "application/gzip",
+        "content-length": String(archive.byteLength),
+        "content-disposition": `attachment; filename="webapp.tar.gz"`,
+      },
+    });
+  });
+
+  return app;
+}
+
+function isHiddenSegment(path: string): boolean {
+  return path
+    .split("/")
+    .some((segment) => segment.startsWith(".") || segment.startsWith("._"));
+}

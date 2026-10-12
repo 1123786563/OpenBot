@@ -8,13 +8,15 @@
  * rows). The yield/persist/finalize layering that the headless scheduled-tasks path was built
  * to reuse (onyx §streaming docstring) is preserved verbatim — that split is the point.
  *
- * Trimmed relative to onyx (phase 1): the artifact walk (artifacts are an immediate outputs/
- * scan in onyx now anyway), md→docx/pptx export, webapp proxying, and the skills/MCP reload
- * chain (columns + staleness contract live on the row; the push is phase 2).
+ * The artifact walk, md→docx/pptx export and webapp proxying live in their own modules
+ * (artifacts.ts / export.ts / webapp-proxy.ts); the skills/MCP reload chain is the staleness
+ * predicate in skills.ts plus the regenerate/dispose/ack tail of reconcileSessionLlmConfig —
+ * the managed-content push that would fill the source hashes is still a later phase.
  */
 
 import { readFile } from "node:fs/promises";
 import type { Database } from "../db/client";
+import type { CraftSessionOrigin } from "../db/schema/craft";
 import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
 import { type BuildPacket, isBuildPacket } from "./events/packets";
@@ -27,6 +29,7 @@ import {
 } from "./opencode-config";
 import type { SandboxGateway } from "./sandbox-gateway";
 import { ensureSessionReady } from "./session-ready";
+import { sessionRuntimeStale } from "./skills";
 import type { CraftSessionRow, CraftStore } from "./store";
 import {
   type BuildStreamingState,
@@ -50,6 +53,15 @@ export type SessionManagerDeps = {
   botIdFor: (sessionId: string) => Promise<string | null>;
   /** Organization-level craft instructions (AGENTS.md section); null when unset. */
   organizationInstructions?: string | null;
+  /**
+   * The deployment's current managed-content fingerprints (skills payload + craft MCP set) to
+   * compare a session's recorded hashes against. onyx reads these off the sandbox row; OpenBot
+   * has no managed-content push yet, so the wiring leaves this unset and both hashes resolve
+   * null — the staleness contract below stays wired but inert until a skills/MCP pipeline lands.
+   */
+  managedContentHashesFor?: (
+    session: CraftSessionRow,
+  ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
 };
 
 export class CraftSessionManager {
@@ -106,6 +118,7 @@ export class CraftSessionManager {
       agentProvider?: string | null;
       agentModel?: string | null;
       headless?: boolean;
+      origin?: CraftSessionOrigin;
     },
   ): Promise<CraftSessionRow> {
     const session = await this.store.createSession({
@@ -113,6 +126,7 @@ export class CraftSessionManager {
       name: input.name ?? null,
       agentProvider: input.agentProvider ?? null,
       agentModel: input.agentModel ?? null,
+      origin: input.origin,
     });
     if (!input.headless) {
       await this.store.reserveNextjsPort({
@@ -192,7 +206,8 @@ export class CraftSessionManager {
    * Reconcile the session's opencode.json against its effective LLM config: identical file →
    * no-op (except a pending dispose); changed file → rewrite + dispose the running instance
    * (it caches config at creation). The dispose-pending marker covers the crash window
-   * between write and dispose (onyx: set BEFORE the write).
+   * between write and dispose (onyx: set BEFORE the write). The tail also reconciles the
+   * managed-content fingerprints (skills/MCP) — the reload half of the same converge story.
    */
   async reconcileSessionLlmConfig(
     _db: Database,
@@ -227,29 +242,71 @@ export class CraftSessionManager {
       }
     }
 
-    if (current === expected) {
+    if (current !== expected) {
+      await this.regenerateSessionConfig(
+        botId,
+        directory,
+        session,
+        llmConfig,
+        userName,
+      );
+    } else if (session.opencodeSessionId) {
       // A matching file does NOT prove the running instance picked it up: a prior
       // reconcile may have written and then failed the dispose. The pending marker
       // (kept in the wiring's KV — Redis when configured) is honored by the caller
       // that owns one; phase 1 re-disposes unconditionally when a session id exists.
-      if (session.opencodeSessionId) {
-        await this.gateway
-          .serveClientFor({ botId, directory })
-          ?.disposeInstance({ directory })
-          .catch(() => undefined);
-      }
-      if (
-        session.agentProvider !== llmConfig.provider ||
-        session.agentModel !== llmConfig.modelName
-      ) {
-        await this.store.updateSession(session.id, {
-          agentProvider: llmConfig.provider,
-          agentModel: llmConfig.modelName,
-        });
-      }
-      return;
+      await this.gateway
+        .serveClientFor({ botId, directory })
+        ?.disposeInstance({ directory })
+        .catch(() => undefined);
     }
 
+    if (
+      session.agentProvider !== llmConfig.provider ||
+      session.agentModel !== llmConfig.modelName
+    ) {
+      await this.store.updateSession(session.id, {
+        agentProvider: llmConfig.provider,
+        agentModel: llmConfig.modelName,
+      });
+    }
+
+    // Managed-content staleness: a runtime that predates a skills/MCP change reloads.
+    const hashes = (await this.deps.managedContentHashesFor?.(session)) ?? null;
+    if (
+      sessionRuntimeStale(
+        session,
+        hashes?.skillsHash ?? null,
+        hashes?.mcpConfigHash ?? null,
+      )
+    ) {
+      await this.reloadSessionSkills(
+        session,
+        botId,
+        directory,
+        userName,
+        hashes,
+      );
+    }
+  }
+
+  /**
+   * Write the session's opencode.json + AGENTS.md into the workspace and dispose any running
+   * instance (it caches config at creation). The shared "regenerate" half of the two paths
+   * that make a live runtime stale: the LLM-config reconcile and the skills/MCP reload.
+   */
+  private async regenerateSessionConfig(
+    botId: string,
+    directory: string,
+    session: CraftSessionRow,
+    llmConfig: CraftLLMProviderConfig,
+    userName: string | null,
+  ): Promise<void> {
+    const expected = opencodeConfigJson(
+      buildProviderOpencodeConfig(llmConfig, {
+        disabledTools: this.config.opencodeDisabledTools,
+      }),
+    );
     const workspaceApi = this.gateway.workspaceApiFor(botId);
     if (workspaceApi) {
       await workspaceApi.writeFile(`${directory}/opencode.json`, expected);
@@ -271,20 +328,50 @@ export class CraftSessionManager {
         ?.disposeInstance({ directory })
         .catch(() => undefined);
     }
+  }
+
+  /**
+   * Reload a session whose runtime predates the deployment's managed content (skills/MCP):
+   * rewrite the session config and dispose the running instance so a fresh one re-reads it,
+   * then acknowledge the current hashes on the row (onyx reload_session_skills). OpenBot ships
+   * no managed content yet, so the rewrite is the same provider-config regenerate the enclosing
+   * reconcile just produced; the hash write-back is what keeps the columns converged.
+   */
+  private async reloadSessionSkills(
+    session: CraftSessionRow,
+    botId: string,
+    directory: string,
+    userName: string | null,
+    hashes: { skillsHash: string | null; mcpConfigHash: string | null } | null,
+  ): Promise<void> {
+    const llmConfig = await this.deps.llmConfigFor(session);
+    await this.regenerateSessionConfig(
+      botId,
+      directory,
+      session,
+      llmConfig,
+      userName,
+    );
     await this.store.updateSession(session.id, {
-      agentProvider: llmConfig.provider,
-      agentModel: llmConfig.modelName,
+      skillsHash: hashes?.skillsHash ?? null,
+      mcpConfigHash: hashes?.mcpConfigHash ?? null,
     });
   }
 
   private async readWorkspaceFile(
-    _botId: string,
-    _path: string,
+    botId: string,
+    path: string,
   ): Promise<string | null> {
-    // Phase-1 stub: the agent-sandbox gateway exposes writes/listing but not file
-    // reads, so the opencode.json compare degrades to "regenerate" (safe — rewrite
-    // + dispose is idempotent). Phase 2 wires the real read endpoint here.
-    return null;
+    // Phase-2 real read via the gateway's `/file/content` (see sandbox-gateway.ts
+    // readFile). Absent/non-text → null, which degrades the opencode.json compare
+    // to "regenerate" — the same safe fallback the phase-1 stub used.
+    const fileApi = this.gateway.fileApiFor(botId);
+    if (!fileApi) return null;
+    try {
+      return await fileApi.readFile(path);
+    } catch {
+      return null;
+    }
   }
 
   // =========================================================================

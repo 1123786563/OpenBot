@@ -1,5 +1,5 @@
 {
-  "id": "a2383c87-55c8-44a6-ba64-c1a483cfc5a1",
+  "id": "0b722739-a14e-4990-b791-ca8ff9351cbf",
   "prevId": "f78bb344-48b5-4714-aae0-511a345c1171",
   "version": "7",
   "dialect": "postgresql",
@@ -2387,6 +2387,330 @@
         "craft_messages_type_check": {
           "name": "craft_messages_type_check",
           "value": "\"craft_messages\".\"type\" IN ('system', 'user', 'assistant', 'tool_call_response', 'user_reminder')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.craft_scheduled_task_runs": {
+      "name": "craft_scheduled_task_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "trigger_source": {
+          "name": "trigger_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_class": {
+          "name": "error_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_detail": {
+          "name": "error_detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "craft_scheduled_task_runs_task_started_idx": {
+          "name": "craft_scheduled_task_runs_task_started_idx",
+          "columns": [
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "craft_scheduled_task_runs_status_idx": {
+          "name": "craft_scheduled_task_runs_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "craft_scheduled_task_runs_session_idx": {
+          "name": "craft_scheduled_task_runs_session_idx",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "craft_scheduled_task_runs_task_id_craft_scheduled_tasks_id_fk": {
+          "name": "craft_scheduled_task_runs_task_id_craft_scheduled_tasks_id_fk",
+          "tableFrom": "craft_scheduled_task_runs",
+          "tableTo": "craft_scheduled_tasks",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "craft_scheduled_task_runs_session_id_craft_sessions_id_fk": {
+          "name": "craft_scheduled_task_runs_session_id_craft_sessions_id_fk",
+          "tableFrom": "craft_scheduled_task_runs",
+          "tableTo": "craft_sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "craft_scheduled_task_runs_status_check": {
+          "name": "craft_scheduled_task_runs_status_check",
+          "value": "\"craft_scheduled_task_runs\".\"status\" IN ('queued', 'running', 'succeeded', 'failed', 'skipped', 'awaiting_approval')"
+        },
+        "craft_scheduled_task_runs_trigger_check": {
+          "name": "craft_scheduled_task_runs_trigger_check",
+          "value": "\"craft_scheduled_task_runs\".\"trigger_source\" IN ('scheduled', 'manual_run_now')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.craft_scheduled_tasks": {
+      "name": "craft_scheduled_tasks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cron_expression": {
+          "name": "cron_expression",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "editor_mode": {
+          "name": "editor_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted": {
+          "name": "deleted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "craft_scheduled_tasks_dispatch_idx": {
+          "name": "craft_scheduled_tasks_dispatch_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deleted",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_run_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "craft_scheduled_tasks_user_created_idx": {
+          "name": "craft_scheduled_tasks_user_created_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "craft_scheduled_tasks_user_id_users_id_fk": {
+          "name": "craft_scheduled_tasks_user_id_users_id_fk",
+          "tableFrom": "craft_scheduled_tasks",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "craft_scheduled_tasks_status_check": {
+          "name": "craft_scheduled_tasks_status_check",
+          "value": "\"craft_scheduled_tasks\".\"status\" IN ('active', 'paused')"
+        },
+        "craft_scheduled_tasks_editor_mode_check": {
+          "name": "craft_scheduled_tasks_editor_mode_check",
+          "value": "\"craft_scheduled_tasks\".\"editor_mode\" IN ('interval', 'daily_weekly', 'advanced')"
         }
       },
       "isRLSEnabled": false
@@ -11848,192 +12172,6 @@
         "payment_orders_currency_check": {
           "name": "payment_orders_currency_check",
           "value": "\"payment_orders\".\"currency\" = 'CNY'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.usage_outbox": {
-      "name": "usage_outbox",
-      "schema": "",
-      "columns": {
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_customer_id": {
-          "name": "external_customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "transaction_id": {
-          "name": "transaction_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client": {
-          "name": "client",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lago_status": {
-          "name": "lago_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "credits_status": {
-          "name": "credits_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "lago_last_error_code": {
-          "name": "lago_last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credits_last_error_code": {
-          "name": "credits_last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "usage_outbox_transaction_id_unique_idx": {
-          "name": "usage_outbox_transaction_id_unique_idx",
-          "columns": [
-            {
-              "expression": "transaction_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "usage_outbox_lago_pending_created_idx": {
-          "name": "usage_outbox_lago_pending_created_idx",
-          "columns": [
-            {
-              "expression": "lago_status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "usage_outbox_credits_pending_created_idx": {
-          "name": "usage_outbox_credits_pending_created_idx",
-          "columns": [
-            {
-              "expression": "credits_status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "usage_outbox_source_check": {
-          "name": "usage_outbox_source_check",
-          "value": "\"usage_outbox\".\"source\" IN ('llm', 'code_run')"
-        },
-        "usage_outbox_input_tokens_check": {
-          "name": "usage_outbox_input_tokens_check",
-          "value": "\"usage_outbox\".\"input_tokens\" >= 0"
-        },
-        "usage_outbox_output_tokens_check": {
-          "name": "usage_outbox_output_tokens_check",
-          "value": "\"usage_outbox\".\"output_tokens\" >= 0"
-        },
-        "usage_outbox_lago_status_check": {
-          "name": "usage_outbox_lago_status_check",
-          "value": "\"usage_outbox\".\"lago_status\" IN ('pending', 'delivered')"
-        },
-        "usage_outbox_credits_status_check": {
-          "name": "usage_outbox_credits_status_check",
-          "value": "\"usage_outbox\".\"credits_status\" IN ('pending', 'delivered')"
         }
       },
       "isRLSEnabled": false

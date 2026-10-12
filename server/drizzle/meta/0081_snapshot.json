@@ -1,6 +1,6 @@
 {
-  "id": "8f009dab-5037-4d22-9d3e-9bdb852ab4bc",
-  "prevId": "c96bc174-13e5-49c1-9227-b69923d38418",
+  "id": "c96bc174-13e5-49c1-9227-b69923d38418",
+  "prevId": "624a9222-7c25-4f38-9014-3ce510b90c29",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12475,11 +12475,11 @@
         },
         "usage_outbox_lago_status_check": {
           "name": "usage_outbox_lago_status_check",
-          "value": "\"usage_outbox\".\"lago_status\" IN ('pending', 'delivered', 'blocked')"
+          "value": "\"usage_outbox\".\"lago_status\" IN ('pending', 'delivered')"
         },
         "usage_outbox_credits_status_check": {
           "name": "usage_outbox_credits_status_check",
-          "value": "\"usage_outbox\".\"credits_status\" IN ('pending', 'delivered', 'blocked')"
+          "value": "\"usage_outbox\".\"credits_status\" IN ('pending', 'delivered')"
         }
       },
       "isRLSEnabled": false

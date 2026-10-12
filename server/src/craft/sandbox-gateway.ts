@@ -26,6 +26,10 @@ export type AgentSandboxFileApi = {
   writeFile(path: string, content: string): Promise<void>;
   /** Delete a file or directory tree. */
   deletePath(path: string): Promise<void>;
+  /** Read a text file's contents, or null when absent/non-text. */
+  readFile(path: string): Promise<string | null>;
+  /** Read a file's raw bytes, or null when absent (binary-safe artifact download). */
+  readFileBytes(path: string): Promise<Uint8Array | null>;
 };
 
 export type SandboxConnection = {
@@ -58,6 +62,10 @@ export type SandboxGateway = {
   close(): void;
   /** The workspace-write view of the file API. */
   workspaceApiFor(botId: string): WorkspaceApi | null;
+  /** One packed snapshot of the Bot's whole workspace (application/gzip), or null when absent. */
+  snapshotArchiveFor(botId: string): Promise<Uint8Array | null>;
+  /** Replay a snapshot archive into the Bot's workspace; false when refused/unreachable. */
+  restoreWorkspace(botId: string, archive: Uint8Array): Promise<boolean>;
 };
 
 export function createSandboxGateway(
@@ -134,6 +142,68 @@ export function createSandboxGateway(
             method: "DELETE",
           }).catch(() => undefined);
         },
+        async readFile(path) {
+          // opencode answers /file/content with a JSON envelope ({type:"text",
+          // content}) for text files and passes binary bytes straight through. A
+          // 404 is the honest "absent" — null, not a throw — so callers degrade to
+          // "regenerate" instead of surfacing a phantom error (see codesandbox/client.ts
+          // readFile for the identical envelope-unwrap on the companion gateway).
+          const response = await doFetch(
+            `${base}/file/content?path=${encodeURIComponent(path)}`,
+            {
+              headers,
+              signal: AbortSignal.timeout(
+                config.opencodeServeRequestTimeoutSeconds * 1000,
+              ),
+            },
+          );
+          if (response.status === 404) return null;
+          if (!response.ok) {
+            throw new Error(
+              `Sandbox /file/content answered ${response.status}.`,
+            );
+          }
+          const raw = await response.text();
+          try {
+            const parsed = JSON.parse(raw) as {
+              type?: unknown;
+              content?: unknown;
+            };
+            if (
+              parsed !== null &&
+              typeof parsed === "object" &&
+              parsed.type === "text" &&
+              typeof parsed.content === "string"
+            ) {
+              return parsed.content;
+            }
+          } catch {
+            // Not JSON: the raw body is the content.
+          }
+          return raw;
+        },
+        async readFileBytes(path) {
+          // The download path needs the raw bytes unmolested: opencode hands text
+          // files back as a JSON envelope and binary files as bare bytes, and both
+          // have to arrive byte-for-byte. 404 is still the honest "absent" (null),
+          // so a deleted artifact degrades to "regenerate" instead of throwing.
+          const response = await doFetch(
+            `${base}/file/content?path=${encodeURIComponent(path)}`,
+            {
+              headers,
+              signal: AbortSignal.timeout(
+                config.opencodeServeRequestTimeoutSeconds * 1000,
+              ),
+            },
+          );
+          if (response.status === 404) return null;
+          if (!response.ok) {
+            throw new Error(
+              `Sandbox /file/content answered ${response.status}.`,
+            );
+          }
+          return new Uint8Array(await response.arrayBuffer());
+        },
       };
     },
 
@@ -146,6 +216,54 @@ export function createSandboxGateway(
         // for the workspace API's shape.
         mkdir: async () => undefined,
       };
+    },
+
+    async snapshotArchiveFor(botId) {
+      // The snapshot pair is Bot-scoped, not session-scoped: the agent-sandbox gateway packs
+      // the Bot's WHOLE workspace (`/workspace/snapshot`), so a craft session's snapshot is the
+      // Bot workspace it lives in — the shared-workspace divergence the port documents.
+      const conn = connection(botId);
+      if (!conn) return null;
+      const headers: Record<string, string> = {};
+      if (conn.token) headers["x-sandbox-token"] = conn.token;
+      headers["x-openbot-bot-id"] = botId;
+      const doFetch = options.fetchImpl ?? fetch;
+      const response = await doFetch(
+        `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/snapshot`,
+        {
+          headers,
+          signal: AbortSignal.timeout(
+            config.opencodeServeRequestTimeoutSeconds * 1000,
+          ),
+        },
+      );
+      if (!response.ok) return null;
+      return new Uint8Array(await response.arrayBuffer());
+    },
+
+    async restoreWorkspace(botId, archive) {
+      const conn = connection(botId);
+      if (!conn) return false;
+      const headers: Record<string, string> = {};
+      if (conn.token) headers["x-sandbox-token"] = conn.token;
+      headers["x-openbot-bot-id"] = botId;
+      headers["content-type"] = "application/gzip";
+      const doFetch = options.fetchImpl ?? fetch;
+      const response = await doFetch(
+        `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/restore`,
+        {
+          method: "POST",
+          headers,
+          body: archive as unknown as BodyInit,
+          signal: AbortSignal.timeout(
+            config.opencodeServeRequestTimeoutSeconds * 1000,
+          ),
+        },
+      );
+      // The gateway refuses a restore mid-turn (409) and rejects a non-snapshot (400); both are
+      // honest "could not restore this instant" answers — false, not a throw — so the caller can
+      // degrade to "rebuild the workspace" instead of surfacing a phantom error.
+      return response.ok;
     },
 
     serveClientFor(input) {
