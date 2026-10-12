@@ -71,7 +71,11 @@ function serviceFor(provider: PaymentProvider, planCode: string) {
       async getPlan() {
         return { found: true, interval: "monthly", currency: "CNY" };
       },
-      async ensureSubscription() {},
+      async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
     },
     externalCustomerKey: "qa-deployment",
     activePlanCode: async () => null,
