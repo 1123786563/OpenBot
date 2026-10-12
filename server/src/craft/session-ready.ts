@@ -13,26 +13,28 @@
 import type { Database } from "../db/client";
 import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
 import { StaleProvisioningAttemptError } from "./errors";
 import {
   type CraftManagedContentResolver,
   companySearchSkillAvailable,
   materializeManagedContent,
 } from "./managed-content";
-import { writeConnectAppPlugin } from "./connect-app-plugin";
+import { writeWebappBootstrapScript } from "./nextjs-dev";
+import {
+  buildProviderOpencodeConfig,
+  opencodeConfigJson,
+} from "./opencode-config";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { SESSION_PLUGINS } from "./session-plugins";
 import type { CraftSessionRow, CraftStore } from "./store";
+import { writeTurnBudgetPlugin } from "./turn-budget";
+import { writeWebappPlugin } from "./webapp-plugin";
 import {
   sessionDirectory,
   sessionWorkspaceExists,
   setupSessionWorkspace,
 } from "./workspace";
-import {
-  buildProviderOpencodeConfig,
-  opencodeConfigJson,
-} from "./opencode-config";
-import { SESSION_PLUGINS } from "./session-plugins";
-import { writeTurnBudgetPlugin } from "./turn-budget";
 
 /** The AGENTS.md template, read once per process (the port of onyx's file-read-at-import). */
 let agentsTemplateCache: string | null = null;
@@ -174,6 +176,21 @@ export async function ensureSessionReady(
           session.id,
           input.config,
         );
+        // The webapp tool's refresh (the workspace may predate it) — plugin
+        // always, bootstrap script when the session holds a reserved port.
+        await writeWebappPlugin(
+          { writeFile: (path, content) => fileApi.writeFile(path, content) },
+          session.id,
+          input.config,
+        );
+        if (session.nextjsPort != null) {
+          await writeWebappBootstrapScript(
+            { writeFile: (path, content) => fileApi.writeFile(path, content) },
+            session.id,
+            input.config,
+            session.nextjsPort,
+          );
+        }
         await store.updateSession(session.id, {
           ...(session.status !== "active" ? { status: "active" } : {}),
           mcpConfigHash: managedContent.mcpConfigHash,
@@ -203,6 +220,7 @@ export async function ensureSessionReady(
         userName: input.userName,
         organizationInstructions: input.organizationInstructions,
         agentsTemplate: await agentsTemplate(),
+        webappPort: session.nextjsPort,
         managedContent: managedContent
           ? {
               connectableAppsSection: managedContent.connectableAppsSection,
