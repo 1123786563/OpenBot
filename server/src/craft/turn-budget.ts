@@ -15,33 +15,17 @@ import { readFile } from "node:fs/promises";
 import { getLogger } from "../../../shared/logger";
 import type { CraftConfig } from "./config";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { TURN_BUDGET_PLUGIN_RELPATH } from "./session-plugins";
 import { sessionDirectory } from "./workspace";
 
 /** The inert stamp: unparseable as a deadline, so the plugin reads it as "off". */
 export const TURN_BUDGET_CLEAR_JSON = "{}";
 
 /**
- * The turn-budget plugin's home inside a session workspace. The sandbox's
- * opencode-serve runs with the session directory as the project root, and it
- * both auto-discovers `.opencode/plugin/*.ts` there and honors the `plugin`
- * config entries below — verified against opencode 1.18.7.
+ * The turn-budget plugin's spec lives in session-plugins.ts (the shared,
+ * cycle-free inventory); this module owns the plugin's behavior — the stamp it
+ * reads and the source it ships from.
  */
-export const TURN_BUDGET_PLUGIN_RELPATH = ".opencode/plugin/turn-budget.ts";
-
-/**
- * The `plugin` entry the per-session opencode.json carries — relative to the
- * session directory (the config file's directory), exactly how opencode
- * resolves local plugin specs. onyx's absolute `/workspace/opencode-plugins/`
- * path cannot work here: the plugin is not baked into the agent-sandbox image
- * (OpenBot cannot change it), it is written per-session like every other
- * workspace file.
- */
-export const SESSION_TURN_BUDGET_PLUGIN_SPEC = `./${TURN_BUDGET_PLUGIN_RELPATH}`;
-
-/** The plugin list every session opencode.json carries (the budget steer). */
-export const SESSION_PLUGINS: readonly string[] = [
-  SESSION_TURN_BUDGET_PLUGIN_SPEC,
-];
 
 /**
  * The deadline stamp as the workspace bytes:

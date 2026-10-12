@@ -16,8 +16,10 @@ import {
   buildProviderOpencodeConfig,
   opencodeConfigJson,
 } from "./opencode-config";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
 import type { AgentSandboxFileApi } from "./sandbox-gateway";
-import { SESSION_PLUGINS, writeTurnBudgetPlugin } from "./turn-budget";
+import { SESSION_PLUGINS } from "./session-plugins";
+import { writeTurnBudgetPlugin } from "./turn-budget";
 
 export const SESSIONS_ROOT = "/workspace/sessions";
 
@@ -53,6 +55,8 @@ export type SetupSessionWorkspaceInput = {
   managedContent?: {
     connectableAppsSection: string;
     companySearchSkillAvailable: boolean;
+    /** The session owner's craft MCP set — same snapshot the reconcile compares against. */
+    mcpServers?: readonly import("./opencode-config").CraftMCPServerConfig[];
   } | null;
 };
 
@@ -95,15 +99,18 @@ export async function setupSessionWorkspace(
   });
   await api.writeFile(`${root}/AGENTS.md`, agentsMd);
 
-  // The turn-budget plugin ships in the workspace itself (agent-sandbox's image
-  // cannot carry it); the opencode.json below points opencode at it.
+  // The managed plugins ship in the workspace itself (agent-sandbox's image
+  // cannot carry them); the opencode.json below points opencode at them.
   await writeTurnBudgetPlugin(api, input.sessionId, input.config);
+  await writeConnectAppPlugin(api, input.sessionId, input.config);
 
   const opencodeJson = opencodeConfigJson(
     buildProviderOpencodeConfig(input.llmConfig, {
       disabledTools: input.config.opencodeDisabledTools,
       gatedTools: input.config.approvalGatedTools,
       plugins: SESSION_PLUGINS,
+      mcpServers: input.managedContent?.mcpServers ?? [],
+      sessionId: input.sessionId,
     }),
   );
   await api.writeFile(`${root}/opencode.json`, opencodeJson);

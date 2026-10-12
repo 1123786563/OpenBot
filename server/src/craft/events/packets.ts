@@ -5,8 +5,8 @@
  * All packets ride SSE as `event: message` records with a `type` field distinguishing them, a
  * snake_case body (wire parity with onyx's pydantic model_dump), and a `timestamp` (ISO UTC)
  * stamped at construction. ApprovalRequested carries the gated-permission announce (see
- * approval-gate.ts); ConnectAppRequest's flow stays a later phase, its type kept so the union
- * and the SSE serializer are already shaped for it.
+ * approval-gate.ts); ConnectAppRequest carries the connect-app handshake's announce (see
+ * connect-app.ts).
  */
 import { type SandboxEvent, SSEKeepalive } from "./types";
 
@@ -97,6 +97,28 @@ export function subagentStartedPacket(
     type: "subagent_started",
     subagent_session_id: subagentSessionId,
     parent_session_id: parentSessionId,
+    timestamp: nowIso(),
+  };
+}
+
+/**
+ * The connect-app card a live stream emits for an announced request (onyx
+ * packets.py:78-89; the live worker pops the announce and wraps it in this
+ * packet). `reason` null stays null on the wire — onyx serializes with
+ * model_dump_json(by_alias=True) and NO exclude_none, so `"reason": null` is
+ * present when the ask carried none.
+ */
+export function connectAppRequestPacket(
+  requestId: string,
+  externalAppId: number,
+  reason: string | null,
+): ConnectAppRequestPacket {
+  return {
+    packetKind: "connect_app_request",
+    type: "connect_app_request",
+    request_id: requestId,
+    external_app_id: externalAppId,
+    reason,
     timestamp: nowIso(),
   };
 }

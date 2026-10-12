@@ -200,15 +200,19 @@ export {
 } from "./streaming";
 export {
   clearTurnDeadline,
-  SESSION_PLUGINS,
-  SESSION_TURN_BUDGET_PLUGIN_SPEC,
   stampTurnDeadline,
   TURN_BUDGET_CLEAR_JSON,
-  TURN_BUDGET_PLUGIN_RELPATH,
   turnBudgetPluginSource,
   turnBudgetStampJson,
   turnBudgetStampPath,
 } from "./turn-budget";
+export {
+  CONNECT_APP_PLUGIN_RELPATH,
+  SESSION_CONNECT_APP_PLUGIN_SPEC,
+  SESSION_PLUGINS,
+  SESSION_TURN_BUDGET_PLUGIN_SPEC,
+  TURN_BUDGET_PLUGIN_RELPATH,
+} from "./session-plugins";
 export {
   createTurnExecutor,
   MAX_TIMEOUT_CONTINUATIONS,

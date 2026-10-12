@@ -267,11 +267,13 @@ describe("POST /sessions/:id/skills/reload", () => {
     const agentsMd = files.get(`${DIRECTORY}/AGENTS.md`);
     expect(typeof agentsMd).toBe("string");
     expect(agentsMd).toContain("- External app ID `7`: **Slack**");
-    // ...the rewritten config carries the turn-budget plugin entry...
+    // ...the rewritten config carries both managed plugins (Task 3 added the
+    // connect-app handshake plugin beside the budget steer)...
     const opencodeJson = files.get(`${DIRECTORY}/opencode.json`);
     expect(opencodeJson).toBeDefined();
     expect(JSON.parse(opencodeJson as string).plugin).toEqual([
       "./.opencode/plugin/turn-budget.ts",
+      "./.opencode/plugin/connect-app.ts",
     ]);
     // The running instance is disposed so a fresh one re-reads the config.
     expect(disposals).toEqual([DIRECTORY]);

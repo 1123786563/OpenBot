@@ -19,6 +19,7 @@ import {
   companySearchSkillAvailable,
   materializeManagedContent,
 } from "./managed-content";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "./store";
 import {
@@ -26,6 +27,12 @@ import {
   sessionWorkspaceExists,
   setupSessionWorkspace,
 } from "./workspace";
+import {
+  buildProviderOpencodeConfig,
+  opencodeConfigJson,
+} from "./opencode-config";
+import { SESSION_PLUGINS } from "./session-plugins";
+import { writeTurnBudgetPlugin } from "./turn-budget";
 
 /** The AGENTS.md template, read once per process (the port of onyx's file-read-at-import). */
 let agentsTemplateCache: string | null = null;
@@ -141,6 +148,32 @@ export async function ensureSessionReady(
             companySearchSkillAvailable(managedContent),
         });
         await fileApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
+        // opencode.json rides along on the light path too: the workspace is
+        // intact but its config may predate a resolved MCP set (a repaired
+        // session, a pre-managed-content runtime). Same snapshot, same bytes
+        // the reconcile computes — one builder, one ordering.
+        await fileApi.writeFile(
+          `${directory}/opencode.json`,
+          opencodeConfigJson(
+            buildProviderOpencodeConfig(llmConfig, {
+              disabledTools: input.config.opencodeDisabledTools,
+              gatedTools: input.config.approvalGatedTools,
+              plugins: SESSION_PLUGINS,
+              mcpServers: managedContent.mcpServers,
+              sessionId: session.id,
+            }),
+          ),
+        );
+        await writeTurnBudgetPlugin(
+          { writeFile: (path, content) => fileApi.writeFile(path, content) },
+          session.id,
+          input.config,
+        );
+        await writeConnectAppPlugin(
+          { writeFile: (path, content) => fileApi.writeFile(path, content) },
+          session.id,
+          input.config,
+        );
         await store.updateSession(session.id, {
           ...(session.status !== "active" ? { status: "active" } : {}),
           mcpConfigHash: managedContent.mcpConfigHash,
@@ -175,6 +208,7 @@ export async function ensureSessionReady(
               connectableAppsSection: managedContent.connectableAppsSection,
               companySearchSkillAvailable:
                 companySearchSkillAvailable(managedContent),
+              mcpServers: managedContent.mcpServers,
             }
           : null,
       },
