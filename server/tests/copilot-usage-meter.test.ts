@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LLMock } from "@copilotkit/aimock";
 import {
+  builtInAgentConfiguration,
   CreditGateError,
   meteredModelForTests,
   resolveRuntimeAgents,
@@ -335,6 +336,213 @@ describe("the model usage meter", () => {
         ),
       ).toBe(true);
     } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("string-form built-in models fail closed when billing admission is wired", async () => {
+    const originalBase = process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_BASE_URL;
+    try {
+      setModelUsageGate(async () => undefined);
+
+      const openai = builtInAgentConfiguration(
+        {
+          id: "general-assistant",
+          name: "General Assistant",
+          type: "built_in",
+          systemPrompt: "Be helpful.",
+        },
+        { provider: "openai", defaultModel: "gpt-5.6-terra" },
+        STUB_MODEL_KEY,
+      ) as {
+        type?: string;
+        factory?: () => AsyncGenerator<unknown>;
+      };
+      expect(openai.type).toBe("custom");
+      await expect(openai.factory?.().next()).rejects.toBeInstanceOf(
+        CreditGateError,
+      );
+
+      const anthropic = builtInAgentConfiguration(
+        {
+          id: "general-assistant",
+          name: "General Assistant",
+          type: "built_in",
+          systemPrompt: "Be helpful.",
+        },
+        { provider: "anthropic", defaultModel: "claude-sonnet-4-5" },
+        STUB_MODEL_KEY,
+      ) as {
+        type?: string;
+        factory?: () => AsyncGenerator<unknown>;
+      };
+      expect(anthropic.type).toBe("custom");
+      await expect(anthropic.factory?.().next()).rejects.toBeInstanceOf(
+        CreditGateError,
+      );
+    } finally {
+      setModelUsageGate(undefined);
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+    }
+  });
+
+  test("cancelling the consumer stream cancels upstream and releases once", async () => {
+    const lifecycle: Array<{ phase: string; reason?: string }> = [];
+    let upstreamCancelled = false;
+    try {
+      setModelUsageGate(async () => ({
+        async finish() {
+          lifecycle.push({ phase: "finish" });
+        },
+        async fail(failure) {
+          lifecycle.push({ phase: "fail", reason: failure.reason });
+        },
+      }));
+      const source = new ReadableStream<Record<string, unknown>>({
+        start(controller) {
+          controller.enqueue({ type: "message", text: "hello" });
+        },
+        cancel() {
+          upstreamCancelled = true;
+        },
+      });
+      const wrapped = meteredModelForTests({
+        modelId: "gpt-test",
+        async doStream() {
+          return { stream: source };
+        },
+      }) as {
+        doStream: (params: unknown) => Promise<{
+          stream: ReadableStream<Record<string, unknown>>;
+        }>;
+      };
+
+      const result = await wrapped.doStream({});
+      const reader = result.stream.getReader();
+      expect((await reader.read()).value).toMatchObject({ type: "message" });
+      await reader.cancel("caller-cancelled");
+      await Promise.resolve();
+
+      expect(upstreamCancelled).toBe(true);
+      expect(lifecycle).toEqual([{ phase: "fail", reason: "stream_error" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("only the first finish chunk triggers metering and settlement", async () => {
+    const meter: Array<{ inputTokens: number | undefined; outputTokens: number | undefined }> = [];
+    const lifecycle: string[] = [];
+    try {
+      setModelUsageMeter((usage) => {
+        meter.push({
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        });
+      });
+      setModelUsageGate(async () => ({
+        async finish() {
+          lifecycle.push("finish");
+        },
+        async fail() {
+          lifecycle.push("fail");
+        },
+      }));
+      const wrapped = meteredModelForTests({
+        modelId: "gpt-test",
+        async doStream() {
+          return {
+            stream: new ReadableStream<Record<string, unknown>>({
+              start(controller) {
+                controller.enqueue({
+                  type: "finish",
+                  usage: {
+                    inputTokens: { total: 3 },
+                    outputTokens: { total: 2 },
+                  },
+                });
+                controller.enqueue({
+                  type: "finish",
+                  usage: {
+                    inputTokens: { total: 30 },
+                    outputTokens: { total: 20 },
+                  },
+                });
+                controller.close();
+              },
+            }),
+          };
+        },
+      }) as {
+        doStream: (params: unknown) => Promise<{
+          stream: ReadableStream<Record<string, unknown>>;
+        }>;
+      };
+
+      const result = await wrapped.doStream({});
+      for await (const _part of result.stream) {
+      }
+
+      expect(meter).toEqual([{ inputTokens: 3, outputTokens: 2 }]);
+      expect(lifecycle).toEqual(["finish"]);
+    } finally {
+      setModelUsageMeter(undefined);
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("malformed finish usage is not charged as normal usage", async () => {
+    const meter: Array<{ inputTokens: number | undefined; outputTokens: number | undefined }> = [];
+    const lifecycle: Array<{ phase: string; reason?: string }> = [];
+    try {
+      setModelUsageMeter((usage) => {
+        meter.push({
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        });
+      });
+      setModelUsageGate(async () => ({
+        async finish() {
+          lifecycle.push({ phase: "finish" });
+        },
+        async fail(failure) {
+          lifecycle.push({ phase: "fail", reason: failure.reason });
+        },
+      }));
+      const wrapped = meteredModelForTests({
+        modelId: "gpt-test",
+        async doStream() {
+          return {
+            stream: new ReadableStream<Record<string, unknown>>({
+              start(controller) {
+                controller.enqueue({
+                  type: "finish",
+                  usage: {
+                    inputTokens: { total: -1 },
+                    outputTokens: { total: 2.5 },
+                  },
+                });
+                controller.close();
+              },
+            }),
+          };
+        },
+      }) as {
+        doStream: (params: unknown) => Promise<{
+          stream: ReadableStream<Record<string, unknown>>;
+        }>;
+      };
+
+      const result = await wrapped.doStream({});
+      for await (const _part of result.stream) {
+      }
+
+      expect(meter).toEqual([]);
+      expect(lifecycle).toEqual([{ phase: "fail", reason: "stream_error" }]);
+    } finally {
+      setModelUsageMeter(undefined);
       setModelUsageGate(undefined);
     }
   });

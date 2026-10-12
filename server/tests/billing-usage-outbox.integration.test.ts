@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import {
   createUsageOutbox,
   UsageOutboxConflictError,
+  type UsageOutbox,
 } from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
@@ -180,6 +181,35 @@ test("delivery failures are target-specific and leave the target pending", async
       creditsStatus: "pending",
       lagoLastErrorCode: "provider_unavailable",
       creditsLastErrorCode: null,
+    },
+  ]);
+});
+
+test("a blocked delivery target leaves durable manual-review evidence and no longer requeues", async () => {
+  const event = usageEvent(`${prefix}-blocked`);
+  await outbox.record(event);
+  await outbox.markLagoDelivered(event.eventId);
+
+  await (outbox as UsageOutbox & {
+    blockDelivery(
+      eventId: string,
+      target: "lago" | "credits",
+      failureCode: string,
+    ): Promise<void>;
+  }).blockDelivery(event.eventId, "credits", "missing_reservation");
+
+  expect(await outbox.pending(10)).toEqual([]);
+  expect(
+    await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId)),
+  ).toMatchObject([
+    {
+      eventId: event.eventId,
+      lagoStatus: "delivered",
+      creditsStatus: "blocked",
+      creditsLastErrorCode: "missing_reservation",
     },
   ]);
 });

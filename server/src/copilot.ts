@@ -521,15 +521,84 @@ function meteredModel<T>(model: T): T {
         throw error;
       }
 
-      const [stream, observed] = result.stream.tee();
-      void (async () => {
-        const reader = observed.getReader();
-        let finished = false;
+      const reader = result.stream.getReader();
+      let settled = false;
+      const settleFinish = async (
+        usage: {
+          inputTokens: number;
+          outputTokens: number;
+        } | null,
+      ) => {
+        if (settled) return;
+        settled = true;
+        if (usage === null) {
+          try {
+            await lifecycle?.fail?.({
+              eventId,
+              occurredAt,
+              reason: "no_usage",
+            });
+          } catch {
+            // Same containment rule as the finish path.
+          }
+          return;
+        }
         try {
-          while (true) {
-            const { done, value: part } = await reader.read();
-            if (done) break;
-            if (part?.type !== "finish") continue;
+          usageMeter?.({
+            eventId,
+            occurredAt,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          });
+        } catch {
+          // A meter that throws must not take the run's last chunk down with it.
+        }
+        try {
+          await lifecycle?.finish?.({
+            eventId,
+            occurredAt,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          });
+        } catch {
+          // The lifecycle owner logs and reconciles its own durable-write failures.
+        }
+      };
+      const settleFail = async (reason: ModelUsageFailureReason) => {
+        if (settled) return;
+        settled = true;
+        try {
+          await lifecycle?.fail?.({
+            eventId,
+            occurredAt,
+            reason,
+          });
+        } catch {
+          // Same containment rule as the finish path.
+        }
+      };
+
+      const stream = new ReadableStream<Record<string, unknown>>({
+        async pull(controller) {
+          let chunk: Awaited<ReturnType<typeof reader.read>>;
+          try {
+            chunk = await reader.read();
+          } catch (error) {
+            await settleFail("stream_error");
+            reader.releaseLock();
+            controller.error(error);
+            return;
+          }
+
+          if (chunk.done) {
+            await settleFail("no_usage");
+            reader.releaseLock();
+            controller.close();
+            return;
+          }
+
+          const part = chunk.value;
+          if (part?.type === "finish" && !settled) {
             const usage = part.usage as
               | {
                   inputTokens?: { total?: number };
@@ -538,57 +607,36 @@ function meteredModel<T>(model: T): T {
               | undefined;
             const inputTokens = usage?.inputTokens?.total;
             const outputTokens = usage?.outputTokens?.total;
-            try {
-              usageMeter?.({
-                eventId,
-                occurredAt,
-                inputTokens,
-                outputTokens,
+            const validInput =
+              inputTokens === undefined ||
+              (Number.isSafeInteger(inputTokens) && inputTokens >= 0);
+            const validOutput =
+              outputTokens === undefined ||
+              (Number.isSafeInteger(outputTokens) && outputTokens >= 0);
+
+            if (!validInput || !validOutput) {
+              await settleFail("stream_error");
+            } else if ((inputTokens ?? 0) > 0 || (outputTokens ?? 0) > 0) {
+              await settleFinish({
+                inputTokens: inputTokens ?? 0,
+                outputTokens: outputTokens ?? 0,
               });
-            } catch {
-              // A meter that throws must not take the run's last chunk down with it.
-            }
-            if ((inputTokens ?? 0) > 0 || (outputTokens ?? 0) > 0) {
-              finished = true;
-              try {
-                await lifecycle?.finish?.({
-                  eventId,
-                  occurredAt,
-                  inputTokens,
-                  outputTokens,
-                });
-              } catch {
-                // The lifecycle owner logs and reconciles its own durable-write failures.
-              }
+            } else {
+              await settleFail("no_usage");
             }
           }
-          if (!finished) {
-            try {
-              await lifecycle?.fail?.({
-                eventId,
-                occurredAt,
-                reason: "no_usage",
-              });
-            } catch {
-              // Same containment rule as the finish path.
-            }
+
+          controller.enqueue(part);
+        },
+        async cancel(reason) {
+          try {
+            await reader.cancel(reason);
+          } finally {
+            await settleFail("stream_error");
+            reader.releaseLock();
           }
-        } catch {
-          if (!finished) {
-            try {
-              await lifecycle?.fail?.({
-                eventId,
-                occurredAt,
-                reason: "stream_error",
-              });
-            } catch {
-              // Same containment rule as the finish path.
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
-      })();
+        },
+      });
 
       return { ...result, stream };
     },
@@ -678,8 +726,22 @@ export function builtInAgentConfiguration(
     })) ?? []),
   ];
 
+  const resolvedModel = planModel ?? runtimeModel(model, apiKey);
+  if (
+    modelUsageGate !== undefined &&
+    typeof resolvedModel === "string"
+  ) {
+    return {
+      type: "custom",
+      // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
+      factory: async function* () {
+        throw new CreditGateError();
+      },
+    };
+  }
+
   return {
-    model: withUsageMeter(planModel ?? runtimeModel(model, apiKey)),
+    model: withUsageMeter(resolvedModel),
     /*
      * The package's role, then the person's own standing instructions, then what this Bot actually
      * holds, then the computer.

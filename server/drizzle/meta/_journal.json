@@ -568,6 +568,13 @@
       "when": 1791781147554,
       "tag": "0080_many_robin_chapel",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1791782987201,
+      "tag": "0081_nostalgic_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

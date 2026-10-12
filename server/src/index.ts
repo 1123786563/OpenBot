@@ -373,6 +373,36 @@ function logUsageOutboxWriteFailure(
   );
 }
 
+function reservationReleaseFailureCode(error: unknown): string {
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === "string" && STABLE_BILLING_CODE.test(code)
+    ? code
+    : "reservation_release_failed";
+}
+
+function logReservationReleaseFailure(input: {
+  source: "llm";
+  eventId: string;
+  reservationId: string;
+  reason: string;
+  error: unknown;
+}) {
+  log.error(
+    {
+      type: "billing-reservation-release-failed",
+      source: input.source,
+      eventId: input.eventId,
+      reservationId: input.reservationId,
+      reason: input.reason,
+      code: reservationReleaseFailureCode(input.error),
+    },
+    "billing-reservation-release-failed",
+  );
+}
+
 // 本进程的全部出站依赖都是内网/本机（Casdoor、kb-mastra、agent 运行时等）：
 // 开发机的 HTTP_PROXY 会把 localhost 请求劫持成代理 404/HTML（Bun fetch 读
 // 环境代理且部分上下文连 NO_PROXY 都不生效——kb-mastra E2E 实测）。摘掉本
@@ -3184,14 +3214,23 @@ if (billing !== undefined && usageOutbox !== undefined) {
         } catch (error) {
           if (
             error instanceof UsageChargeError &&
-            error.code === "usage_invalid_tokens" &&
-            (usage.inputTokens ?? 0) <= 0 &&
-            (usage.outputTokens ?? 0) <= 0
+            error.code === "usage_invalid_tokens"
           ) {
-            await billing.creditWriter.releaseReservation(
-              reservation.reservationId,
-              "no_usage",
-            );
+            logUsageOutboxWriteFailure("llm", input.eventId, error);
+            try {
+              await billing.creditWriter.releaseReservation(
+                reservation.reservationId,
+                "no_usage",
+              );
+            } catch (releaseError) {
+              logReservationReleaseFailure({
+                source: "llm",
+                eventId: input.eventId,
+                reservationId: reservation.reservationId,
+                reason: "no_usage",
+                error: releaseError,
+              });
+            }
             return;
           }
           logUsageOutboxWriteFailure("llm", input.eventId, error);
@@ -3218,10 +3257,20 @@ if (billing !== undefined && usageOutbox !== undefined) {
         }
       },
       fail: async (failure) => {
-        await billing.creditWriter.releaseReservation(
-          reservation.reservationId,
-          failure.reason,
-        );
+        try {
+          await billing.creditWriter.releaseReservation(
+            reservation.reservationId,
+            failure.reason,
+          );
+        } catch (error) {
+          logReservationReleaseFailure({
+            source: "llm",
+            eventId: input.eventId,
+            reservationId: reservation.reservationId,
+            reason: failure.reason,
+            error,
+          });
+        }
       },
     };
   });
@@ -3527,18 +3576,7 @@ const workshopLock = workshopRedisPort
       ttlMs: Number(process.env.WORKSHOP_LOCK_TTL_MS?.trim() || 30_000),
     })
   : createInProcessTurnLock();
-const workshopClientFor = (botId: string) =>
-  {
-    const client = sandboxClientFor(botId);
-    if (
-      codeRunBillingEnabled &&
-      client !== null &&
-      client.capabilities.enforceableTokenBudget !== true
-    ) {
-      return null;
-    }
-    return client;
-  };
+const workshopClientFor = (botId: string) => sandboxClientFor(botId);
 
 const workshopOrchestrator = createTurnOrchestrator({
   store: workshopStore,
