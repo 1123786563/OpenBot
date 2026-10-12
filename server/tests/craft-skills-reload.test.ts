@@ -312,6 +312,36 @@ describe("POST /sessions/:id/skills/reload", () => {
     ]);
   });
 
+  test("a wired resolver that fails mid-reload acks no skills hash (hashes-only acks need a contentless wiring)", async () => {
+    // currentHashesFor succeeded (the hashes seam answered "new"), then the
+    // resolver went down between the two calls: content is null, nothing was
+    // pushed — acking the skills hash anyway would claim content the workspace
+    // never received, with no later reconcile to catch it.
+    const { app, updates } = harness({
+      row: sessionRow({ skillsHash: "old", mcpConfigHash: "old-mcp" }),
+      hashesFor: async () => ({
+        skillsHash: "new",
+        mcpConfigHash: "new-mcp",
+      }),
+      contentFor: async () => {
+        throw new Error("app store down");
+      },
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ skills_stale: true });
+    // The mcp hash rides along (onyx records it regardless); the skills hash
+    // stays at "old" so the row honestly remains behind the content.
+    expect(updates).toEqual([
+      { id: SESSION_ID, patch: { mcpConfigHash: "new-mcp" } },
+    ]);
+  });
+
   test("a failed skills push acks the mcp hash but never the skills hash", async () => {
     const content = liveContent();
     const { app, files, updates } = harness({

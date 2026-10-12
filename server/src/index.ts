@@ -175,7 +175,10 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
-import { createCraftManagedContentResolver } from "./craft/managed-content";
+import {
+  createCraftManagedContentResolver,
+  personalUnconnectedApps,
+} from "./craft/managed-content";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -3656,16 +3659,13 @@ const craftManagedContentFor = createCraftManagedContentResolver({
       pluginStore.connectionsFor(userId),
       pluginStore.brokeredConnectionsFor(userId),
     ]);
-    const connected = new Set([
-      ...held.map((row) => row.serverId),
-      ...brokered.map((row) => row.serverId),
-    ]);
-    return servers
-      .filter(
-        (server) =>
-          server.accountMode === "personal" && !connected.has(server.id),
-      )
-      .map((server) => ({ id: server.id, name: server.title }));
+    return personalUnconnectedApps(
+      servers,
+      new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+    );
   },
 });
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled

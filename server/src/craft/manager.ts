@@ -340,9 +340,7 @@ export class CraftSessionManager {
    * provided: an explicit hashes seam wins (cheap reads), a full resolver is
    * derived from, and neither wired answers the stable null pair.
    */
-  private async currentHashesFor(
-    session: CraftSessionRow,
-  ): Promise<{
+  private async currentHashesFor(session: CraftSessionRow): Promise<{
     skillsHash: string | null;
     mcpConfigHash: string | null;
   } | null> {
@@ -487,11 +485,16 @@ export class CraftSessionManager {
       content,
     );
     const ackMcp = content?.mcpConfigHash ?? hashes?.mcpConfigHash ?? null;
+    // The skills-hash ack is push-gated: a content-bearing reload acks only what
+    // landed, and a WIRED resolver that failed this reload pushes nothing and so
+    // acks nothing — hashes-only acks belong to wirings with no content to push.
     const ackSkills = content
       ? skillsHydrated
         ? content.skillsHash
         : undefined // push failed: keep the row's old skills hash
-      : (hashes?.skillsHash ?? null);
+      : this.deps.managedContentFor
+        ? undefined // resolver failed: keep the row's old skills hash too
+        : (hashes?.skillsHash ?? null);
     const acked: Pick<
       CraftSessionRow,
       "status" | "origin" | "opencodeSessionId" | "skillsHash" | "mcpConfigHash"

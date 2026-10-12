@@ -11,6 +11,7 @@
  */
 
 import type { Database } from "../db/client";
+import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
 import { StaleProvisioningAttemptError } from "./errors";
 import {
@@ -18,7 +19,7 @@ import {
   companySearchSkillAvailable,
   materializeManagedContent,
 } from "./managed-content";
-import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
+import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "./store";
 import {
   sessionDirectory,
@@ -107,17 +108,39 @@ export async function ensureSessionReady(
     };
 
     if (
-      await sessionWorkspaceExists(
-        gateway.fileApiFor(botId) ?? nullApi,
+      fileApi !== null &&
+      (await sessionWorkspaceExists(
+        fileApi,
         session.id,
         input.config.sessionDirectoryMode,
-      )
+      ))
     ) {
       // Light path: the workspace is intact, but the managed content may
       // predate it (a repair under the same id, a pre-managed-content session)
       // — push again and record the hashes the push actually landed.
       const hydrated = await pushManagedContent();
       if (managedContent) {
+        // AGENTS.md is rewritten from the resolved content BEFORE the ack: the
+        // skills hash fingerprints the connectable-apps section the file renders,
+        // so acking it over a pre-section AGENTS.md would mark a stale prompt
+        // current (and the ack would suppress every later reconcile). Written at
+        // the workspace-setup write point; a failed write fails provisioning
+        // through the envelope below, so the hash is only ever acked after the
+        // render landed.
+        const llmConfig = await input.llmConfigFor(session);
+        const agentsMd = generateAgentInstructions({
+          template: await agentsTemplate(),
+          config: input.config,
+          provider: llmConfig.provider,
+          modelName: llmConfig.modelName,
+          disabledTools: input.config.opencodeDisabledTools,
+          userName: input.userName,
+          organizationInstructions: input.organizationInstructions,
+          connectableAppsSection: managedContent.connectableAppsSection,
+          companySearchSkillAvailable:
+            companySearchSkillAvailable(managedContent),
+        });
+        await fileApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
         await store.updateSession(session.id, {
           ...(session.status !== "active" ? { status: "active" } : {}),
           mcpConfigHash: managedContent.mcpConfigHash,
@@ -199,10 +222,3 @@ export async function ensureSessionReady(
     throw error;
   }
 }
-
-/** A null-object file API: every probe fails, so "workspace exists" answers false. */
-const nullApi: Pick<AgentSandboxFileApi, "listFiles"> = {
-  async listFiles() {
-    throw new Error("no sandbox file api");
-  },
-};
