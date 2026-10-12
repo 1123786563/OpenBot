@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Hono } from "hono";
-import type { AppVariables } from "../src/auth/guards";
+import { type Context, Hono } from "hono";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
@@ -12,6 +12,7 @@ import {
 } from "../src/billing/payments/service";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import type {
+  PaymentOrderReadScope,
   PaymentOrderRecord,
   PaymentOrderView,
   PaymentStore,
@@ -41,6 +42,18 @@ function viewFor(orderId: string): PaymentOrderView {
   };
 }
 
+const ADMIN: AuthenticatedActor = {
+  id: "admin-1",
+  email: "admin@openbot.test",
+  role: "admin",
+};
+
+const MEMBER: AuthenticatedActor = {
+  id: "user-member",
+  email: "member@openbot.test",
+  role: "user",
+};
+
 function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
   return {
     catalog: (canPurchase, activePlanCode) => ({
@@ -52,8 +65,10 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
       providers: ["alipay"],
     }),
     createPurchase: async () => ({ order: viewFor("po-new") }),
-    readOrder: async (id) => ({ order: viewFor(id) }),
-    readCurrentOrder: async () => ({ order: null }),
+    readOrder: async (id, _scope?: PaymentOrderReadScope) => ({
+      order: viewFor(id),
+    }),
+    readCurrentOrder: async (_scope?: PaymentOrderReadScope) => ({ order: null }),
     cancelPurchase: async () => ({ outcome: "unknown" }),
     handleCallback: async () => ({ kind: "unknown-provider" }),
     sweepExpired: async () => {},
@@ -61,7 +76,7 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
   };
 }
 
-function guardDoubles() {
+function guardDoubles(actor: AuthenticatedActor = ADMIN) {
   // A Hono middleware must drive `next()` or return a Response — a plain `undefined` return
   // would stop the chain with an empty 200, which is exactly the shape these tests exist to
   // catch. The pass-through drives it AND establishes the actor the real guard establishes,
@@ -71,9 +86,9 @@ function guardDoubles() {
     next: () => Promise<void>,
   ) => {
     context.set("actor", {
-      id: "admin-1",
-      email: "admin@openbot.test",
-      role: "admin",
+      id: actor.id,
+      email: actor.email,
+      role: actor.role,
     });
     await next();
   }) as never;
@@ -81,8 +96,11 @@ function guardDoubles() {
   return { requireUser, requireAdmin: requireAdminAlways };
 }
 
-function userApp(service: PaymentService, options: { audit?: AuditStore } = {}) {
-  const { requireUser, requireAdmin } = guardDoubles();
+function userApp(
+  service: PaymentService,
+  options: { actor?: AuthenticatedActor; audit?: AuditStore } = {},
+) {
+  const { requireUser, requireAdmin } = guardDoubles(options.actor);
   return createPaymentRoutes({
     service,
     requireUser,
@@ -397,6 +415,61 @@ describe("user routes: catalog and reads", () => {
     );
     const response = await app.request("/api/billing/purchases/po-missing");
     expect(response.status).toBe(404);
+  });
+
+  test("current and detail reads only expose the signed-in actor's orders", async () => {
+    const ownerOrder = {
+      ...viewFor("po-member"),
+      checkout: { kind: "qrcode" as const, payload: "qr-member" },
+    };
+    const otherOrder = {
+      ...viewFor("po-other"),
+      checkout: { kind: "qrcode" as const, payload: "qr-other" },
+    };
+    const service = fakeService({
+      readCurrentOrder: async (scope) => ({
+        order: scope?.actorId === MEMBER.id ? ownerOrder : null,
+      }),
+      readOrder: async (id, scope) => {
+        if (scope?.actorId !== MEMBER.id) return { order: null };
+        if (id === ownerOrder.orderId) return { order: ownerOrder };
+        if (id === otherOrder.orderId) return { order: null };
+        return { order: null };
+      },
+    });
+
+    const ownerApp = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(service, { actor: MEMBER }),
+    );
+    const current = await ownerApp.request("/api/billing/purchases/current");
+    expect(current.status).toBe(200);
+    expect(await current.json()).toEqual({ order: ownerOrder });
+
+    const ownDetail = await ownerApp.request("/api/billing/purchases/po-member");
+    expect(ownDetail.status).toBe(200);
+    expect(await ownDetail.json()).toEqual({ order: ownerOrder });
+
+    const otherActorApp = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(service, {
+        actor: {
+          id: "user-other",
+          email: "other@openbot.test",
+          role: "user",
+        },
+      }),
+    );
+    const otherCurrent = await otherActorApp.request(
+      "/api/billing/purchases/current",
+    );
+    expect(otherCurrent.status).toBe(200);
+    expect(await otherCurrent.json()).toEqual({ order: null });
+
+    const otherDetail = await otherActorApp.request(
+      "/api/billing/purchases/po-member",
+    );
+    expect(otherDetail.status).toBe(404);
   });
 });
 

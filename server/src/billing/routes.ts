@@ -22,6 +22,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { CreditWriter } from "./credits-writer";
 import type { Credits } from "./credits";
+import type { PaymentOrderReadScope } from "./payments/types";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
 
@@ -29,6 +30,12 @@ import { BillingError, type BillingService } from "./types";
 type RequireAdmin = (
   context: Context<{ Variables: AppVariables }>,
 ) => Response | undefined;
+
+export function billingReadScopeOf(
+  context: Context<{ Variables: AppVariables }>,
+): PaymentOrderReadScope {
+  return { actorId: context.var.actor.id };
+}
 
 /**
  * The provider's deliveries. One route, no session, no body-parsing middleware: the service reads
@@ -127,12 +134,15 @@ export function createBillingStatementRoutes(deps: {
         from: parsed.data.from ? new Date(parsed.data.from) : null,
         to: parsed.data.to ? new Date(parsed.data.to) : null,
         page: parsed.data.page,
-      }),
+      }, billingReadScopeOf(context)),
     );
   });
 
   routes.get("/invoices/:id", async (context) => {
-    const invoice = await deps.statements.invoice(context.req.param("id"));
+    const invoice = await deps.statements.invoice(
+      context.req.param("id"),
+      billingReadScopeOf(context),
+    );
     if (!invoice) {
       return context.json({ error: "No such bill." }, 404);
     }

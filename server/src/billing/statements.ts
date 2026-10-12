@@ -1,4 +1,8 @@
-import type { PaymentOrderRecord, PaymentStore } from "./payments/types";
+import type {
+  PaymentOrderReadScope,
+  PaymentOrderRecord,
+  PaymentStore,
+} from "./payments/types";
 import type {
   BillingEntitlements,
   BillingInvoice,
@@ -51,8 +55,14 @@ export type StatementWindow = {
 
 export type BillingStatements = {
   planUsage(externalCustomerId?: string): Promise<BillingPlanUsage>;
-  invoices(window: StatementWindow): Promise<BillingInvoicePage>;
-  invoice(id: string): Promise<BillingInvoiceDetail | null>;
+  invoices(
+    window: StatementWindow,
+    scope?: PaymentOrderReadScope,
+  ): Promise<BillingInvoicePage>;
+  invoice(
+    id: string,
+    scope?: PaymentOrderReadScope,
+  ): Promise<BillingInvoiceDetail | null>;
 };
 
 /**
@@ -146,7 +156,7 @@ export function createBillingStatements(deps: {
       };
     },
 
-    async invoices(window) {
+    async invoices(window, scope) {
       const empty: BillingInvoicePage = {
         invoices: [],
         pagination: {
@@ -161,12 +171,14 @@ export function createBillingStatements(deps: {
       const totalCount = await orders.countOrdersInWindow({
         from: window.from,
         to: window.to,
+        scope,
       });
       const rows = await orders.listOrdersInWindow({
         from: window.from,
         to: window.to,
         limit: INVOICE_PAGE_SIZE,
         offset: (window.page - 1) * INVOICE_PAGE_SIZE,
+        scope,
       });
       /*
        * The page count answers 1, not 0, for an empty window. A pager reading "第 1 / 0 页" is a
@@ -186,9 +198,9 @@ export function createBillingStatements(deps: {
       };
     },
 
-    async invoice(id) {
+    async invoice(id, scope) {
       if (!orders) return null;
-      const order = await orders.readOrder(id);
+      const order = await orders.readOrder(id, scope);
       if (!order) return null;
       const invoice = invoiceOf(order);
       return {
