@@ -570,8 +570,10 @@ export function createPaymentService(deps: {
     // The order snapshots a period the moment money lands, even if activation cannot reach Lago.
     // A successful activation later replaces this local fallback with the provider's exact period
     // when Lago answered one.
+    const fallbackPeriodMonths =
+      deps.catalog.get(order.planCode)?.periodMonths ?? 1;
     const fallbackPeriodStart = at;
-    const fallbackPeriodEnd = addMonths(at, 1);
+    const fallbackPeriodEnd = addMonths(at, fallbackPeriodMonths);
     let result: { claimed: boolean; alreadyKnown: boolean };
     try {
       result = await deps.store.confirmPaid({
