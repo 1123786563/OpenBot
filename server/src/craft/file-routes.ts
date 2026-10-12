@@ -82,7 +82,9 @@ export function createFileRoutes(
 
     // Early refuse on the declared size (multipart overhead allowance included) so an
     // oversized body never buffers: parse first is onyx's shape, but FastAPI's parser had
-    // its own ceiling; here the ceiling is ours to state.
+    // its own ceiling; here the ceiling is ours to state. The verdict is onyx's own — an
+    // oversize file is 400 with validate_file's sentence (413 stays reserved for the
+    // sandbox transfer ceiling that refuses mid-write below).
     const declaredLength = Number(
       context.req.raw.headers.get("content-length") ?? "0",
     );
@@ -91,7 +93,7 @@ export function createFileRoutes(
         {
           error: `File size exceeds maximum allowed size of ${deps.config.maxUploadFileSizeBytes} bytes`,
         },
-        413,
+        400,
       );
     }
 

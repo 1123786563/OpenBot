@@ -4,8 +4,9 @@
  * `find | wc -l` and `du -sb` inside the pod.
  *
  * OpenBot's sandbox listing is the agent-sandbox gateway's `GET /file`, which answers bare path
- * strings — no size, no mtime. The per-file limit is exact (the bytes are in hand), the count
- * limit is exact (the listing names every file), and the total-size limit rides a persisted
+ * strings — no size, no mtime, and recursively. The per-file limit is exact (the bytes are in
+ * hand), the count limit is onyx's top level (only attachments/'s direct files count — nested
+ * descendants never consume a slot), and the total-size limit rides a persisted
  * ledger (`.openbot-uploads.json` under attachments/) that the upload/delete endpoints keep in
  * step: the ledger lives INSIDE the workspace, so snapshot/restore carries it with the very files
  * it describes. A file the agent itself drops into attachments/ counts toward the file-count
@@ -126,29 +127,35 @@ async function writeLedger(
   );
 }
 
-const basename = (path: string): string =>
-  path
-    .split("/")
-    .filter((segment) => segment.length > 0)
-    .at(-1) ?? "";
-
 /**
- * The session's current upload usage: file count from the live listing (every non-hidden file,
- * agent-authored ones included — onyx's `find -maxdepth 1 -type f`), total bytes from the
- * ledger, counting only files the listing still sees (a stale ledger entry cannot inflate the
- * limit after its file is gone by any path). The non-hidden names ride along so the caller can
- * resolve upload collisions from the same listing, not a second round-trip.
+ * The session's current upload usage: file count from the live listing's TOP LEVEL only
+ * (onyx's `find -maxdepth 1 -type f` — the gateway's listing is recursive, so nested
+ * descendants neither consume a slot nor reserve their basename), agent-authored ones
+ * included; total bytes from the ledger, counting only files the listing still sees (a
+ * stale ledger entry cannot inflate the limit after its file is gone by any path). The
+ * non-hidden top-level names ride along so the caller can resolve upload collisions from
+ * the same listing, not a second round-trip.
  */
 export async function getUploadStats(
   fileApi: AgentSandboxFileApi,
   directory: string,
   attachmentsDir: string,
 ): Promise<{ fileCount: number; totalBytes: number; names: Set<string> }> {
+  const listedRoot = `${directory}/${attachmentsDir}`;
   const listing = await fileApi
-    .listFiles(`${directory}/${attachmentsDir}`)
+    .listFiles(listedRoot)
     .catch(() => [] as string[]);
+  // Strip the anchor to a rel path, then keep only single-segment (top-level) entries —
+  // exactly the `maxdepth 1` cut onyx's find performs before counting.
   const names = new Set(
-    listing.map(basename).filter((name) => name && !name.startsWith(".")),
+    listing
+      .map((entry) =>
+        entry.startsWith(`${listedRoot}/`)
+          ? entry.slice(listedRoot.length + 1)
+          : entry,
+      )
+      .filter((rel) => rel.split("/").length === 1)
+      .filter((name) => name && !name.startsWith(".")),
   );
   const ledger = await readLedger(fileApi, directory, attachmentsDir);
   let totalBytes = 0;
