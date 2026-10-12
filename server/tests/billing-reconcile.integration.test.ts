@@ -374,8 +374,69 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(after).toEqual(before);
   });
 
-  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {
-    const customer = `${prefix}-stuck-boundary`;
+  test("an expired hold keyed usage:<eventId> with no outbox row is found by reservation id and event id, with age, claiming no usage", async () => {
+    // The audited failure shape: admission reserved, the provider worked, and the finish's
+    // durable write never committed — so there is no outbox row, only an expired hold.
+    const customer = `${prefix}-nooutbox`;
+    const eventId = `${prefix}-no-outbox-event`;
+    await creditWriter.grantCredits({
+      externalCustomerId: customer,
+      source: "promo",
+      totalCents: 1_000,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      reason: "no-outbox-seed",
+      idempotencyKey: `${prefix}-no-outbox-grant`,
+    });
+    const reservationId = reservedId(
+      await creditWriter.reserveCredits({
+        externalCustomerId: customer,
+        idempotencyKey: `usage:${eventId}`,
+        maximumCents: 400,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    expect(
+      await database
+        .select()
+        .from(usageOutbox)
+        .where(eq(usageOutbox.eventId, eventId)),
+    ).toEqual([]);
+    await database
+      .update(creditReservations)
+      .set({ expiresAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(creditReservations.id, reservationId));
+
+    const before = await reservationSnapshot(reservationId);
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "expired_reserved_reservation" &&
+        item.subject === reservationId,
+    );
+    expect(finding).toMatchObject({
+      category: "credits",
+      code: "expired_reserved_reservation",
+      subject: reservationId,
+    });
+    // The hold is identified by BOTH ids — the reservation's own and the usage event the
+    // `usage:` idempotency key names — plus its age, so an operator can find the (absent)
+    // outbox row and the logs for the same event.
+    expect(finding?.detail).toContain(`idempotency_key=usage:${eventId}`);
+    expect(finding?.detail).toContain(`usage_event_id=${eventId}`);
+    expect(finding?.detail).toMatch(/expired_age_ms=\d+/);
+    expect(finding?.detail).toContain(
+      "remediation=operator_recovery_required",
+    );
+    // It must not claim knowledge of usage that was never durably recorded.
+    expect(finding?.detail).not.toContain("input_tokens");
+    expect(finding?.detail).not.toContain("output_tokens");
+
+    const after = await reservationSnapshot(reservationId);
+    expect(after).toEqual(before);
+  });
+
+  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {    const customer = `${prefix}-stuck-boundary`;
     await creditWriter.grantCredits({
       externalCustomerId: customer,
       source: "promo",
