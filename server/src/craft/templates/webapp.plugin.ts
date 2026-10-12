@@ -11,12 +11,19 @@
 // candidate (tests inject a stub helper through it; the sandbox then tries the
 // deployed agent-sandbox candidates followed by onyx's image paths).
 //
+// One deliberate BEHAVIORAL deviation (OCR r3): the restart arm guards its
+// kill with the pid cwd identity check (see pidOwnsAppDir) — onyx's own
+// restart arm (pinned webapp.ts:236-244, fixture F5 §E) kills on `kill -0`
+// alone, so a stale/recycled nextjs.pid can kill an unrelated process.
+// OpenBot's start script already carries the same guard (nextjs-dev.ts), and
+// the plugin runs in the same Linux sandbox, so porting it in is free.
+//
 // Failures are returned as observations, never thrown; a thrown tool error
 // would abort the agent's turn instead of letting it recover.
 
 import { spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readlink, rm } from "node:fs/promises";
 
 const SDK_TOOL_PATHS = [
   ...(process.env.OPENBOT_PLUGIN_TOOL_HELPER
@@ -115,6 +122,24 @@ async function pidAlive(dir: string): Promise<number | null> {
   }
 }
 
+/**
+ * The script's own identity guard, ported into the restart arm: kill -0 alone
+ * trusts a recycled pid, and a stale nextjs.pid could name an unrelated live
+ * process the restart would kill. Reuse the kill only when the pid's cwd IS
+ * this session's app dir (onyx's readlink /proc/$pid/cwd comparison; the
+ * plugin runs in the same Linux sandbox as the server it manages). When
+ * identity cannot be established (/proc unreadable, e.g. outside the sandbox),
+ * skip the kill — the script's own guard drops the stale pid file and
+ * reconciles (see the file header's deviation note).
+ */
+async function pidOwnsAppDir(pid: number, dir: string): Promise<boolean> {
+  try {
+    return (await readlink(`/proc/${pid}/cwd`)) === `${dir}/${APP_DIR_REL}`;
+  } catch {
+    return false;
+  }
+}
+
 async function probeRunning(port: number): Promise<boolean> {
   try {
     await fetch(`http://127.0.0.1:${port}/`, {
@@ -127,6 +152,10 @@ async function probeRunning(port: number): Promise<boolean> {
 }
 
 async function tailLog(dir: string, n: number): Promise<string | null> {
+  // slice(-0) === slice(0): a 0/negative n would return the WHOLE un-rotated
+  // log. All call sites clamp (see the logs action), but keep the floor here
+  // as the backstop.
+  if (n <= 0) return null;
   const logPath = `${dir}/${LOG_REL}`;
   if (!(await pathExists(logPath))) return null;
   const lines = (await readFile(logPath, "utf8")).split("\n");
@@ -271,7 +300,14 @@ export default async () => {
           }
 
           if (args.action === "logs") {
-            const n = Math.min(args.lines ?? DEFAULT_LOGS_LINES, MAX_LOG_LINES);
+            // Floor at 1 and default on non-finite input (OCR r3): the schema
+            // bounds no lower edge, and a 0/negative/NaN lines would otherwise
+            // dump the whole un-rotated log past the advertised max 200.
+            const requested =
+              typeof args.lines === "number" && Number.isFinite(args.lines)
+                ? args.lines
+                : DEFAULT_LOGS_LINES;
+            const n = Math.min(Math.max(requested, 1), MAX_LOG_LINES);
             const obs = await buildObservation(dir, scriptPath, n);
             const headline =
               obs.state === "running"
@@ -282,10 +318,14 @@ export default async () => {
 
           if (args.action === "restart") {
             const pid = await pidAlive(dir);
-            if (pid !== null) {
+            // Kill only a pid this session owns (pidOwnsAppDir): a stale pid
+            // file must never kill an unrelated process. With the identity
+            // unestablished the kill is skipped and the script reconciles.
+            if (pid !== null && (await pidOwnsAppDir(pid, dir))) {
               try {
                 process.kill(pid);
               } catch {}
+              await rm(`${dir}/${PID_REL}`, { force: true });
               await new Promise((r) => setTimeout(r, 2000));
             }
           }

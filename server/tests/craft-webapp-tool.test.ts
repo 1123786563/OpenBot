@@ -260,6 +260,17 @@ describe("webapp plugin source (F5 tool schema)", () => {
     // Titles (onyx :204-210).
     expect(source).toContain('start: "Starting web app…"');
     expect(source).toContain('restart: "Restarting web app…"');
+    // OCR r3: the restart arm carries the script's pid identity guard — the
+    // kill fires only when /proc/<pid>/cwd is this session's app dir (onyx's
+    // plugin restart arm — pinned webapp.ts:236-244 — kills on kill -0 alone;
+    // OpenBot deliberately ports the guard in, a documented deviation).
+    expect(source).toContain(
+      "if (pid !== null && (await pidOwnsAppDir(pid, dir))) {",
+    );
+    expect(source).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: source pin
+      "(await readlink(`/proc/${pid}/cwd`)) === `${dir}/${APP_DIR_REL}`",
+    );
     expect(source).toContain('status: "Checking web app status…"');
     expect(source).toContain('logs: "Reading web app logs…"');
     // Constants (onyx :36-41).
@@ -505,7 +516,7 @@ describe("webapp tool behaviors (F5 B–E)", () => {
     );
   }, 10000);
 
-  test("restart kills a live pid, waits, then takes the start path", async () => {
+  test("restart kills a live pid only when its identity verifies — otherwise the kill is skipped and start reconciles", async () => {
     const port = await startListener();
     const victim = spawnExtraPid();
     const dir = makeSessionDir({
@@ -518,15 +529,43 @@ describe("webapp tool behaviors (F5 B–E)", () => {
     });
     expect(metadataTitles).toEqual(["Restarting web app…"]);
     expect(result).toContain("webapp started successfully");
-    // The old pid is gone (killed by the restart arm).
+    // OCR r3: kill -0 alone trusts a recycled pid. On this darwin host /proc
+    // does not exist, so the pid's identity CANNOT be established — the kill
+    // must be skipped (the victim survives) and the start path still runs; on
+    // the Linux sandbox, readlink /proc/<pid>/cwd verifies and the kill
+    // proceeds (the guard itself is source-pinned in the test above).
     let alive = true;
     try {
       process.kill(victim, 0);
     } catch {
       alive = false;
     }
-    expect(alive).toBe(false);
+    expect(alive).toBe(true);
   }, 20000);
+
+  // ── OCR round-3: the lines argument gets a floor ───────────────────────────
+  // slice(-0) === slice(0): a 0/negative lines must not dump the whole
+  // un-rotated nextjs.log into the observation, past the advertised max 200.
+  test("logs: lines of 0/negative clamps to 1 line; non-finite falls back to the default 30", async () => {
+    const port = await startListener();
+    const dir = makeSessionDir({
+      "start-webapp.sh": `#!/bin/bash\nPORT=${port}\necho ok\n`,
+      "nextjs.log": "alpha\nbeta\ngamma\n",
+    });
+    const zero = await executeWebapp(dir, { action: "logs", lines: 0 });
+    expect(zero.result).toContain("--- last 1 lines of nextjs.log ---");
+    expect(zero.result).toContain("gamma");
+    expect(zero.result).not.toContain("alpha");
+
+    const negative = await executeWebapp(dir, { action: "logs", lines: -5 });
+    expect(negative.result).toContain("--- last 1 lines of nextjs.log ---");
+    expect(negative.result).not.toContain("alpha");
+
+    // NaN (a malformed agent input): the default 30, which for this 3-line
+    // log legitimately includes everything.
+    const nan = await executeWebapp(dir, { action: "logs", lines: Number.NaN });
+    expect(nan.result).toContain("--- last 30 lines of nextjs.log ---");
+  }, 15000);
 
   // ── the full pipeline: real plugin + REAL generated script, shimmed bun ──────
   // The closest executable evidence to a live sandbox session available outside
