@@ -156,6 +156,7 @@ import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import { createRequestTracking } from "./telemetry/request-tracking";
+import { withUsageOrigin } from "./usage-origin";
 import { createTraceMiddleware } from "./telemetry/trace-middleware";
 import type { PackageStatusReader } from "./tenant-package";
 import {
@@ -783,6 +784,14 @@ export function createApp(
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
+  /*
+   * The usage-origin floor for every API surface (2026-10-13 audit, F6): a signed-in person's
+   * request context says `web`, so the usage facts its model calls and code runs record carry
+   * the caller they really came from. Registered after the gate so only requests that got this
+   * far are named, and overridable by an inner context — the worker dispatch below names
+   * itself `api` underneath this `web`.
+   */
+  app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", (context) =>
     auth
@@ -1432,7 +1441,11 @@ export function createApp(
        * the fatigue rule owns it. `run()` never throws by contract; this swallow only guards against
        * that contract being wrong without turning a bug there into an unhandled rejection here.
        */
-      void routineRunner.run(routineRunId).catch(() => {});
+      // The worker's bearer dispatch is an API surface, not a person's session: the turns it
+      // fans out name `api` on their usage facts, not the session floor's `web`.
+      void withUsageOrigin("api", () => routineRunner.run(routineRunId)).catch(
+        () => {},
+      );
       return context.json({ accepted: true }, 202);
     });
   }
