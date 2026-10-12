@@ -161,7 +161,7 @@
 
 ## ⑤ 差异点与取舍理由
 
-汇总口径:一期基础移植的 16 处差异见 `README.md` §四(最重要的是 fetchMessage 异步 hydrate 降级、沙箱通路经 agent-sandbox 网关、Bun 无线程 → fire-and-forget runner;agent-sandbox 拓扑适配 4 处 + 装配决策 3 处)。以下按任务聚合本分支新增/细化的 **52 条**差异,每条含取舍理由。
+汇总口径:一期基础移植的 16 处差异见 `README.md` §四(最重要的是 fetchMessage 异步 hydrate 降级、沙箱通路经 agent-sandbox 网关、Bun 无线程 → fire-and-forget runner;agent-sandbox 拓扑适配 4 处 + 装配决策 3 处)。以下按任务聚合本分支新增/细化的 **56 条**差异,每条含取舍理由。
 
 ### Task 1 — AGENTS 模板(7 处替换 + 逐字保留决策)
 
@@ -176,7 +176,7 @@
 | 7 | Outputs 段前半改写(同 #3 语义) | 后半三句与 onyx 逐字相同 |
 | — | **逐字保留**(有意,非偏差):"powering Onyx Craft" 身份段、user_library/ 描述、credentials proxy 段、工作法 "search company knowledge" 措辞、`[Onyx turn budget]` 标记 | 逐字一致性优先;描述的是未移植子系统,待后续语境化裁定 |
 
-### Task 2 — 审批(9 条)
+### Task 2 — 审批(10 条)
 
 | # | 差异 | 取舍 |
 |---|---|---|
@@ -189,6 +189,7 @@
 | 7 | allow_always ≈ allow_once(落 APPROVED,不写持久授权;上游恒答 once) | onyx session-grant 语义可后续演进;craft 卡片 UI 只提供 allow_once/deny |
 | 8 | session-grant 批量批准端点未移植;headless(定时)turn 对 gated 工具 auto-allow | 无人可问;onyx 由 proxy 另行处理 |
 | 9 | runner 流持久化审批卡为 durable 消息行 | 增量记录,不与 onyx 冲突(onyx 只进 attach 流) |
+| 10 | decide 端点只处理 craft 行:带 `action.policy` 的通用审批行(含 hand_off 策略)→ 404,不触达写入路径 | **Task 9 Fix Round 1 安全修复**:防止经 craft 端点绕过通用 decide 的 hand_off 守卫(hand_off 行只收 handled/deny),且避免 allow_always 不写规则行导致该行滞留 |
 
 ### Task 3 — 上传/文件(7 条)
 

@@ -303,4 +303,43 @@ describe("craft approvals", () => {
     ]);
     expect((await approvals.get("u1", record2.id)).status).toBe("denied");
   });
+
+  test("a generic (policy-bearing) row is not decided here — 404, write path untouched", async () => {
+    // The generic gate stamps `action.policy` on its rows; `openCraftApproval` never does.
+    // Deciding such a row through the craft endpoint would bypass the generic decide's
+    // hand_off guard (a hand_off policy accepts "handled"/"deny" only) and strand the row
+    // when allow_always skips its rule write.
+    const approvals = fakeApprovals([
+      approvalRecord({
+        id: "gen-1",
+        action: {
+          ...approvalRecord().action,
+          toolCallId: "gen-1",
+          policy: {
+            behaviour: "hand_off",
+            source: "default",
+            reason: "handed to the person",
+          },
+        },
+      }),
+    ]);
+    const store = fakeStore({ getSession: async () => sessionRow() });
+    const app = createCraftApprovalRoutes(fakeRequireUser(), {
+      config,
+      store,
+      approvals,
+    });
+
+    const decision = await app.request("/approvals/gen-1/decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "allow_once" }),
+    });
+    expect(decision.status).toBe(404);
+
+    // Neither write path ran and the row is untouched — still pending for the generic one.
+    expect(approvals.decisions).toEqual([]);
+    expect((await approvals.get("u1", "gen-1")).status).toBe("pending");
+    expect((await approvals.get("u1", "gen-1")).decision).toBeNull();
+  });
 });
