@@ -374,6 +374,49 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(after).toEqual(before);
   });
 
+  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {
+    const customer = `${prefix}-stuck-boundary`;
+    await creditWriter.grantCredits({
+      externalCustomerId: customer,
+      source: "promo",
+      totalCents: 1_000,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      reason: "stuck-boundary-seed",
+      idempotencyKey: `${prefix}-stuck-boundary-grant`,
+    });
+    const reservationId = reservedId(
+      await creditWriter.reserveCredits({
+        externalCustomerId: customer,
+        idempotencyKey: `${prefix}-stuck-boundary-reservation`,
+        maximumCents: 400,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    const boundaryNow = new Date("2026-10-12T06:01:56.851Z");
+    await database
+      .update(creditReservations)
+      .set({ expiresAt: boundaryNow })
+      .where(eq(creditReservations.id, reservationId));
+
+    const realNow = Date.now;
+    Date.now = () => boundaryNow.getTime();
+    try {
+      const report = await reconciler.reconcile();
+      const finding = report.findings.find(
+        (item) =>
+          item.code === "expired_reserved_reservation" &&
+          item.subject === reservationId,
+      );
+      expect(finding).toMatchObject({
+        category: "credits",
+        code: "expired_reserved_reservation",
+        subject: reservationId,
+      });
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
   test("a reservation whose allocations no longer match its maximum is reported with the exact delta and remains unchanged", async () => {
     const customer = `${prefix}-imbalance`;
     await creditWriter.grantCredits({
@@ -419,6 +462,51 @@ describe("reconcile (the skeleton, over real tables)", () => {
 
     const after = await reservationSnapshot(reservationId);
     expect(after).toEqual(before);
+  });
+
+  test("allocation imbalance findings cap sampled allocation ids while reporting exact counts and truncation", async () => {
+    const customer = `${prefix}-imbalance-many`;
+    for (let index = 0; index < 7; index += 1) {
+      await creditWriter.grantCredits({
+        externalCustomerId: customer,
+        source: "promo",
+        totalCents: 1,
+        expiresAt: new Date(Date.now() + (index + 1) * 3600_000),
+        reason: `imbalance-many-${index}`,
+        idempotencyKey: `${prefix}-imbalance-many-grant-${index}`,
+      });
+    }
+    const reservationId = reservedId(
+      await creditWriter.reserveCredits({
+        externalCustomerId: customer,
+        idempotencyKey: `${prefix}-imbalance-many-reservation`,
+        maximumCents: 7,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    await database
+      .update(creditReservations)
+      .set({ maximum: 8 })
+      .where(eq(creditReservations.id, reservationId));
+
+    const before = await reservationSnapshot(reservationId);
+    const allocationIds = before.allocations.map((allocation) => allocation.id);
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "reservation_allocation_imbalance" &&
+        item.subject === reservationId,
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.detail).toContain("allocation_count=7");
+    expect(finding?.detail).toContain("allocation_ids_sample=");
+    expect(finding?.detail).toContain("allocation_ids_truncated=yes");
+    expect(finding?.detail).toContain("delta=-1");
+    expect(finding?.detail).toContain(allocationIds[0] ?? "");
+    expect(finding?.detail).toContain(allocationIds[1] ?? "");
+    expect(finding?.detail).toContain(allocationIds[2] ?? "");
+    expect(finding?.detail).not.toContain(allocationIds[6] ?? "");
   });
 
   test("a pending usage target is reported by usage event id with target, age, and stable failure code", async () => {

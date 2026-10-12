@@ -64,6 +64,7 @@ export function createReconciler(
   reconcile(): Promise<ReconcileReport>;
 } {
   const usageFindingLimit = options?.usageFindingLimit ?? 100;
+  const allocationSampleLimit = 3;
   if (!Number.isSafeInteger(usageFindingLimit) || usageFindingLimit <= 0) {
     throw new RangeError(
       "Usage finding limit must be a positive safe integer",
@@ -261,6 +262,7 @@ export function createReconciler(
           reservationId: creditReservations.id,
           expiresAt: creditReservations.expiresAt,
           maximum: creditReservations.maximum,
+          expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
           allocationId: creditReservationAllocations.id,
           allocationAmount: creditReservationAllocations.amount,
         })
@@ -283,6 +285,7 @@ export function createReconciler(
         {
           expiresAt: Date;
           maximum: number;
+          expired: boolean;
           allocated: number;
           allocationIds: string[];
         }
@@ -291,6 +294,7 @@ export function createReconciler(
         const entry = reservedById.get(row.reservationId) ?? {
           expiresAt: row.expiresAt,
           maximum: row.maximum,
+          expired: row.expired,
           allocated: 0,
           allocationIds: [],
         };
@@ -300,19 +304,26 @@ export function createReconciler(
         }
         reservedById.set(row.reservationId, entry);
       }
-      const now = Date.now();
       for (const [reservationId, reservation] of reservedById) {
-        const allocationIds =
+        const allocationIdsSample =
           reservation.allocationIds.length > 0
-            ? reservation.allocationIds.join(",")
+            ? reservation.allocationIds
+                .slice(0, allocationSampleLimit)
+                .join(",")
             : "none";
-        if (reservation.expiresAt.getTime() < now) {
+        const allocationIdsTruncated =
+          reservation.allocationIds.length > allocationSampleLimit
+            ? "yes"
+            : "no";
+        const allocationMetadata =
+          `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
+        if (reservation.expired) {
           findings.push({
             category: "credits",
             code: "expired_reserved_reservation",
             subject: reservationId,
             detail:
-              `state=reserved expires_at=${reservation.expiresAt.toISOString()} maximum=${reservation.maximum} allocated=${reservation.allocated} allocation_ids=${allocationIds} remediation=operator_recovery_required`,
+              `state=reserved expires_at=${reservation.expiresAt.toISOString()} maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
 
@@ -322,7 +333,7 @@ export function createReconciler(
             code: "reservation_allocation_imbalance",
             subject: reservationId,
             detail:
-              `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} allocation_ids=${allocationIds} remediation=operator_recovery_required`,
+              `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
       }
@@ -400,6 +411,7 @@ export function createReconciler(
         pending: { lago: 0, credits: 0 },
         blocked: { lago: 0, credits: 0 },
       };
+      const now = Date.now();
       for (const row of usageRows) {
         const status = row.status === "pending" ? "pending" : "blocked";
         const target = row.target === "lago" ? "lago" : "credits";
