@@ -20,6 +20,13 @@ import type { CraftConfig } from "./config";
 import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
 import { generateSessionName } from "./naming";
+import type { SandboxGateway } from "./sandbox-gateway";
+import {
+  deleteSnapshots,
+  restoreLatestSnapshot,
+  takeSnapshot,
+} from "./snapshot";
+import type { ObjectStore } from "./storage/object-store";
 import type { CraftSessionRow, CraftStore } from "./store";
 
 type Json = Record<string, unknown>;
@@ -30,6 +37,10 @@ export type SessionRoutesDeps = {
   store: CraftStore;
   manager: CraftSessionManager;
   locks: SessionFlowLocks;
+  gateway: SandboxGateway;
+  objectStore: ObjectStore;
+  /** Resolves the Bot whose sandbox hosts a session (snapshot/restore I/O routes through it). */
+  botIdFor: (sessionId: string) => Promise<string | null>;
   /** Optional one-shot LLM for name generation (deterministic fallback without it). */
   generateName?: (system: string, user: string) => Promise<string>;
   /** The user's display name (AGENTS.md personalization on session create). */
@@ -64,6 +75,37 @@ export function createSessionRoutes(
 ): Hono<{ Variables: AppVariables }> {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", requireUser);
+
+  /** The snapshot context hand all four sleep/wake operations need. */
+  const snapshotCtx = () => ({
+    config: deps.config,
+    store: deps.store,
+    gateway: deps.gateway,
+    objectStore: deps.objectStore,
+  });
+
+  /**
+   * The wake half of sleep/wake: an IDLE session is restored from its newest snapshot (when one
+   * exists) and CASed back to active before it answers a detail fetch. A missing snapshot is not
+   * an error — the sandbox is warm here, so the workspace is still intact and the next turn's
+   * reconcile rebuilds whatever is missing.
+   */
+  const wakeIfIdle = async (
+    session: CraftSessionRow,
+  ): Promise<CraftSessionRow> => {
+    if (session.status !== "idle") return session;
+    const botId = await deps.botIdFor(session.id);
+    if (botId) {
+      await restoreLatestSnapshot(snapshotCtx(), {
+        botId,
+        sessionId: session.id,
+      }).catch(() => false);
+    }
+    const updated = await deps.store.updateSession(session.id, {
+      status: "active",
+    });
+    return updated ?? session;
+  };
 
   // ── GET /sessions — the sidebar list ────────────────────────────────────────
   app.get("/sessions", async (context) => {
@@ -111,8 +153,9 @@ export function createSessionRoutes(
     if (!session) {
       return context.json({ error: "Session not found" }, 404);
     }
+    const woken = await wakeIfIdle(session);
     return context.json(
-      sessionResponse(session, { session_loaded_in_sandbox: true }),
+      sessionResponse(woken, { session_loaded_in_sandbox: true }),
     );
   });
 
@@ -189,6 +232,9 @@ export function createSessionRoutes(
     if (!deleted) {
       return context.json({ error: "Session not found" }, 404);
     }
+    // Force-free the snapshot blobs before the row cascade drops their rows — the object store
+    // has no FK, so an orphaned archive is otherwise permanent.
+    await deleteSnapshots(snapshotCtx(), sessionId).catch(() => undefined);
     return context.body(null, 204);
   });
 
@@ -208,7 +254,33 @@ export function createSessionRoutes(
     );
   });
 
-  // ── POST /sessions/:sessionId/restore — warm-sandbox fast path ─────────────
+  // ── POST /sessions/:sessionId/snapshot — take a snapshot now ────────────────
+  app.post("/sessions/:sessionId/snapshot", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    const botId = await deps.botIdFor(sessionId);
+    if (!botId) {
+      return context.json({ error: "Sandbox unavailable" }, 503);
+    }
+    try {
+      const row = await takeSnapshot(snapshotCtx(), { botId, sessionId });
+      return context.json(
+        {
+          snapshot_id: row.id,
+          size_bytes: row.sizeBytes,
+          created_at: row.createdAt.toISOString(),
+        },
+        201,
+      );
+    } catch (error) {
+      logger.error({ error }, "[craft] snapshot failed");
+      return context.json({ error: "Snapshot failed" }, 502);
+    }
+  });
+
+  // ── POST /sessions/:sessionId/restore — wake from a snapshot ───────────────
   app.post("/sessions/:sessionId/restore", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
@@ -216,11 +288,11 @@ export function createSessionRoutes(
     if (!session) {
       return context.json({ error: "Session not found" }, 404);
     }
-    // Phase 1: sandboxes are warm — restore is the no-op compatibility shape
-    // (the workspace reconcile happens lazily on the next turn). The real
-    // sleep/snapshot/restore chain is the deferred phase (report §五).
+    // The real sleep/wake chain: an idle session replays its newest snapshot and returns
+    // active; an already-active session is the warm fast path (nothing to restore).
+    const woken = await wakeIfIdle(session);
     return context.json(
-      sessionResponse(session, { session_loaded_in_sandbox: true }),
+      sessionResponse(woken, { session_loaded_in_sandbox: true }),
     );
   });
 

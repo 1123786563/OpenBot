@@ -192,18 +192,20 @@ test("delivery states are independent and pending returns unfinished events", as
   await outbox.markLagoDelivered(lagoEvent.eventId);
   await outbox.markCreditsDelivered(creditsEvent.eventId);
 
-  expect(await outbox.pending(10)).toMatchObject([
-    {
-      eventId: lagoEvent.eventId,
-      lagoStatus: "delivered",
-      creditsStatus: "pending",
-    },
-    {
-      eventId: creditsEvent.eventId,
-      lagoStatus: "pending",
-      creditsStatus: "delivered",
-    },
-  ]);
+  // Order-insensitive: pending orders by updated_at, and two rows written in the same
+  // tick can tie, flipping the tie-break on event id.
+  const pendingById = new Map(
+    (await outbox.pending(10)).map((row) => [row.eventId, row]),
+  );
+  expect(pendingById.size).toBe(2);
+  expect(pendingById.get(lagoEvent.eventId)).toMatchObject({
+    lagoStatus: "delivered",
+    creditsStatus: "pending",
+  });
+  expect(pendingById.get(creditsEvent.eventId)).toMatchObject({
+    lagoStatus: "pending",
+    creditsStatus: "delivered",
+  });
 
   await outbox.markCreditsDelivered(lagoEvent.eventId);
   await outbox.markLagoDelivered(creditsEvent.eventId);

@@ -1,6 +1,6 @@
 {
-  "id": "c96bc174-13e5-49c1-9227-b69923d38418",
-  "prevId": "624a9222-7c25-4f38-9014-3ce510b90c29",
+  "id": "624a9222-7c25-4f38-9014-3ce510b90c29",
+  "prevId": "fce99e6f-c4da-45be-96ce-abf82132a275",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12304,24 +12304,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "reservation_id": {
-          "name": "reservation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actual_cost_numerator": {
-          "name": "actual_cost_numerator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actual_cost_denominator": {
-          "name": "actual_cost_denominator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "run_id": {
           "name": "run_id",
           "type": "text",
@@ -12468,10 +12450,6 @@
         "usage_outbox_output_tokens_check": {
           "name": "usage_outbox_output_tokens_check",
           "value": "\"usage_outbox\".\"output_tokens\" >= 0"
-        },
-        "usage_outbox_credit_identity_check": {
-          "name": "usage_outbox_credit_identity_check",
-          "value": "(\n        \"usage_outbox\".\"reservation_id\" IS NULL\n        AND \"usage_outbox\".\"actual_cost_numerator\" IS NULL\n        AND \"usage_outbox\".\"actual_cost_denominator\" IS NULL\n      ) OR (\n        \"usage_outbox\".\"reservation_id\" IS NOT NULL\n        AND \"usage_outbox\".\"actual_cost_numerator\" ~ '^[0-9]+$'\n        AND \"usage_outbox\".\"actual_cost_denominator\" ~ '^[1-9][0-9]*$'\n      )"
         },
         "usage_outbox_lago_status_check": {
           "name": "usage_outbox_lago_status_check",

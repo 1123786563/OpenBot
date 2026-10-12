@@ -12,6 +12,7 @@
 
 import type { CraftMessageType } from "../db/schema/craft";
 import {
+  type ApprovalRequestedPacket,
   type BuildPacket,
   type CompactionPacket,
   type ContextUsagePacket,
@@ -307,6 +308,20 @@ export async function persistSandboxEvent(
   }
 
   if (isBuildPacket(sandboxEvent)) {
+    if (sandboxEvent.type === "approval_requested") {
+      const packet = sandboxEvent as ApprovalRequestedPacket;
+      await store.createMessage({
+        sessionId,
+        type: "assistant",
+        turnIndex: state.turnIndex,
+        messageMetadata: {
+          type: packet.type,
+          approval_id: packet.approval_id,
+          session_id: packet.session_id,
+          timestamp: packet.timestamp,
+        },
+      });
+    }
     if (sandboxEvent.type === "compaction") {
       const packet = sandboxEvent as CompactionPacket;
       await store.createMessage({

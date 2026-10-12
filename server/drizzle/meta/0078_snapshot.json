@@ -1,6 +1,6 @@
 {
-  "id": "fce99e6f-c4da-45be-96ce-abf82132a275",
-  "prevId": "b0449c77-369a-4b45-bef0-b46bce7058c8",
+  "id": "b0449c77-369a-4b45-bef0-b46bce7058c8",
+  "prevId": "61a1e4ce-66c4-46bc-a4cd-c67886291198",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12361,8 +12361,8 @@
           "method": "btree",
           "with": {}
         },
-        "usage_outbox_lago_pending_updated_idx": {
-          "name": "usage_outbox_lago_pending_updated_idx",
+        "usage_outbox_lago_pending_created_idx": {
+          "name": "usage_outbox_lago_pending_created_idx",
           "columns": [
             {
               "expression": "lago_status",
@@ -12371,7 +12371,7 @@
               "nulls": "last"
             },
             {
-              "expression": "updated_at",
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -12382,8 +12382,8 @@
           "method": "btree",
           "with": {}
         },
-        "usage_outbox_credits_pending_updated_idx": {
-          "name": "usage_outbox_credits_pending_updated_idx",
+        "usage_outbox_credits_pending_created_idx": {
+          "name": "usage_outbox_credits_pending_created_idx",
           "columns": [
             {
               "expression": "credits_status",
@@ -12392,7 +12392,7 @@
               "nulls": "last"
             },
             {
-              "expression": "updated_at",
+              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

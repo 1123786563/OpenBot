@@ -31,6 +31,111 @@ import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
 import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
 import { recordProvisioned, scimOptions } from "./scim";
+
+/**
+ * Bun fetch 代理豁免（本机/内网上游）：Bun 在进程启动时锁定 HTTP_PROXY 且
+ * 运行时摘 env / NO_PROXY / 逐请求 proxy:"" 都拦不住带 body 的 POST（kb-mastra
+ * E2E 实测）。better-auth 的 OIDC 交换（better-fetch→globalThis.fetch）与
+ * jose 的 JWKS 拉取都走全局 fetch——这里给 globalThis.fetch 打补丁：目标是
+ * loopback/内网时逐请求带 proxy:""（Bun 专属字段）禁用代理；外网目标原样
+ * 放行（保留代理能力）。auth bootstrap 里调用一次。
+ */
+function patchGlobalFetchForLocalhost(): void {
+  const original = globalThis.fetch.bind(globalThis);
+  const loopback =
+    /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|host\.docker\.internal)(:\d+)?$/;
+  globalThis.fetch = (async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    let raw: string;
+    try {
+      raw =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      const { hostname } = new URL(raw);
+      if (!loopback.test(hostname)) return original(input, init);
+    } catch {
+      // URL 解析失败（相对路径等）：走原 fetch。
+      return original(input, init);
+    }
+    /*
+     * loopback 目标：node:http 直连。实测（kb-mastra E2E + 本 auth 修复）
+     * Bun 1.4.2 长驻进程的 fetch 被环境代理劫持 localhost，且逐请求
+     * proxy:"" 对带 body 的 POST 不生效——node:http 从不读代理变量，
+     * 是唯一稳定通道。方法/头/体语义保持：Request 实例先展开再直连。
+     */
+    const url = new URL(raw);
+    const method =
+      init?.method ?? (input instanceof Request ? input.method : "GET");
+    const headerSource =
+      init?.headers ?? (input instanceof Request ? input.headers : undefined);
+    const headers: Record<string, string> = {};
+    if (headerSource) {
+      const entries =
+        headerSource instanceof Headers
+          ? [...headerSource.entries()]
+          : Array.isArray(headerSource)
+            ? (headerSource as string[][]).map(([k, v]) => [k, v] as const)
+            : Object.entries(headerSource as Record<string, string>);
+      for (const [key, value] of entries) headers[key] = value;
+    }
+    const rawBody =
+      init?.body ?? (input instanceof Request ? await input.text() : undefined);
+    const body =
+      rawBody === undefined || typeof rawBody === "string"
+        ? rawBody
+        : Buffer.from(await new Response(rawBody as BodyInit).arrayBuffer());
+    const { request } = await import("node:http");
+    return new Promise<Response>((resolve, reject) => {
+      const req = request(
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: `${url.pathname}${url.search}`,
+          method,
+          headers: {
+            ...headers,
+            ...(body !== undefined
+              ? {
+                  "content-length": String(
+                    typeof body === "string" ? body.length : body.byteLength,
+                  ),
+                }
+              : {}),
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            const buffer = Buffer.concat(chunks);
+            const status = res.statusCode ?? 0;
+            const response = new Response(
+              status === 204 || status === 304 ? null : buffer,
+              {
+                status,
+                headers: res.headers as Record<string, string>,
+              },
+            );
+            resolve(response);
+          });
+          res.on("error", reject);
+        },
+      );
+      req.on("error", reject);
+      if (body !== undefined) req.write(body);
+      req.end();
+    });
+  }) as typeof fetch;
+}
+
+// 模块加载即打补丁（server 启动 import auth 时生效，先于任何 IdP 交互）。
+patchGlobalFetchForLocalhost();
+
 const log = getLogger("server");
 
 /** What a person sees when SSO is required and they tried another way in. */
@@ -277,7 +382,9 @@ export function createAuth(
    */
   const nativeScheme = process.env.EXPO_APP_SCHEME?.trim();
   if (nativeScheme && !/^[a-z][a-z0-9+.-]*$/i.test(nativeScheme))
-    throw new Error("EXPO_APP_SCHEME must be a bare URL scheme, e.g. openmuse.");
+    throw new Error(
+      "EXPO_APP_SCHEME must be a bare URL scheme, e.g. openmuse.",
+    );
   const nativeAppOrigin = `${nativeScheme ?? "openbotmobile"}://`;
   const nativeApp = Boolean(process.env.EXPO_PROJECT_ID?.trim());
   const plugins = [

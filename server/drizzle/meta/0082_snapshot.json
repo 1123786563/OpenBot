@@ -1,6 +1,6 @@
 {
-  "id": "77e02fc4-c84c-4d16-995e-5be178b4887f",
-  "prevId": "8f009dab-5037-4d22-9d3e-9bdb852ab4bc",
+  "id": "8f009dab-5037-4d22-9d3e-9bdb852ab4bc",
+  "prevId": "c96bc174-13e5-49c1-9227-b69923d38418",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12121,12 +12121,6 @@
         },
         "period_end": {
           "name": "period_end",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paid_at": {
-          "name": "paid_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

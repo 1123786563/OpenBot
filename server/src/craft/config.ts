@@ -48,11 +48,30 @@ function isPlainBotId(value: string): boolean {
   return value.length <= 64 && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value);
 }
 
+/** Where snapshot archives are stored — the object-store seam (see storage/object-store.ts). */
+export type CraftStorageConfig = {
+  /** "local" (directory on disk) or "s3" (S3/MinIO via @aws-sdk/client-s3). */
+  readonly backend: "local" | "s3";
+  /** Local backend: the directory archives live under. */
+  readonly localDirectory: string;
+  /** S3 backend: the service endpoint (MinIO: `http://host:9000`); empty for AWS default. */
+  readonly s3Endpoint: string;
+  readonly s3Region: string;
+  readonly s3Bucket: string;
+  readonly s3AccessKeyId: string;
+  readonly s3SecretAccessKey: string;
+  /** MinIO (and most self-hosted S3) needs path-style addressing. */
+  readonly s3ForcePathStyle: boolean;
+};
+
 export type CraftConfig = {
   /** Total switch (`ENABLE_CRAFT`). Off = the /api/craft tree is not mounted. */
   readonly enabled: boolean;
   /** Gates the built-in browser skill inside the sandbox image (`ENABLE_BROWSER`). */
   readonly enableBrowser: boolean;
+
+  /** Snapshot archive storage (sleep/wake pipeline). */
+  readonly storage: CraftStorageConfig;
 
   /** Comma-separated opencode tools to disable (`OPENCODE_DISABLED_TOOLS`, default "question"). */
   readonly opencodeDisabledTools: readonly string[];
@@ -74,6 +93,11 @@ export type CraftConfig = {
 
   // ── approvals (window kept: AGENTS.md guidance and the inactivity floor read it) ─
   readonly sandboxApprovalWaitTimeoutSeconds: number;
+  /**
+   * How long a craft approval request stays "live" before the read path treats it as an orphan
+   * (onyx SANDBOX_APPROVAL_WAIT_TIMEOUT_SECONDS, applied to the pending window here).
+   */
+  readonly approvalWaitTimeoutSeconds: number;
   /**
    * Margin a client-side wait must add over the approval window so a decision landing at the
    * wire never races the client's own timeout (onyx: SANDBOX_APPROVAL_WAIT_MARGIN_SECONDS).
@@ -152,6 +176,12 @@ export type CraftConfig = {
    */
   readonly sandboxBotId: string;
 
+  // ── phase-2 gates (webapp proxy / scheduled tasks) ────────────────────────
+  /** Gate the crafting UI's webapp reverse-proxy (Preview tab). */
+  readonly webappProxyEnabled: boolean;
+  /** Gate the scheduled-tasks surface (cron-driven headless turns). */
+  readonly enableScheduledTasks: boolean;
+
   // ── derived timeout family (timeouts.py) ───────────────────────────────────
   /**
    * A turn runner heartbeats on every consumed event, and the transport emits a keepalive at
@@ -201,6 +231,11 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
   const sandboxApprovalWaitTimeoutSeconds = intEnv(
     env,
     "OPENBOT_CRAFT_SANDBOX_APPROVAL_WAIT_TIMEOUT_SECONDS",
+    180,
+  );
+  const approvalWaitTimeoutSeconds = intEnv(
+    env,
+    "OPENBOT_CRAFT_APPROVAL_WAIT_TIMEOUT_SECONDS",
     180,
   );
   const sandboxApprovalWaitMarginSeconds = 20; // fixed margin, onyx parity
@@ -268,6 +303,7 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     ),
 
     sandboxApprovalWaitTimeoutSeconds,
+    approvalWaitTimeoutSeconds,
     sandboxApprovalWaitMarginSeconds,
 
     sseKeepaliveIntervalSeconds,
@@ -327,11 +363,56 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       "bot-relative"
         ? "bot-relative"
         : "absolute",
+    storage: {
+      backend:
+        stringEnv(env, "OPENBOT_CRAFT_STORAGE_BACKEND", "local") === "s3"
+          ? "s3"
+          : "local",
+      localDirectory: stringEnv(
+        env,
+        "OPENBOT_CRAFT_STORAGE_LOCAL_DIR",
+        ".craft/storage",
+      ),
+      s3Endpoint: stringEnv(env, "OPENBOT_CRAFT_STORAGE_S3_ENDPOINT", ""),
+      s3Region: stringEnv(env, "OPENBOT_CRAFT_STORAGE_S3_REGION", "us-east-1"),
+      s3Bucket: stringEnv(
+        env,
+        "OPENBOT_CRAFT_STORAGE_S3_BUCKET",
+        "openbot-craft-snapshots",
+      ),
+      s3AccessKeyId: stringEnv(
+        env,
+        "OPENBOT_CRAFT_STORAGE_S3_ACCESS_KEY_ID",
+        "",
+      ),
+      s3SecretAccessKey: stringEnv(
+        env,
+        "OPENBOT_CRAFT_STORAGE_S3_SECRET_ACCESS_KEY",
+        "",
+      ),
+      s3ForcePathStyle: boolEnv(
+        env,
+        "OPENBOT_CRAFT_STORAGE_S3_FORCE_PATH_STYLE",
+        true,
+      ),
+    },
     sandboxBotId: isPlainBotId(
       stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft"),
     )
       ? stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft")
       : "craft",
+
+    // ── phase-2 gates ─────────────────────────────────────────────────────────
+    webappProxyEnabled: boolEnv(
+      env,
+      "OPENBOT_CRAFT_WEBAPP_PROXY_ENABLED",
+      true,
+    ),
+    enableScheduledTasks: boolEnv(
+      env,
+      "OPENBOT_CRAFT_ENABLE_SCHEDULED_TASKS",
+      false,
+    ),
 
     // ── derived family: arithmetic over the roots, exactly onyx's ──
     runnerStaleAfterSeconds: 6 * sseKeepaliveIntervalSeconds, // 90s at the default

@@ -223,6 +223,34 @@ echo "======="
 info "1/4  Docker services"
 SERVICES=(postgres)
 if [ "$ONE_COMPUTER_EACH" = "true" ]; then
+  # SPIRE starts beside the supervisor, so every computer it makes can be issued an identity. The
+  # agent joins with a one-time token the server has to have minted first, so the server comes up
+  # alone here, the token is generated when .env does not carry one, and the agent joins the single
+  # `up` below with everything else.
+  COMPOSE_PROGRESS=quiet docker compose up -d spire-server >/dev/null
+  spire_ready=false
+  for _ in $(seq 1 30); do
+    if docker compose exec -T spire-server /opt/spire/bin/spire-server healthcheck >/dev/null 2>&1; then
+      spire_ready=true
+      break
+    fi
+    sleep 2
+  done
+  if [ "$spire_ready" != "true" ]; then
+    red "  spire-server did not become healthy; starting without attested identity."
+  elif grep -qE '^SPIRE_JOIN_TOKEN=..*' "$ROOT/.env"; then
+    info "  spire: reusing the join token in .env"
+    SERVICES+=(spire-server spire-agent)
+  else
+    SPIRE_JOIN_TOKEN="$(docker compose exec -T spire-server /opt/spire/bin/spire-server token generate -output json | sed -n 's/.*"value":"\([^"]*\)".*/\1/p')"
+    if [ -n "$SPIRE_JOIN_TOKEN" ]; then
+      printf '\nSPIRE_JOIN_TOKEN=%s\n' "$SPIRE_JOIN_TOKEN" >>"$ROOT/.env"
+      info "  Generated SPIRE_JOIN_TOKEN and wrote it to .env."
+      SERVICES+=(spire-server spire-agent)
+    else
+      red "  spire-server did not mint a join token; starting without attested identity."
+    fi
+  fi
   SERVICES+=(supervisor)
 fi
 #
