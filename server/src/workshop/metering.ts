@@ -14,6 +14,101 @@
  * row is still written by the gateway — metering is a downstream observer, not a participant.
  */
 import type { UsageOutbox } from "../billing/usage-outbox";
+import type { BillingModelCreditPolicyEntry } from "../config";
+
+export class UsageChargeError extends Error {
+  constructor(
+    readonly code:
+      | "usage_invalid_tokens"
+      | "usage_over_token_max"
+      | "usage_over_reservation",
+  ) {
+    super(`Usage charge failed (${code}).`);
+    this.name = "UsageChargeError";
+  }
+}
+
+export type ExactCharge = { numerator: bigint; denominator: bigint };
+
+function greatestCommonDivisor(left: bigint, right: bigint): bigint {
+  let a = left < 0n ? -left : left;
+  let b = right < 0n ? -right : right;
+  while (b !== 0n) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a === 0n ? 1n : a;
+}
+
+function reduce(numerator: bigint, denominator: bigint): ExactCharge {
+  const divisor = greatestCommonDivisor(numerator, denominator);
+  return {
+    numerator: numerator / divisor,
+    denominator: denominator / divisor,
+  };
+}
+
+function add(left: ExactCharge, right: ExactCharge): ExactCharge {
+  return reduce(
+    left.numerator * right.denominator + right.numerator * left.denominator,
+    left.denominator * right.denominator,
+  );
+}
+
+function multiply(
+  tokens: bigint,
+  rate: { numerator: bigint; denominator: bigint },
+): ExactCharge {
+  return reduce(tokens * rate.numerator, rate.denominator);
+}
+
+function compareWhole(amount: ExactCharge, whole: bigint): number {
+  const scaledWhole = whole * amount.denominator;
+  if (amount.numerator < scaledWhole) return -1;
+  if (amount.numerator > scaledWhole) return 1;
+  return 0;
+}
+
+function wholeTokens(value: number | undefined): number {
+  if (
+    value === undefined ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw new UsageChargeError("usage_invalid_tokens");
+  }
+  return value;
+}
+
+export function calculateExactModelUsageCharge(
+  policy: BillingModelCreditPolicyEntry,
+  usage: {
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+  },
+): {
+  inputTokens: number;
+  outputTokens: number;
+  actual: ExactCharge;
+} {
+  const inputTokens = wholeTokens(usage.inputTokens);
+  const outputTokens = wholeTokens(usage.outputTokens);
+  if (
+    BigInt(inputTokens) > policy.input.maximumTokens ||
+    BigInt(outputTokens) > policy.output.maximumTokens
+  ) {
+    throw new UsageChargeError("usage_over_token_max");
+  }
+  const actual = add(
+    multiply(BigInt(inputTokens), policy.input.rate),
+    multiply(BigInt(outputTokens), policy.output.rate),
+  );
+  if (compareWhole(actual, policy.maximumReservationUnits) > 0) {
+    throw new UsageChargeError("usage_over_reservation");
+  }
+  return { inputTokens, outputTokens, actual };
+}
 
 export type CodeRunUsageInput = {
   runId: string;

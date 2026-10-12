@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { LLMock } from "@copilotkit/aimock";
 import {
   CreditGateError,
+  meteredModelForTests,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
   setModelUsageGate,
@@ -242,6 +243,99 @@ describe("the model usage meter", () => {
       if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = originalBase;
       await recorder.stop();
+    }
+  });
+
+  test("a reservation refusal never reaches the provider", async () => {
+    const environment = {
+      ...testEnvironment(),
+      OPENAI_API_KEY: STUB_MODEL_KEY,
+    };
+    const tenantPackage = await loadTenantPackage(packagePath);
+    const model = runtimeModelForEnvironment(tenantPackage.model, environment);
+    const recorder = new LLMock();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    let providerCalls = 0;
+    let seenEventId: string | undefined;
+    try {
+      process.env.OPENAI_BASE_URL = await recorder.start();
+      recorder.onMessage(/.*/, () => {
+        providerCalls += 1;
+        return { type: "text", content: "provider should not have been called" };
+      });
+      setModelUsageGate(async (input) => {
+        seenEventId = input?.eventId;
+        throw new CreditGateError();
+      });
+      const agents = await resolveRuntimeAgents(
+        () => [
+          {
+            id: "general-assistant",
+            name: "General Assistant",
+            type: "built_in" as const,
+            systemPrompt: "Be helpful.",
+          },
+        ],
+        model,
+        async () => STUB_MODEL_KEY,
+      );
+      const agent = agents["general-assistant"]?.clone();
+      if (!agent) throw new Error("Expected General Assistant.");
+      agent.addMessage({
+        id: "reservation-refusal-request",
+        role: "user",
+        content: "This request should be refused before the provider sees it.",
+      });
+      await expect(agent.runAgent()).rejects.toBeDefined();
+      expect(seenEventId).toBeTruthy();
+      expect(providerCalls).toBe(0);
+    } finally {
+      setModelUsageGate(undefined);
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await recorder.stop();
+    }
+  });
+
+  test("a provider failure releases the admitted work instead of reporting finished usage", async () => {
+    const lifecycle: Array<{ phase: string; eventId: string; reason?: string }> = [];
+    try {
+      setModelUsageGate(async (input) => {
+        lifecycle.push({ phase: "admit", eventId: input.eventId });
+        return {
+          async finish(finish) {
+            lifecycle.push({ phase: "finish", eventId: finish.eventId });
+          },
+          async fail(failure) {
+            lifecycle.push({
+              phase: "fail",
+              eventId: failure.eventId,
+              reason: failure.reason,
+            });
+          },
+        };
+      });
+      const wrapped = meteredModelForTests({
+        modelId: "gpt-test",
+        async doStream() {
+          throw new Error("provider exploded");
+        },
+      });
+      await expect((wrapped as { doStream: (params: unknown) => Promise<unknown> }).doStream({})).rejects.toThrow(
+        "provider exploded",
+      );
+      expect(lifecycle[0]?.phase).toBe("admit");
+      expect(lifecycle.some((entry) => entry.phase === "finish")).toBe(false);
+      expect(
+        lifecycle.some(
+          (entry) =>
+            entry.phase === "fail" &&
+            entry.reason === "provider_error" &&
+            entry.eventId === lifecycle[0]?.eventId,
+        ),
+      ).toBe(true);
+    } finally {
+      setModelUsageGate(undefined);
     }
   });
 });

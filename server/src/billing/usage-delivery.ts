@@ -1,5 +1,7 @@
 import type { BillingService } from "./types";
+import type { CreditWriter } from "./credits-writer";
 import type { UsageOutbox, UsageOutboxRecord } from "./usage-outbox";
+import { UsageDeliveryError } from "./usage-delivery-error";
 
 export { UsageDeliveryError } from "./usage-delivery-error";
 
@@ -64,6 +66,32 @@ export function createLagoUsageTarget(
         ...sourceSpecificProperties(record),
       },
     });
+}
+
+/** The credit target effect: settle the pre-call reservation from the persisted exact usage facts. */
+export function createCreditUsageTarget(
+  writer: Pick<CreditWriter, "settleReservation">,
+): (record: UsageOutboxRecord) => Promise<void> {
+  return async (record) => {
+    if (
+      !record.reservationId ||
+      !record.actualCostNumerator ||
+      !record.actualCostDenominator
+    ) {
+      throw new UsageDeliveryError("missing_reservation");
+    }
+    await writer.settleReservation({
+      reservationId: record.reservationId,
+      actual: {
+        numerator: BigInt(record.actualCostNumerator),
+        denominator: BigInt(record.actualCostDenominator),
+      },
+      title: record.source === "llm" ? "LLM token usage" : "Code run token usage",
+      requestId: record.eventId,
+      model: record.model,
+      client: record.client,
+    });
+  };
 }
 
 /**

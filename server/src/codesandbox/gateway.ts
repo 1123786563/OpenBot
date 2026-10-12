@@ -41,6 +41,7 @@ export type CodeRunOutcome =
 
 export type CodeRunGatewayOptions = {
   client: SandboxClient | null;
+  billingEnabled?: boolean;
   modelId: string;
   botId: string;
   ownerUserId: string;
@@ -120,7 +121,9 @@ const MAX_RUN_TIMEOUT_SECONDS = 600;
 const DEFAULT_ACTIVITY_TIMEOUT_MS = 300_000;
 
 /** A one-event stream that answers "not configured" in the same shape a real run would. */
-function refusedStream(): AsyncIterable<TranslatedEvent> {
+const BILLING_TOKEN_BUDGET_UNAVAILABLE = "billing-token-budget-unavailable";
+
+function refusedStream(reason = "not-configured"): AsyncIterable<TranslatedEvent> {
   return {
     [Symbol.asyncIterator]() {
       let sent = false;
@@ -133,7 +136,7 @@ function refusedStream(): AsyncIterable<TranslatedEvent> {
             value: {
               family: "unknown",
               eventId: "",
-              payload: { refused: "not-configured" },
+              payload: { refused: reason },
             },
           };
         },
@@ -157,6 +160,10 @@ function clampRunSeconds(seconds: number | undefined): number {
 export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGateway {
   const maxArtifacts = options.maxArtifacts ?? 5;
   const maxArtifactBytes = options.maxArtifactBytes ?? 64 * 1024;
+  const billingBlocked =
+    options.billingEnabled &&
+    options.client !== null &&
+    options.client.capabilities.enforceableTokenBudget !== true;
 
   const audit = (
     eventType:
@@ -184,6 +191,30 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       const runId = newCodeRunId();
       const toolCallId = opts?.toolCallId;
       const timeoutMs = clampRunSeconds(opts?.timeoutSeconds) * 1000;
+      if (billingBlocked) {
+        await audit("code.run_refused", {
+          runId,
+          reason: BILLING_TOKEN_BUDGET_UNAVAILABLE,
+          toolCallId,
+          timeoutMs,
+        });
+        await options.store.create({
+          id: runId,
+          botId: options.botId,
+          ownerUserId: options.ownerUserId,
+          task,
+          model: options.modelId,
+        });
+        await options.store.finish(runId, {
+          status: "refused",
+          error: BILLING_TOKEN_BUDGET_UNAVAILABLE,
+        });
+        return {
+          kind: "refused",
+          reason:
+            "Code execution is unavailable because this deployment cannot enforce a billing token budget.",
+        };
+      }
       if (!options.client) {
         await audit("code.run_refused", { runId, reason: "not-configured", toolCallId, timeoutMs });
         await options.store.create({
@@ -298,6 +329,27 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
       // AUDIT FIRST, ROW FIRST — the same order `run` holds, on the streaming path too: the
       // audit row and the code_runs row exist before anything is asked of the sandbox, so a
       // run that never streamed is still a run that was asked for.
+      if (billingBlocked) {
+        await audit("code.run_refused", {
+          runId,
+          reason: BILLING_TOKEN_BUDGET_UNAVAILABLE,
+          toolCallId,
+          timeoutMs,
+        });
+        await options.store.create({
+          id: runId,
+          botId: options.botId,
+          ownerUserId: options.ownerUserId,
+          task,
+          model: options.modelId,
+        });
+        await options.store.finish(runId, {
+          status: "refused",
+          error: BILLING_TOKEN_BUDGET_UNAVAILABLE,
+        });
+        const events = refusedStream(BILLING_TOKEN_BUDGET_UNAVAILABLE);
+        return { runId, events, cancel: async () => undefined };
+      }
       if (!options.client) {
         await audit("code.run_refused", {
           runId,

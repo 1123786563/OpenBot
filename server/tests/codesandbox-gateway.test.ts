@@ -122,6 +122,39 @@ describe("code run gateway", () => {
     expect(row.status).toBe("refused");
   });
 
+  test("billing-enabled runs refuse before any sandbox method is called when token budgets are unenforceable", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const calls: string[] = [];
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient({
+          createSession: async () => {
+            calls.push("createSession");
+            return "ses_x";
+          },
+          sendMessage: async (...args) => {
+            calls.push("sendMessage");
+            return fakeClient().sendMessage(...args);
+          },
+        }),
+        capabilities: { enforceableTokenBudget: false },
+      } as SandboxClient,
+      store,
+      auditStore: audit.store,
+      billingEnabled: true,
+    });
+    const outcome = await gateway.run("anything");
+    expect(outcome.kind).toBe("refused");
+    expect(calls).toEqual([]);
+    expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(true);
+    expect([...rows.values()][0]).toMatchObject({
+      status: "refused",
+      error: "billing-token-budget-unavailable",
+    });
+  });
+
   test("a sandbox timeout lands as a failed run with the budget in the message", async () => {
     const { rows, store } = fakeStore();
     const audit = fakeAudit();
@@ -394,6 +427,40 @@ describe("code run gateway: startStreaming", () => {
     expect(
       audit.events.some((e) => e.eventType === "code.run_cancelled"),
     ).toBe(true);
+  });
+
+  test("④ billing-enabled streaming refuses before createSession or subscribeEvents", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const calls: string[] = [];
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient({
+          createSession: async () => {
+            calls.push("createSession");
+            return "ses_stream";
+          },
+          subscribeEvents: async () => {
+            calls.push("subscribeEvents");
+            return { stop: () => undefined };
+          },
+        }),
+        capabilities: { enforceableTokenBudget: false },
+      } as SandboxClient,
+      store,
+      auditStore: audit.store,
+      billingEnabled: true,
+    });
+    const streaming = await gateway.startStreaming("do not start");
+    expect(rows.get(streaming.runId)).toMatchObject({
+      status: "refused",
+      error: "billing-token-budget-unavailable",
+    });
+    expect(calls).toEqual([]);
+    const seen: string[] = [];
+    for await (const event of streaming.events) seen.push(String(event.payload.refused));
+    expect(seen).toEqual(["billing-token-budget-unavailable"]);
   });
 });
 
