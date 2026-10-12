@@ -314,12 +314,26 @@ describe("POST /sessions/:id/skills/reload", () => {
     ]);
   });
 
-  test("a wired resolver that fails mid-reload acks no skills hash (hashes-only acks need a contentless wiring)", async () => {
+  test("a wired resolver that fails mid-reload regenerates nothing — the config keeps its mcp block", async () => {
     // currentHashesFor succeeded (the hashes seam answered "new"), then the
-    // resolver went down between the two calls: content is null, nothing was
-    // pushed — acking the skills hash anyway would claim content the workspace
-    // never received, with no later reconcile to catch it.
-    const { app, updates } = harness({
+    // resolver went down between the two calls: content is null — a regenerate
+    // from the empty snapshot would strip the session's mcp block while the
+    // resolver is merely down, and acking the seam's fresh fingerprints would
+    // call the degraded bytes current. The reload skips instead: nothing
+    // written, nothing disposed, nothing acked; the row honestly stays stale
+    // and the next pass self-heals once the resolver answers again. (Hashes-
+    // only wirings have no resolver to fail and keep their contentless ack.)
+    const seeded = JSON.stringify({
+      mcp: {
+        "acme-tools-42": {
+          type: "remote",
+          url: "https://openbot.example/api/craft/mcp/42",
+          enabled: true,
+          oauth: false,
+        },
+      },
+    });
+    const { app, files, disposals, updates } = harness({
       row: sessionRow({ skillsHash: "old", mcpConfigHash: "old-mcp" }),
       hashesFor: async () => ({
         skillsHash: "new",
@@ -329,6 +343,7 @@ describe("POST /sessions/:id/skills/reload", () => {
         throw new Error("app store down");
       },
     });
+    files.set(`${DIRECTORY}/opencode.json`, seeded);
     const response = await app.request(
       `/sessions/${SESSION_ID}/skills/reload`,
       {
@@ -337,11 +352,12 @@ describe("POST /sessions/:id/skills/reload", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ skills_stale: true });
-    // The mcp hash rides along (onyx records it regardless); the skills hash
-    // stays at "old" so the row honestly remains behind the content.
-    expect(updates).toEqual([
-      { id: SESSION_ID, patch: { mcpConfigHash: "new-mcp" } },
-    ]);
+    // The workspace config is untouched — the mcp block survives the outage...
+    expect(files.get(`${DIRECTORY}/opencode.json`)).toBe(seeded);
+    expect(files.has(`${DIRECTORY}/AGENTS.md`)).toBe(false);
+    // ...and no disposal, no ack: the row keeps its old hashes and stays stale.
+    expect(disposals).toEqual([]);
+    expect(updates).toEqual([]);
   });
 
   test("a failed skills push acks the mcp hash but never the skills hash", async () => {

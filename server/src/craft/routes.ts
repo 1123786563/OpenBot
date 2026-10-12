@@ -212,7 +212,6 @@ export function createCraftRoutes(input: {
   app.route(
     "/",
     createCraftMcpRelayApp({
-      config,
       store,
       sessionMcpServersFor: async (session) => {
         const content = resolver
