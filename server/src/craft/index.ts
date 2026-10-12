@@ -123,6 +123,7 @@ export {
   type CraftRoutesDeps,
   type CraftRoutesFactory,
   createCraftRoutes,
+  stopCraftIdleReaper,
 } from "./routes";
 export {
   createSandboxGateway,

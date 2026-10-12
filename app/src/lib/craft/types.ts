@@ -201,6 +201,25 @@ export type CraftWebappInfo = {
   ready: boolean;
 };
 
+/**
+ * The sandbox lifecycle values the status chip renders — onyx's SandboxStatus enum verbatim
+ * (backend db/enums.py). "restoring" is client-owned (the wake fetch's in-flight window) and
+ * "terminated" can only arrive from a future sandbox backend; the endpoint itself answers the
+ * other four, or null when no sandbox backs the session.
+ */
+export type CraftSandboxStatus =
+  | "provisioning"
+  | "running"
+  | "sleeping"
+  | "restoring"
+  | "terminated"
+  | "failed";
+
+/** What `GET /sessions/:id/sandbox-status` answers — onyx's SandboxStatusResponse. */
+export type CraftSandboxStatusResponse = {
+  status: CraftSandboxStatus | null;
+};
+
 /** A pending approval the session is waiting on, as the live read returns it. */
 export type CraftApproval = {
   id: string;

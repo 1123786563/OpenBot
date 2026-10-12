@@ -85,9 +85,16 @@ export type CraftConfig = {
   /** Where attachments live inside a session workspace; also the prompt-part allow-list root. */
   readonly attachmentsDirectory: string;
 
-  // ── sandbox lifecycle (kept for parity; the reaper itself is a later phase) ─
+  // ── sandbox lifecycle (the idle reaper reads both below) ────────────────────
   readonly sandboxIdleTimeoutSeconds: number;
   readonly sandboxHeartbeatRefreshIntervalSeconds: number;
+  /** Gate the idle reaper's periodic sweep — false = the reaper never starts. */
+  readonly idleReaperEnabled: boolean;
+  /**
+   * The reaper's sweep cadence (onyx's celery beat SANDBOX_IDLE_CLEANUP_INTERVAL_SECONDS). A
+   * session that goes quiet just past the idle boundary is caught within one cadence.
+   */
+  readonly idleReaperIntervalSeconds: number;
   readonly sandboxNextjsPortStart: number;
   readonly sandboxNextjsPortEnd: number;
 
@@ -308,6 +315,12 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       3600,
     ),
     sandboxHeartbeatRefreshIntervalSeconds: 60,
+    idleReaperEnabled: boolEnv(env, "OPENBOT_CRAFT_IDLE_REAPER_ENABLED", true),
+    idleReaperIntervalSeconds: intEnv(
+      env,
+      "OPENBOT_CRAFT_IDLE_REAPER_INTERVAL_SECONDS",
+      60,
+    ),
     sandboxNextjsPortStart: intEnv(
       env,
       "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START",

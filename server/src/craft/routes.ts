@@ -30,6 +30,7 @@ import {
   startCraftScheduledTaskSweeper,
 } from "./scheduled-tasks";
 import { createSessionRoutes } from "./session-routes";
+import { type CraftIdleReaper, startCraftIdleReaper } from "./snapshot";
 import { createObjectStore } from "./storage/object-store";
 import { createCraftStore } from "./store";
 import { createTurnExecutor } from "./turn-executor";
@@ -72,6 +73,20 @@ export type CraftRoutesDeps = {
 export type CraftRoutesFactory = (input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
 }) => Hono<{ Variables: AppVariables }>;
+
+/**
+ * The process's one idle reaper, started by the first craft assembly and replaced by any later
+ * one (a second mount stops the first — the interval is process-global, the route tree is not).
+ * Held at module scope so `stopCraftIdleReaper` can give the boot file's shutdown hook the off
+ * switch; the timer itself is unref'd, so a stop-less exit never hangs on it either.
+ */
+let runningIdleReaper: CraftIdleReaper | null = null;
+
+/** Stop the assembled idle reaper (boot-file shutdown hook). Idempotent. */
+export function stopCraftIdleReaper(): void {
+  runningIdleReaper?.stop();
+  runningIdleReaper = null;
+}
 
 export function createCraftRoutes(input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
@@ -205,6 +220,22 @@ export function createCraftRoutes(input: {
         botIdFor: deps.botIdFor,
         sandboxConnectionFor: deps.sandboxConnectionFor,
       }),
+    );
+  }
+  if (config.idleReaperEnabled) {
+    // The sleep half of sleep/wake, started at assembly beside the routes it serves. The sweep
+    // snapshots each quiet session then flips it idle through the guarded CAS — never touching
+    // the shared Bot sandbox itself (the divergence snapshot.ts documents). A live interactive
+    // turn keeps a session awake even when its row is quiet; an errored check does too
+    // (fail-closed), so `hasActiveTurn` throws are "still busy", not "skip the check".
+    runningIdleReaper?.stop();
+    runningIdleReaper = startCraftIdleReaper(
+      { config, store, gateway, objectStore },
+      {
+        botIdFor: deps.botIdFor,
+        hasActiveTurn: async ({ id, userId }) =>
+          (await turnState.getActiveTurn({ sessionId: id, userId })) !== null,
+      },
     );
   }
   if (config.enableScheduledTasks) {

@@ -41,6 +41,14 @@ export type CraftStore = {
     sessionId: string,
     userId: string,
   ): Promise<CraftSessionRow | undefined>;
+  /**
+   * The same row WITHOUT the activity bump — the reads that must not feed the idle clock
+   * (the sandbox-status poll would otherwise keep every open session awake forever).
+   */
+  findSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<CraftSessionRow | undefined>;
   /** Sessions for the sidebar: user's INTERACTIVE rows, newest first. */
   listUserSessions(
     userId: string,
@@ -71,6 +79,13 @@ export type CraftStore = {
       status?: "initializing" | "active" | "idle" | "failed";
     },
   ): Promise<CraftSessionRow | undefined>;
+  /**
+   * The reaper's guarded flip: active → idle only while the row is STILL quiet past `before`.
+   * One CAS standing in for onyx's second still-idle scan — activity that landed between the
+   * sweep's list read and now refuses the flip. Unlike updateSession it does not stamp
+   * lastActivityAt: the row keeps its honest last-activity time, not the sleep time.
+   */
+  markSessionIdleIfStillIdle(sessionId: string, before: Date): Promise<boolean>;
   /** Bump lastActivityAt — onyx did this with an ORM onupdate hook; here it's explicit. */
   updateSessionActivity(sessionId: string): Promise<void>;
   /** The CAS core: initializing → active|failed, with the resolved runtime ids. */
@@ -142,7 +157,7 @@ export type CraftStore = {
 
 export function createCraftStore(db: Database): CraftStore {
   return {
-    async getSession(sessionId, userId) {
+    async findSession(sessionId, userId) {
       const rows = await db
         .select()
         .from(craftSessions)
@@ -153,9 +168,14 @@ export function createCraftStore(db: Database): CraftStore {
           ),
         )
         .limit(1);
-      if (rows.length === 0) return undefined;
-      await this.updateSessionActivity(sessionId);
       return rows[0];
+    },
+
+    async getSession(sessionId, userId) {
+      const session = await this.findSession(sessionId, userId);
+      if (!session) return undefined;
+      await this.updateSessionActivity(sessionId);
+      return session;
     },
 
     async listUserSessions(userId, limit = 100) {
@@ -218,6 +238,21 @@ export function createCraftStore(db: Database): CraftStore {
         .where(eq(craftSessions.id, sessionId))
         .returning();
       return rows[0];
+    },
+
+    async markSessionIdleIfStillIdle(sessionId, before) {
+      const rows = await db
+        .update(craftSessions)
+        .set({ status: "idle" })
+        .where(
+          and(
+            eq(craftSessions.id, sessionId),
+            eq(craftSessions.status, "active"),
+            lt(craftSessions.lastActivityAt, before),
+          ),
+        )
+        .returning({ id: craftSessions.id });
+      return rows.length === 1;
     },
 
     async updateSessionActivity(sessionId) {

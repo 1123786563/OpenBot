@@ -50,5 +50,14 @@
     "failed": "失败",
     "retry": "重试上传",
     "remove": "移除"
+  },
+  "sandbox": {
+    "loading": "正在寻找沙箱…",
+    "provisioning": "沙箱初始化中…",
+    "running": "沙箱运行中",
+    "sleeping": "沙箱已休眠",
+    "restoring": "正在恢复会话…",
+    "terminated": "沙箱已终止",
+    "failed": "沙箱启动失败"
   }
 }

@@ -15,6 +15,7 @@ import { MessagePlan } from "./message/plan";
 import { MessageText } from "./message/text";
 import { MessageThinking } from "./message/thinking";
 import { ToolCall } from "./message/tool-call";
+import { useWakeOnIntent } from "./sandbox-status-indicator";
 
 /**
  * The conversation: durable history first, then the live turn, then the composer. History and live
@@ -36,6 +37,9 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     streamMessage,
     interruptStreaming,
   } = useBuildStreaming(sessionId);
+  // Focus on a sleeping sandbox is the wake signal (onyx's useWakeOnIntent): the composer's
+  // textarea onFocus forces the session reload whose server side restores the snapshot.
+  const wakeOnIntent = useWakeOnIntent(sessionId);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyItems = messagesToTranscript(messages.data ?? []);
@@ -133,6 +137,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
         streaming={isStreaming}
         onSend={handleSend}
         onInterrupt={interruptStreaming}
+        onInputFocus={wakeOnIntent}
       />
     </div>
   );
