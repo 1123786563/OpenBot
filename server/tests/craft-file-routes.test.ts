@@ -258,6 +258,24 @@ describe("upload endpoint", () => {
     expect(oversize.status).toBe(400);
   });
 
+  test("an oversize DECLARED content-length is refused 400, not 413, before the body parses", async () => {
+    const { api, files } = memoryFileApi();
+    const app = routes(api);
+    const response = await app.request(`/sessions/${SESSION_ID}/upload`, {
+      method: "POST",
+      // Declared past the 1MB cap + the 64KB multipart allowance; the body itself is tiny
+      // (Bun keeps an explicit content-length verbatim for a FormData body). onyx's
+      // oversize verdict is 400 — 413 stays reserved for the sandbox transfer ceiling.
+      headers: { "content-length": String(2 * 1024 * 1024) },
+      body: multipart("big.bin", new Uint8Array([1])),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toMatch(
+      /exceeds maximum/,
+    );
+    expect([...files.keys()]).toEqual([]); // refused before any sandbox write
+  });
+
   test("a name collision is renamed with onyx's stem_N.ext scheme", async () => {
     const { api } = memoryFileApi({
       [`${DIRECTORY}/attachments/data.csv`]: "existing",
@@ -285,6 +303,39 @@ describe("upload endpoint", () => {
     expect(((await response.json()) as { error: string }).error).toBe(
       "Maximum number of files (2) reached",
     );
+  });
+
+  test("nested descendants of attachments/ don't count toward the file limit (onyx maxdepth 1)", async () => {
+    // Top level holds ONE file (limit is 2); the recursive listing also returns two
+    // NESTED files, which onyx's `find -maxdepth 1 -type f` never sees.
+    const { api, files } = memoryFileApi({
+      [`${DIRECTORY}/attachments/keep.txt`]: "top level",
+      [`${DIRECTORY}/attachments/sub/one.txt`]: "nested",
+      [`${DIRECTORY}/attachments/sub/deeper/two.txt`]: "nested deeper",
+    });
+    const app = routes(api);
+    const response = await app.request(`/sessions/${SESSION_ID}/upload`, {
+      method: "POST",
+      body: multipart("new.txt", new Uint8Array([1])),
+    });
+    expect(response.status).toBe(200);
+    expect(files.has(`${DIRECTORY}/attachments/new.txt`)).toBe(true);
+  });
+
+  test("a nested file's basename reserves no top-level collision name", async () => {
+    const { api, files } = memoryFileApi({
+      [`${DIRECTORY}/attachments/sub/data.csv`]: "nested, same basename",
+    });
+    const app = routes(api);
+    const response = await app.request(`/sessions/${SESSION_ID}/upload`, {
+      method: "POST",
+      body: multipart("data.csv", new Uint8Array([9])),
+    });
+    expect(response.status).toBe(200);
+    // No TOP-LEVEL data.csv existed, so the name is taken as-is — not stem_1'd.
+    const body = (await response.json()) as { filename: string };
+    expect(body.filename).toBe("data.csv");
+    expect(files.has(`${DIRECTORY}/attachments/data.csv`)).toBe(true);
   });
 
   test("the total-size limit answers 429 once the ledger fills", async () => {
