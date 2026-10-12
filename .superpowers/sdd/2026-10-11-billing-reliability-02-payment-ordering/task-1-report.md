@@ -69,3 +69,87 @@ guard before test cases execute; no application database was used.
 `fix(payments): serialize pending purchases per deployment`
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+## Review fix round 1 — legacy upgrade safety and collision retry
+
+### Migration status and authorized exception
+
+The operator confirmed that `0076_productive_nextwave.sql` had reached **only the local disposable
+PostgreSQL 17 test database**, and had not reached production or any shared/deployed database.
+Repository history shows it was introduced by Task 1's local commit `70cf3d7`. Under the user's
+explicit clarification for this fix round, the test-only generated migration was amended in place
+to add the preflight **before** its index drop or column addition. This is a deliberate exception
+for an undeployed generated migration, not permission to rewrite deployed migration history.
+
+The current `billing_test` database remains post-0076. Its migration history was not reset,
+rewritten, or reapplied. Legacy upgrade tests instead create a separate randomly named schema
+**inside a rollback-only transaction** in that dedicated database. Each fixture has its own
+legacy `payment_orders` and the old pending-pair unique index; `SET LOCAL search_path` keeps
+the migration's unqualified names within that schema. A fixture rollback removes every
+table/index/row/schema, and every test explicitly verifies its schema no longer exists.
+
+### Fail-closed upgrade precondition and operator procedure
+
+The deployment must have **at most one pending order across all plan/provider pairs** before
+0076 can proceed. The first statement now:
+
+1. Takes an `ACCESS EXCLUSIVE` table lock, held through the migration transaction, so no new
+   purchase can race the count and subsequent index replacement.
+2. Counts all legacy pending orders, not one plan/provider pair.
+3. Raises an actionable `P0001` exception if more than one exists, before dropping any index
+   or altering schema.
+
+The error's hint and migration comments require operators to pause checkout, reconcile all
+open provider sessions, close/cancel unpaid sessions at their providers and via the existing
+CAS-backed local cancellation flow, preserve paid facts/order price snapshots/anomaly evidence,
+then verify that no more than one pending order remains before rerunning transactionally.
+The migration neither auto-cancels orders nor chooses a winner: outstanding remote sessions
+can still collect money, and paid evidence remains durable for manual resolution.
+
+### TDD evidence
+
+- Added the migration preflight integration test before changing the migration. Against the old
+  SQL, executing the migration's **first statement** resolved (it dropped the old index) rather
+  than producing the expected actionable refusal. This was the expected RED failure.
+- Added a real primary-key collision test before changing store error handling. The test inserts
+  a terminal row, makes the generator emit that existing ID followed by a fresh ID, and calls
+  the real store/PostgreSQL insert. RED surfaced a wrapped `DrizzleQueryError`, whose Bun SQL
+  cause uses `errno: "23505"` and `constraint: "payment_orders_pkey"`. The old detector looked
+  only at outer `code`/`constraint_name`, so it failed to retry.
+- Updated the detector to traverse the cause chain safely, recognizing only the named order
+  primary-key constraint and SQLSTATE `23505`, using Bun SQL and postgres.js field spellings.
+  Other errors are still propagated; immutable price snapshots, CAS and paid-fact uniqueness
+  were untouched.
+- GREEN: competing legacy orders now fail before any destructive migration statement; the old
+  index, lack of deployment scope column, pending rows and amounts remain intact. A reconciled
+  legacy fixture upgrades successfully and preserves the remaining pending order's price
+  snapshot. The forced primary-key collision retries and persists the fresh order.
+- Initial fixture execution exposed Bun's lazy SQL-query behavior when passed directly into
+  `expect(...).rejects`; wrapping it with `Promise.resolve` made the query execute and produced
+  the actual RED result. No production change was made to accommodate test-only behavior.
+
+### Validation and isolation
+
+Used fresh disposable test-only credentials created solely in `openbot-billing-test-postgres`
+at `127.0.0.1:55432`, supplied only through `TEST_DATABASE_URL`. No application DB or copied
+application credentials were used.
+
+- `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/payment-ordering-migration.integration.test.ts server/tests/payment-store.integration.test.ts server/tests/payment-service.test.ts`
+  — PASS: **59 tests, 0 failures**.
+- `bun run --filter server typecheck` — PASS.
+- `bunx biome lint --error-on-warnings server/src/billing/payments/store.ts server/tests/payment-store.integration.test.ts server/tests/payment-ordering-migration.integration.test.ts`
+  — PASS, three files.
+- `bunx biome format server/src/billing/payments/store.ts server/tests/payment-store.integration.test.ts server/tests/payment-ordering-migration.integration.test.ts`
+  — PASS, three files; `git diff --check` — PASS.
+- Final expanded regression:
+  `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/payment-ordering-migration.integration.test.ts server/tests/payment-store.integration.test.ts server/tests/payment-service.test.ts server/tests/payment-routes.test.ts server/tests/qa-batch1-payment-service.test.ts`
+  — PASS: **81 tests, 0 failures, 246 assertions**.
+- Dedicated DB checks confirmed **zero** `payment_upgrade_%` schemas remaining, the public
+  `payment_orders_pending_scope_unique_idx` intact, and migration history still **77 entries**.
+- After the final test run, the fresh disposable credential role was dropped successfully.
+  Neither the existing test DB nor its public migration history was reset.
+
+Self-review: no automatic financial disposition was added; all destructive DDL remains after
+the preflight; the migration lock closes the preflight/write race; fixtures cannot change the
+public migration history; and the primary-key retry is constrained to the real PostgreSQL
+constraint rather than a generic uniqueness error.
