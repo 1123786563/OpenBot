@@ -243,7 +243,12 @@ type WriteLog = Array<
 >;
 
 function memoryFileApi(
-  input: { failPaths?: RegExp; failDelete?: boolean } = {},
+  input: {
+    failPaths?: RegExp;
+    failDelete?: boolean;
+    /** Rejects listings whose path matches, with the given error (the gateway's throw shape). */
+    failListWith?: (path: string) => Error | null;
+  } = {},
 ) {
   const files = new Map<string, Uint8Array>();
   const log: WriteLog = [];
@@ -256,6 +261,8 @@ function memoryFileApi(
       files.set(path, bytes);
     },
     async listFiles(path: string) {
+      const failure = input.failListWith?.(path);
+      if (failure) throw failure;
       return [...files.keys()].filter((key) => key.startsWith(`${path}/`));
     },
     async deletePath(path: string) {
@@ -372,6 +379,54 @@ describe("materializeManagedContent", () => {
     ).toBeDefined();
     expect(api.files.has("cs-mc/.opencode/skills/old/SKILL.md")).toBe(true);
   });
+
+  // ── the listing contract (finding F-C's family, OCR bug·medium) ───────────────
+  // The gateway's listing 404s for an absent directory — a FRESH workspace, where
+  // there is simply nothing stale to clear; every other listing failure is real and
+  // must fail hydration so the skills hash is never acked over an unknown tree.
+
+  test("a 404 listing is a fresh workspace: nothing to clear, hydration succeeds", async () => {
+    const api = memoryFileApi({
+      failListWith: (path) =>
+        path.endsWith("/.opencode/skills")
+          ? new Error(`Sandbox /file?path=${path} answered 404.`)
+          : null,
+    });
+    const content = await contentWith({
+      skillFilesFor: async () =>
+        new Map([["search/SKILL.md", encoder.encode("hi")]]),
+    });
+    expect(await materializeManagedContent(api, "cs-mc", content)).toBe(true);
+    expect(
+      api.files.get("cs-mc/.opencode/skills/search/SKILL.md"),
+    ).toBeDefined();
+  });
+
+  test("a real listing failure fails hydration — no skills ack over an unreconciled tree", async () => {
+    const api = memoryFileApi({
+      failListWith: (path) =>
+        path.endsWith("/.opencode/skills")
+          ? new Error(`Sandbox /file?path=${path} answered 500.`)
+          : null,
+    });
+    // A stale skill IS on disk, but the listing could not see it — the old code
+    // swallowed the failure (stale=[]), skipped the clear, and still acked.
+    api.files.set(
+      "cs-mc/.opencode/skills/old/SKILL.md",
+      encoder.encode("would linger"),
+    );
+    const content = await contentWith({
+      skillFilesFor: async () =>
+        new Map([["search/SKILL.md", encoder.encode("fresh")]]),
+    });
+    const hydrated = await materializeManagedContent(api, "cs-mc", content);
+    // The push still lands what it can (writes are independent legs), but the
+    // ack must not claim a tree whose stale state was never reconciled.
+    expect(hydrated).toBe(false);
+    expect(
+      api.files.get("cs-mc/.opencode/skills/search/SKILL.md"),
+    ).toBeDefined();
+  });
 });
 
 // ── ensureSessionReady ordering: resolve → push → AGENTS.md → finalize ────────
@@ -417,7 +472,9 @@ function readyHarness(input: {
     fileApiFor: () => ({
       async listFiles(path: string) {
         if (input.workspaceExists && path.endsWith("/outputs")) return [];
-        throw new Error("missing");
+        // The real gateway's answer for an absent directory — the 404 shape the
+        // materializer normalizes to a fresh workspace (finding F-C's family).
+        throw new Error(`Sandbox /file?path=${path} answered 404.`);
       },
       async writeFile(path: string, content: string) {
         if (input.failAgentsWrite && path.endsWith("AGENTS.md")) {

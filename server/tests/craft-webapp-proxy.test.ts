@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
@@ -211,7 +211,10 @@ function fakeRequireUser(): MiddlewareHandler<{ Variables: AppVariables }> {
   };
 }
 
-function sessionRow(name: string | null): CraftSessionRow {
+function sessionRow(
+  name: string | null,
+  nextjsPort: number | null = null,
+): CraftSessionRow {
   return {
     id: SESSION_ID,
     userId: "u1",
@@ -219,7 +222,7 @@ function sessionRow(name: string | null): CraftSessionRow {
     status: "active",
     lastActivityAt: new Date(),
     createdAt: new Date(),
-    nextjsPort: null,
+    nextjsPort,
     sharingScope: "private",
     origin: "INTERACTIVE",
     opencodeSessionId: null,
@@ -230,18 +233,23 @@ function sessionRow(name: string | null): CraftSessionRow {
   };
 }
 
-function storeWithSession(name: string | null, ownerUserId = "u1"): CraftStore {
+function storeWithSession(
+  name: string | null,
+  ownerUserId = "u1",
+  nextjsPort: number | null = null,
+): CraftStore {
   return {
     async getSession(id: string, userId: string) {
       return id === SESSION_ID && userId === ownerUserId
-        ? sessionRow(name)
+        ? sessionRow(name, nextjsPort)
         : undefined;
     },
     async updateSessionActivity() {},
   } as unknown as CraftStore;
 }
 
-/** In-memory sandbox (values may be text or raw bytes); listing = every descendant. */
+/** In-memory sandbox (values may be text or raw bytes); the listing answers the REAL
+ * gateway shape — one level per call, immediate children as full paths (finding F-C). */
 function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
   const files = new Map<string, Uint8Array>();
   for (const [path, value] of Object.entries(initial)) {
@@ -252,11 +260,16 @@ function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
   }
   const api: AgentSandboxFileApi = {
     async listFiles(path: string) {
-      const found = [...files.keys()].filter((key) =>
-        key.startsWith(`${path}/`),
-      );
-      if (found.length === 0) throw new Error(`not found: ${path}`);
-      return found;
+      const prefix = `${path}/`;
+      const children = new Set<string>();
+      for (const key of files.keys()) {
+        if (!key.startsWith(prefix)) continue;
+        const rest = key.slice(prefix.length);
+        const first = rest.split("/")[0];
+        children.add(rest.includes("/") ? `${prefix}${first}` : key);
+      }
+      if (children.size === 0) throw new Error(`not found: ${path}`);
+      return [...children];
     },
     async writeFile() {},
     async writeFileBytes() {},
@@ -534,5 +547,91 @@ describe("webapp-download (ZIP contract)", () => {
       );
       expect(existsSync(join(outDir, "src/页面.tsx"))).toBe(true);
     }
+  });
+});
+
+// ── F-E: the preview and the ready probe dial the SANDBOX host, not host loopback ──
+//
+// In the host-server + docker-sandbox topology the dev server listens INSIDE the
+// container; dialing 127.0.0.1:{port} from the server never reaches it (live evidence:
+// in-container probe 200, host 000 — ready永false / preview 503). Both reachability
+// paths must dial the host the SANDBOX itself is reached on — the gateway connection's
+// host (config.sandboxGatewayBaseUrl, else the per-bot conn baseUrl), the same machine
+// the reserved port range is published from.
+
+describe("webapp preview reachability dials the sandbox host (F-E)", () => {
+  function previewRoutes(connBaseUrl: string) {
+    return createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("preview", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({ baseUrl: connBaseUrl, token: null }),
+    });
+  }
+
+  test("webapp-info ready and the preview proxy fetch the gateway host's reserved port", async () => {
+    const dialed: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      dialed.push(String(input));
+      return new Response("<html>app</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    }) as typeof fetch;
+    try {
+      const app = previewRoutes("http://sbox.internal:4300");
+      const info = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+      expect(info.status).toBe(200);
+      expect(((await info.json()) as { ready: boolean }).ready).toBe(true);
+
+      const page = await app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+      );
+      expect(page.status).toBe(200);
+      expect(await page.text()).toBe("<html>app</html>");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    // Every dial went to the SANDBOX host's port — never the host's own loopback.
+    expect(dialed.length).toBeGreaterThan(0);
+    for (const url of dialed) {
+      expect(url.startsWith("http://sbox.internal:3011/")).toBe(true);
+    }
+  });
+
+  test("the sandbox host is taken from the config gateway URL when set, before the conn baseUrl", async () => {
+    const dialed: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      dialed.push(String(input));
+      return new Response("x", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const app = createWebappProxyRoutes(fakeRequireUser(), {
+        config: loadCraftConfig({
+          OPENBOT_CRAFT_SANDBOX_GATEWAY_URL: "http://gateway.host:4300",
+        }),
+        store: storeWithSession("preview", "u1", 3011),
+        gateway: gatewayWith(
+          memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+        ),
+        botIdFor: async () => "craft-bot",
+        sandboxConnectionFor: () => ({
+          baseUrl: "http://other.host:4300",
+          token: null,
+        }),
+      });
+      const info = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+      expect(((await info.json()) as { ready: boolean }).ready).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(
+      dialed.every((url) => url.startsWith("http://gateway.host:3011/")),
+    ).toBe(true);
   });
 });

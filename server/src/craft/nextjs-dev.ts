@@ -4,13 +4,13 @@
  * onyx generates a self-contained `start-webapp.sh` per session (chmod 444) and the
  * sandbox-side `webapp` plugin runs it in the session directory: flock against a double
  * start, a pid + log file beside it, and a 90s readiness poll. OpenBot keeps that shape
- * whole — the agent-sandbox runs `opencode serve` (and the plugin inside it) directly on
- * the host the craft server is co-located with, so the script's own `bun run dev` child
- * and the reserved port are first-class loopback citizens: the tool that starts the
- * server, the tool that reports its status, and the preview route all speak the SAME
- * port (the per-session reservation `craft_sessions.nextjs_port`, onyx's
+ * whole — the script's own `bun run dev` child runs INSIDE the sandbox, so the tool that
+ * starts the server, the tool that reports its status, and the preview route all speak
+ * the SAME port (the per-session reservation `craft_sessions.nextjs_port`, onyx's
  * reserve_nextjs_port__no_commit model), which is what keeps one managed process per
- * session honest.
+ * session honest. The port lives on the SANDBOX host (see F-E below): in-container
+ * consumers (the script's curl, the plugin's probe) use loopback; the server's preview
+ * and ready probe dial the sandbox host via `webappUpstreamHost`.
  *
  * The phase-1 shape this module replaces (a `POST /devserver/start` pool client) is
  * superseded by the restored tool: the pool cannot bind a caller-chosen port, keep a
@@ -21,10 +21,14 @@
  * - no image outputs template: a missing `outputs/web` scaffold is honest guidance, not
  *   a template copy (the scaffold is the agent's job per AGENTS.md);
  * - `bun install` without the image cache bootstrap flags (no BUN_IMAGE_CACHE_DIR);
- * - the dev server binds `-H 127.0.0.1` (onyx pods needed 0.0.0.0; here the preview and
- *   probes are loopback);
  * - SESSION_PATH is normalized to an absolute path so bot-relative session dirs (the
  *   agent-sandbox mode) survive the script's own `cd`.
+ *
+ * The BIND stays onyx's own `-H 0.0.0.0`: the server's preview and ready probe dial the
+ * reserved port on the SANDBOX host (finding F-E — the gateway connection's host, with
+ * the range published from the sandbox), so the server must listen beyond the
+ * container's loopback; the script's own readiness curl stays on in-container loopback,
+ * and the in-sandbox webapp tool's probe likewise (both run where the server does).
  */
 
 import type { CraftConfig } from "./config";
@@ -94,8 +98,10 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
         fi
         echo "Starting Next.js dev server on port $PORT..."
         # 9>&-: the server must not inherit the lock fd, or it would hold the
-        # check-and-spawn lock for its entire lifetime.
-        PORT="$PORT" nohup bun run dev -- -H 127.0.0.1 -p "$PORT" \\
+        # check-and-spawn lock for its entire lifetime. -H 0.0.0.0 is onyx's own
+        # bind: the preview dials this port on the sandbox host (F-E), not the
+        # container's private loopback.
+        PORT="$PORT" nohup bun run dev -- -H 0.0.0.0 -p "$PORT" \\
             > "$SESSION_PATH/nextjs.log" 2>&1 9>&- &
         NEXTJS_PID=$!
         echo "Next.js server started with PID $NEXTJS_PID"
@@ -150,15 +156,30 @@ export async function writeWebappBootstrapScript(
 }
 
 /**
- * Whether the session's dev server answers on its reserved port — onyx's ready
- * judgment (`manager.py:1570-1593`): ANY response counts (404 included), 2s timeout.
+ * The host the session's dev server is dialed on: the gateway base URL's hostname — the
+ * sandbox host, the one machine the reserved port range is published from. Unparsable
+ * input degrades to loopback (the co-located topology), never to a throw.
+ */
+export function webappUpstreamHost(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname || "127.0.0.1";
+  } catch {
+    return "127.0.0.1";
+  }
+}
+
+/**
+ * Whether the session's dev server answers on its reserved port — onyx's ready judgment
+ * (`manager.py:1570-1593`): ANY response counts (404 included), 2s timeout. The dial
+ * goes to the SANDBOX host (F-E): the reserved port listens inside the sandbox, so the
+ * probe is handed the host instead of assuming it shares this process's loopback.
  */
 export async function webappDevServerReady(
-  port: number,
+  input: { host: string; port: number },
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
   try {
-    await fetchImpl(`http://127.0.0.1:${port}/`, {
+    await fetchImpl(`http://${input.host}:${input.port}/`, {
       signal: AbortSignal.timeout(2000),
     });
     return true;

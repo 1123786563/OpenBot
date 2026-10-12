@@ -19,13 +19,15 @@ import {
 
 /**
  * The upload / files-delete / download-directory trio. The sandbox behind the routes is an
- * in-memory file API whose listing returns every descendant (the shape opencode's GET /file
- * answers), so the route's containment and limit decisions are observed against real paths.
+ * in-memory file API whose listing answers the REAL gateway shape (finding F-C): one level
+ * per call — a directory's immediate children as full paths, subdirectories included — so
+ * the route's containment, limit, and archive-walk decisions are observed against what
+ * opencode's GET /file actually answers, not a recursive stand-in that masked F-C.
  */
 
 const config = loadCraftConfig({
   OPENBOT_CRAFT_MAX_UPLOAD_FILE_SIZE_MB: "1",
-  OPENBOT_CRAFT_MAX_UPLOAD_FILES_PER_SESSION: "2",
+  OPENBOT_CRAFT_MAX_UPLOAD_FILES_PER_SESSION: "3",
   OPENBOT_CRAFT_MAX_TOTAL_UPLOAD_SIZE_MB: "1",
 });
 const SESSION_ID = "cs-sess";
@@ -66,8 +68,10 @@ const fakeStore = (): CraftStore =>
   }) as unknown as CraftStore;
 
 /**
- * An in-memory sandbox: keys are absolute paths, values bytes. listFiles returns every
- * descendant of a directory (opencode's recursive listing shape); a directory nothing lives
+ * An in-memory sandbox: keys are absolute paths, values bytes. listFiles answers the REAL
+ * gateway listing shape (finding F-C): ONE level per call — a directory's immediate
+ * children as full paths, subdirectory children included (as bare paths, no trailing
+ * slash, exactly what the gateway normalization hands back). A directory nothing lives
  * under throws (the gateway's behavior for an absent path).
  */
 function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
@@ -81,11 +85,17 @@ function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
   const api: AgentSandboxFileApi = {
     async listFiles(path: string) {
       const prefix = `${path}/`;
-      const found = [...files.keys()].filter((key) => key.startsWith(prefix));
-      if (found.length === 0 && !files.has(path) && !hasDir(path)) {
+      const children = new Set<string>();
+      for (const key of files.keys()) {
+        if (!key.startsWith(prefix)) continue;
+        const rest = key.slice(prefix.length);
+        const first = rest.split("/")[0];
+        children.add(rest.includes("/") ? `${prefix}${first}` : key);
+      }
+      if (children.size === 0 && !files.has(path)) {
         throw new Error(`Sandbox /file answered 404 for ${path}.`);
       }
-      return found;
+      return [...children];
     },
     async writeFile(path, content) {
       files.set(path, new TextEncoder().encode(content));
@@ -106,10 +116,6 @@ function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
       return files.get(path) ?? null;
     },
   };
-  function hasDir(path: string): boolean {
-    const prefix = `${path}/`;
-    return [...files.keys()].some((key) => key.startsWith(prefix));
-  }
   return { api, files };
 }
 
@@ -296,21 +302,24 @@ describe("upload endpoint", () => {
     const { api } = memoryFileApi({
       [`${DIRECTORY}/attachments/a.txt`]: "a",
       [`${DIRECTORY}/attachments/b.txt`]: "b",
+      [`${DIRECTORY}/attachments/c.txt`]: "c",
     });
     const app = routes(api);
     const response = await app.request(`/sessions/${SESSION_ID}/upload`, {
       method: "POST",
-      body: multipart("c.txt", new Uint8Array([1])),
+      body: multipart("d.txt", new Uint8Array([1])),
     });
     expect(response.status).toBe(429);
     expect(((await response.json()) as { error: string }).error).toBe(
-      "Maximum number of files (2) reached",
+      "Maximum number of files (3) reached",
     );
   });
 
   test("nested descendants of attachments/ don't count toward the file limit (onyx maxdepth 1)", async () => {
-    // Top level holds ONE file (limit is 2); the recursive listing also returns two
-    // NESTED files, which onyx's `find -maxdepth 1 -type f` never sees.
+    // The REAL listing is one level: attachments/ answers [keep.txt, sub] — the two
+    // NESTED files never appear (onyx's `find -maxdepth 1 -type f` never saw them
+    // either). The subdirectory itself occupies one top-level slot name — the flat
+    // path strings cannot say file-or-dir, and counting it is the conservative side.
     const { api, files } = memoryFileApi({
       [`${DIRECTORY}/attachments/keep.txt`]: "top level",
       [`${DIRECTORY}/attachments/sub/one.txt`]: "nested",
@@ -559,6 +568,51 @@ describe("download-directory endpoint (ZIP contract)", () => {
     );
     expect(members.find((m) => m.name === "app/blob.bin")?.bytes).toEqual(BLOB);
     expect(members.every((m) => m.method === 8)).toBe(true); // deflate
+  });
+
+  test("F6-A/F-C: a top level of ONLY subdirectories still packs every nested file", async () => {
+    // The finding's exact live shape: the gateway listing is ONE level, so
+    // `outputs` answers only the `web` directory entry. The walk must recurse —
+    // a single flat listing here used to answer a 200 with a ZERO-entry ZIP,
+    // silently dropping every nested file (remediation-verification §3(viii)).
+    const { api } = memoryFileApi({
+      [`${DIRECTORY}/outputs/web/package.json`]: '{"name":"web"}',
+      [`${DIRECTORY}/outputs/web/src/app/page.tsx`]:
+        "export default function Page() {}",
+      [`${DIRECTORY}/outputs/web/.env`]: "hidden",
+      [`${DIRECTORY}/outputs/web/node_modules/pkg/index.js`]: "hidden",
+    });
+    const app = routes(api);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/download-directory/outputs`,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    const members = readZip(new Uint8Array(await response.arrayBuffer()));
+    // The fixture F6 input tree's members, arcnames relative to outputs/
+    // (hidden subtrees pruned whole).
+    expect(members.map((m) => m.name).sort()).toEqual([
+      "web/package.json",
+      "web/src/app/page.tsx",
+    ]);
+  });
+
+  test("F-C ride-along: an archive the writer cannot build is 502, not a misleading 404", async () => {
+    // 65,536 entries: past the non-ZIP64 writer's ceiling. The listing itself is
+    // reachable, so the route must NOT fold the writer's RangeError into onyx's
+    // "directory not found" 404 — the directory exists; the archive failed.
+    const tree: Record<string, string> = {};
+    for (let i = 0; i <= 0xffff; i++)
+      tree[`${DIRECTORY}/outputs/f${i}.txt`] = "x";
+    const { api } = memoryFileApi(tree);
+    const app = routes(api);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/download-directory/outputs`,
+    );
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: "The directory could not be read.",
+    });
   });
 
   test("a dotted directory basename keeps its dots (allow_dots=True)", async () => {
