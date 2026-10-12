@@ -7,11 +7,12 @@ import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
- * QA batch-1 probe (b)+(c): the payment store's pending-pair defence and the paid-fact
- * idempotency under REAL concurrency, against a real PostgreSQL. The author's tests exercise
- * the sequential conflict answer; the property P1-1 was filed over is the race itself — N
- * concurrent inserts on one (plan, provider) pair, and the cross-order paid-fact race that the
- * partial unique index must settle with one winner and N-1 alreadyKnown verdicts.
+ * QA batch-1 probe (b)+(c), aligned with the deployment-scoped purchase semantics: the payment
+ * store's pending-slot defence and the paid-fact idempotency under REAL concurrency, against a
+ * real PostgreSQL. The author's tests exercise the sequential conflict answer; the property
+ * P1-1 was filed over is the race itself — N concurrent inserts contending for the ONE pending
+ * slot this deployment allows, and the cross-order paid-fact race that the partial unique index
+ * must settle with one winner and N-1 alreadyKnown verdicts.
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const store = createPaymentStore(database);
@@ -63,15 +64,32 @@ test("probe b: five concurrent inserts on one (plan, provider) land ONE pending 
   expect(rows).toHaveLength(1);
   expect(rows[0].status).toBe("pending");
   expect(rows[0].id).toBe(winnerId);
+
+  // The pending slot is deployment-wide: leave no pending order behind for the next test.
+  expect(await store.cancelOrder(winnerId, 0)).toBe(true);
 });
 
-test("probe b: the same plan on DIFFERENT providers does not block — the index is per pair", async () => {
+test("probe b: the same plan on DIFFERENT providers contends for the one deployment pending slot", async () => {
   const input = orderInput();
   const alipay = await store.insertOrder({ ...input });
-  const wechat = await store.insertOrder({ ...input, provider: "wechat" });
   expect(alipay.conflict).toBeNull();
-  expect(wechat.conflict).toBeNull();
-  expect(wechat.order.id).not.toBe(alipay.order.id);
+  // The pending-scope partial unique index is per DEPLOYMENT, not per (plan, provider): a
+  // channel switch must first cancel the pending order (the service's flow), not open a
+  // second payable QR beside it.
+  const wechat = await store.insertOrder({ ...input, provider: "wechat" });
+  expect(wechat.conflict).toBe("pending-purchase");
+  expect(wechat.order.id).toBe(alipay.order.id);
+
+  // The database fact: exactly one pending row deployment-wide for this scope.
+  const rows = await database
+    .select({ id: paymentOrders.id, status: paymentOrders.status })
+    .from(paymentOrders)
+    .where(eq(paymentOrders.planCode, input.planCode));
+  expect(rows).toHaveLength(1);
+  expect(rows[0].status).toBe("pending");
+
+  // Free the deployment slot for the next test.
+  expect(await store.cancelOrder(alipay.order.id, alipay.order.version)).toBe(true);
 });
 
 test("probe b: a terminal order frees the pair — a fresh pending order opens after cancel", async () => {
@@ -90,21 +108,26 @@ test("probe b: a terminal order frees the pair — a fresh pending order opens a
 });
 
 test("probe c: two orders racing the SAME channel transaction — one claims, one alreadyKnown", async () => {
-  const planA = orderInput();
-  const planB = orderInput();
-  const { order: first } = await store.insertOrder(planA);
-  const { order: second } = await store.insertOrder(planB);
+  const input = orderInput();
+  const { order: first } = await store.insertOrder(input);
+  // The deployment pending slot allows only one open order: settle the first aside so the
+  // second can open, then race both confirms against the same channel transaction id.
+  expect(await store.cancelOrder(first.id, first.version)).toBe(true);
+  const { order: second } = await store.insertOrder(input);
+  expect(second.id).not.toBe(first.id);
   const transactionId = `${prefix}-tx-race`;
+  const periodStart = new Date();
+  const periodEnd = new Date(Date.now() + 30 * 24 * 3600_000);
 
   const results = await Promise.all([
     store.confirmPaid({
       id: first.id,
-      expectedVersion: first.version,
-      fromStatuses: ["pending"],
+      expectedVersion: first.version + 1,
+      fromStatuses: ["expired", "canceled"],
       channelTransactionId: transactionId,
       amountCents: 8800,
-      periodStart: new Date(),
-      periodEnd: new Date(Date.now() + 30 * 24 * 3600_000),
+      periodStart,
+      periodEnd,
     }),
     store.confirmPaid({
       id: second.id,
@@ -112,8 +135,8 @@ test("probe c: two orders racing the SAME channel transaction — one claims, on
       fromStatuses: ["pending"],
       channelTransactionId: transactionId,
       amountCents: 8800,
-      periodStart: new Date(),
-      periodEnd: new Date(Date.now() + 30 * 24 * 3600_000),
+      periodStart,
+      periodEnd,
     }),
   ]);
 
@@ -122,10 +145,11 @@ test("probe c: two orders racing the SAME channel transaction — one claims, on
   const known = results.filter((result) => result.alreadyKnown);
   expect(known).toHaveLength(1);
 
-  // The loser is untouched: still pending, no channel transaction recorded.
+  // The loser is untouched: it keeps the status it held before the race, with no channel
+  // transaction recorded.
   const loserId = results[0].claimed ? second.id : first.id;
   const loser = await store.readOrder(loserId);
-  expect(loser?.status).toBe("pending");
+  expect(loser?.status).toBe(loserId === first.id ? "canceled" : "pending");
   expect(loser?.channelTransactionId).toBeNull();
 
   // The winner is paid exactly once; the events table holds ONE paid fact for the transaction.
