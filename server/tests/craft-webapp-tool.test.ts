@@ -89,6 +89,71 @@ function spawnExtraPid(): number {
   return Bun.spawn(["sleep", "60"]).pid;
 }
 
+/**
+ * PATH shims so the generated start-webapp.sh runs on darwin: a no-op
+ * `flock`, a `bun` that serves the requested port instead of running a dev
+ * script, and a `readlink` standing in for Linux /proc/$pid/cwd — the pid's
+ * "cwd" is read from `$CRAFT_WEBAPP_TEST_PROC_CWD/$pid`; no mapping = a cwd
+ * the guard does not recognize. Test-only: the shipped script bytes are
+ * untouched (the real sandbox is Linux, where /proc exists).
+ */
+function makeScriptShims(port: number): {
+  shimDir: string;
+  procCwdDir: string;
+} {
+  const shimDir = join(workRoot, `shim-${Math.random().toString(36).slice(2)}`);
+  const procCwdDir = join(shimDir, "proc-cwd");
+  mkdirSync(procCwdDir, { recursive: true });
+  writeFileSync(
+    join(shimDir, "flock"),
+    "#!/bin/bash\n# test shim: no-op flock\nexit 0\n",
+  );
+  writeFileSync(
+    join(shimDir, "bun"),
+    [
+      "#!/bin/bash",
+      'if [ "$1" = "install" ]; then exit 0; fi',
+      'port=""; prev=""',
+      'for a in "$@"; do if [ "$prev" = "-p" ]; then port="$a"; fi; prev="$a"; done',
+      `exec ${JSON.stringify(process.execPath)} -e "Bun.serve({ port: ${port}, fetch: () => new Response('ok') }); setInterval(() => {}, 1e9)"`,
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(shimDir, "readlink"),
+    [
+      "#!/bin/bash",
+      "# test shim: Linux /proc/$pid/cwd stand-in (mapped cwd, else failure).",
+      "p=\"$(printf '%s' \"$1\" | sed -e 's#^/proc/##' -e 's#/cwd$##')\"",
+      'if [ -n "$p" ] && [ -f "$CRAFT_WEBAPP_TEST_PROC_CWD/$p" ]; then',
+      '  cat "$CRAFT_WEBAPP_TEST_PROC_CWD/$p"',
+      "  exit 0",
+      "fi",
+      "exit 1",
+    ].join("\n"),
+  );
+  chmodSync(join(shimDir, "flock"), 0o755);
+  chmodSync(join(shimDir, "bun"), 0o755);
+  chmodSync(join(shimDir, "readlink"), 0o755);
+  return { shimDir, procCwdDir };
+}
+
+/** Run the session's start-webapp.sh the way the plugin does; both streams. */
+async function runBootstrapScript(dir: string): Promise<string> {
+  const proc = Bun.spawn(["bash", "start-webapp.sh"], {
+    cwd: dir,
+    // Explicit env: Bun.spawn would otherwise inherit the environment
+    // snapshot from process start, missing the test's PATH shims.
+    env: { ...process.env },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return `${out}${err}`;
+}
+
 type ExecResult = {
   result: string;
   metadataTitles: string[];
@@ -484,31 +549,14 @@ describe("webapp tool behaviors (F5 B–E)", () => {
     });
     writeFileSync(join(dir, "start-webapp.sh"), script);
 
-    // PATH shims: a no-op flock (darwin has none) and a bun that serves the
-    // requested port instead of running a dev script.
-    const shimDir = join(
-      workRoot,
-      `shim-${Math.random().toString(36).slice(2)}`,
-    );
-    mkdirSync(shimDir, { recursive: true });
-    writeFileSync(
-      join(shimDir, "flock"),
-      "#!/bin/bash\n# test shim: no-op flock\nexit 0\n",
-    );
-    writeFileSync(
-      join(shimDir, "bun"),
-      [
-        "#!/bin/bash",
-        'if [ "$1" = "install" ]; then exit 0; fi',
-        'port=""; prev=""',
-        'for a in "$@"; do if [ "$prev" = "-p" ]; then port="$a"; fi; prev="$a"; done',
-        `exec ${JSON.stringify(process.execPath)} -e "Bun.serve({ port: ${port}, fetch: () => new Response('ok') }); setInterval(() => {}, 1e9)"`,
-      ].join("\n"),
-    );
-    chmodSync(join(shimDir, "flock"), 0o755);
-    chmodSync(join(shimDir, "bun"), 0o755);
+    // PATH shims (see makeScriptShims): a no-op flock, a bun that serves the
+    // requested port, and a readlink standing in for Linux /proc/$pid/cwd so
+    // the script's pid cwd-identity guard is exercisable on darwin.
+    const { shimDir, procCwdDir } = makeScriptShims(port);
     const originalPath = process.env.PATH;
+    const originalProcCwd = process.env.CRAFT_WEBAPP_TEST_PROC_CWD;
     process.env.PATH = `${shimDir}:${originalPath}`;
+    process.env.CRAFT_WEBAPP_TEST_PROC_CWD = procCwdDir;
     try {
       const first = await executeWebapp(dir, { action: "start" });
       expect(first.result).toContain("webapp started successfully");
@@ -518,6 +566,13 @@ describe("webapp tool behaviors (F5 B–E)", () => {
       expect(first.result).toContain(`port: ${port}`);
       expect(first.result).toContain("state: running");
 
+      // Map the provisioned pid's cwd (Linux /proc on the real sandbox; the
+      // readlink shim here) so the replay's identity guard reuses it.
+      writeFileSync(
+        join(procCwdDir, readFileSync(join(dir, "nextjs.pid"), "utf8").trim()),
+        `${dir}/outputs/web`,
+      );
+
       // Repeated start: the live pid is reused — the idempotent headline.
       const second = await executeWebapp(dir, { action: "start" });
       expect(second.result).toContain("webapp was already running");
@@ -526,7 +581,89 @@ describe("webapp tool behaviors (F5 B–E)", () => {
       expect(await webappDevServerReady(port)).toBe(true);
     } finally {
       process.env.PATH = originalPath;
+      if (originalProcCwd === undefined) {
+        delete process.env.CRAFT_WEBAPP_TEST_PROC_CWD;
+      } else {
+        process.env.CRAFT_WEBAPP_TEST_PROC_CWD = originalProcCwd;
+      }
       // Kill the provisioned dev server via the script's own pid file.
+      const pid = Number.parseInt(
+        readFileSync(join(dir, "nextjs.pid"), "utf8").trim(),
+        10,
+      );
+      if (Number.isFinite(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // already gone
+        }
+      }
+    }
+  }, 30000);
+
+  // ── the pid cwd-identity guard (onyx parity) ────────────────────────────────
+  // onyx guards the "already running" reuse with readlink /proc/$pid/cwd: pids
+  // recycle, so a stale nextjs.pid could otherwise name an unrelated live
+  // process — a false "already running" loop whose pid the plugin's restart
+  // arm would kill. Mismatch → respawn and drop the stale pid file; match →
+  // the reuse path is preserved.
+  test("pid cwd-identity guard: recycled pid (cwd mismatch) respawns and clears the pid file; cwd match reuses", async () => {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response("ok") });
+    const port = probe.port;
+    probe.stop(true);
+
+    const dir = makeSessionDir({
+      "outputs/web/package.json":
+        '{"name":"web","scripts":{"dev":"next dev"}}\n',
+    });
+    writeFileSync(
+      join(dir, "start-webapp.sh"),
+      buildWebappBootstrapScript({ sessionDirectory: dir, port }),
+    );
+    const { shimDir, procCwdDir } = makeScriptShims(port);
+    const originalPath = process.env.PATH;
+    const originalProcCwd = process.env.CRAFT_WEBAPP_TEST_PROC_CWD;
+    process.env.PATH = `${shimDir}:${originalPath}`;
+    process.env.CRAFT_WEBAPP_TEST_PROC_CWD = procCwdDir;
+
+    // The "recycled" pid: alive (kill -0 passes) but not the webapp — no cwd
+    // mapping, so the guard's readlink comparison fails exactly like a
+    // recycled pid on the Linux sandbox would.
+    const recycled = Bun.spawn(["sleep", "60"]);
+    writeFileSync(join(dir, "nextjs.pid"), `${recycled.pid}\n`);
+
+    try {
+      // cwd mismatch → treated as not running: the spawn path runs.
+      const first = await runBootstrapScript(dir);
+      expect(first).toContain("Starting Next.js dev server on port");
+      expect(first).toContain("Next.js server started with PID");
+      expect(first).toContain(
+        `web app dev server running on port ${port} - app dir: outputs/web`,
+      );
+      // And the stale entry is cleared: the pid file now names the freshly
+      // spawned server, never the recycled pid.
+      const spawnedPid = readFileSync(join(dir, "nextjs.pid"), "utf8").trim();
+      expect(spawnedPid).not.toBe(String(recycled.pid));
+
+      // cwd match (the /proc view of the spawned server) → the already-
+      // running path: no respawn, pid file untouched.
+      writeFileSync(join(procCwdDir, spawnedPid), `${dir}/outputs/web`);
+      const second = await runBootstrapScript(dir);
+      expect(second).toContain(
+        `Next.js server already running (PID ${spawnedPid}); reusing`,
+      );
+      expect(second).not.toContain("Next.js server started with PID");
+      expect(readFileSync(join(dir, "nextjs.pid"), "utf8").trim()).toBe(
+        spawnedPid,
+      );
+    } finally {
+      process.env.PATH = originalPath;
+      if (originalProcCwd === undefined) {
+        delete process.env.CRAFT_WEBAPP_TEST_PROC_CWD;
+      } else {
+        process.env.CRAFT_WEBAPP_TEST_PROC_CWD = originalProcCwd;
+      }
+      recycled.kill();
       const pid = Number.parseInt(
         readFileSync(join(dir, "nextjs.pid"), "utf8").trim(),
         10,
@@ -579,6 +716,14 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
     expect(script).toContain(
       '"Next.js server already running (PID $NEXTJS_PID); reusing"',
     );
+    // onyx parity: the pid-alive check is guarded by a cwd identity
+    // comparison (readlink /proc/$pid/cwd) so a recycled pid is not mistaken
+    // for the webapp process, and a stale pid file is dropped before
+    // respawning.
+    expect(script).toContain(
+      '[ "$(readlink /proc/$NEXTJS_PID/cwd 2>/dev/null)" = "$SESSION_PATH/outputs/web" ]',
+    );
+    expect(script).toContain('rm -f "$SESSION_PATH/nextjs.pid"');
     // The lock fd must not leak into the dev server.
     expect(script).toContain("9>&-");
   });

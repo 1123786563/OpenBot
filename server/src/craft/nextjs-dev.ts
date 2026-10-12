@@ -52,8 +52,8 @@ SESSION_PATH=${sessionDirectory}
 SESSION_PATH="$(cd "$SESSION_PATH" 2>/dev/null && pwd || pwd)"
 PORT=${port}
 
-# Read by the scaffold's dev script so a \`bun run dev\` the agent runs by
-# hand still binds the port the preview proxy routes to.
+# A record of the reserved port for tooling/debugging (onyx-template parity:
+# onyx's template dev script reads it; a generic scaffold ignores it).
 echo $PORT > "$SESSION_PATH/.nextjs-port"
 
 (
@@ -75,9 +75,18 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
     if [ -f "$SESSION_PATH/nextjs.pid" ]; then
         NEXTJS_PID="$(cat "$SESSION_PATH/nextjs.pid")"
     fi
-    if [ -n "$NEXTJS_PID" ] && kill -0 "$NEXTJS_PID" 2>/dev/null; then
+    # Identity guard: kill -0 alone trusts a recycled pid. A stale
+    # nextjs.pid could name an unrelated live process — skip the spawn
+    # forever, and the plugin's restart arm would kill that process — so
+    # reuse a pid only if its cwd is this session's app dir (onyx's
+    # readlink /proc/$pid/cwd comparison).
+    if [ -n "$NEXTJS_PID" ] && kill -0 "$NEXTJS_PID" 2>/dev/null && \\
+       [ "$(readlink /proc/$NEXTJS_PID/cwd 2>/dev/null)" = "$SESSION_PATH/outputs/web" ]; then
         echo "Next.js server already running (PID $NEXTJS_PID); reusing"
     else
+        # Stale, dead, or mismatched: drop the pid file before respawning so
+        # a dead pid never outlives this run.
+        rm -f "$SESSION_PATH/nextjs.pid"
         cd "$SESSION_PATH/outputs/web"
         if [ ! -d node_modules ]; then
             echo "Installing dependencies with bun..."
