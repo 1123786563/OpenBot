@@ -264,6 +264,25 @@ export type PaymentStore = {
     id: string,
     activationState: PaymentActivationState,
   ): Promise<void>;
+  /**
+   * Resolve which overlapping paid order owns the entitlement period, under row locks at the
+   * database boundary. Only that order may activate; later overlapping collections remain paid but
+   * are duplicates for manual resolution.
+   */
+  resolveActivationOwnership(orderId: string): Promise<
+    | {
+        outcome: "owner";
+        order: PaymentOrderRecord;
+      }
+    | {
+        outcome: "duplicate";
+        order: PaymentOrderRecord;
+        ownerOrder: PaymentOrderRecord;
+      }
+    | {
+        outcome: "unknown" | "not-paid";
+      }
+  >;
   /** Pending orders past their expiry, for the sweeper's query-first pass. */
   listExpiredPendingOrders(
     now: Date,

@@ -5,8 +5,17 @@ import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
 } from "../src/billing/payments/routes";
-import { PurchaseError, type PaymentService } from "../src/billing/payments/service";
-import type { PaymentOrderView } from "../src/billing/payments/types";
+import {
+  createPaymentService,
+  PurchaseError,
+  type PaymentService,
+} from "../src/billing/payments/service";
+import type { PaymentProvider } from "../src/billing/payments/provider";
+import type {
+  PaymentOrderRecord,
+  PaymentOrderView,
+  PaymentStore,
+} from "../src/billing/payments/types";
 import type { AuditStore } from "../src/audit";
 
 /*
@@ -195,6 +204,89 @@ describe("callback routes", () => {
 
     expect(response.status).toBe(409);
     expect(await response.text()).not.toBe("success");
+  });
+
+  test("a thrown durable confirm returns HTTP 500 and provider failure", async () => {
+    const order: PaymentOrderRecord = {
+      id: "po-confirm-failure",
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      status: "pending",
+      activationState: "pending",
+      channelTransactionId: null,
+      expiresAt: new Date("2026-10-10T02:15:00.000Z"),
+      periodStart: null,
+      periodEnd: null,
+      terminalAt: null,
+      createdBy: "admin-1",
+      createdAt: new Date("2026-10-10T02:00:00.000Z"),
+      version: 0,
+      checkoutPayload: null,
+    };
+    const store = {
+      readOrder: async () => order,
+      confirmPaid: async () => {
+        throw new Error("database unavailable");
+      },
+    } as unknown as PaymentStore;
+    const provider: PaymentProvider = {
+      id: "alipay",
+      async createSession() {
+        throw new Error("unused");
+      },
+      async queryPayment() {
+        throw new Error("unused");
+      },
+      async closePayment() {},
+      async verifyNotification() {
+        return {
+          ok: true,
+          fact: {
+            outTradeNo: order.id,
+            state: "paid",
+            channelTransactionId: "tx-confirm-failure",
+            amountCents: order.amountCents,
+          },
+        };
+      },
+      successAck: { body: "success", contentType: "text/plain" },
+    };
+    const service = createPaymentService({
+      providers: new Map([["alipay", provider]]),
+      store,
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
+      notifyBaseUrl: "https://payments.openbot.example",
+      orderTtlMinutes: 15,
+      latePaymentWindowHours: 24,
+      acceptForeignCurrency: false,
+      lago: {
+        async getPlan() {
+          return { found: true, interval: "monthly", currency: "CNY" };
+        },
+        async ensureSubscription() {},
+      },
+      externalCustomerKey: "openbot-deployment",
+      activePlanCode: async () => null,
+      invalidateEntitlementCache: () => undefined,
+    });
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/payments/callbacks",
+      createPaymentCallbackRoutes({ service }),
+    );
+
+    const response = await app.request("/api/payments/callbacks/alipay", {
+      method: "POST",
+      body: "x=1",
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "Payment notification refused.",
+    });
   });
 
   test("success answers with each channel's own ack, byte for byte", async () => {
