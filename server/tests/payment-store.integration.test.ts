@@ -1,6 +1,6 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { like } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { createPaymentStore } from "../src/billing/payments/store";
 import { createDatabase } from "../src/db/client";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
@@ -20,17 +20,31 @@ const store = createPaymentStore(database);
 const prefix = `pay-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(eq(paymentOrders.createdBy, prefix));
   await database.$client.close();
 });
 
+afterEach(async () => {
+  const pending = await database
+    .select({ id: paymentOrders.id, version: paymentOrders.version })
+    .from(paymentOrders)
+    .where(
+      and(
+        eq(paymentOrders.createdBy, prefix),
+        eq(paymentOrders.status, "pending"),
+      ),
+    );
+  for (const order of pending) {
+    await store.cancelOrder(order.id, order.version);
+  }
+});
+
 /**
- * One order's insert input, on a plan code UNIQUE to this call. The pending-pair partial unique
- * index ((plan, provider) WHERE status='pending') is now a database fact, and these tests share
- * one database across runs — a fixed plan code would have every test after the first insert
- * replay into the first test's pending order instead of creating its own. A per-call suffix
- * keeps each insert on its own pair; the pair index has its own dedicated test below.
+ * One order's insert input, on a plan code UNIQUE to this call. The pending-scope partial unique
+ * index (deployment_scope WHERE status='pending') is a database fact, and these tests share one
+ * database across runs — a per-call suffix keeps each test's purchase independent.
  */
 function orderInput() {
   return {
@@ -39,34 +53,34 @@ function orderInput() {
     amountCents: 8800,
     currency: "CNY" as const,
     expiresAt: new Date(Date.now() + 15 * 60_000),
-    createdBy: "admin-1",
+    createdBy: prefix,
     checkoutPayload: "qr-payload",
   };
 }
 
-test("insertOrder generates short ids and retries a collision", async () => {
+test("insertOrder generates short ids and terminal orders leave the purchase slot free", async () => {
   const { order } = await store.insertOrder(orderInput());
   expect(order.id).toMatch(/^po-[0-9a-f]{16}$/);
   expect(order.status).toBe("pending");
+  await store.cancelOrder(order.id, order.version);
 
-  // A `po-` id collision is absorbed: a pre-inserted fixed id occupies the primary key, and the
-  // next insert on a DIFFERENT pair (its own plan) redraws instead of surfacing the violation.
+  // A terminal row does not occupy the deployment's pending slot.
   await database.insert(paymentOrders).values({
-    // Not the store's id, but a plan this pair-test owns: pending, so the pending-pair index
-    // also sees exactly this row on this pair and nothing else.
+    // Not the store's id, but a plan this test owns.
     id: `${prefix}-fixed`,
     planCode: `pro-${randomUUID().slice(0, 8)}`,
     provider: "alipay",
     amountCents: 8800,
     expiresAt: new Date(Date.now() + 15 * 60_000),
-    status: "pending",
+    status: "canceled",
+    createdBy: prefix,
   });
   const second = await store.insertOrder(orderInput());
   expect(second.order.id).not.toBe(order.id);
   expect(await store.readOrder(`${prefix}-fixed`)).not.toBeNull();
 });
 
-test("the pending pair is unique: a second insert on the same (plan, provider) replays the first", async () => {
+test("same-pair orders replay, while channel switches must free the deployment slot first", async () => {
   const input = orderInput();
   const first = await store.insertOrder(input);
   expect(first.conflict).toBeNull();
@@ -77,21 +91,49 @@ test("the pending pair is unique: a second insert on the same (plan, provider) r
   expect(second.conflict).toBe("pending-pair");
   expect(second.order.id).toBe(first.order.id);
 
-  // A different channel is a different pair — the index must not bar a channel switch.
+  // A different channel cannot open alongside the pending purchase.
   const other = await store.insertOrder({ ...input, provider: "wechat" });
-  expect(other.conflict).toBeNull();
-  expect(other.order.id).not.toBe(first.order.id);
+  expect(other.conflict).toBe("pending-purchase");
+  expect(other.order.id).toBe(first.order.id);
 
-  // And a terminal first order frees the pair for a fresh pending one.
+  // A terminal order frees the deployment slot for a channel switch.
   await store.cancelOrder(first.order.id, first.order.version);
-  const third = await store.insertOrder(input);
+  const third = await store.insertOrder({ ...input, provider: "wechat" });
   expect(third.conflict).toBeNull();
   expect(third.order.id).not.toBe(first.order.id);
 });
 
+test("only one pending purchase exists across plans and providers", async () => {
+  const first = await store.insertOrder(orderInput());
+  const second = await store.insertOrder({
+    ...orderInput(),
+    provider: "wechat",
+  });
+
+  expect(second.conflict).toBe("pending-purchase");
+  expect((await store.readPendingPurchase())?.id).toBe(first.order.id);
+});
+
+test("concurrent orders on different plans and providers converge on one pending purchase", async () => {
+  const inputs = [
+    orderInput(),
+    { ...orderInput(), provider: "wechat" as const },
+  ];
+  const results = await Promise.all(
+    inputs.map((input) => store.insertOrder(input)),
+  );
+  const winners = results.filter((result) => result.conflict === null);
+  const losers = results.filter((result) => result.conflict !== null);
+
+  expect(winners).toHaveLength(1);
+  expect(losers).toHaveLength(1);
+  expect(losers[0]?.conflict).toBe("pending-purchase");
+  expect(losers[0]?.order.id).toBe(winners[0]?.order.id);
+  expect((await store.readPendingPurchase())?.id).toBe(winners[0]?.order.id);
+});
+
 test("a paid fact claims its channel transaction exactly once (the race)", async () => {
   const { order } = await store.insertOrder(orderInput());
-  const { order: conflicting } = await store.insertOrder(orderInput());
   const transactionId = `${prefix}-tx-1`;
 
   const first = await store.confirmPaid({
@@ -104,6 +146,7 @@ test("a paid fact claims its channel transaction exactly once (the race)", async
     periodEnd: new Date(Date.now() + 30 * 24 * 3600_000),
   });
   expect(first).toEqual({ claimed: true, alreadyKnown: false });
+  const { order: conflicting } = await store.insertOrder(orderInput());
 
   // The same delivery redelivered: known, not re-claimed.
   const replay = await store.confirmPaid({
@@ -238,12 +281,12 @@ test("the anomaly dedup index: same (order, word) is one row; amount_unreadable 
 });
 
 test("the sweeper's read returns only expired pending orders", async () => {
-  const { order: fresh } = await store.insertOrder(orderInput());
   const { order: stale } = await store.insertOrder({
     ...orderInput(),
     expiresAt: new Date(Date.now() - 60_000),
   });
   await store.expireOrder(stale.id, stale.version);
+  const { order: fresh } = await store.insertOrder(orderInput());
 
   const expired = await store.listExpiredPendingOrders(new Date(), 100);
   // The swept-and-expired order and the not-yet-expired one are both excluded: the read is the

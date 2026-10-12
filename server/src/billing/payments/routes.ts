@@ -182,6 +182,15 @@ export function createPaymentRoutes(deps: {
           400,
         );
       }
+      if (error.refusal.reason === "pending-purchase") {
+        return context.json(
+          {
+            error: "Another purchase is already pending for this deployment.",
+            pendingPlanCode: error.refusal.pendingPlanCode,
+          },
+          409,
+        );
+      }
       return context.json(
         {
           error: "This deployment already has an active subscription.",

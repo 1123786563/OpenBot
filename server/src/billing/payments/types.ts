@@ -157,10 +157,10 @@ export type PaymentStore = {
   /**
    * Insert a fresh pending order, or hand back the one that already exists. The store generates
    * the order id itself (short, collision retried), so the caller never sees a database unique
-   * violation; and the pending-pair partial unique index ((plan, provider) WHERE status='pending')
-   * makes a concurrent purchase of the same pair answer the winner's row — `conflict:
-   * "pending-pair"` — instead of opening a second payable order. The replay answer is not an
-   * error: the caller shows the existing order.
+   * violation; and the pending-scope partial unique index (deployment_scope WHERE status='pending')
+   * makes a concurrent purchase answer the winner's row instead of opening a second payable order.
+   * `pending-pair` means the winner matches the requested plan/provider and is replayed;
+   * `pending-purchase` means another plan or provider owns the deployment slot.
    */
   insertOrder(input: {
     planCode: string;
@@ -170,9 +170,14 @@ export type PaymentStore = {
     expiresAt: Date;
     createdBy: string | null;
     checkoutPayload: string | null;
-  }): Promise<{ order: PaymentOrderRecord; conflict: "pending-pair" | null }>;
+  }): Promise<{
+    order: PaymentOrderRecord;
+    conflict: "pending-pair" | "pending-purchase" | null;
+  }>;
   /** The one order an out-trade number names, or null. */
   readOrder(id: string): Promise<PaymentOrderRecord | null>;
+  /** The deployment's pending purchase, regardless of plan or provider. */
+  readPendingPurchase(): Promise<PaymentOrderRecord | null>;
   /** The newest order for one (plan, provider) pair still pending — the replay lookup. */
   readPendingOrder(
     planCode: string,

@@ -51,6 +51,7 @@ export type PaymentLagoFacade = {
 export type PurchaseRefusal =
   | { reason: "unknown-plan" }
   | { reason: "unknown-provider" }
+  | { reason: "pending-purchase"; pendingPlanCode: string }
   | { reason: "active-subscription"; activePlanCode: string };
 
 export class PurchaseError extends Error {
@@ -62,7 +63,9 @@ export class PurchaseError extends Error {
         ? "That plan is not purchasable here."
         : refusal.reason === "unknown-provider"
           ? "That channel is not configured on this deployment."
-          : "This deployment already has an active subscription.",
+          : refusal.reason === "pending-purchase"
+            ? "Another purchase is already pending for this deployment."
+            : "This deployment already has an active subscription.",
     );
     this.refusal = refusal;
   }
@@ -602,31 +605,47 @@ export function createPaymentService(deps: {
       }
 
       // Replay: the same plan on the same channel, still open, comes back untouched. The read is
-      // a fast path only — the pending-pair partial unique index and the store's conflict
-      // re-read below are the actual guarantee, so a concurrent double-submit converges on one
-      // order even when both callers get here before either insert lands.
+      // a fast path only — the pending-scope partial unique index and the store's conflict
+      // re-read below are the actual guarantee, so concurrent requests converge on one order.
       const replayed = await deps.store
         .readPendingOrder(input.planCode, input.provider)
         .catch(() => null);
       if (replayed) return { order: toView(replayed) };
 
-      // A switch of channel cancels the old order first — locally for certain (CAS), remotely
-      // best-effort (a close that fails leaves the channel to time the order out on its own).
-      for (const [otherId, other] of deps.providers) {
-        if (otherId === input.provider) continue;
-        const stale = await deps.store
-          .readPendingOrder(input.planCode, otherId)
-          .catch(() => null);
-        if (!stale) continue;
-        if (
-          await deps.store
-            .cancelOrder(stale.id, stale.version)
-            .catch(() => false)
-        ) {
+      const pending = await deps.store.readPendingPurchase().catch(() => null);
+      if (pending) {
+        if (pending.planCode !== input.planCode) {
+          throw new PurchaseError({
+            reason: "pending-purchase",
+            pendingPlanCode: pending.planCode,
+          });
+        }
+        if (pending.provider === input.provider) {
+          return { order: toView(pending) };
+        }
+
+        // A same-plan channel switch cancels the old order first — locally for certain (CAS),
+        // remotely best-effort (a close that fails leaves the channel to time out on its own).
+        const canceled = await deps.store
+          .cancelOrder(pending.id, pending.version)
+          .catch(() => false);
+        if (!canceled) {
+          const latest = await deps.store
+            .readOrder(pending.id)
+            .catch(() => null);
+          if (latest?.status === "paid") return { order: toView(latest) };
+          if (!latest || latest.status === "pending") {
+            throw new PurchaseError({
+              reason: "pending-purchase",
+              pendingPlanCode: pending.planCode,
+            });
+          }
+        } else {
+          const oldProvider = deps.providers.get(pending.provider);
           try {
-            await other.closePayment(stale.id);
+            await oldProvider?.closePayment(pending.id);
           } catch {
-            // The channel-side order dies at its own expiry; the local one is already terminal.
+            // The channel-side order dies at its own expiry; the local one is terminal.
           }
         }
       }
@@ -644,10 +663,15 @@ export function createPaymentService(deps: {
         checkoutPayload: null,
       });
       if (conflict === "pending-pair") {
-        // Another caller's insert won the pending pair while we were between the read above and
-        // this insert: their order is this answer, exactly what the replay path would return.
-        // No second QR is created, no session opened, nothing to do but hand it back.
+        // Another caller's insert won the same plan/provider slot while we were between the read
+        // above and this insert. No second QR is created; the winner is the replay answer.
         return { order: toView(order) };
+      }
+      if (conflict === "pending-purchase") {
+        throw new PurchaseError({
+          reason: "pending-purchase",
+          pendingPlanCode: order.planCode,
+        });
       }
 
       // Order first, code second: a channel failure here leaves a pending order that a retry
