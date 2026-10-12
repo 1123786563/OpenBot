@@ -1,5 +1,7 @@
 # OpenMuse Mobile × OpenBot Backend 集成改造方案
 
+> 历史方案：完整能力迁移、OpenBot 独占后端和 Git submodule 布局以 [2026-10-12 设计](2026-10-12-openmuse-frontend-openbot-backend-design.md) 为准。本文保留作迁移参考。
+
 > 版本：v1.0  
 > 编写日期：2026-10-09  
 > 方案定位：**以 OpenMuse 为移动端主项目，保持既有 React Native UI 与交互；以 OpenBot 为统一后端和 Agent 平台。**  
