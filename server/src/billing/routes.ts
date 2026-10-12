@@ -222,6 +222,15 @@ function billingStatus(error: BillingError): 503 | 400 {
     : 400;
 }
 
+function countFindingCodes(
+  findings: readonly { code: string }[],
+): Record<string, number> {
+  return findings.reduce<Record<string, number>>((counts, finding) => {
+    counts[finding.code] = (counts[finding.code] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
 /**
  * The administrator's snapshot and sync.
  *
@@ -363,13 +372,15 @@ export function createBillingAdminRoutes(deps: {
         eventType: "billing.reconciled",
         targetType: "billing",
         actorUserId: context.var.actor.id,
-        // The trail carries the counts and the finding codes (not the sentences): enough to
-        // answer "when did we last look, and did the books agree" without duplicating the
-        // report's evidence into the audit log. Usage backlog findings keep pending and blocked
-        // distinct here too; the operator can tell retryable drift from manual-review drift.
+        // The trail carries the checked counts and a compact code histogram, not the full
+        // findings array: enough to answer "when did we last look, and what kinds of drift
+        // existed" without duplicating a potentially large event-id list into the audit log.
+        // Usage backlog findings keep pending and blocked distinct here too; the operator can
+        // tell retryable drift from manual-review drift, and `checked.usageFindings` says when
+        // the report itself omitted additional event ids.
         payload: {
           checked: report.checked,
-          findings: report.findings.map((finding) => finding.code),
+          findingCounts: countFindingCodes(report.findings),
         },
       });
     }

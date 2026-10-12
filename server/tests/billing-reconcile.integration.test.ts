@@ -80,6 +80,12 @@ function usageEvent(eventId: string) {
   };
 }
 
+async function ageUsageEvent(eventId: string, ageMs: number) {
+  await database.execute(
+    sql`UPDATE usage_outbox SET updated_at = now() - (${ageMs} * interval '1 millisecond') WHERE event_id = ${eventId}`,
+  );
+}
+
 /** One settled-and-activated order, its fact, its grant/ledger pair, and a live projection row. */
 async function agreeingWorld(): Promise<string> {
   const orderId = `${prefix}-ok`;
@@ -381,5 +387,91 @@ describe("reconcile (the skeleton, over real tables)", () => {
       .from(usageOutbox)
       .where(eq(usageOutbox.eventId, event.eventId));
     expect(after).toEqual(before);
+  });
+
+  test("usage findings are bounded deterministically, delivered rows stay silent, and overflow is summarized exactly", async () => {
+    const bounded = createReconciler(database, prefix, {
+      usageFindingLimit: 2,
+    });
+
+    const delivered = usageEvent(`${prefix}-usage-delivered`);
+    await outbox.record(delivered);
+    await outbox.markLagoDelivered(delivered.eventId);
+    await outbox.markCreditsDelivered(delivered.eventId);
+    await ageUsageEvent(delivered.eventId, 4 * 3600_000);
+
+    const oldestPending = usageEvent(`${prefix}-usage-a-pending`);
+    await outbox.record(oldestPending);
+    await outbox.markLagoDelivered(oldestPending.eventId);
+    await outbox.recordDeliveryFailure(
+      oldestPending.eventId,
+      "credits",
+      "provider_unavailable",
+    );
+    await ageUsageEvent(oldestPending.eventId, 3 * 3600_000);
+
+    const secondBlocked = usageEvent(`${prefix}-usage-b-blocked`);
+    await outbox.record(secondBlocked);
+    await outbox.blockDelivery(
+      secondBlocked.eventId,
+      "lago",
+      "missing_reservation",
+    );
+    await outbox.markCreditsDelivered(secondBlocked.eventId);
+    await ageUsageEvent(secondBlocked.eventId, 2 * 3600_000);
+
+    const newestMixed = usageEvent(`${prefix}-usage-c-mixed`);
+    await outbox.record(newestMixed);
+    await outbox.recordDeliveryFailure(
+      newestMixed.eventId,
+      "lago",
+      "provider_unavailable",
+    );
+    await outbox.blockDelivery(
+      newestMixed.eventId,
+      "credits",
+      "missing_reservation",
+    );
+    await ageUsageEvent(newestMixed.eventId, 1 * 3600_000);
+
+    const report = await bounded.reconcile();
+
+    expect(report.checked.usageDeliveryTargets.pending).toEqual({
+      lago: 1,
+      credits: 1,
+    });
+    expect(report.checked.usageDeliveryTargets.blocked).toEqual({
+      lago: 1,
+      credits: 1,
+    });
+    expect(report.checked.usageFindings).toEqual({
+      limit: 2,
+      emitted: 2,
+      omitted: 2,
+    });
+    const usageFindings = report.findings.filter(
+      (finding) => finding.category === "usage",
+    );
+    expect(usageFindings.at(-1)).toMatchObject({
+      category: "usage",
+      code: "usage_findings_omitted",
+      subject: "usage_outbox",
+    });
+    expect(usageFindings.slice(0, 2)).toMatchObject([
+      {
+        category: "usage",
+        code: "usage_target_pending",
+        subject: oldestPending.eventId,
+      },
+      {
+        category: "usage",
+        code: "usage_target_blocked",
+        subject: secondBlocked.eventId,
+      },
+    ]);
+    expect(
+      usageFindings.some((finding) => finding.subject === delivered.eventId),
+    ).toBe(false);
+    expect(usageFindings.at(-1)?.detail).toContain("omitted=2");
   });
 });

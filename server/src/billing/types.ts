@@ -142,7 +142,8 @@ export type ReconcileFinding = {
     | "applied_without_subscription"
     | "grants_ledger_divergence"
     | "usage_target_pending"
-    | "usage_target_blocked";
+    | "usage_target_blocked"
+    | "usage_findings_omitted";
   /** The row the finding is about: an order id, a customer key, or a usage event id. */
   subject: string;
   /** The human sentence — numbers included, because the report is the evidence. */
@@ -161,6 +162,11 @@ export type ReconcileReport = {
     usageDeliveryTargets: {
       pending: { lago: number; credits: number };
       blocked: { lago: number; credits: number };
+    };
+    usageFindings: {
+      limit: number;
+      emitted: number;
+      omitted: number;
     };
   };
   findings: readonly ReconcileFinding[];

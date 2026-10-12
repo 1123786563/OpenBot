@@ -3,7 +3,6 @@ import type { Database } from "../db/client";
 import { billingSubscriptions } from "../db/schema/billing";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
-import { usageOutbox } from "../db/schema/usage-outbox";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 
 /**
@@ -54,9 +53,19 @@ import type { ReconcileFinding, ReconcileReport } from "./types";
 export function createReconciler(
   database: Database,
   externalCustomerKey: string,
+  options?: {
+    usageFindingLimit?: number;
+  },
 ): {
   reconcile(): Promise<ReconcileReport>;
 } {
+  const usageFindingLimit = options?.usageFindingLimit ?? 100;
+  if (!Number.isSafeInteger(usageFindingLimit) || usageFindingLimit <= 0) {
+    throw new RangeError(
+      "Usage finding limit must be a positive safe integer",
+    );
+  }
+
   function usageFailureCode(
     code: string | null,
   ): string {
@@ -68,6 +77,18 @@ export function createReconciler(
     updatedAt: Date,
   ): number {
     return Math.max(0, Math.floor((now - updatedAt.getTime()) / 1000));
+  }
+
+  function sumUsageTargets(targets: {
+    pending: { lago: number; credits: number };
+    blocked: { lago: number; credits: number };
+  }) {
+    return (
+      targets.pending.lago +
+      targets.pending.credits +
+      targets.blocked.lago +
+      targets.blocked.credits
+    );
   }
 
   return {
@@ -229,52 +250,114 @@ export function createReconciler(
        *    The reconciler reads it as evidence only: no target replay, no status updates, no
        *    inference that anything but `delivered` succeeded.
        */
-      const usageRows = await database
-        .select({
-          eventId: usageOutbox.eventId,
-          updatedAt: usageOutbox.updatedAt,
-          lagoStatus: usageOutbox.lagoStatus,
-          creditsStatus: usageOutbox.creditsStatus,
-          lagoLastErrorCode: usageOutbox.lagoLastErrorCode,
-          creditsLastErrorCode: usageOutbox.creditsLastErrorCode,
-        })
-        .from(usageOutbox);
+      const [usageCounts] = await database.execute(sql<{
+        pendingLago: number;
+        pendingCredits: number;
+        blockedLago: number;
+        blockedCredits: number;
+      }>`
+        SELECT
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE lago_status = 'pending') AS "pendingLago",
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE credits_status = 'pending') AS "pendingCredits",
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE lago_status = 'blocked') AS "blockedLago",
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE credits_status = 'blocked') AS "blockedCredits"
+      `);
+      usageDeliveryTargets.pending.lago = usageCounts?.pendingLago ?? 0;
+      usageDeliveryTargets.pending.credits = usageCounts?.pendingCredits ?? 0;
+      usageDeliveryTargets.blocked.lago = usageCounts?.blockedLago ?? 0;
+      usageDeliveryTargets.blocked.credits = usageCounts?.blockedCredits ?? 0;
+
+      const actionableUsageTargetCount = sumUsageTargets(usageDeliveryTargets);
+      const usageRows =
+        actionableUsageTargetCount === 0
+          ? []
+          : await database.execute(sql<{
+              eventId: string;
+              updatedAt: Date;
+              target: "lago" | "credits";
+              status: "pending" | "blocked";
+              lastErrorCode: string | null;
+            }>`
+              SELECT
+                usage_targets.event_id AS "eventId",
+                usage_targets.updated_at AS "updatedAt",
+                usage_targets.target AS "target",
+                usage_targets.status AS "status",
+                usage_targets.last_error_code AS "lastErrorCode"
+              FROM (
+                SELECT
+                  event_id,
+                  updated_at,
+                  'lago'::text AS target,
+                  lago_status::text AS status,
+                  lago_last_error_code AS last_error_code,
+                  1 AS target_rank
+                FROM usage_outbox
+                WHERE lago_status IN ('pending', 'blocked')
+
+                UNION ALL
+
+                SELECT
+                  event_id,
+                  updated_at,
+                  'credits'::text AS target,
+                  credits_status::text AS status,
+                  credits_last_error_code AS last_error_code,
+                  2 AS target_rank
+                FROM usage_outbox
+                WHERE credits_status IN ('pending', 'blocked')
+              ) AS usage_targets
+              ORDER BY
+                usage_targets.updated_at ASC,
+                usage_targets.event_id ASC,
+                usage_targets.target_rank ASC
+              LIMIT ${usageFindingLimit}
+            `);
+      const emittedUsageTargets = {
+        pending: { lago: 0, credits: 0 },
+        blocked: { lago: 0, credits: 0 },
+      };
       const now = Date.now();
       for (const row of usageRows) {
-        const targets = [
-          {
-            name: "lago" as const,
-            status: row.lagoStatus,
-            lastErrorCode: row.lagoLastErrorCode,
-          },
-          {
-            name: "credits" as const,
-            status: row.creditsStatus,
-            lastErrorCode: row.creditsLastErrorCode,
-          },
-        ];
-
-        for (const target of targets) {
-          if (target.status === "pending") {
-            usageDeliveryTargets.pending[target.name] += 1;
-          } else if (target.status === "blocked") {
-            usageDeliveryTargets.blocked[target.name] += 1;
-          } else {
-            continue;
-          }
-
-          const ageSeconds = usageAgeSeconds(now, row.updatedAt);
-          const failureCode = usageFailureCode(target.lastErrorCode);
-          findings.push({
-            category: "usage",
-            code:
-              target.status === "pending"
-                ? "usage_target_pending"
-                : "usage_target_blocked",
-            subject: row.eventId,
-            detail: `target=${target.name} state=${target.status} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
-          });
-        }
+        const status = row.status === "pending" ? "pending" : "blocked";
+        const target = row.target === "lago" ? "lago" : "credits";
+        emittedUsageTargets[status][target] += 1;
+        const ageSeconds = usageAgeSeconds(now, row.updatedAt);
+        const failureCode = usageFailureCode(row.lastErrorCode);
+        findings.push({
+          category: "usage",
+          code:
+            status === "pending"
+              ? "usage_target_pending"
+              : "usage_target_blocked",
+          subject: row.eventId,
+          detail: `target=${target} state=${status} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
+        });
+      }
+      const omittedUsageTargets = {
+        pending: {
+          lago:
+            usageDeliveryTargets.pending.lago - emittedUsageTargets.pending.lago,
+          credits:
+            usageDeliveryTargets.pending.credits -
+            emittedUsageTargets.pending.credits,
+        },
+        blocked: {
+          lago:
+            usageDeliveryTargets.blocked.lago - emittedUsageTargets.blocked.lago,
+          credits:
+            usageDeliveryTargets.blocked.credits -
+            emittedUsageTargets.blocked.credits,
+        },
+      };
+      const omittedUsageFindings = sumUsageTargets(omittedUsageTargets);
+      if (omittedUsageFindings > 0) {
+        findings.push({
+          category: "usage",
+          code: "usage_findings_omitted",
+          subject: "usage_outbox",
+          detail: `omitted=${omittedUsageFindings} pending_lago=${omittedUsageTargets.pending.lago} pending_credits=${omittedUsageTargets.pending.credits} blocked_lago=${omittedUsageTargets.blocked.lago} blocked_credits=${omittedUsageTargets.blocked.credits}`,
+        });
       }
 
       return {
@@ -284,6 +367,11 @@ export function createReconciler(
           appliedOrders: appliedOrders.length,
           creditCustomers: customers.size,
           usageDeliveryTargets,
+          usageFindings: {
+            limit: usageFindingLimit,
+            emitted: usageRows.length,
+            omitted: omittedUsageFindings,
+          },
         },
         findings,
       };
