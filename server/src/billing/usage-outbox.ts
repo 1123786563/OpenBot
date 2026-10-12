@@ -126,7 +126,26 @@ function assertPositiveLimit(limit: number) {
 }
 
 export function createUsageOutbox(database: Database): UsageOutbox {
+  /** A guarded update that matched nothing: present-but-terminal (`delivered`/`blocked`) is silent, absent throws. */
+  async function assertRecordExists(eventId: string) {
+    const [record] = await database
+      .select({ eventId: usageOutbox.eventId })
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, eventId))
+      .limit(1);
+    if (!record) {
+      throw new UsageOutboxRecordNotFoundError(eventId);
+    }
+  }
+
   async function markDelivered(eventId: string, target: "lago" | "credits") {
+    /*
+     * Guarded by `pending`, like the failure and block entries below: a target already
+     * `blocked` is in manual-review terminal state, and a stale worker that delivered the
+     * effect before the block was written must not be able to overwrite it with
+     * `delivered`. A row already delivered (an idempotent re-mark) matches nothing and is
+     * read back here as present — silently correct — while a genuinely missing row throws.
+     */
     const rows =
       target === "lago"
         ? await database
@@ -136,7 +155,12 @@ export function createUsageOutbox(database: Database): UsageOutbox {
               lagoLastErrorCode: null,
               updatedAt: new Date(),
             })
-            .where(eq(usageOutbox.eventId, eventId))
+            .where(
+              and(
+                eq(usageOutbox.eventId, eventId),
+                eq(usageOutbox.lagoStatus, "pending"),
+              ),
+            )
             .returning({ eventId: usageOutbox.eventId })
         : await database
             .update(usageOutbox)
@@ -145,11 +169,16 @@ export function createUsageOutbox(database: Database): UsageOutbox {
               creditsLastErrorCode: null,
               updatedAt: new Date(),
             })
-            .where(eq(usageOutbox.eventId, eventId))
+            .where(
+              and(
+                eq(usageOutbox.eventId, eventId),
+                eq(usageOutbox.creditsStatus, "pending"),
+              ),
+            )
             .returning({ eventId: usageOutbox.eventId });
 
     if (rows.length === 0) {
-      throw new UsageOutboxRecordNotFoundError(eventId);
+      await assertRecordExists(eventId);
     }
   }
 
@@ -185,14 +214,7 @@ export function createUsageOutbox(database: Database): UsageOutbox {
       .returning({ eventId: usageOutbox.eventId });
 
     if (rows.length === 0) {
-      const [record] = await database
-        .select({ eventId: usageOutbox.eventId })
-        .from(usageOutbox)
-        .where(eq(usageOutbox.eventId, eventId))
-        .limit(1);
-      if (!record) {
-        throw new UsageOutboxRecordNotFoundError(eventId);
-      }
+      await assertRecordExists(eventId);
     }
   }
 
@@ -230,14 +252,7 @@ export function createUsageOutbox(database: Database): UsageOutbox {
       .returning({ eventId: usageOutbox.eventId });
 
     if (rows.length === 0) {
-      const [record] = await database
-        .select({ eventId: usageOutbox.eventId })
-        .from(usageOutbox)
-        .where(eq(usageOutbox.eventId, eventId))
-        .limit(1);
-      if (!record) {
-        throw new UsageOutboxRecordNotFoundError(eventId);
-      }
+      await assertRecordExists(eventId);
     }
   }
 

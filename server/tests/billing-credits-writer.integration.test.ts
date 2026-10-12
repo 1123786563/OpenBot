@@ -436,6 +436,10 @@ describe("reservations", () => {
         title: "t",
       }),
     ).rejects.toThrow(/already released/);
+    // Replaying a TERMINAL reservation's key must not answer `reserved`: the hold carries
+    // no capacity, so admitting the call would price work nothing is holding.
+    await expect(reserve(customer, "k3b", 300)).rejects.toThrow(/released/);
+    await expect(reserve(customer, "k3", 400)).rejects.toThrow(/settled/);
     expect(await writer.availableBalance(customer)).toBe(900);
     const rows = await database
       .select({ id: creditLedger.id })

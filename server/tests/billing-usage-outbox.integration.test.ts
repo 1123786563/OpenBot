@@ -6,6 +6,7 @@ import {
   UsageOutboxConflictError,
   type UsageOutbox,
 } from "../src/billing/usage-outbox";
+import { createUsageDelivery } from "../src/billing/usage-delivery";
 import { createDatabase } from "../src/db/client";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -77,6 +78,51 @@ test("record inserts a usage event once and an identical replay is a no-op", asy
       creditsStatus: "pending",
     },
   ]);
+});
+
+test("a second store instance replays only the pending target under the original event id", async () => {
+  // The audited failure shape: Lago accepted the event and the process died before the
+  // credit target settled. A second store instance — a replica or a restart — picks the
+  // committed row up and must execute ONLY the pending target, under the same event id,
+  // and never repeat the delivered one.
+  const event = usageEvent(`${prefix}-replay`);
+  await outbox.record(event);
+  await outbox.markLagoDelivered(event.eventId);
+
+  const secondDatabase = createDatabase(testDatabaseUrl(), { max: 2 });
+  try {
+    const lagoCalls: string[] = [];
+    const creditCalls: string[] = [];
+    const delivery = createUsageDelivery({
+      outbox: createUsageOutbox(secondDatabase),
+      sendToLago: async (record) => {
+        lagoCalls.push(record.eventId);
+      },
+      chargeCredits: async (record) => {
+        creditCalls.push(record.eventId);
+      },
+      log: () => {},
+    });
+
+    expect(await delivery.runBatch(10)).toEqual({
+      examined: 1,
+      delivered: 1,
+      failed: 0,
+    });
+    expect(lagoCalls).toEqual([]);
+    expect(creditCalls).toEqual([event.eventId]);
+
+    // The replay of the replay: both targets delivered, nothing executes, no duplicate effect.
+    expect(await delivery.runBatch(10)).toEqual({
+      examined: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    expect(lagoCalls).toEqual([]);
+    expect(creditCalls).toEqual([event.eventId]);
+  } finally {
+    await secondDatabase.$client.close();
+  }
 });
 
 test("record rejects reuse of an event ID with any changed immutable fact", async () => {
@@ -212,6 +258,45 @@ test("a blocked delivery target leaves durable manual-review evidence and no lon
       creditsLastErrorCode: "missing_reservation",
     },
   ]);
+});
+
+test("a stale worker cannot mark a blocked target delivered", async () => {
+  // `blocked` is a manual-review terminal state; a delivery that raced the block must not
+  // be able to overwrite it, and an idempotent re-mark of a delivered target stays silent.
+  const event = usageEvent(`${prefix}-blocked-guard`);
+  await outbox.record(event);
+  await (outbox as UsageOutbox & {
+    blockDelivery(
+      eventId: string,
+      target: "lago" | "credits",
+      failureCode: string,
+    ): Promise<void>;
+  }).blockDelivery(event.eventId, "lago", "missing_reservation");
+  await outbox.markCreditsDelivered(event.eventId);
+
+  // The stale worker arrives after the block and after delivery of the sibling.
+  await outbox.markLagoDelivered(event.eventId);
+  expect(
+    await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId)),
+  ).toMatchObject([
+    {
+      lagoStatus: "blocked",
+      lagoLastErrorCode: "missing_reservation",
+      creditsStatus: "delivered",
+    },
+  ]);
+
+  // An idempotent re-mark of the already-delivered target is a silent no-op.
+  await outbox.markCreditsDelivered(event.eventId);
+  expect(
+    await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId)),
+  ).toMatchObject([{ creditsStatus: "delivered" }]);
 });
 
 test("pending retries move behind older unattempted events instead of starving the backlog", async () => {
