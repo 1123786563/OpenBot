@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, like } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import { createPaymentStore } from "../src/billing/payments/store";
 import { createDatabase } from "../src/db/client";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
@@ -19,8 +19,24 @@ const store = createPaymentStore(database);
 const prefix = `qa1b-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  // Store-generated order ids (po-...) never start with the test prefix, so scope the
+  // cleanup to createdBy instead; a leaked pending row poisons the deployment's one
+  // pending slot for whichever payment file runs next against this database.
+  const orders = await database
+    .select({ id: paymentOrders.id })
+    .from(paymentOrders)
+    .where(eq(paymentOrders.createdBy, prefix));
+  if (orders.length > 0) {
+    await database.delete(paymentEvents).where(
+      inArray(
+        paymentEvents.orderId,
+        orders.map((order) => order.id),
+      ),
+    );
+    await database.delete(paymentOrders).where(
+      inArray(paymentOrders.id, orders.map((order) => order.id)),
+    );
+  }
   await database.$client.close();
 });
 
@@ -31,7 +47,7 @@ function orderInput(overrides: Partial<Parameters<typeof store.insertOrder>[0]> 
     amountCents: 8800,
     currency: "CNY" as const,
     expiresAt: new Date(Date.now() + 15 * 60_000),
-    createdBy: "qa",
+    createdBy: prefix,
     checkoutPayload: null,
     ...overrides,
   };
