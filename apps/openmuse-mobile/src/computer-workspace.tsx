@@ -1,0 +1,724 @@
+import {
+  ArrowLeft,
+  FilePlus2,
+  FileText,
+  Folder,
+  FolderPlus,
+  Monitor,
+  Play,
+  Power,
+  RefreshCw,
+  Save,
+  Terminal,
+  Upload,
+} from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Platform, Text, View } from "react-native";
+import type { Artifact } from "../packages/domain/src";
+import type {
+  ComputerCommand,
+  ComputerDirectory,
+  ComputerSnapshot,
+} from "../packages/domain/src/computer";
+import { useComputerDraft } from "./computer-drafts";
+import { DesktopStream } from "./desktop-stream";
+import { Button, Card, colors, Empty, ErrorNotice, Field, LinkRow, s, timeLabel } from "./ui";
+import { useWorkspace } from "./workspace";
+
+const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+export function LinuxWorkspace({
+  tab,
+  onSnapshot,
+}: {
+  tab: "Terminal" | "Files" | "Desktop";
+  onSnapshot?: (snapshot: ComputerSnapshot) => void;
+}) {
+  const { api } = useWorkspace();
+  const [snapshot, setSnapshot] = useState<ComputerSnapshot>();
+  const [error, setError] = useState("");
+  const [connectionError, setConnectionError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [command, setCommand] = useComputerDraft("command");
+  const [cwd, setCwd] = useComputerDraft("cwd");
+  const [executing, setExecuting] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [editingCommand, setEditingCommand] = useState(false);
+  const version = useRef(0);
+  const polling = useRef(false);
+  const mutations = useRef(0);
+  const refresh = useCallback(async () => {
+    if (polling.current || mutations.current) return;
+    polling.current = true;
+    const request = ++version.current;
+    try {
+      const next = await api.request<ComputerSnapshot>("/api/computer");
+      if (request === version.current) {
+        setSnapshot(next);
+        setConnectionError("");
+      }
+    } catch (e) {
+      if (request === version.current) setConnectionError(message(e));
+    } finally {
+      polling.current = false;
+    }
+  }, [api]);
+  useEffect(() => {
+    const poll = () => {
+      if (AppState.currentState !== "active") return;
+      void refresh();
+    };
+    void refresh();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") poll();
+    });
+    const watching = tab === "Desktop" && Platform.OS === "web" && snapshot?.status === "running";
+    const active =
+      executing || busy || snapshot?.commands.some((item) => item.status === "running");
+    const interval = watching || active ? setInterval(poll, 5000) : undefined;
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [
+    refresh,
+    tab,
+    executing,
+    busy,
+    snapshot?.status,
+    snapshot?.commands.some((item) => item.status === "running"),
+  ]);
+
+  useEffect(
+    () => () => {
+      version.current++;
+    },
+    [refresh],
+  );
+
+  async function control(action: "start" | "stop") {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    mutations.current++;
+    const operation = ++version.current;
+    try {
+      const next = await api.request<ComputerSnapshot>(`/api/computer/${action}`, {});
+      if (operation === version.current) setSnapshot(next);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+      mutations.current--;
+      void refresh();
+    }
+  }
+  async function run() {
+    if (!command.trim() || executing || busy) return;
+    const sent = command;
+    setExecuting(true);
+    setError("");
+    mutations.current++;
+    const operation = ++version.current;
+    try {
+      const result = await api.request<ComputerCommand>("/api/computer/commands", {
+        command: sent,
+        cwd,
+      });
+      if (operation === version.current)
+        setSnapshot((current) =>
+          current
+            ? {
+                ...current,
+                commands: [result, ...current.commands.filter((item) => item.id !== result.id)],
+              }
+            : current,
+        );
+      setCommand((current) => (current === sent ? "" : current));
+      setEditingCommand(false);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setExecuting(false);
+      mutations.current--;
+      void refresh();
+    }
+  }
+  useEffect(() => {
+    if (snapshot) onSnapshot?.(snapshot);
+  }, [snapshot, onSnapshot]);
+  const running = snapshot?.status === "running";
+  const commandRunning = executing || snapshot?.commands.some((item) => item.status === "running");
+  return (
+    <View style={{ gap: 16 }}>
+      <Card style={{ backgroundColor: colors.sky, gap: 12 }}>
+        <View style={[s.row, { gap: 12 }]}>
+          <Terminal size={24} color={colors.blueDark} />
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={s.heading}>Your Linux workspace</Text>
+            <Text style={s.muted}>
+              {running
+                ? "运行中 · 停止后文件仍保留"
+                : snapshot?.status === "stopped"
+                  ? "已停止 · 文件已保存"
+                  : snapshot?.status === "unconfigured"
+                    ? "先完成计算机设置即可开始"
+                    : snapshot?.status === "error"
+                      ? "连接需要处理"
+                      : "正在连接…"}
+            </Text>
+          </View>
+          {!snapshot && !error && <ActivityIndicator color={colors.blueDark} />}
+        </View>
+        {!!snapshot?.message && <Text style={s.small}>{snapshot.message}</Text>}
+        {snapshot?.enabled && (
+          <View style={[s.row, { gap: 8, flexWrap: "wrap" }]}>
+            {running ? (
+              <Button icon={Power} busy={busy} onPress={() => void control("stop")}>
+                关闭计算机
+              </Button>
+            ) : (
+              <Button primary icon={Play} busy={busy} onPress={() => void control("start")}>
+                启动计算机
+              </Button>
+            )}
+            <Button
+              icon={RefreshCw}
+              disabled={busy}
+              onPress={() =>
+                void refresh()
+                  .then(() => setError(""))
+                  .catch((e) => setError(message(e)))
+              }
+            >
+              Refresh
+            </Button>
+          </View>
+        )}
+      </Card>
+      <ErrorNotice error={error || connectionError} />
+      {!snapshot && (error || connectionError) && (
+        <Button
+          onPress={() =>
+            void refresh()
+              .then(() => setError(""))
+              .catch((e) => setError(message(e)))
+          }
+        >
+          Retry connection
+        </Button>
+      )}
+      {snapshot?.enabled && (
+        <>
+          <View style={{ display: tab === "Terminal" ? "flex" : "none", gap: 16 }}>
+            {editingCommand || command.length > 0 || snapshot.commands.length === 0 ? (
+              <View style={{ borderRadius: 22, backgroundColor: "#F1F3F4", padding: 18, gap: 8 }}>
+                <Text style={{ color: colors.muted, fontSize: 12, fontFamily: mono }}>
+                  TERMINAL
+                </Text>
+                <Field
+                  label="工作目录"
+                  value={cwd}
+                  onChangeText={setCwd}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{ fontFamily: mono }}
+                />
+                <Field
+                  label="命令"
+                  value={command}
+                  onChangeText={setCommand}
+                  placeholder="pwd"
+                  multiline
+                  maxLength={16000}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  smartInsertDelete={false}
+                  keyboardType="ascii-capable"
+                  style={{ fontFamily: mono, minHeight: 80 }}
+                />
+                {/[‘’“”]/.test(command) && (
+                  <Button
+                    small
+                    onPress={() =>
+                      setCommand((text) => text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"'))
+                    }
+                  >
+                    Use straight quotes
+                  </Button>
+                )}
+                <Button
+                  primary
+                  icon={Play}
+                  busy={!!commandRunning}
+                  disabled={!running || !command.trim() || busy}
+                  onPress={() => void run()}
+                >
+                  Run command
+                </Button>
+                <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>
+                  {snapshot.network === "enabled"
+                    ? "在你的计算机上运行，可访问互联网。用 >/dev/null 2>&1 & 启动图形应用，即可在“桌面”标签页打开。"
+                    : "在你的计算机上运行。网络已关闭。需要上网请使用“浏览器”。"}
+                </Text>
+              </View>
+            ) : (
+              <Button
+                primary
+                icon={Terminal}
+                disabled={!running || busy || !!commandRunning}
+                onPress={() => setEditingCommand(true)}
+              >
+                New command
+              </Button>
+            )}
+            {!!commandRunning && (
+              <Text style={s.muted}>
+                处理中…结果将显示在这里。关闭计算机可结束正在运行的命令。
+              </Text>
+            )}
+            {snapshot.commands.length === 0 ? (
+              <Empty
+                icon={Terminal}
+                title="准备就绪，等待第一条命令"
+                detail="运行脚本、处理文件，或让助手在这里为你创建内容。"
+              />
+            ) : (
+              [...snapshot.commands]
+                .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+                .slice(0, showHistory ? undefined : 5)
+                .map((run) => <CommandReceipt key={run.id} run={run} />)
+            )}
+            {snapshot.commands.length > 5 && (
+              <Button small onPress={() => setShowHistory(!showHistory)}>
+                {showHistory ? "显示最近命令" : "更早的命令"}
+              </Button>
+            )}
+          </View>
+          <View style={{ display: tab === "Files" ? "flex" : "none" }}>
+            <ComputerFiles running={!!running} active={tab === "Files"} />
+          </View>
+          {snapshot.provider === "e2b-desktop" && tab === "Desktop" && (
+            <ComputerDesktop running={!!running} />
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
+// Live view of the computer's desktop, shared with the chat's desktop card.
+function ComputerDesktop({ running }: { running: boolean }) {
+  if (!running)
+    return (
+      <Empty
+        icon={Monitor}
+        title="桌面已关闭"
+        detail="启动计算机后即可查看并控制其桌面。"
+      />
+    );
+  return (
+    <View style={{ gap: 12 }}>
+      <DesktopStream running />
+      <Text style={s.small}>
+        你与助手共享此桌面。关闭计算机会结束其应用；/workspace
+        中的文件会保留。打开桌面会让计算机保持唤醒 30
+        分钟；保持此标签页开启或回到应用即可延长。此链接可控制桌面，请勿分享给他人。
+      </Text>
+    </View>
+  );
+}
+
+function CommandReceipt({ run }: { run: ComputerCommand }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <Card style={{ gap: 10 }}>
+      <View style={[s.between, { gap: 10 }]}>
+        <Text
+          style={[
+            s.small,
+            {
+              color:
+                run.status === "succeeded"
+                  ? "#248258"
+                  : run.status === "running"
+                    ? colors.blueDark
+                    : colors.danger,
+            },
+          ]}
+        >
+          {run.status.replace("_", " ")}
+          {run.exitCode !== undefined ? ` · exit ${run.exitCode}` : ""}
+        </Text>
+        <Text style={s.small}>{timeLabel(run.startedAt)}</Text>
+      </View>
+      <Text
+        selectable
+        style={[s.text, { fontFamily: mono, fontSize: 13 }]}
+      >{`$ ${run.command}`}</Text>
+      <Text style={[s.small, { fontFamily: mono }]}>{run.cwd}</Text>
+      {expanded && (
+        <>
+          {!!run.stdout && (
+            <Text selectable style={[s.text, { fontFamily: mono, fontSize: 12, lineHeight: 19 }]}>
+              {run.stdout}
+            </Text>
+          )}
+          {!!run.stderr && (
+            <Text
+              selectable
+              style={[
+                s.text,
+                { fontFamily: mono, fontSize: 12, lineHeight: 19, color: colors.danger },
+              ]}
+            >
+              {run.stderr}
+            </Text>
+          )}
+          {!run.stdout && !run.stderr && run.status !== "running" && (
+            <Text style={s.small}>暂无输出</Text>
+          )}
+          {run.truncated && (
+            <Text style={s.small}>
+              Output reached the display limit. Write large results to a file.
+            </Text>
+          )}
+        </>
+      )}
+      {!!(run.stdout || run.stderr) && (
+        <Button small onPress={() => setExpanded(!expanded)}>
+          {expanded ? "收起输出" : "查看输出"}
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+function ComputerFiles({ running, active }: { running: boolean; active: boolean }) {
+  const { api, workspace, open, refresh } = useWorkspace();
+  const [path, setPath] = useComputerDraft("path");
+  const [directory, setDirectory] = useState<ComputerDirectory>();
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [retry, setRetry] = useState(0);
+  const [editor, setEditor] = useComputerDraft("editor");
+  const [folder, setFolder] = useState<string>();
+  const [importing, setImporting] = useState(false);
+  const dirty = !!editor && (editor.text !== editor.saved || editor.path !== editor.savedPath);
+  useEffect(() => {
+    if (!active || !running) {
+      setLoading(false);
+      return;
+    }
+    let alive = true;
+    setLoading(true);
+    setError("");
+    void api
+      .request<ComputerDirectory>(`/api/computer/files?path=${encodeURIComponent(path)}`)
+      .then((value) => {
+        if (alive) setDirectory(value);
+      })
+      .catch((e) => {
+        if (alive) setError(message(e));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [api, active, running, path, retry]);
+
+  async function read(file: string) {
+    if (busy || loading || !running) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const content = await api.request<{ path: string; text: string }>(
+        "/api/computer/files/read",
+        { path: file },
+      );
+      if (mounted.current) setEditor({ ...content, saved: content.text, savedPath: content.path });
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function importDocument(file: Artifact) {
+    if (busy || !running) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api.request("/api/computer/files/import", {
+        fileId: file.id,
+        path: `${path}/${file.name.replace(/[\\/]/g, "_")}`,
+      });
+      setImporting(false);
+      setNotice("Document copied to your computer.");
+      setRetry((value) => value + 1);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function openPdf(path: string) {
+    if (busy || !running) return;
+    setBusy(true);
+    setError("");
+    try {
+      const file = await api.request<Artifact>("/api/computer/files/export", { path });
+      await refresh();
+      if (mounted.current) open({ type: "file", file });
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function save() {
+    if (!editor || busy) return;
+    const sent = editor;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api.request("/api/computer/files/write", { path: sent.path, text: sent.text });
+      if (mounted.current)
+        setEditor((current) =>
+          current?.path === sent.path
+            ? { ...current, saved: sent.text, savedPath: sent.path }
+            : current,
+        );
+      setNotice("File saved to your computer.");
+      setRetry((value) => value + 1);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function mkdir() {
+    if (!folder?.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.request("/api/computer/files/mkdir", { path: `${path}/${folder.trim()}` });
+      setFolder(undefined);
+      setRetry((value) => value + 1);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <View style={{ gap: 12 }}>
+      <View style={s.between}>
+        <Text style={s.heading}>工作区文件</Text>
+        {(busy || loading) && <ActivityIndicator color={colors.blueDark} />}
+      </View>
+      <Text selectable style={[s.small, { fontFamily: mono }]}>
+        {editor?.path || path}
+      </Text>
+      <ErrorNotice error={error} />
+      {!!notice && <Text style={[s.small, { color: "#248258" }]}>{notice}</Text>}
+      {!running && (
+        <Text style={s.muted}>启动计算机后即可浏览或编辑已保存的文件。</Text>
+      )}
+      {editor ? (
+        <>
+          <Field
+            label="文件路径"
+            value={editor.path}
+            onChangeText={(value) => setEditor({ ...editor, path: value })}
+            autoCorrect={false}
+            autoCapitalize="none"
+            style={{ fontFamily: mono }}
+          />
+          <Field
+            label="文件内容"
+            value={editor.text}
+            onChangeText={(value) => setEditor({ ...editor, text: value })}
+            multiline
+            autoCorrect={false}
+            spellCheck={false}
+            smartInsertDelete={false}
+            keyboardType="ascii-capable"
+            autoCapitalize="none"
+            style={{ fontFamily: mono, minHeight: 240, fontSize: 13 }}
+          />
+          <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
+            <Button
+              primary
+              icon={Save}
+              busy={busy}
+              disabled={!running || !editor.path.trim()}
+              onPress={() => void save()}
+            >
+              保存文件
+            </Button>
+            <Button
+              disabled={busy}
+              icon={ArrowLeft}
+              onPress={() => {
+                setEditor(undefined);
+                setNotice("");
+              }}
+            >
+              {dirty ? "放弃修改" : "返回文件列表"}
+            </Button>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
+            {path !== "/workspace" && (
+              <Button
+                small
+                disabled={busy}
+                icon={ArrowLeft}
+                onPress={() => setPath(path.slice(0, path.lastIndexOf("/")) || "/workspace")}
+              >
+                Up
+              </Button>
+            )}
+            <Button
+              small
+              disabled={!running || busy}
+              icon={FilePlus2}
+              onPress={() => {
+                setNotice("");
+                setEditor({
+                  path: `${path}/note-${Date.now()}.txt`,
+                  text: "",
+                  saved: "",
+                  savedPath: "",
+                });
+              }}
+            >
+              New file
+            </Button>
+            <Button
+              small
+              disabled={!running || busy}
+              icon={FolderPlus}
+              onPress={() => setFolder("")}
+            >
+              New folder
+            </Button>
+            <Button
+              small
+              disabled={!running || busy}
+              icon={RefreshCw}
+              onPress={() => setRetry(retry + 1)}
+            >
+              Refresh files
+            </Button>
+            <Button
+              small
+              disabled={!running || busy}
+              icon={Upload}
+              onPress={() => setImporting(!importing)}
+            >
+              {importing ? "收起文档" : "复制文档到这里"}
+            </Button>
+          </View>
+          {importing && (
+            <Card>
+              <Text style={s.heading}>Choose a saved PDF</Text>
+              <Text style={[s.small, { marginTop: 6 }]}>
+                Copies into this folder. A file with the same name will be replaced.
+              </Text>
+              {workspace.files.map((file) => (
+                <LinkRow
+                  key={file.id}
+                  icon={FileText}
+                  title={file.name}
+                  onPress={() => void importDocument(file)}
+                />
+              ))}
+              {!workspace.files.length && (
+                <Text style={s.muted}>Add a document from mail or Files first.</Text>
+              )}
+            </Card>
+          )}
+          {folder !== undefined && (
+            <Card style={{ gap: 8 }}>
+              <Field
+                label="文件夹名称"
+                value={folder}
+                onChangeText={setFolder}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <View style={[s.row, { gap: 8 }]}>
+                <Button
+                  primary
+                  disabled={!running || !folder.trim()}
+                  busy={busy}
+                  onPress={() => void mkdir()}
+                >
+                  新建文件夹
+                </Button>
+                <Button disabled={busy} onPress={() => setFolder(undefined)}>
+                  Cancel
+                </Button>
+              </View>
+            </Card>
+          )}
+          {running &&
+            directory?.path === path &&
+            directory.entries.map((entry) => (
+              <LinkRow
+                key={entry.path}
+                icon={entry.type === "directory" ? Folder : FileText}
+                title={entry.name}
+                detail={
+                  entry.type === "directory"
+                    ? "Folder"
+                    : entry.type === "symlink"
+                      ? "Symbolic link"
+                      : `${Math.max(1, Math.ceil(entry.size / 1024))} KB`
+                }
+                onPress={() => {
+                  if (busy || loading || !running) return;
+                  if (entry.type === "directory") {
+                    setNotice("");
+                    setPath(entry.path);
+                  } else if (/\.pdf$/i.test(entry.name)) void openPdf(entry.path);
+                  else void read(entry.path);
+                }}
+              />
+            ))}
+          {running &&
+            !busy &&
+            !loading &&
+            !error &&
+            directory?.path === path &&
+            directory.entries.length === 0 && (
+              <Empty
+                icon={Folder}
+                title="A little space to create"
+                detail="Add a file here, or ask your agent to make one in its workspace."
+              />
+            )}
+        </>
+      )}
+    </View>
+  );
+}
