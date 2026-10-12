@@ -4,7 +4,7 @@
  *
  * - POST   /sessions/:id/upload                → attachments/{sanitized name}, 400/429/404
  * - DELETE /sessions/:id/files/*path           → 204; 403 traversal, 404 absent-or-directory
- * - GET    /sessions/:id/download-directory/*  → tar.gz of one workspace directory
+ * - GET    /sessions/:id/download-directory/*  → ZIP of one workspace directory (onyx parity)
  *
  * Error semantics follow onyx exactly where the channel allows: empty/oversize file → 400;
  * per-session count or total limits → 429; unknown session → 404; path traversal → 403; a
@@ -19,7 +19,7 @@ import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
-import { archiveBasename, packDirectoryTarGz } from "./directory-archive";
+import { packDirectoryZip } from "./directory-archive";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import {
@@ -31,6 +31,7 @@ import {
   validateFileSize,
 } from "./uploads";
 import { sessionDirectory } from "./workspace";
+import { buildContentDisposition, sanitizeZipBasename } from "./zip-archive";
 
 const logger = getLogger("server");
 
@@ -276,7 +277,11 @@ export function createFileRoutes(
     return context.body(null, 204);
   });
 
-  // ── GET /sessions/:id/download-directory/*path — one directory as tar.gz ───
+  // ── GET /sessions/:id/download-directory/*path — one directory as a ZIP ────
+  // onyx api.py:711-745 + manager.py:1638-1682: application/zip, filename from
+  // _sanitize_zip_basename(Path(path).name, allow_dots=True); every None shape —
+  // no session, no sandbox, no directory — is the same 404 "Directory not found",
+  // so an ownership probe reads as absence exactly as on onyx.
   app.get(
     "/sessions/:sessionId/download-directory/:path{.+}",
     async (context) => {
@@ -285,7 +290,9 @@ export function createFileRoutes(
       const rel = context.req.param("path") ?? "";
 
       const { session, fileApi } = await resolve(sessionId, actor.id);
-      if (!session) return context.json({ error: "Session not found" }, 404);
+      if (!session) {
+        return context.json({ error: "Directory not found" }, 404);
+      }
 
       const verdict = validateStrictPath(rel);
       if (verdict === "traversal") {
@@ -309,19 +316,20 @@ export function createFileRoutes(
 
       let archive: Uint8Array;
       try {
-        archive = await packDirectoryTarGz(fileApi, fullPath);
+        archive = await packDirectoryZip(fileApi, fullPath);
       } catch {
         // The listing threw: unreachable or absent — onyx's None → 404.
         return context.json({ error: "Directory not found" }, 404);
       }
 
-      const name = `${archiveBasename(rel)}.tar.gz`;
+      const basename = rel.split("/").filter(Boolean).at(-1) ?? "";
+      const name = `${sanitizeZipBasename(basename, { allowDots: true })}.zip`;
       return new Response(archive as unknown as BodyInit, {
         status: 200,
         headers: {
-          "content-type": "application/gzip",
+          "content-type": "application/zip",
           "content-length": String(archive.byteLength),
-          "content-disposition": `attachment; filename="${name.replace(/["\\]/g, "_")}"`,
+          "content-disposition": buildContentDisposition(name),
         },
       });
     },

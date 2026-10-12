@@ -5,7 +5,7 @@
  * Three endpoints:
  * - GET /sessions/:id/webapp-info    — has_webapp / webapp_url / status / ready
  * - GET /sessions/:id/webapp/*        — reverse-proxy the session's dev server
- * - GET /sessions/:id/webapp-download — the scaffolded webapp as a tar.gz
+ * - GET /sessions/:id/webapp-download — the scaffolded webapp as a ZIP (T5: onyx parity)
  *
  * onyx points a Next.js dev server at a backend-reserved port and proxies to it with header
  * hygiene (hop-by-hop + credentials stripped, no set-cookie forwarding) and a relaxed CSP for
@@ -16,15 +16,20 @@
  * rather than a second spawned process beside the managed one.
  */
 
-import { gzipSync } from "node:zlib";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
 import type { CraftConfig } from "./config";
+import { isHiddenWorkspacePath } from "./directory-archive";
 import { webappDevServerReady } from "./nextjs-dev";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
+import {
+  buildContentDisposition,
+  sanitizeZipBasename,
+  zipEntries,
+} from "./zip-archive";
 
 export type WebappProxyRoutesDeps = {
   config: CraftConfig;
@@ -160,61 +165,6 @@ export async function proxyWebappRequest(input: {
   };
 }
 
-/**
- * A minimal POSIX-ustar writer + gzip — enough for the webapp-download tar.gz. There is no
- * tar dependency in the tree, and the archive's contract is "a browser can open it", which an
- * 8.3-name, single-pass, no-longpath writer satisfies for a scaffolded webapp.
- */
-export function tarGzip(
-  entries: { path: string; bytes: Uint8Array }[],
-): Uint8Array {
-  const encoder = new TextEncoder();
-  const chunks: Uint8Array[] = [];
-  const push = (buf: Uint8Array) => chunks.push(buf);
-
-  const octal = (value: number, width: number): string =>
-    `${value
-      .toString(8)
-      .padStart(width - 1, "0")
-      .slice(0, width - 1)} `;
-
-  for (const entry of entries) {
-    const header = new Uint8Array(512);
-    const write = (offset: number, value: string) =>
-      header.set(encoder.encode(value).slice(0, 512 - offset), offset);
-
-    write(0, entry.path.slice(0, 100));
-    write(100, "0000644"); // mode
-    write(108, "0000000"); // uid
-    write(116, "0000000"); // gid
-    write(124, octal(entry.bytes.length, 12)); // size (octal, 11 digits + space)
-    write(136, "00000000000"); // mtime
-    header[156] = "0".charCodeAt(0); // typeflag: regular file
-    write(257, "ustar");
-    write(263, "00");
-
-    // checksum: spaces first, then the sum-of-bytes in octal.
-    let sum = 0;
-    for (let i = 0; i < 512; i++) sum += header[i];
-    write(148, `${sum.toString(8).padStart(6, "0")}\0 `);
-
-    push(header);
-    push(entry.bytes);
-    const padding = (512 - (entry.bytes.length % 512)) % 512;
-    if (padding > 0) push(new Uint8Array(padding));
-  }
-  push(new Uint8Array(1024)); // two zero blocks: end of archive
-
-  const total = chunks.reduce((n, chunk) => n + chunk.length, 0);
-  const joined = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return new Uint8Array(gzipSync(joined));
-}
-
 function hasWebappScaffold(paths: string[]): boolean {
   return paths.some(
     (path) => path.endsWith("/package.json") || path.endsWith("package.json"),
@@ -333,12 +283,15 @@ export function createWebappProxyRoutes(
   app.get("/sessions/:sessionId/webapp/:path{.+}", proxyWebapp);
   app.get("/sessions/:sessionId/webapp", proxyWebapp);
 
-  // ── GET /sessions/:id/webapp-download — the scaffolded webapp as tar.gz ─────
+  // ── GET /sessions/:id/webapp-download — the scaffolded webapp as a ZIP ──────
+  // onyx api.py:681-708 + manager.py:1595-1636: every None shape (no session, no
+  // sandbox, no outputs/web) answers the same 404 "Webapp not found" — an
+  // ownership probe reads as absence, exactly onyx's indistinct refusal.
   app.get("/sessions/:sessionId/webapp-download", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
     const { session, botId } = await resolve(sessionId, actor.id);
-    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!session) return context.json({ error: "Webapp not found" }, 404);
     if (!botId) return context.json({ error: "Webapp not found" }, 404);
 
     const directory = sessionDirectory(
@@ -349,41 +302,49 @@ export function createWebappProxyRoutes(
     if (!fileApi) return context.json({ error: "Webapp not found" }, 404);
 
     const root = `${directory}/outputs/web`;
-    const listing = await fileApi.listFiles(root).catch(() => [] as string[]);
-    const prefix = root.endsWith("/") ? root : `${root}/`;
-
-    const entries: { path: string; bytes: Uint8Array }[] = [];
-    for (const path of listing) {
-      if (path.startsWith("/") || path.includes("/../")) continue;
-      if (isHiddenSegment(path)) continue;
-      const relPath = path.startsWith(prefix)
-        ? path.slice(prefix.length)
-        : path;
-      if (!relPath) continue;
-      const bytes = await fileApi.readFileBytes(path).catch(() => null);
-      if (bytes === null) continue;
-      entries.push({ path: relPath, bytes });
-    }
-    if (entries.length === 0) {
+    let listing: string[];
+    try {
+      listing = await fileApi.listFiles(root);
+    } catch {
+      // outputs/web doesn't exist — onyx's list_directory ValueError → None → 404.
       return context.json({ error: "Webapp not found" }, 404);
     }
+    const prefix = root.endsWith("/") ? root : `${root}/`;
 
-    const archive = tarGzip(entries);
+    // The gateway answers recursive FULL paths (absolute in directory mode, bot-rooted
+    // otherwise), so containment is the anchor prefix — the same discipline as
+    // packDirectoryZip. (The route used to skip anything starting with "/", which
+    // silently emptied the archive whenever the listing was absolute — a latent bug
+    // the T5 route test caught.)
+    const entries: { path: string; bytes: Uint8Array }[] = [];
+    for (const path of listing) {
+      if (!path.startsWith(prefix)) continue;
+      if (isHiddenWorkspacePath(path)) continue;
+      const relPath = path.slice(prefix.length);
+      if (!relPath || relPath.startsWith("/") || relPath.includes("../"))
+        continue;
+      const bytes = await fileApi.readFileBytes(path).catch(() => null);
+      if (bytes === null) continue; // unreadable: skipped, not fatal (onyx parity)
+      entries.push({ path: relPath, bytes });
+    }
+    // A directory whose visible files are all filtered away is an EMPTY zip, not a
+    // 404 — onyx distinguishes "outputs/web is missing" (None) from "holds nothing
+    // downloadable" (a zero-entry archive).
+
+    const archive = zipEntries(entries);
+    // manager.py:1634-1636: the session's name (or a session-{id[:8]} stem),
+    // sanitized with allow_dots=False — dots are unsafe in a download's stem there.
+    const stem = session.name || `session-${sessionId.slice(0, 8)}`;
+    const filename = `${sanitizeZipBasename(stem, { allowDots: false })}-webapp.zip`;
     return new Response(archive as unknown as BodyInit, {
       status: 200,
       headers: {
-        "content-type": "application/gzip",
+        "content-type": "application/zip",
         "content-length": String(archive.byteLength),
-        "content-disposition": `attachment; filename="webapp.tar.gz"`,
+        "content-disposition": buildContentDisposition(filename),
       },
     });
   });
 
   return app;
-}
-
-function isHiddenSegment(path: string): boolean {
-  return path
-    .split("/")
-    .some((segment) => segment.startsWith(".") || segment.startsWith("._"));
 }
