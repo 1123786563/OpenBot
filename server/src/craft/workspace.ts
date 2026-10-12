@@ -83,6 +83,7 @@ export async function setupSessionWorkspace(
   const opencodeJson = opencodeConfigJson(
     buildProviderOpencodeConfig(input.llmConfig, {
       disabledTools: input.config.opencodeDisabledTools,
+      gatedTools: input.config.approvalGatedTools,
     }),
   );
   await api.writeFile(`${root}/opencode.json`, opencodeJson);

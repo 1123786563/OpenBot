@@ -4,9 +4,9 @@
  *
  * All packets ride SSE as `event: message` records with a `type` field distinguishing them, a
  * snake_case body (wire parity with onyx's pydantic model_dump), and a `timestamp` (ISO UTC)
- * stamped at construction. The two packets whose flows are out of the first phase
- * (ApprovalRequested, ConnectAppRequest) keep their types so the union and the SSE serializer
- * are already shaped for them.
+ * stamped at construction. ApprovalRequested carries the gated-permission announce (see
+ * approval-gate.ts); ConnectAppRequest's flow stays a later phase, its type kept so the union
+ * and the SSE serializer are already shaped for it.
  */
 import { type SandboxEvent, SSEKeepalive } from "./types";
 
@@ -67,6 +67,25 @@ const nowIso = () => new Date().toISOString();
 
 export function errorPacket(message: string): ErrorPacket {
   return { packetKind: "error", type: "error", message, timestamp: nowIso() };
+}
+
+/**
+ * The announce a gated permission.asked turns into: one frame telling the client an approval
+ * row is waiting (the producer pushes it onto the session's announce list; the live SSE stream
+ * drains that list and forwards this packet, which the frontend answers by refetching the
+ * live approvals list).
+ */
+export function approvalRequestedPacket(
+  approvalId: string,
+  sessionId: string,
+): ApprovalRequestedPacket {
+  return {
+    packetKind: "approval_requested",
+    type: "approval_requested",
+    approval_id: approvalId,
+    session_id: sessionId,
+    timestamp: nowIso(),
+  };
 }
 
 export function subagentStartedPacket(

@@ -15,11 +15,18 @@
  */
 
 import { readFile } from "node:fs/promises";
+import type { ApprovalStore } from "../approvals/types";
 import type { Database } from "../db/client";
 import type { CraftSessionOrigin } from "../db/schema/craft";
 import { generateAgentInstructions } from "./agent-instructions";
+import { createCraftPermissionGate } from "./approval-gate";
+import type { CraftApprovalSignals } from "./approval-signals";
 import type { CraftConfig } from "./config";
-import { type BuildPacket, isBuildPacket } from "./events/packets";
+import {
+  approvalRequestedPacket,
+  type BuildPacket,
+  isBuildPacket,
+} from "./events/packets";
 import { isKeepalive, isSandboxError, type SandboxEvent } from "./events/types";
 import type { PromptAttachment } from "./opencode/serve-client";
 import type { CraftLLMProviderConfig } from "./opencode-config";
@@ -53,6 +60,13 @@ export type SessionManagerDeps = {
   botIdFor: (sessionId: string) => Promise<string | null>;
   /** Organization-level craft instructions (AGENTS.md section); null when unset. */
   organizationInstructions?: string | null;
+  /**
+   * The raw approval store the gated-permission producer opens rows through, plus its
+   * announce/wake signals. Either absent (or an empty gated-tools config) keeps the
+   * auto-allow posture — no gate is built, no approvals are opened.
+   */
+  approvals?: ApprovalStore | null;
+  approvalSignals?: CraftApprovalSignals | null;
   /**
    * The deployment's current managed-content fingerprints (skills payload + craft MCP set) to
    * compare a session's recorded hashes against. onyx reads these off the sandbox row; OpenBot
@@ -223,6 +237,7 @@ export class CraftSessionManager {
     const expected = opencodeConfigJson(
       buildProviderOpencodeConfig(llmConfig, {
         disabledTools: this.config.opencodeDisabledTools,
+        gatedTools: this.config.approvalGatedTools,
       }),
     );
 
@@ -305,6 +320,7 @@ export class CraftSessionManager {
     const expected = opencodeConfigJson(
       buildProviderOpencodeConfig(llmConfig, {
         disabledTools: this.config.opencodeDisabledTools,
+        gatedTools: this.config.approvalGatedTools,
       }),
     );
     const workspaceApi = this.gateway.workspaceApiFor(botId);
@@ -396,6 +412,12 @@ export class CraftSessionManager {
       shouldInterrupt?: (() => boolean) | null;
       shouldAbortOnTeardown?: (() => boolean) | null;
       turnTimeoutMs?: number | null;
+      /**
+       * The person whose turn this is — required to build the permission gate (approval rows
+       * are owner-scoped). Headless callers (scheduled tasks) leave it unset and get the
+       * auto-allow posture: nobody is there to ask.
+       */
+      userId?: string | null;
     },
     onOpencodeSessionResolved: (newId: string) => Promise<void>,
   ): AsyncGenerator<SandboxEvent | BuildPacket> {
@@ -410,6 +432,20 @@ export class CraftSessionManager {
     if (!client) {
       throw new Error(`No sandbox serve client for bot ${input.botId}`);
     }
+
+    // The permission gate only exists when gating is configured AND someone can
+    // be asked: no gated tools, no store wiring, or no user → auto-allow.
+    const permissionGate =
+      this.deps.approvals && this.deps.approvalSignals && input.userId
+        ? createCraftPermissionGate({
+            config: this.config,
+            approvals: this.deps.approvals,
+            signals: this.deps.approvalSignals,
+            sessionId: input.sessionId,
+            userId: input.userId,
+            botId: input.botId,
+          })
+        : null;
 
     // Preflight the opencode session id: avoids one orphan session per turn, and
     // a stale persisted id (404 after a sandbox recycle) is re-minted + written
@@ -431,6 +467,7 @@ export class CraftSessionManager {
       absoluteTimeoutMs: input.turnTimeoutMs ?? null,
       shouldInterrupt: input.shouldInterrupt ?? null,
       shouldAbortOnTeardown: input.shouldAbortOnTeardown ?? null,
+      permissionGate,
     });
   }
 
@@ -509,11 +546,18 @@ export class CraftSessionManager {
    * Attach to an existing opencode session and stream translated events without driving a
    * prompt — the turn executor is the durable writer; this path only observes. Emits
    * keepalive markers on the same cadence; the SSE serializer turns them into comment lines.
+   *
+   * `announceDrain` (onyx's merge_events_with_announces): polled once per loop iteration
+   * (the loop wakes every ≤1s), each pending approval announce becomes an
+   * approval_requested packet interleaved with the translated events. Keepalive semantics
+   * are unchanged — announces ride between events, never in place of them.
    */
   async *subscribeToExistingSessionEvents(input: {
     session: CraftSessionRow;
     botId: string;
     keepaliveSeconds?: number;
+    /** Drains the session's approval announces; null when gating is off. */
+    announceDrain?: (() => Promise<string[]>) | null;
   }): AsyncGenerator<SandboxEvent | BuildPacket> {
     const directory = sessionDirectory(
       input.session.id,
@@ -546,6 +590,16 @@ export class CraftSessionManager {
     let lastEventAt = Date.now();
     try {
       for (;;) {
+        // Announce merge first: a fresh approval card goes out immediately, not
+        // behind the next bus event (which may be a whole approval window away).
+        if (input.announceDrain) {
+          for (const approvalId of await input
+            .announceDrain()
+            .catch(() => [] as string[])) {
+            yield approvalRequestedPacket(approvalId, input.session.id);
+          }
+        }
+
         const raw = await sub.queue.shift({ timeoutMs: 1000 });
         if (raw === undefined) {
           if (Date.now() - lastEventAt >= keepaliveSeconds * 1000) {

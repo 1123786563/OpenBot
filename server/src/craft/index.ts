@@ -38,6 +38,16 @@
 
 export { generateAgentInstructions } from "./agent-instructions";
 export {
+  type CreateCraftPermissionGateInput,
+  createCraftPermissionGate,
+  isToolGated,
+} from "./approval-gate";
+export {
+  type CraftApprovalSignals,
+  createCraftApprovalSignals,
+  createInProcessApprovalSignals,
+} from "./approval-signals";
+export {
   type CraftApprovalCandidate,
   craftApprovalDigest,
   createCraftApprovalRoutes,
@@ -57,6 +67,7 @@ export {
   UploadLimitExceededError,
 } from "./errors";
 export {
+  approvalRequestedPacket,
   type BuildPacket,
   compactionPacket,
   contextUsagePacket,
@@ -93,7 +104,11 @@ export { PodEventBus } from "./opencode/event-bus";
 export {
   OpencodeHttpError,
   OpencodeServeClient,
+  type PermissionAskedInfo,
+  type PermissionGate,
+  type PermissionGateDecision,
   type PromptAttachment,
+  parsePermissionAsked,
   TurnState,
   translateOpencodeEvent,
   turnStateForStream,

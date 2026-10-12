@@ -3,17 +3,19 @@
  *
  * onyx gates sandbox actions through its egress proxy and waits on a Redis announce/wake
  * channel, recording decisions in `action_approval`/`action_receipt` tables. OpenBot has no
- * egress proxy, and its agent-sandbox opencode runs a static (non-interactive) permission set,
- * so there is no approval producer yet. What this file owns is the read/write surface the UI
- * talks to:
+ * egress proxy; the producer is opencode's own `permission.asked` instead (see
+ * approval-gate.ts — gated tools get an "ask" rule, the waiting turn polls the wake signal).
+ * What this file owns is the read/write surface the UI talks to:
  *
  *   - `approvalRequests.runId` doubles as the craft session id (a pure-text column, no schema
  *     change), so a pending request is "owned" by the session whose turn produced it.
  *   - The decision endpoint reuses the raw `ApprovalStore` (`open`/`decide`/…), not the
  *     coordination-wrapped `approvalService.store` whose `open` carries run-orchestration side
  *     effects craft must not trigger.
- *   - Full suspend/wake (the Redis announce-merge that pauses the turn until a decision lands)
- *     stays deferred — documented in the port plan as a later phase.
+ *   - Decide semantics follow onyx: the same decision replays idempotently, a different one
+ *     is a 409; after the row is written the parked waiter is woken (a missed wake falls back
+ *     to its wait window). EXPIRED stays derived — the shared status CHECK has no such value,
+ *     so expiry is the producer's reject + the live read's window, never a row mutation.
  */
 
 import { createHash } from "node:crypto";
@@ -25,6 +27,7 @@ import {
   ApprovalRefusedError,
 } from "../approvals/types";
 import type { AppVariables } from "../auth/guards";
+import type { CraftApprovalSignals } from "./approval-signals";
 import type { CraftConfig } from "./config";
 import type { CraftStore } from "./store";
 
@@ -134,6 +137,8 @@ export type CraftApprovalRoutesDeps = {
   config: CraftConfig;
   store: CraftStore;
   approvals: ApprovalStore;
+  /** Announce/wake signals; decide wakes the parked waiter through these. */
+  signals?: CraftApprovalSignals | null;
 };
 
 export function createCraftApprovalRoutes(
@@ -178,13 +183,24 @@ export function createCraftApprovalRoutes(
       );
     }
     try {
+      // onyx parity: same decision → idempotent; different decision → conflict.
+      const current = await deps.approvals.get(actor.id, approvalId);
+      if (current.status !== "pending") {
+        if (current.decision === body.decision) {
+          return context.json({ ok: true });
+        }
+        return context.json(
+          { error: "This request was already decided." },
+          409,
+        );
+      }
       await deps.approvals.decide(actor.id, approvalId, body.decision);
-      return context.json({ ok: true });
     } catch (error) {
       if (error instanceof ApprovalNotFoundError) {
         return context.json({ error: "Approval not found" }, 404);
       }
       if (error instanceof ApprovalRefusedError) {
+        // The store's own guard: a decide race between two writers.
         return context.json(
           { error: "This request was already decided." },
           409,
@@ -193,6 +209,13 @@ export function createCraftApprovalRoutes(
       logger.error({ error }, "[craft] approval decision failed");
       return context.json({ error: "Decision failed" }, 500);
     }
+    // Wake the parked waiter (best-effort; a miss falls back to its wait window).
+    await deps.signals
+      ?.sendWake(approvalId, body.decision)
+      .catch((error: unknown) => {
+        logger.warn({ error }, "[craft] approval decision wake failed");
+      });
+    return context.json({ ok: true });
   });
 
   return app;

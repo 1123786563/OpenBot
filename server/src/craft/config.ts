@@ -103,6 +103,13 @@ export type CraftConfig = {
    * wire never races the client's own timeout (onyx: SANDBOX_APPROVAL_WAIT_MARGIN_SECONDS).
    */
   readonly sandboxApprovalWaitMarginSeconds: number;
+  /**
+   * Comma-separated opencode tool names whose permission.asked routes through the approval
+   * rendezvous instead of auto-allow (`OPENBOT_CRAFT_APPROVAL_GATED_TOOLS`; default empty =
+   * every ask is still auto-allowed, the phase-1 posture). Rendered into the session's
+   * opencode.json as an "ask" rule for the whole tool.
+   */
+  readonly approvalGatedTools: readonly string[];
 
   // ── SSE / opencode-serve ───────────────────────────────────────────────────
   /** SSE + runner-liveness base cadence (SSE_KEEPALIVE_INTERVAL). */
@@ -253,6 +260,11 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     "OPENBOT_CRAFT_OPENCODE_DISABLED_TOOLS",
     "question",
   );
+  const approvalGatedToolsRaw = stringEnv(
+    env,
+    "OPENBOT_CRAFT_APPROVAL_GATED_TOOLS",
+    "",
+  );
 
   const maxUploadFileSizeMb = intEnv(
     env,
@@ -270,6 +282,11 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     enableBrowser: boolEnv(env, "OPENBOT_CRAFT_ENABLE_BROWSER", true),
 
     opencodeDisabledTools: disabledToolsRaw
+      .split(",")
+      .map((tool) => tool.trim())
+      .filter((tool) => tool.length > 0),
+
+    approvalGatedTools: approvalGatedToolsRaw
       .split(",")
       .map((tool) => tool.trim())
       .filter((tool) => tool.length > 0),

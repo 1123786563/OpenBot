@@ -149,7 +149,7 @@ const candidate = () => ({
 });
 
 describe("craft approvals", () => {
-  test("open → live 1 → decision → live 0 → re-decision 409", async () => {
+  test("open → live 1 → decision → live 0 → re-decision idempotent, conflict 409", async () => {
     const approvals = fakeApprovals();
     const store = fakeStore({ getSession: async () => sessionRow() });
     const app = createCraftApprovalRoutes(fakeRequireUser(), {
@@ -187,7 +187,14 @@ describe("craft approvals", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision: "allow_once" }),
     });
-    expect(duplicate.status).toBe(409);
+    expect(duplicate.status).toBe(200); // same decision replays idempotently (onyx)
+
+    const conflicting = await app.request(`/approvals/${record.id}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "deny" }),
+    });
+    expect(conflicting.status).toBe(409); // a different decision conflicts (onyx)
   });
 
   test("listLiveApprovals drops expired and other-session rows", async () => {

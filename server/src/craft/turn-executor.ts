@@ -80,6 +80,7 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
   async function driveOnePrompt(input: {
     turnId: string;
     sessionId: string;
+    userId: string;
     botId: string;
     runnerId: string | null;
     prompt: string;
@@ -125,6 +126,8 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       {
         sessionId: input.sessionId,
         botId: input.botId,
+        // The permission gate is owner-scoped: the turn's user is who gets asked.
+        userId: input.userId,
         userMessageContent: input.prompt,
         // The opencode session id is resolved on the session row by the drive loop
         // before the first prompt; continuations rely on the same row.
@@ -285,6 +288,7 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         result = await driveOnePrompt({
           turnId,
           sessionId,
+          userId,
           botId,
           runnerId,
           prompt: currentPrompt,

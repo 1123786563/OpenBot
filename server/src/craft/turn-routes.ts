@@ -16,6 +16,7 @@
 
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
+import type { CraftApprovalSignals } from "./approval-signals";
 import type { CraftConfig } from "./config";
 import { isBuildPacket } from "./events/packets";
 import { isKeepalive, isPromptResponse, isSandboxError } from "./events/types";
@@ -56,6 +57,8 @@ export type TurnRoutesDeps = {
   gateway: SandboxGateway;
   /** Resolves the Bot whose sandbox hosts a session (live attach routing). */
   botIdFor: (sessionId: string) => Promise<string | null>;
+  /** Approval announce/wake signals; the stream merges announces into SSE when gating is on. */
+  approvalSignals?: CraftApprovalSignals | null;
 };
 
 export function createTurnRoutes(
@@ -180,6 +183,12 @@ export function createTurnRoutes(
               session: attachedSession,
               botId,
               keepaliveSeconds: config.sseKeepaliveIntervalSeconds,
+              // onyx's announce merge: approval cards ride the same SSE stream. The
+              // drain is inert unless gated tools are configured.
+              announceDrain:
+                deps.approvalSignals && config.approvalGatedTools.length > 0
+                  ? () => deps.approvalSignals!.drainAnnouncements(sessionId)
+                  : null,
             });
             for await (const event of events) {
               if (!live) return;
