@@ -522,15 +522,16 @@ export function createPaymentService(deps: {
     if (!result.claimed) {
       if (result.alreadyKnown) {
         // This transaction's paid fact is held by another order: an anomaly about the data, and
-        // no migration here — the first claim stands.
-        const recorded = await recordAnomalyQuietly({
+        // no migration here — the first claim stands. The duplicate is already durably known, so
+        // callback acknowledgement does not depend on best-effort anomaly persistence here.
+        await recordAnomalyQuietly({
           orderId: order.id,
           code: "duplicate_paid",
           channelTransactionId: transactionId,
           amountCents: fact.amountCents,
           detail: "transaction already settled against another order",
         });
-        return recorded ? { kind: "duplicate" } : { kind: "retryable-failure" };
+        return { kind: "duplicate" };
       }
       // A stale CAS is not proof that this paid fact is already committed. Let a replay re-read
       // the order and establish either the winning fact or a durable duplicate.
