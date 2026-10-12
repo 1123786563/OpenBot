@@ -129,6 +129,12 @@ export type CreditWriter = {
     | { reserved: true; reservationId: string }
     | { reserved: false; availableCents: number }
   >;
+  /*
+   * Replay semantics: a replay of `idempotencyKey` answers the original reservation only
+   * while it is still `reserved`; a replay against a settled or released hold — or with a
+   * different customer or amount — throws `CreditReservationConflictError`, because a
+   * terminal hold carries no capacity and must never admit work.
+   */
 
   /**
    * Convert a hold into a charge. `actual` is the exact rational cost in scaled units; the
@@ -296,6 +302,14 @@ export function createCreditWriter(database: Database): CreditWriter {
           ) {
             throw new CreditReservationConflictError(
               "reserveCredits: the idempotency key belongs to a different reservation.",
+            );
+          }
+          if (existing.status !== "reserved") {
+            // A terminal hold carries no capacity: answering `reserved` would admit work
+            // the gate never priced and settle could never charge — the same refusal
+            // settle gives a released hold.
+            throw new CreditReservationConflictError(
+              `reserveCredits: the reservation for this idempotency key is ${existing.status}.`,
             );
           }
           return { reserved: true as const, reservationId: existing.id };

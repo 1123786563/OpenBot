@@ -1509,7 +1509,10 @@ function billingCreditPolicyConfig(
       );
       const maximumReservationUnits =
         inputMaximumCostUnits + outputMaximumCostUnits;
-      if (maximumReservationUnits > MAX_STORED_CREDIT_UNITS) {
+      if (
+        maximumReservationUnits === 0n ||
+        maximumReservationUnits > MAX_STORED_CREDIT_UNITS
+      ) {
         issues.push({
           key: `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
           reason: "out_of_range",
