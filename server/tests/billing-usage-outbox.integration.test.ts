@@ -126,6 +126,27 @@ test("delivery failures are target-specific and leave the target pending", async
   ]);
 });
 
+test("pending retries move behind older unattempted events instead of starving the backlog", async () => {
+  const retried = usageEvent(`${prefix}-retried-first`);
+  const unattempted = usageEvent(`${prefix}-unattempted-second`);
+  await outbox.record(retried);
+  await outbox.record(unattempted);
+
+  await database.execute(
+    sql`UPDATE usage_outbox SET created_at = now() - interval '2 minutes', updated_at = now() - interval '2 minutes' WHERE event_id = ${retried.eventId}`,
+  );
+  await database.execute(
+    sql`UPDATE usage_outbox SET created_at = now() - interval '1 minute', updated_at = now() - interval '1 minute' WHERE event_id = ${unattempted.eventId}`,
+  );
+  await outbox.recordDeliveryFailure(
+    retried.eventId,
+    "lago",
+    "provider_unavailable",
+  );
+
+  expect((await outbox.pending(1))[0]?.eventId).toBe(unattempted.eventId);
+});
+
 for (const target of ["lago", "credits"] as const) {
   test(`a late ${target} failure preserves delivered state and does not reopen completed usage`, async () => {
     const event = usageEvent(`${prefix}-late-${target}-failure`);

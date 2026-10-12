@@ -59,13 +59,13 @@ export const usageOutbox = pgTable(
     uniqueIndex("usage_outbox_transaction_id_unique_idx").on(
       table.transactionId,
     ),
-    index("usage_outbox_lago_pending_created_idx").on(
+    index("usage_outbox_lago_pending_updated_idx").on(
       table.lagoStatus,
-      table.createdAt,
+      table.updatedAt,
     ),
-    index("usage_outbox_credits_pending_created_idx").on(
+    index("usage_outbox_credits_pending_updated_idx").on(
       table.creditsStatus,
-      table.createdAt,
+      table.updatedAt,
     ),
   ],
 );

@@ -184,7 +184,7 @@ export function createUsageOutbox(database: Database): UsageOutbox {
             eq(usageOutbox.creditsStatus, "pending"),
           ),
         )
-        .orderBy(asc(usageOutbox.createdAt), asc(usageOutbox.eventId))
+        .orderBy(asc(usageOutbox.updatedAt), asc(usageOutbox.eventId))
         .limit(limit);
     },
 
