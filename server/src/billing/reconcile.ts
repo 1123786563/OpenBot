@@ -3,6 +3,7 @@ import type { Database } from "../db/client";
 import { billingSubscriptions } from "../db/schema/billing";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
+import { usageOutbox } from "../db/schema/usage-outbox";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 
 /**
@@ -56,9 +57,26 @@ export function createReconciler(
 ): {
   reconcile(): Promise<ReconcileReport>;
 } {
+  function usageFailureCode(
+    code: string | null,
+  ): string {
+    return code ?? "none";
+  }
+
+  function usageAgeSeconds(
+    now: number,
+    updatedAt: Date,
+  ): number {
+    return Math.max(0, Math.floor((now - updatedAt.getTime()) / 1000));
+  }
+
   return {
     async reconcile() {
       const findings: ReconcileFinding[] = [];
+      const usageDeliveryTargets = {
+        pending: { lago: 0, credits: 0 },
+        blocked: { lago: 0, credits: 0 },
+      };
 
       /*
        * ── Invariant 1, sides one and two: paid orders ↔ their paid facts. One query each
@@ -205,12 +223,67 @@ export function createReconciler(
         }
       }
 
+      /*
+       * ── Usage delivery backlog evidence: the outbox is the durable truth of what was
+       *    attempted, what is still pending retry, and what ended in manual-review blockade.
+       *    The reconciler reads it as evidence only: no target replay, no status updates, no
+       *    inference that anything but `delivered` succeeded.
+       */
+      const usageRows = await database
+        .select({
+          eventId: usageOutbox.eventId,
+          updatedAt: usageOutbox.updatedAt,
+          lagoStatus: usageOutbox.lagoStatus,
+          creditsStatus: usageOutbox.creditsStatus,
+          lagoLastErrorCode: usageOutbox.lagoLastErrorCode,
+          creditsLastErrorCode: usageOutbox.creditsLastErrorCode,
+        })
+        .from(usageOutbox);
+      const now = Date.now();
+      for (const row of usageRows) {
+        const targets = [
+          {
+            name: "lago" as const,
+            status: row.lagoStatus,
+            lastErrorCode: row.lagoLastErrorCode,
+          },
+          {
+            name: "credits" as const,
+            status: row.creditsStatus,
+            lastErrorCode: row.creditsLastErrorCode,
+          },
+        ];
+
+        for (const target of targets) {
+          if (target.status === "pending") {
+            usageDeliveryTargets.pending[target.name] += 1;
+          } else if (target.status === "blocked") {
+            usageDeliveryTargets.blocked[target.name] += 1;
+          } else {
+            continue;
+          }
+
+          const ageSeconds = usageAgeSeconds(now, row.updatedAt);
+          const failureCode = usageFailureCode(target.lastErrorCode);
+          findings.push({
+            category: "usage",
+            code:
+              target.status === "pending"
+                ? "usage_target_pending"
+                : "usage_target_blocked",
+            subject: row.eventId,
+            detail: `target=${target.name} state=${target.status} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
+          });
+        }
+      }
+
       return {
         ranAt: new Date().toISOString(),
         checked: {
           paidOrders: paidOrders.length,
           appliedOrders: appliedOrders.length,
           creditCustomers: customers.size,
+          usageDeliveryTargets,
         },
         findings,
       };

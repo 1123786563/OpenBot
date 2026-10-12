@@ -130,15 +130,20 @@ export type BillingEntitlements = {
  * here — the seam's vocabulary rule — so a report is greppable and a consumer can group it.
  */
 export type ReconcileFinding = {
-  /** The invariant's family: `payment` (the three-way) or `credits` (the identity). */
-  category: "payment" | "credits";
+  /**
+   * The invariant's family: `payment` (the three-way), `credits` (the identity), or `usage`
+   * (delivery backlog evidence).
+   */
+  category: "payment" | "credits" | "usage";
   /** The specific break, stable and greppable. */
   code:
     | "paid_without_fact"
     | "fact_transaction_mismatch"
     | "applied_without_subscription"
-    | "grants_ledger_divergence";
-  /** The row the finding is about: an order id, or a customer key. */
+    | "grants_ledger_divergence"
+    | "usage_target_pending"
+    | "usage_target_blocked";
+  /** The row the finding is about: an order id, a customer key, or a usage event id. */
   subject: string;
   /** The human sentence — numbers included, because the report is the evidence. */
   detail: string;
@@ -153,6 +158,10 @@ export type ReconcileReport = {
     paidOrders: number;
     appliedOrders: number;
     creditCustomers: number;
+    usageDeliveryTargets: {
+      pending: { lago: number; credits: number };
+      blocked: { lago: number; credits: number };
+    };
   };
   findings: readonly ReconcileFinding[];
 };
