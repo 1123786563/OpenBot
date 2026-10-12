@@ -23,6 +23,14 @@ const baseEnvironment = {
   MANAGED_AGENT_TOKEN: "managed-agent-token",
 };
 
+function unconfiguredPolicyIssues(config: ReturnType<typeof loadConfig>) {
+  const policy = config.billing?.creditPolicy;
+  if (!policy || policy.configured) {
+    throw new Error("expected an unconfigured billing credit policy");
+  }
+  return policy.issues;
+}
+
 describe("billing configuration", () => {
   test("no LAGO_* variables at all means no billing surface", () => {
     const config = loadConfig(baseEnvironment);
@@ -172,7 +180,7 @@ describe("billing configuration", () => {
       LAGO_API_URL: "https://api.getlago.com",
       LAGO_API_KEY: "provider-bearer-key",
     });
-    expect(config.billing).toEqual({
+    expect(config.billing).toMatchObject({
       apiUrl: "https://api.getlago.com",
       apiKey: "provider-bearer-key",
       webhookMode: "off",
@@ -181,6 +189,244 @@ describe("billing configuration", () => {
       planEntitlements: new Map(),
       planQuotas: new Map(),
       planCatalog: new Map(),
+    });
+    expect(config.billing?.creditPolicy).toEqual({
+      configured: false,
+      mode: "hard_cap",
+      issues: [
+        {
+          key: "BILLING_MODEL_CREDIT_RATES",
+          reason: "missing",
+        },
+        {
+          key: "BILLING_MODEL_MAX_RESERVATION_TOKENS",
+          reason: "missing",
+        },
+        {
+          key: "BILLING_CODE_RUN_CREDIT_RATE",
+          reason: "missing",
+        },
+        {
+          key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+          reason: "missing",
+        },
+      ],
+    });
+  });
+
+  test("a complete hard-cap credit policy parses exact rationals and reservation ceilings", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "1", denominator: "3" },
+          output: { numerator: "5", denominator: "4" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "7",
+          output: "2",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "3",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(config.billing?.creditPolicy).toEqual({
+      configured: true,
+      mode: "hard_cap",
+      models: new Map([
+        [
+          "openai/gpt-5.5",
+          {
+            input: {
+              maximumCostUnits: 3n,
+              maximumTokens: 7n,
+              rate: { numerator: 1n, denominator: 3n },
+            },
+            output: {
+              maximumCostUnits: 3n,
+              maximumTokens: 2n,
+              rate: { numerator: 5n, denominator: 4n },
+            },
+            maximumReservationUnits: 6n,
+          },
+        ],
+      ]),
+      codeRun: {
+        maximumReservationUnits: 4n,
+        maximumTokens: 5n,
+        rate: { numerator: 2n, denominator: 3n },
+      },
+    });
+  });
+
+  test("missing rate fields leave the hard-cap policy unconfigured and synthesize no default", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "1", denominator: "3" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "7",
+          output: "2",
+        },
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(config.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    const issues = unconfiguredPolicyIssues(config);
+    expect(issues).toHaveLength(2);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        {
+          key: "BILLING_MODEL_CREDIT_RATES.openai/gpt-5.5.output",
+          reason: "missing",
+        },
+        {
+          key: "BILLING_CODE_RUN_CREDIT_RATE",
+          reason: "missing",
+        },
+      ]),
+    );
+  });
+
+  test("missing maximum reservation bounds leave the hard-cap policy unconfigured", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "1", denominator: "3" },
+          output: { numerator: "5", denominator: "4" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "7",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "3",
+      }),
+    });
+    expect(config.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    const issues = unconfiguredPolicyIssues(config);
+    expect(issues).toHaveLength(2);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        {
+          key: "BILLING_MODEL_MAX_RESERVATION_TOKENS.openai/gpt-5.5.output",
+          reason: "missing",
+        },
+        {
+          key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+          reason: "missing",
+        },
+      ]),
+    );
+  });
+
+  test("zero denominators and negative values leave the hard-cap policy unconfigured", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "-1", denominator: "3" },
+          output: { numerator: "5", denominator: "0" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "-7",
+          output: "2",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "0",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "-5",
+    });
+    expect(config.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    const issues = unconfiguredPolicyIssues(config);
+    expect(issues).toHaveLength(5);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        {
+          key: "BILLING_MODEL_CREDIT_RATES.openai/gpt-5.5.input.numerator",
+          reason: "negative",
+        },
+        {
+          key: "BILLING_MODEL_CREDIT_RATES.openai/gpt-5.5.output.denominator",
+          reason: "zero_denominator",
+        },
+        {
+          key: "BILLING_MODEL_MAX_RESERVATION_TOKENS.openai/gpt-5.5.input",
+          reason: "negative",
+        },
+        {
+          key: "BILLING_CODE_RUN_CREDIT_RATE.denominator",
+          reason: "zero_denominator",
+        },
+        {
+          key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+          reason: "negative",
+        },
+      ]),
+    );
+  });
+
+  test("unsafe integer inputs leave the hard-cap policy unconfigured", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: `{"openai/gpt-5.5":{"input":{"numerator":9007199254740992,"denominator":3},"output":{"numerator":5,"denominator":4}}}`,
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "7",
+          output: "2",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "3",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(config.billing?.creditPolicy).toEqual({
+      configured: false,
+      mode: "hard_cap",
+      issues: [
+        {
+          key: "BILLING_MODEL_CREDIT_RATES.openai/gpt-5.5.input.numerator",
+          reason: "out_of_range",
+        },
+      ],
     });
   });
 
