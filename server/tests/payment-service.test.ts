@@ -1428,6 +1428,87 @@ describe("callback triage", () => {
     expect((await store.readOrder(order.id))?.status).toBe("paid");
   });
 
+  test("a plan with a longer catalog period keeps that fallback snapshot when Lago omits exact dates", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({
+      providers: [alipay],
+      store,
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 12 }],
+      ]),
+      lago: fakeLago({
+        async ensureSubscription() {
+          return { currentPeriodStart: null, currentPeriodEnd: null };
+        },
+      }),
+    });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    const settled = await store.readOrder(order.id);
+    expect(settled?.periodStart?.toISOString()).toBe(tick().toISOString());
+    expect(settled?.periodEnd?.toISOString()).toBe(addMonths(tick(), 12).toISOString());
+  });
+
+  test("activation replaces the fallback snapshot when Lago returns exact dates", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const exactStart = "2026-01-01T00:00:00.000Z";
+    const exactEnd = "2027-01-01T00:00:00.000Z";
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({
+      providers: [alipay],
+      store,
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 12 }],
+      ]),
+      lago: fakeLago({
+        async ensureSubscription() {
+          return {
+            currentPeriodStart: exactStart,
+            currentPeriodEnd: exactEnd,
+          };
+        },
+      }),
+    });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    const settled = await store.readOrder(order.id);
+    expect(settled?.periodStart?.toISOString()).toBe(exactStart);
+    expect(settled?.periodEnd?.toISOString()).toBe(exactEnd);
+  });
+
   test("an expired order outside the window records late_payment and stays expired", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({

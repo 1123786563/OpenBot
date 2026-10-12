@@ -1,6 +1,6 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import * as paymentCrypto from "../src/billing/payments/crypto";
 import { createPaymentStore } from "../src/billing/payments/store";
 import { createDatabase } from "../src/db/client";
@@ -229,6 +229,43 @@ test("only a paid transition writes paidAt, in the same CAS move", async () => {
   expect(await store.expireOrder(expired.id, expired.version)).toBe(true);
   const expiredRow = (await store.readOrder(expired.id)) as { paidAt?: Date | null } | null;
   expect(expiredRow?.paidAt).toBeNull();
+});
+
+test("the paid_at backfill updates old paid rows and leaves non-paid rows null", async () => {
+  const paidTerminalAt = new Date("2026-09-01T00:05:00.000Z");
+  const canceledTerminalAt = new Date("2026-09-02T00:05:00.000Z");
+  const paidId = `${prefix}-backfill-paid-${randomUUID().slice(0, 8)}`;
+  const canceledId = `${prefix}-backfill-canceled-${randomUUID().slice(0, 8)}`;
+
+  await database.insert(paymentOrders).values([
+    {
+      id: paidId,
+      ...orderInput(),
+      status: "paid",
+      terminalAt: paidTerminalAt,
+      paidAt: null,
+    },
+    {
+      id: canceledId,
+      ...orderInput(),
+      status: "canceled",
+      terminalAt: canceledTerminalAt,
+      paidAt: null,
+    },
+  ]);
+
+  await database.execute(sql`
+    UPDATE "payment_orders"
+    SET "paid_at" = "terminal_at"
+    WHERE "status" = 'paid' AND "paid_at" IS NULL
+  `);
+
+  const [paidRow, canceledRow] = await Promise.all([
+    store.readOrder(paidId),
+    store.readOrder(canceledId),
+  ]);
+  expect(paidRow?.paidAt?.toISOString()).toBe(paidTerminalAt.toISOString());
+  expect(canceledRow?.paidAt).toBeNull();
 });
 
 test("resolveActivationOwnership serializes overlapping paid orders to one entitlement owner", async () => {
