@@ -121,6 +121,7 @@ import {
   createUsageDelivery,
 } from "./billing/usage-delivery";
 import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
   loadAttachmentForTurn,
@@ -174,6 +175,7 @@ import {
   CreditGateError,
   type IdentifyActor,
   type IdentifyUser,
+  ModelUsageSettlementError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
@@ -361,13 +363,19 @@ function logUsageOutboxWriteFailure(
   source: "llm" | "code_run",
   eventId: string,
   error: unknown,
+  reservationId?: string,
+  precomputedCode?: string,
 ) {
+  // The error's NAME only: a database message can carry connection details, and the sweep
+  // probes pin that nothing of the sort reaches the logs.
   log.error(
     {
       type: "billing-usage-outbox-write-failed",
       source,
       eventId,
-      code: usageOutboxWriteFailureCode(error),
+      ...(reservationId ? { reservationId } : {}),
+      code: precomputedCode ?? usageOutboxWriteFailureCode(error),
+      ...(error instanceof Error ? { name: error.name } : {}),
     },
     "billing-usage-outbox-write-failed",
   );
@@ -3204,7 +3212,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
     try {
       reservation = await billing.creditWriter.reserveCredits({
         externalCustomerId: billing.externalCustomerKey,
-        idempotencyKey: `usage:${input.eventId}`,
+        idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
         maximumCents: Number(modelPolicy.maximumReservationUnits),
         expiresAt: new Date(
           input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
@@ -3216,7 +3224,37 @@ if (billing !== undefined && usageOutbox !== undefined) {
     if (!reservation.reserved) throw new CreditGateError();
 
     return {
+      /*
+       * The provider-bound contract, as it stands for the adapters this deployment actually
+       * invokes. The built-in instance path is the OpenAI-compatible chat model: it maps
+       * maxOutputTokens to max_tokens, which the chat-completions contract enforces, so the
+       * output cap is proven. Its input side offers neither an exact pre-call token count nor
+       * a configurable provider-enforced ceiling, so a billed call is refused before the
+       * provider — fail-closed, the same rule the code-run path applies until its sandbox
+       * enforces the budget. When a provable input bound exists (a provider count-tokens
+       * contract this adapter demonstrably honours), declare it here as `counted`.
+       */
+      bounds: {
+        input: {
+          enforced: "unsupported" as const,
+          reason:
+            "the OpenAI-compatible chat adapter offers no exact pre-call input token count and enforces no configurable input ceiling",
+        },
+        output: {
+          enforced: "provider_cap" as const,
+          maximumTokens: modelPolicy.output.maximumTokens,
+        },
+      },
       finish: async (usage) => {
+        /*
+         * The decisive boundary: a successful finish means the immutable usage fact is
+         * COMMITTED to the outbox (or an identical event already exists). Any failure —
+         * invalid or over-bound usage, or a rejected write — is logged with both stable ids
+         * and rethrown as a credential-free settlement error, so the stream the person sees
+         * fails rather than reporting a successful answer whose usage vanished. The hold
+         * stays `reserved`: chargeable work is never released by a failed write, and
+         * reconciliation is what investigates it.
+         */
         let charged: ReturnType<typeof calculateExactModelUsageCharge>;
         try {
           charged = calculateExactModelUsageCharge(modelPolicy, {
@@ -3224,31 +3262,24 @@ if (billing !== undefined && usageOutbox !== undefined) {
             outputTokens: usage.outputTokens,
           });
         } catch (error) {
-          if (
-            error instanceof UsageChargeError &&
-            error.code === "usage_invalid_tokens"
-          ) {
-            logUsageOutboxWriteFailure("llm", input.eventId, error);
-            try {
-              await billing.creditWriter.releaseReservation(
-                reservation.reservationId,
-                "no_usage",
-              );
-            } catch (releaseError) {
-              logReservationReleaseFailure({
-                source: "llm",
-                eventId: input.eventId,
-                reservationId: reservation.reservationId,
-                reason: "no_usage",
-                error: releaseError,
-              });
-            }
-            return;
-          }
-          logUsageOutboxWriteFailure("llm", input.eventId, error);
-          return;
+          // Pricing refused the settlement — a distinct stage from the outbox write, so it
+          // gets its own event and never the write-failure code a foreign error would
+          // otherwise fall back to. The hold is retained either way.
+          const code =
+            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
+          log.error(
+            {
+              type: "billing-usage-charge-refused",
+              source: "llm",
+              eventId: input.eventId,
+              reservationId: reservation.reservationId,
+              ...(error instanceof Error ? { name: error.name } : {}),
+              code,
+            },
+            "billing-usage-charge-refused",
+          );
+          throw new ModelUsageSettlementError(code);
         }
-
         try {
           await usageOutbox.record({
             eventId: input.eventId,
@@ -3265,7 +3296,15 @@ if (billing !== undefined && usageOutbox !== undefined) {
             actualCostDenominator: charged.actual.denominator.toString(),
           });
         } catch (error) {
-          logUsageOutboxWriteFailure("llm", input.eventId, error);
+          const failureCode = usageOutboxWriteFailureCode(error);
+          logUsageOutboxWriteFailure(
+            "llm",
+            input.eventId,
+            error,
+            reservation.reservationId,
+            failureCode,
+          );
+          throw new ModelUsageSettlementError(failureCode);
         }
       },
       fail: async (failure) => {

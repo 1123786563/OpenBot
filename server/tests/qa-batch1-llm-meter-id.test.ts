@@ -20,27 +20,33 @@ const SOURCE = readFileSync(
 
 describe("probe f: the meter's outbox write (static contract, index.ts)", () => {
   test("the finish writes usage facts to the outbox, not directly to Lago or credits", () => {
-    // b616ccaa made the write awaited inside a try: a durable-record failure is logged and
-    // surfaced, never silently swallowed — the fire-and-forget `void` shape would hide it.
+    // b616ccaa made the write awaited inside a try; the remediation plan kept the await and
+    // made the failure decisive — logged with both stable ids, then rethrown (see below).
     expect(SOURCE).toMatch(/await usageOutbox\.record\(\{/);
     expect(SOURCE).not.toMatch(/void billingService\s*\n?\s*\.recordUsage/);
     expect(SOURCE).not.toMatch(/void billing\.creditWriter\s*\n?\s*\.consumeCredits/);
   });
 
-  test("an unusable finish (missing or negative tokens) still writes nothing and releases the reservation", () => {
-    // b616ccaa replaced the old `input === 0 && output === 0` meter short-circuit with the
-    // reservation-first gate: an invalid token report fails the charge, releases the held
-    // reservation as no_usage, and never reaches the outbox.
-    expect(SOURCE).toContain('error.code === "usage_invalid_tokens"');
-    expect(SOURCE).toContain(
-      'releaseReservation(\n                reservation.reservationId,\n                "no_usage",',
+  test("an unusable finish writes nothing and KEEPS the reservation for reconciliation", () => {
+    // The reservation-first contract after the remediation: an invalid or over-bound usage
+    // report is a distinct settlement failure. Nothing is written, the hold is never
+    // released as no_usage, and the failure is thrown so the run cannot report success.
+    expect(SOURCE).toMatch(/logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/);
+    expect(SOURCE).toMatch(/throw new ModelUsageSettlementError\(/);
+    expect(SOURCE).not.toMatch(
+      /releaseReservation\(\s*\n\s*reservation\.reservationId,\s*\n\s*"no_usage",/,
     );
   });
 
-  test("the report stays non-fatal: a metering miss is logged, never thrown into the run", () => {
+  test("a failed durable write fails the run instead of vanishing into a log line", () => {
     expect(SOURCE).toMatch(/await usageOutbox\.record\(/);
-    // The catch logs through the runtime's established logger path instead of propagating.
-    expect(SOURCE).toMatch(/logUsageOutboxWriteFailure\("llm", input\.eventId, error\)/);
+    // The catch logs through the runtime's established logger path AND propagates: a
+    // completed billed stream may never be reported as successful when its finish usage
+    // fact failed to persist.
+    expect(SOURCE).toMatch(
+      /logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/,
+    );
+    expect(SOURCE).toMatch(/usageOutboxWriteFailureCode\(error\)/);
   });
 });
 

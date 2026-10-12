@@ -92,6 +92,40 @@ function memoryOutbox(ids: string[]) {
 }
 
 describe("createUsageDelivery", () => {
+  test("a record() rejection leaves the worker nothing to deliver", async () => {
+    // The finish boundary: when the durable write fails there is no committed fact, so
+    // neither Lago nor the credit ledger may run for that event.
+    const calls: string[] = [];
+    const outbox: UsageOutbox = {
+      async record() {
+        throw new Error("usage-outbox down");
+      },
+      async pending() {
+        return [];
+      },
+      async markLagoDelivered() {},
+      async markCreditsDelivered() {},
+      async recordDeliveryFailure() {},
+      async blockDelivery() {},
+    };
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        calls.push("lago");
+      },
+      chargeCredits: async () => {
+        calls.push("credits");
+      },
+      log: () => {},
+    });
+    expect(await delivery.runBatch(10)).toEqual({
+      examined: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    expect(calls).toEqual([]);
+  });
+
   test("retries only the failed target and never repeats delivered effects", async () => {
     const { outbox, failures, rows } = memoryOutbox(["e1"]);
     let lagoCalls = 0;

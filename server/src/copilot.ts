@@ -377,23 +377,11 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
  * usage on the floor, which is exactly right for a deployment that meters nowhere.
  */
 let usageMeter:
-  | ((usage: {
-      eventId: string;
-      occurredAt: Date;
-      inputTokens: number | undefined;
-      outputTokens: number | undefined;
-    }) => void)
+  | ((usage: ModelUsageReport) => void | Promise<void>)
   | undefined;
 
 export function setModelUsageMeter(
-  meter:
-    | ((usage: {
-        eventId: string;
-        occurredAt: Date;
-        inputTokens: number | undefined;
-        outputTokens: number | undefined;
-      }) => void)
-    | undefined,
+  meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
 ) {
   usageMeter = meter;
 }
@@ -401,21 +389,95 @@ export function setModelUsageMeter(
 export type ModelUsageFailureReason =
   | "provider_error"
   | "stream_error"
-  | "no_usage";
+  | "no_usage"
+  | "cancelled"
+  | "bound_refused";
+
+/** One billed call's finished usage, the shape the meter and the lifecycle finish share. */
+export type ModelUsageReport = {
+  eventId: string;
+  occurredAt: Date;
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+};
+
+/**
+ * How the input side of one billed call is provably bounded BEFORE the provider is called.
+ *
+ * A reservation is not a provider limit: admission needs a proof that billable input cannot
+ * exceed the configured maximum. `counted` is an exact pre-call token count of the effective
+ * provider request; `unsupported` names the capability this deployment cannot prove, and a
+ * call that carries it is refused rather than approximated — a character count or a wrong
+ * tokenizer is not an admission authority.
+ */
+export type ModelUsageInputBound =
+  | {
+      enforced: "counted";
+      maximumTokens: bigint;
+      countInputTokens: (params: unknown) => number | Promise<number>;
+    }
+  | { enforced: "unsupported"; reason: string };
+
+/** The output side: the cap this wrapper writes into the call and the provider enforces. */
+export type ModelUsageOutputBound =
+  | { enforced: "provider_cap"; maximumTokens: bigint }
+  | { enforced: "unsupported"; reason: string };
+
+/**
+ * The provider-bound contract every admitted billed call must satisfy. The gate supplies the
+ * exact limits enforced on `inner.doStream` or the call is refused before it; the same limits
+ * price the finished usage (see `calculateExactModelUsageCharge`).
+ */
+export type ModelUsageProviderBounds = {
+  input: ModelUsageInputBound;
+  output: ModelUsageOutputBound;
+};
 
 export type ModelUsageGateLifecycle = {
-  finish?: (usage: {
-    eventId: string;
-    occurredAt: Date;
-    inputTokens: number | undefined;
-    outputTokens: number | undefined;
-  }) => Promise<void> | void;
+  bounds?: ModelUsageProviderBounds;
+  finish?: (usage: ModelUsageReport) => Promise<void> | void;
   fail?: (input: {
     eventId: string;
     occurredAt: Date;
     reason: ModelUsageFailureReason;
   }) => Promise<void> | void;
 };
+
+export type ModelUsageRefusalCode =
+  | "model_bounds_missing"
+  | "input_bound_unsupported"
+  | "input_over_limit"
+  | "output_bound_unsupported";
+
+/**
+ * A billed call refused before the provider saw anything, because its configured reservation
+ * bounds cannot be proven on the actual provider request. Distinct from `CreditGateError`
+ * (the person's balance is fine; this deployment's model wiring is the limit). Release is
+ * ATTEMPTED before throwing; if the release itself fails, the hold stays visible for
+ * operator reconciliation rather than being silently dropped.
+ */
+export class ModelUsageRefusalError extends Error {
+  override name = "ModelUsageRefusalError";
+  constructor(readonly code: ModelUsageRefusalCode) {
+    super(
+      code === "input_over_limit"
+        ? `Model call refused (${code}): the request exceeds this deployment's configured input token limit for this model. Shorten the request and try again.`
+        : `Model call refused (${code}): this deployment cannot prove the configured billing bounds on the provider request. Ask an administrator to configure a provable bound for this model.`,
+    );
+  }
+}
+
+/**
+ * A billed stream that completed at the provider but cannot be settled honestly: malformed
+ * usage, usage above the advertised bound, or a usage fact that failed to persist. The
+ * reservation is NOT released — the hold stays visible for operator reconciliation.
+ */
+export class ModelUsageSettlementError extends Error {
+  override name = "ModelUsageSettlementError";
+  constructor(readonly code: string) {
+    super(`Model usage settlement failed (${code}).`);
+  }
+}
 
 type ModelUsageGateInput = {
   eventId: string;
@@ -435,12 +497,12 @@ type ModelUsageGateInput = {
  * silently given free tokens.
  */
 let modelUsageGate:
-  | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle | undefined>)
+  | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle>)
   | undefined;
 
 export function setModelUsageGate(
   gate:
-    | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle | undefined>)
+    | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle>)
     | undefined,
 ) {
   modelUsageGate = gate;
@@ -462,10 +524,30 @@ export class CreditGateError extends Error {
 }
 
 /**
- * A model instance carrying the usage meter, hand-rolled to the same shape AI SDK's own
- * `wrapLanguageModel` produces: `doStream` delegates to the wrapped model, the result's
- * ReadableStream is piped through a transform so the `finish` part's token counts reach the meter,
- * and every other property (provider, modelId, supportedUrls) passes through untouched.
+ * A model this billed deployment cannot meter in its current form: the runtime resolves
+ * string-form models itself, where the admission wrapper — and with it any provable bound —
+ * cannot reach. Deliberately NOT `CreditGateError`: the balance is not the problem, the
+ * deployment's model wiring is, and telling an administrator to buy credits would be the
+ * wrong instruction.
+ */
+export class UnmeterableModelError extends Error {
+  override name = "UnmeterableModelError";
+  readonly code = "model_unmeterable";
+  constructor() {
+    super(
+      "This model cannot be metered in its current form. Ask an administrator to configure a gateway base URL (OPENAI_BASE_URL) or a plan model so billing admission can prove its bounds.",
+    );
+  }
+}
+
+/**
+ * A model instance carrying the billing admission and settlement, hand-rolled to the same
+ * shape AI SDK's own `wrapLanguageModel` produces: `doStream` delegates to the wrapped model
+ * after the gate's bounds are proven (refusing before the provider otherwise), and the
+ * result's ReadableStream is re-emitted from a hand-written pull loop so settlement is
+ * DECISIVE — the finish chunk is forwarded only after the lifecycle's `finish` (the durable
+ * usage fact) commits, and a failure path releases or retains the reservation by contract.
+ * Every other property (provider, modelId, supportedUrls) passes through untouched.
  * Structural on purpose — the middleware types live in `@ai-sdk/provider`, which this workspace
  * does not depend on directly; the runtime carries them transitively, and pinning that into
  * `package.json` to record two field names is not the trade.
@@ -502,12 +584,103 @@ function meteredModel<T>(model: T): T {
           });
         } catch (error) {
           if (error instanceof CreditGateError) throw error;
+          // The gate's own failure reason stays out of the person-facing sentinel; the
+          // name alone is logged (a message could carry connection details from a store).
+          log.error(
+            {
+              type: "billing-model-gate-failed",
+              eventId,
+              name: (error as Error | null | undefined)?.name,
+            },
+            "billing-model-gate-failed",
+          );
           throw new CreditGateError();
         }
       }
+      /*
+       * The bound contract: admission reserved credits, but a reservation is not a provider
+       * limit. Before the provider is called at all, the lifecycle must prove HOW the
+       * configured input and output maxima are enforced on this invocation — and every
+       * refusal here releases the reservation admission just created, because no chargeable
+       * work has happened yet.
+       */
+      const providerBounds = lifecycle?.bounds;
+      const refuse = async (code: ModelUsageRefusalCode): Promise<never> => {
+        log.error(
+          { type: "billing-model-admission-refused", eventId, code },
+          "billing-model-admission-refused",
+        );
+        try {
+          await lifecycle?.fail?.({
+            eventId,
+            occurredAt,
+            reason: "bound_refused",
+          });
+        } catch {
+          // Admission cleanup is contained: the refusal is the product failure.
+        }
+        throw new ModelUsageRefusalError(code);
+      };
+      let request = params;
+      if (modelUsageGate) {
+        if (!providerBounds) return refuse("model_bounds_missing");
+        if (providerBounds.input.enforced === "unsupported")
+          return refuse("input_bound_unsupported");
+        if (providerBounds.output.enforced === "unsupported")
+          return refuse("output_bound_unsupported");
+        let counted: number;
+        try {
+          counted = await providerBounds.input.countInputTokens(params);
+        } catch (error) {
+          // A count that THREW is a failed probe (dependency outage), not a missing
+          // capability; the name alone is logged so the two stay distinguishable.
+          log.error(
+            {
+              type: "billing-model-input-count-failed",
+              eventId,
+              name: (error as Error | null | undefined)?.name,
+            },
+            "billing-model-input-count-failed",
+          );
+          return refuse("input_bound_unsupported");
+        }
+        if (!Number.isSafeInteger(counted) || counted < 0)
+          return refuse("input_bound_unsupported");
+        if (BigInt(counted) > providerBounds.input.maximumTokens)
+          return refuse("input_over_limit");
+        /*
+         * The cap comparison stays in the bigint domain: the settlement boundary later
+         * compares the reported usage against the same bigint maximum, and a Number()
+         * conversion of an out-of-safe-range ceiling could round — admitting an output the
+         * settlement then rejects, or writing the provider a cap that is not the configured
+         * one. A maximum that cannot survive the Number() write below unchanged is refused
+         * outright. The caller's own request is honoured only when it is a whole, positive,
+         * in-bound number — anything else (including 0, which providers reject or ignore)
+         * gets the configured cap rather than a passthrough the provider contract never
+         * promised.
+         */
+        const cap = providerBounds.output.maximumTokens;
+        if (cap > BigInt(Number.MAX_SAFE_INTEGER)) {
+          return refuse("output_bound_unsupported");
+        }
+        const requested = (
+          params as { maxOutputTokens?: unknown }
+        ).maxOutputTokens;
+        const effective =
+          typeof requested === "number" &&
+          Number.isSafeInteger(requested) &&
+          requested > 0 &&
+          BigInt(requested) <= cap
+            ? BigInt(requested)
+            : cap;
+        request = {
+          ...(params as Record<string, unknown>),
+          maxOutputTokens: Number(effective),
+        };
+      }
       let result: Awaited<ReturnType<typeof inner.doStream>>;
       try {
-        result = await inner.doStream(params);
+        result = await inner.doStream(request);
       } catch (error) {
         try {
           await lifecycle?.fail?.({
@@ -523,45 +696,33 @@ function meteredModel<T>(model: T): T {
 
       const reader = result.stream.getReader();
       let settled = false;
-      const settleFinish = async (
-        usage: {
-          inputTokens: number;
-          outputTokens: number;
-        } | null,
-      ) => {
+      const settleFinish = async (usage: {
+        inputTokens: number;
+        outputTokens: number;
+      }) => {
         if (settled) return;
         settled = true;
-        if (usage === null) {
-          try {
-            await lifecycle?.fail?.({
-              eventId,
-              occurredAt,
-              reason: "no_usage",
-            });
-          } catch {
-            // Same containment rule as the finish path.
-          }
-          return;
-        }
+        /*
+         * The decisive boundary: `finish` resolves only after the immutable usage fact has
+         * committed (or an identical event already exists). A rejection is NOT contained
+         * here — it propagates to the pull below, which errors the stream instead of
+         * reporting a successful answer whose usage was never durably recorded.
+         */
+        await lifecycle?.finish?.({
+          eventId,
+          occurredAt,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        });
         try {
-          usageMeter?.({
+          await usageMeter?.({
             eventId,
             occurredAt,
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
           });
         } catch {
-          // A meter that throws must not take the run's last chunk down with it.
-        }
-        try {
-          await lifecycle?.finish?.({
-            eventId,
-            occurredAt,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-          });
-        } catch {
-          // The lifecycle owner logs and reconciles its own durable-write failures.
+          // A meter that throws (or rejects) must not take the run's last chunk down with it.
         }
       };
       const settleFail = async (reason: ModelUsageFailureReason) => {
@@ -574,7 +735,7 @@ function meteredModel<T>(model: T): T {
             reason,
           });
         } catch {
-          // Same containment rule as the finish path.
+          // Release failures stay contained: the hold's own expiry is the backstop.
         }
       };
 
@@ -598,6 +759,23 @@ function meteredModel<T>(model: T): T {
           }
 
           const part = chunk.value;
+          /**
+           * The one settlement-failure exit: mark settled, log by eventId, tear the
+           * upstream down, error the stream. Cancel — not just `releaseLock` — so the
+           * provider's HTTP body is torn down instead of holding its connection open.
+           */
+          const failSettlement = (
+            logType: string,
+            error: Error,
+            detail?: Record<string, unknown>,
+          ) => {
+            settled = true;
+            log.error({ type: logType, eventId, ...detail }, logType);
+            reader.cancel("settlement_failed").catch(() => {
+              // The upstream is already gone; nothing to recover.
+            });
+            controller.error(error);
+          };
           if (part?.type === "finish" && !settled) {
             const usage = part.usage as
               | {
@@ -614,25 +792,86 @@ function meteredModel<T>(model: T): T {
               outputTokens === undefined ||
               (Number.isSafeInteger(outputTokens) && outputTokens >= 0);
 
+            /*
+             * Malformed or over-bound usage is a DISTINCT settlement failure: no charge is
+             * invented, no successful finish is emitted, and — unlike the cleanup paths
+             * below — the reservation is NOT released. The provider already produced the
+             * work; the hold stays visible for operator reconciliation.
+             */
+            const billedInput = inputTokens ?? 0;
+            const billedOutput = outputTokens ?? 0;
             if (!validInput || !validOutput) {
-              await settleFail("stream_error");
-            } else if ((inputTokens ?? 0) > 0 || (outputTokens ?? 0) > 0) {
-              await settleFinish({
-                inputTokens: inputTokens ?? 0,
-                outputTokens: outputTokens ?? 0,
-              });
+              failSettlement(
+                "billing-model-usage-invalid",
+                new ModelUsageSettlementError("usage_invalid"),
+              );
+              return;
+            }
+            const inputBound = providerBounds?.input;
+            const outputBound = providerBounds?.output;
+            const overBound =
+              (inputBound?.enforced === "counted" &&
+                BigInt(billedInput) > inputBound.maximumTokens) ||
+              (outputBound?.enforced === "provider_cap" &&
+                BigInt(billedOutput) > outputBound.maximumTokens);
+            if (overBound) {
+              failSettlement(
+                "billing-model-usage-over-bound",
+                new ModelUsageSettlementError("usage_over_bound"),
+                { inputTokens: billedInput, outputTokens: billedOutput },
+              );
+              return;
+            }
+
+            if (billedInput > 0 || billedOutput > 0) {
+              try {
+                await settleFinish({
+                  inputTokens: billedInput,
+                  outputTokens: billedOutput,
+                });
+              } catch (error) {
+                // A stable code when the rejection carries one. Only the settlement error
+                // itself crosses into the person-visible stream: a gate implementation's
+                // raw failure (a store error message can carry connection details) is
+                // wrapped into the credential-free shape right here at the boundary.
+                const code =
+                  typeof (error as { code?: unknown })?.code === "string"
+                    ? (error as { code: string }).code
+                    : undefined;
+                failSettlement(
+                  "billing-model-finish-failed",
+                  error instanceof ModelUsageSettlementError
+                    ? error
+                    : new ModelUsageSettlementError(
+                        code ?? "usage_persistence_failed",
+                      ),
+                  code ? { code } : undefined,
+                );
+                return;
+              }
             } else {
               await settleFail("no_usage");
             }
           }
 
-          controller.enqueue(part);
+          try {
+            controller.enqueue(part);
+          } catch {
+            // Enqueue throws for any closed/errored state (consumer cancellation included);
+            // keep the dropped chunk diagnosable rather than silently discarded.
+            log.debug(
+              { type: "billing-model-chunk-dropped", eventId },
+              "billing-model-chunk-dropped",
+            );
+          }
         },
         async cancel(reason) {
+          // Claim the settled flag BEFORE tearing the upstream down: a pull still in
+          // flight would otherwise win the race and record this cancellation as no_usage.
+          await settleFail("cancelled");
           try {
             await reader.cancel(reason);
           } finally {
-            await settleFail("stream_error");
             reader.releaseLock();
           }
         },
@@ -735,7 +974,9 @@ export function builtInAgentConfiguration(
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
       factory: async function* () {
-        throw new CreditGateError();
+        // Fail-closed: string-form models are resolved inside the runtime, where the
+        // admission wrapper — and any provable bound — cannot reach them.
+        throw new UnmeterableModelError();
       },
     };
   }
