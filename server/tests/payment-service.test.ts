@@ -231,6 +231,15 @@ function memoryStore(): PaymentStore {
       paidFacts.add(event.channelTransactionId);
       return true;
     },
+    async readPaidOrderByTransaction(channelTransactionId) {
+      return (
+        [...orders.values()].find(
+          (order) =>
+            order.status === "paid" &&
+            order.channelTransactionId === channelTransactionId,
+        ) ?? null
+      );
+    },
     async recordActivation(id, activationState) {
       const order = orders.get(id);
       if (order) orders.set(id, { ...order, activationState });
@@ -254,24 +263,50 @@ function memoryStore(): PaymentStore {
             order.periodEnd !== null &&
             order.periodStart.getTime() < current.periodEnd.getTime() &&
             order.periodEnd.getTime() > current.periodStart.getTime(),
-        )
+        );
+      const claimed = overlapping
+        .filter((order) => order.activationState !== "pending")
         .sort((a, b) => {
-          const byStart =
-            (a.periodStart?.getTime() ?? 0) - (b.periodStart?.getTime() ?? 0);
-          if (byStart !== 0) return byStart;
+          const byApplied =
+            Number(b.activationState === "applied") -
+            Number(a.activationState === "applied");
+          if (byApplied !== 0) return byApplied;
           const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
           if (byCreated !== 0) return byCreated;
           return a.id.localeCompare(b.id);
-        });
-      const owner = overlapping[0];
-      if (!owner) return { outcome: "unknown" as const };
-      if (owner.id === current.id) {
+        })[0];
+      if (claimed) {
+        if (claimed.id === current.id) {
+          return { outcome: "owner" as const, order: claimed };
+        }
+        return {
+          outcome: "duplicate" as const,
+          order: current,
+          ownerOrder: claimed,
+        };
+      }
+      const winner = [...overlapping].sort((a, b) => {
+        const byStart =
+          (a.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+          (b.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER);
+        if (byStart !== 0) return byStart;
+        const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+        if (byCreated !== 0) return byCreated;
+        return a.id.localeCompare(b.id);
+      })[0];
+      if (!winner) return { outcome: "unknown" as const };
+      if (winner.id === current.id) {
+        if (current.activationState === "pending") {
+          const claimedOwner = { ...current, activationState: "failed" as const };
+          orders.set(current.id, claimedOwner);
+          return { outcome: "owner" as const, order: claimedOwner };
+        }
         return { outcome: "owner" as const, order: current };
       }
       return {
         outcome: "duplicate" as const,
         order: current,
-        ownerOrder: owner,
+        ownerOrder: winner,
       };
     },
     async listExpiredPendingOrders(at) {
@@ -804,6 +839,68 @@ describe("callback triage", () => {
     expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
       kind: "success",
     });
+  });
+
+  test("an already-known duplicate records the settled order id and transaction id in its evidence", async () => {
+    const store = memoryStore();
+    const { order: first } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: first.id,
+      expectedVersion: first.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-first",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+    const { order: second } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const wechat = fakeProvider("wechat", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: second.id,
+          state: "paid",
+          channelTransactionId: "tx-first",
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({
+      providers: [wechat, fakeProvider("alipay")],
+      store,
+    });
+
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    expect(
+      store.anomalies.find(
+        (anomaly) =>
+          anomaly.orderId === second.id && anomaly.code === "duplicate_paid",
+      )?.detail,
+    ).toContain(first.id);
+    expect(
+      store.anomalies.find(
+        (anomaly) =>
+          anomaly.orderId === second.id && anomaly.code === "duplicate_paid",
+      )?.detail,
+    ).toContain("tx-first");
   });
 
   test("a committed cross-order duplicate retries missing anomaly evidence on replay", async () => {
@@ -1723,7 +1820,7 @@ describe("activation gate", () => {
     expect(invalidated).toBe(1);
   });
 
-  test("an unreachable provider keeps activation pending for the next pass", async () => {
+  test("an unreachable provider keeps the claimed owner failed for the next pass", async () => {
     const store = memoryStore();
     const { order, alipay } = await pendingWithPaidDelivery(store);
     const lago = fakeLago({
@@ -1734,7 +1831,7 @@ describe("activation gate", () => {
     const { service } = buildService({ store, lago, providers: [alipay] });
     await service.handleCallback("alipay", new Headers(), "x");
     expect((await store.readOrder(order.id))?.status).toBe("paid");
-    expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+    expect((await store.readOrder(order.id))?.activationState).toBe("failed");
   });
 
   test("a rule-refused (failed) activation is retried by the sweep until the rule changes (P1-4)", async () => {
@@ -2041,7 +2138,8 @@ describe("the plan allowance payout", () => {
         },
       }),
     });
-    // First pass: the grantor is unreachable-looking — grant THROWS, activation stays pending.
+    // First pass: the grantor is unreachable-looking — grant THROWS, but the claimed owner
+    // remains failed so no overlapping duplicate can take the entitlement while the sweep retries.
     const failing: PlanCreditGrantor = {
       ...grantor,
       grantPlanCredits: async () => {
@@ -2050,7 +2148,7 @@ describe("the plan allowance payout", () => {
     };
     const first = buildService({ store, providers: [alipay], grantor: failing });
     await first.service.handleCallback("alipay", new Headers(), "x");
-    expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+    expect((await store.readOrder(order.id))?.activationState).toBe("failed");
 
     // The sweep retries with a healthy grantor: exactly one payout lands.
     const second = buildService({ store, providers: [alipay], grantor });

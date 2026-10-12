@@ -569,12 +569,17 @@ export function createPaymentService(deps: {
         // This transaction's paid fact is held by another order: an anomaly about the data, and
         // no migration here — the first claim stands. The duplicate is already durably known, so
         // callback acknowledgement does not depend on best-effort anomaly persistence here.
+        const owner = await deps.store
+          .readPaidOrderByTransaction(transactionId)
+          .catch(() => null);
         await recordAnomalyQuietly({
           orderId: order.id,
           code: "duplicate_paid",
           channelTransactionId: transactionId,
           amountCents: fact.amountCents,
-          detail: "transaction already settled against another order",
+          detail: owner
+            ? `transaction ${transactionId} already settled on ${owner.id} via ${owner.channelTransactionId ?? transactionId}`
+            : `transaction ${transactionId} already settled against another order`,
         });
         return { kind: "duplicate" };
       }
