@@ -1,11 +1,13 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, like } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { createReconciler } from "../src/billing/reconcile";
+import { createUsageOutbox } from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
 import { billingCustomers, billingSubscriptions } from "../src/db/schema/billing";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
+import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -20,6 +22,7 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * ledger.applied disagreeing).
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+const outbox = createUsageOutbox(database);
 const prefix = `rct-${randomUUID().slice(0, 8)}`;
 // This test deployment's own customer key: the projection side of the three-way scopes to
 // it, exactly as the production assembly scopes to the deployment's key.
@@ -30,6 +33,9 @@ const mine = <T extends { subject: string }>(findings: readonly T[]) =>
   findings.filter((finding) => finding.subject.startsWith(prefix));
 
 afterAll(async () => {
+  await database
+    .delete(usageOutbox)
+    .where(like(usageOutbox.eventId, `${prefix}%`));
   await database
     .delete(paymentEvents)
     .where(like(paymentEvents.orderId, `${prefix}%`));
@@ -50,6 +56,29 @@ afterAll(async () => {
     .where(eq(billingCustomers.externalId, prefix));
   await database.$client.close();
 });
+
+afterEach(async () => {
+  await database
+    .delete(usageOutbox)
+    .where(like(usageOutbox.eventId, `${prefix}%`));
+});
+
+function usageEvent(eventId: string) {
+  return {
+    eventId,
+    source: "llm" as const,
+    externalCustomerId: `${prefix}-customer`,
+    transactionId: `${eventId}-transaction`,
+    inputTokens: 120,
+    outputTokens: 45,
+    model: "gpt-4.1",
+    client: "web",
+    occurredAt: new Date("2026-10-11T10:00:00.000Z"),
+    reservationId: `res-${eventId}`,
+    actualCostNumerator: "33",
+    actualCostDenominator: "2",
+  };
+}
 
 /** One settled-and-activated order, its fact, its grant/ledger pair, and a live projection row. */
 async function agreeingWorld(): Promise<string> {
@@ -250,5 +279,107 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(finding?.category).toBe("credits");
     expect(finding?.detail).toContain("600");
     expect(finding?.detail).toContain("1000");
+  });
+
+  test("a pending usage target is reported by usage event id with target, age, and stable failure code", async () => {
+    const event = usageEvent(`${prefix}-usage-pending`);
+    await outbox.record(event);
+    await outbox.markLagoDelivered(event.eventId);
+    await outbox.recordDeliveryFailure(
+      event.eventId,
+      "credits",
+      "provider_unavailable",
+    );
+    await database.execute(
+      sql`UPDATE usage_outbox SET updated_at = now() - interval '1 hour' WHERE event_id = ${event.eventId}`,
+    );
+
+    const [before] = await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId));
+
+    const report = await reconciler.reconcile();
+    expect(report.checked.usageDeliveryTargets.pending).toEqual({
+      lago: 0,
+      credits: 1,
+    });
+    expect(report.checked.usageDeliveryTargets.blocked).toEqual({
+      lago: 0,
+      credits: 0,
+    });
+
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "usage_target_pending" && item.subject === event.eventId,
+    );
+    expect(finding).toMatchObject({
+      category: "usage",
+      code: "usage_target_pending",
+      subject: event.eventId,
+    });
+    expect(finding?.detail).toContain("target=credits");
+    expect(finding?.detail).toContain("attempt_age_seconds=");
+    expect(finding?.detail).toContain("last_failure_code=provider_unavailable");
+
+    const [after] = await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId));
+    expect(after).toEqual(before);
+  });
+
+  test("a blocked usage target remains distinct manual-review evidence and is not counted as pending", async () => {
+    const event = usageEvent(`${prefix}-usage-blocked`);
+    await outbox.record(event);
+    await outbox.markLagoDelivered(event.eventId);
+    await outbox.blockDelivery(
+      event.eventId,
+      "credits",
+      "missing_reservation",
+    );
+    await database.execute(
+      sql`UPDATE usage_outbox SET updated_at = now() - interval '2 hours' WHERE event_id = ${event.eventId}`,
+    );
+
+    const [before] = await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId));
+
+    const report = await reconciler.reconcile();
+    expect(report.checked.usageDeliveryTargets.pending).toEqual({
+      lago: 0,
+      credits: 0,
+    });
+    expect(report.checked.usageDeliveryTargets.blocked).toEqual({
+      lago: 0,
+      credits: 1,
+    });
+
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "usage_target_blocked" && item.subject === event.eventId,
+    );
+    expect(finding).toMatchObject({
+      category: "usage",
+      code: "usage_target_blocked",
+      subject: event.eventId,
+    });
+    expect(finding?.detail).toContain("target=credits");
+    expect(finding?.detail).toContain("attempt_age_seconds=");
+    expect(finding?.detail).toContain("last_failure_code=missing_reservation");
+    expect(
+      report.findings.some(
+        (item) =>
+          item.subject === event.eventId && item.code === "usage_target_pending",
+      ),
+    ).toBe(false);
+
+    const [after] = await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId));
+    expect(after).toEqual(before);
   });
 });
