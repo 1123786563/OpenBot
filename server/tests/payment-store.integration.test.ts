@@ -495,3 +495,56 @@ test("the sweeper's read returns only expired pending orders", async () => {
   expect(expired.find((order) => order.id === stale.id)).toBeUndefined();
   expect(expired.find((order) => order.id === fresh.id)).toBeUndefined();
 });
+
+/*
+ * The paid-fact insert's conflict semantics (2026-10-13 audit, F3): only a conflict on the
+ * channel-transaction unique index means "this transaction is already known". A random `pe-`
+ * primary-key collision is an unknown conflict and must surface as a retried insert with a
+ * fresh id — exactly the way insertOrder redraws a colliding `po-` id — never as the
+ * already-known verdict, which would tell the caller a payment fact exists that does not.
+ */
+test("confirmPaid retries a paid-fact primary-key collision instead of misreading it as a known transaction", async () => {
+  const { order } = await store.insertOrder(orderInput());
+  // Occupy the pe- id the paid-fact insert is about to draw. An anomaly row with no channel
+  // transaction: it collides on the primary key only, leaving the transaction's own fact key free.
+  const collisionHex = randomUUID().replaceAll("-", "").slice(0, 16);
+  await database.insert(paymentEvents).values({
+    id: `pe-${collisionHex}`,
+    orderId: order.id,
+    kind: "anomaly",
+    code: "seed",
+    state: null,
+    channelTransactionId: null,
+  });
+  const freshHex = randomUUID().replaceAll("-", "").slice(0, 16);
+  const generate = spyOn(paymentCrypto, "generateOutTradeNo")
+    .mockReturnValueOnce(`po-${collisionHex}`)
+    .mockReturnValueOnce(`po-${freshHex}`);
+  try {
+    const result = await store.confirmPaid({
+      id: order.id,
+      expectedVersion: order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-pk-collision`,
+      amountCents: 8800,
+      periodStart: new Date(),
+      periodEnd: new Date(Date.now() + 30 * 24 * 3600_000),
+    });
+    expect(result).toEqual({ claimed: true, alreadyKnown: false });
+    // The fact landed under the redrawn id and names this order and transaction.
+    const facts = await database
+      .select({ id: paymentEvents.id, orderId: paymentEvents.orderId })
+      .from(paymentEvents)
+      .where(
+        eq(
+          paymentEvents.channelTransactionId,
+          `${prefix}-tx-pk-collision`,
+        ),
+      );
+    expect(facts).toEqual([
+      { id: `pe-${freshHex}`, orderId: order.id },
+    ]);
+  } finally {
+    generate.mockRestore();
+  }
+});

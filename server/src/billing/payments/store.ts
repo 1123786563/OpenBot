@@ -182,6 +182,22 @@ function byClaimedOwner(a: PaymentOrderRecord, b: PaymentOrderRecord): number {
 }
 
 function isOrderIdConflict(error: unknown): boolean {
+  return isUniqueViolationOn(error, "payment_orders_pkey");
+}
+
+/**
+ * The paid-fact insert's own id collision (audit F3): a `pe-` primary-key conflict is an unknown
+ * conflict — it must be redrawn, never classified as "this transaction is already known", which
+ * is the channel-transaction index's verdict alone.
+ */
+function isPaymentEventIdConflict(error: unknown): boolean {
+  return isUniqueViolationOn(error, "payment_events_pkey");
+}
+
+function isUniqueViolationOn(
+  error: unknown,
+  constraint: string,
+): boolean {
   const visited = new Set<object>();
   while (error && typeof error === "object" && !visited.has(error)) {
     visited.add(error);
@@ -194,8 +210,7 @@ function isOrderIdConflict(error: unknown): boolean {
     };
     if (
       (postgresError.errno ?? postgresError.code) === "23505" &&
-      (postgresError.constraint ?? postgresError.constraint_name) ===
-        "payment_orders_pkey"
+      (postgresError.constraint ?? postgresError.constraint_name) === constraint
     ) {
       return true;
     }
@@ -359,63 +374,80 @@ export function createPaymentStore(database: Database): PaymentStore {
         .limit(1);
       if (known) return { claimed: false, alreadyKnown: true };
 
-      return database
-        .transaction(async (tx) => {
-          const paidAt = new Date();
-          const moved = await tx
-            .update(paymentOrders)
-            .set({
-              status: "paid",
-              channelTransactionId: input.channelTransactionId,
-              periodStart: input.periodStart,
-              periodEnd: input.periodEnd,
-              paidAt,
-              terminalAt: paidAt,
-              version: input.expectedVersion + 1,
-            })
-            .where(
-              and(
-                eq(paymentOrders.id, input.id),
-                eq(paymentOrders.version, input.expectedVersion),
-                inArray(paymentOrders.status, [...input.fromStatuses]),
-              ),
-            )
-            .returning({ id: paymentOrders.id });
-          if (moved.length === 0)
-            return { claimed: false, alreadyKnown: false };
-
-          // The insert carries the idempotency: inside the same transaction, a concurrent
-          // confirmation of the same transaction id loses here even if the CAS above somehow let
-          // both through — it cannot, but the index does not rely on that.
-          const inserted = await tx
-            .insert(paymentEvents)
-            .values(
-              eventInput({
-                orderId: input.id,
-                kind: "fact",
-                code: "paid",
-                state: "paid",
+      // A `pe-` id collision aborts the whole transaction (Postgres), so the retry re-runs the
+      // CAS and the insert together with a fresh id — the same redraw loop insertOrder gives a
+      // colliding `po-` id (audit F3: an unknown conflict is never the already-known verdict).
+      for (let attempt = 0; attempt <= ID_COLLISION_RETRIES; attempt += 1) {
+        let outcome: { claimed: boolean; alreadyKnown: boolean };
+        try {
+          outcome = await database.transaction(async (tx) => {
+            const paidAt = new Date();
+            const moved = await tx
+              .update(paymentOrders)
+              .set({
+                status: "paid",
                 channelTransactionId: input.channelTransactionId,
-                amountCents: input.amountCents,
-                detail: "",
-              }),
-            )
-            .onConflictDoNothing()
-            .returning({ id: paymentEvents.id });
-          if (inserted.length === 0) {
-            // Another order already holds this transaction's paid fact. Abort so the CAS above
-            // rolls back — one transaction id, one paid order — and tell the caller through the
-            // return value, not an exception across the seam: this is a verdict, not a fault.
-            throw new TransactionAlreadyKnown();
-          }
-          return { claimed: true, alreadyKnown: false };
-        })
-        .catch((error: unknown) => {
+                periodStart: input.periodStart,
+                periodEnd: input.periodEnd,
+                paidAt,
+                terminalAt: paidAt,
+                version: input.expectedVersion + 1,
+              })
+              .where(
+                and(
+                  eq(paymentOrders.id, input.id),
+                  eq(paymentOrders.version, input.expectedVersion),
+                  inArray(paymentOrders.status, [...input.fromStatuses]),
+                ),
+              )
+              .returning({ id: paymentOrders.id });
+            if (moved.length === 0)
+              return { claimed: false, alreadyKnown: false };
+
+            // The insert carries the idempotency: inside the same transaction, a concurrent
+            // confirmation of the same transaction id loses here even if the CAS above somehow
+            // let both through — it cannot, but the index does not rely on that. The conflict
+            // target names the channel-transaction partial unique index exactly, so ONLY a
+            // known-transaction conflict lands in the no-op branch; any other uniqueness the
+            // insert trips (a colliding `pe-` id above all) surfaces as the 23505 it is.
+            const inserted = await tx
+              .insert(paymentEvents)
+              .values(
+                eventInput({
+                  orderId: input.id,
+                  kind: "fact",
+                  code: "paid",
+                  state: "paid",
+                  channelTransactionId: input.channelTransactionId,
+                  amountCents: input.amountCents,
+                  detail: "",
+                }),
+              )
+              .onConflictDoNothing({
+                target: paymentEvents.channelTransactionId,
+                where: sql`${paymentEvents.kind} = 'fact' AND ${paymentEvents.state} = 'paid'`,
+              })
+              .returning({ id: paymentEvents.id });
+            if (inserted.length === 0) {
+              // Another order already holds this transaction's paid fact. Abort so the CAS above
+              // rolls back — one transaction id, one paid order — and tell the caller through the
+              // return value, not an exception across the seam: this is a verdict, not a fault.
+              throw new TransactionAlreadyKnown();
+            }
+            return { claimed: true, alreadyKnown: false };
+          });
+        } catch (error) {
+          if (isPaymentEventIdConflict(error)) continue;
           if (error instanceof TransactionAlreadyKnown) {
             return { claimed: false, alreadyKnown: true };
           }
           throw error;
-        });
+        }
+        return outcome;
+      }
+      // Five primary-key collisions is not a probability, it is a broken generator; say so rather
+      // than loop.
+      throw new BillingError("invalid_response");
     },
 
     async blockOrder(input) {
