@@ -83,8 +83,8 @@ stderr:`server did not become ready - check nextjs.log; if it crashed, fix the e
 ### 脚本结构断言
 
 - 头部:`SESSION_PATH={session_path}`、`PORT={nextjs_port}`(:132-133)——即 webapp 插件 parsePort 的来源。
-- scaffold:无 `outputs/web/package.json` 时 `cp -r /workspace/templates/outputs/*`(含 Next.js 16.1.1 模板)+ `bun install --frozen-lockfile --backend=hardlink`(:141-165)。
-- dev server 环境:`ONYX_WEBAPP_PORT={port}`、`ONYX_WEBAPP_BASE_PATH=/api/build/sessions/{session_id}/webapp`、`ONYX_WEBAPP_ALLOWED_DEV_ORIGINS={WEB_DOMAIN host}`(:93-95);flock 防双起,PID 文件 `nextjs.pid`,日志 `nextjs.log`(:81-117)。
+- scaffold:无 `outputs/web/package.json` 时 `cp -r /workspace/templates/outputs/*`(含 Next.js 16.1.1 模板)+ `bun install --frozen-lockfile --backend=hardlink`(:141-165)。**〔Erratum E1(Task 6,2026-10-13)〕**本条与下条的模板/环境变量断言在 OpenBot 环境**结构性不可满足**(无镜像模板可拷、无 pod 内 dev-server env 注入),为 Onyx 源描述而非 OpenBot 可满足断言。OpenBot 等价物:scaffold 推迟给 agent(缺 `outputs/web/package.json` → exit 1 + 指引文案),dev server 以 `PORT` 环境变量 + `bun run dev -- -H 127.0.0.1 -p $PORT` 启动;断言载体为脚本结构等价物:头部 `SESSION_PATH`/`PORT`、flock fd9、pid cwd 身份守卫、`nextjs.log`、探活循环与 §F"首启成功"逐字节行、90s 超时分支(均已 live 实证,见 `remediation-verification.md` §3(vii))。
+- dev server 环境:`ONYX_WEBAPP_PORT={port}`、`ONYX_WEBAPP_BASE_PATH=/api/build/sessions/{session_id}/webapp`、`ONYX_WEBAPP_ALLOWED_DEV_ORIGINS={WEB_DOMAIN host}`(:93-95);flock 防双起,PID 文件 `nextjs.pid`,日志 `nextjs.log`(:81-117)。**(Erratum E1 同上:ONYX_WEBAPP_* 三变量不可移植;flock/pid/log 断言保留且已 live 实证。)**
 - 端口来源 = DB 预约(session create 时 `reserve_nextjs_port__no_commit`,范围 [3010,3100),B/`configs.py:44-45`;headless 会话无端口、无脚本,B/`session/manager.py:544-549` + B/`sandbox/session_workspace.py:57-63`)。
 
 ## G. webapp-info 与就绪判定(B/`session/manager.py:1493-1593`)

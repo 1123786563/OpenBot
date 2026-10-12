@@ -1,0 +1,342 @@
+
+─── server/src/craft/connect-app-routes.ts:66-69 ───
+[bug · medium] 这里把存储层故障与"请求已过期/不存在"混为一谈：Redis 故障时 loadPending 抛错被 catch 成 null，端点返回 200
+{ok:true}，用户以为决策已生效，实际停驻的 permission 询问永远得不到回答，且与真正的静默 no-op
+完全不可区分。注意根因有两层：createRedisSignals.loadPending 内部还有一层 `.catch(() => null)`（connect-app.ts），会先把所有
+Redis 错误吞成 null，仅修本处的 catch 并不够。建议：适配器层只让 parsePending 返回 null（格式/缺失），存储故障向外抛；本端点用 try/catch
+区分——抛错返回 503 提示重试，null 才走 200 no-op 分支。
+
+-     const pending = await deps.signals.loadPending(requestId).catch(() => null);
++     let pending: CraftConnectAppPending | null;
++     try {
++       pending = await deps.signals.loadPending(requestId);
++     } catch (error) {
++       logger.warn(
++         { err: error instanceof Error ? error.message : String(error) },
++         "[craft] connect_app pending load failed",
++       );
++       return context.json(
++         { error: "Could not read the connect request — please try again." },
++         503,
++       );
++     }
+      if (pending === null) {
+        return context.json({ ok: true });
+      }
+
+
+─── server/src/craft/connect-app-routes.ts:139-144 ───
+[other · low] 文件头与本仓库 audit.ts 的新注释都明确：握手本身不留审批行，这条 `craft.connect_app_decided` 是决策唯一的持久化记录；而这里
+insert 失败仅记 warn 后照常返回成功，决策将不留任何可追溯痕迹，形成审计断档。虽然 best-effort 审计写入与 admin/controls.ts
+的既有模式一致（顺序上也正确：先清 pending 防重放，再尽力写审计），但鉴于其"唯一记录"定位，建议至少升级为 error 级别日志以便监控告警，或考虑简单的重试/补偿标记。
+
+        .catch((error: unknown) => {
+-         logger.warn(
++         // 这一行是决策唯一的持久化记录（onyx 对齐：无审批行），
++         // 写失败必须可被监控发现，而不是静默丢失。
++         logger.error(
+            { err: error instanceof Error ? error.message : String(error) },
+-           "[craft] connect_app decision audit failed",
++           "[craft] connect_app decision audit failed — decision has no durable record",
+          );
+        });
+
+
+─── server/src/craft/connect-app.ts:124-127 ───
+[bug · medium] Redis 适配器的 loadPending 在内部把 get 的所有错误吞成 null，使得上层（connect-app-routes.ts 的 `.catch(()
+=> null)` 与 `pending === null` 分支）永远无法区分"存储故障"与"请求已过期/不存在"——Redis 故障时用户决策会得到 200 假成功。建议去掉这层内部 catch
+让故障向上传播，由路由层决定如何呈现（解析失败仍由 parsePending 返回 null 表示缺失/过期）。
+
+      async loadPending(requestId) {
+-       const raw = await redis.get(pendingKey(requestId)).catch(() => null);
+-       return parsePending(raw);
++       // 只有 parsePending 的 null 表示"过期/缺失"；存储故障必须向上抛，
++       // 由决策端点映射为 503，而不是被读成一次静默 no-op。
++       return parsePending(await redis.get(pendingKey(requestId)));
+      },
+
+
+─── server/src/craft/connect-app.ts:236-243 ───
+[style · low] 两层嵌套三元表达式违反仓库编码规范（禁止嵌套三元），可读性差；且 `Number.parseInt(raw, 10)` 对 "42abc"
+之类带尾部垃圾字符的输入会宽松接受（返回 42），与工具 schema 的严格整数校验意图不一致，格式异常的 metadata 可能被错误地键到某个 app 上。建议改为显式 if/return
+并用全数字校验收紧解析。
+
+-   const parsed =
+-     typeof raw === "number"
+-       ? Number.isInteger(raw)
+-         ? raw
+-         : Number.NaN
+-       : typeof raw === "string" && raw.trim() !== ""
+-         ? Number.parseInt(raw, 10)
+-         : Number.NaN;
++   let parsed = Number.NaN;
++   if (typeof raw === "number") {
++     if (Number.isInteger(raw)) parsed = raw;
++   } else if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
++     parsed = Number.parseInt(raw.trim(), 10);
++   }
+
+
+─── server/src/craft/connect-app.ts:200-206 ───
+[maintainability · low] 内存版 stashPending 复用 push（追加），loadPending 读 values[0]（先写者胜）；Redis 版用 SET
+覆盖（后写者胜）。对同一 requestId 重复 stash 时两者语义相反，而注释自称这是 Redis 实现的"reference semantics"——测试基线与生产行为可能在重 stash
+场景下分叉。requestId 为 uuid4 碰撞概率极低，但既然定位是参考实现，建议与 Redis 的 SET 覆盖语义对齐。
+
+      async stashPending(requestId, pending) {
+-       push(
+-         pendingKey(requestId),
+-         JSON.stringify(pending),
+-         CONNECT_APP_PENDING_TTL_SECONDS,
+-       );
++       // 镜像 Redis SET 的后写者胜语义：同一 requestId 的重复 stash 覆盖旧值。
++       lists.set(pendingKey(requestId), {
++         values: [JSON.stringify(pending)],
++         expiresAt: Date.now() + CONNECT_APP_PENDING_TTL_SECONDS * 1000,
++       });
+      },
+
+
+─── server/src/craft/directory-archive.ts:19-31 ───
+[maintainability · low] HIDDEN_PATTERNS 以可变 Set 形式导出,任何导入方都可以 delete/add 篡改全局隐藏过滤规则,从而静默改变归档下载与
+Files 树 UI 的共同行为(两处共用同一谓词正是本次设计目标)。清单本身是 onyx 对齐的既定常量,建议标注为 ReadonlySet<string>
+以在编译期杜绝意外变更;若无模块外消费者,也可考虑收回 export。
+
+- export const HIDDEN_PATTERNS = new Set([
++ export const HIDDEN_PATTERNS: ReadonlySet<string> = new Set([
+    ".venv",
+    ".git",
+    ".next",
+    "__pycache__",
+    "node_modules",
+    ".DS_Store",
+    "opencode.json",
+    ".env",
+    ".gitignore",
+    "nextjs.log",
+    "nextjs.pid",
+  ]);
+
+
+─── server/src/craft/directory-archive.ts:45-49 ───
+[maintainability · low] 该谓词的"任一 segment 命中即剪除"语义建立在传入 anchor 剥离后的相对路径之上(packDirectoryZip 传
+rel、artifacts.ts 也按 rel 过滤),但 webapp-proxy.ts:322 把 gateway 返回的完整路径(absolute 模式下是
+/workspace/sessions/{id}/... 全路径)整体传入:一旦路径前缀链上出现点开头或命中 HIDDEN_PATTERNS 的祖先 segment,webapp 下载会静默退化为空
+ZIP——与 webapp-proxy 注释里刚修掉的"绝对路径静默清空归档"latent bug 同类。当前
+SESSIONS_ROOT(/workspace/sessions)固定不触发,但输入契约完全隐式。建议在 JSDoc 中明确"仅接受 workspace 相对路径",并让三处调用方统一传 rel。
+
++ /**
++  * The same verdict over a whole path — onyx prunes a hidden directory's subtree whole
++  * (`_walk_sandbox_dir` never recurses into one), and over the gateway's flat recursive
++  * listing that is exactly "no segment may be hidden".
++  *
++  * Input MUST be a workspace-RELATIVE path (anchor stripped, as in packDirectoryZip and
++  * artifacts.ts) — feeding the gateway's absolute/bot-rooted full paths makes ancestor
++  * segments (SESSIONS_ROOT etc.) subject to pruning, which would silently empty an
++  * archive if any prefix segment is ever hidden.
++  */
+  export function isHiddenWorkspacePath(path: string): boolean {
+    return path
+      .split("/")
+      .some((segment) => segment.length > 0 && isHiddenWorkspaceEntry(segment));
+  }
+
+
+─── server/src/craft/directory-archive.ts:68-75 ───
+[maintainability · low] 这段"锚前缀过滤 + 隐藏剪除 + readFileBytes 失败跳过 + entries 收集"的循环与
+webapp-proxy.ts:320-329(webapp-download 路由)几乎逐行重复,后者注释也自认 "the same discipline as
+packDirectoryZip"。两份拷贝已经出现语义漂移的苗头(一处传 rel、一处传全路径给 isHiddenWorkspacePath)。建议提取为共享 helper(如
+gatherWorkspaceEntries(fileApi, root, anchor)),两个下载路由复用,顺带统一隐藏过滤的输入形态,避免日后各自改动造成归档与 webapp 下载行为分叉。
+
++ /** Anchor-prefix filter + hidden pruning + best-effort reads, shared by the
++  *  directory and webapp download routes (onyx's `_walk_sandbox_dir` over a flat listing).
++  *  Takes the gateway's recursive listing and returns relative-path/bytes pairs.
++  */
++ export async function gatherWorkspaceEntries(
++   fileApi: AgentSandboxFileApi,
++   root: string,
++ ): Promise<{ path: string; bytes: Uint8Array }[]> {
++   const anchor = root.endsWith("/") ? root : `${root}/`;
++   const listing = await fileApi.listFiles(root);
++   const entries: { path: string; bytes: Uint8Array }[] = [];
+    for (const entry of listing) {
+      if (!entry.startsWith(anchor)) continue;
+      const rel = entry.slice(anchor.length);
+      if (!rel || isHiddenWorkspacePath(rel)) continue;
+      const bytes = await fileApi.readFileBytes(entry).catch(() => null);
+      if (bytes === null) continue; // unreadable: skipped, not fatal (onyx parity)
+      entries.push({ path: rel, bytes });
++   }
++   return entries;
+-   }
++ }
+
+
+─── server/src/craft/directory-archive.ts:72-72 ───
+[performance · low] 每个文件一次串行 await 的 gateway HTTP 读取,大目录下载耗时随"文件数 × 单请求
+RTT"线性放大,而各文件读取相互独立、无依赖。可用限并发的小批量 Promise.all 并行拉取(如每批 8~16 个,避免压垮 gateway);entries
+本就全量驻留内存,并行不会抬高峰值内存。
+
+-     const bytes = await fileApi.readFileBytes(entry).catch(() => null);
++   const BATCH = 8;
++   for (let i = 0; i < listing.length; i += BATCH) {
++     const batch = listing
++       .slice(i, i + BATCH)
++       .map((entry) => ({ entry, rel: entry.slice(anchor.length) }))
++       .filter(({ entry, rel }) => entry.startsWith(anchor) && rel && !isHiddenWorkspacePath(rel));
++     const read = await Promise.all(
++       batch.map(async ({ entry, rel }) => ({
++         rel,
++         bytes: await fileApi.readFileBytes(entry).catch(() => null),
++       })),
++     );
++     for (const { rel, bytes } of read) {
++       if (bytes !== null) entries.push({ path: rel, bytes }); // unreadable: skipped, not fatal (onyx parity)
++     }
++   }
+
+
+─── server/src/craft/managed-content.ts:215-218 ───
+[bug · medium] listFiles 失败被吞掉后 stale=[] 且 skillsHydrated 仍为
+true：若旧技能树中存在源端已删除的技能，清空步骤被跳过，随后写入成功则函数返回 true，调用方（session-ready 的 light/heavy 两条路径均仅在 true 时记录
+skillsHash）会 ack 新指纹，被删除的技能永久残留在 agent 可见面下且不再触发热重载——与函数 docstring 声明的“先清空技能树、成功才 ack
+指纹”契约矛盾。修复时需注意：全新工作区/预受管内容会话首次推送时 .opencode/skills 尚不存在，网关列举会以 404 抛错走同一 catch，不能一律置
+false（否则每次新建会话都要多一轮 reconcile 才 ack）；正确做法是在 ManagedContentFileApi.listFiles 契约中规定“目录缺失返回
+[]”（sandbox-gateway 实现相应映射 404→[]），仅对真实失败置 skillsHydrated=false。
+
+    const stale = await api.listFiles(skillsRoot).catch((error) => {
++     // 列举失败即无法证明技能树已被清空，本次推送不得按成功 ack skillsHash；
++     // 目录缺失（404）应在 listFiles 契约层归一为 []，不算失败。
+      logger.warn({ error, root }, "[craft] failed to list managed skills");
++     skillsHydrated = false;
+      return [] as string[];
+    });
+
+
+─── server/src/craft/managed-content.ts:231-240 ───
+[performance · medium] 清理 stale、写技能、写库三个循环均为逐文件顺序 await，每个文件一次网关 HTTP
+往返；技能/库文件较多时会线性拉长会话水合（ensureSessionReady 为同步阻塞路径）耗时。文件间操作彼此独立，可改为 Promise.allSettled 并行执行（逐项维护
+skillsHydrated 失败标记与日志），并保持“先清空、后写入”的先后顺序不变。
+
+-   for (const [path, bytes] of content.skillFiles) {
+-     const rel = containedRelativePath(path);
+-     if (rel === null) {
+-       logger.warn(
+-         { path, root },
+-         "[craft] rejecting path-escaping managed skill entry",
++   // 先并行清空（任一失败即未水合），完成后再并行写入，保持删除先于写入的顺序。
++   const clearResults = await Promise.allSettled(
++     stale.map((old) => api.deletePath(old)),
+-       );
++   );
++   clearResults.forEach((result, i) => {
++     if (result.status === "rejected") {
++       logger.warn({ error: result.reason, path: stale[i], root },
++         "[craft] failed to clear managed skill file");
+        skillsHydrated = false;
+-       continue;
+      }
++   });
+
+
+─── server/src/craft/managed-content.ts:252-260 ───
+[maintainability · low] 技能与库两个写入循环的“路径校验→写文件→异常日志”逻辑几乎完全重复，仅失败时是否置位 skillsHydrated 不同；建议提取公共
+helper（如 pushFileTree(files, baseDir, onFileError)），后续调整路径校验或日志形态时避免两处逻辑漂移。
+
+-   for (const [path, bytes] of content.libraryFiles) {
++ // 公共写入 helper：返回是否全部成功，由调用方决定失败语义（技能置 skillsHydrated=false，库仅记日志）。
++ async function pushFileTree(
++   api: ManagedContentFileApi,
++   baseDir: string,
++   files: ReadonlyMap<string, Uint8Array>,
++   root: string,
++   kind: "managed skill" | "user library",
++ ): Promise<boolean> {
++   let ok = true;
++   for (const [path, bytes] of files) {
+      const rel = containedRelativePath(path);
+      if (rel === null) {
+-       logger.warn(
+-         { path, root },
+-         "[craft] rejecting path-escaping library entry",
+-       );
++       logger.warn({ path, root }, `[craft] rejecting path-escaping ${kind} entry`);
++       ok = false;
+        continue;
++     }
++     try {
++       await api.writeFileBytes(`${baseDir}/${rel}`, bytes);
++     } catch (error) {
++       logger.warn({ error, path, root }, `[craft] failed to push ${kind} file`);
++       ok = false;
++     }
++   }
++   return ok;
+-     }
++ }
+
+
+─── server/src/craft/managed-content.ts:252-260 ───
+[bug · low] materializeManagedContent 只对技能树执行「先清空、后写入」的对账，USER_LIBRARY_DIR
+只有覆盖写入、从不清空：用户从库中删除（或源端不再返回）某个文件后，该文件会永久残留在每个已存在会话的工作区里；与技能不同，库没有 hash/staleness 回路能在后续
+create/reload 时触发修复，也没有任何失败信号（library 失败既不影响返回值也不重试）。这与函数 docstring 声称的「onyx mount swap
+的环境等价实现」不一致——onyx 的挂载替换对整个受管内容生效，删除同样会传播。建议对 user_library 采用与技能树相同的清空+重写策略（同样注意 listFiles
+缺失/失败时的语义），或在注释中明确「库删除不向会话传播」是有意的设计取舍。
+
++   const libraryRoot = `${root}/${USER_LIBRARY_DIR}`;
++   const staleLibrary = await api.listFiles(libraryRoot).catch((error) => {
++     logger.warn({ error, root }, "[craft] failed to list user library");
++     return [] as string[];
++   });
++   for (const old of staleLibrary) {
++     await api.deletePath(old).catch((error) => {
++       // 库不做 hash 对账，清不掉的残留只记日志（best-effort，与技能树的 skillsHydrated 门控不同）。
++       logger.warn({ error, path: old, root }, "[craft] failed to clear user library file");
++     });
++   }
++ 
+    for (const [path, bytes] of content.libraryFiles) {
+      const rel = containedRelativePath(path);
+      if (rel === null) {
+        logger.warn(
+          { path, root },
+          "[craft] rejecting path-escaping library entry",
+        );
+        continue;
+      }
+
+
+─── server/src/craft/zip-archive.ts:126-130 ───
+[bug · low] 文件头注释声称超大目录会 "fails honestly"(诚实失败),但该保证仅覆盖条目数 >0xffff 这一个维度:总大小无任何守卫,EOCD 的
+centralSize/offset 字段及每个条目的压缩/原始大小都经 setUint32 写入,超过 4GB 时按 ToUint32 静默回绕,会产出帧结构损坏的 ZIP
+而不是抛错——与注释承诺相悖。注释中 "under 4GB each" 的单文件上限同样未检查。建议仿照条目数守卫,对未压缩总量(或单文件大小)补充 4GB 上限检查,使失败路径名副其实。
+
+    if (entries.length > 0xffff) {
+      throw new RangeError(
+        "zip writer is not ZIP64: at most 65,535 entries per archive",
++     );
++   }
++   // 非 ZIP64:偏移/大小字段是 32 位,超限必须显式失败而非 setUint32 静默回绕。
++   const totalBytes = entries.reduce(
++     (total, entry) => total + entry.bytes.length,
++     0,
++   );
++   if (totalBytes > 0xfffffff0) {
++     throw new RangeError(
++       "zip writer is not ZIP64: archive exceeds the 4GB field limit",
+      );
+    }
+
+
+─── server/src/craft/index.ts:209-215 ───
+[style · low] 新增的 ./session-plugins 导出块放在了 ./turn-budget 之后,破坏了本文件按模块路径字母序排列导出块的既有约定(session-plugins
+应排在 sandbox-gateway 与 scheduled-tasks 之间)。建议调整位置以保持文件一致性,便于后续维护者定位导出。
+
++ // 建议将该导出块移动到 ./sandbox-gateway 与 ./scheduled-tasks 之间,保持字母序:
+  export {
+    CONNECT_APP_PLUGIN_RELPATH,
+    SESSION_CONNECT_APP_PLUGIN_SPEC,
+    SESSION_PLUGINS,
+    SESSION_TURN_BUDGET_PLUGIN_SPEC,
+    TURN_BUDGET_PLUGIN_RELPATH,
+  } from "./session-plugins";
+
