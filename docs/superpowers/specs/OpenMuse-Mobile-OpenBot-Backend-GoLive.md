@@ -1,5 +1,7 @@
 # OpenBot 上线方案（OpenMuse Mobile 接入交付）
 
+> 历史方案：完整能力迁移、OpenBot 独占后端和 Git submodule 布局以 [2026-10-12 设计](2026-10-12-openmuse-frontend-openbot-backend-design.md) 为准。本文保留作迁移参考。
+
 > 版本：v1.0
 > 编写日期：2026-10-11
 > 代码基线：`main` @ `fa4b67f`（移动端 BFF + EXPO_APP_SCHEME）；迁移分支 `feat/openmuse-mobile-migration` @ `8dda8a0`
