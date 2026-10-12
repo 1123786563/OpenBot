@@ -26,7 +26,7 @@ Regenerate it with `bun run diagram` after changing anything it shows.
 
 `scripts/start.sh` starts PostgreSQL, `agent-computer`, `agent-langgraph`, `agent-bot` (skipped when `BOT_PROVIDER=anthropic`, since that sample only takes OpenAI keys) and the supervisor (unless `OPENBOT_ONE_COMPUTER_EACH=false`) through Docker Compose, and runs `migrate`. It then starts `server`, the routines worker (`bun worker/src/index.ts`, the local stand-in for the routines CronJob) and `app` on the host.
 
-The compose file also defines optional SPIRE services. `start.sh` does not start them.
+When the supervisor runs, `start.sh` also starts the SPIRE services beside it, so every computer is issued an identity; a deployment that leaves them out runs without workload identity and reports that state.
 
 ## Runtime flow
 
