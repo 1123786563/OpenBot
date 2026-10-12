@@ -36,6 +36,16 @@ export type CraftMessage = {
   created_at: string;
 };
 
+/**
+ * One uploaded attachment — the wire shape both the upload response's `path` feeds and the
+ * send-message body carries (`{name, path, mime_type}`, onyx's MessageAttachment).
+ */
+export type CraftAttachment = {
+  name: string;
+  path: string;
+  mime_type: string;
+};
+
 /** The six gallery kinds `artifactTypeFor` classifies a produced file into. */
 export type CraftArtifactType =
   | "csv"

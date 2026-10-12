@@ -107,11 +107,16 @@ export async function sessionWorkspaceExists(
   }
 }
 
-/** Best-effort cleanup of a session's workspace (session deletion path). */
+/**
+ * Best-effort cleanup of a session's workspace (session deletion path). The gateway's delete
+ * verb is files-only (onyx's endpoint semantics), so a whole-session tree never deletes through
+ * it — the same honest no-op it has always been against agent-sandbox; workspace teardown is the
+ * Bot workspace reset/sweeper's job, not the session row's.
+ */
 export async function cleanupSessionWorkspace(
   api: AgentSandboxFileApi,
   sessionId: string,
   mode: "absolute" | "bot-relative" = "absolute",
 ): Promise<void> {
-  await api.deletePath(sessionDirectory(sessionId, mode));
+  await api.deletePath(sessionDirectory(sessionId, mode)).catch(() => false);
 }

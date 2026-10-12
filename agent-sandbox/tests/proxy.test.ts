@@ -1,11 +1,10 @@
-import { afterAll } from "bun:test";
-import { describe, expect, test } from "bun:test";
-import { serve } from "bun";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { createProxyHandler, tokenMatches } from "../src/proxy";
+import { serve } from "bun";
 import { createBotRuntimes } from "../src/bot-runtimes";
 import { sandboxEnvFrom } from "../src/env";
+import { createProxyHandler, tokenMatches } from "../src/proxy";
 
 // 宿主机没有 /workspace（容器内的挂载点）：用一次性临时目录充当 volume。
 const workspaceDir = await mkdtemp(`${tmpdir()}/proxy-test-`);
@@ -29,7 +28,8 @@ const upstream = serve({
   fetch: async (request) => {
     const url = new URL(request.url);
     const port = url.port;
-    if (url.pathname === "/doc") return Response.json({ openapi: "3.1.0", served: port });
+    if (url.pathname === "/doc")
+      return Response.json({ openapi: "3.1.0", served: port });
     if (url.pathname === "/session" && request.method === "POST")
       return Response.json({ id: `ses_${port}` });
     if (url.pathname === "/file/content")
@@ -92,7 +92,10 @@ process.on("exit", () => upstream.stop(true));
 
 const call = (path: string, init?: RequestInit) =>
   handler(new Request(`http://127.0.0.1:4300${path}`, init));
-const botHeaders = { "x-sandbox-token": "secret-token", "x-openbot-bot-id": "alpha" };
+const botHeaders = {
+  "x-sandbox-token": "secret-token",
+  "x-openbot-bot-id": "alpha",
+};
 
 describe("proxy", () => {
   test("rejects a request without the token", async () => {
@@ -173,7 +176,10 @@ describe("proxy: the workshop surface (S2/S5)", () => {
       headers: botHeaders,
     });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { aborted?: boolean; port?: string };
+    const body = (await response.json()) as {
+      aborted?: boolean;
+      port?: string;
+    };
     expect(body.aborted).toBe(true);
     expect(body.port).toBe("4600");
   });
@@ -193,9 +199,16 @@ describe("proxy: the workshop surface (S2/S5)", () => {
   test("GET /runtimes answers the roster this proxy holds (S6)", async () => {
     // One Bot is up (the shared upstream fake answers it), then the roster names it with the
     // fields an operator asks for — and nothing else, because the roster is read-only.
-    const warm = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
+    const warm = await call("/session", {
+      method: "POST",
+      headers: botHeaders,
+      body: "{}",
+    });
     expect(warm.status).toBe(200);
-    const response = await call("/runtimes", { method: "GET", headers: botHeaders });
+    const response = await call("/runtimes", {
+      method: "GET",
+      headers: botHeaders,
+    });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       bots: Array<{
@@ -232,12 +245,69 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(body.path).toBe("data.csv");
     expect(body.size).toBe(8); // "a,b\n1,2\n" — count the bytes, not the lines.
     // And an escaping path is refused before any write.
-    const escape = await call("/file?path=../x.csv", {
+    const escapeAttempt = await call("/file?path=../x.csv", {
       method: "POST",
       headers: { ...botHeaders, "content-type": "text/plain" },
       body: "x",
     });
-    expect(escape.status).toBe(400);
+    expect(escapeAttempt.status).toBe(400);
+  });
+
+  test("POST /file carries binary bodies past the 256KB relay cap (craft's upload road)", async () => {
+    // The craft upload default allows 50MB files; the JSON relay cap stays at 256KB. The
+    // file verb must ride its own ceiling — a 300KB binary body crosses the old line.
+    const big = new Uint8Array(300_000).fill(7);
+    const response = await call("/file?path=attachment.bin", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "application/octet-stream" },
+      body: big,
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { size?: number };
+    expect(body.size).toBe(300_000);
+  });
+
+  test("DELETE /file deletes one contained file and refuses directories and escapes", async () => {
+    await call("/file?path=tmp/a.txt", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "x",
+    });
+    await call("/file?path=tmp/nested/b.txt", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "y",
+    });
+
+    // A file deletes.
+    const file = await call("/file?path=tmp/a.txt", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(file.status).toBe(200);
+    // A directory is the same 404 as absence (onyx's `[ -f ] && rm` semantics).
+    const dir = await call("/file?path=tmp/nested", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(dir.status).toBe(404);
+    // The directory's file survived that refusal.
+    const survivor = await call("/file?path=tmp/nested/b.txt", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(survivor.status).toBe(200);
+    // Now absent — and an escaping path is refused before any delete.
+    const absent = await call("/file?path=tmp/a.txt", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(absent.status).toBe(404);
+    const escapeAttempt = await call("/file?path=../workspace/..", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(escapeAttempt.status).toBe(400);
   });
 });
 
@@ -267,8 +337,16 @@ describe("proxy with per-bot runtimes", () => {
   });
 
   test("同一 bot 的请求被路由到同一个上游端口", async () => {
-    const r1 = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
-    const r2 = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
+    const r1 = await call("/session", {
+      method: "POST",
+      headers: botHeaders,
+      body: "{}",
+    });
+    const r2 = await call("/session", {
+      method: "POST",
+      headers: botHeaders,
+      body: "{}",
+    });
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
     const b1 = (await r1.json()) as { id: string };

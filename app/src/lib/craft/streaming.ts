@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { interruptSession, sendMessage, turnEventsUrl } from "./client";
 import type {
+  CraftAttachment,
   CraftMessage,
   CraftStreamPacket,
   CraftToolKind,
@@ -21,7 +22,13 @@ import type {
 
 /** One thing the transcript draws, whatever its source. `streaming` marks a live, still-growing block. */
 export type TranscriptItem =
-  | { key: string; kind: "user"; text: string }
+  | {
+      key: string;
+      kind: "user";
+      text: string;
+      /** The files this message carried (upload chips → send-message → persisted metadata). */
+      attachments?: CraftAttachment[];
+    }
   | { key: string; kind: "text"; text: string; streaming?: boolean }
   | { key: string; kind: "thinking"; text: string; streaming?: boolean }
   | {
@@ -52,6 +59,24 @@ function metaText(meta: Record<string, unknown>): string {
     : "";
 }
 
+/** Read a user message's attachments out of its persisted metadata, when it carried any. */
+function metaAttachments(
+  meta: Record<string, unknown>,
+): CraftAttachment[] | undefined {
+  if (!Array.isArray(meta.attachments)) return undefined;
+  const parsed = meta.attachments.filter(
+    (entry): entry is Record<string, unknown> =>
+      typeof entry === "object" && entry !== null,
+  );
+  const named = parsed.filter(
+    (entry) =>
+      typeof entry.name === "string" &&
+      typeof entry.path === "string" &&
+      typeof entry.mime_type === "string",
+  );
+  return named.length > 0 ? (named as unknown as CraftAttachment[]) : undefined;
+}
+
 /** Fold one persisted transcript row into zero-or-more display items (user, text, tool, …). */
 export function messageToTranscript(message: CraftMessage): TranscriptItem[] {
   const meta = message.message_metadata;
@@ -59,7 +84,10 @@ export function messageToTranscript(message: CraftMessage): TranscriptItem[] {
   switch (metaType(meta)) {
     case "user_message": {
       const text = metaText(meta);
-      return text ? [{ key, kind: "user", text }] : [];
+      const attachments = metaAttachments(meta);
+      return text || attachments
+        ? [{ key, kind: "user", text, attachments }]
+        : [];
     }
     case "agent_message": {
       const text = metaText(meta);
@@ -336,7 +364,10 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
 export function useBuildStreaming(sessionId: string): {
   items: TranscriptItem[];
   isStreaming: boolean;
-  streamMessage(content: string): Promise<void>;
+  streamMessage(
+    content: string,
+    attachments?: CraftAttachment[],
+  ): Promise<void>;
   interruptStreaming(): Promise<void>;
   streamTurnEvents(turnId: string): Promise<void>;
 } {
@@ -395,8 +426,8 @@ export function useBuildStreaming(sessionId: string): {
   );
 
   const streamMessage = useCallback(
-    async (content: string) => {
-      const turn = await sendMessage(sessionId, content);
+    async (content: string, attachments?: CraftAttachment[]) => {
+      const turn = await sendMessage(sessionId, content, attachments);
       await streamTurnEvents(turn.turn_id);
     },
     [sessionId, streamTurnEvents],

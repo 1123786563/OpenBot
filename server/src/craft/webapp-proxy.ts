@@ -15,7 +15,7 @@
  */
 
 import { gzipSync } from "node:zlib";
-import { Hono, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
 import type { CraftConfig } from "./config";
@@ -271,10 +271,18 @@ export function createWebappProxyRoutes(
   });
 
   // ── GET /sessions/:id/webapp/* — the reverse proxy ──────────────────────────
-  app.get("/sessions/:sessionId/webapp/*", async (context) => {
+  // `:path{.+}` not `*`: Hono 4.13's bare wildcard matches but `param("*")` reads null;
+  // the named regex param is the readable multi-segment shape (see artifact-routes). The
+  // bare `/webapp` registration keeps the iframe's root URL (webapp-info answers exactly
+  // that shape) served — a regex param alone would 404 the empty path.
+  const proxyWebapp = async (
+    context: Context<{ Variables: AppVariables }, string>,
+  ) => {
     const actor = context.var.actor;
-    const sessionId = context.req.param("sessionId");
-    const rel = context.req.param("*") ?? "";
+    // The shared handler serves both route shapes, so the params are read by name with a
+    // fallback (a matched route always carries the session id; "" degrades to the 404 below).
+    const sessionId = context.req.param("sessionId") ?? "";
+    const rel = context.req.param("path") ?? "";
     const { session, botId, conn } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!botId || !conn) {
@@ -311,7 +319,9 @@ export function createWebappProxyRoutes(
       status: result.status,
       headers: result.headers,
     });
-  });
+  };
+  app.get("/sessions/:sessionId/webapp/:path{.+}", proxyWebapp);
+  app.get("/sessions/:sessionId/webapp", proxyWebapp);
 
   // ── GET /sessions/:id/webapp-download — the scaffolded webapp as tar.gz ─────
   app.get("/sessions/:sessionId/webapp-download", async (context) => {

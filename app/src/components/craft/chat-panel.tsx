@@ -48,8 +48,11 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     }
   }, [items.length, isStreaming]);
 
-  const handleSend = async (content: string) => {
-    await streamMessage(content);
+  const handleSend = async (
+    content: string,
+    attachments?: { name: string; path: string; mime_type: string }[],
+  ) => {
+    await streamMessage(content, attachments);
     await queryClient.invalidateQueries({
       queryKey: craftKeys.messages(sessionId),
     });
@@ -125,6 +128,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
         ) : null}
       </div>
       <Composer
+        sessionId={sessionId}
         disabled={messages.isPending}
         streaming={isStreaming}
         onSend={handleSend}
@@ -140,8 +144,25 @@ function TranscriptEntry({ item }: { item: TranscriptItem }) {
     case "user":
       return (
         <div className="flex justify-end">
-          <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-muted px-3 py-2 text-sm">
-            {item.text}
+          <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-muted px-3 py-2 text-sm">
+            {item.text ? (
+              <p className="whitespace-pre-wrap">{item.text}</p>
+            ) : null}
+            {item.attachments && item.attachments.length > 0 ? (
+              <ul
+                className="mt-1 space-y-0.5"
+                aria-label={t("attachments.list")}
+              >
+                {item.attachments.map((attachment) => (
+                  <li
+                    key={attachment.path}
+                    className="flex items-center gap-1 text-xs text-muted-foreground"
+                  >
+                    <span className="truncate">{attachment.name}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         </div>
       );

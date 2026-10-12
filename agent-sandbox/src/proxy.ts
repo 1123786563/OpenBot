@@ -11,17 +11,19 @@
  * names, and cannot reach any upstream at all without naming one.
  */
 import { timingSafeEqual } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { SandboxEnv } from "./env";
-import type { BotRuntimes } from "./bot-runtimes";
-import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
-import { createSnapshot, restoreArchive } from "./snapshot";
 import { isPlainBotId } from "./bot-id";
+import type { BotRuntimes } from "./bot-runtimes";
+import type { SandboxEnv } from "./env";
+import { createSnapshot, restoreArchive } from "./snapshot";
 import { forwardEvents } from "./sse";
-import { bridgeWebSocket } from "./ws-passthrough";
+import { readWebappFile, startWebapp, stopWebapp } from "./webapp";
 
-export function tokenMatches(presented: string | undefined, expected: string): boolean {
+export function tokenMatches(
+  presented: string | undefined,
+  expected: string,
+): boolean {
   if (!presented) return false;
   const got = Buffer.from(presented);
   const want = Buffer.from(expected);
@@ -45,6 +47,8 @@ const ALLOWED = new Set([
   "GET /events",
   "POST /session/:id/abort",
   "POST /file",
+  // The craft file surface's delete half: files only, contained like POST /file.
+  "DELETE /file",
   // Not yet implemented — allowed, and answered 501 until their tasks land:
   "POST /devserver/start",
   "POST /devserver/stop",
@@ -101,7 +105,9 @@ export function createProxyHandler(
   runtimes: BotRuntimes,
 ): (
   request: Request,
-  bunServer?: { upgrade(request: Request, options?: { data?: unknown }): boolean },
+  bunServer?: {
+    upgrade(request: Request, options?: { data?: unknown }): boolean;
+  },
 ) => Promise<Response> {
   return async (request: Request, bunServer): Promise<Response> => {
     const url = new URL(request.url);
@@ -109,25 +115,46 @@ export function createProxyHandler(
 
     const presented = request.headers.get("x-sandbox-token") ?? undefined;
     if (!tokenMatches(presented, env.token))
-      return Response.json({ error: "The sandbox token is missing or wrong." }, { status: 401 });
+      return Response.json(
+        { error: "The sandbox token is missing or wrong." },
+        { status: 401 },
+      );
 
     if (!allowedPath(request.method, url.pathname))
-      return Response.json({ error: "No such sandbox route." }, { status: 404 });
+      return Response.json(
+        { error: "No such sandbox route." },
+        { status: 404 },
+      );
 
+    // The request-size gate is per-verb: the file write carries whole uploads (tens of MB by
+    // design, see env.maxUploadBytes), while every other verb's body stays under the relay cap.
     const declaredLength = Number(request.headers.get("content-length") ?? "0");
-    if (declaredLength > env.maxResponseBytes)
-      return Response.json({ error: "The request body is too large." }, { status: 413 });
+    const bodyCeiling =
+      url.pathname === "/file" && request.method === "POST"
+        ? env.maxUploadBytes
+        : env.maxResponseBytes;
+    if (declaredLength > bodyCeiling)
+      return Response.json(
+        { error: "The request body is too large." },
+        { status: 413 },
+      );
 
     const botId = request.headers.get("x-openbot-bot-id")?.trim() ?? "";
     if (!isPlainBotId(botId))
-      return Response.json({ error: "A valid x-openbot-bot-id header is required." }, { status: 400 });
+      return Response.json(
+        { error: "A valid x-openbot-bot-id header is required." },
+        { status: 400 },
+      );
 
     // reset 是治理动作：只允许显式端点，路径白名单之外照旧 404。
     if (url.pathname === "/workspace/reset") {
       if (request.method !== "POST")
         return Response.json({ error: "Use POST." }, { status: 405 });
       await runtimes.stopBot(botId);
-      await rm(`${env.workspaceDir}/bots/${botId}`, { recursive: true, force: true });
+      await rm(`${env.workspaceDir}/bots/${botId}`, {
+        recursive: true,
+        force: true,
+      });
       return Response.json({ ok: true, botId });
     }
 
@@ -159,7 +186,9 @@ export function createProxyHandler(
           { status: 426 },
         );
       }
-      const devTarget = runtimes.listDevServers().find((entry) => entry.botId === botId);
+      const devTarget = runtimes
+        .listDevServers()
+        .find((entry) => entry.botId === botId);
       if (!devTarget) {
         return Response.json(
           { error: "This Bot's dev server is not running." },
@@ -174,8 +203,7 @@ export function createProxyHandler(
           { status: 501 },
         );
       }
-      const subprotocol =
-        request.headers.get("sec-websocket-protocol") ?? null;
+      const subprotocol = request.headers.get("sec-websocket-protocol") ?? null;
       const path = url.searchParams.get("path") ?? "/";
       const upgraded = bunServer.upgrade(request, {
         data: { botId, port: devTarget.port, subprotocol, path },
@@ -195,11 +223,22 @@ export function createProxyHandler(
         dir?: unknown;
         command?: unknown;
       };
-      const dir = typeof body.dir === "string" && body.dir.trim() ? body.dir.trim() : "";
+      const dir =
+        typeof body.dir === "string" && body.dir.trim() ? body.dir.trim() : "";
       if (!dir)
-        return Response.json({ error: "dir is a required string." }, { status: 400 });
-      if (typeof body.command === "string" && !body.command.trim() && body.command !== "")
-        return Response.json({ error: "command must be a non-empty string." }, { status: 400 });
+        return Response.json(
+          { error: "dir is a required string." },
+          { status: 400 },
+        );
+      if (
+        typeof body.command === "string" &&
+        !body.command.trim() &&
+        body.command !== ""
+      )
+        return Response.json(
+          { error: "command must be a non-empty string." },
+          { status: 400 },
+        );
       const started = await runtimes.startDevServer({
         botId,
         dir,
@@ -239,13 +278,19 @@ export function createProxyHandler(
       const path = url.searchParams.get("path") ?? "";
       if (!path || path.startsWith("/") || path.split("/").includes("..")) {
         return Response.json(
-          { error: "The path must be a plain relative path inside the workspace." },
+          {
+            error:
+              "The path must be a plain relative path inside the workspace.",
+          },
           { status: 400 },
         );
       }
       const body = new Uint8Array(await request.arrayBuffer());
-      if (body.byteLength > env.maxResponseBytes) {
-        return Response.json({ error: "The file is too large." }, { status: 413 });
+      if (body.byteLength > env.maxUploadBytes) {
+        return Response.json(
+          { error: "The file is too large." },
+          { status: 413 },
+        );
       }
       const target = join(env.workspaceDir, "bots", botId, path);
       await mkdir(join(target, ".."), { recursive: true });
@@ -253,13 +298,41 @@ export function createProxyHandler(
       return Response.json({ path, size: body.byteLength }, { status: 201 });
     }
 
+    // DELETE /file: the contained inverse of the write — the proxy deletes, and only a regular
+    // file. A directory answers 404 (onyx's `[ -f ] && rm` semantics: "not a file" and "absent"
+    // are the same honest refusal), so the verb can never be aimed at a whole workspace tree.
+    if (url.pathname === "/file" && request.method === "DELETE") {
+      const path = url.searchParams.get("path") ?? "";
+      if (!path || path.startsWith("/") || path.split("/").includes("..")) {
+        return Response.json(
+          {
+            error:
+              "The path must be a plain relative path inside the workspace.",
+          },
+          { status: 400 },
+        );
+      }
+      const target = join(env.workspaceDir, "bots", botId, path);
+      const info = await stat(target).catch(() => null);
+      if (!info?.isFile())
+        return Response.json({ error: "Not found." }, { status: 404 });
+      await unlink(target);
+      return Response.json({ ok: true, path });
+    }
+
     // The static webapp road (S3): files that were built, no process. Start verifies the
     // build exists (404-shaped refusal); GET serves one file under containment.
     if (url.pathname === "/webapp/start" && request.method === "POST") {
-      const started = await startWebapp({ workspaceRoot: env.workspaceDir + "/bots" }, botId);
+      const started = await startWebapp(
+        { workspaceRoot: `${env.workspaceDir}/bots` },
+        botId,
+      );
       if (!started.ok) {
         return Response.json(
-          { error: "No webapp build found for this Bot.", reason: started.reason },
+          {
+            error: "No webapp build found for this Bot.",
+            reason: started.reason,
+          },
           { status: 404 },
         );
       }
@@ -271,7 +344,7 @@ export function createProxyHandler(
     if (url.pathname === "/webapp/file" && request.method === "GET") {
       const path = url.searchParams.get("path") ?? "";
       const file = await readWebappFile(
-        { workspaceRoot: env.workspaceDir + "/bots" },
+        { workspaceRoot: `${env.workspaceDir}/bots` },
         botId,
         path,
       );
@@ -299,7 +372,9 @@ export function createProxyHandler(
       });
     }
     if (url.pathname === "/workspace/restore" && request.method === "POST") {
-      const busy = runtimes.listRuntimes().find((entry) => entry.botId === botId);
+      const busy = runtimes
+        .listRuntimes()
+        .find((entry) => entry.botId === botId);
       if (busy?.streamCount && busy.streamCount > 0) {
         return Response.json(
           { error: "The Bot is mid-turn; restore after it settles." },
@@ -314,7 +389,10 @@ export function createProxyHandler(
       );
       if (!restored.ok) {
         return Response.json(
-          { error: "That archive is not a workspace snapshot.", reason: restored.reason },
+          {
+            error: "That archive is not a workspace snapshot.",
+            reason: restored.reason,
+          },
           { status: 400 },
         );
       }
@@ -357,13 +435,19 @@ export function createProxyHandler(
     // Abort is forwarded verbatim: the upstream abort is opencode's own, and the wrapper adds
     // no semantics of its own beyond the token and the bot routing it just performed.
     if (url.pathname.endsWith("/abort")) {
-      const response = await fetch(`${upstreamBase(runtime.port)}${url.pathname}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      }).catch(() => null);
+      const response = await fetch(
+        `${upstreamBase(runtime.port)}${url.pathname}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      ).catch(() => null);
       if (!response)
-        return Response.json({ error: "The abort did not reach the runtime." }, { status: 503 });
+        return Response.json(
+          { error: "The abort did not reach the runtime." },
+          { status: 503 },
+        );
       // Same encoding-header discipline as the main pass-through below: the body bun hands
       // us is already decompressed, so the upstream's content-encoding/content-length no
       // longer describe it.
@@ -379,7 +463,8 @@ export function createProxyHandler(
     headers.delete("x-sandbox-token");
     headers.delete("host");
     headers.delete("content-length");
-    const body = request.method === "GET" ? undefined : await request.arrayBuffer();
+    const body =
+      request.method === "GET" ? undefined : await request.arrayBuffer();
 
     // 探活重试：子进程可能刚被清扫或正在上线，最多等 15 秒。
     let response: Response | null = null;
@@ -389,11 +474,14 @@ export function createProxyHandler(
           signal: AbortSignal.timeout(2_000),
         });
         if (!probe.ok) throw new Error("not ready");
-        response = await fetch(`${upstreamBase(runtime.port)}${url.pathname}${url.search}`, {
-          method: request.method,
-          headers,
-          body,
-        });
+        response = await fetch(
+          `${upstreamBase(runtime.port)}${url.pathname}${url.search}`,
+          {
+            method: request.method,
+            headers,
+            body,
+          },
+        );
         if (response.status >= 502) {
           response = null;
           await sleep(500);
@@ -403,11 +491,19 @@ export function createProxyHandler(
       }
     }
     if (response === null)
-      return Response.json({ error: "The bot's sandbox runtime is not ready." }, { status: 503 });
+      return Response.json(
+        { error: "The bot's sandbox runtime is not ready." },
+        { status: 503 },
+      );
 
-    const upstreamLength = Number(response.headers.get("content-length") ?? "0");
+    const upstreamLength = Number(
+      response.headers.get("content-length") ?? "0",
+    );
     if (upstreamLength > env.maxResponseBytes)
-      return Response.json({ error: "The sandbox response is too large." }, { status: 413 });
+      return Response.json(
+        { error: "The sandbox response is too large." },
+        { status: 413 },
+      );
     // Bun's fetch already decompressed the upstream body (gzip from opencode on larger
     // listings) — `response.body` is plaintext now. Forwarding the upstream's headers as-is
     // kept `content-encoding: gzip` on a plaintext body, and the next bun fetch downstream

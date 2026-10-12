@@ -16,6 +16,7 @@ import { createCraftApprovalSignals } from "./approval-signals";
 import { createCraftApprovalRoutes } from "./approvals";
 import { createArtifactRoutes } from "./artifact-routes";
 import type { CraftConfig } from "./config";
+import { createFileRoutes } from "./file-routes";
 import { createInterruptFence } from "./interrupt";
 import { createSessionFlowLocks } from "./locks";
 import { CraftSessionManager } from "./manager";
@@ -170,6 +171,15 @@ export function createCraftRoutes(input: {
   app.route(
     "/",
     createArtifactRoutes(requireUser, {
+      config,
+      store,
+      gateway,
+      botIdFor: deps.botIdFor,
+    }),
+  );
+  app.route(
+    "/",
+    createFileRoutes(requireUser, {
       config,
       store,
       gateway,
