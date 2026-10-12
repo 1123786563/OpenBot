@@ -5,6 +5,7 @@ import type {
   CraftAttachment,
   CraftFileEntry,
   CraftMessage,
+  CraftSandboxStatusResponse,
   CraftSession,
   CraftWebappInfo,
 } from "./types";
@@ -76,6 +77,21 @@ export function generateSessionName(id: string): Promise<string> {
   })
     .then((r) => r.json())
     .then((body: { name: string }) => body.name);
+}
+
+/**
+ * The status chip's one read (onyx's SandboxStatusResponse). The server derives the value from
+ * the session row plus gateway liveness, so this poll is cheap and never resets the session's
+ * idle clock — focus-driven wakes go through `getSession`, whose detail read does the wake.
+ */
+export function fetchSandboxStatus(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CraftSandboxStatusResponse> {
+  return client(sessionPath(id, "/sandbox-status"), {
+    fallback: "The sandbox status could not be loaded.",
+    signal,
+  }).then((r) => r.json());
 }
 
 // ── messages / turns ────────────────────────────────────────────────────────────

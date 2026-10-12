@@ -97,6 +97,12 @@ export async function deleteSnapshots(
 export type CraftIdleReaperDeps = {
   /** Resolves the Bot whose workspace hosts an idle session (snapshot must pack the right one). */
   botIdFor: (sessionId: string) => Promise<string | null>;
+  /**
+   * True while a session has a live interactive turn. The sweep leaves such a session awake even
+   * when its row is quiet — a parked approval holds a turn with no traffic. An errored check also
+   * counts as "active" (fail-closed: a session we cannot prove quiet is never slept).
+   */
+  hasActiveTurn?: (session: { id: string; userId: string }) => Promise<boolean>;
 };
 
 export type CraftIdleReaper = {
@@ -106,13 +112,17 @@ export type CraftIdleReaper = {
 };
 
 /**
- * The sleep half of sleep/wake: a period sweep over ACTIVE sessions quiet past
- * `sandboxIdleTimeoutSeconds`. Each is snapshotted THEN marked idle — a session that failed its
- * snapshot stays active and retries next sweep, because sleeping a session with no durable backup
- * is worse than never sleeping it.
+ * The sleep half of sleep/wake: a periodic sweep (onyx's cleanup_idle_sandboxes_task, simplified
+ * per the port plan) over ACTIVE sessions quiet past `sandboxIdleTimeoutSeconds`. Each candidate
+ * is checked for a live turn, snapshotted, THEN flipped idle through a guarded CAS — a session
+ * that failed its snapshot, gained a turn, or was touched mid-sweep stays active and retries next
+ * sweep, because sleeping a session with no durable backup is worse than never sleeping it.
  *
- * The sweep cadence is a fraction of the idle threshold (at least every 30s) so a session that
- * goes quiet just past a boundary is caught within one cadence, not two full thresholds.
+ * DIVERGENCE (the release step): onyx terminates the pod after the snapshot; agent-sandbox hosts
+ * every craft session in ONE shared Bot workspace behind a gateway with no per-session sandbox to
+ * terminate (its /workspace/reset is a destructive governance verb that would drop every session's
+ * live state, and the gateway already reaps idle per-Bot runtimes itself). So the sweep's release
+ * degrades to snapshot + session→idle; the wake half (wakeIfIdle) restores from the snapshot.
  */
 export function startCraftIdleReaper(
   ctx: SnapshotContext,
@@ -120,10 +130,10 @@ export function startCraftIdleReaper(
 ): CraftIdleReaper {
   const periodMs = Math.max(
     30_000,
-    Math.floor(ctx.config.sandboxIdleTimeoutSeconds / 6) * 1000,
+    ctx.config.idleReaperIntervalSeconds * 1000,
   );
   const timer = setInterval(() => {
-    reapIdleSessions(ctx, deps.botIdFor).catch((error) => {
+    reapIdleSessions(ctx, deps).catch((error) => {
       logger.error({ error }, "[craft] idle reaper sweep failed");
     });
   }, periodMs);
@@ -131,13 +141,13 @@ export function startCraftIdleReaper(
 
   return {
     stop: () => clearInterval(timer),
-    sweepOnce: () => reapIdleSessions(ctx, deps.botIdFor),
+    sweepOnce: () => reapIdleSessions(ctx, deps),
   };
 }
 
 async function reapIdleSessions(
   ctx: SnapshotContext,
-  botIdFor: (sessionId: string) => Promise<string | null>,
+  deps: CraftIdleReaperDeps,
 ): Promise<number> {
   const cutoff = new Date(
     Date.now() - ctx.config.sandboxIdleTimeoutSeconds * 1000,
@@ -145,12 +155,18 @@ async function reapIdleSessions(
   const sessions = await ctx.store.listIdleSessions(cutoff);
   let slept = 0;
   for (const session of sessions) {
-    const botId = await botIdFor(session.id);
+    if (await sessionHasLiveTurn(deps, session)) continue;
+    const botId = await deps.botIdFor(session.id);
     if (!botId) continue;
     try {
       await takeSnapshot(ctx, { botId, sessionId: session.id });
-      await ctx.store.updateSession(session.id, { status: "idle" });
-      slept += 1;
+      // The flip is guarded: activity that landed between the list read and now keeps the
+      // session awake (onyx's second still-idle scan, as one CAS).
+      const flipped = await ctx.store.markSessionIdleIfStillIdle(
+        session.id,
+        cutoff,
+      );
+      if (flipped) slept += 1;
     } catch (error) {
       logger.warn(
         { error, sessionId: session.id },
@@ -159,4 +175,20 @@ async function reapIdleSessions(
     }
   }
   return slept;
+}
+
+async function sessionHasLiveTurn(
+  deps: CraftIdleReaperDeps,
+  session: { id: string; userId: string },
+): Promise<boolean> {
+  if (!deps.hasActiveTurn) return false;
+  try {
+    return await deps.hasActiveTurn(session);
+  } catch (error) {
+    logger.warn(
+      { error, sessionId: session.id },
+      "[craft] idle reaper could not check for active turns; leaving active",
+    );
+    return true;
+  }
 }

@@ -22,6 +22,7 @@ export function Composer({
   streaming = false,
   onSend,
   onInterrupt,
+  onInputFocus,
 }: {
   /** The session uploads land in; absent disables the attach road (no session, no upload). */
   sessionId?: string;
@@ -32,6 +33,8 @@ export function Composer({
     attachments?: CraftAttachment[],
   ) => void | Promise<void>;
   onInterrupt: () => void | Promise<void>;
+  /** Input focus — the wake-on-intent hook the panel wires (a sleeping sandbox wakes here). */
+  onInputFocus?: () => void;
 }) {
   const { t } = useTranslation("craft");
   const [draft, setDraft] = useState("");
@@ -97,6 +100,7 @@ export function Composer({
           disabled={disabled}
           rows={1}
           placeholder="What should your agent build?"
+          onFocus={onInputFocus}
           className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
           onChange={(event) => {
             setDraft(event.target.value);

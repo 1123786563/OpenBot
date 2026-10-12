@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import {
+  fetchSandboxStatus,
   getSession,
   listArtifacts,
   listFiles,
@@ -23,6 +24,7 @@ export const craftKeys = {
   artifacts: (id: string) => ["craft", "artifacts", id] as const,
   files: (id: string, path: string) => ["craft", "files", id, path] as const,
   webapp: (id: string) => ["craft", "webapp", id] as const,
+  sandboxStatus: (id: string) => ["craft", "sandboxStatus", id] as const,
 };
 
 export const craftSessionsQueryOptions = () =>
@@ -59,4 +61,21 @@ export const craftWebappQueryOptions = (id: string) =>
   queryOptions({
     queryKey: craftKeys.webapp(id),
     queryFn: ({ signal }) => webappInfo(id, signal),
+  });
+
+/**
+ * The status chip's poll. The cadence is a function of the answer (onyx's reconciler): a
+ * provisioning sandbox is watched at 2s, a running one at 30s, and a settled one — sleeping,
+ * terminated, failed — is not watched at all; the wake path re-fetches it explicitly.
+ */
+export const craftSandboxStatusQueryOptions = (id: string) =>
+  queryOptions({
+    queryKey: craftKeys.sandboxStatus(id),
+    queryFn: ({ signal }) => fetchSandboxStatus(id, signal),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "provisioning") return 2000;
+      if (status === "running") return 30_000;
+      return false;
+    },
   });

@@ -50,5 +50,14 @@
     "failed": "Failed",
     "retry": "Retry upload",
     "remove": "Remove"
+  },
+  "sandbox": {
+    "loading": "Finding sandbox…",
+    "provisioning": "Initializing sandbox…",
+    "running": "Sandbox running",
+    "sleeping": "Sandbox sleeping",
+    "restoring": "Restoring session…",
+    "terminated": "Sandbox terminated",
+    "failed": "Failed to provision sandbox"
   }
 }

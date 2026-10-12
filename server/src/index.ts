@@ -179,7 +179,11 @@ import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
-import { type CraftRoutesFactory, createCraftRoutes } from "./craft/routes";
+import {
+  type CraftRoutesFactory,
+  createCraftRoutes,
+  stopCraftIdleReaper,
+} from "./craft/routes";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -4242,6 +4246,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // Craft's idle reaper (started by the craft route assembly, held at that module's scope).
+    stopCraftIdleReaper();
     void Promise.allSettled([
       channelActivityListener.stop(),
       policyListener.stop(),

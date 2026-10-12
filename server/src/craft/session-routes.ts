@@ -5,8 +5,9 @@
  *
  * Endpoint set here: GET/POST /sessions, GET /sessions/:id, PUT /sessions/:id/name, PATCH
  * /sessions/:id/public, DELETE /sessions/:id, POST /sessions/:id/generate-name, GET
- * /sessions/:id/pre-provisioned-check, POST /sessions/:id/restore (no-op fast path in the
- * warm-sandbox phase — the workspace reconcile runs on demand).
+ * /sessions/:id/pre-provisioned-check, GET /sessions/:id/sandbox-status (the header chip's
+ * poll), POST /sessions/:id/snapshot, POST /sessions/:id/restore (the wake: an idle session
+ * replays its newest snapshot and returns active).
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
@@ -30,6 +31,20 @@ import type { ObjectStore } from "./storage/object-store";
 import type { CraftSessionRow, CraftStore } from "./store";
 
 type Json = Record<string, unknown>;
+
+/**
+ * The sandbox lifecycle values the chip renders — onyx's SandboxStatus enum verbatim
+ * (db/enums.py:489). "restoring" is client-derived (the wake fetch's in-flight window) and
+ * "terminated" could only come from a future sandbox backend; neither is answered here, but
+ * both belong to the wire union the chip consumes.
+ */
+export type CraftSandboxStatus =
+  | "provisioning"
+  | "running"
+  | "sleeping"
+  | "restoring"
+  | "terminated"
+  | "failed";
 
 export type SessionRoutesDeps = {
   db: Database;
@@ -238,6 +253,21 @@ export function createSessionRoutes(
     return context.body(null, 204);
   });
 
+  // ── GET /sessions/:sessionId/sandbox-status — the header chip's one read ────
+  app.get("/sessions/:sessionId/sandbox-status", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    // Deliberately findSession, NOT getSession: the detail read bumps lastActivityAt, and a chip
+    // polling every 30s would reset the reaper's idle clock forever — the poll must be free.
+    const session = await deps.store.findSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    const botId = await deps.botIdFor(sessionId);
+    const status = await sandboxStatusFor(deps, session, botId);
+    return context.json({ status });
+  });
+
   // ── GET /sessions/:sessionId/pre-provisioned-check ─────────────────────────
   app.get("/sessions/:sessionId/pre-provisioned-check", async (context) => {
     const actor = context.var.actor;
@@ -297,4 +327,34 @@ export function createSessionRoutes(
   });
 
   return app;
+}
+
+/**
+ * Derive the chip's sandbox state. onyx reads a sandbox row; OpenBot has no sandbox rows — the
+ * agent-sandbox gateway hosts every session in one shared Bot workspace, so the answer is
+ * derived, never stored:
+ *
+ * - failed session → "failed" (provisioning could not complete for it)
+ * - idle session   → "sleeping" (the reaper snapshotted it; wakeIfIdle restores on the next detail read)
+ * - initializing   → "provisioning" (the workspace reconcile has not CASed the row active yet)
+ * - active         → probe the gateway's opencode-serve: reachable = "running"; unreachable =
+ *   "provisioning" — the closest onyx value, honest here because the gateway spawns a Bot's
+ *   runtime lazily and reaps it idle, so "not answering yet" is a cold start, not a failure.
+ *   A session whose Bot is not even configured has no sandbox to speak of: null (onyx's
+ *   "no sandbox record" answer).
+ *
+ * "terminated" is never derived — in this topology no per-session sandbox exists to terminate
+ * (the reaper's documented divergence); "restoring" stays client-owned, as in onyx.
+ */
+async function sandboxStatusFor(
+  deps: Pick<SessionRoutesDeps, "gateway">,
+  session: CraftSessionRow,
+  botId: string | null,
+): Promise<CraftSandboxStatus | null> {
+  if (session.status === "failed") return "failed";
+  if (session.status === "idle") return "sleeping";
+  if (session.status === "initializing") return "provisioning";
+  if (!botId) return null;
+  const alive = await deps.gateway.healthCheck(botId).catch(() => false);
+  return alive ? "running" : "provisioning";
 }
