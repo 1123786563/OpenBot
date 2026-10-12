@@ -279,10 +279,11 @@ export function createCreditWriter(database: Database): CreditWriter {
         input.maximumCents <= 0 ||
         input.maximumCents > MAX_STORED_UNITS ||
         !Number.isFinite(input.expiresAt.getTime()) ||
+        input.expiresAt.getTime() <= Date.now() ||
         input.idempotencyKey.length === 0
       ) {
         throw new TypeError(
-          "reserveCredits needs a positive 32-bit scaled amount, a real expiry and a key.",
+          "reserveCredits needs a positive 32-bit scaled amount, a future expiry and a key.",
         );
       }
       await ensureCustomer(database, input.externalCustomerId);
@@ -687,7 +688,16 @@ async function lockCustomer(tx: Tx, externalId: string) {
     .for("update");
 }
 
-/** Live grants, soonest expiry first, with capacity left after used units and active holds. */
+/**
+ * Live grants, soonest expiry first, with capacity left after used units and active holds.
+ *
+ * An "active" hold is reserved AND not yet expired (audit F4): a hold whose expiry has passed
+ * no longer occupies capacity — the work it was admitted for either finished or never will,
+ * and reconciliation reports the stuck row for an operator. A late settlement of an expired
+ * hold still charges honestly; the settle path's own `min(allocation.amount, total - used)`
+ * clamp keeps the grants from going negative exactly the way a post-paid overdraw is kept
+ * honest.
+ */
 async function freeGrants(db: Reader, externalId: string, lock: boolean) {
   const query = db
     .select({
@@ -698,7 +708,7 @@ async function freeGrants(db: Reader, externalId: string, lock: boolean) {
         select sum(a.amount)::int
         from credit_reservation_allocations a
         join credit_reservations r on r.id = a.reservation_id
-        where a.grant_id = credit_grants.id and r.status = 'reserved'
+        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > now()
       ), 0)`,
     })
     .from(creditGrants)
