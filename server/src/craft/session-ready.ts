@@ -13,6 +13,11 @@
 import type { Database } from "../db/client";
 import type { CraftConfig } from "./config";
 import { StaleProvisioningAttemptError } from "./errors";
+import {
+  type CraftManagedContentResolver,
+  companySearchSkillAvailable,
+  materializeManagedContent,
+} from "./managed-content";
 import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "./store";
 import {
@@ -57,6 +62,12 @@ export type EnsureSessionReadyInput = {
   llmConfigFor: (
     session: CraftSessionRow,
   ) => Promise<import("./opencode-config").CraftLLMProviderConfig>;
+  /**
+   * Resolves the session owner's managed content BEFORE anything is built: a
+   * failed resolution fails provisioning (AGENTS.md is only ever written after
+   * resolution succeeded — onyx reads the payload up front and builds after).
+   */
+  managedContentResolver?: CraftManagedContentResolver;
   /** The craft runtime config — workspace generation reads it (explicit DI, no globals). */
   config: CraftConfig;
 };
@@ -76,27 +87,54 @@ export async function ensureSessionReady(
     session.id,
     input.config.sessionDirectoryMode,
   );
-
-  if (
-    await sessionWorkspaceExists(
-      gateway.fileApiFor(botId) ?? nullApi,
-      session.id,
-      input.config.sessionDirectoryMode,
-    )
-  ) {
-    if (session.status !== "active") {
-      await store.updateSession(session.id, { status: "active" });
-    }
-    return;
-  }
-
   const fileApi = gateway.fileApiFor(botId);
-  if (!fileApi) {
-    throw new Error(`No sandbox configured for bot ${botId}`);
-  }
 
-  const llmConfig = await input.llmConfigFor(session);
   try {
+    // Managed content resolves BEFORE anything is built: a failed resolution
+    // fails provisioning here, so no AGENTS.md ever names apps or skills the
+    // deployment could not stand behind (onyx reads the payload up front, then
+    // commits before any external work).
+    const managedContent = input.managedContentResolver
+      ? await input.managedContentResolver(session)
+      : null;
+
+    // The push half (onyx push_managed_content): failures are logged, never
+    // raised — the workspace still builds, and because the skills hash is only
+    // acked on a successful push the next create/reload retries.
+    const pushManagedContent = async (): Promise<boolean> => {
+      if (!managedContent || !fileApi) return false;
+      return materializeManagedContent(fileApi, directory, managedContent);
+    };
+
+    if (
+      await sessionWorkspaceExists(
+        gateway.fileApiFor(botId) ?? nullApi,
+        session.id,
+        input.config.sessionDirectoryMode,
+      )
+    ) {
+      // Light path: the workspace is intact, but the managed content may
+      // predate it (a repair under the same id, a pre-managed-content session)
+      // — push again and record the hashes the push actually landed.
+      const hydrated = await pushManagedContent();
+      if (managedContent) {
+        await store.updateSession(session.id, {
+          ...(session.status !== "active" ? { status: "active" } : {}),
+          mcpConfigHash: managedContent.mcpConfigHash,
+          ...(hydrated ? { skillsHash: managedContent.skillsHash } : {}),
+        });
+      } else if (session.status !== "active") {
+        await store.updateSession(session.id, { status: "active" });
+      }
+      return;
+    }
+
+    if (!fileApi) {
+      throw new Error(`No sandbox configured for bot ${botId}`);
+    }
+
+    const llmConfig = await input.llmConfigFor(session);
+    const skillsHydrated = await pushManagedContent();
     await setupSessionWorkspace(
       {
         writeFile: (path, content) => fileApi.writeFile(path, content),
@@ -109,6 +147,13 @@ export async function ensureSessionReady(
         userName: input.userName,
         organizationInstructions: input.organizationInstructions,
         agentsTemplate: await agentsTemplate(),
+        managedContent: managedContent
+          ? {
+              connectableAppsSection: managedContent.connectableAppsSection,
+              companySearchSkillAvailable:
+                companySearchSkillAvailable(managedContent),
+            }
+          : null,
       },
     );
 
@@ -127,6 +172,16 @@ export async function ensureSessionReady(
       sessionId: session.id,
       toStatus: "active",
       opencodeSessionId,
+      // onyx finalize carries the sandbox row's hashes: the MCP fingerprint
+      // regardless (the config is written per session), the skills hash only
+      // when the push landed — a failed push leaves the row behind the content
+      // so the next reconcile/reload retries it.
+      ...(managedContent
+        ? { mcpConfigHash: managedContent.mcpConfigHash }
+        : {}),
+      ...(managedContent && skillsHydrated
+        ? { skillsHash: managedContent.skillsHash }
+        : {}),
     });
     if (!finalized) {
       throw new StaleProvisioningAttemptError(

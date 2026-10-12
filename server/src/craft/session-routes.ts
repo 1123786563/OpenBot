@@ -67,10 +67,9 @@ export type SessionRoutesDeps = {
   turnState: TurnStateStore;
   /**
    * The deployment's current managed-content fingerprints (skills payload + craft MCP set),
-   * the seam the manager's staleness contract reads. OpenBot ships no skills/MCP push, so the
-   * assembly provides the stable null pair — every `skills_stale` below then derives (through
-   * the real predicate, not a literal) to false, which is the honest answer while nothing
-   * managed exists to fall behind.
+   * the seam the manager's staleness contract reads. The craft assembly derives it from the
+   * managed-content resolver (or answers the stable null pair when none is wired) — every
+   * `skills_stale` below derives through the real predicate, never a literal.
    */
   managedContentHashesFor?: (
     session: CraftSessionRow,

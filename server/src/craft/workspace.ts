@@ -44,6 +44,16 @@ export type SetupSessionWorkspaceInput = {
   userName?: string | null;
   organizationInstructions?: string | null;
   agentsTemplate: string;
+  /**
+   * The resolved managed content's AGENTS.md face. The caller resolves BEFORE
+   * setup begins (onyx reads the payload up front, commits, then builds), so
+   * AGENTS.md is only ever written after resolution succeeded. Null for a
+   * wiring without managed content.
+   */
+  managedContent?: {
+    connectableAppsSection: string;
+    companySearchSkillAvailable: boolean;
+  } | null;
 };
 
 export type WorkspaceApi = {
@@ -78,6 +88,10 @@ export async function setupSessionWorkspace(
     disabledTools: input.config.opencodeDisabledTools,
     userName: input.userName,
     organizationInstructions: input.organizationInstructions,
+    connectableAppsSection:
+      input.managedContent?.connectableAppsSection ?? null,
+    companySearchSkillAvailable:
+      input.managedContent?.companySearchSkillAvailable ?? false,
   });
   await api.writeFile(`${root}/AGENTS.md`, agentsMd);
 

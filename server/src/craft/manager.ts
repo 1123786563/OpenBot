@@ -10,9 +10,9 @@
  *
  * The artifact walk, md→docx/pptx export and webapp proxying live in their own modules
  * (artifacts.ts / export.ts / webapp-proxy.ts); the skills/MCP reload chain is the staleness
- * predicate in skills.ts plus reloadSessionSkills — the regenerate/dispose/ack tail both the
- * reconcile and the POST /sessions/:id/skills/reload route drive. The managed-content push
- * that would fill the source hashes is still a later phase.
+ * predicate in skills.ts plus reloadSessionSkills — the push/regenerate/dispose/ack tail both
+ * the reconcile and the POST /sessions/:id/skills/reload route drive, over managed-content.ts's
+ * resolver (the plugins-domain-backed app list + skill fileset + fingerprints).
  */
 
 import { readFile } from "node:fs/promises";
@@ -29,6 +29,12 @@ import {
   isBuildPacket,
 } from "./events/packets";
 import { isKeepalive, isSandboxError, type SandboxEvent } from "./events/types";
+import {
+  type CraftManagedContentResolver,
+  companySearchSkillAvailable,
+  materializeManagedContent,
+  type ResolvedCraftManagedContent,
+} from "./managed-content";
 import type { PromptAttachment } from "./opencode/serve-client";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import {
@@ -71,13 +77,20 @@ export type SessionManagerDeps = {
   approvalSignals?: CraftApprovalSignals | null;
   /**
    * The deployment's current managed-content fingerprints (skills payload + craft MCP set) to
-   * compare a session's recorded hashes against. onyx reads these off the sandbox row; OpenBot
-   * has no managed-content push yet, so the wiring leaves this unset and both hashes resolve
-   * null — the staleness contract below stays wired but inert until a skills/MCP pipeline lands.
+   * compare a session's recorded hashes against. onyx reads these off the sandbox row; when only
+   * this seam is wired the hashes are all the staleness contract sees. Unset + no resolver
+   * below = the stable null pair (nothing pushed → nothing stale).
    */
   managedContentHashesFor?: (
     session: CraftSessionRow,
   ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
+  /**
+   * Resolves the session owner's managed content (connectable-apps section + skill fileset +
+   * craft MCP set + fingerprints) — the port of onyx's build_managed_content_payload, answered
+   * per user (never a deployment-wide id). The reload path pushes the content it resolves; a
+   * failed resolution surfaces as null on the degrading paths and propagates on provisioning.
+   */
+  managedContentFor?: CraftManagedContentResolver;
 };
 
 export class CraftSessionManager {
@@ -215,6 +228,10 @@ export class CraftSessionManager {
       userName,
       organizationInstructions: this.deps.organizationInstructions ?? null,
       llmConfigFor: (s) => this.deps.llmConfigFor(s),
+      // Managed content resolves inside the provisioning envelope: a failed
+      // resolution fails the session (nothing is built off a payload the
+      // deployment could not stand behind), and the push acks only on success.
+      managedContentResolver: this.deps.managedContentFor,
     });
   }
 
@@ -261,12 +278,18 @@ export class CraftSessionManager {
     }
 
     if (current !== expected) {
+      // onyx rebuilds the section for the regenerate (manager.py:346-348): the
+      // app list may have changed under the session even though the model did not.
+      const content =
+        (await this.deps.managedContentFor?.(session).catch(() => null)) ??
+        null;
       await this.regenerateSessionConfig(
         botId,
         directory,
         session,
         llmConfig,
         userName,
+        content,
       );
     } else if (session.opencodeSessionId) {
       // A matching file does NOT prove the running instance picked it up: a prior
@@ -290,9 +313,7 @@ export class CraftSessionManager {
     }
 
     // Managed-content staleness: a runtime that predates a skills/MCP change reloads.
-    const hashes =
-      (await this.deps.managedContentHashesFor?.(session).catch(() => null)) ??
-      null;
+    const hashes = await this.currentHashesFor(session);
     if (
       sessionRuntimeStale(
         session,
@@ -300,14 +321,46 @@ export class CraftSessionManager {
         hashes?.mcpConfigHash ?? null,
       )
     ) {
+      const content =
+        (await this.deps.managedContentFor?.(session).catch(() => null)) ??
+        null;
       await this.regenerateAndAckSkills(
         session,
         botId,
         directory,
         userName,
+        content,
         hashes,
       );
     }
+  }
+
+  /**
+   * The session's current managed-content fingerprints, whichever seam the wiring
+   * provided: an explicit hashes seam wins (cheap reads), a full resolver is
+   * derived from, and neither wired answers the stable null pair.
+   */
+  private async currentHashesFor(
+    session: CraftSessionRow,
+  ): Promise<{
+    skillsHash: string | null;
+    mcpConfigHash: string | null;
+  } | null> {
+    if (this.deps.managedContentHashesFor) {
+      return this.deps.managedContentHashesFor(session).catch(() => null);
+    }
+    if (this.deps.managedContentFor) {
+      const content = await this.deps
+        .managedContentFor(session)
+        .catch(() => null);
+      return content
+        ? {
+            skillsHash: content.skillsHash,
+            mcpConfigHash: content.mcpConfigHash,
+          }
+        : null;
+    }
+    return null;
   }
 
   /**
@@ -321,6 +374,7 @@ export class CraftSessionManager {
     session: CraftSessionRow,
     llmConfig: CraftLLMProviderConfig,
     userName: string | null,
+    managedContent: ResolvedCraftManagedContent | null = null,
   ): Promise<void> {
     const expected = opencodeConfigJson(
       buildProviderOpencodeConfig(llmConfig, {
@@ -332,7 +386,7 @@ export class CraftSessionManager {
     const workspaceApi = this.gateway.workspaceApiFor(botId);
     if (workspaceApi) {
       await workspaceApi.writeFile(`${directory}/opencode.json`, expected);
-      // AGENTS.md rides along (the personalization may have changed too).
+      // AGENTS.md rides along (the personalization or app list may have changed too).
       const agentsMd = generateAgentInstructions({
         template: await this.template(),
         config: this.config,
@@ -341,6 +395,10 @@ export class CraftSessionManager {
         disabledTools: this.config.opencodeDisabledTools,
         userName,
         organizationInstructions: this.deps.organizationInstructions ?? null,
+        connectableAppsSection: managedContent?.connectableAppsSection ?? null,
+        companySearchSkillAvailable: managedContent
+          ? companySearchSkillAvailable(managedContent)
+          : false,
       });
       await workspaceApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
       // The turn-budget plugin the config now references must be present for
@@ -356,16 +414,15 @@ export class CraftSessionManager {
   }
 
   /**
-   * Reload a session whose runtime predates the deployment's managed content (skills/MCP):
-   * rewrite the session config and dispose the running instance so a fresh one re-reads it,
-   * then acknowledge the current hashes on the row (onyx reload_session_skills) and report
-   * whether the runtime is STILL stale afterwards (a fresh push may have raced the read).
-   *
-   * Divergence from onyx (deliberate): onyx short-circuits when the session is not stale;
-   * OpenBot has no managed-content push, so staleness alone would make the endpoint a
-   * no-op forever. The route exposes it as an EXPLICIT refresh — regenerate + dispose run
-   * unconditionally, and with the default null hashes the returned flag is always false
-   * (nothing pushed → nothing to fall behind, the predicate's own semantics).
+   * Reload a session whose runtime predates the deployment's managed content (skills/MCP).
+   * onyx's non-stale short-circuit (manager.py:367-368) is restored now that a real
+   * resolver supplies hashes: an up-to-date runtime reloads nothing. A stale one
+   * re-pushes the managed skills into the session workspace, rewrites the session
+   * config + AGENTS.md, disposes the running instance (it caches config at
+   * creation), and only then acknowledges the current hashes on the row — the
+   * skills hash solely after the push landed (onyx records it on push success
+   * only). Reports whether the runtime is STILL stale afterwards (a failed push
+   * leaves it honestly behind; a fresh push may also have raced the read).
    */
   async reloadSessionSkills(
     session: CraftSessionRow,
@@ -376,46 +433,81 @@ export class CraftSessionManager {
       session.id,
       this.config.sessionDirectoryMode,
     );
-    const hashes =
-      (await this.deps.managedContentHashesFor?.(session).catch(() => null)) ??
-      null;
+    const hashes = await this.currentHashesFor(session);
+    if (
+      !sessionRuntimeStale(
+        session,
+        hashes?.skillsHash ?? null,
+        hashes?.mcpConfigHash ?? null,
+      )
+    ) {
+      return false;
+    }
+    const content =
+      (await this.deps.managedContentFor?.(session).catch(() => null)) ?? null;
     return this.regenerateAndAckSkills(
       session,
       botId,
       directory,
       userName,
+      content,
       hashes,
     );
   }
 
-  /** The shared reload tail: regenerate + dispose, ack the hashes, re-derive staleness. */
+  /**
+   * The shared reload tail: push managed content, regenerate + dispose, ack the
+   * hashes, re-derive staleness. The ack is push-gated (onyx records the skills
+   * hash only when the push landed; the MCP fingerprint rides along regardless)
+   * — a content-bearing reload that failed its skills push acks the mcp hash and
+   * leaves the skills hash untouched, so the row honestly stays stale.
+   */
   private async regenerateAndAckSkills(
     session: CraftSessionRow,
     botId: string,
     directory: string,
     userName: string | null,
+    content: ResolvedCraftManagedContent | null,
     hashes: { skillsHash: string | null; mcpConfigHash: string | null } | null,
   ): Promise<boolean> {
     const llmConfig = await this.deps.llmConfigFor(session);
+    let skillsHydrated: boolean | null = null;
+    if (content) {
+      const fileApi = this.gateway.fileApiFor(botId);
+      skillsHydrated = fileApi
+        ? await materializeManagedContent(fileApi, directory, content)
+        : false;
+    }
     await this.regenerateSessionConfig(
       botId,
       directory,
       session,
       llmConfig,
       userName,
+      content,
     );
+    const ackMcp = content?.mcpConfigHash ?? hashes?.mcpConfigHash ?? null;
+    const ackSkills = content
+      ? skillsHydrated
+        ? content.skillsHash
+        : undefined // push failed: keep the row's old skills hash
+      : (hashes?.skillsHash ?? null);
+    const acked: Pick<
+      CraftSessionRow,
+      "status" | "origin" | "opencodeSessionId" | "skillsHash" | "mcpConfigHash"
+    > = {
+      ...session,
+      mcpConfigHash: ackMcp,
+      ...(ackSkills !== undefined ? { skillsHash: ackSkills } : {}),
+    };
     await this.store.updateSession(session.id, {
-      skillsHash: hashes?.skillsHash ?? null,
-      mcpConfigHash: hashes?.mcpConfigHash ?? null,
+      mcpConfigHash: ackMcp,
+      ...(ackSkills !== undefined ? { skillsHash: ackSkills } : {}),
     });
     return sessionRuntimeStale(
-      {
-        ...session,
-        skillsHash: hashes?.skillsHash ?? null,
-        mcpConfigHash: hashes?.mcpConfigHash ?? null,
-      },
-      hashes?.skillsHash ?? null,
-      hashes?.mcpConfigHash ?? null,
+      acked,
+      content?.skillsHash ?? hashes?.skillsHash ?? null,
+      ackMcp,
     );
   }
 

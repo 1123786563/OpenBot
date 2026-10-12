@@ -4,9 +4,15 @@
  * Placeholder substitution with a deliberately ordered pipeline: `{{ORGANIZATION_INSTRUCTIONS_SECTION}}`
  * is replaced LAST so admin-authored text containing literal `{{…}}` tokens (copy-pasted from
  * the base template) is never expanded. The template is the onyx original verbatim except for
- * the ported infrastructure wording (egress-proxy Hard rules, the webapp tool entry) and the
- * cut sections OpenBot has no counterpart for (connectable apps, company-search) — see
- * docs/craft-port/port-parity.md.
+ * the ported infrastructure wording (egress-proxy Hard rules, the webapp tool entry — Task 4's
+ * restore) and the one environment fact that cannot be true in OpenBot (the "numeric" app-id
+ * qualifier: OpenBot connector ids are string keys).
+ *
+ * The company-knowledge section is the one deliberate cut that remains: onyx backs its
+ * `company-search` skill with an in-sandbox CLI over the permissioned corpus, and OpenBot has
+ * no backed delivery path from the craft sandbox to its knowledge domain yet — a prompt must
+ * not promise a missing tool. `companySearchSkillAvailable` splices the pinned, byte-exact
+ * onyx section back in the day the managed-content seam delivers the skill.
  */
 
 import type { CraftConfig } from "./config";
@@ -35,6 +41,63 @@ function titleCase(value: string): string {
     .join(" ");
 }
 
+/** One org app the user could still connect (OpenBot: a connector server row). */
+export type ConnectableApp = {
+  /** The id the agent will pass to the `connect_app` tool (onyx: ExternalApp.id). */
+  id: string;
+  name: string;
+};
+
+/**
+ * Render the connectable-apps bullet list — org apps the user hasn't set up yet
+ * (onyx `build_connectable_apps_list`). The heading and explanatory prose live in
+ * AGENTS.template.md; this only supplies the dynamic `{{CONNECTABLE_APPS_LIST}}`
+ * value, with a fallback line when there are no apps. Already-connected apps
+ * never reach this function — the app source filters them (onyx
+ * `get_connectable_apps_for_user`).
+ */
+export function buildConnectableAppsList(
+  apps: Iterable<ConnectableApp>,
+): string {
+  const entries = [...apps]
+    .map((app) => [app.id, app.name] as const)
+    .sort(([leftId, leftName], [rightId, rightName]) =>
+      leftId < rightId
+        ? -1
+        : leftId > rightId
+          ? 1
+          : leftName < rightName
+            ? -1
+            : leftName > rightName
+              ? 1
+              : 0,
+    );
+  if (entries.length === 0) {
+    return "No connectable apps available.";
+  }
+  return entries
+    .map(([id, name]) => `- External app ID \`${id}\`: **${name}**`)
+    .join("\n");
+}
+
+/**
+ * onyx's Company knowledge section, byte-exact (`AGENTS.template.md:81-88`) —
+ * spliced in at onyx's position only when the managed-content seam delivers a
+ * backed company-search skill. Note the single leading space on " or label…"
+ * (onyx verbatim).
+ */
+export const COMPANY_KNOWLEDGE_SECTION =
+  "## Company knowledge\n\n" +
+  "When the request relates to the user's work, use the `company-search` skill to search their\n" +
+  "permissioned company corpus. Reformulate and re-search if results are weak, and stop once you\n" +
+  "can answer. Cite every source by title and URL.\n" +
+  "\n" +
+  "If results are empty or weak, say so and name what you searched. Then ask the user for guidance,\n" +
+  " or label any non-grounded content as general knowledge.";
+
+/** Where the company-knowledge section sits in onyx's template: before Files. */
+const COMPANY_KNOWLEDGE_ANCHOR = "## Files & attachments";
+
 function buildOrganizationInstructionsSection(
   instructions: string | null,
 ): string {
@@ -55,6 +118,16 @@ export type GenerateAgentInstructionsInput = {
   disabledTools?: readonly string[] | null;
   userName?: string | null;
   organizationInstructions?: string | null;
+  /**
+   * The pre-rendered connectable-apps list (onyx passes `build_connectable_apps_list`'s
+   * output; the default answers for a deployment whose app source is empty).
+   */
+  connectableAppsSection?: string | null;
+  /**
+   * Whether a backed company-search skill ships in the managed fileset — gates the
+   * Company knowledge section. False while that skill has no backed implementation.
+   */
+  companySearchSkillAvailable?: boolean;
 };
 
 /**
@@ -79,7 +152,22 @@ export function generateAgentInstructions(
     disabledToolsSection = `\n**Disabled Tools**: ${input.disabledTools.join(", ")}\n`;
   }
 
-  let content = input.template;
+  let template = input.template;
+  if (input.companySearchSkillAvailable) {
+    const at = template.indexOf(COMPANY_KNOWLEDGE_ANCHOR);
+    if (at >= 0) {
+      template =
+        template.slice(0, at) +
+        COMPANY_KNOWLEDGE_SECTION +
+        "\n\n" +
+        template.slice(at);
+    }
+  }
+
+  const connectableAppsSection =
+    input.connectableAppsSection ?? "No connectable apps available.";
+
+  let content = template;
   content = content.replaceAll("{{USER_CONTEXT}}", userContext);
   content = content.replaceAll(
     "{{LLM_PROVIDER_NAME}}",
@@ -103,6 +191,10 @@ export function generateAgentInstructions(
   content = content.replaceAll(
     "{{DISABLED_TOOLS_SECTION}}",
     disabledToolsSection,
+  );
+  content = content.replaceAll(
+    "{{CONNECTABLE_APPS_LIST}}",
+    connectableAppsSection,
   );
   // Last, so admin-authored text containing literal {{...}} tokens is never expanded.
   content = content.replaceAll(
