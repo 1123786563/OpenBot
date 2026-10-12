@@ -215,6 +215,12 @@ export function buildProviderOpencodeConfig(
     mcpServers?: readonly CraftMCPServerConfig[];
     /** Tools whose catch-all permission becomes "ask" (the approval rendezvous). */
     gatedTools?: readonly string[];
+    /**
+     * Local plugin specs (paths relative to the session directory) opencode loads for
+     * this session — the turn-budget steer (onyx emits the same field when its image
+     * bakes plugins; here the plugin files ride in the workspace itself).
+     */
+    plugins?: readonly string[];
   } = {},
 ): Record<string, unknown> {
   if (
@@ -228,7 +234,7 @@ export function buildProviderOpencodeConfig(
     );
   }
 
-  return {
+  const config: Record<string, unknown> = {
     $schema: "https://opencode.ai/config.json",
     model: `${llmProviderConfig.provider}/${llmProviderConfig.modelName}`,
     provider: {
@@ -242,6 +248,10 @@ export function buildProviderOpencodeConfig(
       options.gatedTools ?? [],
     ),
   };
+  if (options.plugins && options.plugins.length > 0) {
+    config.plugin = [...options.plugins];
+  }
+  return config;
 }
 
 /** The session's opencode.json as the workspace bytes (stable key order for byte-compare). */

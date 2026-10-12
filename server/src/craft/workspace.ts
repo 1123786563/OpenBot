@@ -17,6 +17,7 @@ import {
   opencodeConfigJson,
 } from "./opencode-config";
 import type { AgentSandboxFileApi } from "./sandbox-gateway";
+import { SESSION_PLUGINS, writeTurnBudgetPlugin } from "./turn-budget";
 
 export const SESSIONS_ROOT = "/workspace/sessions";
 
@@ -80,10 +81,15 @@ export async function setupSessionWorkspace(
   });
   await api.writeFile(`${root}/AGENTS.md`, agentsMd);
 
+  // The turn-budget plugin ships in the workspace itself (agent-sandbox's image
+  // cannot carry it); the opencode.json below points opencode at it.
+  await writeTurnBudgetPlugin(api, input.sessionId, input.config);
+
   const opencodeJson = opencodeConfigJson(
     buildProviderOpencodeConfig(input.llmConfig, {
       disabledTools: input.config.opencodeDisabledTools,
       gatedTools: input.config.approvalGatedTools,
+      plugins: SESSION_PLUGINS,
     }),
   );
   await api.writeFile(`${root}/opencode.json`, opencodeJson);

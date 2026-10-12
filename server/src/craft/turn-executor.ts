@@ -23,8 +23,10 @@ import {
 } from "./events/types";
 import type { InterruptFence } from "./interrupt";
 import type { CraftSessionManager } from "./manager";
+import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { BuildStreamingState } from "./streaming";
+import { clearTurnDeadline, stampTurnDeadline } from "./turn-budget";
 import type { InteractiveTurn, TurnStateStore } from "./turn-state";
 import {
   TURN_STATUS_CANCELLED,
@@ -63,6 +65,8 @@ export type TurnExecutorDeps = {
   fence: InterruptFence;
   /** Resolves the Bot whose sandbox hosts a session (workspace + serve routing). */
   botIdFor: (sessionId: string) => Promise<string | null>;
+  /** The sandbox gateway — the turn-budget stamp/clear write through its file API. */
+  gateway: SandboxGateway;
 };
 
 export type TurnExecutor = {
@@ -259,6 +263,17 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       return; // ownership lost before we started
     }
 
+    // Turn-budget stamp — the point onyx guards with "only while holding the
+    // prompt slot": past the preflight checks and ownership, before the first
+    // prompt, once per turn (continuations never restamp). Best-effort; a
+    // failed write leaves the sandbox-side plugin inert, never blocks the turn.
+    await stampTurnDeadline({
+      gateway: deps.gateway,
+      botId,
+      sessionId,
+      config,
+    });
+
     const state = new BuildStreamingState(turn.turnIndex);
     let deadlineExceeded = false;
 
@@ -378,6 +393,16 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
           (runnerId === null || active.runnerId === runnerId);
         if (stillOwns) {
           await fence.clearInterrupt(sessionId).catch(() => undefined);
+          // Same ownership guard as onyx's clear_turn_deadline: a successor's
+          // fresh stamp (set at ITS turn start) must not be clobbered. Runs on
+          // every exit — success, failure, cancellation — so a failed next-turn
+          // restamp can never inherit this turn's deadlines.
+          await clearTurnDeadline({
+            gateway: deps.gateway,
+            botId,
+            sessionId,
+            config,
+          });
         }
       } catch {
         // Ownership check failed — leave the fence; its TTL is the backstop.
