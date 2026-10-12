@@ -236,6 +236,43 @@ describe("sweep decisions (manual tick)", () => {
     expect(calls).toEqual(["list"]);
   });
 
+  test("an errored botIdFor skips only that session, not the rest of the sweep", async () => {
+    const calls: string[] = [];
+    const store = fakeStore({
+      listIdleSessions: async () => [
+        sessionRow({ id: "cs-boom" }),
+        sessionRow({ id: "cs-fine" }),
+      ],
+      createSnapshot: async () => {
+        calls.push("snapshot");
+        return {
+          id: "csn-1",
+          sessionId: "cs-fine",
+          storagePath: "sandbox-snapshots/craft/csn-1.tar.gz",
+          sizeBytes: bytes.byteLength,
+          createdAt: new Date(),
+        };
+      },
+      markSessionIdleIfStillIdle: async () => {
+        calls.push("flip");
+        return true;
+      },
+    });
+    const reaper = startCraftIdleReaper(
+      { config, store, gateway: archiveGateway(), objectStore: memStore() },
+      {
+        botIdFor: async (sessionId) => {
+          if (sessionId === "cs-boom") throw new Error("bot resolver down");
+          return "craft";
+        },
+      },
+    );
+    const slept = await reaper.sweepOnce();
+    reaper.stop();
+    expect(slept).toBe(1); // the sweep survived the first session's resolver failure
+    expect(calls).toEqual(["snapshot", "flip"]); // ...and slept the second
+  });
+
   test("a failed snapshot fails closed: no idle flip, retry next sweep", async () => {
     const { store, calls } = recordingStore(sessionRow());
     let archiveAttempts = 0;

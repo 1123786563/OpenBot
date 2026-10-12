@@ -156,9 +156,11 @@ async function reapIdleSessions(
   let slept = 0;
   for (const session of sessions) {
     if (await sessionHasLiveTurn(deps, session)) continue;
-    const botId = await deps.botIdFor(session.id);
-    if (!botId) continue;
     try {
+      // Resolver failures are per-session like snapshot failures: one bad botIdFor must not
+      // abort the sweep for the sessions behind it.
+      const botId = await deps.botIdFor(session.id);
+      if (!botId) continue;
       await takeSnapshot(ctx, { botId, sessionId: session.id });
       // The flip is guarded: activity that landed between the list read and now keeps the
       // session awake (onyx's second still-idle scan, as one CAS).
