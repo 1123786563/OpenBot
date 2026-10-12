@@ -20,17 +20,27 @@ const SOURCE = readFileSync(
 
 describe("probe f: the meter's outbox write (static contract, index.ts)", () => {
   test("the finish writes usage facts to the outbox, not directly to Lago or credits", () => {
-    expect(SOURCE).toMatch(/void usageOutbox\s*\n?\s*\.record\(\{/);
+    // b616ccaa made the write awaited inside a try: a durable-record failure is logged and
+    // surfaced, never silently swallowed — the fire-and-forget `void` shape would hide it.
+    expect(SOURCE).toMatch(/await usageOutbox\.record\(\{/);
     expect(SOURCE).not.toMatch(/void billingService\s*\n?\s*\.recordUsage/);
     expect(SOURCE).not.toMatch(/void billing\.creditWriter\s*\n?\s*\.consumeCredits/);
   });
 
-  test("a zero-token finish still writes nothing", () => {
-    expect(SOURCE).toContain("if (input === 0 && output === 0) return;");
+  test("an unusable finish (missing or negative tokens) still writes nothing and releases the reservation", () => {
+    // b616ccaa replaced the old `input === 0 && output === 0` meter short-circuit with the
+    // reservation-first gate: an invalid token report fails the charge, releases the held
+    // reservation as no_usage, and never reaches the outbox.
+    expect(SOURCE).toContain('error.code === "usage_invalid_tokens"');
+    expect(SOURCE).toContain(
+      'releaseReservation(\n                reservation.reservationId,\n                "no_usage",',
+    );
   });
 
-  test("the report stays fire-and-forget: a metering miss never fails the run", () => {
-    expect(SOURCE).toMatch(/void usageOutbox\s*\n?\s*\.record/);
+  test("the report stays non-fatal: a metering miss is logged, never thrown into the run", () => {
+    expect(SOURCE).toMatch(/await usageOutbox\.record\(/);
+    // The catch logs through the runtime's established logger path instead of propagating.
+    expect(SOURCE).toMatch(/logUsageOutboxWriteFailure\("llm", input\.eventId, error\)/);
   });
 });
 
