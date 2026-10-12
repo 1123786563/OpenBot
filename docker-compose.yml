@@ -252,6 +252,9 @@ services:
       spire-init:
         condition: service_completed_successfully
     command: ["-config", "/opt/spire/conf/server.conf"]
+    # Comes back after a daemon restart like the other long-lived services; the CA state is the
+    # spire-server-data volume, so nothing is lost by the restart.
+    restart: unless-stopped
     volumes:
       - ./spire/server.conf:/opt/spire/conf/server.conf:ro
       # Mounted at the directory the image already owns so SPIRE can create its datastore as uid 1000.
@@ -266,6 +269,9 @@ services:
   spire-agent:
     image: ghcr.io/spiffe/spire-agent:1.15.1
     command: ["-config", "/opt/spire/conf/agent.conf", "-joinToken", "${SPIRE_JOIN_TOKEN:-openbot-dev-token}"]
+    # The agent's SVID persists in spire-agent-data, so a restart renews rather than rejoining and
+    # does not need the one-time token again.
+    restart: unless-stopped
     # The agent must see the caller's process to map the Workload API peer to a Docker container. The
     # host PID namespace is required because the attestor reads the peer cgroup from that pid.
     pid: host

@@ -25,7 +25,15 @@ export type Identity = {
 };
 
 let cached: Identity | null = null;
-let attempted = false;
+let lastAttempt = 0;
+let warned = false;
+
+/**
+ * A failed fetch is retried on this cadence rather than cached forever. An entry registered while
+ * this computer was starting reaches the agent a few seconds later, and the health check asks
+ * often enough that the identity then lands without a restart.
+ */
+const RETRY_MS = 10_000;
 
 /**
  * The Workload API is a stream that stays open for rotation. The first batch is the answer, so this
@@ -88,8 +96,9 @@ function firstSvid(
 
 export async function identity(): Promise<Identity | null> {
   if (!SOCKET) return null;
-  if (cached || attempted) return cached;
-  attempted = true;
+  if (cached) return cached;
+  if (lastAttempt && Date.now() - lastAttempt < RETRY_MS) return null;
+  lastAttempt = Date.now();
 
   // Compose can provide the optional agent's volume without running SPIRE. Do not construct a
   // gRPC client against an absent endpoint: that connection crashed the computer during a native
@@ -104,15 +113,19 @@ export async function identity(): Promise<Identity | null> {
       code === "ENOENT" || code === "ENOTDIR" ? "missing" : "unreadable";
   }
   if (unavailable) {
-    console.warn(
-      `This computer's optional SPIRE endpoint is ${unavailable}; workload identity is unavailable.`,
-    );
+    if (!warned) {
+      warned = true;
+      console.warn(
+        `This computer's optional SPIRE endpoint is ${unavailable}; workload identity is unavailable.`,
+      );
+    }
     return null;
   }
 
   cached = await firstSvid(SOCKET, 5_000);
-  if (!cached) {
-    // Once, not on every health check: worth knowing, not worth drowning the log.
+  if (!cached && !warned) {
+    // Once, not on every retry: worth knowing, not worth drowning the log.
+    warned = true;
     console.warn(
       "This computer has a SPIRE socket but was issued no identity. Either no entry matches its labels, or the agent is not answering.",
     );
