@@ -141,6 +141,7 @@ export type ReconcileFinding = {
   code:
     | "paid_without_fact"
     | "fact_transaction_mismatch"
+    | "fact_amount_mismatch"
     | "applied_without_subscription"
     | "grants_ledger_divergence"
     | "expired_reserved_reservation"
@@ -148,6 +149,7 @@ export type ReconcileFinding = {
     | "plan_grant_missing"
     | "plan_grant_amount_mismatch"
     | "activation_backlog"
+    | "duplicate_paid_order"
     | "usage_target_pending"
     | "usage_target_blocked"
     | "usage_findings_omitted";

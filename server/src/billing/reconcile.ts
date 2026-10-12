@@ -137,6 +137,7 @@ export function createReconciler(
         .select({
           id: paymentOrders.id,
           planCode: paymentOrders.planCode,
+          amountCents: paymentOrders.amountCents,
           channelTransactionId: paymentOrders.channelTransactionId,
           activationState: paymentOrders.activationState,
           paidAt: paymentOrders.paidAt,
@@ -148,6 +149,7 @@ export function createReconciler(
         .select({
           orderId: paymentEvents.orderId,
           channelTransactionId: paymentEvents.channelTransactionId,
+          amountCents: paymentEvents.amountCents,
         })
         .from(paymentEvents)
         .where(
@@ -185,6 +187,22 @@ export function createReconciler(
             code: "fact_transaction_mismatch",
             subject: order.id,
             detail: `the order names transaction ${order.channelTransactionId} but its paid fact names ${fact.channelTransactionId} — double-payment evidence, needs an operator`,
+          });
+        }
+        // The fact's amount is the channel's word on what landed; the order's amount_cents is
+        // the catalog price snapshotted at order time. A fact may carry no amount (an
+        // unreadable callback settles after an exhaustion threshold instead) — nothing to
+        // compare then; but a READ amount that disagrees with the snapshot is drift the
+        // callback handler deliberately never reconciles silently.
+        if (
+          fact.amountCents !== null &&
+          fact.amountCents !== order.amountCents
+        ) {
+          findings.push({
+            category: "payment",
+            code: "fact_amount_mismatch",
+            subject: order.id,
+            detail: `the paid fact records order=${order.amountCents} fact=${fact.amountCents} — the channel settled a different sum than the order snapshot; keep both facts, needs an operator (currency is database-enforced CNY on both sides, only the amount can drift)`,
           });
         }
       }
@@ -257,6 +275,37 @@ export function createReconciler(
             detail: `state=${order.activationState} paid_at=${anchor.toISOString()} age_ms=${ageMs} exceeds activation_backlog_age_ms=${activationBacklogAgeMs} — the sweep's retries are not settling this order; a provider outage or a refused plan is the usual suspect`,
           });
         }
+      }
+
+      /*
+       * ── Duplicate paid collections, in the disposition the design records: keep every
+       *    confirmed payment fact, resolve manually, never auto-refund, never pay the
+       *    entitlement twice. The callback/activation path records the overlap as a
+       *    `duplicate_paid` anomaly at write time (it wins the idempotency race against the
+       *    owned order's fact); reconciliation surfaces that evidence row by row. Reading
+       *    the anomaly — not counting paid orders per plan — keeps legitimate sequential
+       *    repurchases (expire, then buy the same plan again) out of the findings.
+       */
+      const duplicateAnomalies = await database
+        .select({
+          orderId: paymentEvents.orderId,
+          amountCents: paymentEvents.amountCents,
+          detail: paymentEvents.detail,
+        })
+        .from(paymentEvents)
+        .where(
+          and(
+            eq(paymentEvents.kind, "anomaly"),
+            eq(paymentEvents.code, "duplicate_paid"),
+          ),
+        );
+      for (const anomaly of duplicateAnomalies) {
+        findings.push({
+          category: "payment",
+          code: "duplicate_paid_order",
+          subject: anomaly.orderId,
+          detail: `a second paid collection overlaps an entitlement this order does not own amount_cents=${anomaly.amountCents ?? "unreadable"} evidence="${anomaly.detail}" remediation=manual_operator_resolution: keep the money, no auto-refund, no second payout`,
+        });
       }
 
       /*
