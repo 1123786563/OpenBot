@@ -33,6 +33,7 @@ import {
 import { createSessionRoutes } from "./session-routes";
 import { type CraftIdleReaper, startCraftIdleReaper } from "./snapshot";
 import { createObjectStore } from "./storage/object-store";
+import type { CraftSessionRow } from "./store";
 import { createCraftStore } from "./store";
 import { createTurnExecutor } from "./turn-executor";
 import { createTurnRoutes } from "./turn-routes";
@@ -65,6 +66,17 @@ export type CraftRoutesDeps = {
   organizationInstructions?: string | null;
   /** Optional one-shot LLM call for session naming (deterministic fallback without it). */
   generateName?: (system: string, user: string) => Promise<string>;
+  /**
+   * The deployment's current managed-content fingerprints (skills payload + craft MCP set)
+   * to compare a session's recorded hashes against — the seam the manager's staleness
+   * contract and `skills_stale` derive through. onyx reads these off the sandbox row;
+   * OpenBot has no managed-content push domain, so the assembly's default is the stable
+   * null pair (nothing pushed → nothing stale, the honest answer until a skills/MCP
+   * pipeline lands — the seam stays wired so that wiring one is one function).
+   */
+  managedContentHashesFor?: (
+    session: CraftSessionRow,
+  ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
 };
 
 /**
@@ -118,6 +130,13 @@ export function createCraftRoutes(input: {
     organizationInstructions: deps.organizationInstructions ?? null,
     approvals: deps.approvals,
     approvalSignals,
+    // The stable-null default is deliberate (see CraftRoutesDeps): with no managed-content
+    // push, the honest "current" fingerprint is null and the staleness predicate reads it
+    // as "nothing to fall behind" — the seam is real (the manager calls this), the
+    // deployment's future skills pipeline swaps the default for a live fingerprint.
+    managedContentHashesFor:
+      deps.managedContentHashesFor ??
+      (async () => ({ skillsHash: null, mcpConfigHash: null })),
   });
   const turnState = createTurnStateStore({ redis, config });
   const fence = createInterruptFence(redis);
@@ -130,6 +149,7 @@ export function createCraftRoutes(input: {
     turnState,
     fence,
     botIdFor: deps.botIdFor,
+    gateway,
   });
 
   const app = new Hono<{ Variables: AppVariables }>();
@@ -157,6 +177,10 @@ export function createCraftRoutes(input: {
       botIdFor: deps.botIdFor,
       generateName: deps.generateName,
       userNameFor: deps.userNameFor,
+      turnState,
+      managedContentHashesFor:
+        deps.managedContentHashesFor ??
+        (async () => ({ skillsHash: null, mcpConfigHash: null })),
     }),
   );
   app.route(

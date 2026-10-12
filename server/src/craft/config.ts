@@ -211,6 +211,12 @@ export type CraftConfig = {
    */
   readonly interactiveTurnSoftBudgetSeconds: number;
   /**
+   * This close to the hard cap the turn-budget plugin's converge steer escalates to finish-now
+   * (onyx TURN_FINAL_NOTICE_MARGIN_SECONDS == 10 min). Derives the stamp's
+   * final_deadline = max(soft, hard − margin); contract, not a knob.
+   */
+  readonly turnFinalNoticeMarginSeconds: number;
+  /**
    * Redis TTL of the turn record + active-turn pointer. Floor is cap + reclaim slack so a live
    * turn's admission block never evaporates under it (1800s + 900s = 2700s).
    */
@@ -450,6 +456,7 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     interactiveTurnSoftBudgetSeconds: Math.floor(
       0.4 * interactiveTurnHardCapSeconds,
     ), // 720s
+    turnFinalNoticeMarginSeconds: 10 * 60, // 600s, onyx timeouts.py parity
     activeTurnTtlSeconds:
       interactiveTurnHardCapSeconds + turnReclaimSlackSeconds, // 2700s
     requestIdTtlSeconds:

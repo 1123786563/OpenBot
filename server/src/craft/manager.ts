@@ -10,8 +10,9 @@
  *
  * The artifact walk, md→docx/pptx export and webapp proxying live in their own modules
  * (artifacts.ts / export.ts / webapp-proxy.ts); the skills/MCP reload chain is the staleness
- * predicate in skills.ts plus the regenerate/dispose/ack tail of reconcileSessionLlmConfig —
- * the managed-content push that would fill the source hashes is still a later phase.
+ * predicate in skills.ts plus reloadSessionSkills — the regenerate/dispose/ack tail both the
+ * reconcile and the POST /sessions/:id/skills/reload route drive. The managed-content push
+ * that would fill the source hashes is still a later phase.
  */
 
 import { readFile } from "node:fs/promises";
@@ -43,6 +44,7 @@ import {
   finalizePersist,
   persistSandboxEvent,
 } from "./streaming";
+import { SESSION_PLUGINS, writeTurnBudgetPlugin } from "./turn-budget";
 import { sessionDirectory } from "./workspace";
 
 /** Redis-keyed marker: a config rewrite owes its running instance a dispose (24h TTL in onyx). */
@@ -238,6 +240,7 @@ export class CraftSessionManager {
       buildProviderOpencodeConfig(llmConfig, {
         disabledTools: this.config.opencodeDisabledTools,
         gatedTools: this.config.approvalGatedTools,
+        plugins: SESSION_PLUGINS,
       }),
     );
 
@@ -287,7 +290,9 @@ export class CraftSessionManager {
     }
 
     // Managed-content staleness: a runtime that predates a skills/MCP change reloads.
-    const hashes = (await this.deps.managedContentHashesFor?.(session)) ?? null;
+    const hashes =
+      (await this.deps.managedContentHashesFor?.(session).catch(() => null)) ??
+      null;
     if (
       sessionRuntimeStale(
         session,
@@ -295,7 +300,7 @@ export class CraftSessionManager {
         hashes?.mcpConfigHash ?? null,
       )
     ) {
-      await this.reloadSessionSkills(
+      await this.regenerateAndAckSkills(
         session,
         botId,
         directory,
@@ -321,6 +326,7 @@ export class CraftSessionManager {
       buildProviderOpencodeConfig(llmConfig, {
         disabledTools: this.config.opencodeDisabledTools,
         gatedTools: this.config.approvalGatedTools,
+        plugins: SESSION_PLUGINS,
       }),
     );
     const workspaceApi = this.gateway.workspaceApiFor(botId);
@@ -337,6 +343,9 @@ export class CraftSessionManager {
         organizationInstructions: this.deps.organizationInstructions ?? null,
       });
       await workspaceApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
+      // The turn-budget plugin the config now references must be present for
+      // sessions whose workspace predates it (onyx's image bake, workspace-born).
+      await writeTurnBudgetPlugin(workspaceApi, session.id, this.config);
     }
     if (session.opencodeSessionId) {
       await this.gateway
@@ -349,17 +358,44 @@ export class CraftSessionManager {
   /**
    * Reload a session whose runtime predates the deployment's managed content (skills/MCP):
    * rewrite the session config and dispose the running instance so a fresh one re-reads it,
-   * then acknowledge the current hashes on the row (onyx reload_session_skills). OpenBot ships
-   * no managed content yet, so the rewrite is the same provider-config regenerate the enclosing
-   * reconcile just produced; the hash write-back is what keeps the columns converged.
+   * then acknowledge the current hashes on the row (onyx reload_session_skills) and report
+   * whether the runtime is STILL stale afterwards (a fresh push may have raced the read).
+   *
+   * Divergence from onyx (deliberate): onyx short-circuits when the session is not stale;
+   * OpenBot has no managed-content push, so staleness alone would make the endpoint a
+   * no-op forever. The route exposes it as an EXPLICIT refresh — regenerate + dispose run
+   * unconditionally, and with the default null hashes the returned flag is always false
+   * (nothing pushed → nothing to fall behind, the predicate's own semantics).
    */
-  private async reloadSessionSkills(
+  async reloadSessionSkills(
+    session: CraftSessionRow,
+    userName: string | null,
+  ): Promise<boolean> {
+    const botId = (await this.deps.botIdFor(session.id)) ?? "";
+    const directory = sessionDirectory(
+      session.id,
+      this.config.sessionDirectoryMode,
+    );
+    const hashes =
+      (await this.deps.managedContentHashesFor?.(session).catch(() => null)) ??
+      null;
+    return this.regenerateAndAckSkills(
+      session,
+      botId,
+      directory,
+      userName,
+      hashes,
+    );
+  }
+
+  /** The shared reload tail: regenerate + dispose, ack the hashes, re-derive staleness. */
+  private async regenerateAndAckSkills(
     session: CraftSessionRow,
     botId: string,
     directory: string,
     userName: string | null,
     hashes: { skillsHash: string | null; mcpConfigHash: string | null } | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const llmConfig = await this.deps.llmConfigFor(session);
     await this.regenerateSessionConfig(
       botId,
@@ -372,6 +408,15 @@ export class CraftSessionManager {
       skillsHash: hashes?.skillsHash ?? null,
       mcpConfigHash: hashes?.mcpConfigHash ?? null,
     });
+    return sessionRuntimeStale(
+      {
+        ...session,
+        skillsHash: hashes?.skillsHash ?? null,
+        mcpConfigHash: hashes?.mcpConfigHash ?? null,
+      },
+      hashes?.skillsHash ?? null,
+      hashes?.mcpConfigHash ?? null,
+    );
   }
 
   private async readWorkspaceFile(

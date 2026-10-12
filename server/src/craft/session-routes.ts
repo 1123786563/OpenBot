@@ -7,7 +7,8 @@
  * /sessions/:id/public, DELETE /sessions/:id, POST /sessions/:id/generate-name, GET
  * /sessions/:id/pre-provisioned-check, GET /sessions/:id/sandbox-status (the header chip's
  * poll), POST /sessions/:id/snapshot, POST /sessions/:id/restore (the wake: an idle session
- * replays its newest snapshot and returns active).
+ * replays its newest snapshot and returns active), POST /sessions/:id/skills/reload (the
+ * explicit managed-content refresh: regenerate config + dispose + ack hashes).
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
@@ -22,6 +23,7 @@ import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
 import { generateSessionName } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { sessionRuntimeStale } from "./skills";
 import {
   deleteSnapshots,
   restoreLatestSnapshot,
@@ -29,6 +31,7 @@ import {
 } from "./snapshot";
 import type { ObjectStore } from "./storage/object-store";
 import type { CraftSessionRow, CraftStore } from "./store";
+import type { TurnStateStore } from "./turn-state";
 
 type Json = Record<string, unknown>;
 
@@ -60,10 +63,23 @@ export type SessionRoutesDeps = {
   generateName?: (system: string, user: string) => Promise<string>;
   /** The user's display name (AGENTS.md personalization on session create). */
   userNameFor: (userId: string) => Promise<string | null>;
+  /** The live-turn admission check the skills/reload endpoint borrows (onyx's prompt slot). */
+  turnState: TurnStateStore;
+  /**
+   * The deployment's current managed-content fingerprints (skills payload + craft MCP set),
+   * the seam the manager's staleness contract reads. OpenBot ships no skills/MCP push, so the
+   * assembly provides the stable null pair — every `skills_stale` below then derives (through
+   * the real predicate, not a literal) to false, which is the honest answer while nothing
+   * managed exists to fall behind.
+   */
+  managedContentHashesFor?: (
+    session: CraftSessionRow,
+  ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
 };
 
 export function sessionResponse(
   session: CraftSessionRow,
+  skillsStale: boolean,
   extra: Json = {},
 ): Json {
   return {
@@ -79,7 +95,7 @@ export function sessionResponse(
     agent_provider: session.agentProvider,
     agent_model: session.agentModel,
     opencode_session_id: session.opencodeSessionId,
-    skills_stale: false, // phase 2: managed-content staleness contract
+    skills_stale: skillsStale,
     ...extra,
   };
 }
@@ -98,6 +114,23 @@ export function createSessionRoutes(
     gateway: deps.gateway,
     objectStore: deps.objectStore,
   });
+
+  /**
+   * Whether a session's runtime predates the deployment's managed content — derived through
+   * the real predicate (skills.ts) against the hashes the wiring provides, never a literal.
+   * onyx reads the pair off the sandbox row; the hashes fetch is best-effort (a transient
+   * failure answers "not stale", the same safe direction a null hash answers).
+   */
+  const skillsStaleFor = async (session: CraftSessionRow): Promise<boolean> => {
+    const hashes = await deps
+      .managedContentHashesFor?.(session)
+      .catch(() => null);
+    return sessionRuntimeStale(
+      session,
+      hashes?.skillsHash ?? null,
+      hashes?.mcpConfigHash ?? null,
+    );
+  };
 
   /**
    * The wake half of sleep/wake: an IDLE session is restored from its newest snapshot (when one
@@ -127,7 +160,11 @@ export function createSessionRoutes(
     const actor = context.var.actor;
     const sessions = await deps.store.listUserSessions(actor.id);
     return context.json({
-      sessions: sessions.map((session) => sessionResponse(session)),
+      sessions: await Promise.all(
+        sessions.map(async (session) =>
+          sessionResponse(session, await skillsStaleFor(session)),
+        ),
+      ),
     });
   });
 
@@ -149,7 +186,9 @@ export function createSessionRoutes(
           }),
       );
       return context.json(
-        sessionResponse(session, { session_loaded_in_sandbox: true }),
+        sessionResponse(session, await skillsStaleFor(session), {
+          session_loaded_in_sandbox: true,
+        }),
         201,
       );
     } catch (error) {
@@ -170,7 +209,9 @@ export function createSessionRoutes(
     }
     const woken = await wakeIfIdle(session);
     return context.json(
-      sessionResponse(woken, { session_loaded_in_sandbox: true }),
+      sessionResponse(woken, await skillsStaleFor(woken), {
+        session_loaded_in_sandbox: true,
+      }),
     );
   });
 
@@ -191,7 +232,8 @@ export function createSessionRoutes(
     const updated = await deps.store.updateSession(sessionId, {
       name: body.name,
     });
-    return context.json(sessionResponse(updated ?? session));
+    const row = updated ?? session;
+    return context.json(sessionResponse(row, await skillsStaleFor(row)));
   });
 
   // ── POST /sessions/:sessionId/generate-name ────────────────────────────────
@@ -322,8 +364,51 @@ export function createSessionRoutes(
     // active; an already-active session is the warm fast path (nothing to restore).
     const woken = await wakeIfIdle(session);
     return context.json(
-      sessionResponse(woken, { session_loaded_in_sandbox: true }),
+      sessionResponse(woken, await skillsStaleFor(woken), {
+        session_loaded_in_sandbox: true,
+      }),
     );
+  });
+
+  // ── POST /sessions/:sessionId/skills/reload — the explicit refresh ─────────
+  app.post("/sessions/:sessionId/skills/reload", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const session = await deps.store.getSession(sessionId, actor.id);
+    if (!session) {
+      return context.json({ error: "Session not found" }, 404);
+    }
+    // onyx guards the reload with the prompt slot ("wait for the current turn to
+    // finish", fail-closed); the active-turn pointer is this port's equivalent
+    // admission check — rewriting opencode.json under a live turn is exactly what
+    // it prevents, and a turn-state outage answers "try again", never "go ahead".
+    const active = await deps.turnState
+      .getActiveTurn({ sessionId, userId: actor.id })
+      .catch(() => "unavailable" as const);
+    if (active === "unavailable") {
+      return context.json(
+        { error: "Turn state is unavailable; retry the reload." },
+        503,
+      );
+    }
+    if (active !== null) {
+      return context.json(
+        {
+          error: "Wait for the current turn to finish before reloading skills.",
+        },
+        409,
+      );
+    }
+    try {
+      const skillsStale = await deps.manager.reloadSessionSkills(
+        session,
+        await deps.userNameFor(actor.id),
+      );
+      return context.json({ skills_stale: skillsStale });
+    } catch (error) {
+      logger.error({ error }, "[craft] skills reload failed");
+      return context.json({ error: "Failed to reload session." }, 502);
+    }
   });
 
   return app;
