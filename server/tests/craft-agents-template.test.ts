@@ -230,6 +230,19 @@ describe("AGENTS.template.md calibration", () => {
         "\n\n## Files & attachments",
     );
   });
+
+  test("a template missing the Files anchor splices nothing and says so (the no-op is observable)", () => {
+    // The skill ships but the anchor is gone: the splice must not crash or
+    // half-render, and the renderer warns (one logger line) so the missing
+    // anchor is a diagnosable template drift, not a silent no-op.
+    const rendered = render({
+      template: "# Bare template\n\n{{CONNECTABLE_APPS_LIST}}\n",
+      connectableAppsSection: buildConnectableAppsList([]),
+      companySearchSkillAvailable: true,
+    });
+    expect(rendered).toContain("No connectable apps available.");
+    expect(rendered).not.toContain("## Company knowledge");
+  });
 });
 
 // ── buildConnectableAppsList (onyx agent_instructions.py:78-89) ───────────────

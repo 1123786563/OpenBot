@@ -135,6 +135,34 @@ export function companySearchSkillAvailable(
   return content.skillFiles.has(COMPANY_SEARCH_SKILL_PATH);
 }
 
+/** One connector server row as the production app-list filter reads it. */
+export type ConnectableAppServerRow = {
+  id: string;
+  title: string;
+  /** Whose account a brokered app acts in; null when the row acts in none. */
+  accountMode: "personal" | "shared" | null;
+};
+
+/**
+ * The production app-list filter (the boot file's `connectableAppsFor` wiring):
+ * personal-account connector rows the user has NOT already connected — onyx's
+ * `get_connectable_apps_for_user` equivalence. Shared/deployment-account apps
+ * answer for everybody and never appear (the agent can already call them), and
+ * a personal app the person HAS connected — under either shape, their own vault
+ * credential or a brokered account — is no longer connectable advice.
+ */
+export function personalUnconnectedApps(
+  servers: readonly ConnectableAppServerRow[],
+  connectedServerIds: ReadonlySet<string>,
+): ConnectableApp[] {
+  return servers
+    .filter(
+      (server) =>
+        server.accountMode === "personal" && !connectedServerIds.has(server.id),
+    )
+    .map((server) => ({ id: server.id, name: server.title }));
+}
+
 /** The write surface managed content materializes through. */
 export type ManagedContentFileApi = {
   writeFileBytes(path: string, bytes: Uint8Array): Promise<void>;
@@ -183,20 +211,23 @@ export async function materializeManagedContent(
   content: Pick<ResolvedCraftManagedContent, "skillFiles" | "libraryFiles">,
 ): Promise<boolean> {
   const skillsRoot = `${root}/${MANAGED_SKILLS_DIR}`;
+  let skillsHydrated = true;
   const stale = await api.listFiles(skillsRoot).catch((error) => {
     logger.warn({ error, root }, "[craft] failed to list managed skills");
     return [] as string[];
   });
   for (const old of stale) {
-    await api.deletePath(old).catch((error) =>
+    await api.deletePath(old).catch((error) => {
+      // A stale file that refuses to delete would linger under the new hash —
+      // the push cannot claim to have hydrated what it could not clear.
       logger.warn(
         { error, path: old, root },
         "[craft] failed to clear managed skill file",
-      ),
-    );
+      );
+      skillsHydrated = false;
+    });
   }
 
-  let skillsHydrated = true;
   for (const [path, bytes] of content.skillFiles) {
     const rel = containedRelativePath(path);
     if (rel === null) {

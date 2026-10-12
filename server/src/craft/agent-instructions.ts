@@ -15,7 +15,10 @@
  * onyx section back in the day the managed-content seam delivers the skill.
  */
 
+import { getLogger } from "../../../shared/logger";
 import type { CraftConfig } from "./config";
+
+const logger = getLogger("server");
 
 /** Provider display name mapping (onyx parity). */
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
@@ -161,6 +164,13 @@ export function generateAgentInstructions(
         COMPANY_KNOWLEDGE_SECTION +
         "\n\n" +
         template.slice(at);
+    } else {
+      // The skill ships but the anchor is gone: the splice silently no-ops and the
+      // agent would be told about a section its prompt never shows. Observable,
+      // not swallowed (the template is deployment-controlled bytes).
+      logger.warn(
+        "[craft] AGENTS template lacks the '## Files & attachments' anchor; the Company knowledge section is not rendered",
+      );
     }
   }
 

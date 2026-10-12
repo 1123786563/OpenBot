@@ -7,10 +7,12 @@ import {
 import type { CraftConfig } from "../src/craft/config";
 import { loadCraftConfig } from "../src/craft/config";
 import {
+  type ConnectableAppServerRow,
   type CraftManagedContentSources,
   companySearchSkillAvailable,
   createCraftManagedContentResolver,
   materializeManagedContent,
+  personalUnconnectedApps,
 } from "../src/craft/managed-content";
 import type { CraftLLMProviderConfig } from "../src/craft/opencode-config";
 import type { SandboxGateway } from "../src/craft/sandbox-gateway";
@@ -209,6 +211,30 @@ describe("companySearchSkillAvailable", () => {
   });
 });
 
+// ── personalUnconnectedApps (the boot file's connectableAppsFor filter) ──────
+
+describe("personalUnconnectedApps", () => {
+  test("answers personal unconnected apps only (shared and already-connected never appear)", () => {
+    const servers = [
+      { id: "slack", title: "Slack", accountMode: "personal" },
+      { id: "notion", title: "Notion", accountMode: "personal" },
+      // A shared/deployment-account app answers for everybody — never advice to connect.
+      { id: "teamdrive", title: "Team Drive", accountMode: "shared" },
+      // A row that acts in no account at all.
+      { id: "shell", title: "Shell", accountMode: null },
+    ] satisfies ConnectableAppServerRow[];
+    // The connected set merges both shapes index.ts reads (the person's own vault
+    // credential and their brokered account) — under either, the app is connected.
+    expect(personalUnconnectedApps(servers, new Set(["notion"]))).toEqual([
+      { id: "slack", name: "Slack" },
+    ]);
+    expect(personalUnconnectedApps(servers, new Set())).toEqual([
+      { id: "slack", name: "Slack" },
+      { id: "notion", name: "Notion" },
+    ]);
+  });
+});
+
 // ── materializeManagedContent ─────────────────────────────────────────────────
 
 type WriteLog = Array<
@@ -216,7 +242,9 @@ type WriteLog = Array<
   | { kind: "bytes"; path: string; bytes: Uint8Array }
 >;
 
-function memoryFileApi(input: { failPaths?: RegExp } = {}) {
+function memoryFileApi(
+  input: { failPaths?: RegExp; failDelete?: boolean } = {},
+) {
   const files = new Map<string, Uint8Array>();
   const log: WriteLog = [];
   return {
@@ -232,6 +260,7 @@ function memoryFileApi(input: { failPaths?: RegExp } = {}) {
     },
     async deletePath(path: string) {
       log.push({ kind: "delete", path });
+      if (input.failDelete) throw new Error("sandbox down");
       // The gateway's delete verb is files-only: one path, gone.
       files.delete(path);
       return true;
@@ -323,6 +352,26 @@ describe("materializeManagedContent", () => {
     const content = await contentWith();
     expect(await materializeManagedContent(api, "cs-mc", content)).toBe(true);
   });
+
+  test("a stale skill file that refuses to delete fails hydration (it would linger under the acked hash)", async () => {
+    const api = memoryFileApi({ failDelete: true });
+    api.files.set(
+      "cs-mc/.opencode/skills/old/SKILL.md",
+      encoder.encode("undeletable"),
+    );
+    const content = await contentWith({
+      skillFilesFor: async () =>
+        new Map([["search/SKILL.md", encoder.encode("fresh")]]),
+    });
+    const hydrated = await materializeManagedContent(api, "cs-mc", content);
+    // The new file still landed, but the push cannot claim the hash while the
+    // old skill it could not clear still sits in the tree.
+    expect(hydrated).toBe(false);
+    expect(
+      api.files.get("cs-mc/.opencode/skills/search/SKILL.md"),
+    ).toBeDefined();
+    expect(api.files.has("cs-mc/.opencode/skills/old/SKILL.md")).toBe(true);
+  });
 });
 
 // ── ensureSessionReady ordering: resolve → push → AGENTS.md → finalize ────────
@@ -341,6 +390,7 @@ const llm: CraftLLMProviderConfig = {
 
 function readyHarness(input: {
   failSkillWrite?: boolean;
+  failAgentsWrite?: boolean;
   workspaceExists?: boolean;
 }) {
   const files = new Map<string, Uint8Array | string>();
@@ -370,6 +420,9 @@ function readyHarness(input: {
         throw new Error("missing");
       },
       async writeFile(path: string, content: string) {
+        if (input.failAgentsWrite && path.endsWith("AGENTS.md")) {
+          throw new Error("sandbox down");
+        }
         writeOrder.push(path);
         files.set(path, content);
       },
@@ -510,10 +563,11 @@ describe("ensureSessionReady with managed content", () => {
     ]);
   });
 
-  test("an intact workspace re-pushes and records hashes through the light path", async () => {
+  test("an intact workspace re-pushes, re-renders AGENTS.md, and records hashes through the light path", async () => {
     const harness = readyHarness({ workspaceExists: true });
     const resolver = createCraftManagedContentResolver(
       sources({
+        connectableAppsFor: async () => [{ id: "7", name: "Slack" }],
         skillFilesFor: async () =>
           new Map([["search/SKILL.md", encoder.encode("do a search")]]),
       }),
@@ -533,12 +587,50 @@ describe("ensureSessionReady with managed content", () => {
     expect(
       harness.files.get(`${root}/.opencode/skills/search/SKILL.md`),
     ).toBeDefined();
+    // The light path re-renders AGENTS.md from the resolved content: the skills
+    // hash fingerprints the connectable-apps section, so a workspace whose
+    // AGENTS.md predates the restored section must not be acked current over a
+    // stale prompt (fixture F2's 注入面断言 — the workspace-setup write point).
+    expect(String(harness.files.get(`${root}/AGENTS.md`))).toContain(
+      "- External app ID `7`: **Slack**",
+    );
     expect(harness.updated).toEqual([
       {
         status: "active",
         skillsHash: (await resolver(session()))?.skillsHash,
         mcpConfigHash: (await resolver(session()))?.mcpConfigHash,
       },
+    ]);
+  });
+
+  test("the light path acks the hashes only after the AGENTS.md write landed", async () => {
+    const harness = readyHarness({
+      workspaceExists: true,
+      failAgentsWrite: true,
+    });
+    const resolver = createCraftManagedContentResolver(
+      sources({
+        connectableAppsFor: async () => [{ id: "7", name: "Slack" }],
+      }),
+    );
+    await expect(
+      ensureSessionReady({
+        db: {} as never,
+        store: harness.store,
+        gateway: harness.gateway,
+        session: session(),
+        botId: "craft",
+        config,
+        userName: "Ada",
+        llmConfigFor: async () => llm,
+        managedContentResolver: resolver,
+      }),
+    ).rejects.toThrow("sandbox down");
+    // A failed render fails provisioning through the envelope — no hash ack, so
+    // the retry re-renders instead of sitting current on a stale prompt.
+    expect(harness.updated).toEqual([]);
+    expect(harness.finalized).toEqual([
+      { sessionId: "cs-mc", toStatus: "failed" },
     ]);
   });
 });

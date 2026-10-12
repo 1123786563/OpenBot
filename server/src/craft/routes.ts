@@ -34,7 +34,7 @@ import {
 import { createSessionRoutes } from "./session-routes";
 import { type CraftIdleReaper, startCraftIdleReaper } from "./snapshot";
 import { createObjectStore } from "./storage/object-store";
-import type { CraftSessionRow } from "./store";
+import type { CraftSessionRow, CraftStore } from "./store";
 import { createCraftStore } from "./store";
 import { createSubagentRoutes } from "./subagent-routes";
 import { createTurnExecutor } from "./turn-executor";
@@ -71,9 +71,9 @@ export type CraftRoutesDeps = {
   /**
    * The deployment's current managed-content fingerprints (skills payload + craft MCP set)
    * to compare a session's recorded hashes against — the seam the manager's staleness
-   * contract and `skills_stale` derive through. onyx reads these off the sandbox row;
-   * when neither this seam nor a resolver below is wired, the assembly's default is the
-   * stable null pair (nothing pushed → nothing stale, the honest answer while no
+   * contract and `skills_stale` derive through. onyx reads these off the sandbox row. When
+   * unset, both derive from the resolver below instead; when neither is wired the answer is
+   * the stable null pair (nothing pushed → nothing stale, the honest answer while no
    * managed-content pipeline is wired).
    */
   managedContentHashesFor?: (
@@ -86,6 +86,12 @@ export type CraftRoutesDeps = {
    * reload path re-pushes the content it resolves.
    */
   managedContentFor?: CraftManagedContentResolver;
+  /**
+   * The store override: production leaves it unset and the assembly derives the standard
+   * store from `db`; an alternate assembly (the tests' in-memory rows) hands over its own
+   * so the factory's wiring — not a specific store — is what gets exercised.
+   */
+  store?: CraftStore;
 };
 
 /**
@@ -118,7 +124,7 @@ export function createCraftRoutes(input: {
   const { config, db, redis } = deps;
 
   // ── the wiring (one assembly; everything below is dependency order) ──
-  const store = createCraftStore(db);
+  const store = deps.store ?? createCraftStore(db);
   const objectStore = createObjectStore(config.storage);
   const gateway = createSandboxGateway({
     config,
@@ -130,28 +136,13 @@ export function createCraftRoutes(input: {
   // The approval rendezvous signals (announce + wake), Redis-backed when the
   // deployment runs multi-replica, in-process otherwise — turn-state's shape.
   const approvalSignals = createCraftApprovalSignals({ redis });
-  const manager = new CraftSessionManager({
-    config,
-    store,
-    gateway,
-    llmConfigFor: async (session) => deps.llmConfigFor(session),
-    botIdFor: (sessionId) => deps.botIdFor(sessionId),
-    organizationInstructions: deps.organizationInstructions ?? null,
-    approvals: deps.approvals,
-    approvalSignals,
-    managedContentFor: deps.managedContentFor,
-    // The stable-null default is deliberate (see CraftRoutesDeps): with no managed-content
-    // push, the honest "current" fingerprint is null and the staleness predicate reads it
-    // as "nothing to fall behind" — the seam is real (the manager calls this), a wired
-    // resolver makes the default moot.
-    managedContentHashesFor:
-      deps.managedContentHashesFor ??
-      (async () => ({ skillsHash: null, mcpConfigHash: null })),
-  });
   /**
-   * `skills_stale` derives from whichever hashes seam the wiring provides: an explicit
-   * hashes function wins (cheap reads), a full resolver is derived from, and neither
-   * wired is the stable null pair (nothing pushed → nothing stale).
+   * The ONE hashes derivation the whole assembly shares — the manager's staleness
+   * contract (reload/reconcile) and `skills_stale` both read through it, so the two can
+   * never disagree: an explicit hashes function wins (cheap reads), a full resolver is
+   * derived from, and neither wired is the stable null pair (nothing pushed → nothing
+   * stale). Forcing a null pair here instead would freeze `skills/reload` into a
+   * permanent no-op while `skills_stale` kept answering true — no convergence.
    */
   const resolver = deps.managedContentFor ?? null;
   const managedContentHashesFor = async (
@@ -168,6 +159,18 @@ export function createCraftRoutes(input: {
         }
       : { skillsHash: null, mcpConfigHash: null };
   };
+  const manager = new CraftSessionManager({
+    config,
+    store,
+    gateway,
+    llmConfigFor: async (session) => deps.llmConfigFor(session),
+    botIdFor: (sessionId) => deps.botIdFor(sessionId),
+    organizationInstructions: deps.organizationInstructions ?? null,
+    approvals: deps.approvals,
+    approvalSignals,
+    managedContentFor: deps.managedContentFor,
+    managedContentHashesFor,
+  });
   const turnState = createTurnStateStore({ redis, config });
   const fence = createInterruptFence(redis);
   const locks = createSessionFlowLocks(redis);

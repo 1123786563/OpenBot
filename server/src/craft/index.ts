@@ -38,8 +38,8 @@
 
 export {
   buildConnectableAppsList,
-  type ConnectableApp,
   COMPANY_KNOWLEDGE_SECTION,
+  type ConnectableApp,
   generateAgentInstructions,
 } from "./agent-instructions";
 export {
@@ -104,14 +104,16 @@ export {
 } from "./llm-config";
 export { createSessionFlowLocks, type SessionFlowLocks } from "./locks";
 export {
+  type ConnectableAppServerRow,
   type CraftManagedContent,
   type CraftManagedContentResolver,
   type CraftManagedContentSources,
   companySearchSkillAvailable,
   createCraftManagedContentResolver,
-  type ManagedContentFileApi,
   MANAGED_SKILLS_DIR,
+  type ManagedContentFileApi,
   materializeManagedContent,
+  personalUnconnectedApps,
   type ResolvedCraftManagedContent,
   USER_LIBRARY_DIR,
 } from "./managed-content";
