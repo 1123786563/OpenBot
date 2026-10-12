@@ -21,10 +21,10 @@ import type {
  * partial unique index is the cross-order idempotency key; the insert-or-nothing against it is
  * what turns a replay into data, not into a second payment.
  *
- * The second idempotency is at insert time: the pending-pair partial unique index ((plan_code,
- * provider) WHERE status='pending') makes "one open order per pair" a fact the database holds,
- * and `insertOrder`'s ON CONFLICT DO NOTHING plus the conflict re-read turn a losing racer into
- * the winner's replay answer instead of a second payable QR.
+ * The second idempotency is at insert time: the pending-scope partial unique index
+ * (deployment_scope WHERE status='pending') makes "one open purchase per deployment" a fact the
+ * database holds, and `insertOrder`'s targeted ON CONFLICT plus the conflict re-read turns a
+ * losing racer into the winner's order instead of a second payable QR.
  *
  * Short ids are generated here, not by callers: a `po-` collision (8 random bytes) retries with a
  * fresh draw up to five times, which keeps a database unique violation from becoming an HTTP 500
@@ -33,6 +33,7 @@ import type {
 
 /** How many times an id collision is redrawn before it becomes a terminal failure. */
 const ID_COLLISION_RETRIES = 5;
+const DEPLOYMENT_SCOPE = "default";
 
 function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
   return {
@@ -94,47 +95,84 @@ async function readPendingRow(
   return row ? rowOf(row) : null;
 }
 
+async function readPendingPurchaseRow(
+  database: Database,
+): Promise<PaymentOrderRecord | null> {
+  const [row] = await database
+    .select()
+    .from(paymentOrders)
+    .where(
+      and(
+        eq(paymentOrders.deploymentScope, DEPLOYMENT_SCOPE),
+        eq(paymentOrders.status, "pending"),
+      ),
+    )
+    .orderBy(sql`${paymentOrders.createdAt} DESC`)
+    .limit(1);
+  return row ? rowOf(row) : null;
+}
+
+function isOrderIdConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const postgresError = error as {
+    code?: unknown;
+    constraint_name?: unknown;
+  };
+  return (
+    postgresError.code === "23505" &&
+    postgresError.constraint_name === "payment_orders_pkey"
+  );
+}
+
 export function createPaymentStore(database: Database): PaymentStore {
   return {
     async insertOrder(input) {
       for (let attempt = 0; attempt <= ID_COLLISION_RETRIES; attempt += 1) {
         const id = generateOutTradeNo();
-        const rows = await database
-          .insert(paymentOrders)
-          .values({
-            id,
-            planCode: input.planCode,
-            provider: input.provider,
-            amountCents: input.amountCents,
-            currency: input.currency,
-            status: "pending",
-            activationState: "pending",
-            checkoutPayload: input.checkoutPayload,
-            expiresAt: input.expiresAt,
-            createdBy: input.createdBy,
-          })
-          // Two conflicts, both absorbed: the redrawable `po-` id collision, and the pending-pair
-          // partial unique index ((plan, provider) WHERE status='pending') that makes "one open
-          // order per pair" a database fact. No row back means one of the two fired — the caller
-          // below re-reads, and for the pending pair that re-read is the answer (replay the
-          // existing order), not a retry.
-          .onConflictDoNothing()
-          .returning();
+        let rows: (typeof paymentOrders.$inferSelect)[];
+        try {
+          rows = await database
+            .insert(paymentOrders)
+            .values({
+              id,
+              deploymentScope: DEPLOYMENT_SCOPE,
+              planCode: input.planCode,
+              provider: input.provider,
+              amountCents: input.amountCents,
+              currency: input.currency,
+              status: "pending",
+              activationState: "pending",
+              checkoutPayload: input.checkoutPayload,
+              expiresAt: input.expiresAt,
+              createdBy: input.createdBy,
+            })
+            // This conflict target names the deployment-scope partial unique index exactly. Other
+            // unique violations, notably the primary-key id collision below, are not swallowed.
+            .onConflictDoNothing({
+              target: paymentOrders.deploymentScope,
+              where: sql`${paymentOrders.status} = 'pending'`,
+            })
+            .returning();
+        } catch (error) {
+          if (isOrderIdConflict(error)) continue;
+          throw error;
+        }
         const row = rows[0];
         if (row) return { order: rowOf(row), conflict: null };
-        // The pair conflict is not redrawable: an existing pending order for this (plan,
-        // provider) is the replay answer, whatever fresh id we draw. Reading it here (rather
-        // than only at the service layer) keeps the race closed inside one store call — the
-        // read happens after the insert lost, so the winner is already committed.
-        const existing = await readPendingRow(
-          database,
-          input.planCode,
-          input.provider,
-        );
-        if (existing) return { order: existing, conflict: "pending-pair" };
-        // No pending row and no inserted row: the loss was on the id alone — redraw.
+        // A targeted pending-scope conflict is resolved from committed state. Its owner may be
+        // the same plan/provider (a replay) or any other purchase on this deployment.
+        const existing = await readPendingPurchaseRow(database);
+        if (existing) {
+          const conflict =
+            existing.planCode === input.planCode &&
+            existing.provider === input.provider
+              ? "pending-pair"
+              : "pending-purchase";
+          return { order: existing, conflict };
+        }
+        // The winner may have become terminal before this read; try again in the now-free slot.
       }
-      // Five redraws colliding is not a probability, it is a broken generator; say so rather
+      // Five primary-key collisions is not a probability, it is a broken generator; say so rather
       // than loop.
       throw new BillingError("invalid_response");
     },
@@ -146,6 +184,10 @@ export function createPaymentStore(database: Database): PaymentStore {
         .where(eq(paymentOrders.id, id))
         .limit(1);
       return row ? rowOf(row) : null;
+    },
+
+    async readPendingPurchase() {
+      return readPendingPurchaseRow(database);
     },
 
     async readPendingOrder(planCode, provider) {

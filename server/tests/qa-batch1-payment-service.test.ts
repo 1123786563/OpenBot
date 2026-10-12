@@ -76,6 +76,13 @@ function memoryStore(): PaymentStore & {
       }
       return null;
     },
+    async readPendingPurchase() {
+      return (
+        [...orders.values()]
+          .reverse()
+          .find((order) => order.status === "pending") ?? null
+      );
+    },
     async readLatestPaidOrder(planCode) {
       const paid = [...orders.values()]
         .filter((o) => o.planCode === planCode && o.status === "paid")

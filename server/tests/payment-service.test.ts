@@ -86,6 +86,13 @@ function memoryStore(): PaymentStore {
       }
       return null;
     },
+    async readPendingPurchase() {
+      return (
+        [...orders.values()]
+          .reverse()
+          .find((order) => order.status === "pending") ?? null
+      );
+    },
     async readLatestPaidOrder(planCode) {
       const paid = [...orders.values()]
         .filter(
@@ -244,16 +251,23 @@ function memoryStore(): PaymentStore {
 function fakeProvider(
   id: PaymentProviderId,
   overrides: Partial<PaymentProvider> = {},
-): PaymentProvider & { closes: string[]; queries: string[] } {
+): PaymentProvider & {
+  closes: string[];
+  queries: string[];
+  creates: string[];
+} {
   const closes: string[] = [];
   const queries: string[] = [];
+  const creates: string[] = [];
   return {
     id,
     closes,
     queries,
-    createSession: async () => ({
-      checkout: { kind: "qrcode", payload: `qr-${id}` },
-    }),
+    creates,
+    createSession: async (input) => {
+      creates.push(input.outTradeNo);
+      return { checkout: { kind: "qrcode", payload: `qr-${id}` } };
+    },
     queryPayment: async (outTradeNo: string) => {
       queries.push(outTradeNo);
       return { outTradeNo, state: "pending" as const };
@@ -267,7 +281,11 @@ function fakeProvider(
       contentType: "text/plain",
     },
     ...overrides,
-  } as PaymentProvider & { closes: string[]; queries: string[] };
+  } as PaymentProvider & {
+    closes: string[];
+    queries: string[];
+    creates: string[];
+  };
 }
 
 function fakeLago(
@@ -302,6 +320,10 @@ function buildService(
     /** The uncached guard read (P1-5) — present in a test that pins its precedence. */
     activePlanCodeUncached?: () => Promise<string | null>;
     invalidateEntitlementCache?: () => void;
+    catalog?: ReadonlyMap<
+      string,
+      { amountCents: number; currency: "CNY"; periodMonths: number }
+    >;
     grantor?: {
       creditsFor: (planCode: string) => number | null;
       grantPlanCredits: (input: {
@@ -326,9 +348,11 @@ function buildService(
   const s = createPaymentService({
     providers: providerMap,
     store,
-    catalog: new Map([
-      ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
-    ]),
+    catalog:
+      overrides.catalog ??
+      new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
     notifyBaseUrl: "https://payments.openbot.example",
     orderTtlMinutes: 15,
     latePaymentWindowHours: overrides.latePaymentWindowHours ?? 24,
@@ -408,6 +432,127 @@ describe("purchase ordering", () => {
       kind: "qrcode",
       payload: "qr-winner",
     });
+  });
+
+  test("a pending purchase for another plan refuses without creating a new order", async () => {
+    const store = memoryStore();
+    const { order: existing } = await store.insertOrder({
+      planCode: "team",
+      provider: "alipay",
+      amountCents: 17600,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-2",
+      checkoutPayload: "qr-existing",
+    });
+    const alipay = fakeProvider("alipay");
+    const wechat = fakeProvider("wechat");
+    const { service } = buildService({
+      store,
+      providers: [alipay, wechat],
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["team", { amountCents: 17600, currency: "CNY", periodMonths: 1 }],
+      ]),
+    });
+
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "wechat",
+        createdBy: "admin-1",
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
+    });
+    expect((await store.readPendingPurchase())?.id).toBe(existing.id);
+    expect(wechat.creates).toEqual([]);
+  });
+
+  test("an insert-time purchase conflict refuses when the pending read raced", async () => {
+    const baseStore = memoryStore();
+    const { order: existing } = await baseStore.insertOrder({
+      planCode: "team",
+      provider: "alipay",
+      amountCents: 17600,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-2",
+      checkoutPayload: "qr-existing",
+    });
+    const store: PaymentStore = {
+      ...baseStore,
+      async readPendingPurchase() {
+        return null;
+      },
+      async insertOrder() {
+        return { order: existing, conflict: "pending-purchase" };
+      },
+    };
+    const wechat = fakeProvider("wechat");
+    const { service } = buildService({
+      store,
+      providers: [wechat],
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["team", { amountCents: 17600, currency: "CNY", periodMonths: 1 }],
+      ]),
+    });
+
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "wechat",
+        createdBy: "admin-1",
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
+    });
+    expect(wechat.creates).toEqual([]);
+  });
+
+  test("a channel-switch cancellation that loses to payment returns the paid order", async () => {
+    const baseStore = memoryStore();
+    const { order: existing } = await baseStore.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-1",
+      checkoutPayload: "qr-existing",
+    });
+    const store: PaymentStore = {
+      ...baseStore,
+      async cancelOrder(id, expectedVersion) {
+        await baseStore.confirmPaid({
+          id,
+          expectedVersion,
+          fromStatuses: ["pending"],
+          channelTransactionId: "payment-won-cancel-race",
+          amountCents: existing.amountCents,
+          periodStart: tick(),
+          periodEnd: new Date(clockMs + 30 * 24 * 60 * 60_000),
+        });
+        return false;
+      },
+    };
+    const alipay = fakeProvider("alipay");
+    const wechat = fakeProvider("wechat");
+    const { service } = buildService({ store, providers: [alipay, wechat] });
+
+    const result = await service.createPurchase({
+      planCode: "pro",
+      cycle: "monthly",
+      provider: "wechat",
+      createdBy: "admin-1",
+    });
+
+    expect(result.order.orderId).toBe(existing.id);
+    expect(result.order.status).toBe("paid");
+    expect(wechat.creates).toEqual([]);
   });
 
   test("a channel switch cancels the old order and closes it at the old channel", async () => {

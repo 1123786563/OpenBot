@@ -410,6 +410,36 @@ describe("user routes: create and cancel", () => {
     });
   });
 
+  test("a competing pending purchase answers 409 with the plan that owns the slot", async () => {
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(
+        fakeService({
+          createPurchase: async () => {
+            throw new PurchaseError({
+              reason: "pending-purchase",
+              pendingPlanCode: "team",
+            });
+          },
+        }),
+      ),
+    );
+    const response = await app.request("/api/billing/purchases", {
+      method: "POST",
+      body: JSON.stringify({
+        planCode: "pro",
+        provider: "wechat",
+        cycle: "monthly",
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Another purchase is already pending for this deployment.",
+      pendingPlanCode: "team",
+    });
+  });
+
   test("an unreachable provider answers 503; an unreachable-because-unwired one too", async () => {
     const { BillingError } = await import("../src/billing/types");
     const app = new Hono<{ Variables: AppVariables }>().route(
