@@ -704,6 +704,61 @@ describe("callback triage", () => {
     });
   });
 
+  test("an already-known duplicate still acknowledges when duplicate evidence logging throws", async () => {
+    const store = memoryStore();
+    const { order: first } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: first.id,
+      expectedVersion: first.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-first",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: tick(),
+    });
+    const { order: second } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.recordAnomaly = async (event) => {
+      if (event.code === "duplicate_paid") {
+        throw new Error("database unavailable");
+      }
+    };
+    const wechat = fakeProvider("wechat", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: second.id,
+          state: "paid",
+          channelTransactionId: "tx-first",
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({
+      providers: [wechat, fakeProvider("alipay")],
+      store,
+    });
+
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+  });
+
   test("a failed amount-mismatch block is not acknowledged", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({
