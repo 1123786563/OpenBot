@@ -188,6 +188,16 @@ export function createCraftApprovalRoutes(
     try {
       // onyx parity: same decision → idempotent; different decision → conflict.
       const current = await deps.approvals.get(actor.id, approvalId);
+      // Craft-origin only: rows the generic gate opens carry `action.policy`; the rows
+      // `openCraftApproval` mints never do. A policy row must go through the generic decide
+      // — whose hand_off guard ("handled"/"deny" only, never an allow) and always-rule write
+      // this quiet path skips — so it is not found here, whatever its status.
+      if (current.action.policy) {
+        return context.json(
+          { error: "This endpoint only decides craft approvals." },
+          404,
+        );
+      }
       if (current.status !== "pending") {
         if (current.decision === body.decision) {
           return context.json({ ok: true });
