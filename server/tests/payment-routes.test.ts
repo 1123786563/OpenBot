@@ -219,6 +219,7 @@ describe("callback routes", () => {
       expiresAt: new Date("2026-10-10T02:15:00.000Z"),
       periodStart: null,
       periodEnd: null,
+      paidAt: null,
       terminalAt: null,
       createdBy: "admin-1",
       createdAt: new Date("2026-10-10T02:00:00.000Z"),

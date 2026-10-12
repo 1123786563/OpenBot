@@ -575,6 +575,13 @@
       "when": 1791782987201,
       "tag": "0081_nostalgic_hellfire_club",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1791785648977,
+      "tag": "0082_naive_nightshade",
+      "breakpoints": true
     }
   ]
 }

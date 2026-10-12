@@ -45,7 +45,10 @@ export type PaymentLagoFacade = {
     externalCustomerId: string;
     externalSubscriptionId: string;
     planCode: string;
-  }): Promise<void>;
+  }): Promise<{
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+  }>;
 };
 
 /** Why a purchase request cannot proceed; the routes map these to 400/409. */
@@ -280,6 +283,17 @@ export function createPaymentService(deps: {
     });
   }
 
+  function exactPeriodOf(period: {
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+  }): { start: Date; end: Date } | null {
+    if (!period.currentPeriodStart || !period.currentPeriodEnd) return null;
+    const start = new Date(period.currentPeriodStart);
+    const end = new Date(period.currentPeriodEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    return { start, end };
+  }
+
   /**
    * The plan allowance payout, run inside activation after the subscription exists and before
    * `applied` is written. Idempotency: the grant's idempotency key is `plan:<orderId>`, so an
@@ -393,7 +407,7 @@ export function createPaymentService(deps: {
           `payments: plan ${order.planCode} is priced in ${plan.currency ?? "a non-CNY currency"}; activating under PAYMENT_ACCEPT_FOREIGN_CURRENCY — the order table (${order.id}, CNY ${order.amountCents}) remains the authority on what was collected`,
         );
       }
-      await deps.lago.ensureSubscription({
+      const subscription = await deps.lago.ensureSubscription({
         externalCustomerId: deps.externalCustomerKey,
         externalSubscriptionId: `${deps.externalCustomerKey}-${order.planCode}`,
         planCode: order.planCode,
@@ -404,7 +418,11 @@ export function createPaymentService(deps: {
       // the activation un-applied, so the sweep's next pass retries it).
       if (!(await grantPlanCreditsFor(order))) return "pending";
       deps.invalidateEntitlementCache();
-      await deps.store.recordActivation(order.id, "applied");
+      await deps.store.recordActivation(
+        order.id,
+        "applied",
+        exactPeriodOf(subscription),
+      );
       return "applied";
     } catch (error) {
       if (error instanceof BillingError && error.retryable) {
@@ -549,6 +567,11 @@ export function createPaymentService(deps: {
         : { kind: "retryable-failure" };
     }
 
+    // The order snapshots a period the moment money lands, even if activation cannot reach Lago.
+    // A successful activation later replaces this local fallback with the provider's exact period
+    // when Lago answered one.
+    const fallbackPeriodStart = at;
+    const fallbackPeriodEnd = addMonths(at, 1);
     let result: { claimed: boolean; alreadyKnown: boolean };
     try {
       result = await deps.store.confirmPaid({
@@ -558,8 +581,8 @@ export function createPaymentService(deps: {
           order.status === "pending" ? ["pending"] : ["expired", "canceled"],
         channelTransactionId: transactionId,
         amountCents: fact.amountCents,
-        periodStart: at,
-        periodEnd: addMonths(at, 1),
+        periodStart: fallbackPeriodStart,
+        periodEnd: fallbackPeriodEnd,
       });
     } catch {
       return { kind: "retryable-failure" };

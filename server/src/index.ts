@@ -3379,7 +3379,7 @@ const payments =
               return { found: false };
             },
             ensureSubscription: async (input) => {
-              await billing.service.ensureSubscription(input);
+              return billing.service.ensureSubscription(input);
             },
           },
           externalCustomerKey,

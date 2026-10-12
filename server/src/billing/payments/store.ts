@@ -49,6 +49,7 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
     expiresAt: order.expiresAt,
     periodStart: order.periodStart,
     periodEnd: order.periodEnd,
+    paidAt: order.paidAt,
     terminalAt: order.terminalAt,
     createdBy: order.createdBy,
     createdAt: order.createdAt,
@@ -70,6 +71,7 @@ type PaymentOrderLockedRow = {
   expiresAt: Date;
   periodStart: Date | null;
   periodEnd: Date | null;
+  paidAt: Date | null;
   terminalAt: Date | null;
   createdBy: string | null;
   createdAt: Date;
@@ -90,6 +92,7 @@ function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
     expiresAt: row.expiresAt,
     periodStart: row.periodStart,
     periodEnd: row.periodEnd,
+    paidAt: row.paidAt,
     terminalAt: row.terminalAt,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
@@ -347,6 +350,7 @@ export function createPaymentStore(database: Database): PaymentStore {
 
       return database
         .transaction(async (tx) => {
+          const paidAt = new Date();
           const moved = await tx
             .update(paymentOrders)
             .set({
@@ -354,7 +358,8 @@ export function createPaymentStore(database: Database): PaymentStore {
               channelTransactionId: input.channelTransactionId,
               periodStart: input.periodStart,
               periodEnd: input.periodEnd,
-              terminalAt: new Date(),
+              paidAt,
+              terminalAt: paidAt,
               version: input.expectedVersion + 1,
             })
             .where(
@@ -512,10 +517,15 @@ export function createPaymentStore(database: Database): PaymentStore {
       return row ? rowOf(row) : null;
     },
 
-    async recordActivation(id, activationState) {
+    async recordActivation(id, activationState, period) {
       await database
         .update(paymentOrders)
-        .set({ activationState })
+        .set({
+          activationState,
+          ...(period
+            ? { periodStart: period.start, periodEnd: period.end }
+            : {}),
+        })
         .where(eq(paymentOrders.id, id));
     },
 
@@ -547,6 +557,7 @@ export function createPaymentStore(database: Database): PaymentStore {
             "expires_at" as "expiresAt",
             "period_start" as "periodStart",
             "period_end" as "periodEnd",
+            "paid_at" as "paidAt",
             "terminal_at" as "terminalAt",
             "created_by" as "createdBy",
             "created_at" as "createdAt",

@@ -22,7 +22,7 @@ import type {
  * "second paid order on the plan → duplicate_paid anomaly recorded" holds at all is exactly
  * what these tests decide.
  */
-let clockMs = 1_791_900_000_000;
+const clockMs = 1_791_900_000_000;
 const tick = () => new Date(clockMs);
 
 function memoryStore(): PaymentStore & {
@@ -51,6 +51,7 @@ function memoryStore(): PaymentStore & {
         expiresAt: new Date(clockMs + 15 * 60_000),
         periodStart: null,
         periodEnd: null,
+        paidAt: null,
         terminalAt: null,
         createdBy: "qa",
         createdAt: new Date(clockMs + serial),
@@ -122,13 +123,15 @@ function memoryStore(): PaymentStore & {
         return { claimed: false, alreadyKnown: false };
       }
       paidFacts.add(input.channelTransactionId);
+      const paidAt = tick();
       orders.set(input.id, {
         ...order,
         status: "paid",
         channelTransactionId: input.channelTransactionId,
         periodStart: input.periodStart,
         periodEnd: input.periodEnd,
-        terminalAt: tick(),
+        paidAt,
+        terminalAt: paidAt,
         version: input.expectedVersion + 1,
       });
       return { claimed: true, alreadyKnown: false };
@@ -168,9 +171,17 @@ function memoryStore(): PaymentStore & {
       paidFacts.add(event.channelTransactionId);
       return true;
     },
-    async recordActivation(id, activationState) {
+    async recordActivation(id, activationState, period) {
       const order = orders.get(id);
-      if (order) orders.set(id, { ...order, activationState });
+      if (order) {
+        orders.set(id, {
+          ...order,
+          activationState,
+          ...(period
+            ? { periodStart: period.start, periodEnd: period.end }
+            : {}),
+        });
+      }
     },
     async listExpiredPendingOrders() {
       return [];
@@ -233,7 +244,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+          return {};
+        },
       },
       externalCustomerKey: "qa-deployment",
       activePlanCode: async () => null,
@@ -276,7 +289,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+          return {};
+        },
       },
       externalCustomerKey: "qa-deployment",
       activePlanCode: async () => null,
@@ -322,7 +337,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+          return {};
+        },
       },
       externalCustomerKey: "qa-deployment",
       activePlanCode: async () => null,
@@ -358,7 +375,9 @@ describe("probe c: duplicate_paid visibility on the sequential path", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+          return {};
+        },
       },
       externalCustomerKey: "qa-deployment",
       activePlanCode: async () => null,
@@ -406,7 +425,9 @@ describe("probe d: the payout keeps applied honest", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+          return {};
+        },
       },
       externalCustomerKey: "qa-deployment",
       activePlanCode: async () => null as string | null,

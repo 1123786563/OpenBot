@@ -111,12 +111,13 @@ function order(over: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
     expiresAt: new Date("2026-10-01T00:15:00.000Z"),
     periodStart: new Date(PERIOD_START),
     periodEnd: new Date(PERIOD_END),
+    paidAt: new Date("2026-10-01T00:05:00.000Z"),
     terminalAt: new Date("2026-10-01T00:05:00.000Z"),
     createdBy: "user-admin",
     createdAt: new Date("2026-10-01T00:01:00.000Z"),
     version: 1,
     ...over,
-  };
+  } as PaymentOrderRecord;
 }
 
 /** A payment ledger over a fixed list, recording the window it was asked for. */
@@ -259,6 +260,76 @@ describe("invoices", () => {
       channelTransactionId: "2026100122001",
     });
     expect(page.invoices[0]?.periodStart).toBe(PERIOD_START);
+  });
+
+  test("historical paid orders keep their own stored periods when the current plan moved on", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-august",
+        createdAt: new Date("2026-08-15T00:01:00.000Z"),
+        periodStart: new Date("2026-08-01T00:00:00.000Z"),
+        periodEnd: new Date("2026-09-01T00:00:00.000Z"),
+      }),
+      order({
+        id: "po-september",
+        createdAt: new Date("2026-09-15T00:01:00.000Z"),
+        periodStart: new Date("2026-09-01T00:00:00.000Z"),
+        periodEnd: new Date("2026-10-01T00:00:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+
+    const page = await statements.invoices({ from: null, to: null, page: 1 });
+
+    expect(page.invoices.map((invoice) => invoice.periodStart)).toEqual([
+      "2026-08-01T00:00:00.000Z",
+      "2026-09-01T00:00:00.000Z",
+    ]);
+    expect(page.invoices.map((invoice) => invoice.periodEnd)).toEqual([
+      "2026-09-01T00:00:00.000Z",
+      "2026-10-01T00:00:00.000Z",
+    ]);
+  });
+
+  test("expired and canceled orders do not expose a paid settlement time", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-expired",
+        status: "expired",
+        activationState: "pending",
+        channelTransactionId: null,
+        paidAt: null,
+        terminalAt: new Date("2026-09-01T00:05:00.000Z"),
+      }),
+      order({
+        id: "po-canceled",
+        status: "canceled",
+        activationState: "pending",
+        channelTransactionId: null,
+        paidAt: null,
+        terminalAt: new Date("2026-09-02T00:05:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+
+    const page = await statements.invoices({ from: null, to: null, page: 1 });
+    const expiredInvoice = page.invoices.find(
+      (invoice) => invoice.invoiceId === "po-expired",
+    );
+    const canceledInvoice = page.invoices.find(
+      (invoice) => invoice.invoiceId === "po-canceled",
+    );
+
+    expect(expiredInvoice?.settledAt).toBeNull();
+    expect(canceledInvoice?.settledAt).toBeNull();
   });
 
   test("an empty window is one empty page, never page 1 of 0", async () => {
