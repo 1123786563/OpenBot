@@ -162,6 +162,14 @@ export type CraftCompactionPacket = {
   timestamp: string;
 };
 
+/** A gated permission is waiting on a decision — revalidate the live approvals list. */
+export type CraftApprovalRequestedPacket = {
+  type: "approval_requested";
+  approval_id: string;
+  session_id: string;
+  timestamp: string;
+};
+
 /** One frame the turn SSE can deliver (`event: message` data payload). */
 export type CraftStreamPacket =
   | CraftAgentMessageChunk
@@ -172,7 +180,8 @@ export type CraftStreamPacket =
   | CraftPromptResponse
   | CraftErrorPacket
   | CraftContextUsagePacket
-  | CraftCompactionPacket;
+  | CraftCompactionPacket
+  | CraftApprovalRequestedPacket;
 
 /** What a `webapp-info` read answers with. */
 export type CraftWebappInfo = {

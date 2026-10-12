@@ -12,6 +12,7 @@ import type { ApprovalStore } from "../approvals/types";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
+import { createCraftApprovalSignals } from "./approval-signals";
 import { createCraftApprovalRoutes } from "./approvals";
 import { createArtifactRoutes } from "./artifact-routes";
 import type { CraftConfig } from "./config";
@@ -88,6 +89,9 @@ export function createCraftRoutes(input: {
       return conn ? { botId, baseUrl: conn.baseUrl, token: conn.token } : null;
     },
   });
+  // The approval rendezvous signals (announce + wake), Redis-backed when the
+  // deployment runs multi-replica, in-process otherwise — turn-state's shape.
+  const approvalSignals = createCraftApprovalSignals({ redis });
   const manager = new CraftSessionManager({
     config,
     store,
@@ -95,6 +99,8 @@ export function createCraftRoutes(input: {
     llmConfigFor: async (session) => deps.llmConfigFor(session),
     botIdFor: (sessionId) => deps.botIdFor(sessionId),
     organizationInstructions: deps.organizationInstructions ?? null,
+    approvals: deps.approvals,
+    approvalSignals,
   });
   const turnState = createTurnStateStore({ redis, config });
   const fence = createInterruptFence(redis);
@@ -158,6 +164,7 @@ export function createCraftRoutes(input: {
       executor,
       gateway,
       botIdFor: deps.botIdFor,
+      approvalSignals,
     }),
   );
   app.route(
@@ -175,6 +182,7 @@ export function createCraftRoutes(input: {
       config,
       store,
       approvals: deps.approvals,
+      signals: approvalSignals,
     }),
   );
   if (config.webappProxyEnabled) {

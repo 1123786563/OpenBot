@@ -123,6 +123,7 @@ function buildPermissions(
   disabledTools: readonly string[] | null,
   devMode: boolean,
   mcpServers: readonly CraftMCPServerConfig[] = [],
+  gatedTools: readonly string[] = [],
 ): Record<string, unknown> {
   const permissions: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(PERMISSIONS_TEMPLATE)) {
@@ -132,6 +133,19 @@ function buildPermissions(
   permissions.external_directory = devMode
     ? "allow"
     : { ...TMP_EXTERNAL_DIRECTORY_RULES };
+  // Gated tools ask instead of allow: the catch-all rule flips to "ask" (whole
+  // tool — bash granularity is the tool, not the command). Named denies keep
+  // denying (opencode's findLast evaluation makes the later specific rule win),
+  // and a tool outside the template gets a bare "ask". Applied BEFORE the
+  // disabled override so "deny" still wins over "ask".
+  for (const tool of gatedTools) {
+    const rules = permissions[tool];
+    if (rules instanceof Object && !Array.isArray(rules)) {
+      (rules as Record<string, string>)["*"] = "ask";
+    } else {
+      permissions[tool] = "ask";
+    }
+  }
   for (const tool of disabledTools ?? []) {
     permissions[tool] = "deny";
   }
@@ -199,6 +213,8 @@ export function buildProviderOpencodeConfig(
     disabledTools?: readonly string[] | null;
     devMode?: boolean;
     mcpServers?: readonly CraftMCPServerConfig[];
+    /** Tools whose catch-all permission becomes "ask" (the approval rendezvous). */
+    gatedTools?: readonly string[];
   } = {},
 ): Record<string, unknown> {
   if (
@@ -223,6 +239,7 @@ export function buildProviderOpencodeConfig(
       options.disabledTools ?? null,
       options.devMode ?? false,
       options.mcpServers ?? [],
+      options.gatedTools ?? [],
     ),
   };
 }

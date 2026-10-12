@@ -16,6 +16,8 @@
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 import {
+  type ApprovalRequestedPacket,
+  approvalRequestedPacket,
   type CompactionPacket,
   type ContextUsagePacket,
   compactionPacket,
@@ -335,6 +337,61 @@ export function routingMetaOf(
 }
 
 export type FetchMessage = (messageId: string) => Json | null;
+
+// ---------------------------------------------------------------------------
+// permission.asked routing — the approval rendezvous seam.
+// ---------------------------------------------------------------------------
+
+/** What one permission.asked event carries (opencode 1.15.x shape, onyx-verified). */
+export type PermissionAskedInfo = {
+  /** The permission id opencode minted — also the answer URL's path segment. */
+  permissionId: string;
+  /** The tool / permission category asked about ("bash", "edit", plugin names). */
+  permission: string | null;
+  /** The command/path patterns the ask covers (display + scope only here). */
+  patterns: string[];
+};
+
+/** Parse the ask payload; null when the event carries no usable permission id. */
+export function parsePermissionAsked(props: Json): PermissionAskedInfo | null {
+  const permissionId = props.id;
+  if (typeof permissionId !== "string" || permissionId === "") return null;
+  const patterns = Array.isArray(props.patterns)
+    ? props.patterns.filter(
+        (pattern): pattern is string => typeof pattern === "string",
+      )
+    : [];
+  return {
+    permissionId,
+    permission: typeof props.permission === "string" ? props.permission : null,
+    patterns,
+  };
+}
+
+/** A gated ask's resolved answer: a recorded decision, or expiry past the wait window. */
+export type PermissionGateDecision =
+  | "allow_once"
+  | "allow_always"
+  | "deny"
+  | "expired";
+
+/**
+ * How the transport routes permission.asked. A gated ask is NOT answered inline: `open`
+ * registers an approval row + announce, and the event loop polls `poll` (0.5s cadence) for
+ * every pending permission on each iteration — so translation, keepalives, and interrupt
+ * checks keep running while opencode's turn parks on the unanswered permission. The caller
+ * (the craft manager) binds this to one turn's session context; null means every ask is
+ * auto-allowed (the phase-1 posture, still the default).
+ */
+export type PermissionGate = {
+  /** The craft session the awaiting approval rows belong to (announce + packet routing). */
+  readonly sessionId: string;
+  isGated(info: PermissionAskedInfo): boolean;
+  /** Register the approval row and announce it; resolves the approval row id. */
+  open(info: PermissionAskedInfo): Promise<string>;
+  /** The decision, "expired" past the wait window, or null while still pending. */
+  poll(approvalId: string): Promise<PermissionGateDecision | null>;
+};
 
 /**
  * A turn state pre-flagged for the configured event stream. A bus reading a family-
@@ -1316,9 +1373,15 @@ export class OpencodeServeClient {
       absoluteTimeoutMs?: number | null;
       shouldInterrupt?: (() => boolean) | null;
       shouldAbortOnTeardown?: (() => boolean) | null;
+      /** Routes gated permission.asked through the approval rendezvous; null = auto-allow. */
+      permissionGate?: PermissionGate | null;
     },
   ): AsyncGenerator<
-    SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket
+    | SandboxEvent
+    | ContextUsagePacket
+    | SubagentStartedPacket
+    | CompactionPacket
+    | ApprovalRequestedPacket
   > {
     if (this.bus === null) {
       throw new Error(
@@ -1382,6 +1445,7 @@ export class OpencodeServeClient {
             ? turnStartedAt + options.absoluteTimeoutMs
             : null,
         shouldInterrupt: options.shouldInterrupt ?? null,
+        permissionGate: options.permissionGate ?? null,
       });
     } finally {
       // Teardown: abort the posted prompt unless a successor owns the session
@@ -1474,9 +1538,14 @@ export class OpencodeServeClient {
       directory: string;
       absoluteDeadlineMs: number | null;
       shouldInterrupt: (() => boolean) | null;
+      permissionGate: PermissionGate | null;
     },
   ): AsyncGenerator<
-    SandboxEvent | ContextUsagePacket | SubagentStartedPacket | CompactionPacket
+    | SandboxEvent
+    | ContextUsagePacket
+    | SubagentStartedPacket
+    | CompactionPacket
+    | ApprovalRequestedPacket
   > {
     const { state, directory } = options;
     const bus = this.bus;
@@ -1488,12 +1557,49 @@ export class OpencodeServeClient {
         fetchMessageBySession: null,
       });
 
+    const gate = options.permissionGate;
+    // Gated permissions answered by the loop, not inline: {approvalId, lastPollAt}.
+    // opencode parks its turn on an unanswered permission, so the bus goes quiet —
+    // resolving these on the loop's own cadence (every ≤1s shift window) keeps
+    // keepalives, interrupt checks, and translation running while parked.
+    const pendingPermissions = new Map<
+      string,
+      { approvalId: string; lastPollAt: number }
+    >();
+    const pollEveryMs = this.config.pollIntervalSeconds * 1000;
+
+    const answerResolvedPermissions = async (): Promise<void> => {
+      if (gate === null || pendingPermissions.size === 0) return;
+      const now = Date.now();
+      for (const [permissionId, entry] of pendingPermissions) {
+        if (now - entry.lastPollAt < pollEveryMs) continue;
+        entry.lastPollAt = now;
+        let decision: PermissionGateDecision | null = null;
+        try {
+          decision = await gate.poll(entry.approvalId);
+        } catch (error) {
+          getLogger("server").warn(
+            { err: error instanceof Error ? error.message : String(error) },
+            "opencode-serve: permission gate poll failed",
+          );
+        }
+        if (decision === null) continue;
+        pendingPermissions.delete(permissionId);
+        await this.answerPermission(options.opencodeSessionId, permissionId, {
+          allow: decision === "allow_once" || decision === "allow_always",
+          directory,
+        });
+      }
+    };
+
     let terminatedLocally = false;
     let lastActivityAt = Date.now();
     let lastKeepaliveAt = lastActivityAt;
     let lastInterruptCheckAt = lastActivityAt;
 
     for (;;) {
+      await answerResolvedPermissions();
+
       const now = Date.now();
       if (options.shouldInterrupt && now - lastInterruptCheckAt >= 1000) {
         lastInterruptCheckAt = now;
@@ -1504,7 +1610,20 @@ export class OpencodeServeClient {
         }
       }
 
-      const inactivityRemainingMs = options.timeoutMs - (now - lastActivityAt);
+      // While a gated permission parks the turn, the inactivity floor rises to
+      // window + margin (onyx's derivation) so the expiry path — not the inactivity
+      // timeout — always cuts the wait first.
+      const inactivityTimeoutMs =
+        pendingPermissions.size > 0
+          ? Math.max(
+              options.timeoutMs,
+              (this.config.approvalWaitTimeoutSeconds +
+                this.config.sandboxApprovalWaitMarginSeconds) *
+                1000,
+            )
+          : options.timeoutMs;
+      const inactivityRemainingMs =
+        inactivityTimeoutMs - (now - lastActivityAt);
       const absoluteRemainingMs =
         options.absoluteDeadlineMs !== null
           ? options.absoluteDeadlineMs - now
@@ -1563,17 +1682,47 @@ export class OpencodeServeClient {
         yield sandboxEvent;
       }
 
-      // permission.asked: auto-allow in phase 1 (no approvals / connect_app flow
-      // here) — opencode.json's permission block pre-approves the known categories;
-      // an unexpected one is answered "once" so the turn never wedges on it.
+      // permission.asked: a gated tool routes through the approval rendezvous —
+      // register + announce + yield the card packet, and let the loop poll for the
+      // decision. Everything else is auto-allowed (phase-1 posture: opencode.json
+      // pre-approves the known categories; an unexpected ask is answered "once" so
+      // the turn never wedges on it).
       if (raw.type === "permission.asked") {
-        const props = (raw.properties ?? {}) as Json;
-        const permissionId = props.id;
-        if (typeof permissionId === "string") {
-          await this.answerPermission(options.opencodeSessionId, permissionId, {
-            allow: true,
-            directory,
-          });
+        const info = parsePermissionAsked((raw.properties ?? {}) as Json);
+        if (info !== null) {
+          if (gate !== null && gate.isGated(info)) {
+            try {
+              const approvalId = await gate.open(info);
+              pendingPermissions.set(info.permissionId, {
+                approvalId,
+                lastPollAt: 0,
+              });
+              yield approvalRequestedPacket(approvalId, gate.sessionId);
+            } catch (error) {
+              // Registration failed: fail closed so the parked turn resumes with a
+              // decline instead of hanging until the inactivity timeout.
+              getLogger("server").warn(
+                {
+                  err: error instanceof Error ? error.message : String(error),
+                },
+                "opencode-serve: opening gated permission approval failed; denying",
+              );
+              await this.answerPermission(
+                options.opencodeSessionId,
+                info.permissionId,
+                { allow: false, directory },
+              );
+            }
+          } else {
+            await this.answerPermission(
+              options.opencodeSessionId,
+              info.permissionId,
+              {
+                allow: true,
+                directory,
+              },
+            );
+          }
         }
       }
 

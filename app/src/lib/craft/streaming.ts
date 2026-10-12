@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { interruptSession, sendMessage, turnEventsUrl } from "./client";
 import type {
@@ -314,6 +315,10 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
           };
         case "prompt_response":
           return { items: closeStreams(state.items), streaming: false };
+        case "approval_requested":
+          // No transcript item — the approvals card renders from the live list,
+          // which the hook revalidates when this packet arrives.
+          return state;
         default:
           return state;
       }
@@ -340,6 +345,7 @@ export function useBuildStreaming(sessionId: string): {
     streaming: false,
   });
   const abortRef = useRef<AbortController | null>(null);
+  const queryClient = useQueryClient();
 
   const streamTurnEvents = useCallback(
     async (turnId: string) => {
@@ -357,6 +363,13 @@ export function useBuildStreaming(sessionId: string): {
         }
         for await (const packet of processSSEStream(response)) {
           dispatch({ type: "packet", packet });
+          if (packet.type === "approval_requested") {
+            // The waiting card renders from the live approvals list; the announce
+            // beats the 5s poll so the card appears the moment the agent asks.
+            void queryClient.invalidateQueries({
+              queryKey: ["craft", "approvals", sessionId],
+            });
+          }
           if (packet.type === "prompt_response" || packet.type === "error")
             break;
         }
@@ -378,7 +391,7 @@ export function useBuildStreaming(sessionId: string): {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [sessionId],
+    [sessionId, queryClient],
   );
 
   const streamMessage = useCallback(
