@@ -14,14 +14,30 @@
  * nextjs-dev.ts), and this proxy ATTACHES to that port — status and preview report the same
  * port by construction, and a down server is an honest 503 (onyx's webapp_proxy refuses too)
  * rather than a second spawned process beside the managed one.
+ *
+ * WHERE THE PORT LIVES (finding F-E): the dev server listens INSIDE the sandbox (the
+ * container the agent-sandbox gateway fronts), not on the API server's own loopback —
+ * dialing `http://127.0.0.1:{port}` from the server never reached it in the host-server +
+ * docker-sandbox topology (live: in-container 200, host 000 → ready永false / preview 503).
+ * The reachability paths (the ready probe and the proxy upstream) therefore dial the
+ * SANDBOX host — the gateway connection's host (config.sandboxGatewayBaseUrl, else the
+ * per-bot connection baseUrl), the one machine every craft file call already reaches and
+ * the one the reserved port range is published from. The tool/status semantics are
+ * untouched: the webapp tool still reports the same reserved port from the sandbox's own
+ * script/pid state.
  */
 
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
 import type { CraftConfig } from "./config";
-import { isHiddenWorkspacePath } from "./directory-archive";
-import { webappDevServerReady } from "./nextjs-dev";
+import {
+  collectWorkspaceFiles,
+  type WorkspaceFileEntry,
+  WorkspaceListingError,
+} from "./directory-archive";
+import { webappDevServerReady, webappUpstreamHost } from "./nextjs-dev";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
@@ -45,6 +61,8 @@ export type WebappProxyRoutesDeps = {
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
 /** The headless refusal: no reserved port, no webapp support (onyx parity). */
 const WEBAPP_NO_SUPPORT_ERROR = "This session has no web-app support.";
+
+const logger = getLogger("server");
 
 /**
  * Request headers never forwarded to the LLM-authored app, matched by lowercase key — onyx's
@@ -217,11 +235,18 @@ export function createWebappProxyRoutes(
 
     // onyx's ready judgment (manager.py:1570-1593): any answer on the managed
     // port counts — the same port the webapp tool reports and the proxy below
-    // routes to, so status and preview can never disagree.
+    // routes to, so status and preview can never disagree. The dial goes to the
+    // SANDBOX host (F-E): the reserved port lives inside the sandbox, not on this
+    // server's loopback.
     const ready =
       hasWebapp &&
       session.nextjsPort !== null &&
-      (await webappDevServerReady(session.nextjsPort as number));
+      (await webappDevServerReady({
+        host: webappUpstreamHost(
+          deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+        ),
+        port: session.nextjsPort as number,
+      }));
 
     return context.json({
       has_webapp: hasWebapp,
@@ -257,7 +282,13 @@ export function createWebappProxyRoutes(
     if (port === null) {
       return context.json({ error: WEBAPP_NO_SUPPORT_ERROR }, 503);
     }
-    if (!(await webappDevServerReady(port))) {
+    // The reserved port lives INSIDE the sandbox: the probe and the proxy both
+    // dial the sandbox host (the gateway connection's host), never this server's
+    // own loopback (F-E).
+    const upstreamHost = webappUpstreamHost(
+      deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+    );
+    if (!(await webappDevServerReady({ host: upstreamHost, port }))) {
       return context.json(
         {
           error:
@@ -268,7 +299,7 @@ export function createWebappProxyRoutes(
     }
 
     const result = await proxyWebappRequest({
-      upstreamBaseUrl: `http://127.0.0.1:${port}`,
+      upstreamBaseUrl: `http://${upstreamHost}:${port}`,
       path: rel,
       query: context.req.url.includes("?")
         ? context.req.url.slice(context.req.url.indexOf("?"))
@@ -302,30 +333,31 @@ export function createWebappProxyRoutes(
     if (!fileApi) return context.json({ error: "Webapp not found" }, 404);
 
     const root = `${directory}/outputs/web`;
-    let listing: string[];
+    // The same recursive walk the download-directory route packs with (F6 §C): the
+    // gateway's listing is one level, so `collectWorkspaceFiles` rebuilds onyx's
+    // outputs/web walk over repeated listings — hidden subtrees pruned whole,
+    // unreadable files skipped, arcnames relative to outputs/web.
+    let entries: WorkspaceFileEntry[];
     try {
-      listing = await fileApi.listFiles(root);
-    } catch {
+      entries = await collectWorkspaceFiles(fileApi, root);
+    } catch (error) {
       // outputs/web doesn't exist — onyx's list_directory ValueError → None → 404.
-      return context.json({ error: "Webapp not found" }, 404);
-    }
-    const prefix = root.endsWith("/") ? root : `${root}/`;
-
-    // The gateway answers recursive FULL paths (absolute in directory mode, bot-rooted
-    // otherwise), so containment is the anchor prefix — the same discipline as
-    // packDirectoryZip. (The route used to skip anything starting with "/", which
-    // silently emptied the archive whenever the listing was absolute — a latent bug
-    // the T5 route test caught.)
-    const entries: { path: string; bytes: Uint8Array }[] = [];
-    for (const path of listing) {
-      if (!path.startsWith(prefix)) continue;
-      if (isHiddenWorkspacePath(path)) continue;
-      const relPath = path.slice(prefix.length);
-      if (!relPath || relPath.startsWith("/") || relPath.includes("../"))
-        continue;
-      const bytes = await fileApi.readFileBytes(path).catch(() => null);
-      if (bytes === null) continue; // unreadable: skipped, not fatal (onyx parity)
-      entries.push({ path: relPath, bytes });
+      // Only the listing's own failure wears that mask; a walk that could not be
+      // completed says so (502), because the directory DID answer.
+      if (error instanceof WorkspaceListingError) {
+        return context.json({ error: "Webapp not found" }, 404);
+      }
+      logger.warn(
+        {
+          sessionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "[craft] webapp archive failed",
+      );
+      return context.json(
+        { error: "The webapp archive could not be built." },
+        502,
+      );
     }
     // A directory whose visible files are all filtered away is an EMPTY zip, not a
     // 404 — onyx distinguishes "outputs/web is missing" (None) from "holds nothing

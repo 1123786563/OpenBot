@@ -166,7 +166,11 @@ export function personalUnconnectedApps(
 /** The write surface managed content materializes through. */
 export type ManagedContentFileApi = {
   writeFileBytes(path: string, bytes: Uint8Array): Promise<void>;
-  /** Lists the paths under one directory (the gateway's `/file` listing). */
+  /**
+   * Lists the paths under one directory (the gateway's `/file` listing). THROWS on
+   * failure; a 404-shaped error (absent directory) is the fresh-workspace case and is
+   * normalized to `[]` by the materializer — every other failure is real.
+   */
   listFiles(path: string): Promise<string[]>;
   /** Deletes one file. The gateway's delete verb is files-only — a directory answers 404. */
   deletePath(path: string): Promise<boolean>;
@@ -212,10 +216,25 @@ export async function materializeManagedContent(
 ): Promise<boolean> {
   const skillsRoot = `${root}/${MANAGED_SKILLS_DIR}`;
   let skillsHydrated = true;
-  const stale = await api.listFiles(skillsRoot).catch((error) => {
-    logger.warn({ error, root }, "[craft] failed to list managed skills");
-    return [] as string[];
-  });
+  // The listing contract (finding F-C's family): a 404 is the honest "the skills
+  // directory does not exist yet" — a fresh workspace with nothing to clear — but
+  // any other failure means the tree's stale state is UNKNOWN. The old code
+  // swallowed every failure as "nothing stale", skipped the clear, and still acked
+  // the fingerprint; a real failure now refuses the ack (the next create/reload
+  // retries) while the writes below still land what they can.
+  let stale: string[];
+  try {
+    stale = await api.listFiles(skillsRoot);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/answered 404/.test(message)) {
+      stale = [];
+    } else {
+      logger.warn({ error, root }, "[craft] failed to list managed skills");
+      skillsHydrated = false;
+      stale = [];
+    }
+  }
   for (const old of stale) {
     await api.deletePath(old).catch((error) => {
       // A stale file that refuses to delete would linger under the new hash —

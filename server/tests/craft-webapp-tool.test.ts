@@ -578,7 +578,9 @@ describe("webapp tool behaviors (F5 B–E)", () => {
       expect(second.result).toContain("webapp was already running");
 
       // The preview's ready probe sees the same port the tool reports.
-      expect(await webappDevServerReady(port)).toBe(true);
+      expect(await webappDevServerReady({ host: "127.0.0.1", port })).toBe(
+        true,
+      );
     } finally {
       process.env.PATH = originalPath;
       if (originalProcCwd === undefined) {
@@ -732,6 +734,10 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
     expect(script).toContain("nohup bun run dev");
     expect(script).toMatch(/PORT="\$PORT"|PORT=\$PORT/);
     expect(script).toContain('-p "$PORT"');
+    // F-E: onyx's own bind (0.0.0.0) is restored — the preview and ready probe
+    // dial the SANDBOX host (the published reserved range), not the host's own
+    // loopback, so the server must listen beyond container-loopback.
+    expect(script).toContain("-H 0.0.0.0");
     expect(script).toContain("Installing dependencies with bun...");
     expect(script).toContain("bun install");
   });
@@ -1003,10 +1009,37 @@ describe("webapp preview route (reserved-port attach)", () => {
 // ---------------------------------------------------------------------------
 
 describe("webappDevServerReady", () => {
-  test("a live loopback listener answers true; a dead port answers false", async () => {
+  test("a live listener on the given host answers true; a dead port answers false", async () => {
     const port = await startListener();
-    expect(await webappDevServerReady(port)).toBe(true);
-    expect(await webappDevServerReady(3017)).toBe(false);
+    expect(await webappDevServerReady({ host: "127.0.0.1", port })).toBe(true);
+    expect(await webappDevServerReady({ host: "127.0.0.1", port: 3017 })).toBe(
+      false,
+    );
+  });
+
+  test("dials the SANDBOX host it is handed, with any-answer semantics (F-E)", async () => {
+    const dialed: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      dialed.push(String(input));
+      return new Response("nope", { status: 404 }); // ANY answer counts (onyx)
+    }) as typeof fetch;
+    expect(
+      await webappDevServerReady(
+        { host: "sbox.internal", port: 3011 },
+        fetchImpl,
+      ),
+    ).toBe(true);
+    expect(dialed).toEqual(["http://sbox.internal:3011/"]);
+
+    const refused = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    expect(
+      await webappDevServerReady(
+        { host: "sbox.internal", port: 3011 },
+        refused,
+      ),
+    ).toBe(false);
   });
 });
 

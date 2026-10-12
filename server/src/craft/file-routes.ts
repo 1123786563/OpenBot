@@ -19,7 +19,7 @@ import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
-import { packDirectoryZip } from "./directory-archive";
+import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import {
@@ -317,9 +317,22 @@ export function createFileRoutes(
       let archive: Uint8Array;
       try {
         archive = await packDirectoryZip(fileApi, fullPath);
-      } catch {
-        // The listing threw: unreachable or absent — onyx's None → 404.
-        return context.json({ error: "Directory not found" }, 404);
+      } catch (error) {
+        // ONLY the root listing's failure is onyx's None → 404; anything past it
+        // (the writer's ceiling, an unexpected walk failure) is a real error that
+        // must not wear the "does not exist" mask — the 502 says the directory
+        // exists but could not be read.
+        if (error instanceof WorkspaceListingError) {
+          return context.json({ error: "Directory not found" }, 404);
+        }
+        logger.warn(
+          {
+            sessionId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "[craft] directory archive failed",
+        );
+        return context.json({ error: "The directory could not be read." }, 502);
       }
 
       const basename = rel.split("/").filter(Boolean).at(-1) ?? "";
