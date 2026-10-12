@@ -1,7 +1,11 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingSubscriptions } from "../db/schema/billing";
 import { creditGrants, creditLedger } from "../db/schema/credits";
+import {
+  creditReservationAllocations,
+  creditReservations,
+} from "../db/schema/credit-reservations";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 
@@ -245,6 +249,85 @@ export function createReconciler(
       }
 
       /*
+       * ── Hard-cap reservation evidence: active holds are intentionally OUTSIDE the
+       *    grants.used ↔ ledger.applied identity until a settlement converts them into a
+       *    ledger fact, so reconciliation inspects reserved rows on their own terms.
+       *    Nothing is auto-released here: an expired hold is recovery evidence only, and an
+       *    allocation sum that no longer equals the reservation's maximum is manual-surgery
+       *    drift that needs an operator, not a writer hidden inside the audit.
+       */
+      const reservedRows = await database
+        .select({
+          reservationId: creditReservations.id,
+          expiresAt: creditReservations.expiresAt,
+          maximum: creditReservations.maximum,
+          allocationId: creditReservationAllocations.id,
+          allocationAmount: creditReservationAllocations.amount,
+        })
+        .from(creditReservations)
+        .leftJoin(
+          creditReservationAllocations,
+          eq(
+            creditReservationAllocations.reservationId,
+            creditReservations.id,
+          ),
+        )
+        .where(eq(creditReservations.status, "reserved"))
+        .orderBy(
+          asc(creditReservations.id),
+          asc(creditReservationAllocations.id),
+        );
+
+      const reservedById = new Map<
+        string,
+        {
+          expiresAt: Date;
+          maximum: number;
+          allocated: number;
+          allocationIds: string[];
+        }
+      >();
+      for (const row of reservedRows) {
+        const entry = reservedById.get(row.reservationId) ?? {
+          expiresAt: row.expiresAt,
+          maximum: row.maximum,
+          allocated: 0,
+          allocationIds: [],
+        };
+        if (row.allocationId !== null) {
+          entry.allocated += row.allocationAmount ?? 0;
+          entry.allocationIds.push(row.allocationId);
+        }
+        reservedById.set(row.reservationId, entry);
+      }
+      const now = Date.now();
+      for (const [reservationId, reservation] of reservedById) {
+        const allocationIds =
+          reservation.allocationIds.length > 0
+            ? reservation.allocationIds.join(",")
+            : "none";
+        if (reservation.expiresAt.getTime() < now) {
+          findings.push({
+            category: "credits",
+            code: "expired_reserved_reservation",
+            subject: reservationId,
+            detail:
+              `state=reserved expires_at=${reservation.expiresAt.toISOString()} maximum=${reservation.maximum} allocated=${reservation.allocated} allocation_ids=${allocationIds} remediation=operator_recovery_required`,
+          });
+        }
+
+        if (reservation.allocated !== reservation.maximum) {
+          findings.push({
+            category: "credits",
+            code: "reservation_allocation_imbalance",
+            subject: reservationId,
+            detail:
+              `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} allocation_ids=${allocationIds} remediation=operator_recovery_required`,
+          });
+        }
+      }
+
+      /*
        * ── Usage delivery backlog evidence: the outbox is the durable truth of what was
        *    attempted, what is still pending retry, and what ended in manual-review blockade.
        *    The reconciler reads it as evidence only: no target replay, no status updates, no
@@ -317,7 +400,6 @@ export function createReconciler(
         pending: { lago: 0, credits: 0 },
         blocked: { lago: 0, credits: 0 },
       };
-      const now = Date.now();
       for (const row of usageRows) {
         const status = row.status === "pending" ? "pending" : "blocked";
         const target = row.target === "lago" ? "lago" : "credits";
