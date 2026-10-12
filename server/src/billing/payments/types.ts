@@ -79,6 +79,11 @@ export type PaymentCheckout =
   | { kind: "qrcode"; payload: string }
   | { kind: "redirect"; url: string };
 
+/** The signed-in actor whose own payment rows may be read. */
+export type PaymentOrderReadScope = {
+  actorId: string;
+};
+
 /** One order, as the HTTP surface spells it. Times ISO-8601, amounts integer cents, no drift. */
 export type PaymentOrderView = {
   orderId: string;
@@ -193,7 +198,10 @@ export type PaymentStore = {
     conflict: "pending-pair" | "pending-purchase" | null;
   }>;
   /** The one order an out-trade number names, or null. */
-  readOrder(id: string): Promise<PaymentOrderRecord | null>;
+  readOrder(
+    id: string,
+    scope?: PaymentOrderReadScope,
+  ): Promise<PaymentOrderRecord | null>;
   /** The deployment's pending purchase, regardless of plan or provider. */
   readPendingPurchase(): Promise<PaymentOrderRecord | null>;
   /** The newest order for one (plan, provider) pair still pending — the replay lookup. */
@@ -214,7 +222,9 @@ export type PaymentStore = {
     excludeOrderId?: string,
   ): Promise<PaymentOrderRecord | null>;
   /** The newest order still live (pending or paid) — what "current purchase" means. */
-  readLatestLiveOrder(): Promise<PaymentOrderRecord | null>;
+  readLatestLiveOrder(
+    scope?: PaymentOrderReadScope,
+  ): Promise<PaymentOrderRecord | null>;
   /** Attach the checkout artifact after the channel session opens (order first, code second). */
   setCheckoutPayload(id: string, payload: string): Promise<void>;
   /**
@@ -316,11 +326,13 @@ export type PaymentStore = {
     to: Date | null;
     limit: number;
     offset: number;
+    scope?: PaymentOrderReadScope;
   }): Promise<readonly PaymentOrderRecord[]>;
   /** How many orders the same window holds, for the pager. */
   countOrdersInWindow(input: {
     from: Date | null;
     to: Date | null;
+    scope?: PaymentOrderReadScope;
   }): Promise<number>;
   /**
    * Paid orders whose activation has not landed — `pending` OR `failed` — for the sweeper's

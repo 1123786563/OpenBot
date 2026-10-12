@@ -5,6 +5,7 @@ import { BillingError } from "../types";
 import { generateOutTradeNo } from "./crypto";
 import type {
   PaymentEventInput,
+  PaymentOrderReadScope,
   PaymentOrderRecord,
   PaymentOrderStatus,
   PaymentProviderId,
@@ -111,6 +112,10 @@ function eventInput(input: PaymentEventInput & { state?: string }) {
     amountCents: input.amountCents,
     detail: input.detail,
   };
+}
+
+function ownerScopeCondition(scope: PaymentOrderReadScope | undefined) {
+  return scope ? eq(paymentOrders.createdBy, scope.actorId) : undefined;
 }
 
 /**
@@ -252,11 +257,14 @@ export function createPaymentStore(database: Database): PaymentStore {
       throw new BillingError("invalid_response");
     },
 
-    async readOrder(id) {
+    async readOrder(id, scope) {
+      const conditions = [eq(paymentOrders.id, id)];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       const [row] = await database
         .select()
         .from(paymentOrders)
-        .where(eq(paymentOrders.id, id))
+        .where(and(...conditions))
         .limit(1);
       return row ? rowOf(row) : null;
     },
@@ -295,11 +303,14 @@ export function createPaymentStore(database: Database): PaymentStore {
       return row ? rowOf(row) : null;
     },
 
-    async readLatestLiveOrder() {
+    async readLatestLiveOrder(scope) {
+      const conditions = [inArray(paymentOrders.status, ["pending", "paid"])];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       const [row] = await database
         .select()
         .from(paymentOrders)
-        .where(inArray(paymentOrders.status, ["pending", "paid"]))
+        .where(and(...conditions))
         .orderBy(sql`${paymentOrders.createdAt} DESC`)
         .limit(1);
       return row ? rowOf(row) : null;
@@ -664,12 +675,14 @@ export function createPaymentStore(database: Database): PaymentStore {
       return rows.map(rowOf);
     },
 
-    async listOrdersInWindow({ from, to, limit, offset }) {
+    async listOrdersInWindow({ from, to, limit, offset, scope }) {
       // Flat condition construction (see readLatestPaidOrder's note): this drizzle version's
       // `and()` takes conditions as direct arguments, and a spread array among them silently
       // degrades the whole predicate — an optional-end window must degrade to "no bound", not
       // to a broken filter.
       const conditions = [];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       if (from) conditions.push(gte(paymentOrders.createdAt, from));
       if (to) conditions.push(lte(paymentOrders.createdAt, to));
       const rows = await database
@@ -682,10 +695,12 @@ export function createPaymentStore(database: Database): PaymentStore {
       return rows.map(rowOf);
     },
 
-    async countOrdersInWindow({ from, to }) {
+    async countOrdersInWindow({ from, to, scope }) {
       // Same flat construction as listOrdersInWindow above; the two must filter identically
       // or the pager and the page disagree.
       const conditions = [];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       if (from) conditions.push(gte(paymentOrders.createdAt, from));
       if (to) conditions.push(lte(paymentOrders.createdAt, to));
       const [row] = await database

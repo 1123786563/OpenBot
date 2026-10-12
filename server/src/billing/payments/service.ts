@@ -21,6 +21,7 @@ import type { NotificationRefusal, PaymentProvider } from "./provider";
 import type {
   PaymentAnomalyCode,
   PaymentCatalog,
+  PaymentOrderReadScope,
   PaymentOrderRecord,
   PaymentOrderView,
   PaymentPlanEntry,
@@ -131,9 +132,12 @@ export type PaymentService = {
   /** One order as its creator may see it. A pending order's channel is asked once (the poll). */
   readOrder(
     id: string,
+    scope?: PaymentOrderReadScope,
   ): Promise<{ order: PaymentOrderView | null; storeFailure?: boolean }>;
   /** The newest still-live order (pending or paid), or null — the settings page's "current". */
-  readCurrentOrder(): Promise<{ order: PaymentOrderView | null }>;
+  readCurrentOrder(
+    scope?: PaymentOrderReadScope,
+  ): Promise<{ order: PaymentOrderView | null }>;
   /** Administrator cancel. Terminal states refuse; canceling twice is the same answer once. */
   cancelPurchase(
     id: string,
@@ -775,8 +779,8 @@ export function createPaymentService(deps: {
       return { order: toView(fresh ?? { ...order, checkoutPayload: null }) };
     },
 
-    async readOrder(id) {
-      const order = await deps.store.readOrder(id).catch(() => null);
+    async readOrder(id, scope) {
+      const order = await deps.store.readOrder(id, scope).catch(() => null);
       if (!order) return { order: null };
 
       // The poll's one side effect: a pending order gets its channel asked once. Money found
@@ -794,12 +798,12 @@ export function createPaymentService(deps: {
           }
         }
       }
-      const fresh = await deps.store.readOrder(id).catch(() => null);
+      const fresh = await deps.store.readOrder(id, scope).catch(() => null);
       return { order: fresh ? toView(fresh) : toView(order) };
     },
 
-    async readCurrentOrder() {
-      const order = await deps.store.readLatestLiveOrder().catch(() => null);
+    async readCurrentOrder(scope) {
+      const order = await deps.store.readLatestLiveOrder(scope).catch(() => null);
       return { order: order ? toView(order) : null };
     },
 

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import type { PaymentOrderRecord, PaymentStore } from "../src/billing/payments/types";
+import type {
+  PaymentOrderReadScope,
+  PaymentOrderRecord,
+  PaymentStore,
+} from "../src/billing/payments/types";
 import {
   createBillingStatementRoutes,
   statementQueryInput,
@@ -120,12 +124,20 @@ function order(over: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
   } as PaymentOrderRecord;
 }
 
+function matchesScope(
+  row: PaymentOrderRecord,
+  scope: PaymentOrderReadScope | undefined,
+): boolean {
+  return !scope || row.createdBy === scope.actorId;
+}
+
 /** A payment ledger over a fixed list, recording the window it was asked for. */
 function fakeOrders(rows: PaymentOrderRecord[]) {
   const calls: { from: Date | null; to: Date | null }[] = [];
   const store = {
     insertOrder: async () => order(),
-    readOrder: async (id: string) => rows.find((row) => row.id === id) ?? null,
+    readOrder: async (id: string, scope?: PaymentOrderReadScope) =>
+      rows.find((row) => row.id === id && matchesScope(row, scope)) ?? null,
     readPendingOrder: async () => null,
     readLatestPaidOrder: async () => null,
     readLatestLiveOrder: async () => null,
@@ -144,19 +156,26 @@ function fakeOrders(rows: PaymentOrderRecord[]) {
       to: Date | null;
       limit: number;
       offset: number;
+      scope?: PaymentOrderReadScope;
     }) => {
       calls.push({ from: input.from, to: input.to });
       return rows
         .filter(
           (row) =>
+            matchesScope(row, input.scope) &&
             (!input.from || row.createdAt >= input.from) &&
             (!input.to || row.createdAt <= input.to),
         )
         .slice(input.offset, input.offset + input.limit);
     },
-    countOrdersInWindow: async (input: { from: Date | null; to: Date | null }) =>
+    countOrdersInWindow: async (input: {
+      from: Date | null;
+      to: Date | null;
+      scope?: PaymentOrderReadScope;
+    }) =>
       rows.filter(
         (row) =>
+          matchesScope(row, input.scope) &&
           (!input.from || row.createdAt >= input.from) &&
           (!input.to || row.createdAt <= input.to),
       ).length,
@@ -384,6 +403,43 @@ describe("invoices", () => {
       { label: "pro", quantity: 1, amountCents: 19900 },
     ]);
   });
+
+  test("statement reads only expose orders created by the authenticated actor", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-member",
+        createdBy: MEMBER.id,
+        createdAt: new Date("2026-10-02T00:01:00.000Z"),
+      }),
+      order({
+        id: "po-other",
+        createdBy: "user-other",
+        createdAt: new Date("2026-10-01T00:01:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+
+    const page = await statements.invoices(
+      { from: null, to: null, page: 1 },
+      { actorId: MEMBER.id },
+    );
+
+    expect(page.invoices.map((invoice) => invoice.invoiceId)).toEqual([
+      "po-member",
+    ]);
+    expect(await statements.invoice("po-member", { actorId: MEMBER.id })).toMatchObject(
+      {
+        invoiceId: "po-member",
+      },
+    );
+    expect(
+      await statements.invoice("po-other", { actorId: MEMBER.id }),
+    ).toBeNull();
+  });
 });
 
 describe("statement routes", () => {
@@ -406,7 +462,7 @@ describe("statement routes", () => {
   }
 
   const withOrders = () => {
-    const { store } = fakeOrders([order()]);
+    const { store } = fakeOrders([order({ createdBy: MEMBER.id })]);
     return createBillingStatements({
       service: fakeService(ACTIVE, USAGE),
       quotas: new Map([["pro", QUOTAS]]),
@@ -468,6 +524,44 @@ describe("statement routes", () => {
     };
     expect(body.invoice.invoiceId).toBe("po-aaaaaaaaaaaaaaaa");
     expect(body.invoice.lines).toHaveLength(1);
+  });
+
+  test("bill list and detail return only the signed-in actor's orders", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-member",
+        createdBy: MEMBER.id,
+        createdAt: new Date("2026-10-02T00:01:00.000Z"),
+      }),
+      order({
+        id: "po-other",
+        createdBy: "user-other",
+        createdAt: new Date("2026-10-01T00:01:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map([["pro", QUOTAS]]),
+      orders: store,
+    });
+
+    const list = await app(statements, MEMBER).request("/api/billing/invoices");
+    expect(list.status).toBe(200);
+    expect(
+      ((await list.json()) as { invoices: Array<{ invoiceId: string }> }).invoices.map(
+        (invoice) => invoice.invoiceId,
+      ),
+    ).toEqual(["po-member"]);
+
+    const own = await app(statements, MEMBER).request(
+      "/api/billing/invoices/po-member",
+    );
+    expect(own.status).toBe(200);
+
+    const other = await app(statements, MEMBER).request(
+      "/api/billing/invoices/po-other",
+    );
+    expect(other.status).toBe(404);
   });
 });
 
