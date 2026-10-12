@@ -26,6 +26,16 @@ export type PaymentActivationState = "pending" | "applied" | "failed";
 /** The two channels v1 collects through. */
 export type PaymentProviderId = "alipay" | "wechat";
 
+/** The durable result of deciding whether one paid channel fact may settle an order. */
+export type PaymentSettlementResult =
+  | { kind: "claimed" }
+  | { kind: "duplicate" }
+  | {
+      kind: "refused";
+      reason: "amount-mismatch" | "blocked" | "late";
+    }
+  | { kind: "retryable-failure" };
+
 /** One order, as the store holds it. */
 export type PaymentOrder = {
   id: string;
@@ -206,9 +216,8 @@ export type PaymentStore = {
   cancelOrder(id: string, expectedVersion: number): Promise<boolean>;
   /**
    * One CAS on the order row plus the fact insert, one transaction. `claimed: false` means the
-   * version moved under us (someone else confirmed this very callback): the caller answers
-   * duplicate-success, not failure. `alreadyKnown: true` means the channel transaction id is
-   * already recorded as a paid fact — a replay from a different delivery.
+   * version moved or the fact was already known. Only `alreadyKnown: true` confirms a committed
+   * duplicate; a plain CAS miss is not proof of settlement and must be retried after a fresh read.
    */
   confirmPaid(input: {
     id: string;

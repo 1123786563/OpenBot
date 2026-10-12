@@ -98,6 +98,8 @@ async function callbackAnswer(
         headers: { "content-type": provider.contentType },
       });
     }
+    case "settlement-refused":
+      return fail(409);
     case "unknown-provider":
       return context.json({ error: "Unknown payment provider." }, 404);
     case "unverified":

@@ -677,6 +677,121 @@ describe("callback triage", () => {
     amountCents: 8800,
   });
 
+  test("a failed paid-fact confirm asks the provider to retry", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.confirmPaid = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a failed amount-mismatch block is not acknowledged", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.blockOrder = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: { ...paidFactFor(order.id), amountCents: 1 },
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a failed unreadable-amount evidence write is not acknowledged", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.recordAnomaly = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid",
+          channelTransactionId: "tx-9",
+        },
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a failed late-payment evidence write is not acknowledged", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.expireOrder(order.id, order.version);
+    clockMs =
+      (await store.readOrder(order.id))!.terminalAt!.getTime() + 25 * 3600_000;
+    store.recordAnomaly = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
   test("an unknown provider is refused before verification", async () => {
     const { service } = buildService();
     const outcome = await service.handleCallback(
@@ -789,7 +904,7 @@ describe("callback triage", () => {
     expect(invalidated).toBe(1);
   });
 
-  test("an amount mismatch blocks a pending order and answers success (terminal quiet)", async () => {
+  test("an amount mismatch blocks a pending order and is not acknowledged as settled", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({
       planCode: "pro",
@@ -808,12 +923,14 @@ describe("callback triage", () => {
     });
     const { service } = buildService({ providers: [alipay], store });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     // Blocked absorbs: the same mismatched delivery again changes nothing.
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
   });
@@ -841,7 +958,8 @@ describe("callback triage", () => {
     });
     const { service } = buildService({ providers: [alipay], store });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("pending");
   });
@@ -878,7 +996,8 @@ describe("callback triage", () => {
       lago,
     });
     expect(await second.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
     });
     const settled = await store.readOrder(order.id);
     expect(settled?.status).toBe("paid");
@@ -945,7 +1064,8 @@ describe("callback triage", () => {
     const lago = fakeLago();
     const { service } = buildService({ providers: [alipay], store, lago });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "late" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("expired");
     expect(lago.state.subscriptions).toHaveLength(0);
@@ -1085,7 +1205,8 @@ describe("callback triage", () => {
     const lago = fakeLago();
     const { service } = buildService({ providers: [alipay], store, lago });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     expect(lago.state.subscriptions).toHaveLength(0);
