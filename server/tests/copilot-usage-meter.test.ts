@@ -2,14 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LLMock } from "@copilotkit/aimock";
+import { createOpenAI } from "@ai-sdk/openai";
 import {
   builtInAgentConfiguration,
   CreditGateError,
+  type ModelUsageGateLifecycle,
   meteredModelForTests,
+  ModelUsageSettlementError,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
   setModelUsageGate,
   setModelUsageMeter,
+  UnmeterableModelError,
 } from "../src/copilot";
 import { loadTenantPackage } from "../src/tenant-package";
 import { testEnvironment } from "./support/environment";
@@ -304,6 +308,7 @@ describe("the model usage meter", () => {
       setModelUsageGate(async (input) => {
         lifecycle.push({ phase: "admit", eventId: input.eventId });
         return {
+          bounds: admittingBounds(),
           async finish(finish) {
             lifecycle.push({ phase: "finish", eventId: finish.eventId });
           },
@@ -344,7 +349,11 @@ describe("the model usage meter", () => {
     const originalBase = process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_BASE_URL;
     try {
-      setModelUsageGate(async () => undefined);
+      // Any wired gate admits or refuses; the string-form refusal happens at agent build,
+      // before this gate could even be asked.
+      setModelUsageGate(async () => {
+        throw new CreditGateError();
+      });
 
       const openai = builtInAgentConfiguration(
         {
@@ -360,8 +369,10 @@ describe("the model usage meter", () => {
         factory?: () => AsyncGenerator<unknown>;
       };
       expect(openai.type).toBe("custom");
+      // Not CreditGateError: the balance is fine, the model wiring is what cannot be
+      // metered, and the message must not send an administrator to buy credits.
       await expect(openai.factory?.().next()).rejects.toBeInstanceOf(
-        CreditGateError,
+        UnmeterableModelError,
       );
 
       const anthropic = builtInAgentConfiguration(
@@ -379,7 +390,7 @@ describe("the model usage meter", () => {
       };
       expect(anthropic.type).toBe("custom");
       await expect(anthropic.factory?.().next()).rejects.toBeInstanceOf(
-        CreditGateError,
+        UnmeterableModelError,
       );
     } finally {
       setModelUsageGate(undefined);
@@ -393,6 +404,7 @@ describe("the model usage meter", () => {
     let upstreamCancelled = false;
     try {
       setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
         async finish() {
           lifecycle.push({ phase: "finish" });
         },
@@ -426,7 +438,7 @@ describe("the model usage meter", () => {
       await Promise.resolve();
 
       expect(upstreamCancelled).toBe(true);
-      expect(lifecycle).toEqual([{ phase: "fail", reason: "stream_error" }]);
+      expect(lifecycle).toEqual([{ phase: "fail", reason: "cancelled" }]);
     } finally {
       setModelUsageGate(undefined);
     }
@@ -443,6 +455,7 @@ describe("the model usage meter", () => {
         });
       });
       setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
         async finish() {
           lifecycle.push("finish");
         },
@@ -504,6 +517,7 @@ describe("the model usage meter", () => {
         });
       });
       setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
         async finish() {
           lifecycle.push({ phase: "finish" });
         },
@@ -536,14 +550,523 @@ describe("the model usage meter", () => {
       };
 
       const result = await wrapped.doStream({});
-      for await (const _part of result.stream) {
+      let failure: unknown;
+      try {
+        for await (const _part of result.stream) {
+        }
+      } catch (error) {
+        failure = error;
       }
 
       expect(meter).toEqual([]);
-      expect(lifecycle).toEqual([{ phase: "fail", reason: "stream_error" }]);
+      // Malformed usage is a distinct settlement failure: no charge is invented, no
+      // successful finish is emitted, and the hold stays visible for reconciliation.
+      expect(lifecycle).toEqual([]);
+      expect(failure).toMatchObject({
+        name: "ModelUsageSettlementError",
+        code: "usage_invalid",
+      });
     } finally {
       setModelUsageMeter(undefined);
       setModelUsageGate(undefined);
+    }
+  });
+});
+
+/** Bounds that admit everything: a counted input far above any fixture, a cap far above any output. */
+function admittingBounds() {
+  return {
+    input: {
+      enforced: "counted" as const,
+      maximumTokens: 100_000n,
+      countInputTokens: () => 1,
+    },
+    output: { enforced: "provider_cap" as const, maximumTokens: 100_000n },
+  };
+}
+
+describe("the model usage bound contract (pre-call admission)", () => {
+  type WrappedModel = {
+    doStream: (params: unknown) => Promise<{
+      stream: ReadableStream<Record<string, unknown>>;
+    }>;
+  };
+
+  /** An inner model that records every call and its effective request parameters. */
+  function recordingModel(finishUsage?: { inputTokens: number; outputTokens: number }) {
+    const calls: unknown[] = [];
+    const model = {
+      modelId: "gpt-test",
+      async doStream(params: unknown) {
+        calls.push(params);
+        return {
+          stream: new ReadableStream<Record<string, unknown>>({
+            start(controller) {
+              controller.enqueue({ type: "text-delta", id: "t", delta: "hi" });
+              if (finishUsage) {
+                controller.enqueue({
+                  type: "finish",
+                  usage: {
+                    inputTokens: { total: finishUsage.inputTokens },
+                    outputTokens: { total: finishUsage.outputTokens },
+                  },
+                });
+              }
+              controller.close();
+            },
+          }),
+        };
+      },
+    };
+    return { calls, model };
+  }
+
+  /** A lifecycle that records its phases against the arrays a test inspects. */
+  function recordingLifecycle(bounds: ModelUsageGateLifecycle["bounds"]) {
+    const phases: Array<{ phase: string; reason?: string }> = [];
+    const lifecycle: ModelUsageGateLifecycle = {
+      ...(bounds ? { bounds } : {}),
+      finish: async () => {
+        phases.push({ phase: "finish" });
+      },
+      fail: async (failure) => {
+        phases.push({ phase: "fail", reason: failure.reason });
+      },
+    };
+    return { phases, lifecycle };
+  }
+
+  test("input over the configured maximum is refused before the provider call", async () => {
+    const { calls, model } = recordingModel();
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 10n,
+        countInputTokens: () => 11,
+      },
+      output: { enforced: "provider_cap", maximumTokens: 100n },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(wrapped.doStream({ prompt: [] })).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "input_over_limit",
+      });
+      expect(calls).toHaveLength(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("an input bound this deployment cannot prove is refused before the provider call", async () => {
+    const { calls, model } = recordingModel();
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "unsupported",
+        reason:
+          "the OpenAI-compatible chat adapter offers no exact pre-call input token count",
+      },
+      output: { enforced: "provider_cap", maximumTokens: 100n },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(wrapped.doStream({ prompt: [] })).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "input_bound_unsupported",
+      });
+      expect(calls).toHaveLength(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("an output cap this provider cannot enforce is refused before the provider call", async () => {
+    const { calls, model } = recordingModel();
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 10n,
+        countInputTokens: () => 1,
+      },
+      output: {
+        enforced: "unsupported",
+        reason: "the adapter drops maxOutputTokens",
+      },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(wrapped.doStream({ prompt: [] })).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "output_bound_unsupported",
+      });
+      expect(calls).toHaveLength(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("an admitted lifecycle without bounds is refused before the provider call", async () => {
+    const { calls, model } = recordingModel();
+    const { phases, lifecycle } = recordingLifecycle(undefined);
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(wrapped.doStream({ prompt: [] })).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "model_bounds_missing",
+      });
+      expect(calls).toHaveLength(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a failing or non-whole input count is a refusal, never an approximation", async () => {
+    const { calls, model } = recordingModel();
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 10n,
+        countInputTokens: () => {
+          throw new Error("counter unavailable");
+        },
+      },
+      output: { enforced: "provider_cap", maximumTokens: 100n },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(wrapped.doStream({ prompt: [] })).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "input_bound_unsupported",
+      });
+      expect(calls).toHaveLength(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("exactly-at-limit input is admitted and the configured cap reaches the provider request", async () => {
+    const { calls, model } = recordingModel({ inputTokens: 10, outputTokens: 7 });
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 10n,
+        countInputTokens: () => 10,
+      },
+      output: { enforced: "provider_cap", maximumTokens: 7n },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const first = await wrapped.doStream({ prompt: [], maxOutputTokens: 20 });
+      for await (const _part of first.stream) {
+      }
+      // A caller's smaller request is never raised to the configured cap.
+      const second = await wrapped.doStream({ prompt: [], maxOutputTokens: 3 });
+      for await (const _part of second.stream) {
+      }
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toMatchObject({ maxOutputTokens: 7 });
+      expect(calls[1]).toMatchObject({ maxOutputTokens: 3 });
+      expect(phases).toEqual([
+        { phase: "finish" },
+        { phase: "finish" },
+      ]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish above the advertised bound fails visibly and keeps the hold", async () => {
+    const meter: number[] = [];
+    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 6 });
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 10n,
+        countInputTokens: () => 3,
+      },
+      output: { enforced: "provider_cap", maximumTokens: 5n },
+    });
+    try {
+      setModelUsageMeter(() => {
+        meter.push(1);
+      });
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      let failure: unknown;
+      try {
+        for await (const _part of result.stream) {
+        }
+      } catch (error) {
+        failure = error;
+      }
+      expect(calls).toHaveLength(1);
+      expect(meter).toEqual([]);
+      // Neither finish (no charge invented) nor fail (the hold stays reserved for
+      // reconciliation) runs: the provider broke its advertised bound.
+      expect(phases).toEqual([]);
+      expect(failure).toMatchObject({
+        name: "ModelUsageSettlementError",
+        code: "usage_over_bound",
+      });
+    } finally {
+      setModelUsageMeter(undefined);
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("the real OpenAI chat adapter carries the configured cap on the outgoing request", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const sse = [
+      `data: ${JSON.stringify({
+        id: "c1",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "gpt-test",
+        choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }],
+      })}`,
+      "",
+      `data: ${JSON.stringify({
+        id: "c1",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "gpt-test",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+      })}`,
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    const model = createOpenAI({
+      apiKey: STUB_MODEL_KEY,
+      baseURL: "http://adapter.test/v1",
+      fetch: (async (
+        _input: unknown,
+        init?: { body?: BodyInit | null },
+      ) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return new Response(sse, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }) as unknown as typeof fetch,
+    }).chat("gpt-4o-mini");
+    const finishes: number[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: {
+          input: {
+            enforced: "counted",
+            maximumTokens: 50n,
+            countInputTokens: () => 4,
+          },
+          output: { enforced: "provider_cap", maximumTokens: 7n },
+        },
+        finish: async (usage) => {
+          finishes.push((usage as { outputTokens?: number }).outputTokens ?? 0);
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({
+        prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      });
+      for await (const _part of result.stream) {
+      }
+      expect(requests).toHaveLength(1);
+      // The adapter maps maxOutputTokens to max_tokens, which the chat-completions
+      // contract enforces: this is the provider cap the bound contract claims.
+      expect(requests[0]).toMatchObject({ max_tokens: 7 });
+      expect(finishes).toEqual([2]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("an over-budget input makes zero provider requests through the real adapter", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const model = createOpenAI({
+      apiKey: STUB_MODEL_KEY,
+      baseURL: "http://adapter.test/v1",
+      fetch: (async (
+        _input: unknown,
+        init?: { body?: BodyInit | null },
+      ) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return new Response("data: [DONE]\n\n", {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }) as unknown as typeof fetch,
+    }).chat("gpt-4o-mini");
+    try {
+      setModelUsageGate(async () => ({
+        bounds: {
+          input: {
+            enforced: "counted",
+            maximumTokens: 10n,
+            countInputTokens: () => 11,
+          },
+          output: { enforced: "provider_cap", maximumTokens: 7n },
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(
+        wrapped.doStream({
+          prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        }),
+      ).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "input_over_limit",
+      });
+      expect(requests).toHaveLength(0);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish whose durable write fails rejects the stream and keeps the hold", async () => {
+    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const phases: Array<{ phase: string; reason?: string }> = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        // The lifecycle owner's outbox write failed after the provider finished.
+        finish: async () => {
+          phases.push({ phase: "finish" });
+          throw new ModelUsageSettlementError("usage_outbox_write_failed");
+        },
+        fail: async (failure) => {
+          phases.push({ phase: "fail", reason: failure.reason });
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      const parts: string[] = [];
+      let failure: unknown;
+      try {
+        for await (const part of result.stream) {
+          parts.push(String((part as { type?: string }).type));
+        }
+      } catch (error) {
+        failure = error;
+      }
+      // The provider worked, but no successful finish may be reported: the finish chunk
+      // never reaches the consumer, the stream rejects, and — because the work was
+      // chargeable — the hold is NOT released, leaving it for reconciliation.
+      expect(calls).toHaveLength(1);
+      expect(parts).toEqual(["text-delta"]);
+      expect(failure).toMatchObject({
+        name: "ModelUsageSettlementError",
+        code: "usage_outbox_write_failed",
+      });
+      expect(phases).toEqual([{ phase: "finish" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a retried finish for the identical event succeeds once", async () => {
+    const { model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const phases: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        // record() answered { inserted: false } for identical facts: the durable row
+        // already stands, so the finish resolves and the run reports success exactly once.
+        finish: async () => {
+          phases.push("finish");
+        },
+        fail: async () => {
+          phases.push("fail");
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      const parts: string[] = [];
+      for await (const part of result.stream) {
+        parts.push(String((part as { type?: string }).type));
+      }
+      expect(parts).toEqual(["text-delta", "finish"]);
+      expect(phases).toEqual(["finish"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a billed run without a provable input bound is refused before the provider", async () => {
+    const environment = {
+      ...testEnvironment(),
+      OPENAI_API_KEY: STUB_MODEL_KEY,
+    };
+    const tenantPackage = await loadTenantPackage(packagePath);
+    const model = runtimeModelForEnvironment(tenantPackage.model, environment);
+    const recorder = new LLMock();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    let providerCalls = 0;
+    const phases: Array<{ phase: string; reason?: string }> = [];
+    try {
+      process.env.OPENAI_BASE_URL = await recorder.start();
+      recorder.onMessage(/.*/, () => {
+        providerCalls += 1;
+        return { type: "text", content: "must never be reached" };
+      });
+      // The production declaration for the OpenAI-compatible chat adapter: the output
+      // cap is provider-enforced, the input bound is not provable, so the run refuses.
+      setModelUsageGate(async () => ({
+        bounds: {
+          input: {
+            enforced: "unsupported",
+            reason:
+              "no exact pre-call input token count or provider-enforced input ceiling",
+          },
+          output: { enforced: "provider_cap", maximumTokens: 1000n },
+        },
+        finish: async () => {
+          phases.push({ phase: "finish" });
+        },
+        fail: async (failure) => {
+          phases.push({ phase: "fail", reason: failure.reason });
+        },
+      }));
+      const agents = await resolveRuntimeAgents(
+        () => [
+          {
+            id: "general-assistant",
+            name: "General Assistant",
+            type: "built_in" as const,
+            systemPrompt: "Be helpful.",
+          },
+        ],
+        model,
+        async () => STUB_MODEL_KEY,
+      );
+      const agent = agents["general-assistant"]?.clone();
+      if (!agent) throw new Error("Expected General Assistant.");
+      agent.addMessage({
+        id: "input-bound-refusal-request",
+        role: "user",
+        content: "This request must be refused for lack of a provable input bound.",
+      });
+      await expect(agent.runAgent()).rejects.toBeDefined();
+      expect(providerCalls).toBe(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await recorder.stop();
     }
   });
 });

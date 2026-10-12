@@ -101,6 +101,21 @@ describe("reportCodeRunUsage (I4: single source, idempotent, silent without bill
         }),
       );
     });
+
+    test("usage exactly at the configured token ceiling charges at the ceiling cost", () => {
+      // The same limits admission enforces: exactly-at-limit is admitted, and the
+      // whole-celling charge equals the configured maximum reservation.
+      expect(
+        calculateExactModelUsageCharge(policy, {
+          inputTokens: 10,
+          outputTokens: 8,
+        }),
+      ).toEqual({
+        inputTokens: 10,
+        outputTokens: 8,
+        actual: { numerator: 25n, denominator: 1n },
+      });
+    });
   });
 
   test("a replayed report carries identical immutable facts for the same run", async () => {

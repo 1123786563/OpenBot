@@ -25,6 +25,14 @@ const RETRYABLE: Record<BillingErrorCode, boolean> = {
   unsupported: false,
 };
 
+/**
+ * The idempotency-key prefix tying one admitted model call's reservation to the usage event
+ * its finish is expected to commit: the gate writes `usage:<eventId>`, the reconciler reads
+ * the same prefix back out to name the event an expired hold belongs to. One constant so the
+ * write side and the read side cannot drift apart silently.
+ */
+export const USAGE_IDEMPOTENCY_KEY_PREFIX = "usage:";
+
 export class BillingError extends Error {
   override name = "BillingError";
   readonly code: BillingErrorCode;
