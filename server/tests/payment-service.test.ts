@@ -24,6 +24,11 @@ import { BillingError } from "../src/billing/types";
 /** A fixed clock the tests share. */
 let clockMs = 1_791_900_000_000;
 const tick = () => new Date(clockMs);
+const addMonths = (from: Date, months: number) => {
+  const to = new Date(from.getTime());
+  to.setUTCMonth(to.getUTCMonth() + months);
+  return to;
+};
 
 function memoryStore(): PaymentStore {
   const orders = new Map<string, PaymentOrderRecord>();
@@ -43,6 +48,7 @@ function memoryStore(): PaymentStore {
     expiresAt: new Date(clockMs + 15 * 60_000),
     periodStart: null,
     periodEnd: null,
+    paidAt: null,
     terminalAt: null,
     createdBy: "admin-1",
     createdAt: new Date(clockMs),
@@ -64,6 +70,7 @@ function memoryStore(): PaymentStore {
         channelTransactionId: null,
         periodStart: null,
         periodEnd: null,
+        paidAt: null,
         terminalAt: null,
         version: 0,
         createdAt: tick(),
@@ -86,10 +93,20 @@ function memoryStore(): PaymentStore {
       }
       return null;
     },
-    async readLatestPaidOrder(planCode) {
+    async readPendingPurchase() {
+      return (
+        [...orders.values()]
+          .reverse()
+          .find((order) => order.status === "pending") ?? null
+      );
+    },
+    async readLatestPaidOrder(planCode, excludeOrderId) {
       const paid = [...orders.values()]
         .filter(
-          (order) => order.planCode === planCode && order.status === "paid",
+          (order) =>
+            order.planCode === planCode &&
+            order.status === "paid" &&
+            order.id !== excludeOrderId,
         )
         .sort(
           (a, b) =>
@@ -139,13 +156,15 @@ function memoryStore(): PaymentStore {
         return { claimed: false, alreadyKnown: false };
       }
       paidFacts.add(input.channelTransactionId);
+      const paidAt = tick();
       orders.set(input.id, {
         ...order,
         status: "paid",
         channelTransactionId: input.channelTransactionId,
         periodStart: input.periodStart,
         periodEnd: input.periodEnd,
-        terminalAt: tick(),
+        paidAt,
+        terminalAt: paidAt,
         version: input.expectedVersion + 1,
       });
       return { claimed: true, alreadyKnown: false };
@@ -216,9 +235,91 @@ function memoryStore(): PaymentStore {
       paidFacts.add(event.channelTransactionId);
       return true;
     },
-    async recordActivation(id, activationState) {
+    async readPaidOrderByTransaction(channelTransactionId) {
+      return (
+        [...orders.values()].find(
+          (order) =>
+            order.status === "paid" &&
+            order.channelTransactionId === channelTransactionId,
+        ) ?? null
+      );
+    },
+    async recordActivation(id, activationState, period) {
       const order = orders.get(id);
-      if (order) orders.set(id, { ...order, activationState });
+      if (order) {
+        orders.set(id, {
+          ...order,
+          activationState,
+          ...(period
+            ? { periodStart: period.start, periodEnd: period.end }
+            : {}),
+        });
+      }
+    },
+    async resolveActivationOwnership(orderId) {
+      const current = orders.get(orderId);
+      if (!current) return { outcome: "unknown" as const };
+      if (
+        current.status !== "paid" ||
+        !current.periodStart ||
+        !current.periodEnd
+      ) {
+        return { outcome: "not-paid" as const };
+      }
+      const overlapping = [...orders.values()]
+        .filter(
+          (order) =>
+            order.status === "paid" &&
+            order.planCode === current.planCode &&
+            order.periodStart !== null &&
+            order.periodEnd !== null &&
+            order.periodStart.getTime() < current.periodEnd.getTime() &&
+            order.periodEnd.getTime() > current.periodStart.getTime(),
+        );
+      const claimed = overlapping
+        .filter((order) => order.activationState !== "pending")
+        .sort((a, b) => {
+          const byApplied =
+            Number(b.activationState === "applied") -
+            Number(a.activationState === "applied");
+          if (byApplied !== 0) return byApplied;
+          const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+          if (byCreated !== 0) return byCreated;
+          return a.id.localeCompare(b.id);
+        })[0];
+      if (claimed) {
+        if (claimed.id === current.id) {
+          return { outcome: "owner" as const, order: claimed };
+        }
+        return {
+          outcome: "duplicate" as const,
+          order: current,
+          ownerOrder: claimed,
+        };
+      }
+      const winner = [...overlapping].sort((a, b) => {
+        const byStart =
+          (a.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+          (b.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER);
+        if (byStart !== 0) return byStart;
+        const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+        if (byCreated !== 0) return byCreated;
+        return a.id.localeCompare(b.id);
+      })[0];
+      if (!winner) return { outcome: "unknown" as const };
+      if (winner.id === current.id) {
+        if (current.activationState === "pending") {
+          const claimedOwner = { ...current, activationState: "failed" as const };
+          orders.set(current.id, claimedOwner);
+          return { outcome: "owner" as const, order: claimedOwner };
+        }
+        return { outcome: "owner" as const, order: current };
+      }
+      return {
+        outcome: "duplicate" as const,
+        order: current,
+        ownerOrder: winner,
+      };
     },
     async listExpiredPendingOrders(at) {
       return [...orders.values()].filter(
@@ -244,16 +345,23 @@ function memoryStore(): PaymentStore {
 function fakeProvider(
   id: PaymentProviderId,
   overrides: Partial<PaymentProvider> = {},
-): PaymentProvider & { closes: string[]; queries: string[] } {
+): PaymentProvider & {
+  closes: string[];
+  queries: string[];
+  creates: string[];
+} {
   const closes: string[] = [];
   const queries: string[] = [];
+  const creates: string[] = [];
   return {
     id,
     closes,
     queries,
-    createSession: async () => ({
-      checkout: { kind: "qrcode", payload: `qr-${id}` },
-    }),
+    creates,
+    createSession: async (input) => {
+      creates.push(input.outTradeNo);
+      return { checkout: { kind: "qrcode", payload: `qr-${id}` } };
+    },
     queryPayment: async (outTradeNo: string) => {
       queries.push(outTradeNo);
       return { outTradeNo, state: "pending" as const };
@@ -267,7 +375,11 @@ function fakeProvider(
       contentType: "text/plain",
     },
     ...overrides,
-  } as PaymentProvider & { closes: string[]; queries: string[] };
+  } as PaymentProvider & {
+    closes: string[];
+    queries: string[];
+    creates: string[];
+  };
 }
 
 function fakeLago(
@@ -286,6 +398,7 @@ function fakeLago(
     },
     async ensureSubscription(input) {
       state.subscriptions.push(input.externalSubscriptionId);
+      return {};
     },
     ...overrides,
   };
@@ -302,6 +415,10 @@ function buildService(
     /** The uncached guard read (P1-5) — present in a test that pins its precedence. */
     activePlanCodeUncached?: () => Promise<string | null>;
     invalidateEntitlementCache?: () => void;
+    catalog?: ReadonlyMap<
+      string,
+      { amountCents: number; currency: "CNY"; periodMonths: number }
+    >;
     grantor?: {
       creditsFor: (planCode: string) => number | null;
       grantPlanCredits: (input: {
@@ -326,9 +443,11 @@ function buildService(
   const s = createPaymentService({
     providers: providerMap,
     store,
-    catalog: new Map([
-      ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
-    ]),
+    catalog:
+      overrides.catalog ??
+      new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
     notifyBaseUrl: "https://payments.openbot.example",
     orderTtlMinutes: 15,
     latePaymentWindowHours: overrides.latePaymentWindowHours ?? 24,
@@ -408,6 +527,127 @@ describe("purchase ordering", () => {
       kind: "qrcode",
       payload: "qr-winner",
     });
+  });
+
+  test("a pending purchase for another plan refuses without creating a new order", async () => {
+    const store = memoryStore();
+    const { order: existing } = await store.insertOrder({
+      planCode: "team",
+      provider: "alipay",
+      amountCents: 17600,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-2",
+      checkoutPayload: "qr-existing",
+    });
+    const alipay = fakeProvider("alipay");
+    const wechat = fakeProvider("wechat");
+    const { service } = buildService({
+      store,
+      providers: [alipay, wechat],
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["team", { amountCents: 17600, currency: "CNY", periodMonths: 1 }],
+      ]),
+    });
+
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "wechat",
+        createdBy: "admin-1",
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
+    });
+    expect((await store.readPendingPurchase())?.id).toBe(existing.id);
+    expect(wechat.creates).toEqual([]);
+  });
+
+  test("an insert-time purchase conflict refuses when the pending read raced", async () => {
+    const baseStore = memoryStore();
+    const { order: existing } = await baseStore.insertOrder({
+      planCode: "team",
+      provider: "alipay",
+      amountCents: 17600,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-2",
+      checkoutPayload: "qr-existing",
+    });
+    const store: PaymentStore = {
+      ...baseStore,
+      async readPendingPurchase() {
+        return null;
+      },
+      async insertOrder() {
+        return { order: existing, conflict: "pending-purchase" };
+      },
+    };
+    const wechat = fakeProvider("wechat");
+    const { service } = buildService({
+      store,
+      providers: [wechat],
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+        ["team", { amountCents: 17600, currency: "CNY", periodMonths: 1 }],
+      ]),
+    });
+
+    await expect(
+      service.createPurchase({
+        planCode: "pro",
+        cycle: "monthly",
+        provider: "wechat",
+        createdBy: "admin-1",
+      }),
+    ).rejects.toMatchObject({
+      refusal: { reason: "pending-purchase", pendingPlanCode: "team" },
+    });
+    expect(wechat.creates).toEqual([]);
+  });
+
+  test("a channel-switch cancellation that loses to payment returns the paid order", async () => {
+    const baseStore = memoryStore();
+    const { order: existing } = await baseStore.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-1",
+      checkoutPayload: "qr-existing",
+    });
+    const store: PaymentStore = {
+      ...baseStore,
+      async cancelOrder(id, expectedVersion) {
+        await baseStore.confirmPaid({
+          id,
+          expectedVersion,
+          fromStatuses: ["pending"],
+          channelTransactionId: "payment-won-cancel-race",
+          amountCents: existing.amountCents,
+          periodStart: tick(),
+          periodEnd: new Date(clockMs + 30 * 24 * 60 * 60_000),
+        });
+        return false;
+      },
+    };
+    const alipay = fakeProvider("alipay");
+    const wechat = fakeProvider("wechat");
+    const { service } = buildService({ store, providers: [alipay, wechat] });
+
+    const result = await service.createPurchase({
+      planCode: "pro",
+      cycle: "monthly",
+      provider: "wechat",
+      createdBy: "admin-1",
+    });
+
+    expect(result.order.orderId).toBe(existing.id);
+    expect(result.order.status).toBe("paid");
+    expect(wechat.creates).toEqual([]);
   });
 
   test("a channel switch cancels the old order and closes it at the old channel", async () => {
@@ -532,6 +772,415 @@ describe("callback triage", () => {
     amountCents: 8800,
   });
 
+  test("a failed paid-fact confirm asks the provider to retry", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.confirmPaid = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("an already-known duplicate still acknowledges when duplicate evidence logging throws", async () => {
+    const store = memoryStore();
+    const { order: first } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: first.id,
+      expectedVersion: first.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-first",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+    const { order: second } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.recordAnomaly = async (event) => {
+      if (event.code === "duplicate_paid") {
+        throw new Error("database unavailable");
+      }
+    };
+    const wechat = fakeProvider("wechat", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: second.id,
+          state: "paid",
+          channelTransactionId: "tx-first",
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({
+      providers: [wechat, fakeProvider("alipay")],
+      store,
+    });
+
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+  });
+
+  test("an already-known duplicate records the settled order id and transaction id in its evidence", async () => {
+    const store = memoryStore();
+    const { order: first } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: first.id,
+      expectedVersion: first.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-first",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+    const { order: second } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const wechat = fakeProvider("wechat", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: second.id,
+          state: "paid",
+          channelTransactionId: "tx-first",
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({
+      providers: [wechat, fakeProvider("alipay")],
+      store,
+    });
+
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    expect(
+      store.anomalies.find(
+        (anomaly) =>
+          anomaly.orderId === second.id && anomaly.code === "duplicate_paid",
+      )?.detail,
+    ).toContain(first.id);
+    expect(
+      store.anomalies.find(
+        (anomaly) =>
+          anomaly.orderId === second.id && anomaly.code === "duplicate_paid",
+      )?.detail,
+    ).toContain("tx-first");
+  });
+
+  test("a committed cross-order duplicate retries missing anomaly evidence on replay", async () => {
+    const store = memoryStore();
+    const { order: first } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.confirmPaid({
+      id: first.id,
+      expectedVersion: first.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: "tx-first",
+      amountCents: 8800,
+      periodStart: tick(),
+      periodEnd: addMonths(tick(), 1),
+    });
+    const { order: second } = await store.insertOrder({
+      planCode: "pro",
+      provider: "wechat",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const originalConfirmPaid = store.confirmPaid.bind(store);
+    let confirmations = 0;
+    store.confirmPaid = async (input) => {
+      confirmations += 1;
+      return originalConfirmPaid(input);
+    };
+    const originalRecordAnomaly = store.recordAnomaly.bind(store);
+    let failDuplicateEvidence = true;
+    store.recordAnomaly = async (event) => {
+      if (event.code === "duplicate_paid" && failDuplicateEvidence) {
+        failDuplicateEvidence = false;
+        throw new Error("database unavailable");
+      }
+      return originalRecordAnomaly(event);
+    };
+    const wechat = fakeProvider("wechat", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: second.id,
+          state: "paid",
+          channelTransactionId: "tx-second",
+          amountCents: 8800,
+        },
+      }),
+    });
+    const { service } = buildService({
+      providers: [wechat, fakeProvider("alipay")],
+      store,
+    });
+
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    expect((await store.readOrder(second.id))?.status).toBe("paid");
+    expect(confirmations).toBe(1);
+
+    expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    expect(confirmations).toBe(1);
+    expect(
+      store.anomalies.some(
+        (anomaly) =>
+          anomaly.orderId === second.id && anomaly.code === "duplicate_paid",
+      ),
+    ).toBe(true);
+  });
+
+  test("an unreadable amount on a blocked order records durable evidence", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.blockOrder({
+      id: order.id,
+      expectedVersion: order.version,
+      channelTransactionId: "tx-mismatch",
+      amountCents: 1,
+      detail: "underpaid",
+    });
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid",
+          channelTransactionId: "tx-unreadable",
+        },
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
+    });
+    expect(
+      store.anomalies.some(
+        (anomaly) =>
+          anomaly.orderId === order.id &&
+          anomaly.code === "amount_unreadable",
+      ),
+    ).toBe(true);
+  });
+
+  test("a failed unreadable-amount evidence write on a blocked order retries", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.blockOrder({
+      id: order.id,
+      expectedVersion: order.version,
+      channelTransactionId: "tx-mismatch",
+      amountCents: 1,
+      detail: "underpaid",
+    });
+    store.recordAnomaly = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid",
+          channelTransactionId: "tx-unreadable",
+        },
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a callback order lookup failure is a retryable store failure", async () => {
+    const store = memoryStore();
+    store.readOrder = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor("po-unreadable"),
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a failed amount-mismatch block is not acknowledged", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.blockOrder = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: { ...paidFactFor(order.id), amountCents: 1 },
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a failed unreadable-amount evidence write is not acknowledged", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    store.recordAnomaly = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: {
+          outTradeNo: order.id,
+          state: "paid",
+          channelTransactionId: "tx-9",
+        },
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
+  test("a failed late-payment evidence write is not acknowledged", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    await store.expireOrder(order.id, order.version);
+    clockMs =
+      (await store.readOrder(order.id))!.terminalAt!.getTime() + 25 * 3600_000;
+    store.recordAnomaly = async () => {
+      throw new Error("database unavailable");
+    };
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({ providers: [alipay], store });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "store-failure",
+    });
+  });
+
   test("an unknown provider is refused before verification", async () => {
     const { service } = buildService();
     const outcome = await service.handleCallback(
@@ -644,7 +1293,7 @@ describe("callback triage", () => {
     expect(invalidated).toBe(1);
   });
 
-  test("an amount mismatch blocks a pending order and answers success (terminal quiet)", async () => {
+  test("an amount mismatch blocks a pending order and is not acknowledged as settled", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({
       planCode: "pro",
@@ -663,12 +1312,14 @@ describe("callback triage", () => {
     });
     const { service } = buildService({ providers: [alipay], store });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     // Blocked absorbs: the same mismatched delivery again changes nothing.
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
   });
@@ -696,7 +1347,8 @@ describe("callback triage", () => {
     });
     const { service } = buildService({ providers: [alipay], store });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("pending");
   });
@@ -733,7 +1385,8 @@ describe("callback triage", () => {
       lago,
     });
     expect(await second.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
     });
     const settled = await store.readOrder(order.id);
     expect(settled?.status).toBe("paid");
@@ -775,6 +1428,87 @@ describe("callback triage", () => {
     expect((await store.readOrder(order.id))?.status).toBe("paid");
   });
 
+  test("a plan with a longer catalog period keeps that fallback snapshot when Lago omits exact dates", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({
+      providers: [alipay],
+      store,
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 12 }],
+      ]),
+      lago: fakeLago({
+        async ensureSubscription() {
+          return { currentPeriodStart: null, currentPeriodEnd: null };
+        },
+      }),
+    });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    const settled = await store.readOrder(order.id);
+    expect(settled?.periodStart?.toISOString()).toBe(tick().toISOString());
+    expect(settled?.periodEnd?.toISOString()).toBe(addMonths(tick(), 12).toISOString());
+  });
+
+  test("activation replaces the fallback snapshot when Lago returns exact dates", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 60_000),
+      createdBy: "a",
+      checkoutPayload: null,
+    });
+    const exactStart = "2026-01-01T00:00:00.000Z";
+    const exactEnd = "2027-01-01T00:00:00.000Z";
+    const alipay = fakeProvider("alipay", {
+      verifyNotification: async () => ({
+        ok: true,
+        fact: paidFactFor(order.id),
+      }),
+    });
+    const { service } = buildService({
+      providers: [alipay],
+      store,
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 12 }],
+      ]),
+      lago: fakeLago({
+        async ensureSubscription() {
+          return {
+            currentPeriodStart: exactStart,
+            currentPeriodEnd: exactEnd,
+          };
+        },
+      }),
+    });
+
+    expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
+      kind: "success",
+    });
+    const settled = await store.readOrder(order.id);
+    expect(settled?.periodStart?.toISOString()).toBe(exactStart);
+    expect(settled?.periodEnd?.toISOString()).toBe(exactEnd);
+  });
+
   test("an expired order outside the window records late_payment and stays expired", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({
@@ -800,7 +1534,8 @@ describe("callback triage", () => {
     const lago = fakeLago();
     const { service } = buildService({ providers: [alipay], store, lago });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "late" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("expired");
     expect(lago.state.subscriptions).toHaveLength(0);
@@ -839,7 +1574,7 @@ describe("callback triage", () => {
       channelTransactionId: "tx-newer",
       amountCents: 8800,
       periodStart: tick(),
-      periodEnd: tick(),
+      periodEnd: addMonths(tick(), 1),
     });
 
     const alipay = fakeProvider("alipay", {
@@ -858,9 +1593,18 @@ describe("callback triage", () => {
     expect((await store.readOrder(older.id))?.status).toBe("paid");
   });
 
-  test("a pending order confirmed while the plan already has a paid order (cross-provider) is paid and activated anyway", async () => {
+  test("a pending order confirmed while the plan already has a paid order (cross-provider) stays paid but cannot activate or grant twice", async () => {
     const store = memoryStore();
-    // The plan's first purchase, already paid, on alipay.
+    const payouts: string[] = [];
+    const grantor: PlanCreditGrantor = {
+      creditsFor: () => 900_000,
+      async grantPlanCredits(input) {
+        payouts.push(input.orderId);
+        return { inserted: true };
+      },
+      readCurrentPeriodEnd: async () => tick(),
+    };
+    // The plan's first purchase, already paid and activated, on alipay.
     const { order: first } = await store.insertOrder({
       planCode: "pro",
       provider: "alipay",
@@ -877,13 +1621,18 @@ describe("callback triage", () => {
       channelTransactionId: "tx-first",
       amountCents: 8800,
       periodStart: tick(),
-      periodEnd: tick(),
+      periodEnd: addMonths(tick(), 1),
     });
+    const { service: firstService } = buildService({
+      providers: [fakeProvider("alipay")],
+      store,
+      grantor,
+    });
+    await firstService.sweepActivations();
+    expect((await store.readOrder(first.id))?.activationState).toBe("applied");
 
-    // A wechat order the pending-pair index cannot bar (the index is per (plan, provider) on
-    // purpose: a channel switch is a legal flow). Its money is real and its confirm must STAND
-    // — the duplicate_paid anomaly the service records is what makes the double collection
-    // visible to reconciliation, not a refusal that strands a paid order.
+    // A wechat order the pending-pair index cannot bar. Its paid fact stands, but the second
+    // order must not win the entitlement or a second credit payout while the first period overlaps.
     const { order: second } = await store.insertOrder({
       planCode: "pro",
       provider: "wechat",
@@ -904,13 +1653,20 @@ describe("callback triage", () => {
         },
       }),
     });
-    const { service } = buildService({ providers: [wechat], store });
+    const { service } = buildService({ providers: [wechat], store, grantor });
     expect(await service.handleCallback("wechat", new Headers(), "x")).toEqual({
       kind: "success",
     });
     const settled = await store.readOrder(second.id);
     expect(settled?.status).toBe("paid");
-    expect(settled?.activationState).toBe("applied");
+    expect(settled?.activationState).toBe("pending");
+    expect(payouts).toEqual([first.id]);
+    expect(
+      store.anomalies.some(
+        (anomaly) =>
+          anomaly.orderId === second.id && anomaly.code === "duplicate_paid",
+      ),
+    ).toBe(true);
   });
 
   test("blocked refuses every migration, including a well-paid fact", async () => {
@@ -940,7 +1696,8 @@ describe("callback triage", () => {
     const lago = fakeLago();
     const { service } = buildService({ providers: [alipay], store, lago });
     expect(await service.handleCallback("alipay", new Headers(), "x")).toEqual({
-      kind: "success",
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
     });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     expect(lago.state.subscriptions).toHaveLength(0);
@@ -1157,7 +1914,7 @@ describe("activation gate", () => {
     expect(invalidated).toBe(1);
   });
 
-  test("an unreachable provider keeps activation pending for the next pass", async () => {
+  test("an unreachable provider keeps the claimed owner failed for the next pass", async () => {
     const store = memoryStore();
     const { order, alipay } = await pendingWithPaidDelivery(store);
     const lago = fakeLago({
@@ -1168,7 +1925,7 @@ describe("activation gate", () => {
     const { service } = buildService({ store, lago, providers: [alipay] });
     await service.handleCallback("alipay", new Headers(), "x");
     expect((await store.readOrder(order.id))?.status).toBe("paid");
-    expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+    expect((await store.readOrder(order.id))?.activationState).toBe("failed");
   });
 
   test("a rule-refused (failed) activation is retried by the sweep until the rule changes (P1-4)", async () => {
@@ -1229,7 +1986,6 @@ describe("activation gate", () => {
     await expect(
       service.createPurchase({
         planCode: "pro",
-        cycle: "monthly",
         provider: "alipay",
         cycle: "monthly",
         createdBy: "admin-1",
@@ -1239,7 +1995,7 @@ describe("activation gate", () => {
     });
   });
 
-  test("a no-amount delivery on a BLOCKED order adds no further strike row (B3's closed tail)", async () => {
+  test("a no-amount delivery on a BLOCKED order durably records every refusal", async () => {
     const store = memoryStore();
     const { order } = await store.insertOrder({
       planCode: "pro",
@@ -1272,13 +2028,12 @@ describe("activation gate", () => {
     await deliver();
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(3);
-    // The fourth (and fifth) delivery on the terminal order: acknowledged, but NO new row —
-    // the blocked state already carries the story and a dead order's evidence is complete.
-    // (The qa-batch2-fourth probe pinned the OLD accumulating behaviour; this pins the fix.)
+    // The fourth and fifth deliveries still record their unreadable-amount evidence before
+    // refusing; a blocked status does not erase evidence about a later paid delivery.
     await deliver();
     await deliver();
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
-    expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(3);
+    expect(await store.countAnomalies(order.id, "amount_unreadable")).toBe(5);
   });
 
   test("a channel that never states an amount: the third unreadable strike blocks the order (P2-3)", async () => {
@@ -1477,7 +2232,8 @@ describe("the plan allowance payout", () => {
         },
       }),
     });
-    // First pass: the grantor is unreachable-looking — grant THROWS, activation stays pending.
+    // First pass: the grantor is unreachable-looking — grant THROWS, but the claimed owner
+    // remains failed so no overlapping duplicate can take the entitlement while the sweep retries.
     const failing: PlanCreditGrantor = {
       ...grantor,
       grantPlanCredits: async () => {
@@ -1486,7 +2242,7 @@ describe("the plan allowance payout", () => {
     };
     const first = buildService({ store, providers: [alipay], grantor: failing });
     await first.service.handleCallback("alipay", new Headers(), "x");
-    expect((await store.readOrder(order.id))?.activationState).toBe("pending");
+    expect((await store.readOrder(order.id))?.activationState).toBe("failed");
 
     // The sweep retries with a healthy grantor: exactly one payout lands.
     const second = buildService({ store, providers: [alipay], grantor });

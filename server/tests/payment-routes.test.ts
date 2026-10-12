@@ -1,12 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { Hono } from "hono";
-import type { AppVariables } from "../src/auth/guards";
+import { type Context, Hono } from "hono";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
 } from "../src/billing/payments/routes";
-import { PurchaseError, type PaymentService } from "../src/billing/payments/service";
-import type { PaymentOrderView } from "../src/billing/payments/types";
+import {
+  createPaymentService,
+  PurchaseError,
+  type PaymentService,
+} from "../src/billing/payments/service";
+import type { PaymentProvider } from "../src/billing/payments/provider";
+import type {
+  PaymentOrderReadScope,
+  PaymentOrderRecord,
+  PaymentOrderView,
+  PaymentStore,
+} from "../src/billing/payments/types";
 import type { AuditStore } from "../src/audit";
 
 /*
@@ -32,6 +42,18 @@ function viewFor(orderId: string): PaymentOrderView {
   };
 }
 
+const ADMIN: AuthenticatedActor = {
+  id: "admin-1",
+  email: "admin@openbot.test",
+  role: "admin",
+};
+
+const MEMBER: AuthenticatedActor = {
+  id: "user-member",
+  email: "member@openbot.test",
+  role: "user",
+};
+
 function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
   return {
     catalog: (canPurchase, activePlanCode) => ({
@@ -43,8 +65,10 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
       providers: ["alipay"],
     }),
     createPurchase: async () => ({ order: viewFor("po-new") }),
-    readOrder: async (id) => ({ order: viewFor(id) }),
-    readCurrentOrder: async () => ({ order: null }),
+    readOrder: async (id, _scope?: PaymentOrderReadScope) => ({
+      order: viewFor(id),
+    }),
+    readCurrentOrder: async (_scope?: PaymentOrderReadScope) => ({ order: null }),
     cancelPurchase: async () => ({ outcome: "unknown" }),
     handleCallback: async () => ({ kind: "unknown-provider" }),
     sweepExpired: async () => {},
@@ -52,7 +76,7 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
   };
 }
 
-function guardDoubles() {
+function guardDoubles(actor: AuthenticatedActor = ADMIN) {
   // A Hono middleware must drive `next()` or return a Response — a plain `undefined` return
   // would stop the chain with an empty 200, which is exactly the shape these tests exist to
   // catch. The pass-through drives it AND establishes the actor the real guard establishes,
@@ -62,9 +86,9 @@ function guardDoubles() {
     next: () => Promise<void>,
   ) => {
     context.set("actor", {
-      id: "admin-1",
-      email: "admin@openbot.test",
-      role: "admin",
+      id: actor.id,
+      email: actor.email,
+      role: actor.role,
     });
     await next();
   }) as never;
@@ -72,8 +96,11 @@ function guardDoubles() {
   return { requireUser, requireAdmin: requireAdminAlways };
 }
 
-function userApp(service: PaymentService, options: { audit?: AuditStore } = {}) {
-  const { requireUser, requireAdmin } = guardDoubles();
+function userApp(
+  service: PaymentService,
+  options: { actor?: AuthenticatedActor; audit?: AuditStore } = {},
+) {
+  const { requireUser, requireAdmin } = guardDoubles(options.actor);
   return createPaymentRoutes({
     service,
     requireUser,
@@ -174,6 +201,111 @@ describe("callback routes", () => {
         message: "Payment notification refused.",
       });
     }
+  });
+
+  test("a durable settlement refusal is not a provider success acknowledgement", async () => {
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/payments/callbacks",
+      createPaymentCallbackRoutes({
+        service: fakeService({
+          handleCallback: async () => ({
+            kind: "settlement-refused",
+            settlement: { kind: "refused", reason: "amount-mismatch" },
+          }),
+        }),
+      }),
+    );
+    const response = await app.request("/api/payments/callbacks/alipay", {
+      method: "POST",
+      body: "x=1",
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.text()).not.toBe("success");
+  });
+
+  test("a thrown durable confirm returns HTTP 500 and provider failure", async () => {
+    const order: PaymentOrderRecord = {
+      id: "po-confirm-failure",
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      status: "pending",
+      activationState: "pending",
+      channelTransactionId: null,
+      expiresAt: new Date("2026-10-10T02:15:00.000Z"),
+      periodStart: null,
+      periodEnd: null,
+      paidAt: null,
+      terminalAt: null,
+      createdBy: "admin-1",
+      createdAt: new Date("2026-10-10T02:00:00.000Z"),
+      version: 0,
+      checkoutPayload: null,
+    };
+    const store = {
+      readOrder: async () => order,
+      confirmPaid: async () => {
+        throw new Error("database unavailable");
+      },
+    } as unknown as PaymentStore;
+    const provider: PaymentProvider = {
+      id: "alipay",
+      async createSession() {
+        throw new Error("unused");
+      },
+      async queryPayment() {
+        throw new Error("unused");
+      },
+      async closePayment() {},
+      async verifyNotification() {
+        return {
+          ok: true,
+          fact: {
+            outTradeNo: order.id,
+            state: "paid",
+            channelTransactionId: "tx-confirm-failure",
+            amountCents: order.amountCents,
+          },
+        };
+      },
+      successAck: { body: "success", contentType: "text/plain" },
+    };
+    const service = createPaymentService({
+      providers: new Map([["alipay", provider]]),
+      store,
+      catalog: new Map([
+        ["pro", { amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+      ]),
+      notifyBaseUrl: "https://payments.openbot.example",
+      orderTtlMinutes: 15,
+      latePaymentWindowHours: 24,
+      acceptForeignCurrency: false,
+      lago: {
+        async getPlan() {
+          return { found: true, interval: "monthly", currency: "CNY" };
+        },
+        async ensureSubscription() {},
+      },
+      externalCustomerKey: "openbot-deployment",
+      activePlanCode: async () => null,
+      invalidateEntitlementCache: () => undefined,
+    });
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/payments/callbacks",
+      createPaymentCallbackRoutes({ service }),
+    );
+
+    const response = await app.request("/api/payments/callbacks/alipay", {
+      method: "POST",
+      body: "x=1",
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "Payment notification refused.",
+    });
   });
 
   test("success answers with each channel's own ack, byte for byte", async () => {
@@ -283,6 +415,61 @@ describe("user routes: catalog and reads", () => {
     );
     const response = await app.request("/api/billing/purchases/po-missing");
     expect(response.status).toBe(404);
+  });
+
+  test("current and detail reads only expose the signed-in actor's orders", async () => {
+    const ownerOrder = {
+      ...viewFor("po-member"),
+      checkout: { kind: "qrcode" as const, payload: "qr-member" },
+    };
+    const otherOrder = {
+      ...viewFor("po-other"),
+      checkout: { kind: "qrcode" as const, payload: "qr-other" },
+    };
+    const service = fakeService({
+      readCurrentOrder: async (scope) => ({
+        order: scope?.actorId === MEMBER.id ? ownerOrder : null,
+      }),
+      readOrder: async (id, scope) => {
+        if (scope?.actorId !== MEMBER.id) return { order: null };
+        if (id === ownerOrder.orderId) return { order: ownerOrder };
+        if (id === otherOrder.orderId) return { order: null };
+        return { order: null };
+      },
+    });
+
+    const ownerApp = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(service, { actor: MEMBER }),
+    );
+    const current = await ownerApp.request("/api/billing/purchases/current");
+    expect(current.status).toBe(200);
+    expect(await current.json()).toEqual({ order: ownerOrder });
+
+    const ownDetail = await ownerApp.request("/api/billing/purchases/po-member");
+    expect(ownDetail.status).toBe(200);
+    expect(await ownDetail.json()).toEqual({ order: ownerOrder });
+
+    const otherActorApp = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(service, {
+        actor: {
+          id: "user-other",
+          email: "other@openbot.test",
+          role: "user",
+        },
+      }),
+    );
+    const otherCurrent = await otherActorApp.request(
+      "/api/billing/purchases/current",
+    );
+    expect(otherCurrent.status).toBe(200);
+    expect(await otherCurrent.json()).toEqual({ order: null });
+
+    const otherDetail = await otherActorApp.request(
+      "/api/billing/purchases/po-member",
+    );
+    expect(otherDetail.status).toBe(404);
   });
 });
 
@@ -407,6 +594,36 @@ describe("user routes: create and cancel", () => {
     expect(await response.json()).toEqual({
       error: "This deployment already has an active subscription.",
       activePlanCode: "pro",
+    });
+  });
+
+  test("a competing pending purchase answers 409 with the plan that owns the slot", async () => {
+    const app = new Hono<{ Variables: AppVariables }>().route(
+      "/api/billing",
+      userApp(
+        fakeService({
+          createPurchase: async () => {
+            throw new PurchaseError({
+              reason: "pending-purchase",
+              pendingPlanCode: "team",
+            });
+          },
+        }),
+      ),
+    );
+    const response = await app.request("/api/billing/purchases", {
+      method: "POST",
+      body: JSON.stringify({
+        planCode: "pro",
+        provider: "wechat",
+        cycle: "monthly",
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Another purchase is already pending for this deployment.",
+      pendingPlanCode: "team",
     });
   });
 

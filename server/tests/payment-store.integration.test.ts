@@ -1,6 +1,7 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { like } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
+import * as paymentCrypto from "../src/billing/payments/crypto";
 import { createPaymentStore } from "../src/billing/payments/store";
 import { createDatabase } from "../src/db/client";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
@@ -20,17 +21,31 @@ const store = createPaymentStore(database);
 const prefix = `pay-${randomUUID().slice(0, 8)}`;
 
 afterAll(async () => {
-  await database.delete(paymentEvents).where(like(paymentEvents.orderId, `${prefix}%`));
-  await database.delete(paymentOrders).where(like(paymentOrders.id, `${prefix}%`));
+  await database
+    .delete(paymentOrders)
+    .where(eq(paymentOrders.createdBy, prefix));
   await database.$client.close();
 });
 
+afterEach(async () => {
+  const pending = await database
+    .select({ id: paymentOrders.id, version: paymentOrders.version })
+    .from(paymentOrders)
+    .where(
+      and(
+        eq(paymentOrders.createdBy, prefix),
+        eq(paymentOrders.status, "pending"),
+      ),
+    );
+  for (const order of pending) {
+    await store.cancelOrder(order.id, order.version);
+  }
+});
+
 /**
- * One order's insert input, on a plan code UNIQUE to this call. The pending-pair partial unique
- * index ((plan, provider) WHERE status='pending') is now a database fact, and these tests share
- * one database across runs — a fixed plan code would have every test after the first insert
- * replay into the first test's pending order instead of creating its own. A per-call suffix
- * keeps each insert on its own pair; the pair index has its own dedicated test below.
+ * One order's insert input, on a plan code UNIQUE to this call. The pending-scope partial unique
+ * index (deployment_scope WHERE status='pending') is a database fact, and these tests share one
+ * database across runs — a per-call suffix keeps each test's purchase independent.
  */
 function orderInput() {
   return {
@@ -39,34 +54,56 @@ function orderInput() {
     amountCents: 8800,
     currency: "CNY" as const,
     expiresAt: new Date(Date.now() + 15 * 60_000),
-    createdBy: "admin-1",
+    createdBy: prefix,
     checkoutPayload: "qr-payload",
   };
 }
 
-test("insertOrder generates short ids and retries a collision", async () => {
+test("insertOrder retries a real primary-key collision with a fresh order id", async () => {
+  const collisionId = `po-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  const freshId = `po-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  await database.insert(paymentOrders).values({
+    id: collisionId,
+    ...orderInput(),
+    status: "canceled",
+  });
+  const generate = spyOn(paymentCrypto, "generateOutTradeNo")
+    .mockReturnValueOnce(collisionId)
+    .mockReturnValueOnce(freshId);
+  try {
+    const result = await store.insertOrder(orderInput());
+    expect(result.conflict).toBeNull();
+    expect(result.order.id).toBe(freshId);
+    expect((await store.readOrder(collisionId))?.status).toBe("canceled");
+    expect((await store.readPendingPurchase())?.id).toBe(freshId);
+  } finally {
+    generate.mockRestore();
+  }
+});
+
+test("insertOrder generates short ids and terminal orders leave the purchase slot free", async () => {
   const { order } = await store.insertOrder(orderInput());
   expect(order.id).toMatch(/^po-[0-9a-f]{16}$/);
   expect(order.status).toBe("pending");
+  await store.cancelOrder(order.id, order.version);
 
-  // A `po-` id collision is absorbed: a pre-inserted fixed id occupies the primary key, and the
-  // next insert on a DIFFERENT pair (its own plan) redraws instead of surfacing the violation.
+  // A terminal row does not occupy the deployment's pending slot.
   await database.insert(paymentOrders).values({
-    // Not the store's id, but a plan this pair-test owns: pending, so the pending-pair index
-    // also sees exactly this row on this pair and nothing else.
+    // Not the store's id, but a plan this test owns.
     id: `${prefix}-fixed`,
     planCode: `pro-${randomUUID().slice(0, 8)}`,
     provider: "alipay",
     amountCents: 8800,
     expiresAt: new Date(Date.now() + 15 * 60_000),
-    status: "pending",
+    status: "canceled",
+    createdBy: prefix,
   });
   const second = await store.insertOrder(orderInput());
   expect(second.order.id).not.toBe(order.id);
   expect(await store.readOrder(`${prefix}-fixed`)).not.toBeNull();
 });
 
-test("the pending pair is unique: a second insert on the same (plan, provider) replays the first", async () => {
+test("same-pair orders replay, while channel switches must free the deployment slot first", async () => {
   const input = orderInput();
   const first = await store.insertOrder(input);
   expect(first.conflict).toBeNull();
@@ -77,21 +114,49 @@ test("the pending pair is unique: a second insert on the same (plan, provider) r
   expect(second.conflict).toBe("pending-pair");
   expect(second.order.id).toBe(first.order.id);
 
-  // A different channel is a different pair — the index must not bar a channel switch.
+  // A different channel cannot open alongside the pending purchase.
   const other = await store.insertOrder({ ...input, provider: "wechat" });
-  expect(other.conflict).toBeNull();
-  expect(other.order.id).not.toBe(first.order.id);
+  expect(other.conflict).toBe("pending-purchase");
+  expect(other.order.id).toBe(first.order.id);
 
-  // And a terminal first order frees the pair for a fresh pending one.
+  // A terminal order frees the deployment slot for a channel switch.
   await store.cancelOrder(first.order.id, first.order.version);
-  const third = await store.insertOrder(input);
+  const third = await store.insertOrder({ ...input, provider: "wechat" });
   expect(third.conflict).toBeNull();
   expect(third.order.id).not.toBe(first.order.id);
 });
 
+test("only one pending purchase exists across plans and providers", async () => {
+  const first = await store.insertOrder(orderInput());
+  const second = await store.insertOrder({
+    ...orderInput(),
+    provider: "wechat",
+  });
+
+  expect(second.conflict).toBe("pending-purchase");
+  expect((await store.readPendingPurchase())?.id).toBe(first.order.id);
+});
+
+test("concurrent orders on different plans and providers converge on one pending purchase", async () => {
+  const inputs = [
+    orderInput(),
+    { ...orderInput(), provider: "wechat" as const },
+  ];
+  const results = await Promise.all(
+    inputs.map((input) => store.insertOrder(input)),
+  );
+  const winners = results.filter((result) => result.conflict === null);
+  const losers = results.filter((result) => result.conflict !== null);
+
+  expect(winners).toHaveLength(1);
+  expect(losers).toHaveLength(1);
+  expect(losers[0]?.conflict).toBe("pending-purchase");
+  expect(losers[0]?.order.id).toBe(winners[0]?.order.id);
+  expect((await store.readPendingPurchase())?.id).toBe(winners[0]?.order.id);
+});
+
 test("a paid fact claims its channel transaction exactly once (the race)", async () => {
   const { order } = await store.insertOrder(orderInput());
-  const { order: conflicting } = await store.insertOrder(orderInput());
   const transactionId = `${prefix}-tx-1`;
 
   const first = await store.confirmPaid({
@@ -104,6 +169,7 @@ test("a paid fact claims its channel transaction exactly once (the race)", async
     periodEnd: new Date(Date.now() + 30 * 24 * 3600_000),
   });
   expect(first).toEqual({ claimed: true, alreadyKnown: false });
+  const { order: conflicting } = await store.insertOrder(orderInput());
 
   // The same delivery redelivered: known, not re-claimed.
   const replay = await store.confirmPaid({
@@ -131,6 +197,184 @@ test("a paid fact claims its channel transaction exactly once (the race)", async
   expect(stolen).toEqual({ claimed: false, alreadyKnown: true });
   const unchanged = await store.readOrder(conflicting.id);
   expect(unchanged?.status).toBe("pending");
+});
+
+test("only a paid transition writes paidAt, in the same CAS move", async () => {
+  const { order } = await store.insertOrder(orderInput());
+  expect(((await store.readOrder(order.id)) as { paidAt?: Date | null })?.paidAt).toBeNull();
+
+  expect(
+    await store.confirmPaid({
+      id: order.id,
+      expectedVersion: order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-paid-at`,
+      amountCents: 8800,
+      periodStart: new Date("2026-09-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-10-01T00:00:00.000Z"),
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+  const settled = (await store.readOrder(order.id)) as {
+    terminalAt?: Date | null;
+    paidAt?: Date | null;
+    version?: number;
+    status?: string;
+  } | null;
+  expect(settled?.status).toBe("paid");
+  expect(settled?.paidAt).toBeInstanceOf(Date);
+  expect(settled?.terminalAt).toBeInstanceOf(Date);
+  expect(settled?.version).toBe(order.version + 1);
+
+  const { order: expired } = await store.insertOrder(orderInput());
+  expect(await store.expireOrder(expired.id, expired.version)).toBe(true);
+  const expiredRow = (await store.readOrder(expired.id)) as { paidAt?: Date | null } | null;
+  expect(expiredRow?.paidAt).toBeNull();
+});
+
+test("the paid_at backfill updates old paid rows and leaves non-paid rows null", async () => {
+  const paidTerminalAt = new Date("2026-09-01T00:05:00.000Z");
+  const canceledTerminalAt = new Date("2026-09-02T00:05:00.000Z");
+  const paidId = `${prefix}-backfill-paid-${randomUUID().slice(0, 8)}`;
+  const canceledId = `${prefix}-backfill-canceled-${randomUUID().slice(0, 8)}`;
+
+  await database.insert(paymentOrders).values([
+    {
+      id: paidId,
+      ...orderInput(),
+      status: "paid",
+      terminalAt: paidTerminalAt,
+      paidAt: null,
+    },
+    {
+      id: canceledId,
+      ...orderInput(),
+      status: "canceled",
+      terminalAt: canceledTerminalAt,
+      paidAt: null,
+    },
+  ]);
+
+  await database.execute(sql`
+    UPDATE "payment_orders"
+    SET "paid_at" = "terminal_at"
+    WHERE "status" = 'paid' AND "paid_at" IS NULL
+  `);
+
+  const [paidRow, canceledRow] = await Promise.all([
+    store.readOrder(paidId),
+    store.readOrder(canceledId),
+  ]);
+  expect(paidRow?.paidAt?.toISOString()).toBe(paidTerminalAt.toISOString());
+  expect(canceledRow?.paidAt).toBeNull();
+});
+
+test("resolveActivationOwnership serializes overlapping paid orders to one entitlement owner", async () => {
+  const sharedPlan = `pro-${randomUUID().slice(0, 8)}`;
+  const first = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+  });
+  const firstPeriodStart = new Date();
+  const firstPeriodEnd = new Date(firstPeriodStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: first.order.id,
+      expectedVersion: first.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-owner`,
+      amountCents: 8800,
+      periodStart: firstPeriodStart,
+      periodEnd: firstPeriodEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+
+  const second = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+    provider: "wechat",
+  });
+  const secondPeriodStart = new Date(firstPeriodStart.getTime() + 5 * 60_000);
+  const secondPeriodEnd = new Date(secondPeriodStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: second.order.id,
+      expectedVersion: second.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-duplicate`,
+      amountCents: 8800,
+      periodStart: secondPeriodStart,
+      periodEnd: secondPeriodEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+
+  const [owner, duplicate] = await Promise.all([
+    store.resolveActivationOwnership(first.order.id),
+    store.resolveActivationOwnership(second.order.id),
+  ]);
+
+  expect(owner).toMatchObject({
+    outcome: "owner",
+    order: { id: first.order.id },
+  });
+  expect(duplicate).toMatchObject({
+    outcome: "duplicate",
+    order: { id: second.order.id },
+    ownerOrder: {
+      id: first.order.id,
+      channelTransactionId: `${prefix}-tx-owner`,
+    },
+  });
+});
+
+test("an already-applied owner stays the owner when a later overlapping paid order settles", async () => {
+  const sharedPlan = `pro-${randomUUID().slice(0, 8)}`;
+  const owner = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+  });
+  const laterPeriodStart = new Date(Date.now() + 10 * 60_000);
+  const laterPeriodEnd = new Date(laterPeriodStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: owner.order.id,
+      expectedVersion: owner.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-applied-owner`,
+      amountCents: 8800,
+      periodStart: laterPeriodStart,
+      periodEnd: laterPeriodEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+  await store.recordActivation(owner.order.id, "applied");
+
+  const duplicate = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+    provider: "wechat",
+  });
+  const earlierOverlapStart = new Date(laterPeriodStart.getTime() - 5 * 60_000);
+  const earlierOverlapEnd = new Date(earlierOverlapStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: duplicate.order.id,
+      expectedVersion: duplicate.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-late-overlap`,
+      amountCents: 8800,
+      periodStart: earlierOverlapStart,
+      periodEnd: earlierOverlapEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+
+  await expect(store.resolveActivationOwnership(owner.order.id)).resolves.toMatchObject({
+    outcome: "owner",
+    order: { id: owner.order.id },
+  });
+  await expect(store.resolveActivationOwnership(duplicate.order.id)).resolves.toMatchObject({
+    outcome: "duplicate",
+    order: { id: duplicate.order.id },
+    ownerOrder: { id: owner.order.id },
+  });
 });
 
 test("CAS version moves reject a stale writer", async () => {
@@ -238,12 +482,12 @@ test("the anomaly dedup index: same (order, word) is one row; amount_unreadable 
 });
 
 test("the sweeper's read returns only expired pending orders", async () => {
-  const { order: fresh } = await store.insertOrder(orderInput());
   const { order: stale } = await store.insertOrder({
     ...orderInput(),
     expiresAt: new Date(Date.now() - 60_000),
   });
   await store.expireOrder(stale.id, stale.version);
+  const { order: fresh } = await store.insertOrder(orderInput());
 
   const expired = await store.listExpiredPendingOrders(new Date(), 100);
   // The swept-and-expired order and the not-yet-expired one are both excluded: the read is the

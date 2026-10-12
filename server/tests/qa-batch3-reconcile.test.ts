@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, like, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
@@ -14,7 +14,6 @@ import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
 import { createDatabase } from "../src/db/client";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
-import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -176,6 +175,14 @@ describe("probe a: the reconcile admin route", () => {
     };
     expect(report.checked).toHaveProperty("paidOrders");
     expect(Array.isArray(report.findings)).toBe(true);
+    const findingCounts = Object.fromEntries(
+      Object.entries(
+        report.findings.reduce<Record<string, number>>((counts, finding) => {
+          counts[finding.code] = (counts[finding.code] ?? 0) + 1;
+          return counts;
+        }, {}),
+      ).sort(([left], [right]) => left.localeCompare(right)),
+    );
 
     expect(audit.events).toHaveLength(1);
     const event = audit.events[0];
@@ -186,7 +193,7 @@ describe("probe a: the reconcile admin route", () => {
     });
     const payload = event.payload as Record<string, unknown>;
     expect(payload.checked).toEqual(report.checked);
-    expect(payload.findings).toEqual(report.findings.map((f) => f.code));
+    expect(payload.findingCounts).toEqual(findingCounts);
   });
 });
 

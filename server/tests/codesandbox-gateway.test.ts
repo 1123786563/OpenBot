@@ -6,7 +6,7 @@ import type { CodeRunStore } from "../src/codesandbox/store";
 function fakeClient(overrides: Partial<SandboxClient> = {}): SandboxClient {
   return {
     createSession: async () => "ses_x",
-    sendMessage: async (_sessionId: string, text: string) => ({
+    sendMessage: async (_sessionId: string, _text: string) => ({
       sessionId: "ses_x",
       text: "算完了：答案是 42。",
       usage: { inputTokens: 10, outputTokens: 5 },
@@ -55,6 +55,7 @@ const baseOptions = {
   ownerUserId: "user-1",
   initiator: { kind: "person" } as never,
   modelId: "GLM-5.3",
+  billingEnabled: false,
 };
 
 describe("code run gateway", () => {
@@ -84,8 +85,26 @@ describe("code run gateway", () => {
     expect(started).toBeGreaterThanOrEqual(0);
     expect(completed).toBeGreaterThan(started);
     const row = [...rows.values()][0] as Record<string, unknown>;
-    expect(row["status"]).toBe("completed");
-    expect(row["inputTokens"]).toBe(9);
+    expect(row.status).toBe("completed");
+    expect(row.inputTokens).toBe(9);
+  });
+
+  test("the metering hook receives the same completion timestamp the row persists", async () => {
+    const { rows, store } = fakeStore();
+    let seenOccurredAt: Date | undefined;
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: fakeClient(),
+      store,
+      onUsage: async (input) => {
+        seenOccurredAt = (input as { occurredAt?: Date }).occurredAt;
+      },
+    });
+    const outcome = await gateway.run("算 6*7");
+    expect(outcome.kind).toBe("completed");
+    const row = [...rows.values()][0] as Record<string, unknown>;
+    expect(seenOccurredAt).toBeInstanceOf(Date);
+    expect(row.finishedAt).toBe(seenOccurredAt);
   });
 
   test("an unconfigured sandbox refuses, and the refusal is audited and stored", async () => {
@@ -101,7 +120,63 @@ describe("code run gateway", () => {
     expect(outcome.kind).toBe("refused");
     expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(true);
     const row = [...rows.values()][0] as Record<string, unknown>;
-    expect(row["status"]).toBe("refused");
+    expect(row.status).toBe("refused");
+  });
+
+  test("billing-enabled runs refuse before any sandbox method is called when token budgets are unenforceable", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const calls: string[] = [];
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient({
+          createSession: async () => {
+            calls.push("createSession");
+            return "ses_x";
+          },
+          sendMessage: async (...args) => {
+            calls.push("sendMessage");
+            return fakeClient().sendMessage(...args);
+          },
+        }),
+        capabilities: { enforceableTokenBudget: false },
+      } as SandboxClient,
+      store,
+      auditStore: audit.store,
+      billingEnabled: true,
+    });
+    const outcome = await gateway.run("anything");
+    expect(outcome.kind).toBe("refused");
+    expect(calls).toEqual([]);
+    expect(audit.events.some((e) => e.eventType === "code.run_refused")).toBe(true);
+    expect([...rows.values()][0]).toMatchObject({
+      status: "refused",
+      error: "billing-token-budget-unavailable",
+    });
+  });
+
+  test("billing-disabled runs preserve existing execution behavior even without token-budget enforcement", async () => {
+    const { rows, store } = fakeStore();
+    const calls: string[] = [];
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient({
+          createSession: async () => {
+            calls.push("createSession");
+            return "ses_x";
+          },
+        }),
+        capabilities: { enforceableTokenBudget: false },
+      } as SandboxClient,
+      store,
+      billingEnabled: false,
+    });
+    const outcome = await gateway.run("anything");
+    expect(outcome.kind).toBe("completed");
+    expect(calls).toEqual(["createSession"]);
+    expect([...rows.values()][0]).toMatchObject({ status: "completed" });
   });
 
   test("a sandbox timeout lands as a failed run with the budget in the message", async () => {
@@ -123,7 +198,7 @@ describe("code run gateway", () => {
     if (outcome.kind !== "failed") return;
     expect(outcome.reason).toMatch(/exceeded|budget|120000/i);
     const row = [...rows.values()][0] as Record<string, unknown>;
-    expect(row["status"]).toBe("timeout");
+    expect(row.status).toBe("timeout");
     expect(audit.events.some((e) => e.eventType === "code.run_failed")).toBe(true);
   });
 
@@ -133,8 +208,12 @@ describe("code run gateway", () => {
     // only reports the difference, capped at maxArtifacts.
     let listed = 0;
     const client = fakeClient({
-      listFiles: async () =>
-        (listed += 1) > 1 ? ["a.py", "b.csv", "c.bin", "d.txt", "e.md", "f.log"] : [],
+      listFiles: async () => {
+        listed += 1;
+        return listed > 1
+          ? ["a.py", "b.csv", "c.bin", "d.txt", "e.md", "f.log"]
+          : [];
+      },
       readFile: async (path: string) => ({
         path,
         size: 3,
@@ -181,7 +260,7 @@ describe("code run gateway", () => {
     });
     await gateway.run("慢任务", { timeoutSeconds: 90 });
     const started = audit.events.find((e) => e.eventType === "code.run_started");
-    expect(started?.payload["timeoutMs"]).toBe(90_000);
+    expect(started?.payload.timeoutMs).toBe(90_000);
   });
 
   test("resetWorkspace writes the audit row before the sandbox is told", async () => {
@@ -220,7 +299,7 @@ describe("code run gateway", () => {
     expect(result).toEqual({ ok: false, reason: "not-configured" });
     // 拒绝也是一次治理决策：留在审计里，但没有任何 sandbox 调用发生。
     const refused = audit.events.find((e) => e.eventType === "code.workspace_reset");
-    expect(refused?.payload["reason"]).toBe("not-configured");
+    expect(refused?.payload.reason).toBe("not-configured");
   });
 });
 
@@ -237,7 +316,7 @@ describe("code run gateway: startStreaming", () => {
     | "end"
   >) {
     const calls: string[] = [];
-    let aborted: string[] = [];
+    const aborted: string[] = [];
     let finishScript: () => void = () => undefined;
     const scriptDone = new Promise<void>((resolve) => {
       finishScript = resolve;
@@ -335,7 +414,11 @@ describe("code run gateway: startStreaming", () => {
     expect((thrown as Error).name).toBe("CodeSandboxActivityTimeoutError");
     expect(seen).toEqual(["progress"]);
     expect(rows.get(streaming.runId)).toMatchObject({ status: "timeout" });
-    expect(audit.events.some((e) => e.eventType === "code.run_failed" && e.payload["timedOut"] === true)).toBe(true);
+    expect(
+      audit.events.some(
+        (e) => e.eventType === "code.run_failed" && e.payload.timedOut === true,
+      ),
+    ).toBe(true);
     expect(calls).toContain("stop");
   });
 
@@ -368,6 +451,40 @@ describe("code run gateway: startStreaming", () => {
     expect(
       audit.events.some((e) => e.eventType === "code.run_cancelled"),
     ).toBe(true);
+  });
+
+  test("④ billing-enabled streaming refuses before createSession or subscribeEvents", async () => {
+    const { rows, store } = fakeStore();
+    const audit = fakeAudit();
+    const calls: string[] = [];
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient({
+          createSession: async () => {
+            calls.push("createSession");
+            return "ses_stream";
+          },
+          subscribeEvents: async () => {
+            calls.push("subscribeEvents");
+            return { stop: () => undefined };
+          },
+        }),
+        capabilities: { enforceableTokenBudget: false },
+      } as SandboxClient,
+      store,
+      auditStore: audit.store,
+      billingEnabled: true,
+    });
+    const streaming = await gateway.startStreaming("do not start");
+    expect(rows.get(streaming.runId)).toMatchObject({
+      status: "refused",
+      error: "billing-token-budget-unavailable",
+    });
+    expect(calls).toEqual([]);
+    const seen: string[] = [];
+    for await (const event of streaming.events) seen.push(String(event.payload.refused));
+    expect(seen).toEqual(["billing-token-budget-unavailable"]);
   });
 });
 
