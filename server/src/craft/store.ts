@@ -49,6 +49,14 @@ export type CraftStore = {
     sessionId: string,
     userId: string,
   ): Promise<CraftSessionRow | undefined>;
+  /**
+   * The row by id alone, no owner check, no activity bump — for callers that
+   * authenticate by something OTHER than a user session and then take the
+   * owner from the row (the MCP relay's session-tag attribution: the tag is
+   * validated against the row; ownership checks belong to the requireUser
+   * surfaces, not here).
+   */
+  findSessionById(sessionId: string): Promise<CraftSessionRow | undefined>;
   /** Sessions for the sidebar: user's INTERACTIVE rows, newest first. */
   listUserSessions(
     userId: string,
@@ -167,6 +175,15 @@ export function createCraftStore(db: Database): CraftStore {
             eq(craftSessions.userId, userId),
           ),
         )
+        .limit(1);
+      return rows[0];
+    },
+
+    async findSessionById(sessionId) {
+      const rows = await db
+        .select()
+        .from(craftSessions)
+        .where(eq(craftSessions.id, sessionId))
         .limit(1);
       return rows[0];
     },

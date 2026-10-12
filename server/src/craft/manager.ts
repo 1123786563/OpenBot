@@ -22,10 +22,37 @@ import type { CraftSessionOrigin } from "../db/schema/craft";
 import { generateAgentInstructions } from "./agent-instructions";
 import { createCraftPermissionGate } from "./approval-gate";
 import type { CraftApprovalSignals } from "./approval-signals";
+import type {
+  CraftConnectAppRequest,
+  CraftConnectAppSignals,
+} from "./connect-app";
+
+/** Parse one drained announce payload; null on an unparseable card (dropped, onyx parity). */
+function parseConnectAppAnnounce(
+  payload: string,
+): CraftConnectAppRequest | null {
+  try {
+    const parsed = JSON.parse(payload) as Partial<CraftConnectAppRequest>;
+    if (
+      typeof parsed.request_id !== "string" ||
+      typeof parsed.external_app_id !== "number"
+    ) {
+      return null;
+    }
+    return {
+      request_id: parsed.request_id,
+      external_app_id: parsed.external_app_id,
+      reason: typeof parsed.reason === "string" ? parsed.reason : null,
+    };
+  } catch {
+    return null;
+  }
+}
 import type { CraftConfig } from "./config";
 import {
   approvalRequestedPacket,
   type BuildPacket,
+  connectAppRequestPacket,
   isBuildPacket,
 } from "./events/packets";
 import { isKeepalive, isSandboxError, type SandboxEvent } from "./events/types";
@@ -50,7 +77,9 @@ import {
   finalizePersist,
   persistSandboxEvent,
 } from "./streaming";
-import { SESSION_PLUGINS, writeTurnBudgetPlugin } from "./turn-budget";
+import { SESSION_PLUGINS } from "./session-plugins";
+import { writeTurnBudgetPlugin } from "./turn-budget";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
 import { sessionDirectory } from "./workspace";
 
 /** Redis-keyed marker: a config rewrite owes its running instance a dispose (24h TTL in onyx). */
@@ -75,6 +104,12 @@ export type SessionManagerDeps = {
    */
   approvals?: ApprovalStore | null;
   approvalSignals?: CraftApprovalSignals | null;
+  /**
+   * The connect-app handshake's KV (pending stash + announce). Wired = connect_app
+   * asks park for the decision endpoint; absent = they are denied like any
+   * unknown category (nothing announced, nothing stashed).
+   */
+  connectAppSignals?: CraftConnectAppSignals | null;
   /**
    * The deployment's current managed-content fingerprints (skills payload + craft MCP set) to
    * compare a session's recorded hashes against. onyx reads these off the sandbox row; when only
@@ -241,6 +276,14 @@ export class CraftSessionManager {
    * (it caches config at creation). The dispose-pending marker covers the crash window
    * between write and dispose (onyx: set BEFORE the write). The tail also reconciles the
    * managed-content fingerprints (skills/MCP) — the reload half of the same converge story.
+   *
+   * Snapshot rule (the plan's binding constraint): when a managed-content resolver
+   * is wired, ONE resolution feeds both the byte-compare's expected config and
+   * any regeneration — workspace creation and reconcile can never disagree about
+   * the session's MCP set. A resolution failure means the expected bytes are
+   * UNKNOWN: the compare is skipped (never answered "mismatched"), so a
+   * transient outage cannot strip a session's mcp block by regenerating from
+   * an empty snapshot.
    */
   async reconcileSessionLlmConfig(
     _db: Database,
@@ -253,13 +296,27 @@ export class CraftSessionManager {
       this.config.sessionDirectoryMode,
     );
     const llmConfig = await this.deps.llmConfigFor(session);
-    const expected = opencodeConfigJson(
-      buildProviderOpencodeConfig(llmConfig, {
-        disabledTools: this.config.opencodeDisabledTools,
-        gatedTools: this.config.approvalGatedTools,
-        plugins: SESSION_PLUGINS,
-      }),
-    );
+    // onyx re-resolves the managed content for the reconcile (manager.py:288-302
+    // reads connectable_apps + mcp_servers fresh); this is that one read, reused
+    // for expected AND regenerate so the two cannot disagree.
+    const content = this.deps.managedContentFor
+      ? await this.deps.managedContentFor(session).catch(() => null)
+      : null;
+    // A WIRED resolver that failed leaves the expected bytes unknown — compare
+    // nothing (the staleness tail retries the convergence later). An UNWIRED
+    // resolver still compares: its expected config has no managed-content face.
+    const expected =
+      content !== null || !this.deps.managedContentFor
+        ? opencodeConfigJson(
+            buildProviderOpencodeConfig(llmConfig, {
+              disabledTools: this.config.opencodeDisabledTools,
+              gatedTools: this.config.approvalGatedTools,
+              plugins: SESSION_PLUGINS,
+              mcpServers: content?.mcpServers ?? [],
+              sessionId: session.id,
+            }),
+          )
+        : null;
 
     const fileApi = this.gateway.fileApiFor(botId);
     let current: string | null = null;
@@ -277,12 +334,9 @@ export class CraftSessionManager {
       }
     }
 
-    if (current !== expected) {
+    if (expected !== null && current !== expected) {
       // onyx rebuilds the section for the regenerate (manager.py:346-348): the
       // app list may have changed under the session even though the model did not.
-      const content =
-        (await this.deps.managedContentFor?.(session).catch(() => null)) ??
-        null;
       await this.regenerateSessionConfig(
         botId,
         directory,
@@ -291,7 +345,7 @@ export class CraftSessionManager {
         userName,
         content,
       );
-    } else if (session.opencodeSessionId) {
+    } else if (expected !== null && session.opencodeSessionId) {
       // A matching file does NOT prove the running instance picked it up: a prior
       // reconcile may have written and then failed the dispose. The pending marker
       // (kept in the wiring's KV — Redis when configured) is honored by the caller
@@ -321,9 +375,6 @@ export class CraftSessionManager {
         hashes?.mcpConfigHash ?? null,
       )
     ) {
-      const content =
-        (await this.deps.managedContentFor?.(session).catch(() => null)) ??
-        null;
       await this.regenerateAndAckSkills(
         session,
         botId,
@@ -379,6 +430,8 @@ export class CraftSessionManager {
         disabledTools: this.config.opencodeDisabledTools,
         gatedTools: this.config.approvalGatedTools,
         plugins: SESSION_PLUGINS,
+        mcpServers: managedContent?.mcpServers ?? [],
+        sessionId: session.id,
       }),
     );
     const workspaceApi = this.gateway.workspaceApiFor(botId);
@@ -399,9 +452,10 @@ export class CraftSessionManager {
           : false,
       });
       await workspaceApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
-      // The turn-budget plugin the config now references must be present for
-      // sessions whose workspace predates it (onyx's image bake, workspace-born).
+      // The plugins the config now references must be present for sessions
+      // whose workspace predates them (onyx's image bake, workspace-born).
       await writeTurnBudgetPlugin(workspaceApi, session.id, this.config);
+      await writeConnectAppPlugin(workspaceApi, session.id, this.config);
     }
     if (session.opencodeSessionId) {
       await this.gateway
@@ -586,6 +640,16 @@ export class CraftSessionManager {
             botId: input.botId,
           })
         : null;
+    // The connect-app rendezvous exists whenever its KV is wired — onyx wires
+    // it for every turn too: a headless ask announces a card nobody sees and
+    // the window's expiry declines it (the plugin's declined string), so the
+    // tool stays honest about there being nobody to ask.
+    const connectApp = this.deps.connectAppSignals
+      ? {
+          sessionId: input.sessionId,
+          signals: this.deps.connectAppSignals,
+        }
+      : null;
 
     // Preflight the opencode session id: avoids one orphan session per turn, and
     // a stale persisted id (404 after a sandbox recycle) is re-minted + written
@@ -608,6 +672,7 @@ export class CraftSessionManager {
       shouldInterrupt: input.shouldInterrupt ?? null,
       shouldAbortOnTeardown: input.shouldAbortOnTeardown ?? null,
       permissionGate,
+      connectApp,
     });
   }
 
@@ -654,11 +719,18 @@ export class CraftSessionManager {
             botId: input.botId,
           })
         : null;
+    const connectApp = this.deps.connectAppSignals
+      ? {
+          sessionId: input.session.id,
+          signals: this.deps.connectAppSignals,
+        }
+      : null;
 
     yield* client.sendMessage(input.opencodeSessionId, input.content, {
       directory,
       timeoutMs: this.config.opencodePromptInactivityTimeoutSeconds * 1000,
       permissionGate,
+      connectApp,
     });
   }
 
@@ -749,6 +821,12 @@ export class CraftSessionManager {
     keepaliveSeconds?: number;
     /** Drains the session's approval announces; null when gating is off. */
     announceDrain?: (() => Promise<string[]>) | null;
+    /**
+     * Drains the session's connect-app announce payloads (JSON strings, onyx's
+     * ConnectAppRequest model_dump_json); each becomes a connect_app_request
+     * card on this stream. Null when the handshake's KV is not wired.
+     */
+    connectAppAnnounceDrain?: (() => Promise<string[]>) | null;
   }): AsyncGenerator<SandboxEvent | BuildPacket> {
     const directory = sessionDirectory(
       input.session.id,
@@ -788,6 +866,23 @@ export class CraftSessionManager {
             .announceDrain()
             .catch(() => [] as string[])) {
             yield approvalRequestedPacket(approvalId, input.session.id);
+          }
+        }
+
+        // The connect-app cards ride the same merge (onyx's live worker pops
+        // craft:connect_app:announce exactly like the approval announce list).
+        if (input.connectAppAnnounceDrain) {
+          for (const payload of await input
+            .connectAppAnnounceDrain()
+            .catch(() => [] as string[])) {
+            const card = parseConnectAppAnnounce(payload);
+            if (card !== null) {
+              yield connectAppRequestPacket(
+                card.request_id,
+                card.external_app_id,
+                card.reason,
+              );
+            }
           }
         }
 

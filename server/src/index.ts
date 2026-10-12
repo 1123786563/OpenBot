@@ -179,6 +179,7 @@ import {
   createCraftManagedContentResolver,
   personalUnconnectedApps,
 } from "./craft/managed-content";
+import { resolveCraftMcpServers } from "./craft/mcp-servers";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -3652,6 +3653,18 @@ const craftEffectiveConfig = sandboxUrl
  * - the per-user craft MCP set: Task 3's seam (resolve against the plugins catalogue's
  *   user-oauth servers); an empty set keeps mcp_config_hash a live fingerprint of "none".
  */
+/*
+ * The relay origin the per-user MCP set stamps into session opencode.json: the
+ * operator's explicit override first, then the deployment's public url (the
+ * same address deliveryProviders resolve against), then the loopback default —
+ * the sandbox's opencode dials this and the relay attaches credentials, so it
+ * must be an address that deployment's sandboxes can reach.
+ */
+const craftMcpRelayBaseUrl =
+  craftEffectiveConfig.mcpRelayBaseUrl ||
+  config.publicUrl ||
+  config.auth?.baseUrl ||
+  `http://localhost:${config.port}`;
 const craftManagedContentFor = createCraftManagedContentResolver({
   connectableAppsFor: async (userId) => {
     const [servers, held, brokered] = await Promise.all([
@@ -3666,6 +3679,32 @@ const craftManagedContentFor = createCraftManagedContentResolver({
         ...brokered.map((row) => row.serverId),
       ]),
     );
+  },
+  /*
+   * The per-user craft MCP set (the contract's C3 ruling): personal-account
+   * servers the user HAS connected — the same connection fact the connectable
+   * list inverts. Each entry's url is the RELAY route, never the vendor
+   * endpoint: the credential attaches on the server side (mcp-relay.ts), so
+   * none can enter a workspace file. Unconnected servers are dropped entirely,
+   * onyx's unauthenticated-drop, because the relay would refuse their calls.
+   */
+  mcpServersFor: async (userId) => {
+    const [wireServers, held, brokered] = await Promise.all([
+      pluginStore.mcpWireServersFor(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return resolveCraftMcpServers({
+      servers: wireServers.map((server) => ({
+        id: server.id,
+        name: server.title,
+      })),
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      relayBaseUrl: craftMcpRelayBaseUrl,
+    });
   },
 });
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
@@ -3699,6 +3738,11 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           // they have NOT connected yet (onyx's get_connectable_apps_for_user —
           // shared/deployment-account apps answer for everybody and never appear).
           managedContentFor: craftManagedContentFor,
+          // The relay's credential resolution: the plugins domain's own
+          // per-person connection handling (MCP-wire servers only), decrypted
+          // per forwarded call and never written anywhere the agent reads.
+          mcpConnectionFor: (userId, serverId) =>
+            pluginStore.mcpWireConnectionFor(userId, serverId),
         },
       })
   : undefined;

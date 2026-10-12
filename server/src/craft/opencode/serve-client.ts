@@ -16,9 +16,17 @@
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 import {
+  CONNECT_APP_PERMISSION,
+  type CraftConnectAppSignals,
+  parseConnectAppAsk,
+  stashAndAnnounce,
+} from "../connect-app";
+import {
   type ApprovalRequestedPacket,
   approvalRequestedPacket,
   type CompactionPacket,
+  type ConnectAppRequestPacket,
+  connectAppRequestPacket,
   type ContextUsagePacket,
   compactionPacket,
   contextUsagePacket,
@@ -350,6 +358,8 @@ export type PermissionAskedInfo = {
   permission: string | null;
   /** The command/path patterns the ask covers (display + scope only here). */
   patterns: string[];
+  /** The ask's metadata object when present (the connect-app tool keys its card on it). */
+  metadata: Record<string, unknown> | null;
 };
 
 /** Parse the ask payload; null when the event carries no usable permission id. */
@@ -361,10 +371,15 @@ export function parsePermissionAsked(props: Json): PermissionAskedInfo | null {
         (pattern): pattern is string => typeof pattern === "string",
       )
     : [];
+  const metadata = props.metadata;
   return {
     permissionId,
     permission: typeof props.permission === "string" ? props.permission : null,
     patterns,
+    metadata:
+      metadata instanceof Object && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)
+        : null,
   };
 }
 
@@ -391,6 +406,20 @@ export type PermissionGate = {
   open(info: PermissionAskedInfo): Promise<string>;
   /** The decision, "expired" past the wait window, or null while still pending. */
   poll(approvalId: string): Promise<PermissionGateDecision | null>;
+};
+
+/**
+ * The connect-app handshake binding for one turn: the craft session the ask
+ * belongs to and the KV its two records ride (onyx serve_client.py's
+ * `_handle_connect_app_permission` — this client stashes the answer context and
+ * announces the card, tracks the wait deadline, and rejects on expiry; the
+ * decision endpoint answers out-of-band through the stashed context).
+ * Null = connect_app asks are denied like any unknown category (nothing is
+ * announced, nothing stashed — there is nobody to route a card to).
+ */
+export type ConnectAppRendezvous = {
+  readonly sessionId: string;
+  readonly signals: CraftConnectAppSignals;
 };
 
 /**
@@ -1375,6 +1404,8 @@ export class OpencodeServeClient {
       shouldAbortOnTeardown?: (() => boolean) | null;
       /** Routes gated permission.asked through the approval rendezvous; null = auto-allow. */
       permissionGate?: PermissionGate | null;
+      /** Routes connect_app asks through the connect-card handshake; null = deny them. */
+      connectApp?: ConnectAppRendezvous | null;
     },
   ): AsyncGenerator<
     | SandboxEvent
@@ -1382,6 +1413,7 @@ export class OpencodeServeClient {
     | SubagentStartedPacket
     | CompactionPacket
     | ApprovalRequestedPacket
+    | ConnectAppRequestPacket
   > {
     if (this.bus === null) {
       throw new Error(
@@ -1446,6 +1478,7 @@ export class OpencodeServeClient {
             : null,
         shouldInterrupt: options.shouldInterrupt ?? null,
         permissionGate: options.permissionGate ?? null,
+        connectApp: options.connectApp ?? null,
       });
     } finally {
       // Teardown: abort the posted prompt unless a successor owns the session
@@ -1539,6 +1572,7 @@ export class OpencodeServeClient {
       absoluteDeadlineMs: number | null;
       shouldInterrupt: (() => boolean) | null;
       permissionGate: PermissionGate | null;
+      connectApp: ConnectAppRendezvous | null;
     },
   ): AsyncGenerator<
     | SandboxEvent
@@ -1546,6 +1580,7 @@ export class OpencodeServeClient {
     | SubagentStartedPacket
     | CompactionPacket
     | ApprovalRequestedPacket
+    | ConnectAppRequestPacket
   > {
     const { state, directory } = options;
     const bus = this.bus;
@@ -1567,6 +1602,14 @@ export class OpencodeServeClient {
       { approvalId: string; lastPollAt: number }
     >();
     const pollEveryMs = this.config.pollIntervalSeconds * 1000;
+
+    // Connect-app asks park the same way, but the decision endpoint answers
+    // them out-of-band; the loop only owns the timeout fallback — deadline per
+    // permission id, checked each iteration, one reject when it passes (onyx
+    // serve_client.py:1809-1827). Like the gated set, a parked ask raises the
+    // inactivity floor so the window — not the timeout — cuts the wait.
+    const connectApp = options.connectApp;
+    const pendingConnectApp = new Map<string, number>();
 
     const answerResolvedPermissions = async (): Promise<void> => {
       if (gate === null || pendingPermissions.size === 0) return;
@@ -1600,6 +1643,21 @@ export class OpencodeServeClient {
     for (;;) {
       await answerResolvedPermissions();
 
+      // Timeout fallback for connect-app asks nobody decided: one reject each,
+      // exactly like the gated expiry — the plugin's catch block turns it into
+      // the declined string, so the turn continues rather than hanging.
+      if (pendingConnectApp.size > 0) {
+        const now = Date.now();
+        for (const [permissionId, deadline] of pendingConnectApp) {
+          if (deadline > now) continue;
+          pendingConnectApp.delete(permissionId);
+          await this.answerPermission(options.opencodeSessionId, permissionId, {
+            allow: false,
+            directory,
+          });
+        }
+      }
+
       const now = Date.now();
       if (options.shouldInterrupt && now - lastInterruptCheckAt >= 1000) {
         lastInterruptCheckAt = now;
@@ -1610,11 +1668,11 @@ export class OpencodeServeClient {
         }
       }
 
-      // While a gated permission parks the turn, the inactivity floor rises to
-      // window + margin (onyx's derivation) so the expiry path — not the inactivity
-      // timeout — always cuts the wait first.
+      // While a gated permission or connect-app ask parks the turn, the
+      // inactivity floor rises to window + margin (onyx's derivation) so the
+      // expiry path — not the inactivity timeout — always cuts the wait first.
       const inactivityTimeoutMs =
-        pendingPermissions.size > 0
+        pendingPermissions.size > 0 || pendingConnectApp.size > 0
           ? Math.max(
               options.timeoutMs,
               (this.config.approvalWaitTimeoutSeconds +
@@ -1682,15 +1740,70 @@ export class OpencodeServeClient {
         yield sandboxEvent;
       }
 
-      // permission.asked: a gated tool routes through the approval rendezvous —
-      // register + announce + yield the card packet, and let the loop poll for the
-      // decision. Everything else is auto-allowed (phase-1 posture: opencode.json
-      // pre-approves the known categories; an unexpected ask is answered "once" so
-      // the turn never wedges on it).
+      // permission.asked: the connect_app category routes through the connect-card
+      // handshake (stash + announce, decided out-of-band, rejected on timeout);
+      // a gated tool routes through the approval rendezvous — register + announce
+      // + yield the card packet, and let the loop poll for the decision. Everything
+      // else is auto-allowed (opencode.json pre-approves the known categories; an
+      // unexpected ask is answered "once" so the turn never wedges on it).
       if (raw.type === "permission.asked") {
         const info = parsePermissionAsked((raw.properties ?? {}) as Json);
         if (info !== null) {
-          if (gate !== null && gate.isGated(info)) {
+          if (info.permission === CONNECT_APP_PERMISSION) {
+            // onyx serve_client.py:1738-1811: the app id comes from the tool's
+            // metadata; missing/invalid → immediate deny (nothing to announce).
+            // A stash/announce failure also denies — fail closed so the parked
+            // turn resumes with a decline instead of hanging.
+            const ask =
+              info.metadata !== null ? parseConnectAppAsk(info.metadata) : null;
+            const deny = (reason: string): Promise<boolean> => {
+              getLogger("server").warn(
+                { permissionId: info.permissionId, reason },
+                "opencode-serve: denying connect_app permission",
+              );
+              return this.answerPermission(
+                options.opencodeSessionId,
+                info.permissionId,
+                { allow: false, directory },
+              );
+            };
+            if (ask === null) {
+              await deny("ask carried no usable external_app_id");
+            } else if (connectApp !== null) {
+              try {
+                const requestId = await stashAndAnnounce(connectApp.signals, {
+                  sessionId: connectApp.sessionId,
+                  opencodeSessionId: options.opencodeSessionId,
+                  directory,
+                  permissionId: info.permissionId,
+                  externalAppId: ask.externalAppId,
+                  reason: ask.reason,
+                });
+                pendingConnectApp.set(
+                  info.permissionId,
+                  Date.now() + this.config.approvalWaitTimeoutSeconds * 1000,
+                );
+                // The card rides the announce list (the attach stream's drain)
+                // AND this turn's stream — the same dual emission the approval
+                // card has, so whichever surface the client reads sees it once.
+                yield connectAppRequestPacket(
+                  requestId,
+                  ask.externalAppId,
+                  ask.reason,
+                );
+              } catch (error) {
+                getLogger("server").warn(
+                  {
+                    err: error instanceof Error ? error.message : String(error),
+                  },
+                  "opencode-serve: connect_app announce failed; denying",
+                );
+                await deny("announce failed");
+              }
+            } else {
+              await deny("no connect-app rendezvous for this turn");
+            }
+          } else if (gate !== null && gate.isGated(info)) {
             try {
               const approvalId = await gate.open(info);
               pendingPermissions.set(info.permissionId, {

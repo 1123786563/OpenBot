@@ -8,12 +8,19 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
+import { createAuditStore, recordAuditEvent } from "../audit";
 import type { ApprovalStore } from "../approvals/types";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
 import { createCraftApprovalSignals } from "./approval-signals";
 import { createCraftApprovalRoutes } from "./approvals";
+import { createConnectAppRoutes } from "./connect-app-routes";
+import { createCraftConnectAppSignals } from "./connect-app";
+import {
+  createCraftMcpRelayApp,
+  type CraftMcpConnectionResolver,
+} from "./mcp-relay";
 import { createArtifactRoutes } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { createFileRoutes } from "./file-routes";
@@ -87,6 +94,13 @@ export type CraftRoutesDeps = {
    */
   managedContentFor?: CraftManagedContentResolver;
   /**
+   * The connector domain's credential resolution for the MCP relay (the trusted
+   * side): the vendor url + the owner's decrypted credential for one forwarded
+   * call, or null. Unset = the relay answers 403 not_authorized for everything
+   * (fail closed — the mcp set stays empty in that wiring anyway).
+   */
+  mcpConnectionFor?: CraftMcpConnectionResolver | null;
+  /**
    * The store override: production leaves it unset and the assembly derives the standard
    * store from `db`; an alternate assembly (the tests' in-memory rows) hands over its own
    * so the factory's wiring — not a specific store — is what gets exercised.
@@ -136,6 +150,8 @@ export function createCraftRoutes(input: {
   // The approval rendezvous signals (announce + wake), Redis-backed when the
   // deployment runs multi-replica, in-process otherwise — turn-state's shape.
   const approvalSignals = createCraftApprovalSignals({ redis });
+  // The connect-app handshake's KV (pending stash + announce), same shape.
+  const connectAppSignals = createCraftConnectAppSignals({ redis });
   /**
    * The ONE hashes derivation the whole assembly shares — the manager's staleness
    * contract (reload/reconcile) and `skills_stale` both read through it, so the two can
@@ -168,6 +184,7 @@ export function createCraftRoutes(input: {
     organizationInstructions: deps.organizationInstructions ?? null,
     approvals: deps.approvals,
     approvalSignals,
+    connectAppSignals,
     managedContentFor: deps.managedContentFor,
     managedContentHashesFor,
   });
@@ -186,6 +203,27 @@ export function createCraftRoutes(input: {
   });
 
   const app = new Hono<{ Variables: AppVariables }>();
+
+  // The MCP relay mounts BEFORE requireUser: its caller is the sandbox's
+  // opencode MCP client, which authenticates with the session-tag header the
+  // relay itself validates (an unattributable tag is a 403, never a dial).
+  // Registered first so Hono's registration-order matching lets it answer
+  // without the user guard ever running for these paths.
+  app.route(
+    "/",
+    createCraftMcpRelayApp({
+      config,
+      store,
+      sessionMcpServersFor: async (session) => {
+        const content = resolver
+          ? await resolver(session).catch(() => null)
+          : null;
+        return content?.mcpServers ?? [];
+      },
+      resolveConnection: deps.mcpConnectionFor ?? (async () => null),
+    }),
+  );
+
   app.use("*", requireUser);
 
   // Enabled-gate: everything below 503s (not 404s) when the flag is off mid-flight,
@@ -244,6 +282,7 @@ export function createCraftRoutes(input: {
       executor,
       botIdFor: deps.botIdFor,
       approvalSignals,
+      connectAppSignals,
     }),
   );
   app.route(
@@ -271,6 +310,19 @@ export function createCraftRoutes(input: {
       store,
       approvals: deps.approvals,
       signals: approvalSignals,
+    }),
+  );
+  app.route(
+    "/",
+    createConnectAppRoutes(requireUser, {
+      config,
+      store,
+      gateway,
+      botIdFor: deps.botIdFor,
+      signals: connectAppSignals,
+      audit: {
+        insert: (event) => recordAuditEvent(createAuditStore(db), event),
+      },
     }),
   );
   if (config.webappProxyEnabled) {
