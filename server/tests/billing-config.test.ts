@@ -266,6 +266,83 @@ describe("billing configuration", () => {
     });
   });
 
+  test("exactly divisible reservation arithmetic stays exact instead of rounding up", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "3", denominator: "2" },
+          output: { numerator: "4", denominator: "2" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "4",
+          output: "6",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "6",
+        denominator: "3",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "9",
+    });
+    expect(config.billing?.creditPolicy).toEqual({
+      configured: true,
+      mode: "hard_cap",
+      models: new Map([
+        [
+          "openai/gpt-5.5",
+          {
+            input: {
+              maximumCostUnits: 6n,
+              maximumTokens: 4n,
+              rate: { numerator: 3n, denominator: 2n },
+            },
+            output: {
+              maximumCostUnits: 12n,
+              maximumTokens: 6n,
+              rate: { numerator: 4n, denominator: 2n },
+            },
+            maximumReservationUnits: 18n,
+          },
+        ],
+      ]),
+      codeRun: {
+        maximumReservationUnits: 18n,
+        maximumTokens: 9n,
+        rate: { numerator: 6n, denominator: 3n },
+      },
+    });
+  });
+
+  test("empty model policy leaves the hard-cap policy unconfigured", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({}),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({}),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "3",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(config.billing?.creditPolicy).toEqual({
+      configured: false,
+      mode: "hard_cap",
+      issues: [
+        {
+          key: "BILLING_MODEL_CREDIT_RATES",
+          reason: "missing",
+        },
+      ],
+    });
+  });
+
   test("missing rate fields leave the hard-cap policy unconfigured and synthesize no default", () => {
     const config = loadConfig({
       ...baseEnvironment,
@@ -428,6 +505,134 @@ describe("billing configuration", () => {
         },
       ],
     });
+  });
+
+  test("malformed JSON and wrong-shape policy values leave the hard-cap policy unconfigured", () => {
+    const malformed = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: "{",
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "7",
+          output: "2",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "3",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(malformed.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    expect(unconfiguredPolicyIssues(malformed)).toEqual(
+      expect.arrayContaining([
+        {
+          key: "BILLING_MODEL_CREDIT_RATES",
+          reason: "invalid_json",
+        },
+      ]),
+    );
+
+    const wrongShape = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify([]),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({}),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify(["wrong"]),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(wrongShape.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    const wrongShapeIssues = unconfiguredPolicyIssues(wrongShape);
+    expect(wrongShapeIssues).toContainEqual({
+      key: "BILLING_MODEL_CREDIT_RATES",
+      reason: "invalid_shape",
+    });
+    expect(wrongShapeIssues).toContainEqual({
+      key: "BILLING_CODE_RUN_CREDIT_RATE",
+      reason: "invalid_shape",
+    });
+
+    const wrongShapeMaximums = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "1", denominator: "1" },
+          output: { numerator: "1", denominator: "1" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": "wrong",
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2",
+        denominator: "3",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "5",
+    });
+    expect(wrongShapeMaximums.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    expect(unconfiguredPolicyIssues(wrongShapeMaximums)).toEqual(
+      expect.arrayContaining([
+        {
+          key: "BILLING_MODEL_MAX_RESERVATION_TOKENS.openai/gpt-5.5",
+          reason: "invalid_shape",
+        },
+      ]),
+    );
+  });
+
+  test("quoted huge rates that overflow 32-bit stored credit units leave the policy unconfigured", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://api.getlago.com",
+      LAGO_API_KEY: "provider-bearer-key",
+      BILLING_MODEL_CREDIT_RATES: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: { numerator: "2147483648", denominator: "1" },
+          output: { numerator: "1", denominator: "1" },
+        },
+      }),
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: JSON.stringify({
+        "openai/gpt-5.5": {
+          input: "1",
+          output: "1",
+        },
+      }),
+      BILLING_CODE_RUN_CREDIT_RATE: JSON.stringify({
+        numerator: "2147483648",
+        denominator: "1",
+      }),
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "1",
+    });
+    expect(config.billing?.creditPolicy).toMatchObject({
+      configured: false,
+      mode: "hard_cap",
+    });
+    expect(unconfiguredPolicyIssues(config)).toEqual(
+      expect.arrayContaining([
+        {
+          key: "BILLING_MODEL_MAX_RESERVATION_TOKENS.openai/gpt-5.5",
+          reason: "out_of_range",
+        },
+        {
+          key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+          reason: "out_of_range",
+        },
+      ]),
+    );
   });
 
   test("the jwt webhook key selects jwt mode and is carried verbatim", () => {

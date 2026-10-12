@@ -1282,6 +1282,8 @@ export type BillingCreditPolicyConfig =
       codeRun: BillingCodeRunCreditPolicyConfig;
     };
 
+const MAX_STORED_CREDIT_UNITS = 2_147_483_647n;
+
 export type LagoBillingConfig = {
   /** The provider origin, for example `https://api.getlago.com`. No path, no query, no fragment. */
   apiUrl: string;
@@ -1456,23 +1458,36 @@ function billingCreditPolicyConfig(
         });
         continue;
       }
+      const parsedRateRecord = objectRecord(
+        rateRecord,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}`,
+        issues,
+      );
+      const parsedMaximumRecord = objectRecord(
+        maximumRecord,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+        issues,
+      );
+      if (parsedRateRecord === undefined || parsedMaximumRecord === undefined) {
+        continue;
+      }
       const inputRate = exactRate(
-        rateField(rateRecord, "input"),
+        parsedRateRecord.input,
         `BILLING_MODEL_CREDIT_RATES.${modelId}.input`,
         issues,
       );
       const outputRate = exactRate(
-        rateField(rateRecord, "output"),
+        parsedRateRecord.output,
         `BILLING_MODEL_CREDIT_RATES.${modelId}.output`,
         issues,
       );
       const inputMaximumTokens = exactWholeNumber(
-        integerField(maximumRecord, "input"),
+        parsedMaximumRecord.input,
         `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}.input`,
         issues,
       );
       const outputMaximumTokens = exactWholeNumber(
-        integerField(maximumRecord, "output"),
+        parsedMaximumRecord.output,
         `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}.output`,
         issues,
       );
@@ -1492,6 +1507,15 @@ function billingCreditPolicyConfig(
         outputMaximumTokens,
         outputRate,
       );
+      const maximumReservationUnits =
+        inputMaximumCostUnits + outputMaximumCostUnits;
+      if (maximumReservationUnits > MAX_STORED_CREDIT_UNITS) {
+        issues.push({
+          key: `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+          reason: "out_of_range",
+        });
+        continue;
+      }
       models.set(modelId, {
         input: {
           rate: inputRate,
@@ -1503,20 +1527,41 @@ function billingCreditPolicyConfig(
           maximumTokens: outputMaximumTokens,
           maximumCostUnits: outputMaximumCostUnits,
         },
-        maximumReservationUnits:
-          inputMaximumCostUnits + outputMaximumCostUnits,
+        maximumReservationUnits,
       });
     }
+  }
+  if (
+    issues.length === 0 &&
+    modelRates !== undefined &&
+    modelMaximums !== undefined &&
+    models.size === 0
+  ) {
+    issues.push({ key: "BILLING_MODEL_CREDIT_RATES", reason: "missing" });
   }
 
   const parsedCodeRunRate =
     codeRunRate === undefined
       ? undefined
       : exactRate(codeRunRate, "BILLING_CODE_RUN_CREDIT_RATE", issues);
+  const codeRunMaximumReservationUnits =
+    parsedCodeRunRate === undefined || codeRunMaximumTokens === undefined
+      ? undefined
+      : ceilingProduct(codeRunMaximumTokens, parsedCodeRunRate);
+  if (
+    codeRunMaximumReservationUnits !== undefined &&
+    codeRunMaximumReservationUnits > MAX_STORED_CREDIT_UNITS
+  ) {
+    issues.push({
+      key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+      reason: "out_of_range",
+    });
+  }
   if (
     issues.length > 0 ||
     parsedCodeRunRate === undefined ||
-    codeRunMaximumTokens === undefined
+    codeRunMaximumTokens === undefined ||
+    codeRunMaximumReservationUnits === undefined
   ) {
     return {
       configured: false,
@@ -1532,10 +1577,7 @@ function billingCreditPolicyConfig(
     codeRun: {
       rate: parsedCodeRunRate,
       maximumTokens: codeRunMaximumTokens,
-      maximumReservationUnits: ceilingProduct(
-        codeRunMaximumTokens,
-        parsedCodeRunRate,
-      ),
+      maximumReservationUnits: codeRunMaximumReservationUnits,
     },
   };
 }
@@ -1572,18 +1614,16 @@ function jsonObjectEnvironment(
   return parsed as Record<string, unknown>;
 }
 
-function rateField(record: unknown, key: string): unknown {
-  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+function objectRecord(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    issues.push({ key, reason: "invalid_shape" });
     return undefined;
   }
-  return (record as Record<string, unknown>)[key];
-}
-
-function integerField(record: unknown, key: string): unknown {
-  if (record === null || typeof record !== "object" || Array.isArray(record)) {
-    return undefined;
-  }
-  return (record as Record<string, unknown>)[key];
+  return value as Record<string, unknown>;
 }
 
 function exactRate(
