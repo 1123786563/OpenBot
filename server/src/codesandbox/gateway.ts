@@ -66,8 +66,8 @@ export type CodeRunGatewayOptions = {
    * The metering hook, fired once when a run settles WITH usage — the billing pipeline's one
    * door into this gateway. The row in `code_runs` is the single source of truth for what a
    * run cost; this hook carries that row's dimensions (bot, owner, session, model, tokens) to
-   * the caller, which reports to the provider with the run id as the idempotency key. Absent
-   * (a deployment without billing) nothing runs, and the row itself is still written.
+   * the caller, plus the durable completion timestamp the row persisted. Absent (a deployment
+   * without billing) nothing runs, and the row itself is still written.
    */
   onUsage?: (input: {
     runId: string;
@@ -78,6 +78,7 @@ export type CodeRunGatewayOptions = {
     modelId: string;
     inputTokens: number;
     outputTokens: number;
+    occurredAt: Date;
   }) => Promise<void>;
 };
 
@@ -231,12 +232,14 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         }
 
         await audit("code.run_completed", { runId, sessionId, usage: result.usage, artifacts: created.length });
+        const occurredAt = new Date();
         await options.store.finish(runId, {
           status: "completed",
           sessionId,
           inputTokens: result.usage?.inputTokens,
           outputTokens: result.usage?.outputTokens,
           artifactPaths: JSON.stringify(created),
+          finishedAt: occurredAt,
         });
         // Metering after the row is durable: the hook is fire-and-contained, keyed by runId.
         if (options.onUsage && result.usage) {
@@ -250,6 +253,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
               modelId: options.modelId,
               inputTokens: result.usage.inputTokens,
               outputTokens: result.usage.outputTokens,
+              occurredAt,
             });
           } catch {
             // Contained like onArtifacts: a metering miss is a billing miss, never a run error.
@@ -259,7 +263,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
         // failure must not rewrite a completed run's outcome (see CodeRunGatewayOptions).
         if (options.onArtifacts && artifacts.length > 0) {
           try {
-            await options.onArtifacts({ runId, sessionId: sessionId!, artifacts });
+            await options.onArtifacts({ runId, sessionId, artifacts });
           } catch {
             // Deliberately silent on the run's path; the hook owns its own failure story.
           }
@@ -381,11 +385,13 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
             sessionId,
             usage: result.usage,
           });
+          const occurredAt = new Date();
           await options.store.finish(runId, {
             status: "completed",
             sessionId,
             inputTokens: result.usage?.inputTokens,
             outputTokens: result.usage?.outputTokens,
+            finishedAt: occurredAt,
           });
           // The streaming path's metering, at the same settle point the tool path uses: the
           // row just written is the fact, and the run id is the idempotency key.
@@ -400,6 +406,7 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
                 modelId: options.modelId,
                 inputTokens: result.usage.inputTokens,
                 outputTokens: result.usage.outputTokens,
+                occurredAt,
               });
             } catch {
               // Contained: see the run path's identical block.
@@ -445,7 +452,8 @@ export function createCodeRunGateway(options: CodeRunGatewayOptions): CodeRunGat
             async next(): Promise<IteratorResult<TranslatedEvent>> {
               for (;;) {
                 if (queue.length > 0) {
-                  const event = queue.shift()!;
+                  const event = queue.shift();
+                  if (!event) continue;
                   if (event.payload.__end === true) {
                     await drainTail();
                     return { done: true, value: undefined } as IteratorResult<TranslatedEvent>;

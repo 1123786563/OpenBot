@@ -27,6 +27,7 @@ export type CodeRunFinish = {
   outputTokens?: number;
   artifactPaths?: string;
   error?: string;
+  finishedAt?: Date;
 };
 
 export type CodeRunStore = {
@@ -67,7 +68,7 @@ export function createCodeRunStore(db: Database): CodeRunStore {
           outputTokens: patch.outputTokens,
           artifactPaths: patch.artifactPaths,
           error: patch.error,
-          finishedAt: new Date(),
+          finishedAt: patch.finishedAt ?? new Date(),
         })
         .where(eq(codeRuns.id, id));
     },

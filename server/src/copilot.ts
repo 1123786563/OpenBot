@@ -2,6 +2,7 @@ import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { BuiltInAgentConfiguration } from "@copilotkit/runtime/v2";
+import { randomUUID } from "node:crypto";
 import {
   BuiltInAgent,
   CopilotKitIntelligence,
@@ -377,6 +378,8 @@ function runtimeModel(model: RuntimeModel, apiKey: string | null) {
  */
 let usageMeter:
   | ((usage: {
+      eventId: string;
+      occurredAt: Date;
       inputTokens: number | undefined;
       outputTokens: number | undefined;
     }) => void)
@@ -385,6 +388,8 @@ let usageMeter:
 export function setModelUsageMeter(
   meter:
     | ((usage: {
+        eventId: string;
+        occurredAt: Date;
         inputTokens: number | undefined;
         outputTokens: number | undefined;
       }) => void)
@@ -461,6 +466,8 @@ function meteredModel<T>(model: T): T {
           throw new CreditGateError();
         }
       }
+      const eventId = randomUUID();
+      const occurredAt = new Date();
       const result = await inner.doStream(params);
       const report = new TransformStream<
         Record<string, unknown>,
@@ -476,6 +483,8 @@ function meteredModel<T>(model: T): T {
               | undefined;
             try {
               usageMeter?.({
+                eventId,
+                occurredAt,
                 inputTokens: usage?.inputTokens?.total,
                 outputTokens: usage?.outputTokens?.total,
               });
