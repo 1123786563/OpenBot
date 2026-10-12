@@ -19,6 +19,7 @@ import type { CraftConfig } from "./config";
 import { createFileRoutes } from "./file-routes";
 import { createInterruptFence } from "./interrupt";
 import { createSessionFlowLocks } from "./locks";
+import type { CraftManagedContentResolver } from "./managed-content";
 import { CraftSessionManager } from "./manager";
 import { createMessageRoutes } from "./message-routes";
 import type { CraftLLMProviderConfig } from "./opencode-config";
@@ -71,13 +72,20 @@ export type CraftRoutesDeps = {
    * The deployment's current managed-content fingerprints (skills payload + craft MCP set)
    * to compare a session's recorded hashes against — the seam the manager's staleness
    * contract and `skills_stale` derive through. onyx reads these off the sandbox row;
-   * OpenBot has no managed-content push domain, so the assembly's default is the stable
-   * null pair (nothing pushed → nothing stale, the honest answer until a skills/MCP
-   * pipeline lands — the seam stays wired so that wiring one is one function).
+   * when neither this seam nor a resolver below is wired, the assembly's default is the
+   * stable null pair (nothing pushed → nothing stale, the honest answer while no
+   * managed-content pipeline is wired).
    */
   managedContentHashesFor?: (
     session: CraftSessionRow,
   ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
+  /**
+   * Resolves the session owner's managed content (connectable-apps section, skill
+   * fileset, craft MCP set, fingerprints) — the real managed-content layer. When wired,
+   * `skills_stale` derives from it unless an explicit hashes seam overrides, and the
+   * reload path re-pushes the content it resolves.
+   */
+  managedContentFor?: CraftManagedContentResolver;
 };
 
 /**
@@ -131,14 +139,35 @@ export function createCraftRoutes(input: {
     organizationInstructions: deps.organizationInstructions ?? null,
     approvals: deps.approvals,
     approvalSignals,
+    managedContentFor: deps.managedContentFor,
     // The stable-null default is deliberate (see CraftRoutesDeps): with no managed-content
     // push, the honest "current" fingerprint is null and the staleness predicate reads it
-    // as "nothing to fall behind" — the seam is real (the manager calls this), the
-    // deployment's future skills pipeline swaps the default for a live fingerprint.
+    // as "nothing to fall behind" — the seam is real (the manager calls this), a wired
+    // resolver makes the default moot.
     managedContentHashesFor:
       deps.managedContentHashesFor ??
       (async () => ({ skillsHash: null, mcpConfigHash: null })),
   });
+  /**
+   * `skills_stale` derives from whichever hashes seam the wiring provides: an explicit
+   * hashes function wins (cheap reads), a full resolver is derived from, and neither
+   * wired is the stable null pair (nothing pushed → nothing stale).
+   */
+  const resolver = deps.managedContentFor ?? null;
+  const managedContentHashesFor = async (
+    session: CraftSessionRow,
+  ): Promise<{ skillsHash: string | null; mcpConfigHash: string | null }> => {
+    if (deps.managedContentHashesFor) {
+      return deps.managedContentHashesFor(session);
+    }
+    const content = resolver ? await resolver(session).catch(() => null) : null;
+    return content
+      ? {
+          skillsHash: content.skillsHash,
+          mcpConfigHash: content.mcpConfigHash,
+        }
+      : { skillsHash: null, mcpConfigHash: null };
+  };
   const turnState = createTurnStateStore({ redis, config });
   const fence = createInterruptFence(redis);
   const locks = createSessionFlowLocks(redis);
@@ -179,9 +208,7 @@ export function createCraftRoutes(input: {
       generateName: deps.generateName,
       userNameFor: deps.userNameFor,
       turnState,
-      managedContentHashesFor:
-        deps.managedContentHashesFor ??
-        (async () => ({ skillsHash: null, mcpConfigHash: null })),
+      managedContentHashesFor,
     }),
   );
   app.route(

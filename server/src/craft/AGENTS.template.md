@@ -46,6 +46,12 @@ Your working directory is the session root. Everything you produce goes under `o
 └── .opencode/skills/  # installed skills
 ```
 
+## Connectable apps
+
+Some org apps aren't set up for this user yet, so you can't call them until they're connected. When the task needs one, call the `connect_app` tool with its external app ID from the list below; once connected, it works like any other app. Never ask for or handle credentials yourself.
+
+{{CONNECTABLE_APPS_LIST}}
+
 ## Credentials & external actions
 
 You have internet access, but every outbound request automatically routes through an egress

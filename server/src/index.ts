@@ -175,6 +175,7 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
+import { createCraftManagedContentResolver } from "./craft/managed-content";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -3636,6 +3637,37 @@ const craftEffectiveConfig = sandboxUrl
       ),
     })
   : craftConfig;
+/*
+ * Craft's managed content (AGENTS.md app guidance + skill fileset + fingerprints), answered
+ * for the session's user — never the deployment-wide Bot id. Two legs are deliberately
+ * absent:
+ *
+ * - the company-search skill: onyx backs it with an in-sandbox CLI over the permissioned
+ *   corpus; OpenBot's knowledge domain has no path the craft sandbox can call (credentials
+ *   stay out of agent-readable workspace files), so the adapter ships no such file and the
+ *   AGENTS.md Company-knowledge section stays out until a backed implementation lands;
+ * - the per-user craft MCP set: Task 3's seam (resolve against the plugins catalogue's
+ *   user-oauth servers); an empty set keeps mcp_config_hash a live fingerprint of "none".
+ */
+const craftManagedContentFor = createCraftManagedContentResolver({
+  connectableAppsFor: async (userId) => {
+    const [servers, held, brokered] = await Promise.all([
+      pluginStore.listServers(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    const connected = new Set([
+      ...held.map((row) => row.serverId),
+      ...brokered.map((row) => row.serverId),
+    ]);
+    return servers
+      .filter(
+        (server) =>
+          server.accountMode === "personal" && !connected.has(server.id),
+      )
+      .map((server) => ({ id: server.id, name: server.title }));
+  },
+});
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
   ? ({ requireUser }) =>
       createCraftRoutes({
@@ -3662,6 +3694,11 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           userNameFor: async (userId) =>
             (await peopleStore.find(userId))?.name ?? null,
           generateName: craftGenerateName,
+          // The managed-content layer over the plugins domain: connectable apps are
+          // the enabled connector rows that act in the person's own account and that
+          // they have NOT connected yet (onyx's get_connectable_apps_for_user —
+          // shared/deployment-account apps answer for everybody and never appear).
+          managedContentFor: craftManagedContentFor,
         },
       })
   : undefined;

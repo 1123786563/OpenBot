@@ -36,7 +36,12 @@
  * comes from, and how to reach the agent-sandbox gateway.
  */
 
-export { generateAgentInstructions } from "./agent-instructions";
+export {
+  buildConnectableAppsList,
+  type ConnectableApp,
+  COMPANY_KNOWLEDGE_SECTION,
+  generateAgentInstructions,
+} from "./agent-instructions";
 export {
   type CreateCraftPermissionGateInput,
   createCraftPermissionGate,
@@ -98,6 +103,18 @@ export {
   parseAgentSelection,
 } from "./llm-config";
 export { createSessionFlowLocks, type SessionFlowLocks } from "./locks";
+export {
+  type CraftManagedContent,
+  type CraftManagedContentResolver,
+  type CraftManagedContentSources,
+  companySearchSkillAvailable,
+  createCraftManagedContentResolver,
+  type ManagedContentFileApi,
+  MANAGED_SKILLS_DIR,
+  materializeManagedContent,
+  type ResolvedCraftManagedContent,
+  USER_LIBRARY_DIR,
+} from "./managed-content";
 export { CraftSessionManager } from "./manager";
 export { generateSessionName } from "./naming";
 export { PodEventBus } from "./opencode/event-bus";

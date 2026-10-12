@@ -2,10 +2,15 @@ import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
+import type { ResolvedCraftManagedContent } from "../src/craft/managed-content";
 import { CraftSessionManager } from "../src/craft/manager";
 import type { CraftLLMProviderConfig } from "../src/craft/opencode-config";
 import type { SandboxGateway } from "../src/craft/sandbox-gateway";
 import { createSessionRoutes } from "../src/craft/session-routes";
+import {
+  computeSkillRuntimeHash,
+  craftMcpFingerprint,
+} from "../src/craft/skills";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import type { InteractiveTurn, TurnStateStore } from "../src/craft/turn-state";
 
@@ -15,10 +20,12 @@ import type { InteractiveTurn, TurnStateStore } from "../src/craft/turn-state";
  * `skills_stale` field of the session responses now DERIVED through
  * sessionRuntimeStale (the managed-content seam), never a hardcoded false.
  *
- * The deliberate divergence from onyx is pinned here too: onyx short-circuits
- * when the session is not stale; this port runs regenerate + dispose
- * unconditionally (an explicit refresh — otherwise, with no managed-content
- * push domain, the endpoint could never do anything).
+ * onyx's non-stale short-circuit (manager.py:367-368) is restored now that the
+ * managed-content resolver supplies real hashes: an up-to-date runtime reloads
+ * nothing. A stale one re-materializes the managed skills into the session
+ * workspace, regenerates the config + AGENTS.md, disposes the running instance,
+ * and only then acknowledges the new hashes — the skills hash only after the
+ * push landed (onyx records it solely on push success).
  */
 
 const SESSION_ID = "cs-reload";
@@ -26,6 +33,8 @@ const USER_ID = "u1";
 const DIRECTORY = `/workspace/sessions/${SESSION_ID}`;
 
 const config = loadCraftConfig({});
+
+const encoder = new TextEncoder();
 
 const llm: CraftLLMProviderConfig = {
   provider: "openbot",
@@ -56,14 +65,44 @@ function sessionRow(overrides: Partial<CraftSessionRow> = {}): CraftSessionRow {
   };
 }
 
+/** A live managed-content payload with one skill and one connectable app. */
+function liveContent(
+  overrides: Partial<ResolvedCraftManagedContent> = {},
+): ResolvedCraftManagedContent {
+  const skillFiles = new Map([
+    ["search/SKILL.md", encoder.encode("do a search")],
+  ]);
+  const section = "- External app ID `7`: **Slack**";
+  return {
+    connectableAppsSection: section,
+    skillFiles,
+    mcpServers: [],
+    skillsHash: computeSkillRuntimeHash(
+      Object.fromEntries(skillFiles),
+      section,
+    ),
+    mcpConfigHash: craftMcpFingerprint([]),
+    libraryFiles: new Map(),
+    ...overrides,
+  };
+}
+
 const llmConfigFor = async () => llm;
 
-function memoryGateway(input: { failWrites?: boolean } = {}) {
-  const files = new Map<string, string>();
+function memoryGateway(
+  input: { failWrites?: boolean; failSkillWrites?: boolean } = {},
+) {
+  const files = new Map<string, string | Uint8Array>();
   const disposals: string[] = [];
   const writeFile = async (path: string, content: string) => {
     if (input.failWrites) throw new Error("sandbox down");
     files.set(path, content);
+  };
+  const writeFileBytes = async (path: string, bytes: Uint8Array) => {
+    if (input.failWrites || input.failSkillWrites) {
+      throw new Error("sandbox down");
+    }
+    files.set(path, bytes);
   };
   const gateway = {
     fileApiFor: () => ({
@@ -71,9 +110,12 @@ function memoryGateway(input: { failWrites?: boolean } = {}) {
         return [...files.keys()].filter((key) => key.startsWith(`${path}/`));
       },
       writeFile,
-      async writeFileBytes() {},
-      async deletePath() {
-        return false;
+      writeFileBytes,
+      async deletePath(path: string) {
+        for (const key of [...files.keys()]) {
+          if (key === path || key.startsWith(`${path}/`)) files.delete(key);
+        }
+        return true;
       },
       async readFile(path: string) {
         return files.get(path) ?? null;
@@ -100,9 +142,14 @@ type Hashes = { skillsHash: string | null; mcpConfigHash: string | null };
 function harness(input: {
   row?: CraftSessionRow | null;
   hashesFor?: (session: CraftSessionRow) => Promise<Hashes>;
+  contentFor?: (
+    session: CraftSessionRow,
+  ) => Promise<ResolvedCraftManagedContent | null>;
   activeTurn?: InteractiveTurn | null;
   failTurnState?: boolean;
   failWrites?: boolean;
+  /** Only the binary skill-file writes fail — the push lands, nothing else. */
+  failSkillWrites?: boolean;
 }) {
   const row = input.row === undefined ? sessionRow() : input.row;
   const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -120,13 +167,17 @@ function harness(input: {
       return row && userId === USER_ID ? [row] : [];
     },
   } as unknown as CraftStore;
-  const sandbox = memoryGateway({ failWrites: input.failWrites });
+  const sandbox = memoryGateway({
+    failWrites: input.failWrites,
+    failSkillWrites: input.failSkillWrites,
+  });
   const manager = new CraftSessionManager({
     config,
     store,
     gateway: sandbox.gateway,
     llmConfigFor,
     botIdFor: async () => "craft",
+    managedContentFor: input.contentFor,
     managedContentHashesFor: input.hashesFor,
   });
   const turnState = {
@@ -177,7 +228,7 @@ describe("POST /sessions/:id/skills/reload", () => {
     expect(response.status).toBe(404);
   });
 
-  test("regenerates opencode.json + AGENTS.md + the plugin, disposes, acks hashes, answers false", async () => {
+  test("an up-to-date runtime is a no-op (onyx's non-stale short-circuit)", async () => {
     const { app, files, disposals, updates } = harness({});
     const response = await app.request(
       `/sessions/${SESSION_ID}/skills/reload`,
@@ -187,32 +238,56 @@ describe("POST /sessions/:id/skills/reload", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ skills_stale: false });
+    // Nothing pushed, nothing regenerated, nothing disposed, nothing acked.
+    expect(files.size).toBe(0);
+    expect(disposals).toEqual([]);
+    expect(updates).toEqual([]);
+  });
 
-    // Regenerate: the rewritten config carries the turn-budget plugin entry...
+  test("a stale runtime re-pushes skills, regenerates config + AGENTS.md, disposes, acks", async () => {
+    const content = liveContent();
+    const { app, files, disposals, updates } = harness({
+      row: sessionRow({ skillsHash: "old", mcpConfigHash: "old-mcp" }),
+      contentFor: async () => content,
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ skills_stale: false });
+
+    // The managed skill file is delivered into the session workspace...
+    expect(files.get(`${DIRECTORY}/.opencode/skills/search/SKILL.md`)).toEqual(
+      encoder.encode("do a search"),
+    );
+    // ...AGENTS.md renders the resolved connectable-apps section...
+    const agentsMd = files.get(`${DIRECTORY}/AGENTS.md`);
+    expect(typeof agentsMd).toBe("string");
+    expect(agentsMd).toContain("- External app ID `7`: **Slack**");
+    // ...the rewritten config carries the turn-budget plugin entry...
     const opencodeJson = files.get(`${DIRECTORY}/opencode.json`);
     expect(opencodeJson).toBeDefined();
-    expect(JSON.parse(opencodeJson!).plugin).toEqual([
+    expect(JSON.parse(opencodeJson as string).plugin).toEqual([
       "./.opencode/plugin/turn-budget.ts",
     ]);
-    // ...the plugin file itself rides along (onyx bakes it into the image; this
-    // port ships it in the workspace)...
-    expect(files.get(`${DIRECTORY}/.opencode/plugin/turn-budget.ts`)).toContain(
-      "[Onyx turn budget]",
-    );
-    // ...and AGENTS.md is rewritten.
-    expect(files.get(`${DIRECTORY}/AGENTS.md`)).toBeDefined();
     // The running instance is disposed so a fresh one re-reads the config.
     expect(disposals).toEqual([DIRECTORY]);
-    // The row acknowledges the (null) current hashes.
+    // The row acknowledges the pushed hashes.
     expect(updates).toEqual([
       {
         id: SESSION_ID,
-        patch: { skillsHash: null, mcpConfigHash: null },
+        patch: {
+          skillsHash: content.skillsHash,
+          mcpConfigHash: content.mcpConfigHash,
+        },
       },
     ]);
   });
 
-  test("a live managed-content push acks its hashes and converges the stale flag", async () => {
+  test("hashes-only wiring regenerates + acks without a skills push", async () => {
     const { app, updates } = harness({
       row: sessionRow({ skillsHash: "old", mcpConfigHash: "old-mcp" }),
       hashesFor: async () => ({
@@ -235,6 +310,48 @@ describe("POST /sessions/:id/skills/reload", () => {
         patch: { skillsHash: "new", mcpConfigHash: "new-mcp" },
       },
     ]);
+  });
+
+  test("a failed skills push acks the mcp hash but never the skills hash", async () => {
+    const content = liveContent();
+    const { app, files, updates } = harness({
+      row: sessionRow({ skillsHash: "old", mcpConfigHash: "old-mcp" }),
+      contentFor: async () => content,
+      failSkillWrites: true,
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    // The push failed but the config regenerated — the reload completes, the
+    // mcp hash rides along (onyx records it regardless), the skills hash does
+    // NOT: acking it would claim content the workspace never received.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ skills_stale: true });
+    expect(files.get(`${DIRECTORY}/AGENTS.md`)).toBeDefined();
+    expect(updates).toEqual([
+      { id: SESSION_ID, patch: { mcpConfigHash: content.mcpConfigHash } },
+    ]);
+  });
+
+  test("a dead sandbox answers 502 and acks nothing (onyx's BAD_GATEWAY)", async () => {
+    const content = liveContent();
+    const { app, files, updates } = harness({
+      row: sessionRow({ skillsHash: "old", mcpConfigHash: "old-mcp" }),
+      contentFor: async () => content,
+      failWrites: true,
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(502);
+    expect(files.size).toBe(0);
+    expect(updates).toEqual([]);
   });
 
   test("a live turn answers 409 (onyx's prompt-slot conflict)", async () => {
@@ -278,7 +395,11 @@ describe("POST /sessions/:id/skills/reload", () => {
   });
 
   test("a sandbox failure answers 502 without touching the row", async () => {
-    const { app, updates } = harness({ failWrites: true });
+    const { app, updates } = harness({
+      row: sessionRow({ skillsHash: "old" }),
+      hashesFor: async () => ({ skillsHash: "new", mcpConfigHash: null }),
+      failWrites: true,
+    });
     const response = await app.request(
       `/sessions/${SESSION_ID}/skills/reload`,
       {
