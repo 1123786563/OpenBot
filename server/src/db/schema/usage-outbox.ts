@@ -10,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export type UsageOutboxSource = "llm" | "code_run";
-export type UsageOutboxDeliveryStatus = "pending" | "delivered";
+export type UsageOutboxDeliveryStatus = "pending" | "delivered" | "blocked";
 
 export const usageOutbox = pgTable(
   "usage_outbox",
@@ -70,11 +70,11 @@ export const usageOutbox = pgTable(
     ),
     check(
       "usage_outbox_lago_status_check",
-      sql`${table.lagoStatus} IN ('pending', 'delivered')`,
+      sql`${table.lagoStatus} IN ('pending', 'delivered', 'blocked')`,
     ),
     check(
       "usage_outbox_credits_status_check",
-      sql`${table.creditsStatus} IN ('pending', 'delivered')`,
+      sql`${table.creditsStatus} IN ('pending', 'delivered', 'blocked')`,
     ),
     uniqueIndex("usage_outbox_transaction_id_unique_idx").on(
       table.transactionId,

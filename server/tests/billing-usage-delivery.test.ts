@@ -44,6 +44,7 @@ function makeRecord(eventId: string): UsageOutboxRecord {
 function memoryOutbox(ids: string[]) {
   const rows = new Map(ids.map((id) => [id, makeRecord(id)]));
   const failures: string[] = [];
+  const blocks: string[] = [];
   const outbox: UsageOutbox = {
     async record() {
       return { inserted: true };
@@ -67,8 +68,27 @@ function memoryOutbox(ids: string[]) {
     async recordDeliveryFailure(id, target, code) {
       failures.push(`${id}:${target}:${code}`);
     },
+    async blockDelivery(id, target, code) {
+      blocks.push(`${id}:${target}:${code}`);
+      const row = rows.get(id);
+      if (row) {
+        if (target === "lago") {
+          row.lagoStatus = "blocked" as typeof row.lagoStatus;
+          row.lagoLastErrorCode = code;
+        } else {
+          row.creditsStatus = "blocked" as typeof row.creditsStatus;
+          row.creditsLastErrorCode = code;
+        }
+      }
+    },
+  } as UsageOutbox & {
+    blockDelivery(
+      eventId: string,
+      target: "lago" | "credits",
+      failureCode: string,
+    ): Promise<void>;
   };
-  return { rows, failures, outbox };
+  return { rows, failures, blocks, outbox };
 }
 
 describe("createUsageDelivery", () => {
@@ -191,6 +211,46 @@ describe("createUsageDelivery", () => {
       log: () => {},
     });
     await expect(delivery.runBatch(10)).rejects.toThrow("db down");
+  });
+
+  test("legacy rows missing reservations converge to a blocked credit target without replaying", async () => {
+    const { outbox, rows, failures, blocks } = memoryOutbox(["legacy"]);
+    const logs: string[] = [];
+    let lagoCalls = 0;
+    let creditCalls = 0;
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        lagoCalls += 1;
+      },
+      chargeCredits: async () => {
+        creditCalls += 1;
+        throw new UsageDeliveryError("missing_reservation");
+      },
+      log: (message) => logs.push(message),
+    });
+
+    expect(await delivery.runBatch(10)).toEqual({
+      examined: 1,
+      delivered: 0,
+      failed: 1,
+    });
+    expect(rows.get("legacy")).toMatchObject({
+      lagoStatus: "delivered",
+      creditsStatus: "blocked",
+      creditsLastErrorCode: "missing_reservation",
+    });
+    expect(failures).toEqual([]);
+    expect(blocks).toEqual(["legacy:credits:missing_reservation"]);
+    expect(logs).toHaveLength(1);
+
+    expect(await delivery.runBatch(10)).toEqual({
+      examined: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    expect([lagoCalls, creditCalls]).toEqual([1, 1]);
+    expect(logs).toHaveLength(1);
   });
 });
 

@@ -41,7 +41,7 @@ export type CodeRunOutcome =
 
 export type CodeRunGatewayOptions = {
   client: SandboxClient | null;
-  billingEnabled?: boolean;
+  billingEnabled: boolean;
   modelId: string;
   botId: string;
   ownerUserId: string;

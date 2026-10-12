@@ -55,6 +55,7 @@ const baseOptions = {
   ownerUserId: "user-1",
   initiator: { kind: "person" } as never,
   modelId: "GLM-5.3",
+  billingEnabled: false,
 };
 
 describe("code run gateway", () => {
@@ -153,6 +154,29 @@ describe("code run gateway", () => {
       status: "refused",
       error: "billing-token-budget-unavailable",
     });
+  });
+
+  test("billing-disabled runs preserve existing execution behavior even without token-budget enforcement", async () => {
+    const { rows, store } = fakeStore();
+    const calls: string[] = [];
+    const gateway = createCodeRunGateway({
+      ...baseOptions,
+      client: {
+        ...fakeClient({
+          createSession: async () => {
+            calls.push("createSession");
+            return "ses_x";
+          },
+        }),
+        capabilities: { enforceableTokenBudget: false },
+      } as SandboxClient,
+      store,
+      billingEnabled: false,
+    });
+    const outcome = await gateway.run("anything");
+    expect(outcome.kind).toBe("completed");
+    expect(calls).toEqual(["createSession"]);
+    expect([...rows.values()][0]).toMatchObject({ status: "completed" });
   });
 
   test("a sandbox timeout lands as a failed run with the budget in the message", async () => {

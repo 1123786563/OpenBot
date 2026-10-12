@@ -118,6 +118,17 @@ describe("listTree", () => {
     expect(await listTree(optionsFor(store, null), "ws_1")).toEqual([]);
   });
 
+  test("read-only browsing still works when the sandbox cannot enforce execution token budgets", async () => {
+    const { store } = fakeStore(sessionRow());
+    const client = {
+      ...fakeClient(["out.csv"]),
+      capabilities: { enforceableTokenBudget: false },
+    } as SandboxClient;
+    expect(await listTree(optionsFor(store, client), "ws_1")).toMatchObject([
+      { name: "out.csv", type: "file" },
+    ]);
+  });
+
   test("an unknown session is an error", async () => {
     const { store } = fakeStore(undefined);
     await expect(

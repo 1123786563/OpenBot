@@ -33,6 +33,11 @@ export type UsageOutbox = {
   pending(limit: number): Promise<readonly UsageOutboxRecord[]>;
   markLagoDelivered(eventId: string): Promise<void>;
   markCreditsDelivered(eventId: string): Promise<void>;
+  blockDelivery(
+    eventId: string,
+    target: "lago" | "credits",
+    failureCode: string,
+  ): Promise<void>;
   recordDeliveryFailure(
     eventId: string,
     target: "lago" | "credits",
@@ -191,6 +196,51 @@ export function createUsageOutbox(database: Database): UsageOutbox {
     }
   }
 
+  async function blockDelivery(
+    eventId: string,
+    target: "lago" | "credits",
+    failureCode: string,
+  ) {
+    const rows = await database
+      .update(usageOutbox)
+      .set(
+        target === "lago"
+          ? {
+              lagoStatus: "blocked" satisfies UsageOutboxDeliveryStatus,
+              lagoLastErrorCode: failureCode,
+              updatedAt: new Date(),
+            }
+          : {
+              creditsStatus: "blocked" satisfies UsageOutboxDeliveryStatus,
+              creditsLastErrorCode: failureCode,
+              updatedAt: new Date(),
+            },
+      )
+      .where(
+        and(
+          eq(usageOutbox.eventId, eventId),
+          eq(
+            target === "lago"
+              ? usageOutbox.lagoStatus
+              : usageOutbox.creditsStatus,
+            "pending",
+          ),
+        ),
+      )
+      .returning({ eventId: usageOutbox.eventId });
+
+    if (rows.length === 0) {
+      const [record] = await database
+        .select({ eventId: usageOutbox.eventId })
+        .from(usageOutbox)
+        .where(eq(usageOutbox.eventId, eventId))
+        .limit(1);
+      if (!record) {
+        throw new UsageOutboxRecordNotFoundError(eventId);
+      }
+    }
+  }
+
   return {
     async record(input) {
       const normalized = normalizeInput(input);
@@ -238,6 +288,8 @@ export function createUsageOutbox(database: Database): UsageOutbox {
     markCreditsDelivered(eventId) {
       return markDelivered(eventId, "credits");
     },
+
+    blockDelivery,
 
     recordDeliveryFailure,
   };

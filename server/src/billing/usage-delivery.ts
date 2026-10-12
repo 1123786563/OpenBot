@@ -129,20 +129,25 @@ export function createUsageDelivery(deps: {
           pending: boolean;
           effect: () => Promise<void>;
           markDelivered: () => Promise<void>;
+          block: (failureCode: string) => Promise<void>;
         }[] = [
-          {
-            name: "lago",
-            pending: record.lagoStatus === "pending",
-            effect: () => deps.sendToLago(record),
-            markDelivered: () => outbox.markLagoDelivered(record.eventId),
-          },
-          {
-            name: "credits",
-            pending: record.creditsStatus === "pending",
-            effect: () => deps.chargeCredits(record),
-            markDelivered: () => outbox.markCreditsDelivered(record.eventId),
-          },
-        ];
+            {
+              name: "lago",
+              pending: record.lagoStatus === "pending",
+              effect: () => deps.sendToLago(record),
+              markDelivered: () => outbox.markLagoDelivered(record.eventId),
+              block: (failureCode) =>
+                outbox.blockDelivery(record.eventId, "lago", failureCode),
+            },
+            {
+              name: "credits",
+              pending: record.creditsStatus === "pending",
+              effect: () => deps.chargeCredits(record),
+              markDelivered: () => outbox.markCreditsDelivered(record.eventId),
+              block: (failureCode) =>
+                outbox.blockDelivery(record.eventId, "credits", failureCode),
+            },
+          ];
 
         let effectFailed = false;
         let allDelivered = true;
@@ -168,11 +173,15 @@ export function createUsageDelivery(deps: {
             log(
               `billing: usage delivery failed event=${record.eventId} target=${target.name} code=${code}`,
             );
-            await outbox.recordDeliveryFailure(
-              record.eventId,
-              target.name,
-              code,
-            );
+            if (code === "missing_reservation") {
+              await target.block(code);
+            } else {
+              await outbox.recordDeliveryFailure(
+                record.eventId,
+                target.name,
+                code,
+              );
+            }
           } catch (error) {
             allDelivered = false;
             bookkeepingErrors.push(error);
