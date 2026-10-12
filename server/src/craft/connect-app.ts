@@ -71,6 +71,13 @@ export type CraftConnectAppSignals = {
   ): Promise<void>;
   /** The stashed context, or null when expired/already cleared/unparseable. */
   loadPending(requestId: string): Promise<CraftConnectAppPending | null>;
+  /**
+   * Atomically load-AND-clear the context: exactly ONE caller per requestId can
+   * ever see a non-null answer (GET+DEL in one Redis script; one synchronous
+   * block in-process). The decision endpoint takes through this so concurrent
+   * replays (double-click, two tabs) cannot both answer opencode.
+   */
+  takePending(requestId: string): Promise<CraftConnectAppPending | null>;
   clearPending(requestId: string): Promise<void>;
   readonly mode: "redis" | "memory";
 };
@@ -95,6 +102,12 @@ return 1`;
 
 /** The port exposes no DEL; the script keeps clearPending on the same eval seam. */
 const DEL_KEY = `redis.call('del', KEYS[1]) return 1`;
+
+/** GET+DEL as one script — the atomic take the decision endpoint decides through. */
+const TAKE_KEY = `
+local v = redis.call('get', KEYS[1])
+if v then redis.call('del', KEYS[1]) end
+return v`;
 
 function createRedisSignals(redis: RedisPort): CraftConnectAppSignals {
   return {
@@ -123,6 +136,12 @@ function createRedisSignals(redis: RedisPort): CraftConnectAppSignals {
     },
     async loadPending(requestId) {
       const raw = await redis.get(pendingKey(requestId)).catch(() => null);
+      return parsePending(raw);
+    },
+    async takePending(requestId) {
+      const raw = await redis
+        .eval(TAKE_KEY, 1, pendingKey(requestId))
+        .catch(() => null);
       return parsePending(raw);
     },
     async clearPending(requestId) {
@@ -206,6 +225,14 @@ export function createInProcessConnectAppSignals(): CraftConnectAppSignals & {
     },
     async loadPending(requestId) {
       return parsePending(live(pendingKey(requestId)).values[0] ?? null);
+    },
+    async takePending(requestId) {
+      // One synchronous block — single-threaded JS makes read+delete atomic
+      // the same way the Redis script does.
+      const key = pendingKey(requestId);
+      const entry = live(key);
+      lists.delete(key);
+      return parsePending(entry.values[0] ?? null);
     },
     async clearPending(requestId) {
       lists.delete(pendingKey(requestId));

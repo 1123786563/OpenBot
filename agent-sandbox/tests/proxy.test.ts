@@ -22,6 +22,7 @@ const env = sandboxEnvFrom({
  * 假上游：占住 base 端口 4600，echo 出自己的端口。
  * 真 spawn 被替换掉，所以第一个 bot（alpha）的"opencode serve"就是这个 serve 的语义替身。
  */
+const eventUpstreamRequests: string[] = [];
 const upstream = serve({
   port: 4600,
   hostname: "127.0.0.1",
@@ -37,8 +38,10 @@ const upstream = serve({
         headers: { "content-length": String(300_000) },
       });
     // The event bus: a short burst of real captured shapes, then the stream ends. The proxy's
-    // keepalive and filter behaviour is what these tests observe.
+    // keepalive and filter behaviour is what these tests observe. The requested scope is
+    // captured for the directory-forwarding test (F-G).
     if (url.pathname === "/event") {
+      eventUpstreamRequests.push(`${url.pathname}${url.search}`);
       const samples = [
         `data: {"id":"e1","type":"server.heartbeat","properties":{}}\n\n`,
         `data: {"id":"e2","type":"message.part.delta","properties":{"sessionID":"s","messageID":"m","partID":"p","field":"text","delta":"你好"}}\n\n`,
@@ -170,6 +173,17 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(response.status).toBe(401);
   });
 
+  test("GET /events forwards the directory scope to the upstream (F-G)", async () => {
+    // opencode publishes a directory-scoped session's events only on the
+    // scoped stream; dropping the scope makes every craft turn invisible.
+    const response = await call("/events?directory=cs-scoped-9", {
+      headers: botHeaders,
+    });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(eventUpstreamRequests).toContain("/event?directory=cs-scoped-9");
+  });
+
   test("POST /session/:id/abort forwards to the upstream abort", async () => {
     const response = await call("/session/ses_1/abort", {
       method: "POST",
@@ -182,6 +196,26 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     };
     expect(body.aborted).toBe(true);
     expect(body.port).toBe("4600");
+  });
+
+  test("POST /session/:id/permissions/:permissionId forwards (F-G: the answer path)", async () => {
+    // Every permission answer — the connect_app decision endpoint's and the
+    // timeout fallback's — rides this verb; an unlisted verb is a silent 404
+    // that parks the turn forever (decide half cannot close).
+    const response = await call(
+      "/session/ses_1/permissions/perm_1?directory=/w",
+      {
+        method: "POST",
+        headers: { ...botHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ response: "reject" }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      echo: "/session/ses_1/permissions/perm_1",
+      method: "POST",
+      port: "4600",
+    });
   });
 
   test("the not-yet-implemented table is empty — every allow-listed verb is real (S4)", async () => {

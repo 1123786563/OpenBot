@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { forwardBlock } from "../src/sse";
-import { forwardEvents } from "../src/sse";
 import { serve } from "bun";
+import { forwardBlock, forwardEvents } from "../src/sse";
 
 describe("forwardBlock (the family filter)", () => {
   test("a text delta passes labelled message_chunk", () => {
@@ -15,14 +14,28 @@ describe("forwardBlock (the family filter)", () => {
   });
 
   test("heartbeats and plugin noise are dropped", () => {
-    expect(forwardBlock(`data: {"type":"server.heartbeat","properties":{}}`)).toBeNull();
-    expect(forwardBlock(`data: {"type":"plugin.added","properties":{"id":"x"}}`)).toBeNull();
+    expect(
+      forwardBlock(`data: {"type":"server.heartbeat","properties":{}}`),
+    ).toBeNull();
+    expect(
+      forwardBlock(`data: {"type":"plugin.added","properties":{"id":"x"}}`),
+    ).toBeNull();
   });
 
   test("non-data blocks and empty payloads are dropped", () => {
     expect(forwardBlock(": comment")).toBeNull();
     expect(forwardBlock("event: x")).toBeNull();
     expect(forwardBlock("data: ")).toBeNull();
+  });
+
+  test("permission.asked passes labelled permission (F-G: the ask must reach the server bus)", () => {
+    // The craft turn consumer routes connect_app/gated asks off this very event;
+    // a filter that drops it parks the opencode turn with no egress at all —
+    // no card, no timeout decline (remediation-verification §0.3).
+    const block =
+      `data: {"id":"p1","type":"permission.asked","properties":{"sessionID":"ses_1","id":"perm_1",` +
+      `"permission":"connect_app","patterns":[],"metadata":{"external_app_id":7,"reason":"Need Slack"}}}`;
+    expect(forwardBlock(block)).toBe(`event: permission\n${block}\n\n`);
   });
 });
 
@@ -46,13 +59,18 @@ describe("forwardEvents (the stream)", () => {
             controller.close();
           },
         });
-        return new Response(body, { headers: { "content-type": "text/event-stream" } });
+        return new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        });
       },
     });
     const port = (upstream as unknown as { port: number }).port;
 
     const events: string[] = [];
-    const response = await forwardEvents({ upstreamPort: port, onEvent: () => events.push("x") });
+    const response = await forwardEvents({
+      upstreamPort: port,
+      onEvent: () => events.push("x"),
+    });
     expect(response.status).toBe(200);
     const text = await response.text();
     expect(text).toContain("event: message_chunk");
@@ -84,7 +102,9 @@ describe("forwardEvents (the stream)", () => {
             open = false;
           },
         });
-        return new Response(body, { headers: { "content-type": "text/event-stream" } });
+        return new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        });
       },
     });
     const port = (upstream as unknown as { port: number }).port;
@@ -110,6 +130,67 @@ describe("forwardEvents (the stream)", () => {
   test("an unavailable upstream answers 503, not a broken stream", async () => {
     const response = await forwardEvents({ upstreamPort: 1 });
     expect(response.status).toBe(503);
+  });
+
+  test("upstreamQuery rides the upstream URL (the directory scope, F-G)", async () => {
+    // opencode scopes /event per ?directory= — a craft session's events only
+    // publish on the scoped stream. The forwarder must carry the caller's
+    // query through, or every directory-scoped consumer reads the default
+    // instance's bus and sees nothing.
+    const requests: string[] = [];
+    const upstream = serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: (request) => {
+        const url = new URL(request.url);
+        requests.push(`${url.pathname}${url.search}`);
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        });
+        return new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+    const port = (upstream as unknown as { port: number }).port;
+    const response = await forwardEvents({
+      upstreamPort: port,
+      upstreamQuery: "?directory=cs-scoped-1",
+      fetchImpl: (async (input: unknown) =>
+        fetch(input as RequestInfo)) as never,
+    });
+    await response.body!.cancel();
+    expect(requests).toEqual(["/event?directory=cs-scoped-1"]);
+    upstream.stop(true);
+  });
+
+  test("without upstreamQuery the URL stays bare (default instance)", async () => {
+    const requests: string[] = [];
+    const upstream = serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: (request) => {
+        const url = new URL(request.url);
+        requests.push(`${url.pathname}${url.search}`);
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.close();
+            },
+          }),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
+      },
+    });
+    const port = (upstream as unknown as { port: number }).port;
+    const response = await forwardEvents({ upstreamPort: port });
+    await response.body!.cancel();
+    expect(requests).toEqual(["/event"]);
+    upstream.stop(true);
   });
 
   test("a refused connection (fetch rejects) answers the same 503 JSON", async () => {

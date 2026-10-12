@@ -66,10 +66,19 @@ function provisioningHarness(input?: {
   seed?: CraftSessionRow;
   /** Simulates a repair race: the failed→initializing CAS loses. */
   loseRepairRace?: boolean;
+  /** The workspace probe answers "present" — the light path runs, not setup. */
+  workspaceExists?: boolean;
+  /** Managed content the manager's resolver answers (the light path's input). */
+  managedContentFor?: (
+    session: CraftSessionRow,
+  ) => Promise<
+    import("../src/craft/managed-content").ResolvedCraftManagedContent
+  >;
 }) {
   const files = new Map<string, string>();
   const rows = new Map<string, CraftSessionRow>();
   const messages = new Set<string>();
+  const disposals: string[] = [];
   let seq = 0;
   let portOffset = 0;
   if (input?.seed) rows.set(input.seed.id, { ...input.seed });
@@ -142,22 +151,31 @@ function provisioningHarness(input?: {
   } as unknown as CraftStore;
 
   const gateway = {
-    // A fresh session: the workspace probe answers "not found" so the manager
-    // takes the full initial-provisioning path (setupSessionWorkspace).
+    // Fresh session: the workspace probe answers "not found" so the manager
+    // takes the full initial-provisioning path (setupSessionWorkspace);
+    // `workspaceExists` flips it to the light path (repair under a live
+    // workspace).
     fileApiFor: () => ({
-      async listFiles() {
+      async listFiles(path: string) {
+        if (input?.workspaceExists) return [`${path}/opencode.json`];
         throw new Error("ENOENT: no workspace yet");
       },
       async writeFile(path: string, content: string) {
         files.set(path, content);
       },
+      async deletePath(path: string) {
+        files.delete(path);
+        return true;
+      },
       async readFile() {
         return null;
       },
     }),
-    serveClientFor: () => ({
+    serveClientFor: ({ directory }: { directory: string }) => ({
       ensureSession: async () => "ses_new",
-      disposeInstance: async () => undefined,
+      disposeInstance: async () => {
+        disposals.push(directory);
+      },
     }),
   } as unknown as SandboxGateway;
 
@@ -167,8 +185,11 @@ function provisioningHarness(input?: {
     gateway,
     llmConfigFor: async () => llm,
     botIdFor: async () => "craft",
+    ...(input?.managedContentFor
+      ? { managedContentFor: input.managedContentFor }
+      : {}),
   });
-  return { files, rows, manager };
+  return { files, rows, manager, disposals };
 }
 
 describe("createSession initial provisioning (F-D)", () => {
@@ -235,5 +256,74 @@ describe("failed-session repair (F-F)", () => {
     await expect(
       manager.getOrCreateEmptySession(db, { userId: "u1" }),
     ).rejects.toBeInstanceOf(StaleProvisioningAttemptError);
+  });
+});
+
+describe("light-path config rewrite disposes the running instance (OCR r2)", () => {
+  test("workspace intact + instance minted pre-crash: rewrite → dispose BEFORE the hash ack", async () => {
+    const content = {
+      connectableAppsSection: "No connectable apps available.",
+      skillFiles: new Map<string, Uint8Array>(),
+      mcpServers: [],
+      skillsHash: "skills-v2",
+      mcpConfigHash: "mcp-v2",
+      libraryFiles: new Map<string, Uint8Array>(),
+    };
+    const { files, rows, manager, disposals } = provisioningHarness({
+      seed: sessionRow({
+        id: "cs-light",
+        status: "failed",
+        nextjsPort: 3014,
+        // An opencode instance was minted before the provisioning attempt
+        // crashed (finalize never ran) — it caches the OLD directory config.
+        opencodeSessionId: "ses_old",
+        skillsHash: "skills-v1",
+        mcpConfigHash: "mcp-v1",
+      }),
+      workspaceExists: true,
+      managedContentFor: async () => content,
+    });
+
+    const repaired = await manager.getOrCreateEmptySession(db, {
+      userId: "u1",
+    });
+
+    expect(repaired.status).toBe("active");
+    // The light path rewrote the config from the resolved snapshot...
+    const rewritten = files.get("/workspace/sessions/cs-light/opencode.json");
+    expect(rewritten).toContain('"connect_app":"ask"');
+    // ...and acked the new fingerprints...
+    expect(rows.get("cs-light")?.mcpConfigHash).toBe("mcp-v2");
+    // ...so it OWED the still-alive instance a dispose: without it the ack
+    // marks the row synced forever while the old instance keeps serving the
+    // cached pre-rewrite config (sessionRuntimeStale never fires again).
+    expect(disposals).toContain("/workspace/sessions/cs-light");
+  });
+
+  test("no instance minted yet: the light path disposes nothing", async () => {
+    const content = {
+      connectableAppsSection: "No connectable apps available.",
+      skillFiles: new Map<string, Uint8Array>(),
+      mcpServers: [],
+      skillsHash: "skills-v2",
+      mcpConfigHash: "mcp-v2",
+      libraryFiles: new Map<string, Uint8Array>(),
+    };
+    const { manager, disposals } = provisioningHarness({
+      seed: sessionRow({
+        id: "cs-light-fresh",
+        status: "failed",
+        nextjsPort: 3015,
+        opencodeSessionId: null,
+      }),
+      workspaceExists: true,
+      managedContentFor: async () => content,
+    });
+
+    const repaired = await manager.getOrCreateEmptySession(db, {
+      userId: "u1",
+    });
+    expect(repaired.status).toBe("active");
+    expect(disposals).toEqual([]);
   });
 });

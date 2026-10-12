@@ -46,6 +46,10 @@ const ALLOWED = new Set([
   // The workshop plan's additions, frozen here in one change:
   "GET /events",
   "POST /session/:id/abort",
+  // The permission answer verb (craft's approval/connect_app routing): both the
+  // decision endpoint's answer and the timeout fallback's reject ride it. The
+  // shape routing below admits exactly two non-empty id segments.
+  "POST /session/:id/permissions/:permissionId",
   "POST /file",
   // The craft file surface's delete half: files only, contained like POST /file.
   "DELETE /file",
@@ -73,7 +77,8 @@ const NOT_YET_IMPLEMENTED = new Set<string>([]);
 
 function allowedPath(method: string, pathname: string): boolean {
   if (ALLOWED.has(`${method} ${pathname}`)) return true;
-  // The shape-routed entries: /session/:id(/message|/abort) with one non-empty id segment.
+  // The shape-routed entries: /session/:id(/message|/abort|/permissions/:pid)
+  // with non-empty id segments.
   if (!pathname.startsWith("/session/")) return false;
   const segments = pathname.slice("/session/".length).split("/");
   if (segments.length === 1) return segments[0]?.length > 0 && method === "GET";
@@ -82,6 +87,13 @@ function allowedPath(method: string, pathname: string): boolean {
       segments[0]?.length > 0 &&
       ((segments[1] === "message" && (method === "GET" || method === "POST")) ||
         (segments[1] === "abort" && method === "POST"))
+    );
+  if (segments.length === 3)
+    return (
+      segments[0]?.length > 0 &&
+      segments[2]?.length > 0 &&
+      segments[1] === "permissions" &&
+      method === "POST"
     );
   return false;
 }
@@ -412,9 +424,18 @@ export function createProxyHandler(
       // listener is a stall; a quiet runtime WITHOUT any is just idle. Open before the stream
       // exists, close when it tears down — the count must not leak on either path.
       runtimes.noteStreamOpen(botId);
+      // opencode scopes its event bus per ?directory= (a directory-scoped
+      // session's events publish ONLY on the scoped stream), so the caller's
+      // scope rides through to the upstream — a craft session's turn would
+      // otherwise stream to nobody (F-G: the live bus was reading the default
+      // instance and every scoped turn was invisible to the server).
+      const directory = url.searchParams.get("directory");
       try {
         const response = await forwardEvents({
           upstreamPort: runtime.port,
+          upstreamQuery: directory
+            ? `?directory=${encodeURIComponent(directory)}`
+            : null,
           onEvent: () => runtimes.markActivity(botId),
           onClose: () => runtimes.noteStreamClose(botId),
         });
