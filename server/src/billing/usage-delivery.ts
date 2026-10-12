@@ -33,6 +33,17 @@ const METRIC_BY_SOURCE = {
   code_run: "code_run_tokens",
 } as const;
 
+function sourceSpecificProperties(record: UsageOutboxRecord) {
+  if (record.source !== "code_run") return {};
+  return {
+    ...(record.runId ? { run_id: record.runId } : {}),
+    ...(record.botId ? { bot_id: record.botId } : {}),
+    ...(record.ownerUserId ? { owner_user_id: record.ownerUserId } : {}),
+    ...(record.sessionId ? { session_id: record.sessionId } : {}),
+    ...(record.status ? { status: record.status } : {}),
+  };
+}
+
 /** The Lago target effect: persisted facts in, delivery-grade service call out. */
 export function createLagoUsageTarget(
   billing: Pick<BillingService, "deliverUsage">,
@@ -50,6 +61,7 @@ export function createLagoUsageTarget(
         model: record.model,
         client: record.client,
         source: record.source,
+        ...sourceSpecificProperties(record),
       },
     });
 }

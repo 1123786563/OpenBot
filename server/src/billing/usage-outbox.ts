@@ -16,6 +16,11 @@ export type UsageOutboxInput = {
   model: string;
   client: string;
   occurredAt: Date;
+  runId?: string | null;
+  botId?: string | null;
+  ownerUserId?: string | null;
+  sessionId?: string | null;
+  status?: string | null;
 };
 
 export type UsageOutboxRecord = typeof usageOutbox.$inferSelect;
@@ -56,15 +61,40 @@ const immutableFields = [
   "model",
   "client",
   "occurredAt",
+  "runId",
+  "botId",
+  "ownerUserId",
+  "sessionId",
+  "status",
 ] as const;
+
+function normalizeInput(
+  input: UsageOutboxInput,
+): UsageOutboxInput & {
+  runId: string | null;
+  botId: string | null;
+  ownerUserId: string | null;
+  sessionId: string | null;
+  status: string | null;
+} {
+  return {
+    ...input,
+    runId: input.runId ?? null,
+    botId: input.botId ?? null,
+    ownerUserId: input.ownerUserId ?? null,
+    sessionId: input.sessionId ?? null,
+    status: input.status ?? null,
+  };
+}
 
 function sameImmutableFacts(
   record: UsageOutboxRecord,
   input: UsageOutboxInput,
 ) {
+  const normalized = normalizeInput(input);
   return immutableFields.every((field) => {
     const recorded = record[field];
-    const incoming = input[field];
+    const incoming = normalized[field];
     if (recorded instanceof Date && incoming instanceof Date) {
       return recorded.getTime() === incoming.getTime();
     }
@@ -151,9 +181,10 @@ export function createUsageOutbox(database: Database): UsageOutbox {
 
   return {
     async record(input) {
+      const normalized = normalizeInput(input);
       const inserted = await database
         .insert(usageOutbox)
-        .values(input)
+        .values(normalized)
         .onConflictDoNothing({ target: usageOutbox.eventId })
         .returning({ eventId: usageOutbox.eventId });
 
@@ -167,7 +198,7 @@ export function createUsageOutbox(database: Database): UsageOutbox {
         .where(eq(usageOutbox.eventId, input.eventId))
         .limit(1);
 
-      if (!record || !sameImmutableFacts(record, input)) {
+      if (!record || !sameImmutableFacts(record, normalized)) {
         throw new UsageOutboxConflictError(input.eventId);
       }
       return { inserted: false };

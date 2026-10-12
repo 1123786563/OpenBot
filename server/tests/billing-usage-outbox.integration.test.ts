@@ -37,6 +37,25 @@ function usageEvent(eventId: string) {
   };
 }
 
+function codeRunUsageEvent(eventId: string) {
+  return {
+    eventId,
+    source: "code_run" as const,
+    externalCustomerId: `${prefix}-customer`,
+    transactionId: `${eventId}-transaction`,
+    inputTokens: 12,
+    outputTokens: 7,
+    model: "glm-4.6",
+    client: "web",
+    occurredAt: new Date("2026-10-11T10:30:00.000Z"),
+    runId: `${eventId}-run`,
+    botId: `${prefix}-bot`,
+    ownerUserId: `${prefix}-owner`,
+    sessionId: `${prefix}-session`,
+    status: "completed",
+  };
+}
+
 test("record inserts a usage event once and an identical replay is a no-op", async () => {
   const event = usageEvent(`${prefix}-event-1`);
 
@@ -72,6 +91,39 @@ test("record rejects reuse of an event ID with any changed immutable fact", asyn
   ];
 
   for (const conflictingEvent of conflictingEvents) {
+    await expect(outbox.record(conflictingEvent)).rejects.toBeInstanceOf(
+      UsageOutboxConflictError,
+    );
+  }
+});
+
+test("record persists source-specific code-run facts and rejects conflicting replays", async () => {
+  const event = codeRunUsageEvent(`${prefix}-code-run`);
+  expect(await outbox.record(event)).toEqual({ inserted: true });
+  expect(await outbox.record(event)).toEqual({ inserted: false });
+
+  expect(
+    await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId)),
+  ).toMatchObject([
+    {
+      ...event,
+      lagoStatus: "pending",
+      creditsStatus: "pending",
+    },
+  ]);
+
+  const conflicts = [
+    { ...event, runId: `${event.runId}-other` },
+    { ...event, botId: `${event.botId}-other` },
+    { ...event, ownerUserId: `${event.ownerUserId}-other` },
+    { ...event, sessionId: `${event.sessionId}-other` },
+    { ...event, status: "failed" },
+  ];
+
+  for (const conflictingEvent of conflicts) {
     await expect(outbox.record(conflictingEvent)).rejects.toBeInstanceOf(
       UsageOutboxConflictError,
     );
