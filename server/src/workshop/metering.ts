@@ -15,6 +15,7 @@
  */
 import type { UsageOutbox } from "../billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../config";
+import { currentUsageOrigin } from "../usage-origin";
 
 export class UsageChargeError extends Error {
   constructor(
@@ -143,7 +144,7 @@ export async function reportCodeRunUsage(
     inputTokens: input.inputTokens,
     outputTokens: input.outputTokens,
     model: input.modelId,
-    client: "web",
+    client: currentUsageOrigin(),
     occurredAt: input.occurredAt,
     runId: input.runId,
     botId: input.botId,

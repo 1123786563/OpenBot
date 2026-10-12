@@ -17,6 +17,7 @@ import {
 } from "../src/copilot";
 import { loadTenantPackage } from "../src/tenant-package";
 import { testEnvironment } from "./support/environment";
+import { withUsageOrigin } from "../src/usage-origin";
 
 const packagePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -1062,6 +1063,76 @@ describe("the model usage bound contract (pre-call admission)", () => {
       await expect(agent.runAgent()).rejects.toBeDefined();
       expect(providerCalls).toBe(0);
       expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+      if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = originalBase;
+      await recorder.stop();
+    }
+  });
+});
+
+/*
+ * Usage source attribution (2026-10-13 audit, F6): the wrapper reads the caller's origin at
+ * doStream time — where the request context still exists — and hands it to the billing gate
+ * with the event, so the gate's outbox write can record the surface the call really came from
+ * instead of a hardcoded "web".
+ */
+describe("model usage origin", () => {
+  test("the gate receives the caller's real origin with the event", async () => {
+    const environment = {
+      ...testEnvironment(),
+      OPENAI_API_KEY: STUB_MODEL_KEY,
+    };
+    const tenantPackage = await loadTenantPackage(packagePath);
+    const model = runtimeModelForEnvironment(tenantPackage.model, environment);
+    const recorder = new LLMock();
+    const originalBase = process.env.OPENAI_BASE_URL;
+    const origins: (string | undefined)[] = [];
+    try {
+      process.env.OPENAI_BASE_URL = await recorder.start();
+      recorder.onMessage(
+        /Complete the origin fixture request\./,
+        { type: "text", content: "Origin fixture completed." },
+        { inputTokens: 120, outputTokens: 30 },
+      );
+      setModelUsageGate(async (input) => {
+        origins.push((input as { client?: string }).client);
+        return {
+          bounds: {
+            input: {
+              enforced: "counted" as const,
+              maximumTokens: 1_000_000n,
+              countInputTokens: () => 42,
+            },
+            output: {
+              enforced: "provider_cap" as const,
+              maximumTokens: 8_192n,
+            },
+          },
+        };
+      });
+      const agents = await resolveRuntimeAgents(
+        () => [
+          {
+            id: "origin-agent",
+            name: "Origin Agent",
+            type: "built_in" as const,
+            systemPrompt: "Be helpful.",
+          },
+        ],
+        model,
+        async () => STUB_MODEL_KEY,
+      );
+      const agent = agents["origin-agent"]?.clone();
+      if (!agent) throw new Error("Expected Origin Agent.");
+      agent.addMessage({
+        id: "origin-request",
+        role: "user",
+        content: "Complete the origin fixture request.",
+      });
+      await withUsageOrigin("cli", () => agent.runAgent());
+      expect(origins).toContain("cli");
     } finally {
       setModelUsageGate(undefined);
       if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;

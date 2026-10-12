@@ -67,6 +67,7 @@ import {
 import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance, parametersFor } from "./plugins/tools";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
+import { currentUsageOrigin } from "./usage-origin";
 
 const log = getLogger("server");
 
@@ -483,6 +484,12 @@ type ModelUsageGateInput = {
   eventId: string;
   occurredAt: Date;
   modelId: string | null;
+  /**
+   * The surface the call came from (`web`/`api`/`unknown` — the usage-origin vocabulary), read
+   * here at doStream time, the one point where the request context still exists, so the gate's
+   * outbox write can attribute the usage fact to its real caller instead of a hardcoded "web".
+   */
+  client: string;
 };
 
 /**
@@ -581,6 +588,7 @@ function meteredModel<T>(model: T): T {
             occurredAt,
             modelId:
               typeof inner.modelId === "string" ? inner.modelId : null,
+            client: currentUsageOrigin(),
           });
         } catch (error) {
           if (error instanceof CreditGateError) throw error;
