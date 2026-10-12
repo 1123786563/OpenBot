@@ -51,6 +51,7 @@ function parseConnectAppAnnounce(
 
 import type { CraftConfig } from "./config";
 import { writeConnectAppPlugin } from "./connect-app-plugin";
+import { StaleProvisioningAttemptError } from "./errors";
 import {
   approvalRequestedPacket,
   type BuildPacket,
@@ -203,7 +204,13 @@ export class CraftSessionManager {
         portEnd: this.config.sandboxNextjsPortEnd,
       });
     }
-    await this.reconcileSession(db, session, input.userName ?? null);
+    // The reservation persists nextjsPort on the row AFTER the snapshot above
+    // was taken — re-read so the initial provisioning envelope sees the
+    // reserved port and start-webapp.sh lands now, not only on a later
+    // repair/reload reconcile (F-D).
+    const toProvision =
+      (await this.store.getSession(session.id, input.userId)) ?? session;
+    await this.reconcileSession(db, toProvision, input.userName ?? null);
     const fresh = await this.store.getSession(session.id, input.userId);
     return fresh ?? session;
   }
@@ -256,6 +263,20 @@ export class CraftSessionManager {
     session: CraftSessionRow,
     userName: string | null,
   ): Promise<void> {
+    // A failed row repairs under the same committed id, but the provisioning
+    // envelope's finalize CAS only matches `initializing` — reset FIRST so the
+    // repair can succeed (F-F: otherwise every reconcile of a failed row
+    // throws Stale and the session stays bricked). The reset is itself a CAS:
+    // a lost race means another repair attempt owns this rebuild, and this
+    // one must not provision over it.
+    if (session.status === "failed") {
+      const claimed = await this.store.resetFailedSessionForRepair(session.id);
+      if (!claimed) {
+        throw new StaleProvisioningAttemptError(
+          `Session ${session.id} was claimed by a concurrent repair attempt`,
+        );
+      }
+    }
     await ensureSessionReady({
       db,
       store: this.store,

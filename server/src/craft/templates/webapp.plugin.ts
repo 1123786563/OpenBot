@@ -8,8 +8,8 @@
 // and connect-app plugins, because the agent-sandbox image cannot bake it): the
 // `satisfies Plugin` type sugar is dropped for a structural ToolFactory, and
 // the SDK load path list gains a leading `OPENBOT_PLUGIN_TOOL_HELPER` env
-// candidate (tests inject a stub helper through it; the sandbox tries the same
-// absolute-path candidates onyx's image uses).
+// candidate (tests inject a stub helper through it; the sandbox then tries the
+// deployed agent-sandbox candidates followed by onyx's image paths).
 //
 // Failures are returned as observations, never thrown; a thrown tool error
 // would abort the agent's turn instead of letting it recover.
@@ -22,6 +22,13 @@ const SDK_TOOL_PATHS = [
   ...(process.env.OPENBOT_PLUGIN_TOOL_HELPER
     ? [process.env.OPENBOT_PLUGIN_TOOL_HELPER]
     : []),
+  // The deployed agent-sandbox (verified live, remediation-verification
+  // §3(ii)): the SDK lands beside the plugin in the session's own
+  // `.opencode/node_modules`, and under opencode's config dir (HOME=/config).
+  // onyx's image candidates follow (a trailing miss is harmless).
+  new URL("../node_modules/@opencode-ai/plugin/dist/tool.js", import.meta.url)
+    .href,
+  "/config/opencode/node_modules/@opencode-ai/plugin/dist/tool.js",
   "/home/sandbox/.opencode/node_modules/@opencode-ai/plugin/dist/tool.js",
   "/home/sandbox/.config/opencode/node_modules/@opencode-ai/plugin/dist/tool.js",
 ];
