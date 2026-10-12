@@ -153,6 +153,26 @@ async function readPendingPurchaseRow(
   return row ? rowOf(row) : null;
 }
 
+function byOverlapWinner(a: PaymentOrderRecord, b: PaymentOrderRecord): number {
+  const byStart =
+    (a.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+    (b.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER);
+  if (byStart !== 0) return byStart;
+  const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+  if (byCreated !== 0) return byCreated;
+  return a.id.localeCompare(b.id);
+}
+
+function byClaimedOwner(a: PaymentOrderRecord, b: PaymentOrderRecord): number {
+  const byApplied =
+    Number(b.activationState === "applied") -
+    Number(a.activationState === "applied");
+  if (byApplied !== 0) return byApplied;
+  const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+  if (byCreated !== 0) return byCreated;
+  return a.id.localeCompare(b.id);
+}
+
 function isOrderIdConflict(error: unknown): boolean {
   const visited = new Set<object>();
   while (error && typeof error === "object" && !visited.has(error)) {
@@ -477,6 +497,21 @@ export function createPaymentStore(database: Database): PaymentStore {
       return inserted.length > 0;
     },
 
+    async readPaidOrderByTransaction(channelTransactionId) {
+      const [row] = await database
+        .select()
+        .from(paymentOrders)
+        .where(
+          and(
+            eq(paymentOrders.status, "paid"),
+            eq(paymentOrders.channelTransactionId, channelTransactionId),
+          ),
+        )
+        .orderBy(sql`${paymentOrders.createdAt} ASC`)
+        .limit(1);
+      return row ? rowOf(row) : null;
+    },
+
     async recordActivation(id, activationState) {
       await database
         .update(paymentOrders)
@@ -534,16 +569,54 @@ export function createPaymentStore(database: Database): PaymentStore {
         ) as PaymentOrderLockedRow[];
         const lockedOrders = rows.map(lockedRowOf);
         const current = lockedOrders.find((row) => row.id === orderId);
-        const owner = lockedOrders[0];
-        if (!current || !owner) return { outcome: "unknown" as const };
-        if (owner.id === current.id) {
-          return { outcome: "owner" as const, order: current };
+        if (!current) return { outcome: "unknown" as const };
+
+        const existingOwner = [...lockedOrders]
+          .filter((row) => row.activationState !== "pending")
+          .sort(byClaimedOwner)[0];
+        if (existingOwner) {
+          if (existingOwner.id === current.id) {
+            return { outcome: "owner" as const, order: current };
+          }
+          return {
+            outcome: "duplicate" as const,
+            order: current,
+            ownerOrder: existingOwner,
+          };
         }
-        return {
-          outcome: "duplicate" as const,
-          order: current,
-          ownerOrder: owner,
-        };
+
+        const winner = [...lockedOrders].sort(byOverlapWinner)[0];
+        if (!winner) return { outcome: "unknown" as const };
+        if (winner.id !== current.id) {
+          return {
+            outcome: "duplicate" as const,
+            order: current,
+            ownerOrder: winner,
+          };
+        }
+        if (current.activationState === "pending") {
+          const [claimed] = await tx
+            .update(paymentOrders)
+            .set({ activationState: "failed" })
+            .where(
+              and(
+                eq(paymentOrders.id, current.id),
+                eq(paymentOrders.status, "paid"),
+                eq(paymentOrders.activationState, "pending"),
+              ),
+            )
+            .returning();
+          if (claimed) return { outcome: "owner" as const, order: rowOf(claimed) };
+        }
+        const [fresh] = await tx
+          .select()
+          .from(paymentOrders)
+          .where(eq(paymentOrders.id, current.id))
+          .limit(1);
+        if (fresh?.status !== "paid") {
+          return { outcome: "unknown" as const };
+        }
+        return { outcome: "owner" as const, order: rowOf(fresh) };
       });
     },
 

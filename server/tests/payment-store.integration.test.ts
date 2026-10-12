@@ -257,6 +257,57 @@ test("resolveActivationOwnership serializes overlapping paid orders to one entit
   });
 });
 
+test("an already-applied owner stays the owner when a later overlapping paid order settles", async () => {
+  const sharedPlan = `pro-${randomUUID().slice(0, 8)}`;
+  const owner = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+  });
+  const laterPeriodStart = new Date(Date.now() + 10 * 60_000);
+  const laterPeriodEnd = new Date(laterPeriodStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: owner.order.id,
+      expectedVersion: owner.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-applied-owner`,
+      amountCents: 8800,
+      periodStart: laterPeriodStart,
+      periodEnd: laterPeriodEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+  await store.recordActivation(owner.order.id, "applied");
+
+  const duplicate = await store.insertOrder({
+    ...orderInput(),
+    planCode: sharedPlan,
+    provider: "wechat",
+  });
+  const earlierOverlapStart = new Date(laterPeriodStart.getTime() - 5 * 60_000);
+  const earlierOverlapEnd = new Date(earlierOverlapStart.getTime() + 30 * 24 * 3600_000);
+  expect(
+    await store.confirmPaid({
+      id: duplicate.order.id,
+      expectedVersion: duplicate.order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-late-overlap`,
+      amountCents: 8800,
+      periodStart: earlierOverlapStart,
+      periodEnd: earlierOverlapEnd,
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+
+  await expect(store.resolveActivationOwnership(owner.order.id)).resolves.toMatchObject({
+    outcome: "owner",
+    order: { id: owner.order.id },
+  });
+  await expect(store.resolveActivationOwnership(duplicate.order.id)).resolves.toMatchObject({
+    outcome: "duplicate",
+    order: { id: duplicate.order.id },
+    ownerOrder: { id: owner.order.id },
+  });
+});
+
 test("CAS version moves reject a stale writer", async () => {
   const { order } = await store.insertOrder(orderInput());
   const expired = await store.expireOrder(order.id, order.version);

@@ -20,7 +20,13 @@ export type PaymentOrderStatus =
   | "canceled"
   | "expired";
 
-/** Activation is a property of a paid order, orthogonal to its money state. */
+/**
+ * Activation is a property of a paid order, orthogonal to its money state.
+ *
+ * `failed` is the durable "owner claimed, not yet landed" state as well as "last activation
+ * attempt failed": once a paid order wins an overlapping entitlement period, it leaves `pending`
+ * before any external side effect so later overlapping collections can no longer steal ownership.
+ */
 export type PaymentActivationState = "pending" | "applied" | "failed";
 
 /** The two channels v1 collects through. */
@@ -265,9 +271,10 @@ export type PaymentStore = {
     activationState: PaymentActivationState,
   ): Promise<void>;
   /**
-   * Resolve which overlapping paid order owns the entitlement period, under row locks at the
-   * database boundary. Only that order may activate; later overlapping collections remain paid but
-   * are duplicates for manual resolution.
+   * Resolve and DURABLY claim which overlapping paid order owns the entitlement period, under row
+   * locks at the database boundary. When no owner exists yet, the deterministic winner leaves
+   * `pending` inside this transaction before any external side effect runs, so a later overlapping
+   * settlement cannot steal ownership.
    */
   resolveActivationOwnership(orderId: string): Promise<
     | {
@@ -283,6 +290,10 @@ export type PaymentStore = {
         outcome: "unknown" | "not-paid";
       }
   >;
+  /** The paid order already holding one channel transaction id, for duplicate evidence detail. */
+  readPaidOrderByTransaction(
+    channelTransactionId: string,
+  ): Promise<PaymentOrderRecord | null>;
   /** Pending orders past their expiry, for the sweeper's query-first pass. */
   listExpiredPendingOrders(
     now: Date,
