@@ -9,9 +9,12 @@
  *
  *   - `approvalRequests.runId` doubles as the craft session id (a pure-text column, no schema
  *     change), so a pending request is "owned" by the session whose turn produced it.
- *   - The decision endpoint reuses the raw `ApprovalStore` (`open`/`decide`/…), not the
- *     coordination-wrapped `approvalService.store` whose `open` carries run-orchestration side
- *     effects craft must not trigger.
+ *   - The decision endpoint writes through the raw `ApprovalStore`'s quiet path (`decideQuiet`):
+ *     the same row + audit as `decide`, but none of its orchestration effects — no
+ *     `approval.resume` work item for the worker queue (craft's waiter is woken by the
+ *     announce/wake signals above) and no always-rule (craft has no rule surface; allow_always
+ *     behaves as allow_once, the sandbox answering the ask "once" either way). Like `open`, it
+ *     is the raw store, not the coordination-wrapped `approvalService.store`.
  *   - Decide semantics follow onyx: the same decision replays idempotently, a different one
  *     is a 409; after the row is written the parked waiter is woken (a missed wake falls back
  *     to its wait window). EXPIRED stays derived — the shared status CHECK has no such value,
@@ -194,7 +197,12 @@ export function createCraftApprovalRoutes(
           409,
         );
       }
-      await deps.approvals.decide(actor.id, approvalId, body.decision);
+      // Craft's own write path: the row lands (approved/denied + audit) without the generic
+      // decide's worker resume item or always-rule write — both are noise for craft rows (no
+      // continuation to resume; no rule surface to grant), and the wake below is the real
+      // unparker. allow_always lands verbatim and replays idempotently, but behaves as
+      // allow_once: no persistent grant is written.
+      await deps.approvals.decideQuiet(actor.id, approvalId, body.decision);
     } catch (error) {
       if (error instanceof ApprovalNotFoundError) {
         return context.json({ error: "Approval not found" }, 404);

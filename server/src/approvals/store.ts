@@ -189,6 +189,38 @@ export function createApprovalStore(database: Database): ApprovalStore {
         return updated;
       });
     },
+    async decideQuiet(owner, id, decision) {
+      // The single guarded UPDATE is the whole write: it can only land on a row still pending,
+      // so a racing writer loses atomically instead of interleaving with a read-then-write.
+      const [updated] = await database
+        .update(approvalRequests)
+        .set({
+          decision,
+          status: decision === "deny" ? "denied" : "approved",
+          decidedAt: sql`now()`,
+        })
+        .where(and(owned(owner, id), eq(approvalRequests.status, "pending")))
+        .returning();
+      if (!updated) {
+        // Zero rows is either not-the-owner's id or a decided-first race; get() sorts 404 from 409.
+        await get(owner, id);
+        throw new ApprovalRefusedError("This request was already decided.");
+      }
+      await recordAuditEvent(createAuditStore(database), {
+        eventType: "approval.person_decided",
+        targetType: "approval",
+        targetId: id,
+        actorUserId: owner,
+        payload: {
+          decidedBy: "person",
+          decision,
+          bot: updated.action.botId,
+          tool: updated.action.toolRef,
+          scope: updated.action.scope,
+        },
+      });
+      return updated;
+    },
     async consume(owner, id, digest) {
       return database.transaction(async (tx) => {
         const [request] = await tx

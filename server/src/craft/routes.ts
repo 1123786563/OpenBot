@@ -212,7 +212,6 @@ export function createCraftRoutes(input: {
       manager,
       turnState,
       executor,
-      gateway,
       botIdFor: deps.botIdFor,
       approvalSignals,
     }),

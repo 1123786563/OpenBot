@@ -114,6 +114,18 @@ function fakeApprovals(initial: ApprovalRecord[] = []): ApprovalStore & {
       found.decidedAt = new Date();
       return found;
     },
+    async decideQuiet(owner, id, decision) {
+      const found = records.find(
+        (record) => record.ownerUserId === owner && record.id === id,
+      );
+      if (!found) throw new ApprovalNotFoundError();
+      if (found.status !== "pending")
+        throw new ApprovalRefusedError("This request was already decided.");
+      found.decision = decision;
+      found.status = decision === "deny" ? "denied" : "approved";
+      found.decidedAt = new Date();
+      return found;
+    },
     async consume() {
       return false;
     },

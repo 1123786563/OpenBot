@@ -48,7 +48,7 @@ describe("AGENTS.template.md calibration", () => {
     for (const name of RENDERED_PLACEHOLDERS) {
       expect(template).toContain(`{{${name}}}`);
     }
-    // Eight occurrences total: each placeholder exactly once, nothing extra.
+    // Seven occurrences total: each placeholder exactly once, nothing extra.
     expect(template.match(/\{\{/g)?.length ?? 0).toBe(
       RENDERED_PLACEHOLDERS.length,
     );
