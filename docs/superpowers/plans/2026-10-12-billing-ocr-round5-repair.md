@@ -19,7 +19,9 @@
 
 ## Open items (route each through SDD when picked up)
 
-### Item 1 — Expired reservations permanently consume capacity [medium · bug]
+### Item 1 — Expired reservations permanently consume capacity [medium · bug] — **ABSORBED 2026-10-13**
+
+> Absorbed by `2026-10-13-billing-reliability-audit-remediation.md` Task 3 (F4): option (a) decided and implemented — the `held` subquery now excludes `expires_at <= now()`, `reserveCredits` rejects a past expiry, no sweep. Tests live in `billing-credits-writer.integration.test.ts` ("expired hold no longer occupies capacity"). Do not execute separately.
 
 `credits-writer.ts` `held` subquery counts every `status='reserved'` row regardless of `expires_at`; a crash between reserve and finish leaves a hold that suppresses `availableBalance` until an operator acts on `expired_reserved_reservation`. Decide: exclude expired holds from the capacity sum (`r.expires_at > now()`), add an expiry-release sweep, or both. `reserveCredits` should also reject a past `expiresAt`. Tests: `billing-credits-writer.integration.test.ts`.
 
@@ -39,7 +41,9 @@ After the deployment-level unique pending slot, a pending order whose `createSes
 
 Duplicate orders keep `activationState='pending'`, so `sweepActivations` re-runs the `resolveActivationOwnership` row-lock transaction every pass. Persist a recognizable terminal state (mind the `activation_retry_exhausted` alarm) or exclude confirmed duplicates from the sweep query.
 
-### Item 6 — Code-run rows guarantee a `missing_reservation` credits failure every run [medium]
+### Item 6 — Code-run rows guarantee a `missing_reservation` credits failure every run [medium] — **DECIDED 2026-10-13, implementation remains open**
+
+> The decision half is absorbed by `2026-10-13-billing-reliability-audit-remediation.md` Task 4 (F5): both surfaces stay fail-closed, and Lago-only code-run metering is REFUSED (the code-run rate is part of the approved hard-cap policy; metering a surface whose ceiling cannot be enforced is what the policy exists to prevent). See `2026-10-11-billing-reliability-design.md` "Billed admission per surface". The residual engineering (sandbox-enforced budget, or the explicit credits-target skip once a budget exists) stays here and stays open.
 
 `code_run` outbox rows never carry reservation facts, so the credits target always blocks with a warn. Either skip the credits target for rows without reservation facts (Lago-only code-run metering), or build the code-run reservation chain. Also relevant: `index.ts`'s code-run path then never touches local credits — confirm that is the intended v1 semantics.
 
@@ -65,9 +69,9 @@ Recurring rounds 1–5: no `attempts` column or backoff; persistent failures ret
 - `lockedRowOf` hardcodes `currency: "CNY"`; unused `deploymentScope` in its row type.
 - `(errno ?? code) === "23505"` and `sqlState.startsWith` non-string guards (`store.ts` ×2).
 - `statements.ts` optional `scope` parameter — make it required (fail-closed tenant isolation).
-- `usage-delivery.ts` metric literals vs `CODE_RUN_METRIC`; `"web"` client literal shared.
+- `usage-delivery.ts` metric literals vs `CODE_RUN_METRIC`; `"web"` client literal shared. — **ABSORBED 2026-10-13 (the `"web"` half): the client literal now reads the usage-origin context (`server/src/usage-origin.ts`, audit F6).**
 - `delivered` counter optimism when the sibling target is blocked.
-- `maintenance.ts` stale "nothing starts this in production yet" comment; mixed timeout/interval handle cleanup.
+- `maintenance.ts` stale "nothing starts this in production yet" comment; mixed timeout/interval handle cleanup. — **ABSORBED 2026-10-13 (the comment half): header now names the production wiring in `index.ts`. The timeout/interval cleanup half remains open.**
 - `metering.ts` docstring: note `occurredAt` must be the persisted finish time for replay idempotency.
 - Snapshot EOF-newline policy for drizzle-generated files.
 - `config.ts` bigint rate components unbounded (denominator past 70 digits reaches `MAX_ACTUAL_DENOMINATOR` at settle time); bound at parse.

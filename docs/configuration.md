@@ -53,6 +53,17 @@ decimal string; values outside JavaScript's safe-integer range must be quoted as
 exact. Negative values, zero denominators, malformed JSON, and shape mismatches leave the block
 unconfigured instead of defaulting to a free rate.
 
+**What enabling this block currently refuses (terminal states, not outages):** a deployment that
+configures the hard-cap block and turns billing on refuses every billed model call and every code
+run, on purpose, until the adapters can prove their bounds. Billed model calls are refused with
+`input_bound_unsupported` because the OpenAI-compatible chat adapter offers no exact pre-call input
+token count and enforces no configurable input ceiling; billed code runs are refused with
+`billing-token-budget-unavailable` because the sandbox contract cannot enforce the configured token
+budget. Enabling the keys reserves credits correctly and reconciliation runs — but the built-in
+Bots' model calls and code executions are fail-closed until a provable input bound (a provider
+count-tokens contract) and a sandbox-enforced token budget exist. This is the recorded decision in
+`docs/superpowers/specs/2026-10-11-billing-reliability-design.md` ("Billed admission per surface").
+
 `MANAGED_AGENT_AG_UI_URL` names the Bot in the box: the default endpoint for coworkers created in
 the product. It needs `MANAGED_AGENT_TOKEN` beside it, or the server refuses to start. Unset, the
 server starts without a managed Bot, the shipped Risk Analyst coworker is omitted, and creating a
