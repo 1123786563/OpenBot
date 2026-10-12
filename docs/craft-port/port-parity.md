@@ -24,9 +24,10 @@
 | `approvals/`(onyx craft 审批 API + cache) | `server/src/craft/approvals.ts` + `approval-gate.ts` + `approval-signals.ts` | live 列表 :152、decision :169;生产者 = permission.asked(见差异 Task 2) |
 | `scheduled_tasks/`(7 端点 + beat) | `server/src/craft/scheduled-tasks.ts` | list :848、create :870、detail :950、update :958、delete :1062、run/run-now :1070、runs :1088;sweeper :751 |
 | —(onyx scheduled-run 上下文/事件流) | `scheduled-tasks.ts` :1151 / :1175 | run-context join 查询 + SSE 事件流(与 turn SSE 同契约) |
-| `api.py` 上传/删除/下载 | `server/src/craft/file-routes.ts` | upload :79、DELETE files :226、download-directory :280(tar.gz) |
+| `api.py` 上传/删除/下载 | `server/src/craft/file-routes.ts` | upload :79、DELETE files :226、download-directory :280(zip;T5 按 F6 恢复 onyx 契约) |
+| `manager.py:1595-1682`(download_webapp_zip / download_directory / _zip_files)+ `file_store/serving.py:103-115` | `server/src/craft/zip-archive.ts` | 零依赖 ZIP 写入器(deflate = node:zlib `deflateRawSync`,CRC-32 内建表,仅文件条目)+ `_sanitize_zip_basename` + `build_content_disposition`(ASCII 回退 + RFC 5987 `filename*`);T5 |
 | `api.py` artifacts/export-docx/pptx-preview | `server/src/craft/artifact-routes.ts` | artifacts :98、files :119、artifacts/:path :150、export-docx :191、pptx-preview :246 |
-| `webapp_proxy.py` | `server/src/craft/webapp-proxy.ts` | 反代沙箱 webapp 端口(config 门控挂载) |
+| `webapp_proxy.py` + `api.py` webapp-info/webapp-download | `server/src/craft/webapp-proxy.ts` | 反代沙箱 webapp 端口(config 门控挂载);webapp-download 出 zip(T5):`application/zip`、会话名派生 `*-webapp.zip`、HIDDEN_PATTERNS 剪枝、空目录为空档非 404 |
 | k8s/docker 沙箱后端(4,754 行) | 不移植 | agent-sandbox 服务承担;`sandbox-gateway.ts` 是薄适配(file/session/events/snapshot 动词) |
 
 ### 提示词与工具配置
@@ -84,7 +85,7 @@
 
 1. **Task 1** — AGENTS.template.md 对齐 onyx 原文:7 占位符恢复,审批窗口占位符接通(180/200 派生),裁剪段(Connectable apps/Company knowledge)锁定。
 2. **Task 2** — 审批生产者:`OPENBOT_CRAFT_APPROVAL_GATED_TOOLS` 门控(opencode.json "ask" 规则)、permission.asked 分流、approval-gate(open/announce/poll)、approval-signals(announce/wake 双列表,Redis eval 或进程内)、decide 端点幂等语义 + wake、SSE announce 合流(approval_requested 包)、前端 invalidate 接线。
-3. **Task 3** — 上传/删除/目录下载:upload(multipart、sanitize、限额、碰撞重命名)、DELETE files(严格路径校验)、download-directory(tar.gz);agent-sandbox 侧 `SANDBOX_MAX_UPLOAD_BYTES` + `DELETE /file`;前端附件链路(attachment-input/composer/chat-panel)。
+3. **Task 3** — 上传/删除/目录下载:upload(multipart、sanitize、限额、碰撞重命名)、DELETE files(严格路径校验)、download-directory(初版 tar.gz,T5 起按 F6 恢复为 zip);agent-sandbox 侧 `SANDBOX_MAX_UPLOAD_BYTES` + `DELETE /file`;前端附件链路(attachment-input/composer/chat-panel)。
 4. **Task 4** — idle reaper 装配(默认开,60s 节奏,快照 + CAS 置 idle)、sandbox-status 推导端点、前端状态芯片(轮询节奏按状态、聚焦唤醒)、SIGINT/SIGTERM 关停。
 5. **Task 5** — scheduled-run:run-now 别名、scheduled-run-context join 查询、scheduled-run-events SSE(与 turn SSE 同契约)、前端任务管理页 + 编辑器 + banner + 自动附流 + 导航入口。
 6. **Task 6** — skills reload 端点(managedContentHashesFor 接缝 + skills_stale 真派生)、turn-budget 契约(stamp/clear 落 `.onyx-turn-budget.json`)、turn-budget 插件逐字移植并随 workspace 落盘。
@@ -107,7 +108,7 @@
 | `cron-parser` | ^5 | `craft/scheduled-tasks.ts`(describeCron / next_runs) | 早于本分支 |
 | `@aws-sdk/client-s3` | ^3.1149.0 | `craft/storage/object-store.ts`(动态 import;S3/MinIO 快照存储) | 早于本分支 |
 
-其余复用:hono、drizzle-orm、postgres、zod、项目内 RedisPort(Redis 形态经窄 Port 的 `eval` 跑 list 动词)。前端零新依赖(react-query/tanstack router 既有)。
+其余复用:hono、drizzle-orm、postgres、zod、项目内 RedisPort(Redis 形态经窄 Port 的 `eval` 跑 list 动词)。前端零新依赖(react-query/tanstack router 既有)。T5 的 ZIP 输出同样零依赖:写入器为仓库内 `craft/zip-archive.ts`(deflate 用 node:zlib `deflateRawSync`,CRC-32 为内置表),未引入任何 zip npm 包;测试外部校验用系统 `unzip -t` + `ditto -x -k`(macOS),非 npm 依赖。
 运行时外部服务:Postgres、可选 Redis(多副本;缺省降级进程内)、可选 S3/MinIO(快照;缺省本地目录)、agent-sandbox 网关(必选,`AGENT_SANDBOX_URL`)。
 
 ---
@@ -196,7 +197,7 @@
 
 | # | 差异 | 取舍 |
 |---|---|---|
-| 1 | 目录下载 tar.gz 而非 zip | 复用仓库既有 tarGzip(webapp-download 同款),不引新依赖 |
+| 1 | ~~目录下载 tar.gz 而非 zip~~ **已恢复(T5)** | F6/裁决 C6:download-directory 与 webapp-download 均改出 `application/zip`(deflate、仅文件条目、`_sanitize_zip_basename` 文件名、RFC 5987 disposition);写入器零新依赖(`zip-archive.ts`,node:zlib `deflateRawSync` + 内建 CRC-32);tarGzip 已删除 |
 | 2 | 总量限额字节来自上传账本(`attachments/.openbot-uploads.json`),非 `du -sb` | 网关 listing 无 size 字段;账本随快照/恢复走 |
 | 3 | 无拖拽/粘贴上传、无进度条/并发限速 | 前端最小范围(chip 状态机) |
 | 4 | 空 sandbox 错误码:upload 503,delete/download 404 | OpenBot 网关缺失形态 onyx 不存在 |
