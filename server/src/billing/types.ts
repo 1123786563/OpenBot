@@ -528,6 +528,19 @@ export type BillingService = {
     /** Absent means this deployment's own customer key. */
     externalCustomerId?: string;
   }): Promise<void>;
+  /**
+   * Delivery-grade usage metering for the durable outbox: resolves only once the provider accepted
+   * or deduplicated the event, and rejects with a `UsageDeliveryError` (no active subscription,
+   * provider refusal) or the provider's `BillingError` (transient) so the caller can retry.
+   * `recordUsage` above stays the best-effort, never-throwing variant.
+   */
+  deliverUsage(input: {
+    metricCode: string;
+    properties: Record<string, number | string>;
+    transactionId: string;
+    timestamp?: Date;
+    externalCustomerId?: string;
+  }): Promise<void>;
   snapshot(): Promise<BillingSnapshot>;
   /**
    * The reconciliation pass (T7's skeleton): a READ-ONLY audit of the books' two invariants —
