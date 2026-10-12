@@ -23,6 +23,11 @@ function makeRecord(eventId: string): UsageOutboxRecord {
     model: "m1",
     client: "web",
     occurredAt: new Date("2026-10-12T00:00:00Z"),
+    runId: null,
+    botId: null,
+    ownerUserId: null,
+    sessionId: null,
+    status: null,
     lagoStatus: "pending",
     creditsStatus: "pending",
     lagoLastErrorCode: null,
@@ -210,10 +215,34 @@ describe("createLagoUsageTarget", () => {
         },
       },
     ]);
-    await send({ ...makeRecord("e2"), source: "code_run" });
-    expect((calls[1] as { metricCode: string }).metricCode).toBe(
-      "code_run_tokens",
-    );
+    await send({
+      ...makeRecord("e2"),
+      source: "code_run",
+      runId: "run-e2",
+      botId: "bot-e2",
+      ownerUserId: "owner-e2",
+      sessionId: "session-e2",
+      status: "completed",
+    });
+    expect(calls[1]).toEqual({
+      metricCode: "code_run_tokens",
+      transactionId: "tx-e2",
+      externalCustomerId: "cust",
+      timestamp: new Date("2026-10-12T00:00:00Z"),
+      properties: {
+        input_tokens: 3,
+        output_tokens: 4,
+        tokens: 7,
+        model: "m1",
+        client: "web",
+        source: "code_run",
+        run_id: "run-e2",
+        bot_id: "bot-e2",
+        owner_user_id: "owner-e2",
+        session_id: "session-e2",
+        status: "completed",
+      },
+    });
   });
 });
 

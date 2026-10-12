@@ -554,6 +554,13 @@
       "when": 1791778675154,
       "tag": "0078_worried_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1791780181670,
+      "tag": "0079_lying_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

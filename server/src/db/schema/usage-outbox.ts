@@ -24,6 +24,11 @@ export const usageOutbox = pgTable(
     model: text("model").notNull(),
     client: text("client").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    runId: text("run_id"),
+    botId: text("bot_id"),
+    ownerUserId: text("owner_user_id"),
+    sessionId: text("session_id"),
+    status: text("status"),
     lagoStatus: text("lago_status")
       .$type<UsageOutboxDeliveryStatus>()
       .notNull()

@@ -50,6 +50,11 @@ export async function reportCodeRunUsage(
     model: input.modelId,
     client: "web",
     occurredAt: input.occurredAt,
+    runId: input.runId,
+    botId: input.botId,
+    ownerUserId: input.ownerUserId,
+    sessionId: input.sessionId,
+    status: input.status,
   });
   return true;
 }

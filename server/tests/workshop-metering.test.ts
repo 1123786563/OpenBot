@@ -47,6 +47,11 @@ describe("reportCodeRunUsage (I4: single source, idempotent, silent without bill
       model: "glm-4.6",
       client: "web",
       occurredAt: RUN.occurredAt,
+      runId: "cr-test-1",
+      botId: "bot-1",
+      ownerUserId: "user-1",
+      sessionId: "ses-1",
+      status: "completed",
     });
   });
 
