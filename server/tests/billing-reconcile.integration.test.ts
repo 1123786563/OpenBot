@@ -1,11 +1,16 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
+import { createCreditWriter } from "../src/billing/credits-writer";
 import { createReconciler } from "../src/billing/reconcile";
 import { createUsageOutbox } from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
 import { billingCustomers, billingSubscriptions } from "../src/db/schema/billing";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
+import {
+  creditReservationAllocations,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -22,6 +27,7 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * ledger.applied disagreeing).
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
+const creditWriter = createCreditWriter(database);
 const outbox = createUsageOutbox(database);
 const prefix = `rct-${randomUUID().slice(0, 8)}`;
 // This test deployment's own customer key: the projection side of the three-way scopes to
@@ -84,6 +90,42 @@ async function ageUsageEvent(eventId: string, ageMs: number) {
   await database.execute(
     sql`UPDATE usage_outbox SET updated_at = now() - (${ageMs} * interval '1 millisecond') WHERE event_id = ${eventId}`,
   );
+}
+
+function reservedId(
+  result: Awaited<ReturnType<typeof creditWriter.reserveCredits>>,
+) {
+  if (!result.reserved) throw new Error("expected a reservation");
+  return result.reservationId;
+}
+
+async function reservationSnapshot(reservationId: string) {
+  const [reservation] = await database
+    .select()
+    .from(creditReservations)
+    .where(eq(creditReservations.id, reservationId))
+    .limit(1);
+  if (!reservation) throw new Error("expected reservation row");
+
+  const allocations = await database
+    .select()
+    .from(creditReservationAllocations)
+    .where(eq(creditReservationAllocations.reservationId, reservationId))
+    .orderBy(
+      creditReservationAllocations.id,
+      creditReservationAllocations.grantId,
+    );
+  const grants = await database
+    .select()
+    .from(creditGrants)
+    .where(eq(creditGrants.externalCustomerId, reservation.externalCustomerId))
+    .orderBy(creditGrants.id);
+
+  return {
+    reservation,
+    allocations,
+    grants,
+  };
 }
 
 /** One settled-and-activated order, its fact, its grant/ledger pair, and a live projection row. */
@@ -285,6 +327,98 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(finding?.category).toBe("credits");
     expect(finding?.detail).toContain("600");
     expect(finding?.detail).toContain("1000");
+  });
+
+  test("an expired reserved hold stays reserved and is reported for operator recovery without mutating rows", async () => {
+    const customer = `${prefix}-stuck`;
+    await creditWriter.grantCredits({
+      externalCustomerId: customer,
+      source: "promo",
+      totalCents: 1_000,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      reason: "stuck-seed",
+      idempotencyKey: `${prefix}-stuck-grant`,
+    });
+    const reservationId = reservedId(
+      await creditWriter.reserveCredits({
+        externalCustomerId: customer,
+        idempotencyKey: `${prefix}-stuck-reservation`,
+        maximumCents: 400,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    await database
+      .update(creditReservations)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(creditReservations.id, reservationId));
+
+    const before = await reservationSnapshot(reservationId);
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "expired_reserved_reservation" &&
+        item.subject === reservationId,
+    );
+    expect(finding).toMatchObject({
+      category: "credits",
+      code: "expired_reserved_reservation",
+      subject: reservationId,
+    });
+    expect(finding?.detail).toContain("state=reserved");
+    expect(finding?.detail).toContain(
+      "remediation=operator_recovery_required",
+    );
+
+    const after = await reservationSnapshot(reservationId);
+    expect(after).toEqual(before);
+  });
+
+  test("a reservation whose allocations no longer match its maximum is reported with the exact delta and remains unchanged", async () => {
+    const customer = `${prefix}-imbalance`;
+    await creditWriter.grantCredits({
+      externalCustomerId: customer,
+      source: "promo",
+      totalCents: 1_000,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      reason: "imbalance-seed",
+      idempotencyKey: `${prefix}-imbalance-grant`,
+    });
+    const reservationId = reservedId(
+      await creditWriter.reserveCredits({
+        externalCustomerId: customer,
+        idempotencyKey: `${prefix}-imbalance-reservation`,
+        maximumCents: 500,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    await database
+      .update(creditReservations)
+      .set({ maximum: 550 })
+      .where(eq(creditReservations.id, reservationId));
+
+    const before = await reservationSnapshot(reservationId);
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "reservation_allocation_imbalance" &&
+        item.subject === reservationId,
+    );
+    expect(finding).toMatchObject({
+      category: "credits",
+      code: "reservation_allocation_imbalance",
+      subject: reservationId,
+    });
+    expect(finding?.detail).toContain("maximum=550");
+    expect(finding?.detail).toContain("allocated=500");
+    expect(finding?.detail).toContain("delta=-50");
+    expect(finding?.detail).toContain(
+      "remediation=operator_recovery_required",
+    );
+
+    const after = await reservationSnapshot(reservationId);
+    expect(after).toEqual(before);
   });
 
   test("a pending usage target is reported by usage event id with target, age, and stable failure code", async () => {

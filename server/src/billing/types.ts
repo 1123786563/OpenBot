@@ -141,10 +141,15 @@ export type ReconcileFinding = {
     | "fact_transaction_mismatch"
     | "applied_without_subscription"
     | "grants_ledger_divergence"
+    | "expired_reserved_reservation"
+    | "reservation_allocation_imbalance"
     | "usage_target_pending"
     | "usage_target_blocked"
     | "usage_findings_omitted";
-  /** The row the finding is about: an order id, a customer key, or a usage event id. */
+  /**
+   * The row the finding is about: an order id, a customer key, a reservation id, or a usage
+   * event id.
+   */
   subject: string;
   /** The human sentence — numbers included, because the report is the evidence. */
   detail: string;

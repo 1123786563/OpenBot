@@ -175,6 +175,14 @@ describe("probe a: the reconcile admin route", () => {
     };
     expect(report.checked).toHaveProperty("paidOrders");
     expect(Array.isArray(report.findings)).toBe(true);
+    const findingCounts = Object.fromEntries(
+      Object.entries(
+        report.findings.reduce<Record<string, number>>((counts, finding) => {
+          counts[finding.code] = (counts[finding.code] ?? 0) + 1;
+          return counts;
+        }, {}),
+      ).sort(([left], [right]) => left.localeCompare(right)),
+    );
 
     expect(audit.events).toHaveLength(1);
     const event = audit.events[0];
@@ -185,7 +193,7 @@ describe("probe a: the reconcile admin route", () => {
     });
     const payload = event.payload as Record<string, unknown>;
     expect(payload.checked).toEqual(report.checked);
-    expect(payload.findingCounts).toEqual({});
+    expect(payload.findingCounts).toEqual(findingCounts);
   });
 });
 
