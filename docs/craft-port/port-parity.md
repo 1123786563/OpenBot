@@ -3,6 +3,7 @@
 > 基线:onyx `backend/onyx/server/features/build/`(71 文件 / 27,584 行)→ OpenBot `server/src/craft/`(44 文件 / 约 13,800 行 TS,含 events/opencode/storage/templates 四个子目录)。
 > 本文档覆盖 craft-port-verify 分支(`ac1d408..HEAD`,9 个任务)完成后的**当前**状态:功能对照、实现清单、依赖清单、调用链路、差异点与取舍。
 > 同目录:`architecture-analysis.md`(移植前架构分析)|`schema-notes.md`(数据库对照)|`acceptance-report.md`(一期验收)|`README.md`(总览,差异详表 §四)。
+> **2026-10-12 起**:§五 全部差异已按 Onyx 源(pinned `251933a`)逐条裁决,裁决表与勘误见 `onyx-contract.md`(六项被裁能力恢复计划 Tasks 2–6 的实现基线);与本文冲突处以 `onyx-contract.md` §6 勘误为准。
 
 ---
 
