@@ -8,6 +8,7 @@ import {
 } from "../db/schema/credit-reservations";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
 import type { ReconcileFinding, ReconcileReport } from "./types";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
 
 /**
  * The reconciliation skeleton (T7): a READ-ONLY pass that answers "do the books agree" in one
@@ -405,6 +406,7 @@ export function createReconciler(
       const reservedRows = await database
         .select({
           reservationId: creditReservations.id,
+          idempotencyKey: creditReservations.idempotencyKey,
           expiresAt: creditReservations.expiresAt,
           maximum: creditReservations.maximum,
           expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
@@ -428,6 +430,7 @@ export function createReconciler(
       const reservedById = new Map<
         string,
         {
+          idempotencyKey: string;
           expiresAt: Date;
           maximum: number;
           expired: boolean;
@@ -437,6 +440,7 @@ export function createReconciler(
       >();
       for (const row of reservedRows) {
         const entry = reservedById.get(row.reservationId) ?? {
+          idempotencyKey: row.idempotencyKey,
           expiresAt: row.expiresAt,
           maximum: row.maximum,
           expired: row.expired,
@@ -463,12 +467,33 @@ export function createReconciler(
         const allocationMetadata =
           `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
         if (reservation.expired) {
+          /*
+           * The hold is named by BOTH ids it can prove: its own reservation id, and — when the
+           * idempotency key is the usage seam's `usage:<eventId>` — the usage event whose
+           * durable fact may never have committed (a failed finish write leaves exactly this
+           * shape, with no outbox row to read). The detail records reservation facts and age
+           * only: usage that was never durably recorded cannot be claimed here.
+           */
+          const expiredAgeMs = Math.max(
+            0,
+            nowMs - reservation.expiresAt.getTime(),
+          );
+          const usageEventId = reservation.idempotencyKey.startsWith(
+            USAGE_IDEMPOTENCY_KEY_PREFIX,
+          )
+            ? reservation.idempotencyKey.slice(
+                USAGE_IDEMPOTENCY_KEY_PREFIX.length,
+              )
+            : null;
           findings.push({
             category: "credits",
             code: "expired_reserved_reservation",
             subject: reservationId,
             detail:
-              `state=reserved expires_at=${reservation.expiresAt.toISOString()} maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
+              `state=reserved expires_at=${reservation.expiresAt.toISOString()} expired_age_ms=${expiredAgeMs} `
+              + `idempotency_key=${reservation.idempotencyKey}`
+              + (usageEventId ? ` usage_event_id=${usageEventId}` : "")
+              + ` maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
 
