@@ -59,6 +59,8 @@ export type PaymentOrder = {
   /** The period the paid order buys, when known. */
   periodStart: Date | null;
   periodEnd: Date | null;
+  /** When money landed on the order. Null unless the order actually reached `paid`. */
+  paidAt: Date | null;
   /**
    * When the order reached a terminal money state (paid, blocked, canceled, expired). The anchor
    * for the late-payment fulfilment window: an expired order may still be paid inside
@@ -269,6 +271,7 @@ export type PaymentStore = {
   recordActivation(
     id: string,
     activationState: PaymentActivationState,
+    period?: { start: Date; end: Date } | null,
   ): Promise<void>;
   /**
    * Resolve and DURABLY claim which overlapping paid order owns the entitlement period, under row

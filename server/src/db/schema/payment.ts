@@ -31,6 +31,9 @@ import type {
  * - `terminal_at` records when a terminal state was reached, and anchors the late-payment window:
  *   an expired order may still be paid within `terminal_at + window`, never after, so an
  *   expiring-then-paying order loses no money and cannot be replayed forever.
+ * - `paid_at` records only the paid transition itself. Old paid rows backfill it from
+ *   `terminal_at`; every non-paid row keeps it null, so invoice settlement time never has to
+ *   guess whether a terminal timestamp means "money landed" or merely "this order ended".
  * - `created_by` names the administrator who opened the order, for the audit trail.
  * - The channel's transaction id lands both here (the latest seen) and, once money moved, as a
  *   paid fact in `payment_events` — the events row is the cross-order idempotency key (see the
@@ -56,6 +59,7 @@ export const paymentOrders = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     periodStart: timestamp("period_start", { withTimezone: true }),
     periodEnd: timestamp("period_end", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
     terminalAt: timestamp("terminal_at", { withTimezone: true }),
     createdBy: text("created_by"),
     createdAt: timestamp("created_at", { withTimezone: true })

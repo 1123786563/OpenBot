@@ -199,6 +199,38 @@ test("a paid fact claims its channel transaction exactly once (the race)", async
   expect(unchanged?.status).toBe("pending");
 });
 
+test("only a paid transition writes paidAt, in the same CAS move", async () => {
+  const { order } = await store.insertOrder(orderInput());
+  expect(((await store.readOrder(order.id)) as { paidAt?: Date | null })?.paidAt).toBeNull();
+
+  expect(
+    await store.confirmPaid({
+      id: order.id,
+      expectedVersion: order.version,
+      fromStatuses: ["pending"],
+      channelTransactionId: `${prefix}-tx-paid-at`,
+      amountCents: 8800,
+      periodStart: new Date("2026-09-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-10-01T00:00:00.000Z"),
+    }),
+  ).toEqual({ claimed: true, alreadyKnown: false });
+  const settled = (await store.readOrder(order.id)) as {
+    terminalAt?: Date | null;
+    paidAt?: Date | null;
+    version?: number;
+    status?: string;
+  } | null;
+  expect(settled?.status).toBe("paid");
+  expect(settled?.paidAt).toBeInstanceOf(Date);
+  expect(settled?.terminalAt).toBeInstanceOf(Date);
+  expect(settled?.version).toBe(order.version + 1);
+
+  const { order: expired } = await store.insertOrder(orderInput());
+  expect(await store.expireOrder(expired.id, expired.version)).toBe(true);
+  const expiredRow = (await store.readOrder(expired.id)) as { paidAt?: Date | null } | null;
+  expect(expiredRow?.paidAt).toBeNull();
+});
+
 test("resolveActivationOwnership serializes overlapping paid orders to one entitlement owner", async () => {
   const sharedPlan = `pro-${randomUUID().slice(0, 8)}`;
   const first = await store.insertOrder({

@@ -283,6 +283,8 @@ export function createBillingService(deps: {
           externalCustomerId: input.externalCustomerId,
           externalSubscriptionId: onThisPlan.externalSubscriptionId,
           planCode: input.planCode,
+          currentPeriodStart: onThisPlan.currentPeriodStart ?? null,
+          currentPeriodEnd: onThisPlan.currentPeriodEnd ?? null,
         };
       }
       if (live.length > 0) {
@@ -307,6 +309,8 @@ export function createBillingService(deps: {
             externalCustomerId: input.externalCustomerId,
             externalSubscriptionId: again.externalSubscriptionId,
             planCode: input.planCode,
+            currentPeriodStart: again.currentPeriodStart ?? null,
+            currentPeriodEnd: again.currentPeriodEnd ?? null,
           };
         }
         // A different plan after the refusal is the conflict above; an empty list after a
@@ -325,6 +329,8 @@ export function createBillingService(deps: {
         externalSubscriptionId:
           created.body?.externalSubscriptionId ?? input.externalSubscriptionId,
         planCode: input.planCode,
+        currentPeriodStart: created.body?.currentPeriodStart ?? null,
+        currentPeriodEnd: created.body?.currentPeriodEnd ?? null,
       };
     },
 

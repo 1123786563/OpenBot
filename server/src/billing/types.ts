@@ -68,6 +68,8 @@ export type SubscriptionReceipt = {
   externalCustomerId: string;
   externalSubscriptionId: string;
   planCode: string;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
 };
 
 /** One entitlement a plan grants, with optional presentational copy from deployment config. */
@@ -298,7 +300,7 @@ export type BillingInvoice = {
   method: "alipay" | "wechat";
   /** When the bill was raised: the order's creation. */
   issuedAt: string;
-  /** When money landed, or when the bill reached a terminal state. Absent while pending. */
+  /** When money landed. Absent unless the order actually settled as paid. */
   settledAt: string | null;
   /** The channel's own transaction id, once seen — what a person quotes to the channel. */
   channelTransactionId: string | null;

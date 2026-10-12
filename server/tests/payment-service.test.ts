@@ -48,6 +48,7 @@ function memoryStore(): PaymentStore {
     expiresAt: new Date(clockMs + 15 * 60_000),
     periodStart: null,
     periodEnd: null,
+    paidAt: null,
     terminalAt: null,
     createdBy: "admin-1",
     createdAt: new Date(clockMs),
@@ -69,6 +70,7 @@ function memoryStore(): PaymentStore {
         channelTransactionId: null,
         periodStart: null,
         periodEnd: null,
+        paidAt: null,
         terminalAt: null,
         version: 0,
         createdAt: tick(),
@@ -154,13 +156,15 @@ function memoryStore(): PaymentStore {
         return { claimed: false, alreadyKnown: false };
       }
       paidFacts.add(input.channelTransactionId);
+      const paidAt = tick();
       orders.set(input.id, {
         ...order,
         status: "paid",
         channelTransactionId: input.channelTransactionId,
         periodStart: input.periodStart,
         periodEnd: input.periodEnd,
-        terminalAt: tick(),
+        paidAt,
+        terminalAt: paidAt,
         version: input.expectedVersion + 1,
       });
       return { claimed: true, alreadyKnown: false };
@@ -240,9 +244,17 @@ function memoryStore(): PaymentStore {
         ) ?? null
       );
     },
-    async recordActivation(id, activationState) {
+    async recordActivation(id, activationState, period) {
       const order = orders.get(id);
-      if (order) orders.set(id, { ...order, activationState });
+      if (order) {
+        orders.set(id, {
+          ...order,
+          activationState,
+          ...(period
+            ? { periodStart: period.start, periodEnd: period.end }
+            : {}),
+        });
+      }
     },
     async resolveActivationOwnership(orderId) {
       const current = orders.get(orderId);
@@ -386,6 +398,7 @@ function fakeLago(
     },
     async ensureSubscription(input) {
       state.subscriptions.push(input.externalSubscriptionId);
+      return {};
     },
     ...overrides,
   };
