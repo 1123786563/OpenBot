@@ -80,9 +80,7 @@ function approvalRecord(
  * `decide` (whose real implementation inserts the `approval.resume` work item and, for
  * allow_always, an approvalRules row) must never run for craft rows.
  */
-function fakeApprovals(
-  initial: ApprovalRecord[] = [],
-): ApprovalStore & {
+function fakeApprovals(initial: ApprovalRecord[] = []): ApprovalStore & {
   records: ApprovalRecord[];
   decisions: string[];
 } {
