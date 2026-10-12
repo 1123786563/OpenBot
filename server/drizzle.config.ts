@@ -43,6 +43,7 @@ export default defineConfig({
     "./src/db/schema/billing.ts",
     "./src/db/schema/code-runs.ts",
     "./src/db/schema/credits.ts",
+    "./src/db/schema/credit-reservations.ts",
     "./src/db/schema/sandbox-instances.ts",
     "./src/db/schema/workshop.ts",
     "./src/db/schema/payment.ts",
