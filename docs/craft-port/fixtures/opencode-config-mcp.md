@@ -60,7 +60,7 @@
 
 ## 期望:AGENTS.md 的 DISABLED_TOOLS_SECTION 联动
 
-MCP 禁用工具**不**进 AGENTS.md 的 `{{DISABLED_TOOLS_SECTION}}`(该段只吃部署级 `OPENCODE_DISABLED_TOOLS`,B/`agent_instructions.py:141-144` + B/`docker_sandbox_manager.py:1109`);MCP 禁用只体现在 permission deny 行。
+MCP 禁用工具**不**进 AGENTS.md 的 `{{DISABLED_TOOLS_SECTION}}`(该段只吃部署级 `OPENCODE_DISABLED_TOOLS`,B/`agent_instructions.py:141-144` + B/`sandbox/docker/docker_sandbox_manager.py:1109`);MCP 禁用只体现在 permission deny 行。
 
 ## 期望:权限模板全量基线(逐键,F3 的 diff 基准)
 

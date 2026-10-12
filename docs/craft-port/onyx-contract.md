@@ -32,7 +32,7 @@
 ### 2.2 Managed content 推送(skills / user library / 哈希)
 
 - `build_managed_content_payload`(`sandbox_lifecycle.py:218-232`):
-  - `build_user_skills_payload(user, db)`(`onyx/skills/push.py:245-256`)→ `(connectable_apps_section, skills_files)`;fileset 组装 `_assemble_fileset`(`push.py:154-236`):内置技能从盘上拷贝 + 模板渲染(company-search、external-app `SKILL.md.template`);custom 技能从 FileStore zip 解包,路径前缀 `{skill.name}/`。
+  - `build_user_skills_payload(user, db)`(`backend/onyx/skills/push.py:245-256`)→ `(connectable_apps_section, skills_files)`;fileset 组装 `_assemble_fileset`(`push.py:154-236`):内置技能从盘上拷贝 + 模板渲染(company-search、external-app `SKILL.md.template`);custom 技能从 FileStore zip 解包,路径前缀 `{skill.name}/`。
   - `skills_hash = compute_skill_runtime_hash(skills_files, connectable_apps_section)`(`push.py:58-76`):sha256,len-prefixed 的 connectable_apps 字节 + 按 path 排序的 len-prefixed path/content。
   - `mcp_fingerprint = craft_mcp_fingerprint(resolve_craft_mcp_servers(db, user))`(`sandbox/util/mcp_config.py:78-95`):对 `[server_id, url, sorted(disabled_tools)]` 排序后 json sha256,与顺序无关。
   - `library_files = build_user_library_fileset(...)`。
@@ -42,7 +42,7 @@
 ### 2.3 Workspace setup
 
 - `session_workspace.py:46-105` 生成 setup 脚本:`mkdir outputs/ attachments/`、`ln -sfn /workspace/managed/skills → {session}/.opencode/skills`(:87)、`ln -sfn /workspace/managed/user_library → {session}/user_library`(:89)、写 `AGENTS.md`(:94)与 `opencode.json`(:96)、有 port 时写 chmod-444 `start-webapp.sh`(`nextjs_dev.py:225-242` 的 write snippet)。目录契约见 `sandbox/base.py:98-113`。
-- AGENTS.md 渲染:`docker_sandbox_manager.py:1095-1112 _build_agents_md` → `generate_agent_instructions(...)`(见 §3.1)。
+- AGENTS.md 渲染:`sandbox/docker/docker_sandbox_manager.py:1095-1112 _build_agents_md` → `generate_agent_instructions(...)`(见 §3.1)。
 
 ### 2.4 opencode 配置
 
@@ -68,7 +68,7 @@
 
 ### 2.8 归档下载(ZIP)
 
-- `GET /sessions/{id}/download-directory/{path}`(`session/api.py:711-745`):`application/zip`(:741),Content-Disposition `build_content_disposition("attachment", filename)`(`onyx/file_store/serving.py:103-115`:ASCII fallback + RFC5987 filename*)。错误:path traversal→403、ValueError→400、目录不存在→404 `"Directory not found"`(:728-735)。
+- `GET /sessions/{id}/download-directory/{path}`(`session/api.py:711-745`):`application/zip`(:741),Content-Disposition `build_content_disposition("attachment", filename)`(`backend/onyx/file_store/serving.py:103-115`:ASCII fallback + RFC5987 filename*)。错误:path traversal→403、ValueError→400、目录不存在→404 `"Directory not found"`(:728-735)。
 - `GET /sessions/{id}/webapp-download`(`session/api.py:681-708`):同样 `application/zip`;不存在→404 `"Webapp not found"`。
 - ZIP 构造:`manager.py:1638-1682 download_directory`(arcname = 去掉 `{path}/` 前缀;filename = `_sanitize_zip_basename(Path(path).name, allow_dots=True) + ".zip"`)、`manager.py:1595-1636 download_webapp_zip`(base `outputs/web`;filename = `_sanitize_zip_basename(session.name or f"session-{id[:8]}", allow_dots=False) + "-webapp.zip"`)、`_zip_files`(:1273-1290,`zipfile.ZIP_DEFLATED`,读不到的文件跳过)、`_walk_sandbox_dir`(:1244-1271,递归、跳过 hidden)、`HIDDEN_PATTERNS`(:141-153)与 `_is_hidden_workspace_entry`(:166-167,含一切 dot 开头)。
 - `_sanitize_zip_basename`(:159-163):非 `[A-Za-z0-9_-_.]` 一律换 `_`;`allow_dots=False` 时连 `.` 也换。
@@ -86,7 +86,7 @@
 
 - 模板段 `AGENTS.template.md:51-55`(标题 `## Connectable apps` + 三句 prose + `{{CONNECTABLE_APPS_LIST}}`),逐字节见 fixture F2。
 - 渲染:`agent_instructions.py:78-89` — 按 `(id, name)` 排序;空 → `"No connectable apps available."`;每行 `` - External app ID `{id}`: **{name}** ``。
-- 数据源:`get_connectable_apps_for_user`(`onyx/db/external_app.py:187-201`)= enabled 且该用户**未**通过认证的 org apps(org-credential apps 对所有人可用,不出现在列表)。
+- 数据源:`get_connectable_apps_for_user`(`backend/onyx/db/external_app.py:187-201`)= enabled 且该用户**未**通过认证的 org apps(org-credential apps 对所有人可用,不出现在列表)。
 - 注入点:workspace setup(`manager.py:685-687`)、llm reconcile(:346-348)、skills reload(:411-413)、skills_hash 的一部分(`push.py:58-76`)。
 - 其余 7 个占位符的替换值(常量):`agent_instructions.py:133-168`(USER_CONTEXT :133-136、provider display :20-42、timeout/margin `configs.py:32-38`)。
 
@@ -107,7 +107,7 @@
 
 ### 3.4 connect_app 工具(Task 3)
 
-- 插件 `sandbox/image/opencode-plugins/connect-app.ts`(整文件 82 行,schema + 两条结果字符串逐字,见 fixtures F4)。
+- 插件 `sandbox/image/opencode-plugins/connect-app.ts`(整文件 81 行,schema + 两条结果字符串逐字,见 fixtures F4)。
 - 权限:`_PERMISSIONS_TEMPLATE["connect_app"] = "ask"`(`opencode_config.py:87-89`)。
 - 处理链 + Redis 键/TTL + decision 端点:见 §2.5 / §2.9 / `build/connect_app.py`(整文件)。
 - SSE 卡:`ConnectAppRequestPacket{type:"connect_app_request", request_id, external_app_id, reason?}`(`packets.py:78-89`;FE 由 `/live`/registry 解析 app 名)。
@@ -178,7 +178,7 @@
 | 3 | 无拖拽/进度条 | environment-equivalent(前端范围) | — |
 | 4 | 空 sandbox 错误码 | environment-equivalent(Onyx 无该形态:沙箱行恒在) | — |
 | 5 | 400/413 分层 | environment-equivalent | — |
-| 6 | 删目录 → 404 | **restore-parity(已满足)**——docker 实现 `[ -f ] && rm` 对目录输出 NOT_FOUND → False → 404(`docker_sandbox_manager.py:1871-1887`);api 层的 400 映射只在 ValueError 抛出时触发,此路径不抛。T5 加回归断言 | T5 |
+| 6 | 删目录 → 404 | **restore-parity(已满足)**——docker 实现 `[ -f ] && rm` 对目录输出 NOT_FOUND → False → 404(`sandbox/docker/docker_sandbox_manager.py:1871-1887`);api 层的 400 映射只在 ValueError 抛出时触发,此路径不抛。T5 加回归断言 | T5 |
 | 7 | bot-relative 目录模式 | environment-equivalent(agent-sandbox POST /file 契约) | — |
 
 ### 4.4 原 Task 4 — 快照/idle(6)

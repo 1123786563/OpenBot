@@ -23,7 +23,7 @@ session.name = `"My Project!"`,session_id = `11111111-2222-3333-4444-55555555555
 
 ## A. GET /sessions/{id}/download-directory/outputs
 
-### 期望响应头(B/`session/api.py:739-745` + B/`onyx/file_store/serving.py:103-115`)
+### 期望响应头(B/`session/api.py:739-745` + `backend/onyx/file_store/serving.py:103-115`)
 
 ```
 200 OK
@@ -57,7 +57,7 @@ filename = `_sanitize_zip_basename(Path("outputs").name, allow_dots=True) + ".zi
 
 - 200 + `Content-Type: application/zip`(api.py:700-708)。
 - filename = `_sanitize_zip_basename(session.name or f"session-{str(id)[:8]}", allow_dots=False) + "-webapp.zip"`(manager.py:1634-1636):
-  - 本例:`"My Project!"` → 非法字符(`!` 与空格)换 `_` → **`My_Project-webapp.zip`**(`allow_dots=False` 时 `.` 也换,manager.py:159-163);
+  - 本例:`"My Project!"` → 非法字符(空格与 `!`)各换一个 `_` → **`My_Project_-webapp.zip`**(`allow_dots=False` 时 `.` 也换,manager.py:159-163);
   - session.name 为空 → `session-11111111-webapp.zip`。
 - 归档内容 = `outputs/web` 递归、arcname 去 `outputs/web/` 前缀(manager.py:1615-1632):`package.json`、`src/app/page.tsx`;`node_modules/**`、`.env` 剪除。
 - `outputs/web` 不存在 → 404 `Webapp not found`(api.py:697-698;manager.py:1622-1624)。
@@ -66,10 +66,10 @@ filename = `_sanitize_zip_basename(Path("outputs").name, allow_dots=True) + ".zi
 
 | 输入 basename | allow_dots | 输出 |
 |---|---|---|
-| `My Project!` | false | `My_Project` |
+| `My Project!` | false | `My_Project_`(空格与 `!` 各换一个 `_`) |
 | `my.lib` | true | `my.lib` |
 | `my.lib` | false | `my_lib`(点换下划线;字母原样) |
-| `../../etc` | true | `______etc`(`/` 与 `.` 均换;`allow_dots=true` 时 `.` 保留:`.._.._etc`) |
+| `../../etc` | true | `.._.._etc`(`.` 保留,`/` 一律换 `_`) |
 
 > 实现方注意:上表第 4 行按逐字符规则机械推导——`..` 在 allow_dots=true 下保留,`/` 一律换 `_`。
 

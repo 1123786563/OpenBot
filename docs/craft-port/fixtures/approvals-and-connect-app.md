@@ -26,6 +26,30 @@ OpenBot 无 egress proxy;拒绝路径 = gated 工具 permission → `answer_perm
 
 agent 调 `connect_app(external_app_id=7, reason="Need Slack to post updates")`;opencode 发 `permission.asked {permission: "connect_app", patterns: ["7"], metadata: {external_app_id: 7, reason: "Need Slack to post updates"}}`(工具定义 B/`sandbox/image/opencode-plugins/connect-app.ts:52-64`)。
 
+### 工具 schema(逐字节,B/`sandbox/image/opencode-plugins/connect-app.ts:36-51`)
+
+```ts
+        description:
+          "Ask the user to connect an org app you aren't set up to use yet. " +
+          "Pass the app's numeric ID (as listed under 'Connectable apps' in AGENTS.md). " +
+          "This pauses for the user to connect it. If this returns normally the " +
+          "app is connected and you can use it; if it is denied, do not retry — " +
+          "offer an alternative.",
+        args: {
+          external_app_id: tool.schema
+            .number()
+            .int()
+            .describe("Numeric ID of the connectable app, e.g. 42"),
+          reason: tool.schema
+            .string()
+            .optional()
+            .describe("One short sentence on why you need it, shown to the user"),
+        },
+```
+
+- 拼接后的 description 运行时值:`Ask the user to connect an org app you aren't set up to use yet. Pass the app's numeric ID (as listed under 'Connectable apps' in AGENTS.md). This pauses for the user to connect it. If this returns normally the app is connected and you can use it; if it is denied, do not retry — offer an alternative.`
+- args:`external_app_id` = `number().int()`(必填);`reason` = `string().optional()`。
+
 ### 期望:api-server 侧(B/`sandbox/opencode/serve_client.py:1738-1811`)
 
 - Redis 写两条:
@@ -39,7 +63,7 @@ agent 调 `connect_app(external_app_id=7, reason="Need Slack to post updates")`;
 ```json
 {"type": "connect_app_request", "request_id": "<uuid4>", "external_app_id": 7, "reason": "Need Slack to post updates", "timestamp": "<iso8601-utc>"}
 ```
-包定义 B/`packets.py:78-89`(`reason` 为 None 时省略;`reason` 来自 metadata,空串转 None,:1796)。
+包定义 B/`packets.py:78-89`;SSE 序列化点 = `_format_packet_event`(B/`session/streaming.py:292-294`)的 `packet.model_dump_json(by_alias=True)` —— 未传 `exclude_none`(Pydantic 缺省保留 None 字段;`BasePacket` 亦无 exclude 配置,`packets.py:37-43`),故 **`reason` 为 None 时 wire 上为 `"reason": null`,不省略**;`reason` 来自 metadata,空串转 None(`serve_client.py:1796`)。
 
 ### 期望:用户拒绝
 

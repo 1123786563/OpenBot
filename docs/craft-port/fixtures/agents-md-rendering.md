@@ -22,7 +22,7 @@
 - provider=`"anthropic"`,model=`"claude-sonnet-4-5"`
 - `disabled_tools = ["question"]`(部署默认)
 - `organization_instructions = None`
-- `get_connectable_apps_for_user(...) = []`(用户已可用的 org-credential apps 不算 connectable —— B/`onyx/db/external_app.py:187-201`:`is_user_authenticated_for_app` 为真的被过滤)
+- `get_connectable_apps_for_user(...) = []`(用户已可用的 org-credential apps 不算 connectable —— `backend/onyx/db/external_app.py:187-201`:`is_user_authenticated_for_app` 为真的被过滤)
 
 ### 期望:占位符替换(agent_instructions.py:133-168)
 
@@ -52,7 +52,7 @@ No connectable apps available.
 ### 期望:凭据段的两处数值行(模板 :72/:75 替换后)
 
 ```
-**180 seconds**。          ← "pauses at the proxy for user approval for up to\n**{{APPROVAL_WAIT_TIMEOUT_SECONDS}} seconds**。"
+**180 seconds**.          ← "pauses at the proxy for user approval for up to\n**{{APPROVAL_WAIT_TIMEOUT_SECONDS}} seconds**."
 **at least 200 seconds**   ← "set a client timeout of\n**at least {{APPROVAL_CLIENT_TIMEOUT_SECONDS}} seconds**"
 ```
 
@@ -81,7 +81,7 @@ No connectable apps available.
 {{CONNECTABLE_APPS_LIST}} → "- External app ID `7`: **Slack**"
 ```
 
-- 已连接的 Linear(被过滤)与 org-credential apps 一律**不出现在任何渲染产物中**(数据源过滤器 B/`onyx/db/external_app.py:196-201`)。
+- 已连接的 Linear(被过滤)与 org-credential apps 一律**不出现在任何渲染产物中**(数据源过滤器 `backend/onyx/db/external_app.py:196-201`)。
 - 多可连接应用排序断言:apps `[(7,"Slack"), (2,"GitHub")]` → 列表 = `"- External app ID `2`: **GitHub**\n- External app ID `7`: **Slack**"`(按 `(id, name)` 排序,:83;行间单个 `\n`,:86-89)。
 
 ### 期望:渲染后的 Connectable apps 段(逐字节)
@@ -99,7 +99,7 @@ Some org apps aren't set up for this user yet, so you can't call them until they
 1. workspace setup:B/`session/manager.py:685-687, 701-709`
 2. llm reconcile 重生成:B/`session/manager.py:346-348`
 3. skills reload 重生成:B/`session/manager.py:411-413`
-4. skills_hash 输入:B/`onyx/skills/push.py:58-76`(connectable_apps 字节进 sha256,len 前缀 8 字节小端)
+4. skills_hash 输入:`backend/onyx/skills/push.py:58-76`(connectable_apps 字节进 sha256,len 前缀 8 字节大端/u64be,`int.to_bytes(8)` 缺省大端)
 
 ### skills_hash 可复算断言(F2 的哈希面)
 
