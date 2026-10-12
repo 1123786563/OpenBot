@@ -23,6 +23,7 @@ import {
   type VerifiedWebhook,
   type WebhookVerifier,
 } from "./types";
+import { UsageDeliveryError } from "./usage-delivery-error";
 
 /** The daily aggregation's read window: per page, the ceiling, and how long an answer is reused. */
 const DAILY_PAGE_SIZE = 100;
@@ -450,6 +451,28 @@ export function createBillingService(deps: {
             error instanceof BillingError ? error.code : "unexpected error"
           }`,
         );
+      }
+    },
+
+    /**
+     * Delivery-grade twin of recordUsage: the same provider call, but success means the provider
+     * accepted (or deduplicated, by transaction id) the event, and every other outcome rejects with
+     * a stable code so the outbox keeps the target pending.
+     */
+    async deliverUsage(input) {
+      const key = input.externalCustomerId ?? config.externalCustomerKey;
+      const rows = await store.readSubscriptions(key);
+      const active = rows.find((row) => row.status === "active");
+      if (!active) throw new UsageDeliveryError("no_active_subscription");
+      const result = await client.postEvent({
+        transactionId: input.transactionId,
+        code: input.metricCode,
+        timestamp: Math.floor((input.timestamp ?? new Date()).getTime() / 1000),
+        externalSubscriptionId: active.externalSubscriptionId,
+        properties: input.properties,
+      });
+      if (result.status !== 200 && result.status !== 202) {
+        throw new UsageDeliveryError("provider_refused");
       }
     },
 
