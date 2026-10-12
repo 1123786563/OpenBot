@@ -25,6 +25,7 @@ import type { CraftLLMProviderConfig } from "./opencode-config";
 import { createSandboxGateway } from "./sandbox-gateway";
 import {
   createCraftScheduledTaskStore,
+  createScheduledRunRoutes,
   createScheduledTaskRoutes,
   fireAndForgetRun,
   startCraftScheduledTaskSweeper,
@@ -257,6 +258,16 @@ export function createCraftRoutes(input: {
       createScheduledTaskRoutes(requireUser, {
         tasks,
         enqueueRun,
+      }),
+    );
+    app.route(
+      "/",
+      createScheduledRunRoutes(requireUser, {
+        tasks,
+        store,
+        config,
+        manager,
+        botIdFor: deps.botIdFor,
       }),
     );
   }

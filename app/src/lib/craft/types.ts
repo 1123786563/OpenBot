@@ -234,3 +234,90 @@ export type CraftApproval = {
     args: unknown;
   };
 };
+
+// ── scheduled tasks (server: craft/scheduled-tasks.ts, onyx interfaces.ts) ──
+
+export type CraftScheduledTaskStatus = "active" | "paused";
+
+export type CraftScheduledTaskRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "awaiting_approval";
+
+export type CraftScheduledTaskTriggerSource = "scheduled" | "manual_run_now";
+
+export type CraftScheduledTaskEditorMode =
+  | "interval"
+  | "daily_weekly"
+  | "advanced";
+
+export type CraftIntervalUnit = "minutes" | "hours" | "days";
+
+/** The three editor payloads, one per `editor_mode` (onyx interfaces.ts verbatim). */
+export type CraftIntervalPayload = {
+  unit: CraftIntervalUnit;
+  every: number;
+  /** "HH:MM" — required when unit is "days". */
+  time_of_day?: string | null;
+};
+
+export type CraftDailyWeeklyPayload = {
+  /** "HH:MM". */
+  time_of_day: string;
+  /** Cron weekday convention (0=Sunday..6=Saturday); empty/omitted means every day. */
+  weekdays?: number[];
+};
+
+export type CraftAdvancedPayload = {
+  cron: string;
+};
+
+export type CraftEditorPayload =
+  | CraftIntervalPayload
+  | CraftDailyWeeklyPayload
+  | CraftAdvancedPayload;
+
+/** One row of `GET /scheduled-tasks/:id/runs`, and the `last_run` field everywhere. */
+export type CraftScheduledRunSummary = {
+  id: string;
+  status: CraftScheduledTaskRunStatus;
+  trigger_source: CraftScheduledTaskTriggerSource;
+  started_at: string;
+  finished_at: string | null;
+  session_id: string | null;
+  summary: string | null;
+  skip_reason: string | null;
+  error_class: string | null;
+};
+
+export type CraftScheduledTaskListItem = {
+  id: string;
+  name: string;
+  human_readable_schedule: string;
+  cron_expression: string;
+  editor_mode: CraftScheduledTaskEditorMode;
+  status: CraftScheduledTaskStatus;
+  next_run_at: string | null;
+  last_run: CraftScheduledRunSummary | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** The detail read adds the prompt and the next-3-fires preview. */
+export type CraftScheduledTaskDetail = CraftScheduledTaskListItem & {
+  prompt: string;
+  next_runs: string[];
+};
+
+/** The session-view banner's one read (`GET /sessions/:id/scheduled-run-context`). */
+export type CraftScheduledRunContext = {
+  run_id: string;
+  task_id: string;
+  task_name: string;
+  status: CraftScheduledTaskRunStatus;
+  started_at: string;
+  finished_at: string | null;
+};

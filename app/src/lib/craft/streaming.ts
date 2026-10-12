@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { interruptSession, sendMessage, turnEventsUrl } from "./client";
+import { scheduledRunEventsUrl } from "./scheduled-tasks";
 import type {
   CraftAttachment,
   CraftMessage,
@@ -358,8 +359,10 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
  * A session's live turn, as a flat renderable transcript.
  *
  * `streamMessage` sends and attaches; `streamTurnEvents` re-attaches to an already-started turn
- * (the reconnect path). Both reset the live list and drain the SSE into `items`, which the caller
- * renders after the durable history.
+ * (the reconnect path); `streamScheduledRunEvents` attaches to a live scheduled run — the same
+ * wire, addressed by session instead of turn (onyx `streamScheduledRunEvents`, the banner's
+ * simplified `shouldStreamScheduledRun`). All three reset the live list and drain the SSE into
+ * `items`, which the caller renders after the durable history.
  */
 export function useBuildStreaming(sessionId: string): {
   items: TranscriptItem[];
@@ -370,6 +373,7 @@ export function useBuildStreaming(sessionId: string): {
   ): Promise<void>;
   interruptStreaming(): Promise<void>;
   streamTurnEvents(turnId: string): Promise<void>;
+  streamScheduledRunEvents(): Promise<void>;
 } {
   const [state, dispatch] = useReducer(streamReducer, {
     items: [],
@@ -378,13 +382,14 @@ export function useBuildStreaming(sessionId: string): {
   const abortRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
 
-  const streamTurnEvents = useCallback(
-    async (turnId: string) => {
+  /** Open one SSE URL and drain it into the live list — the shape every attach path shares. */
+  const runStream = useCallback(
+    async (url: string) => {
       const controller = new AbortController();
       abortRef.current = controller;
       dispatch({ type: "reset" });
       try {
-        const response = await fetch(turnEventsUrl(sessionId, turnId), {
+        const response = await fetch(url, {
           credentials: "include",
           signal: controller.signal,
         });
@@ -425,6 +430,17 @@ export function useBuildStreaming(sessionId: string): {
     [sessionId, queryClient],
   );
 
+  const streamTurnEvents = useCallback(
+    async (turnId: string) => {
+      await runStream(turnEventsUrl(sessionId, turnId));
+    },
+    [runStream, sessionId],
+  );
+
+  const streamScheduledRunEvents = useCallback(async () => {
+    await runStream(scheduledRunEventsUrl(sessionId));
+  }, [runStream, sessionId]);
+
   const streamMessage = useCallback(
     async (content: string, attachments?: CraftAttachment[]) => {
       const turn = await sendMessage(sessionId, content, attachments);
@@ -451,5 +467,6 @@ export function useBuildStreaming(sessionId: string): {
     streamMessage,
     interruptStreaming,
     streamTurnEvents,
+    streamScheduledRunEvents,
   };
 }
