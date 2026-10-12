@@ -1,7 +1,7 @@
 # Craft → OpenBot 移植总览（功能对照说明）
 
-> onyx `backend/onyx/server/features/build/`（71 文件 / 27,584 行）→ OpenBot `server/src/craft/`（25 文件 / ~7,500 行 TS）
-> 本目录文档：`architecture-analysis.md`（架构与映射全表）｜`schema-notes.md`（数据库对照）｜`acceptance-report.md`（验收报告）
+> onyx `backend/onyx/server/features/build/`（71 文件 / 27,584 行）→ OpenBot `server/src/craft/`（44 文件 / ~13,800 行 TS，含 events/opencode/storage/templates 子目录；其中约 +5,400 行来自 craft-port-verify 分支的 9 个校准任务）
+> 本目录文档：`port-parity.md`（**当前状态的权威对照**：功能映射/依赖/调用链/差异全表）｜`architecture-analysis.md`（架构与映射全表）｜`schema-notes.md`（数据库对照）｜`acceptance-report.md`（验收报告）
 
 ## 一、功能对照（原实现 → OpenBot 实现）
 
@@ -18,11 +18,12 @@
 | `db/build_session.py` 等 | `db/schema/craft.ts` + `craft/store.ts` | 一对一：三表 + CAS（finalize WHERE status='initializing'；端口 23505 重试） |
 | `configs.py` + `timeouts.py` | `craft/config.ts` | 一对一：OPENBOT_CRAFT_* 前缀，派生族照搬 |
 | k8s/docker 沙箱后端（4,754 行） | 不移植 | 取舍：agent-sandbox 服务 + sandbox_instances 表已覆盖生命周期 |
-| 审批 / 定时任务 / external_apps+OAuth / user_library / 快照 sleep-wake / webapp_proxy / docx/pptx | 不移植（一期） | 取舍：OpenBot 已有 approvals/workshop schedule/plugins 体系；沙箱常驻则无需 sleep/restore。restore 端点留 no-op 兼容 |
+| ~~审批~~ / ~~定时任务~~ / ~~快照 sleep-wake~~ / ~~docx/pptx~~ / ~~webapp_proxy~~ | **已落地**（craft-port-verify 分支） | 审批 = permission.asked 生产者 + announce/wake 信号（`approvals.ts`/`approval-gate.ts`/`approval-signals.ts`）；定时任务 7+3 端点 + sweeper；快照/idle reaper + sandbox-status；上传/删除/目录下载；docx/pptx 导出复用既有依赖。详见 `port-parity.md` |
+| external_apps+OAuth / user_library / connect_app / craft_gateway / debug | 不移植 | 取舍：OpenBot 无对应外部应用域与推送管线；AGENTS 模板对应段落随之一并裁剪（port-parity.md Task 1） |
 
 ## 二、配置与依赖清单
 
-**零新增 npm 依赖**（package.json 未动）——复用 hono/drizzle-orm/项目内 RedisPort。
+**零新增 npm 依赖**（package.json 未动，craft-port-verify 分支亦未动）——复用 hono/drizzle-orm/zod/项目内 RedisPort，以及四个既有依赖：`docx`、`pptxgenjs`（export.ts）、`cron-parser`（scheduled-tasks.ts）、`@aws-sdk/client-s3`（storage/object-store.ts 动态 import，快照对象存储）。依赖实况见 `port-parity.md` §③。
 
 环境变量（前缀 `OPENBOT_CRAFT_*`，语义对照 onyx `configs.py`）：
 
