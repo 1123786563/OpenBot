@@ -4,7 +4,6 @@
 # Claude Code: .claude/skills/ is shared, the rest is local state
 .claude/worktrees/
 .claude/settings.local.json
-docs/superpowers/
 
 docs/specs/
 docs/plans/
