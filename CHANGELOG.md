@@ -8,6 +8,40 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
 
 ## Unreleased
 
+**Before upgrading.** Four things change for an existing deployment:
+- A hosted computer's browser is now headed by default. It uses a little more memory than headless
+  did; set `COMPUTER_BROWSER_MODE=headless` (Helm: `computers.browserMode: headless`) to keep the old
+  behaviour.
+- A deployment whose public URL is https on a public address starts signing its Bots' requests with
+  Web Bot Auth; `WEB_BOT_AUTH=off` (Helm: `config.webBotAuth: "off"`) prevents it.
+- Migration `0054_memory_on_intelligence` adds two columns to `personal_memories`. On a deployment
+  entitled to Intelligence memory, the memory sweep then copies existing reviewed, switched-on memories
+  into Intelligence, a few people at a time each minute; it is idempotent and safe to interrupt.
+  Memories awaiting review, paused or forgotten stay local until that changes.
+- With nothing saved under Admin → Automatic Learning and no `CPK_INTELLIGENCE_LEARNING_CONTAINER_ID`,
+  the server assigns its Intelligence project's `openbot` container once it exists, and `scripts/start.sh`
+  creates that container. A saved setting, including off, is never changed;
+  `OPENBOT_LEARNING_AUTO_ASSIGN=false` (Helm: `config.learning.autoAssign: false`) prevents it.
+
+### Fewer "Verify you are human" pages
+
+Sites behind Cloudflare challenged a Bot's browser on sight, and opening one could restart the
+computer and leave the person a blank page to solve. Now:
+- The computer no longer restarts on such a page, and a help request reopens the page the Bot was
+  on, so the person taking control always gets the check to solve. That handoff is the designed
+  fallback for a check a Bot cannot pass.
+- A hosted computer runs headed Chromium on its own virtual display, behind the same live screen.
+  Headless Chromium is what bot checks catch first. A computer still run headless no longer calls
+  itself `HeadlessChrome`.
+- With a public https URL, every request a Bot's browser sends is signed with Web Bot Auth and the
+  key is published at `/.well-known/http-message-signatures-directory`. Register the deployment once
+  with Cloudflare (Bot Submission Form, Request Signature) for sites that allow signed agents to let
+  Bots through. See docs/configuration.md. Every site a Bot visits sees the deployment's URL.
+- A residential or ISP proxy is a first-class setting: `EGRESS_PROXY_DEFAULT`, or on Helm
+  `computers.egressProxy` with the URL in a Secret. Off by default; turning it on makes Bots' traffic
+  look like a person's home connection, which is the operator's choice to make.
+- Bun 1.4.3 throughout, which fixes the connection crash behind the restarts.
+
 ### Automatic Learning assigns its container without a trip to Admin
 
 Learning was on by default but collected nothing until somebody assigned a container. Now, when
@@ -28,11 +62,6 @@ in their Memory page and reach their Bots. OpenBot still records each memory's p
 and which Bot or source it came from, and applies those rules to everything Intelligence returns, so a
 Bot-formed memory still reaches only the Bot that formed it. Without Intelligence memory nothing changes:
 OpenBot's own tables remain the store.
-
-**Before upgrading.** Migration `0054_memory_on_intelligence` adds two columns to `personal_memories`.
-On an entitled deployment, the memory sweep then copies existing reviewed, switched-on memories into
-Intelligence, a few people at a time each minute; it is idempotent and safe to interrupt. Memories
-awaiting review, paused or forgotten stay local until that changes.
 
 ## 0.2.0
 
