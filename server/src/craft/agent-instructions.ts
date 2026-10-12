@@ -3,9 +3,10 @@
  *
  * Placeholder substitution with a deliberately ordered pipeline: `{{ORGANIZATION_INSTRUCTIONS_SECTION}}`
  * is replaced LAST so admin-authored text containing literal `{{…}}` tokens (copy-pasted from
- * the base template) is never expanded. The template itself is rewritten for the OpenBot
- * context (no egress proxy, no connectable apps, no user library — the corresponding sections
- * were dropped, not stubbed).
+ * the base template) is never expanded. The template is the onyx original verbatim except for
+ * the ported infrastructure wording (egress-proxy Hard rules, the webapp tool entry) and the
+ * cut sections OpenBot has no counterpart for (connectable apps, company-search) — see
+ * docs/craft-port/port-parity.md.
  */
 
 import type { CraftConfig } from "./config";
