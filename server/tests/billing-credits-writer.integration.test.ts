@@ -460,6 +460,31 @@ describe("reservations", () => {
     expect(await writer.readBalance(customer)).toBe(500);
   });
 
+  test("a legacy draw cannot consume capacity already held by a reservation", async () => {
+    const customer = `${prefix}-r4-mixed`;
+    await seedGrant(customer, 1_000, "mixed");
+    const id = reservedId(await reserve(customer, "mixed-hold", 700));
+    expect(await writer.readBalance(customer)).toBe(300);
+
+    const draw = await writer.consumeCredits({
+      externalCustomerId: customer,
+      amountCents: 400,
+      idempotencyKey: `${prefix}-mixed-draw`,
+      title: "模型调用",
+    });
+
+    expect(draw.applied).toBe(300);
+    expect(await writer.availableBalance(customer)).toBe(0);
+    await expect(
+      writer.settleReservation({
+        reservationId: id,
+        actual: whole(700),
+        title: "模型调用",
+      }),
+    ).resolves.toMatchObject({ appliedCents: 700, releasedCents: 0 });
+    expect(await writer.readBalance(customer)).toBe(0);
+  });
+
   test("expired grants hold nothing, and an admitted hold still settles after its grant lapses", async () => {
     const customer = `${prefix}-r5`;
     await seedGrant(customer, 1_000, "gone", new Date(Date.now() - 1_000));
@@ -566,6 +591,24 @@ describe("reservations", () => {
                  (SELECT sum(applied) FROM credit_ledger WHERE external_customer_id = ${customer})::int AS applied`,
     );
     expect(sums).toEqual({ used: 2, applied: 2 });
+  });
+
+  test("a remainder can carry across a denominator larger than the per-event limit", async () => {
+    const customer = `${prefix}-r7-large-denominator`;
+    await seedGrant(customer, 1_000, "large-denominator");
+    const settle = async (key: string, denominator: bigint) =>
+      writer.settleReservation({
+        reservationId: reservedId(await reserve(customer, key, 10)),
+        actual: { numerator: 1n, denominator },
+        title: "t",
+      });
+
+    const denominator = 10n ** 60n - 1n;
+    const first = await settle("k7-large-a", denominator);
+    expect(first.remainder).toEqual({ numerator: 1n, denominator });
+    const second = await settle("k7-large-b", 2n);
+    expect(second.chargedCents).toBe(0);
+    expect(second.remainder.denominator).toBe(denominator * 2n);
   });
 
   test("cost above the hold is ledgered in full but only held capacity is applied", async () => {

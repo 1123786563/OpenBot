@@ -54,8 +54,8 @@ function generateGrantId(): string {
 
 /** Largest value a 32-bit PostgreSQL integer column can hold. */
 const MAX_STORED_UNITS = 2_147_483_647;
-/** Bounds the lowest-terms denominator a customer's carried remainder may reach. */
-const MAX_REMAINDER_DENOMINATOR = 10n ** 60n;
+/** Bounds a single rational charge; accumulated remainders may need a larger denominator. */
+const MAX_ACTUAL_DENOMINATOR = 10n ** 60n;
 
 /** An exact non-negative rational, in scaled credit units (×100). */
 export type CreditAmount = { numerator: bigint; denominator: bigint };
@@ -101,9 +101,9 @@ export type CreditWriter = {
   }): Promise<{ inserted: boolean; grant: CreditGrantResult }>;
 
   /**
-   * The live balance, in scaled units (×100): the sum over this customer's grants of
-   * `max(total - used, 0)` where the grant has not lapsed. The pre-call gate reads this; the
-   * consumption itself never does (its own transaction re-derives inside the row updates).
+   * The currently spendable balance, in scaled units (×100): live grant capacity after active
+   * reservations and any carried fractional charge are accounted for. This is a read-only
+   * pre-call signal; reserveCredits remains the atomic admission authority.
    */
   readBalance(externalCustomerId: string): Promise<number>;
 
@@ -260,24 +260,7 @@ export function createCreditWriter(database: Database): CreditWriter {
     },
 
     async readBalance(externalCustomerId) {
-      // The live grants only: an expired or exhausted row contributes nothing, the same
-      // liveness the read side (credits.ts deriveGrantStatus) spells. Floored per-grant in the
-      // sum so a data bug (used > total, impossible under the check constraint) cannot mint
-      // balance out of a negative.
-      const rows = await database
-        .select({ total: creditGrants.total, used: creditGrants.used })
-        .from(creditGrants)
-        .where(
-          and(
-            eq(creditGrants.externalCustomerId, externalCustomerId),
-            gt(creditGrants.expiresAt, new Date()),
-          ),
-        );
-      let balance = 0;
-      for (const row of rows) {
-        balance += Math.max(row.total - row.used, 0);
-      }
-      return balance;
+      return availableOf(database, externalCustomerId);
     },
 
     async availableBalance(externalCustomerId) {
@@ -359,7 +342,7 @@ export function createCreditWriter(database: Database): CreditWriter {
         typeof denominator !== "bigint" ||
         numerator < 0n ||
         denominator <= 0n ||
-        denominator > MAX_REMAINDER_DENOMINATOR
+        denominator > MAX_ACTUAL_DENOMINATOR
       ) {
         throw new TypeError(
           "settleReservation needs a non-negative rational actual cost with a positive bounded denominator.",
@@ -426,6 +409,8 @@ export function createCreditWriter(database: Database): CreditWriter {
             id: creditReservationAllocations.id,
             grantId: creditReservationAllocations.grantId,
             amount: creditReservationAllocations.amount,
+            total: creditGrants.total,
+            used: creditGrants.used,
           })
           .from(creditReservationAllocations)
           .innerJoin(
@@ -444,7 +429,15 @@ export function createCreditWriter(database: Database): CreditWriter {
         let toApply = Math.min(charged, reservation.maximum);
         let applied = 0;
         for (const allocation of allocations) {
-          const drew = Math.min(toApply, allocation.amount);
+          const remainingGrantCapacity = Math.max(
+            allocation.total - allocation.used,
+            0,
+          );
+          const drew = Math.min(
+            toApply,
+            allocation.amount,
+            remainingGrantCapacity,
+          );
           if (drew > 0) {
             await tx
               .update(creditGrants)
@@ -574,6 +567,8 @@ export function createCreditWriter(database: Database): CreditWriter {
         return { inserted: false, applied: known.applied, remaining: 0 };
 
       return database.transaction(async (tx) => {
+        await lockCustomer(tx, input.externalCustomerId);
+
         // Insert the ledger row FIRST, inside the transaction: the unique index is the
         // idempotency, and claiming it before any grant moves means a concurrent report of
         // the same key loses HERE (inserted nothing) rather than after having drawn grants.
@@ -607,57 +602,36 @@ export function createCreditWriter(database: Database): CreditWriter {
         }
 
         /*
-         * Draw across the live grants, soonest-to-lapse first: expiring allowance is spent
-         * before durable allowance, so a person never lapses credits a later grant could have
-         * covered.
-         *
-         * The row is locked BEFORE it moves (`FOR UPDATE` on the SELECT): a concurrent draw
-         * against the same grant blocks here rather than racing the UPDATE, so the
-         * `capacity = total - used` this loop computes is the committed truth it moves
-         * against. Without the lock, two draws could both read capacity 1000 and both take
-         * it — the UPDATE would still cap `used` at `total` (no overdraw, the check
-         * constraint holds), but each transaction would CREDIT itself with capacity it did
-         * not win, and `applied` would lie. The lock makes the accounting exact; the
-         * constraint stays the last line of defence either way.
+         * The customer lock serializes this draw with reservations and settlements. Grant
+         * locks then let freeGrants subtract active holds before this post-paid path uses only
+         * unreserved capacity; expired allowance is excluded and the remaining grants stay in
+         * soonest-to-lapse order. A fractional carried charge keeps one additional unit free.
          */
+        const grants = await freeGrants(tx, input.externalCustomerId, true);
+        const owed = await remainderOf(tx, input.externalCustomerId);
+        if (owed.numerator > 0n) {
+          const lastAvailable = grants.reduce(
+            (last, grant, index) => (grant.free > 0 ? index : last),
+            -1,
+          );
+          const remainderGrant = grants[lastAvailable];
+          if (remainderGrant) remainderGrant.free -= 1;
+        }
+
         let toApply = input.amountCents;
         let applied = 0;
         let firstGrantId: string | null = null;
-        while (toApply > 0) {
-          const [live] = await tx
-            .select({
-              id: creditGrants.id,
-              used: creditGrants.used,
-              total: creditGrants.total,
-            })
-            .from(creditGrants)
-            .where(
-              and(
-                eq(creditGrants.externalCustomerId, input.externalCustomerId),
-                gt(creditGrants.expiresAt, new Date()),
-                sql`${creditGrants.used} < ${creditGrants.total}`,
-              ),
-            )
-            // Soonest expiry first, then oldest grant — the consumption order the read side
-            // shows and the lapsemanship above depends on.
-            .orderBy(asc(creditGrants.expiresAt), asc(creditGrants.grantedAt))
-            .limit(1)
-            // The lock: this row's capacity is ours alone until the transaction ends.
-            .for("update");
-          if (!live) break; // No live balance left: the ledger keeps the full cost anyway.
-
-          // Under the lock, the arithmetic is plain: draw what this grant can fund of what
-          // remains, capped at its capacity. The UPDATE below cannot miss because nobody
-          // else can move the row while we hold it.
-          const capacity = Math.max(live.total - live.used, 0);
-          const drew = Math.min(toApply, capacity);
+        for (const grant of grants) {
+          if (toApply === 0) break;
+          const drew = Math.min(toApply, grant.free);
+          if (drew === 0) continue;
           await tx
             .update(creditGrants)
-            .set({ used: live.used + drew })
-            .where(eq(creditGrants.id, live.id));
+            .set({ used: sql`${creditGrants.used} + ${drew}` })
+            .where(eq(creditGrants.id, grant.id));
           applied += drew;
           toApply -= drew;
-          if (firstGrantId === null) firstGrantId = live.id;
+          if (firstGrantId === null) firstGrantId = grant.id;
         }
 
         // Attribute the draw to its first grant (the display copy the consumption table
@@ -670,7 +644,7 @@ export function createCreditWriter(database: Database): CreditWriter {
 
         // The balance after this draw, inside the same transaction: the caller's "remaining"
         // is consistent with the rows this draw just moved.
-        const after = await liveBalanceOf(tx, input.externalCustomerId);
+        const after = await availableOf(tx, input.externalCustomerId);
         return { inserted: true, applied, remaining: after };
       });
     },
@@ -732,7 +706,7 @@ async function freeGrants(db: Reader, externalId: string, lock: boolean) {
   }));
 }
 
-async function availableOf(db: Database, externalId: string): Promise<number> {
+async function availableOf(db: Reader, externalId: string): Promise<number> {
   const grants = await freeGrants(db, externalId, false);
   const owed = await remainderOf(db, externalId);
   const free = grants.reduce((sum, grant) => sum + grant.free, 0);
@@ -768,16 +742,10 @@ function reduce(numerator: bigint, denominator: bigint): CreditAmount {
 }
 
 function addAmounts(a: CreditAmount, b: CreditAmount): CreditAmount {
-  const sum = reduce(
+  return reduce(
     a.numerator * b.denominator + b.numerator * a.denominator,
     a.denominator * b.denominator,
   );
-  if (sum.denominator > MAX_REMAINDER_DENOMINATOR) {
-    throw new TypeError(
-      "settleReservation: the carried remainder's denominator exceeds the supported bound.",
-    );
-  }
-  return sum;
 }
 
 function settledResultOf(
@@ -792,27 +760,6 @@ function settledResultOf(
       denominator: BigInt(reservation.remainderDenominator ?? "1"),
     },
   };
-}
-
-/** The live balance over one customer's grants, on a transaction or the plain database. */
-async function liveBalanceOf(
-  db:
-    | Pick<Database, "select">
-    | Parameters<Parameters<Database["transaction"]>[0]>[0],
-  externalCustomerId: string,
-): Promise<number> {
-  const rows = await db
-    .select({ total: creditGrants.total, used: creditGrants.used })
-    .from(creditGrants)
-    .where(
-      and(
-        eq(creditGrants.externalCustomerId, externalCustomerId),
-        gt(creditGrants.expiresAt, new Date()),
-      ),
-    );
-  let balance = 0;
-  for (const row of rows) balance += Math.max(row.total - row.used, 0);
-  return balance;
 }
 
 type GrantRow = typeof creditGrants.$inferSelect;
