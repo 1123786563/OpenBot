@@ -80,7 +80,7 @@
 
 ### R3.5 OCR round 3
 
-重跑已启动（同命令，范围随 HEAD 扩至含 `fe169d20`）。**截至本增落笔：`/tmp/ocr-round3-output.txt` 0 字节、ocr 进程仍在运行（05:22 启动）——尚无完成信号，无可披露的覆盖数/意见**；与前两轮 429 配额阻断是否同形，待其落定后确认并另行补录。
+已完成（session `24c5f9d8`，`3c690410..HEAD`，8m21s）：**41 文件入选、31 个因 bigmodel 429 配额失败（三轮同形阻断）、18 条意见（1 high / 7 medium / 10 low）**。全部 high/medium 已处置于 `faab3c33`：6 项修复（鉴权先于破坏性 take、Branch-4 诚实失败 + permissionGone→410 终态、Redis eval 失败透传 502、超时兜底先拒后删、超时/decide 原子对账、tailLog 下限），1 项裁定为有意偏离（webapp restart 臂的 pid cwd 守卫——onyx 同样裸 `kill -0`，OpenBot 更安全，已录 onyx-contract §6 #9）；10 low 全部 defer。明细见 `ocr-report-round3.md`（原文 `ocr-comments-round3-raw.txt`）。**覆盖不完整（10/41）为持续配额阻断，环境性缺口如实记录**；三轮累计已审 23 个不同文件，含 connect-app/manager/routes/turn 引擎等核心面，其余文件由 SDD 评审与 456 craft 测试背书。处置后套件 **456 pass / 0 fail（31 文件）** + typecheck clean。
 
 ### R3.6 未变化项
 
