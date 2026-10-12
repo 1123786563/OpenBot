@@ -2,6 +2,7 @@ import { client } from "@/lib/client";
 import type {
   CraftApproval,
   CraftArtifactEntry,
+  CraftAttachment,
   CraftFileEntry,
   CraftMessage,
   CraftSession,
@@ -95,13 +96,56 @@ export function listMessages(
 export function sendMessage(
   id: string,
   content: string,
+  attachments?: CraftAttachment[],
 ): Promise<{ turn_id: string }> {
   return client(sessionPath(id, "/send-message"), {
     method: "POST",
-    body: { content },
+    body: attachments?.length ? { content, attachments } : { content },
     fallback: "The message could not be sent.",
   }).then((r) => r.json());
 }
+
+/**
+ * Upload one file into the session's attachments directory. Multipart is the one body shape
+ * `client` cannot carry (it serializes JSON), so this rides a same-origin `fetch` with the
+ * same credentials — still through this module, per the feature's data-access convention.
+ * The server sanitizes the filename, so the response's `filename`/`path` may differ from the
+ * local file's name; the chip updates to what actually landed.
+ */
+export async function uploadFile(
+  id: string,
+  file: File,
+): Promise<UploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(sessionPath(id, "/upload"), {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  const body = (await response.json().catch(() => null)) as
+    | UploadResult
+    | { error?: string }
+    | null;
+  if (!response.ok) {
+    const error =
+      body && "error" in body && typeof body.error === "string"
+        ? body.error
+        : "The file could not be uploaded.";
+    throw new Error(error);
+  }
+  if (!body || typeof (body as UploadResult).path !== "string") {
+    throw new Error("The file could not be uploaded.");
+  }
+  return body as UploadResult;
+}
+
+/** The upload endpoint's answer (onyx's UploadResponse). */
+export type UploadResult = {
+  filename: string;
+  path: string;
+  size_bytes: number;
+};
 
 /** Ask a running turn to stop; settles the session's live stream. */
 export function interruptSession(id: string): Promise<void> {

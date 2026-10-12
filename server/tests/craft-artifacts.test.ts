@@ -15,7 +15,8 @@ function fileApi(
   return {
     listFiles: async () => [],
     writeFile: async () => undefined,
-    deletePath: async () => undefined,
+    writeFileBytes: async () => undefined,
+    deletePath: async () => false,
     readFile: async () => null,
     readFileBytes: async () => null,
     ...overrides,

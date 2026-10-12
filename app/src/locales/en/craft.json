@@ -42,5 +42,13 @@
     "waiting": "Waiting for your approval",
     "allowOnce": "Allow once",
     "deny": "Deny"
+  },
+  "attachments": {
+    "add": "Attach files",
+    "list": "Attached files",
+    "uploading": "Uploading…",
+    "failed": "Failed",
+    "retry": "Retry upload",
+    "remove": "Remove"
   }
 }

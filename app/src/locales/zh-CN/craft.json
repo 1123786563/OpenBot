@@ -42,5 +42,13 @@
     "waiting": "等待你的审批",
     "allowOnce": "允许一次",
     "deny": "拒绝"
+  },
+  "attachments": {
+    "add": "添加附件",
+    "list": "附件",
+    "uploading": "上传中…",
+    "failed": "失败",
+    "retry": "重试上传",
+    "remove": "移除"
   }
 }
