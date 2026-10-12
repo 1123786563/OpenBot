@@ -21,13 +21,11 @@ import type { CraftConfig } from "./config";
 import { isBuildPacket } from "./events/packets";
 import { isKeepalive, isPromptResponse, isSandboxError } from "./events/types";
 import type { CraftSessionManager } from "./manager";
-import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { eventToSse, SSE_KEEPALIVE } from "./streaming";
 import type { TurnExecutor } from "./turn-executor";
 import type { TurnStateStore } from "./turn-state";
 import { TURN_STATUS_FAILED } from "./turn-state";
-import { sessionDirectory } from "./workspace";
 
 /** The SSE headers every craft stream sends (the workshop's four-piece set + type). */
 export const CRAFT_SSE_HEADERS: Record<string, string> = {
@@ -54,7 +52,6 @@ export type TurnRoutesDeps = {
   manager: CraftSessionManager;
   turnState: TurnStateStore;
   executor: TurnExecutor;
-  gateway: SandboxGateway;
   /** Resolves the Bot whose sandbox hosts a session (live attach routing). */
   botIdFor: (sessionId: string) => Promise<string | null>;
   /** Approval announce/wake signals; the stream merges announces into SSE when gating is on. */
@@ -253,8 +250,6 @@ export function createTurnRoutes(
     return new Response(stream, { status: 200, headers: CRAFT_SSE_HEADERS });
   });
 
-  void sessionDirectory;
-  void deps.gateway;
   return app;
 }
 

@@ -23,9 +23,7 @@ import {
   type InteractiveTurn,
   InteractiveTurnLockError,
   TURN_STATUS_FAILED,
-  turnIsActive,
 } from "./turn-state";
-import { sessionDirectory } from "./workspace";
 
 type Json = Record<string, unknown>;
 
@@ -326,7 +324,5 @@ export function createMessageRoutes(
     return context.json(turn ? interactiveTurnResponse(turn) : null);
   });
 
-  void turnIsActive;
-  void sessionDirectory;
   return app;
 }
