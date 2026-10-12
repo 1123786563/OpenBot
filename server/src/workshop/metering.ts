@@ -3,7 +3,8 @@
  *
  * The gateway's onUsage hook hands this the row's dimensions at the settle point; this module
  * turns them into exactly one provider event per run, keyed by the run id — the provider's
- * transaction-id dedup makes a double report a no-op, which is the whole idempotency story.
+ * event id and transaction id are both `code-run:<runId>`, so a double report records identical
+ * immutable facts in the usage outbox and the delivery worker settles it once downstream.
  *
  * The workshop's `usage` column is a DISPLAY COPY for the browser (F6 renders it); it is never
  * read here and never reported. If `code_runs` and the display ever disagree, `code_runs` wins
@@ -12,7 +13,7 @@
  * A deployment without billing (no service) calls nothing and drops nothing: the `code_runs`
  * row is still written by the gateway — metering is a downstream observer, not a participant.
  */
-import type { BillingService } from "../billing/types";
+import type { UsageOutbox } from "../billing/usage-outbox";
 
 export type CodeRunUsageInput = {
   runId: string;
@@ -23,37 +24,32 @@ export type CodeRunUsageInput = {
   modelId: string;
   inputTokens: number;
   outputTokens: number;
+  occurredAt: Date;
 };
 
 /** The provider's metric code for a code run's token usage, one constant so both sides agree. */
 export const CODE_RUN_METRIC = "code_run_tokens";
 
 /**
- * Report one run's usage. Never throws (the service's recordUsage already logs and swallows);
- * returns true when a report was attempted, false when there was nothing to report or no
- * billing to report to — both are silent on purpose.
+ * Record one run's usage in the durable outbox. Returns true when a write was attempted, false
+ * when there was nothing meterable or no outbox to write to — both are silent on purpose.
  */
 export async function reportCodeRunUsage(
-  billing: Pick<BillingService, "recordUsage"> | null | undefined,
-  input: CodeRunUsageInput,
+  outbox: Pick<UsageOutbox, "record"> | null | undefined,
+  input: CodeRunUsageInput & { externalCustomerId: string },
 ): Promise<boolean> {
-  if (!billing) return false; // Unconfigured: silent, and the code_runs row already stands.
+  if (!outbox) return false; // Unconfigured: silent, and the code_runs row already stands.
   if (input.inputTokens <= 0 && input.outputTokens <= 0) return false; // Nothing meterable.
-  await billing.recordUsage({
-    // The run id IS the idempotency key: the same run reported twice (a retry, a crash-replay)
-    // is one event at the provider, because the transaction id deduplicates there.
+  await outbox.record({
+    eventId: `code-run:${input.runId}`,
+    source: "code_run",
+    externalCustomerId: input.externalCustomerId,
     transactionId: `code-run:${input.runId}`,
-    metricCode: CODE_RUN_METRIC,
-    properties: {
-      run_id: input.runId,
-      bot_id: input.botId,
-      owner_user_id: input.ownerUserId,
-      session_id: input.sessionId ?? "",
-      model: input.modelId,
-      status: input.status,
-      input_tokens: input.inputTokens,
-      output_tokens: input.outputTokens,
-    },
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    model: input.modelId,
+    client: "web",
+    occurredAt: input.occurredAt,
   });
   return true;
 }

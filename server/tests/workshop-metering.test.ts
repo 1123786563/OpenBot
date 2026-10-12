@@ -1,28 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { CODE_RUN_METRIC, reportCodeRunUsage } from "../src/workshop/metering";
-import type { BillingService } from "../src/billing/types";
+import type { UsageOutbox, UsageOutboxInput } from "../src/billing/usage-outbox";
 
 /**
  * The metering pipeline's contract (I4): one run, one provider event — and no provider at
  * all is silence, never an error. The fake billing records every recordUsage call; nothing
  * here touches Lago, the database, or the network.
  */
-function fakeBilling() {
-  const calls: Array<{
-    transactionId: string;
-    metricCode: string;
-    properties: Record<string, number | string>;
-  }> = [];
-  const service = {
-    recordUsage: async (input: {
-      transactionId: string;
-      metricCode: string;
-      properties: Record<string, number | string>;
-    }) => {
+function fakeOutbox() {
+  const calls: UsageOutboxInput[] = [];
+  const outbox = {
+    record: async (input: UsageOutboxInput) => {
       calls.push(input);
+      return { inserted: true };
     },
-  } as unknown as BillingService;
-  return { service, calls };
+  } as unknown as UsageOutbox;
+  return { outbox, calls };
 }
 
 const RUN = {
@@ -31,73 +24,74 @@ const RUN = {
   sessionId: "ses-1",
   botId: "bot-1",
   ownerUserId: "user-1",
+  externalCustomerId: "cust-1",
   modelId: "glm-4.6",
   inputTokens: 4_845,
   outputTokens: 4,
+  occurredAt: new Date("2026-10-12T03:04:05.000Z"),
 };
 
 describe("reportCodeRunUsage (I4: single source, idempotent, silent without billing)", () => {
-  test("reports once with the run id as the idempotency key", async () => {
-    const { service, calls } = fakeBilling();
-    const attempted = await reportCodeRunUsage(service, RUN);
+  test("records one immutable outbox event keyed by the run id", async () => {
+    const { outbox, calls } = fakeOutbox();
+    const attempted = await reportCodeRunUsage(outbox, RUN as never);
     expect(attempted).toBe(true);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.transactionId).toBe("code-run:cr-test-1");
-    expect(calls[0]?.metricCode).toBe(CODE_RUN_METRIC);
-  });
-
-  test("a replayed report carries the SAME transaction id (provider dedup makes it one event)", async () => {
-    const { service, calls } = fakeBilling();
-    await reportCodeRunUsage(service, RUN);
-    await reportCodeRunUsage(service, RUN); // a crash-replay, a retried settle
-    expect(calls).toHaveLength(2);
-    // The key is what makes two calls one event at the provider:
-    expect(new Set(calls.map((call) => call.transactionId)).size).toBe(1);
-  });
-
-  test("the event carries the row's dimensions: bot, owner, session, model, tokens", async () => {
-    const { service, calls } = fakeBilling();
-    await reportCodeRunUsage(service, RUN);
-    expect(calls[0]?.properties).toMatchObject({
-      run_id: "cr-test-1",
-      bot_id: "bot-1",
-      owner_user_id: "user-1",
-      session_id: "ses-1",
+    expect(calls[0]).toMatchObject({
+      eventId: "code-run:cr-test-1",
+      source: "code_run",
+      externalCustomerId: "cust-1",
+      transactionId: "code-run:cr-test-1",
+      inputTokens: 4845,
+      outputTokens: 4,
       model: "glm-4.6",
-      status: "completed",
-      input_tokens: 4845,
-      output_tokens: 4,
+      client: "web",
+      occurredAt: RUN.occurredAt,
     });
   });
 
-  test("no billing configured: silent false, nothing thrown, nothing reported", async () => {
-    const attempted = await reportCodeRunUsage(null, RUN);
+  test("a replayed report carries identical immutable facts for the same run", async () => {
+    const { outbox, calls } = fakeOutbox();
+    await reportCodeRunUsage(outbox, RUN as never);
+    await reportCodeRunUsage(outbox, RUN as never); // a crash-replay, a retried settle
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual(calls[1]);
+  });
+
+  test("the event keeps the provider metric constant alongside the persisted facts", async () => {
+    expect(CODE_RUN_METRIC).toBe("code_run_tokens");
+  });
+
+  test("no outbox configured: silent false, nothing thrown, nothing recorded", async () => {
+    const attempted = await reportCodeRunUsage(null, RUN as never);
     expect(attempted).toBe(false);
-    const attempted2 = await reportCodeRunUsage(undefined, RUN);
+    const attempted2 = await reportCodeRunUsage(undefined, RUN as never);
     expect(attempted2).toBe(false);
   });
 
   test("a run without tokens is nothing meterable — no event, no error", async () => {
-    const { service, calls } = fakeBilling();
-    const attempted = await reportCodeRunUsage(service, {
+    const { outbox, calls } = fakeOutbox();
+    const attempted = await reportCodeRunUsage(outbox, {
       ...RUN,
       inputTokens: 0,
       outputTokens: 0,
-    });
+    } as never);
     expect(attempted).toBe(false);
     expect(calls).toHaveLength(0);
   });
 
-  test("a billing service that throws is contained: the run's report never surfaces as an error", async () => {
+  test("an outbox write that throws is contained by the caller, not this helper", async () => {
     const broken = {
-      recordUsage: async () => {
-        throw new Error("lago unreachable");
+      record: async () => {
+        throw new Error("usage-outbox down");
       },
-    } as unknown as BillingService;
+    } as unknown as UsageOutbox;
     // The gateway wraps its onUsage in its own catch; this asserts the module itself does not
     // add a second failure mode (it delegates, and what it delegates to is the service's own
     // contained path — a broken fake here proves the direct-call shape throws, so callers
     // MUST keep the containment the gateway provides).
-    await expect(reportCodeRunUsage(broken, RUN)).rejects.toThrow("lago unreachable");
+    await expect(reportCodeRunUsage(broken, RUN as never)).rejects.toThrow(
+      "usage-outbox down",
+    );
   });
 });

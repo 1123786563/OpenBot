@@ -114,6 +114,7 @@ import {
 } from "./billing/service";
 import { createBillingStatements } from "./billing/statements";
 import { createBillingStore } from "./billing/store";
+import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
   loadAttachmentForTurn,
@@ -331,6 +332,36 @@ import {
 import { createWorkshopStore } from "./workshop/store";
 
 const log = getLogger("server");
+const STABLE_BILLING_CODE = /^[a-z0-9_]{1,64}$/;
+
+function usageOutboxWriteFailureCode(error: unknown): string {
+  if (error instanceof UsageOutboxConflictError) {
+    return "usage_outbox_conflict";
+  }
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === "string" && STABLE_BILLING_CODE.test(code)
+    ? code
+    : "usage_outbox_write_failed";
+}
+
+function logUsageOutboxWriteFailure(
+  source: "llm" | "code_run",
+  eventId: string,
+  error: unknown,
+) {
+  log.error(
+    {
+      type: "billing-usage-outbox-write-failed",
+      source,
+      eventId,
+      code: usageOutboxWriteFailureCode(error),
+    },
+    "billing-usage-outbox-write-failed",
+  );
+}
 
 // 本进程的全部出站依赖都是内网/本机（Casdoor、kb-mastra、agent 运行时等）：
 // 开发机的 HTTP_PROXY 会把 localhost 请求劫持成代理 404/HTML（Bun fetch 读
@@ -3097,67 +3128,35 @@ const billing =
           creditWriter: createCreditWriter(database),
         };
       })();
+const usageOutbox =
+  billing === undefined ? undefined : createUsageOutbox(database);
 
 /*
  * The billing seam meters what the built-in Bots consume, once it exists: every model call's
- * finish lands here and becomes one provider event.
- *
- * The transaction id is a per-process monotonic sequence (`llm:<key>:<seq>`), NOT a timestamp
- * mix: the meter callback carries only the token counts (copilot.ts `setModelUsageMeter` — no
- * run id, no session id reaches it; the finish part of a model stream is all it sees), so the
- * two properties the id needs cannot come from a business identifier and are built instead:
- * * different calls → different ids: the sequence increments per reported finish, so two calls
- *   in the same millisecond (or the same tick of any clock) still number apart;
- * * a retried REPORT of the same call → the same id: the id is minted once, when the finish is
- *   first seen, and the report itself is fire-and-forget with no caller-side retry, so there is
- *   no second minting of one call to deduplicate.
- * This replaces the old `llm-<key>-<Date.now()>-<in>-<out>`, which double-metered real retries
- * (a new millisecond meant a "new" event) and merged distinct same-millisecond same-usage calls
- * into one (the provider deduplicates on the id). A usage miss is a billing miss, never a
- * product error, which is why the meter never awaits and the service never throws.
- *
- * THE CREDIT LEDGER'S EXCHANGE RATE (the two meters below share it): one token = one scaled
- * credit unit (×100 ledger units per whole credit ⇒ a 9000-credit plan allowance funds 9000
- * tokens at 1:100, i.e. ledger rows carry `tokens × 100`). This is the v1 placeholder — it
- * aligns the local ledger's magnitude with Lago's `llm_tokens`/`code_run_tokens` units so the
- * two books COULD reconcile — and the product-priced rate plugs in at exactly these two call
- * sites when it exists.
- * TODO(product): replace the 1-token = 1-credit×1/100 placeholder with configured pricing.
+ * finish lands here and becomes one immutable usage fact in the outbox. Delivery to Lago and
+ * credits is a downstream concern on purpose: this task stops direct provider/ledger writes on
+ * the completion path while the reservation-aware credit settlement still lives in the later plan.
  */
-if (billing !== undefined) {
-  const billingService = billing.service;
-  let meterSequence = 0;
+if (billing !== undefined && usageOutbox !== undefined) {
   setModelUsageMeter((usage) => {
     const input = usage.inputTokens ?? 0;
     const output = usage.outputTokens ?? 0;
     if (input === 0 && output === 0) return;
-    meterSequence += 1;
-    const transactionId = `llm:${billing.externalCustomerKey}:${meterSequence}`;
-    void billingService
-      .recordUsage({
-        metricCode: "llm_tokens",
-        transactionId,
-        properties: {
-          input_tokens: input,
-          output_tokens: output,
-          tokens: input + output,
-        },
-      })
-      .catch(() => {});
-    // The local ledger's draw, POST-PAID: the same finish that meters to Lago draws the credit
-    // balance by the actual cost (tokens × 100, the exchange rate above). Fire-and-forget for
-    // the same reason the meter is — a ledger miss must not fail a finished call — and
-    // idempotent on the same sequence-derived key, so a double-reported finish draws once.
-    void billing.creditWriter
-      .consumeCredits({
+    void usageOutbox
+      .record({
+        eventId: usage.eventId,
+        source: "llm",
         externalCustomerId: billing.externalCustomerKey,
-        amountCents: (input + output) * 100,
-        idempotencyKey: transactionId,
-        title: "模型调用",
-        requestId: transactionId,
+        transactionId: usage.eventId,
+        inputTokens: input,
+        outputTokens: output,
+        model: runtimeModel.defaultModel,
         client: "web",
+        occurredAt: usage.occurredAt,
       })
-      .catch(() => {});
+      .catch((error) => {
+        logUsageOutboxWriteFailure("llm", usage.eventId, error);
+      });
   });
 
   /*
@@ -3413,36 +3412,16 @@ const codeRunStore = createCodeRunStore(database);
  * column is a display copy and is never read here). A deployment without billing passes
  * `billing === undefined` straight through: silent, and the run row still stands.
  */
-const codeRunUsageReporter = billing
-  ? async (input: Parameters<typeof reportCodeRunUsage>[1]): Promise<void> => {
-      await reportCodeRunUsage(billing.service, input);
-      /*
-       * The local ledger's draw, beside the Lago report: the same run's tokens × 100 (the
-       * exchange rate the LLM meter's block above spells), idempotent on the SAME run id the
-       * Lago report uses (`code-run:<runId>`) — a replayed settle is one draw here exactly as
-       * it is one event there. Fire-and-forget for the same reason: the run already finished,
-       * and a ledger miss must not fail it.
-       *
-       * No PRE-call gate on code runs, deliberately: the run has already started by the time
-       * the gateway reports usage (the sandbox's own budget governs the run), and refusing
-       * mid-run saves nothing the sandbox's timeout would not. The LLM gate (above) is where
-       * before-the-first-token refusal lives; this side keeps the ledger honest afterwards.
-       */
-      const tokens = input.inputTokens + input.outputTokens;
-      if (tokens <= 0) return;
-      await billing.creditWriter
-        .consumeCredits({
+const codeRunUsageReporter = billing && usageOutbox
+  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
+      try {
+        await reportCodeRunUsage(usageOutbox, {
+          ...input,
           externalCustomerId: billing.externalCustomerKey,
-          amountCents: tokens * 100,
-          idempotencyKey: `code-run:${input.runId}`,
-          title: "代码运行",
-          requestId: input.runId,
-          model: input.modelId,
-          client: "web",
-        })
-        .catch(() => {
-          // Contained on purpose — see the comment above.
         });
+      } catch (error) {
+        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
+      }
     }
   : undefined;
 const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
