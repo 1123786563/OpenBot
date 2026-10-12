@@ -53,21 +53,44 @@ import type { ReconcileFinding, ReconcileReport } from "./types";
  * no customer column — v1's orders ARE this deployment's): the "live subscription" ask is the
  * same shape and the same key the purchase guard's uncached read uses, so the audit and the
  * gate can never disagree about what "live" means.
+ *
+ * `expectedPlanCredits`, when the assembly provides it, prices a plan code in scaled integer
+ * credit units (whole credits × CREDIT_SCALE — the same arithmetic the payout's grantor uses),
+ * answering `null` for plans with no credit component. Against it the pass audits the plan
+ * allowance payout: every paid order must carry a grant keyed `plan:<orderId>` of exactly the
+ * priced amount, and no paid order may sit with its activation pending or failed past the
+ * documented age threshold (the sweep retries on a one-minute interval, so 15 minutes without
+ * settlement means the retries are not converging — a young retry is not an incident).
  */
+export type ExpectedPlanCredits = (planCode: string) => number | null;
+
 export function createReconciler(
   database: Database,
   externalCustomerKey: string,
+  expectedPlanCredits?: ExpectedPlanCredits,
   options?: {
     usageFindingLimit?: number;
+    activationBacklogAgeMs?: number;
   },
 ): {
   reconcile(): Promise<ReconcileReport>;
 } {
   const usageFindingLimit = options?.usageFindingLimit ?? 100;
+  // The activation sweep runs every minute; fifteen missed passes without a settlement means
+  // the retry is not converging (provider down, plan refused), not a callback still in flight.
+  const activationBacklogAgeMs = options?.activationBacklogAgeMs ?? 15 * 60_000;
   const allocationSampleLimit = 3;
   if (!Number.isSafeInteger(usageFindingLimit) || usageFindingLimit <= 0) {
     throw new RangeError(
       "Usage finding limit must be a positive safe integer",
+    );
+  }
+  if (
+    !Number.isSafeInteger(activationBacklogAgeMs) ||
+    activationBacklogAgeMs <= 0
+  ) {
+    throw new RangeError(
+      "Activation backlog age must be a positive safe integer",
     );
   }
 
@@ -113,8 +136,11 @@ export function createReconciler(
       const paidOrders = await database
         .select({
           id: paymentOrders.id,
+          planCode: paymentOrders.planCode,
           channelTransactionId: paymentOrders.channelTransactionId,
           activationState: paymentOrders.activationState,
+          paidAt: paymentOrders.paidAt,
+          terminalAt: paymentOrders.terminalAt,
         })
         .from(paymentOrders)
         .where(eq(paymentOrders.status, "paid"));
@@ -159,6 +185,76 @@ export function createReconciler(
             code: "fact_transaction_mismatch",
             subject: order.id,
             detail: `the order names transaction ${order.channelTransactionId} but its paid fact names ${fact.channelTransactionId} — double-payment evidence, needs an operator`,
+          });
+        }
+      }
+
+      /*
+       * ── Invariant 1, side four: the plan allowance payout. A paid order whose plan prices
+       *    an allowance must carry exactly one grant keyed `plan:<orderId>` of exactly the
+       *    priced amount, in scaled integer units. The grant's insert-or-nothing key makes a
+       *    retried payout safe at write time; this is the after-the-fact audit that the
+       *    payout landed at all and for the right sum. Plans the catalog prices at null (or
+       *    zero) grant nothing by configuration — nothing to check.
+       */
+      if (expectedPlanCredits) {
+        const planGrants = await database
+          .select({
+            idempotencyKey: creditGrants.idempotencyKey,
+            total: creditGrants.total,
+          })
+          .from(creditGrants)
+          .where(eq(creditGrants.source, "plan"));
+        const planGrantTotalByKey = new Map(
+          planGrants.map((grant) => [grant.idempotencyKey, grant.total]),
+        );
+        for (const order of paidOrders) {
+          const expected = expectedPlanCredits(order.planCode);
+          if (expected === null || expected <= 0) continue;
+          const key = `plan:${order.id}`;
+          const actual = planGrantTotalByKey.get(key);
+          if (actual === undefined) {
+            findings.push({
+              category: "payment",
+              code: "plan_grant_missing",
+              subject: order.id,
+              detail: `the order is paid but no plan grant carries idempotency_key=${key} — the allowance payout never landed; expected=${expected} scaled units`,
+            });
+          } else if (actual !== expected) {
+            findings.push({
+              category: "payment",
+              code: "plan_grant_amount_mismatch",
+              subject: order.id,
+              detail: `grant ${key} totals actual=${actual} but the catalog prices plan ${order.planCode} at expected=${expected} scaled units — payout drift, needs an operator`,
+            });
+          }
+        }
+      }
+
+      /*
+       * ── Activation backlog: money that landed but entitlement that never settled. The
+       *    sweep re-runs activation every minute, so a paid order still pending/failed once
+       *    its paid time is older than the threshold is a retry that is not converging — the
+       *    provider unreachable, the plan refused — not a callback in flight. The anchor is
+       *    paid_at (terminal_at is the fallback for rows written before that column existed).
+       */
+      const nowMs = Date.now();
+      for (const order of paidOrders) {
+        if (
+          order.activationState !== "pending" &&
+          order.activationState !== "failed"
+        ) {
+          continue;
+        }
+        const anchor = order.paidAt ?? order.terminalAt;
+        if (!anchor) continue;
+        const ageMs = Math.max(0, nowMs - anchor.getTime());
+        if (ageMs > activationBacklogAgeMs) {
+          findings.push({
+            category: "payment",
+            code: "activation_backlog",
+            subject: order.id,
+            detail: `state=${order.activationState} paid_at=${anchor.toISOString()} age_ms=${ageMs} exceeds activation_backlog_age_ms=${activationBacklogAgeMs} — the sweep's retries are not settling this order; a provider outage or a refused plan is the usual suspect`,
           });
         }
       }

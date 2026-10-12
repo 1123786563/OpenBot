@@ -145,6 +145,9 @@ export type ReconcileFinding = {
     | "grants_ledger_divergence"
     | "expired_reserved_reservation"
     | "reservation_allocation_imbalance"
+    | "plan_grant_missing"
+    | "plan_grant_amount_mismatch"
+    | "activation_backlog"
     | "usage_target_pending"
     | "usage_target_blocked"
     | "usage_findings_omitted";
