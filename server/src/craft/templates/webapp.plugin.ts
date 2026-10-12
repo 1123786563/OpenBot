@@ -14,6 +14,10 @@
 // Failures are returned as observations, never thrown; a thrown tool error
 // would abort the agent's turn instead of letting it recover.
 
+import { spawn } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
+import { access, readFile } from "node:fs/promises";
+
 const SDK_TOOL_PATHS = [
   ...(process.env.OPENBOT_PLUGIN_TOOL_HELPER
     ? [process.env.OPENBOT_PLUGIN_TOOL_HELPER]
@@ -59,10 +63,6 @@ type ToolDefinition = {
     },
   ): Promise<string>;
 };
-
-import { spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
 
 const SCRIPT_REL = "start-webapp.sh";
 const PID_REL = "nextjs.pid";
