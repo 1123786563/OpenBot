@@ -16,10 +16,17 @@
 // turn failure.
 //
 // Module resolution: the workspace has no node_modules, so a bare runtime
-// `import` of the SDK cannot resolve. The `tool` helper is loaded at runtime by
-// absolute path from opencode's bundled SDK (same approach as onyx's image).
+// `import` of the SDK cannot resolve. The `tool` helper is loaded at runtime
+// from opencode's bundled SDK (same approach as onyx's image): first relative
+// to this plugin's own location — opencode materializes the SDK beside it in
+// the session's `.opencode/node_modules` — then by the absolute paths the
+// deployed sandbox lays out, then onyx's image candidates (a trailing miss is
+// harmless; the list is candidates-in-order).
 
 const SDK_TOOL_PATHS = [
+  new URL("../node_modules/@opencode-ai/plugin/dist/tool.js", import.meta.url)
+    .href,
+  "/config/opencode/node_modules/@opencode-ai/plugin/dist/tool.js",
   "/home/sandbox/.opencode/node_modules/@opencode-ai/plugin/dist/tool.js",
   "/home/sandbox/.config/opencode/node_modules/@opencode-ai/plugin/dist/tool.js",
 ];
