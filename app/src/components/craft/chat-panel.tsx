@@ -1,6 +1,6 @@
-import { IconCircleX, IconClock } from "@tabler/icons-react";
+import { IconClock } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { decideCraftApproval, listLiveApprovals } from "@/lib/craft/client";
@@ -14,18 +14,12 @@ import {
   scheduledRunContextKey,
   scheduledRunContextQueryOptions,
 } from "@/lib/craft/scheduled-tasks";
-import {
-  messagesToTranscript,
-  type TranscriptItem,
-  useBuildStreaming,
-} from "@/lib/craft/streaming";
+import { messagesToTranscript, useBuildStreaming } from "@/lib/craft/streaming";
 import { Composer } from "./composer";
-import { MessagePlan } from "./message/plan";
-import { MessageText } from "./message/text";
-import { MessageThinking } from "./message/thinking";
-import { ToolCall } from "./message/tool-call";
+import { TranscriptEntry } from "./message/transcript-entry";
 import { useWakeOnIntent } from "./sandbox-status-indicator";
 import { ScheduledRunStatusChip } from "./scheduled-task-editor";
+import { SubagentView } from "./subagent-view";
 
 /**
  * The conversation: durable history first, then the live turn, then the composer. History and live
@@ -35,6 +29,11 @@ import { ScheduledRunStatusChip } from "./scheduled-task-editor";
  * A SCHEDULED-origin session additionally carries the run banner: the context read drives it, and
  * while the run is live the scheduled-run SSE feeds the same live list the interactive turns use
  * (onyx's shouldStreamScheduledRun, minus its input lock — recorded as a port difference).
+ *
+ * The main area also swaps between the conversation and a subagent's read-only transcript
+ * (`viewedSubagentId`, onyx's viewedSubagentSessionId minus the cross-fade): the `task` tool
+ * card's click-through sets it, the view's return button clears it, and the composer is hidden
+ * while a subagent is on screen so the pane is unambiguously read-only.
  */
 export function ChatPanel({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
@@ -55,6 +54,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
   const {
     items: liveItems,
     isStreaming,
+    subagents,
     streamMessage,
     interruptStreaming,
     streamScheduledRunEvents,
@@ -63,6 +63,20 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
   // Focus on a sleeping sandbox is the wake signal (onyx's useWakeOnIntent): the composer's
   // textarea onFocus forces the session reload whose server side restores the snapshot.
   const wakeOnIntent = useWakeOnIntent(sessionId);
+
+  // The subagent view is session-scoped: switching sessions mid-mount (the route keeps this
+  // panel alive) drops the viewer back to the conversation — the render-time reset, so no
+  // stale subagent id outlives its session.
+  const [viewedSubagentId, setViewedSubagentId] = useState<string | null>(null);
+  const [subagentViewSessionId, setSubagentViewSessionId] = useState(sessionId);
+  if (subagentViewSessionId !== sessionId) {
+    setSubagentViewSessionId(sessionId);
+    setViewedSubagentId(null);
+  }
+  const viewedSubagent =
+    viewedSubagentId !== null
+      ? (subagents.get(viewedSubagentId) ?? null)
+      : null;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyItems = messagesToTranscript(messages.data ?? []);
@@ -148,132 +162,77 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
           <ScheduledRunStatusChip status={scheduledRun.data.status} />
         </div>
       ) : null}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
-        {messages.isPending && items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t("chat.loading")}</p>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t("chat.empty")}</p>
-        ) : (
-          <ul className="space-y-3">
-            {items.map((item) => (
-              <li key={item.key}>
-                <TranscriptEntry item={item} />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {approvals.data && approvals.data.length > 0 ? (
-          <div className="mt-4 rounded-md border border-border p-3">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">
-              {t("approvals.waiting")}
-            </p>
-            <ul className="space-y-2">
-              {approvals.data.map((approval) => (
-                <li
-                  key={approval.id}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <span className="truncate text-sm">
-                    {approval.action.effect || approval.action.tool_ref}
-                  </span>
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void decide(approval.id, "allow_once")}
-                    >
-                      {t("approvals.allowOnce")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void decide(approval.id, "deny")}
-                    >
-                      {t("approvals.deny")}
-                    </Button>
-                  </div>
+      {viewedSubagent ? (
+        <SubagentView
+          subagent={viewedSubagent}
+          onReturn={() => setViewedSubagentId(null)}
+        />
+      ) : (
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+          {messages.isPending && items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("chat.loading")}</p>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("chat.empty")}</p>
+          ) : (
+            <ul className="space-y-3">
+              {items.map((item) => (
+                <li key={item.key}>
+                  <TranscriptEntry
+                    item={item}
+                    onViewSubagent={setViewedSubagentId}
+                  />
                 </li>
               ))}
             </ul>
-          </div>
-        ) : null}
-      </div>
-      <Composer
-        sessionId={sessionId}
-        disabled={messages.isPending}
-        streaming={isStreaming}
-        onSend={handleSend}
-        onInterrupt={interruptStreaming}
-        onInputFocus={wakeOnIntent}
-      />
-    </div>
-  );
-}
+          )}
 
-function TranscriptEntry({ item }: { item: TranscriptItem }) {
-  const { t } = useTranslation("craft");
-  switch (item.kind) {
-    case "user":
-      return (
-        <div className="flex justify-end">
-          <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-muted px-3 py-2 text-sm">
-            {item.text ? (
-              <p className="whitespace-pre-wrap">{item.text}</p>
-            ) : null}
-            {item.attachments && item.attachments.length > 0 ? (
-              <ul
-                className="mt-1 space-y-0.5"
-                aria-label={t("attachments.list")}
-              >
-                {item.attachments.map((attachment) => (
+          {approvals.data && approvals.data.length > 0 ? (
+            <div className="mt-4 rounded-md border border-border p-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                {t("approvals.waiting")}
+              </p>
+              <ul className="space-y-2">
+                {approvals.data.map((approval) => (
                   <li
-                    key={attachment.path}
-                    className="flex items-center gap-1 text-xs text-muted-foreground"
+                    key={approval.id}
+                    className="flex items-center justify-between gap-2"
                   >
-                    <span className="truncate">{attachment.name}</span>
+                    <span className="truncate text-sm">
+                      {approval.action.effect || approval.action.tool_ref}
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void decide(approval.id, "allow_once")}
+                      >
+                        {t("approvals.allowOnce")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void decide(approval.id, "deny")}
+                      >
+                        {t("approvals.deny")}
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
-      );
-    case "text":
-      return <MessageText text={item.text} />;
-    case "thinking":
-      return <MessageThinking text={item.text} streaming={item.streaming} />;
-    case "tool":
-      return (
-        <ToolCall
-          title={item.title}
-          toolKind={item.toolKind}
-          status={item.status}
-          rawInput={item.rawInput}
-          rawOutput={item.rawOutput}
-          content={item.content}
+      )}
+      {viewedSubagent ? null : (
+        <Composer
+          sessionId={sessionId}
+          disabled={messages.isPending}
+          streaming={isStreaming}
+          onSend={handleSend}
+          onInterrupt={interruptStreaming}
+          onInputFocus={wakeOnIntent}
         />
-      );
-    case "plan":
-      return <MessagePlan entries={item.entries} />;
-    case "usage":
-      return (
-        <p className="text-center text-[11px] text-muted-foreground">
-          {t("chat.usage", { tokens: item.usedTokens })}
-        </p>
-      );
-    case "compaction":
-      return (
-        <p className="text-center text-[11px] text-muted-foreground">
-          {t("chat.compacted")}
-        </p>
-      );
-    case "error":
-      return (
-        <p className="flex items-center gap-1.5 text-sm text-destructive">
-          <IconCircleX className="size-3.5 shrink-0" />
-          {item.message}
-        </p>
-      );
-  }
+      )}
+    </div>
+  );
 }

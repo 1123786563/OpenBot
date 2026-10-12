@@ -516,6 +516,57 @@ export class CraftSessionManager {
     });
   }
 
+  /**
+   * Drive one direct-to-subagent prompt to completion, yielding sandbox events — the sync-SSE
+   * backing of POST /sessions/:id/subagents/:ocSessionId/send-message (onyx messages.py's
+   * subagent route reusing yield_sandbox_events). No InteractiveTurn, no runner, no persistence:
+   * the caller streams the events straight to the client.
+   *
+   * Deliberate divergence from the shared path: no ensureSession preflight. The subagent id is
+   * caller-supplied; a stale one (sandbox recycled) surfaces as an opencode 404 → error frame,
+   * rather than silently minting a fresh unrelated session the way ensureSession would.
+   */
+  async *yieldSubagentSandboxEvents(input: {
+    session: CraftSessionRow;
+    botId: string;
+    opencodeSessionId: string;
+    content: string;
+    /** The requester — gates permission.asked through the session's approval rendezvous. */
+    userId?: string | null;
+  }): AsyncGenerator<SandboxEvent | BuildPacket> {
+    const directory = sessionDirectory(
+      input.session.id,
+      this.config.sessionDirectoryMode,
+    );
+    const client = this.gateway.serveClientFor({
+      botId: input.botId,
+      directory,
+    });
+    if (!client) {
+      throw new Error(`No sandbox serve client for bot ${input.botId}`);
+    }
+
+    // Same gate construction as yieldSandboxEvents: approvals ride the session's
+    // announce list either way (the live list is polled independently of streams).
+    const permissionGate =
+      this.deps.approvals && this.deps.approvalSignals && input.userId
+        ? createCraftPermissionGate({
+            config: this.config,
+            approvals: this.deps.approvals,
+            signals: this.deps.approvalSignals,
+            sessionId: input.session.id,
+            userId: input.userId,
+            botId: input.botId,
+          })
+        : null;
+
+    yield* client.sendMessage(input.opencodeSessionId, input.content, {
+      directory,
+      timeoutMs: this.config.opencodePromptInactivityTimeoutSeconds * 1000,
+      permissionGate,
+    });
+  }
+
   /** Persistence half of a turn — see streaming.persistSandboxEvent. */
   async persistSandboxEvent(
     sessionId: string,
