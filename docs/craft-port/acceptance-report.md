@@ -60,3 +60,25 @@ createCraftRoutes({ requireUser, deps: {
 - 端到端冒烟（建会话→发消息→SSE→重载→interrupt）需 agent-sandbox 网关在线实测；opencode 版本差异逐条回归（风险点 1）
 - fetchMessage 异步预水化（若实测发现 delta 丢角色）
 - skills/MCP 推送 + dispose-pending 标记 + 快照 sleep/wake + webapp 代理 + 审批对接 OpenBot approvals
+
+---
+
+# 附：Craft Parity Remediation 验收（2026-10-13，检查点 `6c7c0d16`）
+
+> 增量验收范围：六能力恢复（C1–C6），提交 `bf81d741..6c7c0d16`。证据基线：`remediation-verification.md`（真实 agent-sandbox 冒烟）+ 全量 craft 测试。总判定：**契约级验收通过；真实现场带 6 项命名 finding（F-A…F-F），修复回流控制器后复验。**
+
+| # | 验收行 | 结果 | 证据 |
+|---|---|---|---|
+| R1 | 全部 craft 测试（28 文件） | **PASS** — 425/425（1245 断言） | remediation-verification §1 |
+| R2 | server + agent-sandbox typecheck | **PASS** — 双 EXIT=0 | 同上 |
+| R3 | agent-sandbox 测试套 | **PASS** — 72/72 | 同上 |
+| R4 | C1/C2 managed content（渲染+倒置+双哈希+reload 真值） | **PASS** — 测试全绿；live：段落渲染、MCP seed 后 reload 重写 opencode.json | §2/§3(i) |
+| R5 | C3 MCP mcp block + 中继凭证 | **PASS** — 测试全绿；**live：工具调用回程 `FIXTURE_ECHO:mcpping`，中继逐调用解密附挂 Bearer** | §3(i) |
+| R6 | C4 connect_app | **PASS（装配级）**；**真实现场 GAP(F-B)**：插件不注册（工具目录 12 项无 connect_app） | §3(ii)(iii) |
+| R7 | C5 webapp 工具+托管启动 | **PASS（脚本级 live）**：真 `bun run dev`+flock+pid cwd 守卫+ready 行逐字节+幂等重跑；**GAP(F-B) 工具、GAP(F-D) 初装缺脚本、GAP(F-E) 预览拓扑** | §3(vii) |
+| R8 | C6 ZIP 双路由 | **PASS（live 字节级）**：disposition/sanitize/仅文件条目；真空 dir=22B 零条目 ZIP；缺失 404；**GAP(F-C)** 顶层仅子目录时空档 | §3(viii) |
+| R9 | 无新依赖/迁移/schema 变更 | **PASS** — 范围内零 diff（仅 audit.ts +7 常量） | §5.3 |
+| R10 | BLOCKED 沿袭（company-search） | **维持 BLOCKED** — 无 backed skill 落地 | §5.4 |
+| R11 | OCR 覆盖（--audience agent） | **部分（8/34 文件,15 意见,无 Critical/High）— LLM 429 配额阻断,已记录 + 待 round 2** — `ocr-report-round1.md` | §6 |
+
+**复验指引**：F-B/F-D 修复后重跑 §3(ii)(iii)(vii)；F-C 修复后重跑 §3(viii) 顶层目录用例；F-A/F-F 为平台级（auth fetch 补丁旁路 craft 流量 + CAS 复位 initializing），修复后重跑完整 turn 环。

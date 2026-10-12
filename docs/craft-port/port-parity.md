@@ -270,10 +270,51 @@
 
 ---
 
+## ⑥ Remediation Delta(2026-10-13,验证检查点 `6c7c0d16`)
+
+> 增量基线:六能力恢复计划(`docs/plans/2026-10-12-craft-parity-remediation.md`,提交 `bf81d741..6c7c0d16`)。契约事实源:`onyx-contract.md` + `fixtures/`;终审证据:`remediation-verification.md`(真实 agent-sandbox 冒烟 + finding 全录)。**本节只记增量,与 §①–⑤ 冲突处以本节 + `onyx-contract.md` §6 勘误为准。**
+
+### 恢复了什么(vs remediation 前分支状态 `3c690410`)
+
+| 能力 | remediation 前 | remediation 后(契约级) | 真实现场状态(2026-10-13 冒烟) |
+|---|---|---|---|
+| C1 Connectable apps 段 | 模板裁剪 | **restore**:`{{CONNECTABLE_APPS_LIST}}` 段 + 逐用户倒置过滤(已连接不出、共享部署账号不出) | ✅ live(段落渲染 + 倒置实证) |
+| C2 Managed skills + 双哈希 | 接缝缺失 | **restore**:resolver 接缝 + AGENTS.md 先渲染后 ack + reload 走真 resolver | ✅ live(空源哈希照算;reload 短路按哈希) |
+| C3 Per-user MCP servers | 无 mcp block | **restore**:mcp block(键名/权限/指纹逐 onyx)+ 服务器侧中继(逐调用凭证解密) | ✅ live(工具调用全链:`FIXTURE_ECHO` 回程,中继附挂 Bearer) |
+| C4 connect_app 工具 | 裁剪 | **restore**:插件文本逐字节 + ask/announce/decide/超时 + decide 端点限定 | ⚠️ **契约级成立,真实现场 blocked-by F-B**(插件不注册,SDK 路径) |
+| C5 webapp 工具 + 托管启动 | 裁剪(一期经 /devserver) | **restore**:工具 + 预留端口 start-webapp.sh(flock/pid cwd 守卫)+ attach-not-spawn 预览 | ⚠️ **脚本级 ✅ live;工具真实现场 blocked-by F-B;预览拓扑 blocked-by F-E** |
+| C6 ZIP 输出 | tar.gz | **restore**:两路由 `application/zip`(deflate、仅文件条目、sanitize、RFC 5987);tar.gz 从 craft HTTP 面移除 | ✅ live 字节级;**F6-A 递归语义 blocked-by F-C**(顶层仅子目录时空档) |
+
+**配置/依赖:零变更**(`package.json`/`bun.lock`/db schema 在 `3c690410..6c7c0d16` 无 diff;zip-archive.ts 为仓库内实现)。测试:425 craft + 72 agent-sandbox + 双 typecheck 全绿。
+
+### 勘误(转移项 (iv)(v)(vi),Onyx/实现事实胜出先前文档)
+
+- **勘误 C5(原 §4.0 表述)**:C5 的执行环境替代**不是**"agent-sandbox `/devserver/start` 池",而是 **onyx 自己的预留端口模型**(DB 预约 [3010,3100) + 工作区内 start-webapp.sh 自管理单进程)。理由:devserver 池无法绑定指定端口、无法保证 log/pid 文件与进程同址、且池在沙箱内被触发需携带网关 token(泄露面)。`/devserver/start` 子系统仍服务非 craft 场景,与 C5 无关。
+- **勘误(措辞)**:webapp 工具 description 保持 onyx 逐字节 "it scaffolds outputs/web, installs dependencies…",而脚本实际**把 scaffold 推迟给 agent**(无 `outputs/web/package.json` 时 `exit 1` + 指引文案)。AGENTS.md 指引补偿(已测);真实现场已复现脚本两侧行为。
+- **勘误(fixture)**:`fixtures/webapp-tool.md` §F 的模板拷贝(`cp -r /workspace/templates/outputs/*`,Next 模板)与 dev-server 三环境变量(`ONYX_WEBAPP_PORT/BASE_PATH/ALLOWED_DEV_ORIGINS`)两条在 OpenBot 环境**结构性不可满足**(无镜像模板、无 pod 内 env 注入)——fixture 已加 Erratum E1 注记,断言以脚本结构等价物(flock/pid/探活/ready 行)为准。
+
+### BLOCKED 沿袭(未变化)
+
+company-search(组织知识技能)维持 BLOCKED:OpenBot 知识域无可供沙箱调用而不泄凭证的路径;`COMPANY_KNOWLEDGE_SECTION` 钉住,AGENTS.md 公司知识段仅当 backed skill 落地才渲染。**全量 parity 在此解决 + F-B/F-C/F-D/F-E 修复前不得宣称。**
+
+### 真实现场 finding 摘要(详见 remediation-verification.md §4)
+
+| # | 级别 | 一句话 |
+|---|---|---|
+| F-A | Critical(部署) | auth 全局 fetch 补丁破坏 craft 对回环沙箱网关的调用(写 201 读 400 / turn runner 事件流卡死) |
+| F-B | High(交付) | SDK_TOOL_PATHS 在部署布局不解析 → connect_app/webapp 插件真实现场不注册 |
+| F-C | High(交付) | download-directory 假设递归 listing,真实网关扁平 → 嵌套文件静默丢弃 |
+| F-D | Medium(交付) | 初装路径不写 start-webapp.sh(stale 行,nextjsPort 未回读) |
+| F-E | Medium(拓扑) | 预览/ready 拨 host 回环,dev server 在容器内 → host 部署永 503 |
+| F-F | Low/Medium | failed 空会话修复路径必抛 Stale(CAS 不复位 initializing) |
+
+---
+
 ## 附:文档间关系
 
 - 一期(基础移植)差异全表与部署接入:`README.md`(§四 16 处 + §五装配)。
 - 移植前架构分析与完整映射建议:`architecture-analysis.md`。
 - 数据库对照:`schema-notes.md`。
 - 一期验收记录:`acceptance-report.md`。
+- 契约基线与终审证据:`onyx-contract.md`(+ `fixtures/`)、`remediation-verification.md`(2026-10-13 真实 agent-sandbox 冒烟 + finding 全录)、`ocr-report-round1.md`。
 - 本文为**当前状态的权威对照**,agent-instructions.ts 头注指向本文件。
