@@ -65,12 +65,27 @@ function fakeBus(): PodEventBus & { sub: PodSubscription } {
 
 type Posted = { url: string; body: string };
 
-/** fetch mock: permission-answer POSTs recorded; the prompt admits at once (the turn parks on the unanswered ask, not the POST). */
-function recordingFetch(posts: Posted[]): typeof fetch {
+/**
+ * fetch mock: permission-answer POSTs recorded; the prompt admits at once (the
+ * turn parks on the unanswered ask, not the POST). `answerStatuses` scripts the
+ * Nth permission POST's status (default 200); a 404 carries opencode's
+ * PermissionNotFoundError body (pinned live against opencode 1.18.7).
+ */
+function recordingFetch(
+  posts: Posted[],
+  answerStatuses: number[] = [],
+): typeof fetch {
   return (async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/permissions/")) {
+      const index = posts.length;
       posts.push({ url, body: String(init?.body ?? "") });
+      const status = answerStatuses[index] ?? 200;
+      const body =
+        status === 404
+          ? '{"_tag":"PermissionNotFoundError","requestID":"perm","message":"Permission request not found: perm"}'
+          : "{}";
+      return new Response(body, { status });
     }
     return new Response("{}", { status: 200 });
   }) as unknown as typeof fetch;
@@ -108,6 +123,7 @@ async function startTurn(
   config: CraftConfig,
   connectApp: { sessionId: string; signals: CraftConnectAppSignals } | null,
   posts: Posted[],
+  answerStatuses: number[] = [],
 ): Promise<{
   bus: PodEventBus & { sub: PodSubscription };
   finish: () => Promise<void>;
@@ -119,7 +135,7 @@ async function startTurn(
     token: null,
     botId: "craft",
     eventBus: bus,
-    fetchImpl: recordingFetch(posts),
+    fetchImpl: recordingFetch(posts, answerStatuses),
   });
   const runner = (async () => {
     for await (const _event of client.sendMessage("ses_1", "hi", {
@@ -362,9 +378,11 @@ describe("connect_app timeout", () => {
     );
     await waitFor(() => signals.peekAnnouncements("cs-sess").length === 1);
     const [card] = signals.peekAnnouncements("cs-sess").map(JSON.parse);
-    // The decision endpoint answered (allow) and cleared the pending record —
-    // the ONLY answer opencode may ever see for this permission.
-    await signals.clearPending(card.request_id);
+    // The decision endpoint answered (allow) — its mechanism is the atomic
+    // take, which also cleared the record. This is the ONLY answer opencode
+    // may ever see for this permission (OCR r3: the timeout must reconcile
+    // through the same take, losing cleanly when the decide wins it).
+    expect(await signals.takePending(card.request_id)).not.toBeNull();
 
     // Window (1s) passes: the loop must NOT send its redundant reject after
     // the user already connected (OCR r2: the deletion-path gap).
@@ -373,6 +391,128 @@ describe("connect_app timeout", () => {
       post.url.includes("/permissions/perm_decided"),
     );
     expect(answers).toHaveLength(0);
+
+    await turn.finish();
+  }, 15000);
+
+  // ── OCR round-3: the timeout's reconcile mirrors the decide endpoint ───────
+  // Claim through the atomic take (never load+answer+clear, which races the
+  // endpoint's own take), and only drop the entry once an answer landed.
+  test("KV blip at the deadline → the reject is retried next pass, not silently dropped", async () => {
+    const base = createInProcessConnectAppSignals();
+    let failed = false;
+    const blip = (): void => {
+      if (!failed) {
+        failed = true;
+        throw new Error("kv blip");
+      }
+    };
+    const signals: CraftConnectAppSignals = {
+      ...base,
+      loadPending: async (id) => {
+        blip();
+        return base.loadPending(id);
+      },
+      takePending: async (id) => {
+        blip();
+        return base.takePending(id);
+      },
+    };
+    const posts: Posted[] = [];
+    const turn = await startTurn(
+      fastConfig,
+      { sessionId: "cs-sess", signals },
+      posts,
+    );
+
+    turn.bus.sub.queue.push(
+      connectAppAsk("perm_blip", { external_app_id: 7, reason: "x" }),
+    );
+    // The window passes during the blip: the first claim attempt fails, the
+    // entry must survive it and the next pass must still deliver the reject
+    // (pre-fix, the read failure read as "decide took it" and the ask hung
+    // unanswered until the inactivity timeout).
+    await waitFor(
+      () => posts.some((post) => post.url.includes("/permissions/perm_blip")),
+      6000,
+    );
+    expect(JSON.parse(posts[0].body)).toEqual({ response: "reject" });
+    // Exactly one answer, once delivered.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(
+      posts.filter((post) => post.url.includes("/permissions/perm_blip")),
+    ).toHaveLength(1);
+    expect(
+      await base.loadPending(
+        signals
+          .peekAnnouncements("cs-sess")
+          .map((p) => JSON.parse(p) as { request_id: string })[0].request_id,
+      ),
+    ).toBeNull();
+
+    await turn.finish();
+  }, 15000);
+
+  test("reject delivery fails once → pending re-stashed, reject retried, one answer in the end", async () => {
+    const signals = createInProcessConnectAppSignals();
+    const posts: Posted[] = [];
+    const turn = await startTurn(
+      fastConfig,
+      { sessionId: "cs-sess", signals },
+      posts,
+      [500, 200], // first answer POST fails, the retry lands
+    );
+
+    turn.bus.sub.queue.push(
+      connectAppAsk("perm_retry", { external_app_id: 7, reason: "x" }),
+    );
+    // The first reject POST 500s: the take already consumed the record, so it
+    // must be re-stashed (the card stays decidable) and the entry kept so the
+    // next pass retries — instead of losing the record with no answer sent
+    // (pre-fix) or clearing it after a phantom success.
+    await waitFor(
+      () =>
+        posts.filter((post) => post.url.includes("/permissions/perm_retry"))
+          .length === 2,
+      6000,
+    );
+    const requestId = signals
+      .peekAnnouncements("cs-sess")
+      .map((p) => JSON.parse(p) as { request_id: string })[0].request_id;
+    // The retry's take removed it again — no lingering record for a late card.
+    expect(await signals.loadPending(requestId)).toBeNull();
+
+    await turn.finish();
+  }, 15000);
+
+  test("ask already answered upstream at the deadline → timeout stands down (terminal 404), no re-stash", async () => {
+    const signals = createInProcessConnectAppSignals();
+    const posts: Posted[] = [];
+    const turn = await startTurn(
+      fastConfig,
+      { sessionId: "cs-sess", signals },
+      posts,
+      [404], // opencode: permission already resolved — PermissionNotFoundError
+    );
+
+    turn.bus.sub.queue.push(
+      connectAppAsk("perm_gone", { external_app_id: 7, reason: "x" }),
+    );
+    await waitFor(
+      () => posts.some((post) => post.url.includes("/permissions/perm_gone")),
+      6000,
+    );
+    // The ask is dead upstream: exactly one probe, no retry storm, and the
+    // take-consumed record is NOT re-stashed (a re-stash would resurrect a
+    // card that can never be answered).
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(
+      posts.filter((post) => post.url.includes("/permissions/perm_gone")),
+    ).toHaveLength(1);
+    const requestId = signals
+      .peekAnnouncements("cs-sess")
+      .map((p) => JSON.parse(p) as { request_id: string })[0].request_id;
+    expect(await signals.loadPending(requestId)).toBeNull();
 
     await turn.finish();
   }, 15000);
@@ -457,7 +597,10 @@ function recordingGateway(recorder: AnswerRecorder): SandboxGateway {
           url: `/session/${sessionId}/permissions/${permissionId}`,
           body: JSON.stringify({ response: options.allow ? "once" : "reject" }),
         });
-        return recorder.answerStatus === 200;
+        return {
+          ok: recorder.answerStatus === 200,
+          permissionGone: recorder.answerStatus === 404,
+        };
       },
     }),
   } as unknown as SandboxGateway;
@@ -466,14 +609,15 @@ function recordingGateway(recorder: AnswerRecorder): SandboxGateway {
 async function decisionHarness(input: {
   session?: CraftSessionRow | null;
   answerStatus?: number;
+  signals?: CraftConnectAppSignals;
 }): Promise<{
   app: ReturnType<typeof createConnectAppRoutes>;
-  signals: ReturnType<typeof createInProcessConnectAppSignals>;
+  signals: CraftConnectAppSignals;
   posts: Posted[];
   requestId: string;
   auditEvents: Array<Record<string, unknown>>;
 }> {
-  const signals = createInProcessConnectAppSignals();
+  const signals = input.signals ?? createInProcessConnectAppSignals();
   const posts: Posted[] = [];
   const auditEvents: Array<Record<string, unknown>> = [];
   const app = createConnectAppRoutes(fakeRequireUser("u1"), {
@@ -673,10 +817,228 @@ describe("POST /apps/connect/:requestId/decision", () => {
       },
     );
     expect(response.status).toBe(502);
-    expect(await response.text()).toContain(
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toContain(
       "Could not reach the sandbox to apply your choice — please try again.",
     );
+    // The restore succeeded, so the client may honestly retry.
+    expect(body).toMatchObject({ retryable: true });
     expect(await h.signals.loadPending(h.requestId)).not.toBeNull();
+  });
+
+  // ── OCR round-3: authorize BEFORE the destructive take ─────────────────────
+  // The pending record must survive every unauthorized/failed exit, or a
+  // leaked requestId (they ride SSE cards, audit rows, logs) becomes a remote
+  // cancel of the owner's decision.
+  test("cross-user 404 does not consume the pending — the owner can still decide", async () => {
+    const signals = createInProcessConnectAppSignals();
+    const requestId = await stashAndAnnounce(signals, {
+      sessionId: "cs-sess",
+      opencodeSessionId: "ses_1",
+      directory: "/w",
+      permissionId: "perm_ok",
+      externalAppId: 7,
+      reason: null,
+      newRequestId: () => "req-o",
+    });
+    const posts: Posted[] = [];
+    const store = {
+      // u1 owns the session; any other caller owns nothing.
+      getSession: async (_id: string, userId: string) =>
+        userId === "u1" ? sessionRow() : undefined,
+    } as unknown as CraftStore;
+    const deps = {
+      config: fastConfig,
+      store,
+      gateway: recordingGateway({ posts, answerStatus: 200 }),
+      botIdFor: async () => "craft",
+      signals,
+    };
+    const attackerApp = createConnectAppRoutes(fakeRequireUser("u2"), deps);
+    const ownerApp = createConnectAppRoutes(fakeRequireUser("u1"), deps);
+
+    // A user holding someone else's requestId (SSE card / audit / log leak):
+    // the 404 must NOT have deleted the record (pre-fix, the take ran before
+    // the ownership check and the owner's later decision no-opped forever).
+    const attack = await attackerApp.request(
+      `/apps/connect/${requestId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "declined" }),
+      },
+    );
+    expect(attack.status).toBe(404);
+    expect(await signals.loadPending(requestId)).not.toBeNull();
+    expect(posts).toHaveLength(0);
+
+    // The owner's decision still lands — exactly one answer, ever.
+    const owner = await ownerApp.request(
+      `/apps/connect/${requestId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "connected" }),
+      },
+    );
+    expect(owner.status).toBe(200);
+    expect(posts).toEqual([
+      {
+        url: "/session/ses_1/permissions/perm_ok",
+        body: '{"response":"once"}',
+      },
+    ]);
+  });
+
+  test("503 (sandbox not running) leaves the pending answerable once it returns", async () => {
+    const signals = createInProcessConnectAppSignals();
+    const requestId = await stashAndAnnounce(signals, {
+      sessionId: "cs-sess",
+      opencodeSessionId: "ses_1",
+      directory: "/w",
+      permissionId: "perm_ok",
+      externalAppId: 7,
+      reason: null,
+      newRequestId: () => "req-s",
+    });
+    let row = sessionRow({ status: "paused" });
+    const posts: Posted[] = [];
+    const app = createConnectAppRoutes(fakeRequireUser("u1"), {
+      config: fastConfig,
+      store: { getSession: async () => row } as unknown as CraftStore,
+      gateway: recordingGateway({ posts, answerStatus: 200 }),
+      botIdFor: async () => "craft",
+      signals,
+    });
+
+    const paused = await app.request(`/apps/connect/${requestId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "connected" }),
+    });
+    expect(paused.status).toBe(503);
+    // The 503 consumed nothing (pre-fix it ate the record permanently).
+    expect(await signals.loadPending(requestId)).not.toBeNull();
+
+    row = sessionRow(); // the sandbox is back
+    const retry = await app.request(`/apps/connect/${requestId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "connected" }),
+    });
+    expect(retry.status).toBe(200);
+    expect(posts).toHaveLength(1);
+  });
+
+  // ── OCR round-3: KV failure at the gate is a 5xx, never a false 200 no-op ──
+  test("KV failure at the load → 502, not a silent no-op 200", async () => {
+    const base = createInProcessConnectAppSignals();
+    const h = await decisionHarness({
+      session: sessionRow(),
+      signals: {
+        ...base,
+        loadPending: async () => {
+          throw new Error("kv down");
+        },
+      },
+    });
+    const response = await h.app.request(
+      `/apps/connect/${h.requestId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "connected" }),
+      },
+    );
+    expect(response.status).toBe(502);
+    expect(h.posts).toHaveLength(0);
+  });
+
+  test("KV failure at the take → 502, the record stays put", async () => {
+    const base = createInProcessConnectAppSignals();
+    const h = await decisionHarness({
+      session: sessionRow(),
+      signals: {
+        ...base,
+        takePending: async () => {
+          throw new Error("kv down");
+        },
+      },
+    });
+    const response = await h.app.request(
+      `/apps/connect/${h.requestId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "connected" }),
+      },
+    );
+    expect(response.status).toBe(502);
+    expect(h.posts).toHaveLength(0);
+    // The stash was never taken: the owner can retry once the KV recovers.
+    expect(await base.loadPending(h.requestId)).not.toBeNull();
+  });
+
+  // ── OCR round-3: failed restore + terminal upstream 404 stop the retry loop ─
+  test("answer fails AND the re-stash fails → 502 retryable:false (a retry would no-op)", async () => {
+    const base = createInProcessConnectAppSignals();
+    // The initial stash (handshake setup) succeeds; only the RESTORE after a
+    // failed answer hits the dead KV.
+    let stashedOnce = false;
+    const h = await decisionHarness({
+      session: sessionRow(),
+      answerStatus: 500,
+      signals: {
+        ...base,
+        stashPending: async (id, pending) => {
+          if (!stashedOnce) {
+            stashedOnce = true;
+            return base.stashPending(id, pending);
+          }
+          throw new Error("kv down");
+        },
+      },
+    });
+    const response = await h.app.request(
+      `/apps/connect/${h.requestId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "connected" }),
+      },
+    );
+    expect(response.status).toBe(502);
+    // The record is LOST (restore failed): the response must say so — a
+    // retryable 502 here sends the user into false-success no-op 200s.
+    expect(await response.json()).toMatchObject({ retryable: false });
+    expect(await h.signals.loadPending(h.requestId)).toBeNull();
+  });
+
+  test("ask already resolved upstream (opencode 404 PermissionNotFoundError) → terminal 410, no re-stash, no loop", async () => {
+    // Pinned: opencode 1.18.7's reply handler deletes the pending entry on the
+    // first answer and 404s PermissionNotFoundError on every re-answer (live
+    // probe + packages/core/src/permission.ts) — a false-negative answer
+    // (applied but response lost) makes every retry 404 forever. The endpoint
+    // must recognize the terminal 404 and stop promising "please try again".
+    const h = await decisionHarness({
+      session: sessionRow(),
+      answerStatus: 404,
+    });
+    const response = await h.app.request(
+      `/apps/connect/${h.requestId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "connected" }),
+      },
+    );
+    expect(response.status).toBe(410);
+    expect(await response.json()).toMatchObject({ retryable: false });
+    // Terminal: NOT re-stashed (the retry loop's cap) and not audited — this
+    // side cannot prove the user's choice took effect upstream.
+    expect(await h.signals.loadPending(h.requestId)).toBeNull();
+    expect(h.auditEvents).toHaveLength(0);
+    expect(h.posts).toHaveLength(1);
   });
 
   test("invalid decision body → 400", async () => {

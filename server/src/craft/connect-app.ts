@@ -69,16 +69,21 @@ export type CraftConnectAppSignals = {
     requestId: string,
     pending: CraftConnectAppPending,
   ): Promise<void>;
-  /** The stashed context, or null when expired/already cleared/unparseable. */
+  /**
+   * The stashed context, or null when expired/already cleared/unparseable.
+   * An infrastructure failure THROWS (never folds to null): callers must be
+   * able to tell "expired/answered" apart from "KV down" and answer 5xx
+   * honestly instead of a false-success no-op.
+   */
   loadPending(requestId: string): Promise<CraftConnectAppPending | null>;
   /**
    * Atomically load-AND-clear the context: exactly ONE caller per requestId can
    * ever see a non-null answer (GET+DEL in one Redis script; one synchronous
    * block in-process). The decision endpoint takes through this so concurrent
-   * replays (double-click, two tabs) cannot both answer opencode.
+   * replays (double-click, two tabs) cannot both answer opencode. An
+   * infrastructure failure THROWS — the same error contract as loadPending.
    */
   takePending(requestId: string): Promise<CraftConnectAppPending | null>;
-  clearPending(requestId: string): Promise<void>;
   readonly mode: "redis" | "memory";
 };
 
@@ -99,9 +104,6 @@ return out`;
 const SET_WITH_TTL = `
 redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2])
 return 1`;
-
-/** The port exposes no DEL; the script keeps clearPending on the same eval seam. */
-const DEL_KEY = `redis.call('del', KEYS[1]) return 1`;
 
 /** GET+DEL as one script — the atomic take the decision endpoint decides through. */
 const TAKE_KEY = `
@@ -135,19 +137,17 @@ function createRedisSignals(redis: RedisPort): CraftConnectAppSignals {
       );
     },
     async loadPending(requestId) {
-      const raw = await redis.get(pendingKey(requestId)).catch(() => null);
+      // No .catch(() => null) here: a Redis outage must surface as a throw so
+      // the decision endpoint can 5xx instead of masquerading as the
+      // "expired/already answered" no-op (OCR r3) — stashPending and
+      // announceRequest already propagate; the take/load gates now do too.
+      const raw = await redis.get(pendingKey(requestId));
       return parsePending(raw);
     },
     async takePending(requestId) {
-      const raw = await redis
-        .eval(TAKE_KEY, 1, pendingKey(requestId))
-        .catch(() => null);
+      // Same error contract as loadPending: eval failures propagate.
+      const raw = await redis.eval(TAKE_KEY, 1, pendingKey(requestId));
       return parsePending(raw);
-    },
-    async clearPending(requestId) {
-      await redis
-        .eval(DEL_KEY, 1, pendingKey(requestId))
-        .catch(() => undefined);
     },
   };
 }
@@ -233,9 +233,6 @@ export function createInProcessConnectAppSignals(): CraftConnectAppSignals & {
       const entry = live(key);
       lists.delete(key);
       return parsePending(entry.values[0] ?? null);
-    },
-    async clearPending(requestId) {
-      lists.delete(pendingKey(requestId));
     },
   };
 }

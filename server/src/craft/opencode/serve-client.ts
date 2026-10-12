@@ -17,6 +17,7 @@ import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 import {
   CONNECT_APP_PERMISSION,
+  type CraftConnectAppPending,
   type CraftConnectAppSignals,
   parseConnectAppAsk,
   stashAndAnnounce,
@@ -389,6 +390,16 @@ export type PermissionGateDecision =
   | "allow_always"
   | "deny"
   | "expired";
+
+/**
+ * The outcome of answering one permission upstream: `ok` is delivery success;
+ * `permissionGone` means the ask itself is dead upstream (already answered —
+ * opencode 404s re-answers — or expired there), so retrying can never land.
+ */
+export type PermissionAnswerOutcome = {
+  ok: boolean;
+  permissionGone: boolean;
+};
 
 /**
  * How the transport routes permission.asked. A gated ask is NOT answered inline: `open`
@@ -1649,32 +1660,74 @@ export class OpencodeServeClient {
       // Timeout fallback for connect-app asks nobody decided: one reject each,
       // exactly like the gated expiry — the plugin's catch block turns it into
       // the declined string, so the turn continues rather than hanging.
-      // Reconciled against the out-of-band decide through the KV record: a
-      // cleared pending means the decision endpoint already answered (skip —
-      // a second answer would contradict the user's choice), and after this
-      // side rejects, the pending is cleared so a late card click lands in
-      // the endpoint's 200 no-op branch instead of retrying a dead permission.
+      // Reconciled against the out-of-band decide the same way replayed
+      // decisions reconcile with each other — through the atomic TAKE: whoever
+      // takes the record owns the one answer, so a user's late card click and
+      // this loop can never both answer opencode. The entry is only dropped
+      // AFTER an answer landed (or the record is confirmed gone); a failed
+      // delivery keeps it for the next pass, so a KV blip or a dead sandbox
+      // can never lose the record without an answer (the fail-closed posture
+      // this block has always claimed).
       if (pendingConnectApp.size > 0) {
         const now = Date.now();
         for (const [permissionId, entry] of pendingConnectApp) {
           if (entry.deadline > now) continue;
-          pendingConnectApp.delete(permissionId);
           // Entries only exist when the connectApp rendezvous does — its
           // handler is the sole writer of this map.
           const signals = connectApp?.signals ?? null;
+          let claimed: CraftConnectAppPending | null = null;
           if (signals !== null) {
-            const stillPending = await signals
-              .loadPending(entry.requestId)
-              .catch(() => null);
-            if (stillPending === null) continue;
+            try {
+              claimed = await signals.takePending(entry.requestId);
+            } catch (error) {
+              // KV unreadable: cannot tell "decided" from "still pending".
+              // Keep the entry and retry next pass — a blind reject could
+              // contradict a choice the user just made, and while entries
+              // remain the inactivity floor stays raised (the turn is not
+              // cut early).
+              getLogger("server").warn(
+                {
+                  err: error instanceof Error ? error.message : String(error),
+                  permissionId,
+                },
+                "opencode-serve: connect_app timeout take failed; retrying",
+              );
+              continue;
+            }
+            if (claimed === null) {
+              // Answered or expired out-of-band (the decide endpoint won the
+              // take): drop the entry — a second answer would contradict the
+              // user's choice.
+              pendingConnectApp.delete(permissionId);
+              continue;
+            }
           }
           const rejected = await this.answerPermission(
             options.opencodeSessionId,
             permissionId,
             { allow: false, directory },
           );
-          if (rejected && signals !== null) {
-            await signals.clearPending(entry.requestId).catch(() => undefined);
+          if (rejected.ok || rejected.permissionGone) {
+            // Delivered — or the ask died upstream (already answered by a
+            // decide whose response was lost; opencode 404s re-answers).
+            // Either way this side is done; the take already removed the
+            // record, so a late card click lands in the endpoint's 200 no-op
+            // branch instead of retrying a dead permission.
+            pendingConnectApp.delete(permissionId);
+            continue;
+          }
+          if (claimed !== null) {
+            // The take consumed the record but no answer landed. Put it back
+            // (the decide endpoint's Branch-4 restore semantics) and KEEP the
+            // entry: the user's still-live card can decide, and the next pass
+            // retries the reject — the record is never lost unanswered.
+            await signals
+              ?.stashPending(entry.requestId, claimed)
+              .catch(() => undefined);
+          } else {
+            // Unreachable by the sole-writer invariant (entries require the
+            // rendezvous); kept defensive: don't spin on a dead arm forever.
+            pendingConnectApp.delete(permissionId);
           }
         }
       }
@@ -1777,7 +1830,7 @@ export class OpencodeServeClient {
             // turn resumes with a decline instead of hanging.
             const ask =
               info.metadata !== null ? parseConnectAppAsk(info.metadata) : null;
-            const deny = (reason: string): Promise<boolean> => {
+            const deny = (reason: string): Promise<PermissionAnswerOutcome> => {
               getLogger("server").warn(
                 { permissionId: info.permissionId, reason },
                 "opencode-serve: denying connect_app permission",
@@ -1865,12 +1918,23 @@ export class OpencodeServeClient {
     }
   }
 
-  /** Resolve a pending opencode permission: allow ("once") runs the tool; deny ("reject") surfaces it. */
+  /**
+   * Resolve a pending opencode permission: allow ("once") runs the tool; deny
+   * ("reject") surfaces it. `ok` is delivery success. `permissionGone` marks
+   * the ask itself dead upstream: opencode's reply handler deletes the pending
+   * entry on the first answer and 404s `PermissionNotFoundError` on every
+   * re-answer (pinned live + source, opencode 1.18.7
+   * packages/core/src/permission.ts), so a false-negative answer (applied but
+   * its response was lost) can never be re-delivered — callers use it to stop
+   * retry loops instead of promising "try again" forever. The sandbox
+   * gateway's allow-list 404 (`{"error":"Not found."}`) is deliberately NOT
+   * permissionGone: that is a transport/config failure, still retryable.
+   */
   async answerPermission(
     sessionId: string,
     permissionId: string,
     options: { allow: boolean; directory: string },
-  ): Promise<boolean> {
+  ): Promise<PermissionAnswerOutcome> {
     try {
       const response = await this.doFetch(
         `${this.base}/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}?directory=${encodeURIComponent(options.directory)}`,
@@ -1883,9 +1947,17 @@ export class OpencodeServeClient {
           ),
         },
       );
-      return response.ok;
+      if (response.ok) return { ok: true, permissionGone: false };
+      if (response.status === 404) {
+        const body = await response.text().catch(() => "");
+        return {
+          ok: false,
+          permissionGone: body.includes("PermissionNotFoundError"),
+        };
+      }
+      return { ok: false, permissionGone: false };
     } catch {
-      return false;
+      return { ok: false, permissionGone: false };
     }
   }
 }
