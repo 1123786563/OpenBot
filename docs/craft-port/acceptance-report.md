@@ -71,7 +71,7 @@ createCraftRoutes({ requireUser, deps: {
 |---|---|---|---|
 | R1 | 全部 craft 测试（28 文件） | **PASS** — 425/425（1245 断言） | remediation-verification §1 |
 | R2 | server + agent-sandbox typecheck | **PASS** — 双 EXIT=0 | 同上 |
-| R3 | agent-sandbox 测试套 | **PASS** — 72/72 | 同上 |
+| R3 | agent-sandbox 测试套 | **PASS** — 72/72(round 3 @ `fe169d20` 刷新:77/77) | 同上 |
 | R4 | C1/C2 managed content（渲染+倒置+双哈希+reload 真值） | **PASS** — 测试全绿；live：段落渲染、MCP seed 后 reload 重写 opencode.json | §2/§3(i) |
 | R5 | C3 MCP mcp block + 中继凭证 | **PASS** — 测试全绿；**live：工具调用回程 `FIXTURE_ECHO:mcpping`，中继逐调用解密附挂 Bearer** | §3(i) |
 | R6 | C4 connect_app | **PASS（装配级）**；**真实现场 GAP(F-B)**：插件不注册（工具目录 12 项无 connect_app） | §3(ii)(iii) |
@@ -87,9 +87,9 @@ createCraftRoutes({ requireUser, deps: {
 
 | # | 验收行 | 结果 | 证据 |
 |---|---|---|---|
-| R12 | craft 测试 + typecheck | **PASS — 439/439（30 文件）、typecheck EXIT=0** | remediation-verification §0.1 |
+| R12 | craft 测试 + typecheck | **PASS — 439/439（30 文件）@ round 2;round 3 @ `fe169d20` 刷新:446/446（31 文件）、typecheck EXIT=0** | remediation-verification §0.1/§R3.4 |
 | R13 | F-A/F-F（平台级） | **FIXED live**：回环 URL 会话创建 active；完整 turn 环（abort/steer 续跑/落定/assistant 落库/409/interrupt）；failed 会话同 id 修复 | §0.2 |
 | R14 | F-B/F-D（交付级） | **FIXED live**：工具目录含 connect_app+webapp；webapp 工具真实执行（observation 逐字节）；connect_app 真实调用且 ask 停车；start-webapp.sh 初装在场 | §0.2/§0.3 |
 | R15 | F-C/F-E | **FIXED live**：嵌套树 3 文件 ZIP + 隐藏剪除；webapp-info ready:true + 预览 200 + host 端口 200 | §0.2 |
-| R16 | connect_app decide/超时 | **仍缺口 — 新 finding F-G**（停车期 attach SSE 0 字节：无 connect_app_request 卡/无 keepalive，request_id 无出口；窗口到期未见 decline 工具结果）+ F-H 低置信观察（interrupt 后续 turn 空转） | §0.3/§0.4 |
+| R16 | connect_app decide/超时 | **已闭合（round 3，修复 `fe169d20`）— F-G FIXED live**：attach SSE 承载完整回合（connect_app_request 帧 + keepalive）；decision declined → 200 → 回合以 declined 工具结果收尾，无非活性 abort、无重试。F-H **CONFIRMED + FIXED**（fence 泄漏；live：interrupt 后续 turn 跑完） | remediation-verification Round 3 |
 | R17 | OCR round 2 | **仍 429 阻断 — 8/36 文件 13 意见无 Critical/High** — `ocr-report-round2.md` | §0.5 |

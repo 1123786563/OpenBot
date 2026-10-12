@@ -179,7 +179,7 @@ export async function forwardEvents(
  * One upstream SSE block, forwarded or dropped.
  *
  * A block is `data: {...}` (opencode sends no event:/id: lines). It passes when its event
- * family is one of the five the product consumes; heartbeats, plugin noise, session metadata
+ * family is one of the six the product consumes; heartbeats, plugin noise, session metadata
  * and unknown future types are dropped here — the single place that decision lives.
  */
 export function forwardBlock(block: string): string | null {

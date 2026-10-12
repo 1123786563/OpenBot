@@ -46,6 +46,48 @@
 
 ---
 
+## Round 3 复验（修复后，2026-10-13，检查点 `fe169d20`）
+
+> 修复提交：`fe169d20`（F-G + F-H + OCR round-2 mediums，16 文件：agent-sandbox src 3 + tests 2，server src 7 + tests 4）。证据源：修复代理报告 `.superpowers/sdd/task-6-report.md`「F-G/F-H/OCR-mediums fix」节——每 finding 先 RED 后 GREEN；F-G/F-H 另有真实现场全链路复现（重建镜像 + docker run 沙箱 + 自建 server 3099 + 真实 GLM-5.3 回合），复现后环境已拆、DB 测试行已清。本节为该报告的持久化摘录。
+
+### R3.1 F-G — FIXED（live 全链实证）
+
+**根因：五处仅现场可达的断层叠加**（单测缝隙全部绕开了它们——craft-connect-app 套件把 permission.asked 直接注入 bus 队列、用 stub gateway 应答（不经真网关 filter/allow-list）；attach 相关只测到 `subscribeToExistingSessionEvents` 生成器，从未穿过 `createTurnRoutes` 的 HTTP 面；boot 的 server.timeout 在单测里不存在）：
+
+1. **网关 family filter 丢 `permission.asked`**（`agent-sandbox/src/sse.ts` forwardBlock → `events.ts` familyOf）：五族之外一律 "other" → null——ask 永远到不了 server 的 PodEventBus（无 announce 卡、无 pending 条目，窗口到期无从回绝）。修复：permission.asked 入 SANDBOX_EVENT_TYPES + 新 "permission" 族（控制面例外）。
+2. **网关剥掉 `/event` 的 `?directory=` 作用域**（proxy /events handler → forwardEvents 只拉裸 `/event`）：opencode 按 directory 分实例发布事件，craft 会话（directory-scoped）的回合事件**整条不可见**（现场实证：同回合裸流与 scoped 流经网关均 0 字节，直连 per-bot `4400/event?directory=…` 8KB+ 正常）。修复：forwardEvents 增 `upstreamQuery`，proxy 透传调用方的 directory。
+3. **权限应答动词不在网关 allow-list**（proxy allowedPath 只认 2 段 `/session/:id/…`）：`POST /session/:id/permissions/:pid` 404 → 决策端点与超时回绝的 answerPermission 全部静默失败（返回 false，opencode 继续停车）。修复：3 段形状路由入列。
+4. **boot server 的 SSE idle-timeout 豁免漏了 craft**（`server/src/index.ts:4126-4131` 只对 `/api/workshop/*/events` 调 `server.timeout(request, 255)`）：Bun 默认 ~10s idle 切断，attach 流首条 keepalive 在 15s——现场实测 `time curl` **9.038s 被切、0 字节**。修复：豁免条件扩至 `/api/craft/`。
+5. **turn executor 每趟 pass 硬编码 `opencodeSessionId: null`**（turn-executor.ts driveOnePrompt，注释声称"drive loop 从行上解析"但从未实现）：每趟 mint 新 opencode 会话 → attach 订阅的行上 id 与事件流 sessionID 错位，attach 永远看不到回合自身事件（且跨 turn 上下文丢失）。修复：每趟 pass 前重读行、把行上 id 交给 ensureSession（404 仍走 re-mint 回写）。
+
+**RED→GREEN**：agent-sandbox `sse.test.ts`（forwardBlock(permission.asked) 修复前 null → `event: permission`）、`proxy.test.ts`（permissions 应答 404 → 200 转发；`GET /events?directory=X` 到达上游 `/event?directory=X`）；新增 `server/tests/craft-turn-sse-attach.test.ts` 穿真 `createTurnRoutes` SSE 端点 + 真 executor/manager/gateway/bus，事件源经真 forwardBlock——stash 网关修复即 RED（卡永不上流、9s 超时），恢复即 GREEN。
+
+**live 证据**（修复前三处 RED 现场：attach 9.038s 被切 0 字节、网关 scoped/裸流 0 事件；修复后）：attach SSE 承载**完整回合**——65 thought chunks、53 message chunks、tool_call_start/progress（connect_app 运行中=停车）、**1 帧 `connect_app_request`**（request_id e61d838b…，F4 wire 逐字段）、keepalives、停车期间存活；`POST /apps/connect/:request_id/decision {"decision":"declined"}` → **200 → 回合以 declined 工具结果恢复**（落库 `tool_call_progress … connect_app … completed`，模型答复 "Connection declined — Slack (app 7) isn't connected…"），turn 正常收尾——**decide 半段现场闭合：step 经 decline 而非非活性 abort 收场、恰好一次应答、无重试**。
+
+### R3.2 F-H — CONFIRMED + FIXED
+
+**机制确认**（装配级复现 + 现场同形）：`POST /interrupt` 置 fence；被中断 turn 的 runner 经 `shouldInterrupt` 轮询自杀式 cancelled → `finishTurn(CANCELLED)` 清掉 active 指针 → finally 的守卫 `active !== null && active.turnId === turnId` **必为 false**（自己的 finishTurn 刚清了指针）→ **end-of-turn 清 fence 永不执行**；而 interrupt 契约的 "start of each turn" 清除在 admit 路径上根本没接线。fence TTL 600s，泄漏窗口内每个新 turn 都被它在 ~1s 内 cancelled（admit 后即刻清除、无 prompt 输出、无落库、无错误行）。修复两处（都是契约原文）：① turn-executor.ts finally：`active === null` 也算 still-owns（仅指针指向**别的** turn 才让位）；② message-routes.ts admit：409 检查通过后、createInteractiveTurn 前 `fence.clearInterrupt`。**live**：interrupt 取消 turn 1 后，后续 turn admit 并跑完（答复 "ok" 落库）。
+
+### R3.3 OCR round-2 mediums — 全修
+
+1. **pendingConnectApp 删除路径单一**（serve-client.ts）：map 值携 `{requestId, deadline}`；到期先 loadPending——已裁决（决策端点 clearPending 过）则跳过冗余 reject，自行 reject 成功后 clearPending（迟到卡片点击落 200 no-op 而非 502 重试至 TTL；reject 失败保留记录供重试）。
+2. **决策路径非原子**（connect-app-routes.ts）：`takePending`（Redis GET+DEL 单脚本；in-process 单同步块）替换 loadPending——并发双击恰一人拿到记录、一人 200 no-op、恰好一次 sandbox 应答 + 一条 audit 行；**502 失败路径 re-stash 保重试**。
+3. **轻路径 ack 哈希未 dispose 旧实例**（session-ready.ts 轻路径）：opencode.json 重写后、哈希 ack 前，`session.opencodeSessionId` 存在即尽力 dispose（对齐 manager.regenerateSessionConfig 契约）——否则预崩溃实例永远服旧配置且 sessionRuntimeStale 永假。
+
+### R3.4 回归计数（检查点 `fe169d20`）
+
+`cd server && bun test tests/craft-*.test.ts`：**446 pass / 0 fail（31 文件；基线 439/30）**；`bun run typecheck` EXIT=0。`cd agent-sandbox && bun test`：**77 pass / 0 fail（基线 72 + 5）**；typecheck EXIT=0。零新依赖、零 schema 变更（`3c690410..fe169d20` 对 package.json/bun.lock/db schema 无 diff，复核通过）。
+
+### R3.5 OCR round 3
+
+重跑已启动（同命令，范围随 HEAD 扩至含 `fe169d20`）。**截至本增落笔：`/tmp/ocr-round3-output.txt` 0 字节、ocr 进程仍在运行（05:22 启动）——尚无完成信号，无可披露的覆盖数/意见**；与前两轮 429 配额阻断是否同形，待其落定后确认并另行补录。
+
+### R3.6 未变化项
+
+company-search 维持 BLOCKED（§5.4）；compose 默认发布 3010-3100 与本机 dev 端口冲突的环境注记维持（§0.4，非产品缺陷）。
+
+---
+
 ## 1. 命令与结果（round 1，检查点 `6c7c0d16`）
 
 | # | 命令（cwd=repo） | 结果 |
