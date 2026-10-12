@@ -31,7 +31,7 @@ services:
   # owns embeddings talks to Qdrant over HTTP on 6333. Redis-style: one binary, no external
   # dependencies, storage in the named volume below.
   qdrant:
-    image: ${QDRANT_IMAGE:-qdrant/qdrant:1.19.2}
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.19.2}
     restart: unless-stopped
     # Loopback both families, like every other port in these files: a host-run kb process
     # reaches it through the published port, nothing off the machine can.
@@ -41,9 +41,11 @@ services:
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
-      # The health endpoint answers 200 with the version once the HTTP API is up; no TCP
-      # probing, because a listening socket says nothing about the REST API being served.
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:6333/healthz || exit 1"]
+      # TCP on the REST port, not wget: this image ships no wget and no curl, just bash (and
+      # the /dev/tcp probe it can run). The HTTP API serving /healthz is what matters and a
+      # listening 6333 is the best cheap signal bash alone can get; the kb client's startup
+      # self-check (ensureCollection) is the functional probe on top.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/6333' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
