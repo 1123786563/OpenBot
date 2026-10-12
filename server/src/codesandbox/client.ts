@@ -36,6 +36,9 @@ export type SandboxClientOptions = {
 };
 
 export type SandboxClient = {
+  capabilities: {
+    enforceableTokenBudget: boolean;
+  };
   createSession(title: string): Promise<string>;
   sendMessage(
     sessionId: string,
@@ -124,6 +127,9 @@ export function createSandboxClient(options: SandboxClientOptions): SandboxClien
   };
 
   return {
+    capabilities: {
+      enforceableTokenBudget: false,
+    },
     async createSession(title: string) {
       const response = await request("/session", {
         method: "POST",

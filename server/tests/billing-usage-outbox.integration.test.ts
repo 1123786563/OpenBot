@@ -34,6 +34,9 @@ function usageEvent(eventId: string) {
     model: "gpt-4.1",
     client: "web",
     occurredAt: new Date("2026-10-11T10:00:00.000Z"),
+    reservationId: `res-${eventId}`,
+    actualCostNumerator: "33",
+    actualCostDenominator: "2",
   };
 }
 
@@ -88,6 +91,9 @@ test("record rejects reuse of an event ID with any changed immutable fact", asyn
     { ...event, model: "gpt-4.1-mini" },
     { ...event, client: "api" },
     { ...event, occurredAt: new Date(event.occurredAt.getTime() + 1) },
+    { ...event, reservationId: `${event.reservationId}-other` },
+    { ...event, actualCostNumerator: "34" },
+    { ...event, actualCostDenominator: "3" },
   ];
 
   for (const conflictingEvent of conflictingEvents) {

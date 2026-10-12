@@ -101,6 +101,7 @@ import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
 import { createLagoClient } from "./billing/lago";
+import { startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
@@ -114,6 +115,11 @@ import {
 } from "./billing/service";
 import { createBillingStatements } from "./billing/statements";
 import { createBillingStore } from "./billing/store";
+import {
+  createCreditUsageTarget,
+  createLagoUsageTarget,
+  createUsageDelivery,
+} from "./billing/usage-delivery";
 import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
@@ -172,7 +178,6 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setModelUsageGate,
-  setModelUsageMeter,
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
@@ -318,7 +323,11 @@ import {
 import { indexArtifacts } from "./workshop/artifacts";
 import { createTurnEventBus } from "./workshop/bus";
 import { createInProcessTurnLock, createRedisTurnLock } from "./workshop/locks";
-import { reportCodeRunUsage } from "./workshop/metering";
+import {
+  calculateExactModelUsageCharge,
+  reportCodeRunUsage,
+  UsageChargeError,
+} from "./workshop/metering";
 import { createTurnOrchestrator } from "./workshop/orchestrator";
 import { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import {
@@ -333,6 +342,7 @@ import { createWorkshopStore } from "./workshop/store";
 
 const log = getLogger("server");
 const STABLE_BILLING_CODE = /^[a-z0-9_]{1,64}$/;
+const MODEL_RESERVATION_WINDOW_MS = 15 * 60_000;
 
 function usageOutboxWriteFailureCode(error: unknown): string {
   if (error instanceof UsageOutboxConflictError) {
@@ -3133,52 +3143,101 @@ const usageOutbox =
 
 /*
  * The billing seam meters what the built-in Bots consume, once it exists: every model call's
- * finish lands here and becomes one immutable usage fact in the outbox. Delivery to Lago and
- * credits is a downstream concern on purpose: this task stops direct provider/ledger writes on
- * the completion path while the reservation-aware credit settlement still lives in the later plan.
+ * admitted call reserves first, then the finished usage becomes one immutable outbox fact with the
+ * same event/reservation identity and exact rational charge. Delivery to Lago and credits happens
+ * downstream; a completed run whose durable write failed stays visible for reconciliation rather
+ * than being silently charged in-process.
  */
 if (billing !== undefined && usageOutbox !== undefined) {
-  setModelUsageMeter((usage) => {
-    const input = usage.inputTokens ?? 0;
-    const output = usage.outputTokens ?? 0;
-    if (input === 0 && output === 0) return;
-    void usageOutbox
-      .record({
-        eventId: usage.eventId,
-        source: "llm",
-        externalCustomerId: billing.externalCustomerKey,
-        transactionId: usage.eventId,
-        inputTokens: input,
-        outputTokens: output,
-        model: runtimeModel.defaultModel,
-        client: "web",
-        occurredAt: usage.occurredAt,
-      })
-      .catch((error) => {
-        logUsageOutboxWriteFailure("llm", usage.eventId, error);
-      });
-  });
+  const creditPolicy = billingSettings?.creditPolicy;
+  setModelUsageGate(async (input) => {
+    if (!creditPolicy?.configured) throw new CreditGateError();
+    const modelId = input.modelId ?? runtimeModel.defaultModel;
+    const modelPolicy = creditPolicy.models.get(modelId);
+    if (!modelPolicy) throw new CreditGateError();
 
-  /*
-   * The PRE-CALL gate (P0-2's front door): a deployment whose live credit balance is zero does
-   * not get free model calls while it looks paid-for. A 10-second TTL cache in front of the
-   * balance read — a burst of calls costs one read, and a fresh grant shows through at most
-   * 10s later; the consume path above is the accuracy, this gate is only the visibility.
-   * Fail-closed: a balance read that throws refuses the call (copilot.ts wraps it into
-   * CreditGateError), because an unreadable balance is not a free pass.
-   */
-  let gateBalance: { value: number; checkedAt: number } | undefined;
-  setModelUsageGate(async () => {
-    const now = Date.now();
-    if (gateBalance && now - gateBalance.checkedAt < 10_000) {
-      if (gateBalance.value <= 0) throw new CreditGateError();
-      return;
+    let reservation: Awaited<
+      ReturnType<typeof billing.creditWriter.reserveCredits>
+    >;
+    try {
+      reservation = await billing.creditWriter.reserveCredits({
+        externalCustomerId: billing.externalCustomerKey,
+        idempotencyKey: `usage:${input.eventId}`,
+        maximumCents: Number(modelPolicy.maximumReservationUnits),
+        expiresAt: new Date(
+          input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
+        ),
+      });
+    } catch {
+      throw new CreditGateError();
     }
-    const balance = await billing.creditWriter.readBalance(
-      billing.externalCustomerKey,
-    );
-    gateBalance = { value: balance, checkedAt: now };
-    if (balance <= 0) throw new CreditGateError();
+    if (!reservation.reserved) throw new CreditGateError();
+
+    return {
+      finish: async (usage) => {
+        let charged: ReturnType<typeof calculateExactModelUsageCharge>;
+        try {
+          charged = calculateExactModelUsageCharge(modelPolicy, {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          });
+        } catch (error) {
+          if (
+            error instanceof UsageChargeError &&
+            error.code === "usage_invalid_tokens" &&
+            (usage.inputTokens ?? 0) <= 0 &&
+            (usage.outputTokens ?? 0) <= 0
+          ) {
+            await billing.creditWriter.releaseReservation(
+              reservation.reservationId,
+              "no_usage",
+            );
+            return;
+          }
+          logUsageOutboxWriteFailure("llm", input.eventId, error);
+          return;
+        }
+
+        try {
+          await usageOutbox.record({
+            eventId: input.eventId,
+            source: "llm",
+            externalCustomerId: billing.externalCustomerKey,
+            transactionId: input.eventId,
+            inputTokens: charged.inputTokens,
+            outputTokens: charged.outputTokens,
+            model: modelId,
+            client: "web",
+            occurredAt: input.occurredAt,
+            reservationId: reservation.reservationId,
+            actualCostNumerator: charged.actual.numerator.toString(),
+            actualCostDenominator: charged.actual.denominator.toString(),
+          });
+        } catch (error) {
+          logUsageOutboxWriteFailure("llm", input.eventId, error);
+        }
+      },
+      fail: async (failure) => {
+        await billing.creditWriter.releaseReservation(
+          reservation.reservationId,
+          failure.reason,
+        );
+      },
+    };
+  });
+} else {
+  setModelUsageGate(undefined);
+}
+
+if (billing !== undefined && usageOutbox !== undefined) {
+  const usageDelivery = createUsageDelivery({
+    outbox: usageOutbox,
+    sendToLago: createLagoUsageTarget(billing.service),
+    chargeCredits: createCreditUsageTarget(billing.creditWriter),
+    log: (message) => log.warn(message),
+  });
+  startUsageDeliverySweeps(usageDelivery, {
+    log: (message) => log.warn(message),
   });
 }
 
@@ -3404,6 +3463,7 @@ const credits =
  */
 const sandboxUrl = process.env.AGENT_SANDBOX_URL?.trim();
 const sandboxToken = process.env.SANDBOX_TOKEN?.trim();
+const codeRunBillingEnabled = billing !== undefined;
 const codeRunStore = createCodeRunStore(database);
 /*
  * Metering's one door (I4): every gateway finish that carries usage reports to Lago through
@@ -3424,16 +3484,18 @@ const codeRunUsageReporter = billing && usageOutbox
       }
     }
   : undefined;
+const sandboxClientFor = (botId: string) =>
+  sandboxUrl && sandboxToken
+    ? createSandboxClient({
+        baseUrl: sandboxUrl,
+        token: sandboxToken,
+        botId,
+      })
+    : null;
 const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
   createCodeRunGateway({
-    client:
-      sandboxUrl && sandboxToken
-        ? createSandboxClient({
-            baseUrl: sandboxUrl,
-            token: sandboxToken,
-            botId,
-          })
-        : null,
+    client: sandboxClientFor(botId),
+    billingEnabled: codeRunBillingEnabled,
     modelId: runtimeModel.defaultModel,
     botId,
     ownerUserId,
@@ -3466,9 +3528,17 @@ const workshopLock = workshopRedisPort
     })
   : createInProcessTurnLock();
 const workshopClientFor = (botId: string) =>
-  sandboxUrl && sandboxToken
-    ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
-    : null;
+  {
+    const client = sandboxClientFor(botId);
+    if (
+      codeRunBillingEnabled &&
+      client !== null &&
+      client.capabilities.enforceableTokenBudget !== true
+    ) {
+      return null;
+    }
+    return client;
+  };
 
 const workshopOrchestrator = createTurnOrchestrator({
   store: workshopStore,
@@ -3476,6 +3546,7 @@ const workshopOrchestrator = createTurnOrchestrator({
   gatewayFor: ({ botId, ownerUserId }) =>
     createCodeRunGateway({
       client: workshopClientFor(botId),
+      billingEnabled: codeRunBillingEnabled,
       modelId: runtimeModel.defaultModel,
       botId,
       ownerUserId,

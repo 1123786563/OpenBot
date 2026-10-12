@@ -398,6 +398,31 @@ export function setModelUsageMeter(
   usageMeter = meter;
 }
 
+export type ModelUsageFailureReason =
+  | "provider_error"
+  | "stream_error"
+  | "no_usage";
+
+export type ModelUsageGateLifecycle = {
+  finish?: (usage: {
+    eventId: string;
+    occurredAt: Date;
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+  }) => Promise<void> | void;
+  fail?: (input: {
+    eventId: string;
+    occurredAt: Date;
+    reason: ModelUsageFailureReason;
+  }) => Promise<void> | void;
+};
+
+type ModelUsageGateInput = {
+  eventId: string;
+  occurredAt: Date;
+  modelId: string | null;
+};
+
 /**
  * The pre-call credit gate, the meter's sibling: where the meter reports what a call COST after
  * it finished, the gate refuses the call BEFORE the first token when the deployment's credit
@@ -409,9 +434,15 @@ export function setModelUsageMeter(
  * (fail-closed): a person with credits whose gate errored is told to retry rather than
  * silently given free tokens.
  */
-let modelUsageGate: (() => Promise<void>) | undefined;
+let modelUsageGate:
+  | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle | undefined>)
+  | undefined;
 
-export function setModelUsageGate(gate: (() => Promise<void>) | undefined) {
+export function setModelUsageGate(
+  gate:
+    | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle | undefined>)
+    | undefined,
+) {
   modelUsageGate = gate;
 }
 
@@ -450,6 +481,9 @@ function meteredModel<T>(model: T): T {
   return {
     ...inner,
     async doStream(params: unknown) {
+      const eventId = randomUUID();
+      const occurredAt = new Date();
+      let lifecycle: ModelUsageGateLifecycle | undefined;
       /*
        * The credit gate, BEFORE the first token: this is the one point every built-in Bot's
        * model call passes through (the same reason the meter lives here), and "before the
@@ -460,45 +494,108 @@ function meteredModel<T>(model: T): T {
        */
       if (modelUsageGate) {
         try {
-          await modelUsageGate();
+          lifecycle = await modelUsageGate({
+            eventId,
+            occurredAt,
+            modelId:
+              typeof inner.modelId === "string" ? inner.modelId : null,
+          });
         } catch (error) {
           if (error instanceof CreditGateError) throw error;
           throw new CreditGateError();
         }
       }
-      const eventId = randomUUID();
-      const occurredAt = new Date();
-      const result = await inner.doStream(params);
-      const report = new TransformStream<
-        Record<string, unknown>,
-        Record<string, unknown>
-      >({
-        transform(part, controller) {
-          if (part.type === "finish") {
+      let result: Awaited<ReturnType<typeof inner.doStream>>;
+      try {
+        result = await inner.doStream(params);
+      } catch (error) {
+        try {
+          await lifecycle?.fail?.({
+            eventId,
+            occurredAt,
+            reason: "provider_error",
+          });
+        } catch {
+          // Admission cleanup is contained: the provider failure is the product failure.
+        }
+        throw error;
+      }
+
+      const [stream, observed] = result.stream.tee();
+      void (async () => {
+        const reader = observed.getReader();
+        let finished = false;
+        try {
+          while (true) {
+            const { done, value: part } = await reader.read();
+            if (done) break;
+            if (part?.type !== "finish") continue;
             const usage = part.usage as
               | {
                   inputTokens?: { total?: number };
                   outputTokens?: { total?: number };
                 }
               | undefined;
+            const inputTokens = usage?.inputTokens?.total;
+            const outputTokens = usage?.outputTokens?.total;
             try {
               usageMeter?.({
                 eventId,
                 occurredAt,
-                inputTokens: usage?.inputTokens?.total,
-                outputTokens: usage?.outputTokens?.total,
+                inputTokens,
+                outputTokens,
               });
             } catch {
               // A meter that throws must not take the run's last chunk down with it.
             }
+            if ((inputTokens ?? 0) > 0 || (outputTokens ?? 0) > 0) {
+              finished = true;
+              try {
+                await lifecycle?.finish?.({
+                  eventId,
+                  occurredAt,
+                  inputTokens,
+                  outputTokens,
+                });
+              } catch {
+                // The lifecycle owner logs and reconciles its own durable-write failures.
+              }
+            }
           }
-          controller.enqueue(part);
-        },
-      });
-      return { ...result, stream: result.stream.pipeThrough(report) };
+          if (!finished) {
+            try {
+              await lifecycle?.fail?.({
+                eventId,
+                occurredAt,
+                reason: "no_usage",
+              });
+            } catch {
+              // Same containment rule as the finish path.
+            }
+          }
+        } catch {
+          if (!finished) {
+            try {
+              await lifecycle?.fail?.({
+                eventId,
+                occurredAt,
+                reason: "stream_error",
+              });
+            } catch {
+              // Same containment rule as the finish path.
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      })();
+
+      return { ...result, stream };
     },
   } as T;
 }
+
+export const meteredModelForTests = meteredModel;
 
 /**
  * Wrap the model instance in the usage meter when one is wired and the model is an instance (the

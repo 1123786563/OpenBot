@@ -16,6 +16,9 @@ export type UsageOutboxInput = {
   model: string;
   client: string;
   occurredAt: Date;
+  reservationId?: string | null;
+  actualCostNumerator?: string | null;
+  actualCostDenominator?: string | null;
   runId?: string | null;
   botId?: string | null;
   ownerUserId?: string | null;
@@ -61,6 +64,9 @@ const immutableFields = [
   "model",
   "client",
   "occurredAt",
+  "reservationId",
+  "actualCostNumerator",
+  "actualCostDenominator",
   "runId",
   "botId",
   "ownerUserId",
@@ -71,6 +77,9 @@ const immutableFields = [
 function normalizeInput(
   input: UsageOutboxInput,
 ): UsageOutboxInput & {
+  reservationId: string | null;
+  actualCostNumerator: string | null;
+  actualCostDenominator: string | null;
   runId: string | null;
   botId: string | null;
   ownerUserId: string | null;
@@ -79,6 +88,9 @@ function normalizeInput(
 } {
   return {
     ...input,
+    reservationId: input.reservationId ?? null,
+    actualCostNumerator: input.actualCostNumerator ?? null,
+    actualCostDenominator: input.actualCostDenominator ?? null,
     runId: input.runId ?? null,
     botId: input.botId ?? null,
     ownerUserId: input.ownerUserId ?? null,

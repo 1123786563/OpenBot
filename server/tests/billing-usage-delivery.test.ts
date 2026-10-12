@@ -3,6 +3,7 @@ import { startUsageDeliverySweeps } from "../src/billing/maintenance";
 import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
 import {
+  createCreditUsageTarget,
   createLagoUsageTarget,
   createUsageDelivery,
   UsageDeliveryError,
@@ -28,6 +29,9 @@ function makeRecord(eventId: string): UsageOutboxRecord {
     ownerUserId: null,
     sessionId: null,
     status: null,
+    reservationId: null,
+    actualCostNumerator: null,
+    actualCostDenominator: null,
     lagoStatus: "pending",
     creditsStatus: "pending",
     lagoLastErrorCode: null,
@@ -187,6 +191,50 @@ describe("createUsageDelivery", () => {
       log: () => {},
     });
     await expect(delivery.runBatch(10)).rejects.toThrow("db down");
+  });
+});
+
+describe("createCreditUsageTarget", () => {
+  test("settles the persisted reservation with the exact rational actual cost", async () => {
+    const calls: unknown[] = [];
+    const settle = createCreditUsageTarget({
+      settleReservation: async (input) => {
+        calls.push(input);
+        return {
+          chargedCents: 7,
+          appliedCents: 7,
+          releasedCents: 18,
+          remainder: { numerator: 0n, denominator: 1n },
+        };
+      },
+    });
+    await settle({
+      ...makeRecord("e-credit"),
+      reservationId: "cr_123",
+      actualCostNumerator: "7",
+      actualCostDenominator: "2",
+    });
+    expect(calls).toEqual([
+      {
+        reservationId: "cr_123",
+        actual: { numerator: 7n, denominator: 2n },
+        title: "LLM token usage",
+        requestId: "e-credit",
+        model: "m1",
+        client: "web",
+      },
+    ]);
+  });
+
+  test("legacy rows without a reservation fail with a stable missing-reservation code", async () => {
+    const settle = createCreditUsageTarget({
+      settleReservation: async () => {
+        throw new Error("should not be called");
+      },
+    });
+    await expect(settle(makeRecord("legacy"))).rejects.toEqual(
+      new UsageDeliveryError("missing_reservation"),
+    );
   });
 });
 

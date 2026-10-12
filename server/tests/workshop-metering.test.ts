@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { CODE_RUN_METRIC, reportCodeRunUsage } from "../src/workshop/metering";
+import {
+  calculateExactModelUsageCharge,
+  CODE_RUN_METRIC,
+  reportCodeRunUsage,
+  UsageChargeError,
+} from "../src/workshop/metering";
 import type { UsageOutbox, UsageOutboxInput } from "../src/billing/usage-outbox";
 
 /**
@@ -52,6 +57,49 @@ describe("reportCodeRunUsage (I4: single source, idempotent, silent without bill
       ownerUserId: "user-1",
       sessionId: "ses-1",
       status: "completed",
+    });
+  });
+
+  describe("calculateExactModelUsageCharge", () => {
+    const policy = {
+      input: {
+        rate: { numerator: 3n, denominator: 2n },
+        maximumTokens: 10n,
+        maximumCostUnits: 15n,
+      },
+      output: {
+        rate: { numerator: 5n, denominator: 4n },
+        maximumTokens: 8n,
+        maximumCostUnits: 10n,
+      },
+      maximumReservationUnits: 25n,
+    };
+
+    test("adds exact rational input and output charges without rounding away the remainder", () => {
+      expect(
+        calculateExactModelUsageCharge(policy, {
+          inputTokens: 3,
+          outputTokens: 2,
+        }),
+      ).toEqual({
+        inputTokens: 3,
+        outputTokens: 2,
+        actual: { numerator: 7n, denominator: 1n },
+      });
+    });
+
+    test("refuses usage that exceeds the configured token ceiling", () => {
+      expect(() =>
+        calculateExactModelUsageCharge(policy, {
+          inputTokens: 11,
+          outputTokens: 0,
+        }),
+      ).toThrow(
+        expect.objectContaining({
+          name: UsageChargeError.name,
+          code: "usage_over_token_max",
+        }),
+      );
     });
   });
 

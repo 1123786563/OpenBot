@@ -24,6 +24,9 @@ export const usageOutbox = pgTable(
     model: text("model").notNull(),
     client: text("client").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    reservationId: text("reservation_id"),
+    actualCostNumerator: text("actual_cost_numerator"),
+    actualCostDenominator: text("actual_cost_denominator"),
     runId: text("run_id"),
     botId: text("bot_id"),
     ownerUserId: text("owner_user_id"),
@@ -53,6 +56,18 @@ export const usageOutbox = pgTable(
     ),
     check("usage_outbox_input_tokens_check", sql`${table.inputTokens} >= 0`),
     check("usage_outbox_output_tokens_check", sql`${table.outputTokens} >= 0`),
+    check(
+      "usage_outbox_credit_identity_check",
+      sql`(
+        ${table.reservationId} IS NULL
+        AND ${table.actualCostNumerator} IS NULL
+        AND ${table.actualCostDenominator} IS NULL
+      ) OR (
+        ${table.reservationId} IS NOT NULL
+        AND ${table.actualCostNumerator} ~ '^[0-9]+$'
+        AND ${table.actualCostDenominator} ~ '^[1-9][0-9]*$'
+      )`,
+    ),
     check(
       "usage_outbox_lago_status_check",
       sql`${table.lagoStatus} IN ('pending', 'delivered')`,
