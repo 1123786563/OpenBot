@@ -43,6 +43,17 @@
     "allowOnce": "Allow once",
     "deny": "Deny"
   },
+  "subagent": {
+    "title": "Subagent",
+    "back": "Back to the conversation",
+    "view": "View subagent",
+    "empty": "The subagent has not produced any output yet.",
+    "status": {
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed"
+    }
+  },
   "attachments": {
     "add": "Attach files",
     "list": "Attached files",

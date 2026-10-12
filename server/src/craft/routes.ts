@@ -35,6 +35,7 @@ import { type CraftIdleReaper, startCraftIdleReaper } from "./snapshot";
 import { createObjectStore } from "./storage/object-store";
 import type { CraftSessionRow } from "./store";
 import { createCraftStore } from "./store";
+import { createSubagentRoutes } from "./subagent-routes";
 import { createTurnExecutor } from "./turn-executor";
 import { createTurnRoutes } from "./turn-routes";
 import { createTurnStateStore } from "./turn-state";
@@ -193,6 +194,14 @@ export function createCraftRoutes(input: {
       executor,
       botIdFor: deps.botIdFor,
       fence,
+    }),
+  );
+  app.route(
+    "/",
+    createSubagentRoutes(requireUser, {
+      store,
+      manager,
+      botIdFor: deps.botIdFor,
     }),
   );
   app.route(

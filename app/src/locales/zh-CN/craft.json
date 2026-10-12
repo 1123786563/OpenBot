@@ -43,6 +43,17 @@
     "allowOnce": "允许一次",
     "deny": "拒绝"
   },
+  "subagent": {
+    "title": "子代理",
+    "back": "返回对话",
+    "view": "查看子代理",
+    "empty": "子代理还没有输出。",
+    "status": {
+      "running": "运行中",
+      "done": "已完成",
+      "failed": "已失败"
+    }
+  },
   "attachments": {
     "add": "添加附件",
     "list": "附件",

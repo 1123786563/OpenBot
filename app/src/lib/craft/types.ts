@@ -180,6 +180,14 @@ export type CraftApprovalRequestedPacket = {
   timestamp: string;
 };
 
+/** A subagent session was spawned by the turn's `task` tool — seeds the subagent map. */
+export type CraftSubagentStartedPacket = {
+  type: "subagent_started";
+  subagent_session_id: string;
+  parent_session_id: string;
+  timestamp: string;
+};
+
 /** One frame the turn SSE can deliver (`event: message` data payload). */
 export type CraftStreamPacket =
   | CraftAgentMessageChunk
@@ -191,7 +199,8 @@ export type CraftStreamPacket =
   | CraftErrorPacket
   | CraftContextUsagePacket
   | CraftCompactionPacket
-  | CraftApprovalRequestedPacket;
+  | CraftApprovalRequestedPacket
+  | CraftSubagentStartedPacket;
 
 /** What a `webapp-info` read answers with. */
 export type CraftWebappInfo = {
