@@ -699,11 +699,13 @@ describe("reconcile (the skeleton, over real tables)", () => {
 });
 
 /*
- * Plan payout reconciliation (plan 05, task 4): a paid order prices an expected plan allowance
- * through the catalog lookup the assembly passes in; the reconciler matches it against the
- * grant the payout should have written (idempotency key `plan:<orderId>`, scaled integer
- * units), and reports paid orders whose activation never settled once they are older than the
- * documented threshold. Everything stays read-only: these tests assert the rows are untouched.
+ * Plan payout and payment evidence reconciliation (plans 05, tasks 4 and 5): a paid order
+ * prices an expected plan allowance through the catalog lookup the assembly passes in; the
+ * reconciler matches it against the grant the payout should have written (idempotency key
+ * `plan:<orderId>`, scaled integer units), reports paid orders whose activation never settled
+ * once they are older than the documented threshold, surfaces duplicate-collection anomalies
+ * as manual-disposition evidence, and compares each paid fact's amount against the order's
+ * own snapshot. Everything stays read-only: these tests assert the rows are untouched.
  */
 describe("plan payout and payment evidence reconciliation", () => {
   // pro pays 500 whole credits → 50_000 scaled units, the same ×CREDIT_SCALE arithmetic the
@@ -717,6 +719,7 @@ describe("plan payout and payment evidence reconciliation", () => {
     options: {
       planCode?: string;
       amountCents?: number;
+      factAmountCents?: number | null;
       activationState?: "pending" | "applied" | "failed";
     } = {},
   ) {
@@ -742,7 +745,10 @@ describe("plan payout and payment evidence reconciliation", () => {
       code: "paid",
       state: "paid",
       channelTransactionId: `${orderId}-tx`,
-      amountCents,
+      amountCents:
+        options.factAmountCents === undefined
+          ? amountCents
+          : options.factAmountCents,
     });
     await database
       .insert(billingCustomers)
@@ -863,6 +869,72 @@ describe("plan payout and payment evidence reconciliation", () => {
         (item) =>
           item.code === "activation_backlog" &&
           item.subject.startsWith(prefix),
+      ),
+    ).toBe(false);
+  });
+
+  test("a duplicate paid collection is duplicate_paid_order evidence requiring manual disposition, and rows stay unchanged", async () => {
+    const owner = await seedPaidOrder(`${prefix}-dup-owner`);
+    const late = await seedPaidOrder(`${prefix}-dup-late`);
+    await database.insert(paymentEvents).values({
+      id: `${late}-anomaly`,
+      orderId: late,
+      kind: "anomaly",
+      code: "duplicate_paid",
+      state: null,
+      channelTransactionId: `${late}-tx`,
+      amountCents: 8_800,
+      detail: `overlaps entitlement owned by ${owner} via ${owner}-tx`,
+    });
+
+    const [beforeOrder] = await database
+      .select()
+      .from(paymentOrders)
+      .where(eq(paymentOrders.id, late));
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) => item.subject === late && item.code === "duplicate_paid_order",
+    );
+    expect(finding).toMatchObject({
+      category: "payment",
+      code: "duplicate_paid_order",
+      subject: late,
+    });
+    expect(finding?.detail).toContain(owner);
+    expect(finding?.detail).toContain("remediation=manual_operator_resolution");
+
+    const [afterOrder] = await database
+      .select()
+      .from(paymentOrders)
+      .where(eq(paymentOrders.id, late));
+    expect(afterOrder).toEqual(beforeOrder);
+  });
+
+  test("a paid fact whose amount disagrees with the order snapshot is fact_amount_mismatch; an unreadable amount stays silent", async () => {
+    const drifted = await seedPaidOrder(`${prefix}-fact-amount`, {
+      factAmountCents: 8_801,
+    });
+    await seedPaidOrder(`${prefix}-fact-unreadable`, {
+      factAmountCents: null,
+    });
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.subject === drifted && item.code === "fact_amount_mismatch",
+    );
+    expect(finding).toMatchObject({
+      category: "payment",
+      code: "fact_amount_mismatch",
+      subject: drifted,
+    });
+    expect(finding?.detail).toContain("order=8800");
+    expect(finding?.detail).toContain("fact=8801");
+    expect(
+      report.findings.some(
+        (item) =>
+          item.subject === `${prefix}-fact-unreadable` &&
+          item.code === "fact_amount_mismatch",
       ),
     ).toBe(false);
   });
