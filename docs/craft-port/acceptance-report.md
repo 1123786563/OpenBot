@@ -82,3 +82,14 @@ createCraftRoutes({ requireUser, deps: {
 | R11 | OCR 覆盖（--audience agent） | **部分（8/34 文件,15 意见,无 Critical/High）— LLM 429 配额阻断,已记录 + 待 round 2** — `ocr-report-round1.md` | §6 |
 
 **复验指引**：F-B/F-D 修复后重跑 §3(ii)(iii)(vii)；F-C 修复后重跑 §3(viii) 顶层目录用例；F-A/F-F 为平台级（auth fetch 补丁旁路 craft 流量 + CAS 复位 initializing），修复后重跑完整 turn 环。
+
+## Round 2 复验（2026-10-13，检查点 `6488eab2`，修复 `ff7d18ab`+`0aae4340`+`6488eab2`）
+
+| # | 验收行 | 结果 | 证据 |
+|---|---|---|---|
+| R12 | craft 测试 + typecheck | **PASS — 439/439（30 文件）、typecheck EXIT=0** | remediation-verification §0.1 |
+| R13 | F-A/F-F（平台级） | **FIXED live**：回环 URL 会话创建 active；完整 turn 环（abort/steer 续跑/落定/assistant 落库/409/interrupt）；failed 会话同 id 修复 | §0.2 |
+| R14 | F-B/F-D（交付级） | **FIXED live**：工具目录含 connect_app+webapp；webapp 工具真实执行（observation 逐字节）；connect_app 真实调用且 ask 停车；start-webapp.sh 初装在场 | §0.2/§0.3 |
+| R15 | F-C/F-E | **FIXED live**：嵌套树 3 文件 ZIP + 隐藏剪除；webapp-info ready:true + 预览 200 + host 端口 200 | §0.2 |
+| R16 | connect_app decide/超时 | **仍缺口 — 新 finding F-G**（停车期 attach SSE 0 字节：无 connect_app_request 卡/无 keepalive，request_id 无出口；窗口到期未见 decline 工具结果）+ F-H 低置信观察（interrupt 后续 turn 空转） | §0.3/§0.4 |
+| R17 | OCR round 2 | **仍 429 阻断 — 8/36 文件 13 意见无 Critical/High** — `ocr-report-round2.md` | §0.5 |

@@ -7,7 +7,46 @@
 
 ---
 
-## 1. 命令与结果（全部在检查点 `6c7c0d16` 执行）
+## 0. Round 2 复验（修复后，2026-10-13，检查点 `6488eab2`）
+
+> 修复提交：`ff7d18ab`（F-A：auth fetch 补丁 — content-length 按字节、SSE 经 `Readable.toWeb` 流式、abort signal 接线）、`0aae4340`（F-B：SDK_TOOL_PATHS 部署候选 + 相对解析；F-D：createSession 在端口预留后回读行；F-F：resetFailedSessionForRepair CAS）、`6488eab2`（F-C：按 onyx `_walk_sandbox_dir` 重建递归扁平遍历；OCR 同族 bug：404→[] + 真失败拒绝 ack；F-E：网关 /webapp/* 中继证实不可行 → 沙箱宿主拨号 + compose 发布 3010-3100 + 恢复 `-H 0.0.0.0`）。
+
+### 0.1 复验命令与结果
+
+| # | 命令（cwd=repo） | 结果 |
+|---|---|---|
+| R2-1 | `cd server && bun test tests/craft-*.test.ts`（30 文件） | **439 pass / 0 fail**（10.56s） |
+| R2-2 | `cd server && bun run typecheck` | **EXIT=0** |
+| R2-3 | agent-sandbox 经 compose override 发布 3011-3098（本机 3010/3100 被占用）；`AGENT_SANDBOX_URL=http://127.0.0.1:4300` **不再绕行**（F-A 的真正测试位形） | 容器健康，全链跑通 |
+
+### 0.2 finding 状态（全部真实现场证据）
+
+| # | 状态 | 现场证据 |
+|---|---|---|
+| F-A | **FIXED（live）** | 回环沙箱 URL 下会话创建 201→active（原先 400/500）；完整 turn 环闭环：send-message → 真实 GLM 回合（含 45s 非活性 abort → steer 续跑的设计机制）→ turn 落定 → **assistant 消息持久化**（messages 出现 error-frame 与 steer 文案两型落库）；409 busy；`POST /interrupt` → `{"interrupted":true}` 且 active turn 即时清除 |
+| F-B | **FIXED（live）** | 部署沙箱会话目录实例工具目录 **14 项，含 `connect_app` 与 `webapp`**（round 1 为 12 项无两者）；模型实际调用 **`webapp` 工具**成功，observation 逐字节（`web app is not running; call webapp start` + `state: not_running / port: 3012 / app dir: outputs/web / scaffolded: no / logs: nextjs.log` — F5-E 契约）；**`connect_app` 工具被真实调用且 `context.ask` 停车**（tool part status `running` 持续数分钟） |
+| F-C | **FIXED（live）** | 嵌套树 `outputs/{report.md, web/package.json, web/src/app/page.tsx, web/node_modules/pkg/index.js, web/.env}`：`download-directory/outputs` → **3 文件 ZIP**（递归收集），node_modules/** 与 .env 正确剪除；zero-entry 退化消失 |
+| F-D | **FIXED（live）** | 全新会话初始装配即含 `start-webapp.sh`（容器 ls 实证；round 1 三个会话两缺） |
+| F-E | **FIXED（live）** | 脚本真跑后：`webapp-info` → **`"ready": true`**；`GET /sessions/:id/webapp` → **200 + dev server HTML 正文**（经服务器代理）；host 直连发布端口 200 |
+| F-F | **FIXED（live）** | 将 dev 用户空会话行置 `failed` 后 `POST /sessions` → **同 id 修复为 `active`**（round 1 必抛 Stale 500） |
+| OCR bug（managed-content 404→[]） | FIXED（439 套件背书） | 6488eab2 的 craft-managed-content 增测 + 全绿 |
+
+### 0.3 转移项 (iii) 的 round-2 状态
+
+**ask 半段 REAL**：connect_app 工具注册（目录证据）+ 被模型真实调用 + `context.ask` 停车（tool part `running`）。**decide 半段与超时回绝仍不能现场闭环 — 新 finding F-G**：停车期间 attach SSE（`GET /turns/:id/events`）0 字节 — 既无 `connect_app_request` 卡（request_id 的唯一出口），也无 keepalive；且窗口到期未见 decline 落为工具结果（步骤最终以"非活性 abort + steer"收场，两轮复现，含按默认派生序 approval=25 < inactivity 的位形）。request_id 无其他出口（无 audit 行、无 pending 列出端点）。装配级 decide/超时语义仍由 craft-connect-app 套件背书。**F-G（Medium）回流控制器。**
+
+### 0.4 新观察（随 F-G 一并流转）
+
+- **F-H（Low，待产品确认）**：对会话 `POST /interrupt` 之后的后续两个 turn 出现"admit 后即刻清除、无 prompt 送出、无落库、无错误行"（同会话连续两次复现）；疑 interrupt fence 跨 turn 残留或清理竞态。
+- 环境注记（非产品缺陷）：compose 默认发布 3010-3100 与本机 dev 端口冲突（APP_PORT=3010 的 vite、OrbStack 残留 3100 占用）——本地 dev 需先解冲突；本轮以 override 发布 3011-3098 完成验证。
+
+### 0.5 OCR round 2
+
+同命令重跑（范围随 HEAD 扩至含修复提交，36 文件）：**仍 429 配额阻断 — 8/36 完成、13 条意见、无 Critical/High**（3 × bug·medium：pendingConnectApp 删除路径单一、决策路径非原子、轻路径 ack 哈希未 dispose 旧实例——末条与 §3(i) 实测的实例配置缓存行为同族）。报告 `ocr-report-round2.md`，原文 `ocr-comments-round2-raw.txt`。round-3 待配额恢复。
+
+---
+
+## 1. 命令与结果（round 1，检查点 `6c7c0d16`）
 
 | # | 命令（cwd=repo） | 结果 |
 |---|---|---|
