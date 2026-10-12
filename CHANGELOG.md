@@ -16,6 +16,13 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   such record for up to ten minutes after the upgrade, and calls they make to a Shared app in that
   window are refused.
 
+### The desktop asks before every command that can edit a folder
+
+When a Bot runs a command in a folder shared from the desktop app, the person sees a prompt that can
+offer "Always allow in this folder". That choice now covers commands that only read the folder. A
+command that can change or delete files in it shows the prompt every time, without the "Always
+allow" option. Folders already set to "Always allow" work as before for read-only commands.
+
 ### One Bots list, and one page per Bot
 
 Agents, Team Bots and Bots were three lists of the same Bots. `/bots` is now the only one — pinned,
