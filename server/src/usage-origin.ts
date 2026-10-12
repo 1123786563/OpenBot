@@ -7,17 +7,20 @@
  * a parameter threaded through the runtime's provider chain would cross module boundaries the
  * billing seam deliberately does not own.
  *
- * Controlled vocabulary, enforced at the two doors that set it:
- * - `web`  — a signed-in person's session (the session middleware sets this for every /api/*
- *   request it fronts);
+ * Controlled vocabulary, locked by the `UsageOrigin` type (the outbox `client` column itself
+ * is unconstrained text, so the type plus the doors that set it are the whole fence):
+ * - `web`  — a signed-in person's session (the session middleware sets this for the API
+ *   surfaces it fronts);
  * - `api`  — an internal bearer-token surface (the routines worker dispatch);
- * - `unknown` — no origin was established (a path with no request context behind it, or a
- *   future CLI/token surface that has not named itself yet). A named unknown, never a wrong
- * `web`: misattribution is a billing-report bug that outlives the call.
+ * - `cli`  — a command-line surface (no entry point sets it yet; the type carries it so a
+ *   future CLI door compiles against the vocabulary instead of inventing a value);
+ * - `unknown` — no origin was established (a path with no request context behind it). A
+ *   named unknown, never a wrong `web`: misattribution is a billing-report bug that outlives
+ *   the call.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export type UsageOrigin = "web" | "api" | "unknown";
+export type UsageOrigin = "web" | "api" | "cli" | "unknown";
 
 const originStore = new AsyncLocalStorage<{ origin: UsageOrigin }>();
 

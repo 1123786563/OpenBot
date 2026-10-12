@@ -785,11 +785,14 @@ export function createApp(
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
   /*
-   * The usage-origin floor for every API surface (2026-10-13 audit, F6): a signed-in person's
-   * request context says `web`, so the usage facts its model calls and code runs record carry
-   * the caller they really came from. Registered after the gate so only requests that got this
-   * far are named, and overridable by an inner context — the worker dispatch below names
-   * itself `api` underneath this `web`.
+   * The usage-origin floor (2026-10-13 audit, F6): a signed-in person's request context says
+   * `web`, so the usage facts its model calls and code runs record carry the caller they
+   * really came from. Registered after the gate so only requests that got this far are named.
+   * Hono composes handlers in registration order, so this covers exactly the usage-bearing
+   * API surfaces mounted BELOW this point (the CopilotKit runtime, the workshop, the channels
+   * — all of them); the earlier-mounted /api/capabilities, /api/auth/*, desktop-connection and
+   * provider-proxy surfaces never pass through here, record no usage today, and any future
+   * usage-bearing surface must mount below this line or name its own origin.
    */
   app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
@@ -1441,8 +1444,10 @@ export function createApp(
        * the fatigue rule owns it. `run()` never throws by contract; this swallow only guards against
        * that contract being wrong without turning a bug there into an unhandled rejection here.
        */
-      // The worker's bearer dispatch is an API surface, not a person's session: the turns it
-      // fans out name `api` on their usage facts, not the session floor's `web`.
+      // The worker's bearer dispatch is an API surface, not a person's session. This route is
+      // deliberately not under /api/* (see the comment above it), so no session `web` floor
+      // applies here — naming `api` is what puts the turns this fans out on their usage facts
+      // at all.
       void withUsageOrigin("api", () => routineRunner.run(routineRunId)).catch(
         () => {},
       );

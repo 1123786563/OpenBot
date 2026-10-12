@@ -697,8 +697,14 @@ async function lockCustomer(tx: Tx, externalId: string) {
  * hold still charges honestly; the settle path's own `min(allocation.amount, total - used)`
  * clamp keeps the grants from going negative exactly the way a post-paid overdraw is kept
  * honest.
+ *
+ * One clock per computation: the grant-liveness filter and the hold-expiry filter below are
+ * bound to the SAME app-side instant (a parameter), never the database's `now()` — app and
+ * database clocks skew, and a skewed pair would let a reservation be admitted against
+ * capacity an expired hold already vacated (or refuse one that is still live).
  */
 async function freeGrants(db: Reader, externalId: string, lock: boolean) {
+  const at = new Date();
   const query = db
     .select({
       id: creditGrants.id,
@@ -708,14 +714,14 @@ async function freeGrants(db: Reader, externalId: string, lock: boolean) {
         select sum(a.amount)::int
         from credit_reservation_allocations a
         join credit_reservations r on r.id = a.reservation_id
-        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > now()
+        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > ${at}
       ), 0)`,
     })
     .from(creditGrants)
     .where(
       and(
         eq(creditGrants.externalCustomerId, externalId),
-        gt(creditGrants.expiresAt, new Date()),
+        gt(creditGrants.expiresAt, at),
       ),
     )
     .orderBy(
