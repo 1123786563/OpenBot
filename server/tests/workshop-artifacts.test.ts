@@ -132,7 +132,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       let messageCount = 0;
       return {
         createSession: async () => "ses_x",
-        sendMessage: async (_sessionId: string, text: string) => {
+        sendMessage: async (_sessionId: string, _text: string) => {
           messageCount += 1;
           return {
             sessionId: "ses_x",
@@ -188,6 +188,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       const gateway = createCodeRunGateway({
         client: fakeClient(),
+        billingEnabled: false,
         modelId: "GLM-5.3",
         botId,
         ownerUserId,

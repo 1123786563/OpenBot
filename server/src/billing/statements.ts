@@ -1,5 +1,10 @@
-import type { PaymentOrderRecord, PaymentStore } from "./payments/types";
 import type {
+  PaymentOrderReadScope,
+  PaymentOrderRecord,
+  PaymentStore,
+} from "./payments/types";
+import type {
+  BillingEntitlements,
   BillingInvoice,
   BillingInvoiceDetail,
   BillingInvoicePage,
@@ -30,6 +35,17 @@ const INVOICE_PAGE_SIZE = 20;
 /** One configured ceiling, as `LAGO_PLAN_QUOTAS` spells it. */
 type QuotaConfig = ReadonlyMap<string, readonly BillingQuotaEntry[]>;
 
+function providerPeriodOf(entitlements: BillingEntitlements): {
+  start: string | null;
+  end: string | null;
+} | null {
+  if (!entitlements.active || !entitlements.subscription) return null;
+  return {
+    start: entitlements.subscription.currentPeriodStart,
+    end: entitlements.subscription.currentPeriodEnd,
+  };
+}
+
 /** The window a statement read is narrowed to. Both ends inclusive, either end optional. */
 export type StatementWindow = {
   from: Date | null;
@@ -39,8 +55,14 @@ export type StatementWindow = {
 
 export type BillingStatements = {
   planUsage(externalCustomerId?: string): Promise<BillingPlanUsage>;
-  invoices(window: StatementWindow): Promise<BillingInvoicePage>;
-  invoice(id: string): Promise<BillingInvoiceDetail | null>;
+  invoices(
+    window: StatementWindow,
+    scope?: PaymentOrderReadScope,
+  ): Promise<BillingInvoicePage>;
+  invoice(
+    id: string,
+    scope?: PaymentOrderReadScope,
+  ): Promise<BillingInvoiceDetail | null>;
 };
 
 /**
@@ -63,23 +85,6 @@ export function createBillingStatements(deps: {
 }): BillingStatements {
   const { service, quotas, orders } = deps;
 
-  /**
-   * The provider's current period, or null when the read refused — the bills' leading period
-   * source (see invoices). One shared helper so the page and the detail cannot disagree about
-   * which source they read.
-   */
-  const providerPeriodOf = async (): Promise<{
-    start: string | null;
-    end: string | null;
-  } | null> => {
-    const entitlements = await service.entitlements().catch(() => null);
-    if (!entitlements?.active || !entitlements.subscription) return null;
-    return {
-      start: entitlements.subscription.currentPeriodStart,
-      end: entitlements.subscription.currentPeriodEnd,
-    };
-  };
-
   return {
     async planUsage(externalCustomerId) {
       const [entitlements, usage] = await Promise.all([
@@ -96,7 +101,7 @@ export function createBillingStatements(deps: {
         };
       }
 
-      const subscription = entitlements.subscription ?? null;
+      const subscription = providerPeriodOf(entitlements);
       const ceilings =
         entitlements.planCode === undefined
           ? []
@@ -139,11 +144,11 @@ export function createBillingStatements(deps: {
         ...(entitlements.planCode !== undefined
           ? { planCode: entitlements.planCode }
           : {}),
-        ...(subscription ? { status: subscription.status } : {}),
+        ...(entitlements.subscription ? { status: entitlements.subscription.status } : {}),
         ...(usage.currency !== undefined ? { currency: usage.currency } : {}),
-        currentPeriodStart: subscription?.currentPeriodStart ?? null,
-        currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
-        resetsAt: subscription?.currentPeriodEnd ?? null,
+        currentPeriodStart: subscription?.start ?? null,
+        currentPeriodEnd: subscription?.end ?? null,
+        resetsAt: subscription?.end ?? null,
         ...(usage.totalAmountCents !== undefined
           ? { totalCents: usage.totalAmountCents }
           : {}),
@@ -151,7 +156,7 @@ export function createBillingStatements(deps: {
       };
     },
 
-    async invoices(window) {
+    async invoices(window, scope) {
       const empty: BillingInvoicePage = {
         invoices: [],
         pagination: {
@@ -166,12 +171,14 @@ export function createBillingStatements(deps: {
       const totalCount = await orders.countOrdersInWindow({
         from: window.from,
         to: window.to,
+        scope,
       });
       const rows = await orders.listOrdersInWindow({
         from: window.from,
         to: window.to,
         limit: INVOICE_PAGE_SIZE,
         offset: (window.page - 1) * INVOICE_PAGE_SIZE,
+        scope,
       });
       /*
        * The page count answers 1, not 0, for an empty window. A pager reading "第 1 / 0 页" is a
@@ -179,17 +186,8 @@ export function createBillingStatements(deps: {
        * which is what a filter that matched nothing means.
        */
       const totalPages = Math.max(Math.ceil(totalCount / INVOICE_PAGE_SIZE), 1);
-      /*
-       * The PROVIDER's period is the bill's period when it answers one (P2-4's single truth):
-       * the local `period_*` columns snapshot pay-time (+1 month) while the plan card beside
-       * it reads Lago's `currentPeriod*`, and the two can disagree — the page showing
-       * "有效期至" and "下次更新" a day apart is exactly the disagreement. One entitlements
-       * read per page supplies the authoritative pair; the stored columns stay the fallback
-       * for when the provider refuses the courtesy read.
-       */
-      const providerPeriod = await providerPeriodOf();
       return {
-        invoices: rows.map((order) => invoiceOf(order, providerPeriod)),
+        invoices: rows.map((order) => invoiceOf(order)),
         pagination: {
           totalCount,
           totalPages,
@@ -200,11 +198,11 @@ export function createBillingStatements(deps: {
       };
     },
 
-    async invoice(id) {
+    async invoice(id, scope) {
       if (!orders) return null;
-      const order = await orders.readOrder(id);
+      const order = await orders.readOrder(id, scope);
       if (!order) return null;
-      const invoice = invoiceOf(order, await providerPeriodOf());
+      const invoice = invoiceOf(order);
       return {
         ...invoice,
         /*
@@ -224,30 +222,19 @@ export function createBillingStatements(deps: {
   };
 }
 
-/**
- * One stored order as a bill. The order id IS the bill number — it is already unique and quotable.
- *
- * `providerPeriod` (P2-4): the subscription's current period straight from the provider, when
- * the entitlement read answered one — the bill shows THAT period, and the order's own
- * `period_*` snapshot is the fallback. See the invoices() comment for why two sources exist
- * and which one leads.
- */
-function invoiceOf(
-  order: PaymentOrderRecord,
-  providerPeriod?: { start: string | null; end: string | null } | null,
-): BillingInvoice {
+/** One stored order as a bill, from its own snapshotted period and paid timestamp. */
+function invoiceOf(order: PaymentOrderRecord): BillingInvoice {
   return {
     invoiceId: order.id,
     planCode: order.planCode,
-    periodStart:
-      providerPeriod?.start ?? order.periodStart?.toISOString() ?? null,
-    periodEnd: providerPeriod?.end ?? order.periodEnd?.toISOString() ?? null,
+    periodStart: order.periodStart?.toISOString() ?? null,
+    periodEnd: order.periodEnd?.toISOString() ?? null,
     amountCents: order.amountCents,
     currency: order.currency,
     status: order.status,
     method: order.provider,
     issuedAt: order.createdAt.toISOString(),
-    settledAt: order.terminalAt?.toISOString() ?? null,
+    settledAt: order.paidAt?.toISOString() ?? null,
     channelTransactionId: order.channelTransactionId,
   };
 }

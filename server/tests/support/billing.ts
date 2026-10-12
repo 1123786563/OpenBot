@@ -14,7 +14,10 @@ import type {
 export function memoryBillingStore(): BillingStore & {
   customers: Map<string, { name: string | null }>;
   subscriptions: Map<string, BillingSubscriptionRow>;
-  inbox: Map<string, { uniqueKey?: string; webhookType: string; objectId?: string }>;
+  inbox: Map<
+    string,
+    { uniqueKey?: string; webhookType: string; objectId?: string }
+  >;
 } {
   const customers = new Map<string, { name: string | null }>();
   const subscriptions = new Map<string, BillingSubscriptionRow>();
@@ -22,10 +25,64 @@ export function memoryBillingStore(): BillingStore & {
     string,
     { uniqueKey?: string; webhookType: string; objectId?: string }
   >();
+  let pending = Promise.resolve();
   return {
     customers,
     subscriptions,
     inbox,
+    async applyWebhookProjection(input) {
+      const previous = pending;
+      let release = () => {};
+      pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        if (inbox.has(`${input.event.provider}:${input.event.eventId}`)) {
+          return "duplicate";
+        }
+        const before = {
+          customers: new Map(customers),
+          subscriptions: new Map(subscriptions),
+          inbox: new Map(inbox),
+        };
+        const restore = () => {
+          customers.clear();
+          subscriptions.clear();
+          inbox.clear();
+          for (const [key, value] of before.customers)
+            customers.set(key, value);
+          for (const [key, value] of before.subscriptions)
+            subscriptions.set(key, value);
+          for (const [key, value] of before.inbox) inbox.set(key, value);
+        };
+        try {
+          if (input.customer) {
+            if (input.customer.name === undefined) {
+              await this.ensureCustomerRow(input.customer);
+            } else {
+              await this.upsertCustomer({
+                externalId: input.customer.externalId,
+                name: input.customer.name,
+              });
+            }
+          }
+          for (const subscription of input.subscriptions ?? []) {
+            await this.upsertSubscription(subscription);
+          }
+          if (!(await this.recordWebhookEvent(input.event))) {
+            restore();
+            return "duplicate";
+          }
+          return "processed";
+        } catch (error) {
+          restore();
+          throw error;
+        }
+      } finally {
+        release();
+      }
+    },
     async upsertCustomer(input) {
       customers.set(input.externalId, { name: input.name });
     },

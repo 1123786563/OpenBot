@@ -1,9 +1,14 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingSubscriptions } from "../db/schema/billing";
 import { creditGrants, creditLedger } from "../db/schema/credits";
+import {
+  creditReservationAllocations,
+  creditReservations,
+} from "../db/schema/credit-reservations";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
 import type { ReconcileFinding, ReconcileReport } from "./types";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
 
 /**
  * The reconciliation skeleton (T7): a READ-ONLY pass that answers "do the books agree" in one
@@ -49,16 +54,79 @@ import type { ReconcileFinding, ReconcileReport } from "./types";
  * no customer column — v1's orders ARE this deployment's): the "live subscription" ask is the
  * same shape and the same key the purchase guard's uncached read uses, so the audit and the
  * gate can never disagree about what "live" means.
+ *
+ * `expectedPlanCredits`, when the assembly provides it, prices a plan code in scaled integer
+ * credit units (whole credits × CREDIT_SCALE — the same arithmetic the payout's grantor uses),
+ * answering `null` for plans with no credit component. Against it the pass audits the plan
+ * allowance payout: every paid order must carry a grant keyed `plan:<orderId>` of exactly the
+ * priced amount, and no paid order may sit with its activation pending or failed past the
+ * documented age threshold (the sweep retries on a one-minute interval, so 15 minutes without
+ * settlement means the retries are not converging — a young retry is not an incident).
  */
+export type ExpectedPlanCredits = (planCode: string) => number | null;
+
 export function createReconciler(
   database: Database,
   externalCustomerKey: string,
+  expectedPlanCredits?: ExpectedPlanCredits,
+  options?: {
+    usageFindingLimit?: number;
+    activationBacklogAgeMs?: number;
+  },
 ): {
   reconcile(): Promise<ReconcileReport>;
 } {
+  const usageFindingLimit = options?.usageFindingLimit ?? 100;
+  // The activation sweep runs every minute; fifteen missed passes without a settlement means
+  // the retry is not converging (provider down, plan refused), not a callback still in flight.
+  const activationBacklogAgeMs = options?.activationBacklogAgeMs ?? 15 * 60_000;
+  const allocationSampleLimit = 3;
+  if (!Number.isSafeInteger(usageFindingLimit) || usageFindingLimit <= 0) {
+    throw new RangeError(
+      "Usage finding limit must be a positive safe integer",
+    );
+  }
+  if (
+    !Number.isSafeInteger(activationBacklogAgeMs) ||
+    activationBacklogAgeMs <= 0
+  ) {
+    throw new RangeError(
+      "Activation backlog age must be a positive safe integer",
+    );
+  }
+
+  function usageFailureCode(
+    code: string | null,
+  ): string {
+    return code ?? "none";
+  }
+
+  function usageAgeSeconds(
+    now: number,
+    updatedAt: Date,
+  ): number {
+    return Math.max(0, Math.floor((now - updatedAt.getTime()) / 1000));
+  }
+
+  function sumUsageTargets(targets: {
+    pending: { lago: number; credits: number };
+    blocked: { lago: number; credits: number };
+  }) {
+    return (
+      targets.pending.lago +
+      targets.pending.credits +
+      targets.blocked.lago +
+      targets.blocked.credits
+    );
+  }
+
   return {
     async reconcile() {
       const findings: ReconcileFinding[] = [];
+      const usageDeliveryTargets = {
+        pending: { lago: 0, credits: 0 },
+        blocked: { lago: 0, credits: 0 },
+      };
 
       /*
        * ── Invariant 1, sides one and two: paid orders ↔ their paid facts. One query each
@@ -69,8 +137,12 @@ export function createReconciler(
       const paidOrders = await database
         .select({
           id: paymentOrders.id,
+          planCode: paymentOrders.planCode,
+          amountCents: paymentOrders.amountCents,
           channelTransactionId: paymentOrders.channelTransactionId,
           activationState: paymentOrders.activationState,
+          paidAt: paymentOrders.paidAt,
+          terminalAt: paymentOrders.terminalAt,
         })
         .from(paymentOrders)
         .where(eq(paymentOrders.status, "paid"));
@@ -78,6 +150,7 @@ export function createReconciler(
         .select({
           orderId: paymentEvents.orderId,
           channelTransactionId: paymentEvents.channelTransactionId,
+          amountCents: paymentEvents.amountCents,
         })
         .from(paymentEvents)
         .where(
@@ -117,6 +190,123 @@ export function createReconciler(
             detail: `the order names transaction ${order.channelTransactionId} but its paid fact names ${fact.channelTransactionId} — double-payment evidence, needs an operator`,
           });
         }
+        // The fact's amount is the channel's word on what landed; the order's amount_cents is
+        // the catalog price snapshotted at order time. A fact may carry no amount (an
+        // unreadable callback settles after an exhaustion threshold instead) — nothing to
+        // compare then; but a READ amount that disagrees with the snapshot is drift the
+        // callback handler deliberately never reconciles silently.
+        if (
+          fact.amountCents !== null &&
+          fact.amountCents !== order.amountCents
+        ) {
+          findings.push({
+            category: "payment",
+            code: "fact_amount_mismatch",
+            subject: order.id,
+            detail: `the paid fact records order=${order.amountCents} fact=${fact.amountCents} — the channel settled a different sum than the order snapshot; keep both facts, needs an operator (currency is database-enforced CNY on both sides, only the amount can drift)`,
+          });
+        }
+      }
+
+      /*
+       * ── Invariant 1, side four: the plan allowance payout. A paid order whose plan prices
+       *    an allowance must carry exactly one grant keyed `plan:<orderId>` of exactly the
+       *    priced amount, in scaled integer units. The grant's insert-or-nothing key makes a
+       *    retried payout safe at write time; this is the after-the-fact audit that the
+       *    payout landed at all and for the right sum. Plans the catalog prices at null (or
+       *    zero) grant nothing by configuration — nothing to check.
+       */
+      if (expectedPlanCredits) {
+        const planGrants = await database
+          .select({
+            idempotencyKey: creditGrants.idempotencyKey,
+            total: creditGrants.total,
+          })
+          .from(creditGrants)
+          .where(eq(creditGrants.source, "plan"));
+        const planGrantTotalByKey = new Map(
+          planGrants.map((grant) => [grant.idempotencyKey, grant.total]),
+        );
+        for (const order of paidOrders) {
+          const expected = expectedPlanCredits(order.planCode);
+          if (expected === null || expected <= 0) continue;
+          const key = `plan:${order.id}`;
+          const actual = planGrantTotalByKey.get(key);
+          if (actual === undefined) {
+            findings.push({
+              category: "payment",
+              code: "plan_grant_missing",
+              subject: order.id,
+              detail: `the order is paid but no plan grant carries idempotency_key=${key} — the allowance payout never landed; expected=${expected} scaled units`,
+            });
+          } else if (actual !== expected) {
+            findings.push({
+              category: "payment",
+              code: "plan_grant_amount_mismatch",
+              subject: order.id,
+              detail: `grant ${key} totals actual=${actual} but the catalog prices plan ${order.planCode} at expected=${expected} scaled units — payout drift, needs an operator`,
+            });
+          }
+        }
+      }
+
+      /*
+       * ── Activation backlog: money that landed but entitlement that never settled. The
+       *    sweep re-runs activation every minute, so a paid order still pending/failed once
+       *    its paid time is older than the threshold is a retry that is not converging — the
+       *    provider unreachable, the plan refused — not a callback in flight. The anchor is
+       *    paid_at (terminal_at is the fallback for rows written before that column existed).
+       */
+      const nowMs = Date.now();
+      for (const order of paidOrders) {
+        if (
+          order.activationState !== "pending" &&
+          order.activationState !== "failed"
+        ) {
+          continue;
+        }
+        const anchor = order.paidAt ?? order.terminalAt;
+        if (!anchor) continue;
+        const ageMs = Math.max(0, nowMs - anchor.getTime());
+        if (ageMs > activationBacklogAgeMs) {
+          findings.push({
+            category: "payment",
+            code: "activation_backlog",
+            subject: order.id,
+            detail: `state=${order.activationState} paid_at=${anchor.toISOString()} age_ms=${ageMs} exceeds activation_backlog_age_ms=${activationBacklogAgeMs} — the sweep's retries are not settling this order; a provider outage or a refused plan is the usual suspect`,
+          });
+        }
+      }
+
+      /*
+       * ── Duplicate paid collections, in the disposition the design records: keep every
+       *    confirmed payment fact, resolve manually, never auto-refund, never pay the
+       *    entitlement twice. The callback/activation path records the overlap as a
+       *    `duplicate_paid` anomaly at write time (it wins the idempotency race against the
+       *    owned order's fact); reconciliation surfaces that evidence row by row. Reading
+       *    the anomaly — not counting paid orders per plan — keeps legitimate sequential
+       *    repurchases (expire, then buy the same plan again) out of the findings.
+       */
+      const duplicateAnomalies = await database
+        .select({
+          orderId: paymentEvents.orderId,
+          amountCents: paymentEvents.amountCents,
+          detail: paymentEvents.detail,
+        })
+        .from(paymentEvents)
+        .where(
+          and(
+            eq(paymentEvents.kind, "anomaly"),
+            eq(paymentEvents.code, "duplicate_paid"),
+          ),
+        );
+      for (const anomaly of duplicateAnomalies) {
+        findings.push({
+          category: "payment",
+          code: "duplicate_paid_order",
+          subject: anomaly.orderId,
+          detail: `a second paid collection overlaps an entitlement this order does not own amount_cents=${anomaly.amountCents ?? "unreadable"} evidence="${anomaly.detail}" remediation=manual_operator_resolution: keep the money, no auto-refund, no second payout`,
+        });
       }
 
       /*
@@ -205,12 +395,247 @@ export function createReconciler(
         }
       }
 
+      /*
+       * ── Hard-cap reservation evidence: active holds are intentionally OUTSIDE the
+       *    grants.used ↔ ledger.applied identity until a settlement converts them into a
+       *    ledger fact, so reconciliation inspects reserved rows on their own terms.
+       *    Nothing is auto-released here: an expired hold is recovery evidence only, and an
+       *    allocation sum that no longer equals the reservation's maximum is manual-surgery
+       *    drift that needs an operator, not a writer hidden inside the audit.
+       */
+      const reservedRows = await database
+        .select({
+          reservationId: creditReservations.id,
+          idempotencyKey: creditReservations.idempotencyKey,
+          expiresAt: creditReservations.expiresAt,
+          maximum: creditReservations.maximum,
+          expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
+          allocationId: creditReservationAllocations.id,
+          allocationAmount: creditReservationAllocations.amount,
+        })
+        .from(creditReservations)
+        .leftJoin(
+          creditReservationAllocations,
+          eq(
+            creditReservationAllocations.reservationId,
+            creditReservations.id,
+          ),
+        )
+        .where(eq(creditReservations.status, "reserved"))
+        .orderBy(
+          asc(creditReservations.id),
+          asc(creditReservationAllocations.id),
+        );
+
+      const reservedById = new Map<
+        string,
+        {
+          idempotencyKey: string;
+          expiresAt: Date;
+          maximum: number;
+          expired: boolean;
+          allocated: number;
+          allocationIds: string[];
+        }
+      >();
+      for (const row of reservedRows) {
+        const entry = reservedById.get(row.reservationId) ?? {
+          idempotencyKey: row.idempotencyKey,
+          expiresAt: row.expiresAt,
+          maximum: row.maximum,
+          expired: row.expired,
+          allocated: 0,
+          allocationIds: [],
+        };
+        if (row.allocationId !== null) {
+          entry.allocated += row.allocationAmount ?? 0;
+          entry.allocationIds.push(row.allocationId);
+        }
+        reservedById.set(row.reservationId, entry);
+      }
+      for (const [reservationId, reservation] of reservedById) {
+        const allocationIdsSample =
+          reservation.allocationIds.length > 0
+            ? reservation.allocationIds
+                .slice(0, allocationSampleLimit)
+                .join(",")
+            : "none";
+        const allocationIdsTruncated =
+          reservation.allocationIds.length > allocationSampleLimit
+            ? "yes"
+            : "no";
+        const allocationMetadata =
+          `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
+        if (reservation.expired) {
+          /*
+           * The hold is named by BOTH ids it can prove: its own reservation id, and — when the
+           * idempotency key is the usage seam's `usage:<eventId>` — the usage event whose
+           * durable fact may never have committed (a failed finish write leaves exactly this
+           * shape, with no outbox row to read). The detail records reservation facts and age
+           * only: usage that was never durably recorded cannot be claimed here.
+           */
+          const expiredAgeMs = Math.max(
+            0,
+            nowMs - reservation.expiresAt.getTime(),
+          );
+          const usageEventId = reservation.idempotencyKey.startsWith(
+            USAGE_IDEMPOTENCY_KEY_PREFIX,
+          )
+            ? reservation.idempotencyKey.slice(
+                USAGE_IDEMPOTENCY_KEY_PREFIX.length,
+              )
+            : null;
+          findings.push({
+            category: "credits",
+            code: "expired_reserved_reservation",
+            subject: reservationId,
+            detail:
+              `state=reserved expires_at=${reservation.expiresAt.toISOString()} expired_age_ms=${expiredAgeMs} `
+              + `idempotency_key=${reservation.idempotencyKey}`
+              + (usageEventId ? ` usage_event_id=${usageEventId}` : "")
+              + ` maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
+          });
+        }
+
+        if (reservation.allocated !== reservation.maximum) {
+          findings.push({
+            category: "credits",
+            code: "reservation_allocation_imbalance",
+            subject: reservationId,
+            detail:
+              `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} ${allocationMetadata} remediation=operator_recovery_required`,
+          });
+        }
+      }
+
+      /*
+       * ── Usage delivery backlog evidence: the outbox is the durable truth of what was
+       *    attempted, what is still pending retry, and what ended in manual-review blockade.
+       *    The reconciler reads it as evidence only: no target replay, no status updates, no
+       *    inference that anything but `delivered` succeeded.
+       */
+      const [usageCounts] = await database.execute(sql<{
+        pendingLago: number;
+        pendingCredits: number;
+        blockedLago: number;
+        blockedCredits: number;
+      }>`
+        SELECT
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE lago_status = 'pending') AS "pendingLago",
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE credits_status = 'pending') AS "pendingCredits",
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE lago_status = 'blocked') AS "blockedLago",
+          (SELECT COUNT(*)::int FROM usage_outbox WHERE credits_status = 'blocked') AS "blockedCredits"
+      `);
+      usageDeliveryTargets.pending.lago = usageCounts?.pendingLago ?? 0;
+      usageDeliveryTargets.pending.credits = usageCounts?.pendingCredits ?? 0;
+      usageDeliveryTargets.blocked.lago = usageCounts?.blockedLago ?? 0;
+      usageDeliveryTargets.blocked.credits = usageCounts?.blockedCredits ?? 0;
+
+      const actionableUsageTargetCount = sumUsageTargets(usageDeliveryTargets);
+      const usageRows =
+        actionableUsageTargetCount === 0
+          ? []
+          : await database.execute(sql<{
+              eventId: string;
+              updatedAt: Date;
+              target: "lago" | "credits";
+              status: "pending" | "blocked";
+              lastErrorCode: string | null;
+            }>`
+              SELECT
+                usage_targets.event_id AS "eventId",
+                usage_targets.updated_at AS "updatedAt",
+                usage_targets.target AS "target",
+                usage_targets.status AS "status",
+                usage_targets.last_error_code AS "lastErrorCode"
+              FROM (
+                SELECT
+                  event_id,
+                  updated_at,
+                  'lago'::text AS target,
+                  lago_status::text AS status,
+                  lago_last_error_code AS last_error_code,
+                  1 AS target_rank
+                FROM usage_outbox
+                WHERE lago_status IN ('pending', 'blocked')
+
+                UNION ALL
+
+                SELECT
+                  event_id,
+                  updated_at,
+                  'credits'::text AS target,
+                  credits_status::text AS status,
+                  credits_last_error_code AS last_error_code,
+                  2 AS target_rank
+                FROM usage_outbox
+                WHERE credits_status IN ('pending', 'blocked')
+              ) AS usage_targets
+              ORDER BY
+                usage_targets.updated_at ASC,
+                usage_targets.event_id ASC,
+                usage_targets.target_rank ASC
+              LIMIT ${usageFindingLimit}
+            `);
+      const emittedUsageTargets = {
+        pending: { lago: 0, credits: 0 },
+        blocked: { lago: 0, credits: 0 },
+      };
+      const now = Date.now();
+      for (const row of usageRows) {
+        const status = row.status === "pending" ? "pending" : "blocked";
+        const target = row.target === "lago" ? "lago" : "credits";
+        emittedUsageTargets[status][target] += 1;
+        const ageSeconds = usageAgeSeconds(now, row.updatedAt);
+        const failureCode = usageFailureCode(row.lastErrorCode);
+        findings.push({
+          category: "usage",
+          code:
+            status === "pending"
+              ? "usage_target_pending"
+              : "usage_target_blocked",
+          subject: row.eventId,
+          detail: `target=${target} state=${status} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
+        });
+      }
+      const omittedUsageTargets = {
+        pending: {
+          lago:
+            usageDeliveryTargets.pending.lago - emittedUsageTargets.pending.lago,
+          credits:
+            usageDeliveryTargets.pending.credits -
+            emittedUsageTargets.pending.credits,
+        },
+        blocked: {
+          lago:
+            usageDeliveryTargets.blocked.lago - emittedUsageTargets.blocked.lago,
+          credits:
+            usageDeliveryTargets.blocked.credits -
+            emittedUsageTargets.blocked.credits,
+        },
+      };
+      const omittedUsageFindings = sumUsageTargets(omittedUsageTargets);
+      if (omittedUsageFindings > 0) {
+        findings.push({
+          category: "usage",
+          code: "usage_findings_omitted",
+          subject: "usage_outbox",
+          detail: `omitted=${omittedUsageFindings} pending_lago=${omittedUsageTargets.pending.lago} pending_credits=${omittedUsageTargets.pending.credits} blocked_lago=${omittedUsageTargets.blocked.lago} blocked_credits=${omittedUsageTargets.blocked.credits}`,
+        });
+      }
+
       return {
         ranAt: new Date().toISOString(),
         checked: {
           paidOrders: paidOrders.length,
           appliedOrders: appliedOrders.length,
           creditCustomers: customers.size,
+          usageDeliveryTargets,
+          usageFindings: {
+            limit: usageFindingLimit,
+            emitted: usageRows.length,
+            omitted: omittedUsageFindings,
+          },
         },
         findings,
       };

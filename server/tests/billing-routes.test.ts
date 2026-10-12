@@ -21,6 +21,7 @@ import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
 import { createWebhookVerifier } from "../src/billing/webhook-signature";
 import { memoryBillingStore } from "./support/billing";
+import type { ReconcileReport } from "../src/billing/types";
 
 const WEBHOOK_SIGNING_KEY = `endpoint-${"hmac-key"}`;
 // A stand-in provider credential, referenced everywhere and expected to appear nowhere.
@@ -233,13 +234,34 @@ function serviceFixture(client: LagoClient) {
   return { store, service };
 }
 
+function serviceFixtureWithReconciler(
+  client: LagoClient,
+  reconcile: () => Promise<ReconcileReport>,
+) {
+  const store = memoryBillingStore();
+  const service = createBillingService({
+    config: { externalCustomerKey: DEPLOYMENT_KEY, webhookMode: "hmac" },
+    client,
+    store,
+    verifier: undefined,
+    reconciler: { reconcile },
+    planEntitlements: new Map([
+      ["pro", [{ code: "intelligence" }, { code: "teams" }]],
+    ]),
+  });
+  return { store, service };
+}
+
 /** An app with the three billing groups mounted where app.ts mounts them. */
 function billingApp(
   actor: AuthenticatedActor | undefined,
   client: LagoClient,
   creditWriter?: CreditWriter,
+  reconcile?: () => Promise<ReconcileReport>,
 ) {
-  const { service } = serviceFixture(client);
+  const { service } = reconcile
+    ? serviceFixtureWithReconciler(client, reconcile)
+    : serviceFixture(client);
   const audit = recordingAudit();
   const app = new Hono<{ Variables: AppVariables }>();
   app.route("/api/billing/webhooks", createBillingWebhookRoutes({ service }));
@@ -638,6 +660,74 @@ describe("the admin routes", () => {
       body: JSON.stringify({ source: "promo", totalCents: 100 }),
     });
     expect(response.status).toBe(503);
+  });
+
+  test("reconcile returns usage pending and blocked counts distinctly and audits finding codes", async () => {
+    const report: ReconcileReport = {
+      ranAt: "2026-10-12T00:00:00.000Z",
+      checked: {
+        paidOrders: 1,
+        appliedOrders: 1,
+        creditCustomers: 1,
+        usageDeliveryTargets: {
+          pending: { lago: 0, credits: 2 },
+          blocked: { lago: 1, credits: 0 },
+        },
+        usageFindings: {
+          limit: 2,
+          emitted: 2,
+          omitted: 3,
+        },
+      },
+      findings: [
+        {
+          category: "usage",
+          code: "usage_target_pending",
+          subject: "usage-event-1",
+          detail:
+            "target=credits state=pending attempt_age_seconds=3600 last_failure_code=provider_unavailable",
+        },
+        {
+          category: "usage",
+          code: "usage_target_blocked",
+          subject: "usage-event-2",
+          detail:
+            "target=lago state=blocked attempt_age_seconds=7200 last_failure_code=invalid_response",
+        },
+        {
+          category: "usage",
+          code: "usage_findings_omitted",
+          subject: "usage_outbox",
+          detail:
+            "omitted=3 pending_lago=0 pending_credits=2 blocked_lago=1 blocked_credits=0",
+        },
+      ],
+    };
+    const { app, audit } = billingApp(
+      ADMIN,
+      countingClient().client,
+      undefined,
+      async () => report,
+    );
+
+    const response = await app.request("/api/admin/billing/reconcile", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(report);
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      eventType: "billing.reconciled",
+      payload: {
+        checked: report.checked,
+        findingCounts: {
+          usage_target_pending: 1,
+          usage_target_blocked: 1,
+          usage_findings_omitted: 1,
+        },
+      },
+    });
   });
 });
 

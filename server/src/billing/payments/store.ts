@@ -5,6 +5,7 @@ import { BillingError } from "../types";
 import { generateOutTradeNo } from "./crypto";
 import type {
   PaymentEventInput,
+  PaymentOrderReadScope,
   PaymentOrderRecord,
   PaymentOrderStatus,
   PaymentProviderId,
@@ -21,10 +22,10 @@ import type {
  * partial unique index is the cross-order idempotency key; the insert-or-nothing against it is
  * what turns a replay into data, not into a second payment.
  *
- * The second idempotency is at insert time: the pending-pair partial unique index ((plan_code,
- * provider) WHERE status='pending') makes "one open order per pair" a fact the database holds,
- * and `insertOrder`'s ON CONFLICT DO NOTHING plus the conflict re-read turn a losing racer into
- * the winner's replay answer instead of a second payable QR.
+ * The second idempotency is at insert time: the pending-scope partial unique index
+ * (deployment_scope WHERE status='pending') makes "one open purchase per deployment" a fact the
+ * database holds, and `insertOrder`'s targeted ON CONFLICT plus the conflict re-read turns a
+ * losing racer into the winner's order instead of a second payable QR.
  *
  * Short ids are generated here, not by callers: a `po-` collision (8 random bytes) retries with a
  * fresh draw up to five times, which keeps a database unique violation from becoming an HTTP 500
@@ -33,6 +34,7 @@ import type {
 
 /** How many times an id collision is redrawn before it becomes a terminal failure. */
 const ID_COLLISION_RETRIES = 5;
+const DEPLOYMENT_SCOPE = "default";
 
 function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
   return {
@@ -48,10 +50,54 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
     expiresAt: order.expiresAt,
     periodStart: order.periodStart,
     periodEnd: order.periodEnd,
+    paidAt: order.paidAt,
     terminalAt: order.terminalAt,
     createdBy: order.createdBy,
     createdAt: order.createdAt,
     version: order.version,
+  };
+}
+
+type PaymentOrderLockedRow = {
+  id: string;
+  deploymentScope: string;
+  planCode: string;
+  provider: PaymentProviderId;
+  amountCents: number;
+  currency: string;
+  status: PaymentOrderStatus;
+  activationState: PaymentOrderRecord["activationState"];
+  channelTransactionId: string | null;
+  checkoutPayload: string | null;
+  expiresAt: Date;
+  periodStart: Date | null;
+  periodEnd: Date | null;
+  paidAt: Date | null;
+  terminalAt: Date | null;
+  createdBy: string | null;
+  createdAt: Date;
+  version: number;
+};
+
+function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
+  return {
+    id: row.id,
+    planCode: row.planCode,
+    provider: row.provider,
+    amountCents: row.amountCents,
+    currency: "CNY",
+    status: row.status,
+    activationState: row.activationState,
+    channelTransactionId: row.channelTransactionId,
+    checkoutPayload: row.checkoutPayload,
+    expiresAt: row.expiresAt,
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    paidAt: row.paidAt,
+    terminalAt: row.terminalAt,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    version: row.version,
   };
 }
 
@@ -66,6 +112,10 @@ function eventInput(input: PaymentEventInput & { state?: string }) {
     amountCents: input.amountCents,
     detail: input.detail,
   };
+}
+
+function ownerScopeCondition(scope: PaymentOrderReadScope | undefined) {
+  return scope ? eq(paymentOrders.createdBy, scope.actorId) : undefined;
 }
 
 /**
@@ -94,58 +144,133 @@ async function readPendingRow(
   return row ? rowOf(row) : null;
 }
 
+async function readPendingPurchaseRow(
+  database: Database,
+): Promise<PaymentOrderRecord | null> {
+  const [row] = await database
+    .select()
+    .from(paymentOrders)
+    .where(
+      and(
+        eq(paymentOrders.deploymentScope, DEPLOYMENT_SCOPE),
+        eq(paymentOrders.status, "pending"),
+      ),
+    )
+    .orderBy(sql`${paymentOrders.createdAt} DESC`)
+    .limit(1);
+  return row ? rowOf(row) : null;
+}
+
+function byOverlapWinner(a: PaymentOrderRecord, b: PaymentOrderRecord): number {
+  const byStart =
+    (a.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+    (b.periodStart?.getTime() ?? Number.MAX_SAFE_INTEGER);
+  if (byStart !== 0) return byStart;
+  const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+  if (byCreated !== 0) return byCreated;
+  return a.id.localeCompare(b.id);
+}
+
+function byClaimedOwner(a: PaymentOrderRecord, b: PaymentOrderRecord): number {
+  const byApplied =
+    Number(b.activationState === "applied") -
+    Number(a.activationState === "applied");
+  if (byApplied !== 0) return byApplied;
+  const byCreated = a.createdAt.getTime() - b.createdAt.getTime();
+  if (byCreated !== 0) return byCreated;
+  return a.id.localeCompare(b.id);
+}
+
+function isOrderIdConflict(error: unknown): boolean {
+  const visited = new Set<object>();
+  while (error && typeof error === "object" && !visited.has(error)) {
+    visited.add(error);
+    const postgresError = error as {
+      code?: unknown;
+      errno?: unknown;
+      constraint?: unknown;
+      constraint_name?: unknown;
+      cause?: unknown;
+    };
+    if (
+      (postgresError.errno ?? postgresError.code) === "23505" &&
+      (postgresError.constraint ?? postgresError.constraint_name) ===
+        "payment_orders_pkey"
+    ) {
+      return true;
+    }
+    error = postgresError.cause;
+  }
+  return false;
+}
+
 export function createPaymentStore(database: Database): PaymentStore {
   return {
     async insertOrder(input) {
       for (let attempt = 0; attempt <= ID_COLLISION_RETRIES; attempt += 1) {
         const id = generateOutTradeNo();
-        const rows = await database
-          .insert(paymentOrders)
-          .values({
-            id,
-            planCode: input.planCode,
-            provider: input.provider,
-            amountCents: input.amountCents,
-            currency: input.currency,
-            status: "pending",
-            activationState: "pending",
-            checkoutPayload: input.checkoutPayload,
-            expiresAt: input.expiresAt,
-            createdBy: input.createdBy,
-          })
-          // Two conflicts, both absorbed: the redrawable `po-` id collision, and the pending-pair
-          // partial unique index ((plan, provider) WHERE status='pending') that makes "one open
-          // order per pair" a database fact. No row back means one of the two fired — the caller
-          // below re-reads, and for the pending pair that re-read is the answer (replay the
-          // existing order), not a retry.
-          .onConflictDoNothing()
-          .returning();
+        let rows: (typeof paymentOrders.$inferSelect)[];
+        try {
+          rows = await database
+            .insert(paymentOrders)
+            .values({
+              id,
+              deploymentScope: DEPLOYMENT_SCOPE,
+              planCode: input.planCode,
+              provider: input.provider,
+              amountCents: input.amountCents,
+              currency: input.currency,
+              status: "pending",
+              activationState: "pending",
+              checkoutPayload: input.checkoutPayload,
+              expiresAt: input.expiresAt,
+              createdBy: input.createdBy,
+            })
+            // This conflict target names the deployment-scope partial unique index exactly. Other
+            // unique violations, notably the primary-key id collision below, are not swallowed.
+            .onConflictDoNothing({
+              target: paymentOrders.deploymentScope,
+              where: sql`${paymentOrders.status} = 'pending'`,
+            })
+            .returning();
+        } catch (error) {
+          if (isOrderIdConflict(error)) continue;
+          throw error;
+        }
         const row = rows[0];
         if (row) return { order: rowOf(row), conflict: null };
-        // The pair conflict is not redrawable: an existing pending order for this (plan,
-        // provider) is the replay answer, whatever fresh id we draw. Reading it here (rather
-        // than only at the service layer) keeps the race closed inside one store call — the
-        // read happens after the insert lost, so the winner is already committed.
-        const existing = await readPendingRow(
-          database,
-          input.planCode,
-          input.provider,
-        );
-        if (existing) return { order: existing, conflict: "pending-pair" };
-        // No pending row and no inserted row: the loss was on the id alone — redraw.
+        // A targeted pending-scope conflict is resolved from committed state. Its owner may be
+        // the same plan/provider (a replay) or any other purchase on this deployment.
+        const existing = await readPendingPurchaseRow(database);
+        if (existing) {
+          const conflict =
+            existing.planCode === input.planCode &&
+            existing.provider === input.provider
+              ? "pending-pair"
+              : "pending-purchase";
+          return { order: existing, conflict };
+        }
+        // The winner may have become terminal before this read; try again in the now-free slot.
       }
-      // Five redraws colliding is not a probability, it is a broken generator; say so rather
+      // Five primary-key collisions is not a probability, it is a broken generator; say so rather
       // than loop.
       throw new BillingError("invalid_response");
     },
 
-    async readOrder(id) {
+    async readOrder(id, scope) {
+      const conditions = [eq(paymentOrders.id, id)];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       const [row] = await database
         .select()
         .from(paymentOrders)
-        .where(eq(paymentOrders.id, id))
+        .where(and(...conditions))
         .limit(1);
       return row ? rowOf(row) : null;
+    },
+
+    async readPendingPurchase() {
+      return readPendingPurchaseRow(database);
     },
 
     async readPendingOrder(planCode, provider) {
@@ -178,11 +303,14 @@ export function createPaymentStore(database: Database): PaymentStore {
       return row ? rowOf(row) : null;
     },
 
-    async readLatestLiveOrder() {
+    async readLatestLiveOrder(scope) {
+      const conditions = [inArray(paymentOrders.status, ["pending", "paid"])];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       const [row] = await database
         .select()
         .from(paymentOrders)
-        .where(inArray(paymentOrders.status, ["pending", "paid"]))
+        .where(and(...conditions))
         .orderBy(sql`${paymentOrders.createdAt} DESC`)
         .limit(1);
       return row ? rowOf(row) : null;
@@ -233,6 +361,7 @@ export function createPaymentStore(database: Database): PaymentStore {
 
       return database
         .transaction(async (tx) => {
+          const paidAt = new Date();
           const moved = await tx
             .update(paymentOrders)
             .set({
@@ -240,7 +369,8 @@ export function createPaymentStore(database: Database): PaymentStore {
               channelTransactionId: input.channelTransactionId,
               periodStart: input.periodStart,
               periodEnd: input.periodEnd,
-              terminalAt: new Date(),
+              paidAt,
+              terminalAt: paidAt,
               version: input.expectedVersion + 1,
             })
             .where(
@@ -383,11 +513,133 @@ export function createPaymentStore(database: Database): PaymentStore {
       return inserted.length > 0;
     },
 
-    async recordActivation(id, activationState) {
+    async readPaidOrderByTransaction(channelTransactionId) {
+      const [row] = await database
+        .select()
+        .from(paymentOrders)
+        .where(
+          and(
+            eq(paymentOrders.status, "paid"),
+            eq(paymentOrders.channelTransactionId, channelTransactionId),
+          ),
+        )
+        .orderBy(sql`${paymentOrders.createdAt} ASC`)
+        .limit(1);
+      return row ? rowOf(row) : null;
+    },
+
+    async recordActivation(id, activationState, period) {
       await database
         .update(paymentOrders)
-        .set({ activationState })
+        .set({
+          activationState,
+          ...(period
+            ? { periodStart: period.start, periodEnd: period.end }
+            : {}),
+        })
         .where(eq(paymentOrders.id, id));
+    },
+
+    async resolveActivationOwnership(orderId) {
+      return database.transaction(async (tx) => {
+        const [anchor] = await tx
+          .select()
+          .from(paymentOrders)
+          .where(eq(paymentOrders.id, orderId))
+          .limit(1);
+        if (!anchor) return { outcome: "unknown" as const };
+        if (anchor.status !== "paid") return { outcome: "not-paid" as const };
+        if (!anchor.periodStart || !anchor.periodEnd) {
+          return { outcome: "not-paid" as const };
+        }
+
+        const locked = await tx.execute(sql`
+          select
+            "id",
+            "deployment_scope" as "deploymentScope",
+            "plan_code" as "planCode",
+            "provider",
+            "amount_cents" as "amountCents",
+            "currency",
+            "status",
+            "activation_state" as "activationState",
+            "channel_transaction_id" as "channelTransactionId",
+            "checkout_payload" as "checkoutPayload",
+            "expires_at" as "expiresAt",
+            "period_start" as "periodStart",
+            "period_end" as "periodEnd",
+            "paid_at" as "paidAt",
+            "terminal_at" as "terminalAt",
+            "created_by" as "createdBy",
+            "created_at" as "createdAt",
+            "version"
+          from "payment_orders"
+          where "deployment_scope" = ${anchor.deploymentScope}
+            and "plan_code" = ${anchor.planCode}
+            and "status" = 'paid'
+            and "period_start" is not null
+            and "period_end" is not null
+            and "period_start" < ${anchor.periodEnd}
+            and "period_end" > ${anchor.periodStart}
+          order by "period_start" asc, "created_at" asc, "id" asc
+          for update
+        `);
+        const rows = (
+          Array.isArray(locked)
+            ? locked
+            : ((locked as { rows?: unknown[] }).rows ?? [])
+        ) as PaymentOrderLockedRow[];
+        const lockedOrders = rows.map(lockedRowOf);
+        const current = lockedOrders.find((row) => row.id === orderId);
+        if (!current) return { outcome: "unknown" as const };
+
+        const existingOwner = [...lockedOrders]
+          .filter((row) => row.activationState !== "pending")
+          .sort(byClaimedOwner)[0];
+        if (existingOwner) {
+          if (existingOwner.id === current.id) {
+            return { outcome: "owner" as const, order: current };
+          }
+          return {
+            outcome: "duplicate" as const,
+            order: current,
+            ownerOrder: existingOwner,
+          };
+        }
+
+        const winner = [...lockedOrders].sort(byOverlapWinner)[0];
+        if (!winner) return { outcome: "unknown" as const };
+        if (winner.id !== current.id) {
+          return {
+            outcome: "duplicate" as const,
+            order: current,
+            ownerOrder: winner,
+          };
+        }
+        if (current.activationState === "pending") {
+          const [claimed] = await tx
+            .update(paymentOrders)
+            .set({ activationState: "failed" })
+            .where(
+              and(
+                eq(paymentOrders.id, current.id),
+                eq(paymentOrders.status, "paid"),
+                eq(paymentOrders.activationState, "pending"),
+              ),
+            )
+            .returning();
+          if (claimed) return { outcome: "owner" as const, order: rowOf(claimed) };
+        }
+        const [fresh] = await tx
+          .select()
+          .from(paymentOrders)
+          .where(eq(paymentOrders.id, current.id))
+          .limit(1);
+        if (fresh?.status !== "paid") {
+          return { outcome: "unknown" as const };
+        }
+        return { outcome: "owner" as const, order: rowOf(fresh) };
+      });
     },
 
     async listExpiredPendingOrders(now, limit) {
@@ -423,12 +675,14 @@ export function createPaymentStore(database: Database): PaymentStore {
       return rows.map(rowOf);
     },
 
-    async listOrdersInWindow({ from, to, limit, offset }) {
+    async listOrdersInWindow({ from, to, limit, offset, scope }) {
       // Flat condition construction (see readLatestPaidOrder's note): this drizzle version's
       // `and()` takes conditions as direct arguments, and a spread array among them silently
       // degrades the whole predicate — an optional-end window must degrade to "no bound", not
       // to a broken filter.
       const conditions = [];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       if (from) conditions.push(gte(paymentOrders.createdAt, from));
       if (to) conditions.push(lte(paymentOrders.createdAt, to));
       const rows = await database
@@ -441,10 +695,12 @@ export function createPaymentStore(database: Database): PaymentStore {
       return rows.map(rowOf);
     },
 
-    async countOrdersInWindow({ from, to }) {
+    async countOrdersInWindow({ from, to, scope }) {
       // Same flat construction as listOrdersInWindow above; the two must filter identically
       // or the pager and the page disagree.
       const conditions = [];
+      const ownerScope = ownerScopeCondition(scope);
+      if (ownerScope) conditions.push(ownerScope);
       if (from) conditions.push(gte(paymentOrders.createdAt, from));
       if (to) conditions.push(lte(paymentOrders.createdAt, to));
       const [row] = await database

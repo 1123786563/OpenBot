@@ -3,17 +3,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /*
- * QA batch-1 probe (f): the LLM meter's transaction id, verified against the SOURCE — the
+ * QA batch-1 probe (f): the LLM meter's outbox write, verified against the SOURCE — the
  * wiring lives inside index.ts's assembly (a module with heavy side effects that no unit test
  * can import), so the check is twofold:
  *
- *   1. STATIC: the implementation the file actually contains — `llm:<key>:<seq>` off a
- *      per-process counter, zero-usage short-circuit, fire-and-forget report — read from disk
- *      and pinned, so the comment and the code cannot drift apart silently (the old code
- *      promised "stable enough to deduplicate a retry" while embedding Date.now(); P2-1 was
- *      filed over exactly that kind of drift).
- *   2. BEHAVIORAL: the id grammar the sequence produces — monotonic per key, distinct across
- *      keys, no timestamp anywhere — replayed through the same string-building arithmetic.
+ *   1. STATIC: the implementation the file actually contains — a usage-outbox write keyed by
+ *      the stream event id, zero-usage short-circuit, and no direct Lago or credit draw —
+ *      read from disk and pinned, so the task boundary cannot regress silently.
+ *   2. BEHAVIORAL: the event-id grammar the stream uses — UUID-shaped and distinct across calls.
  */
 
 const SOURCE = readFileSync(
@@ -21,77 +18,50 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
-describe("probe f: the meter's transaction id (static contract, index.ts)", () => {
-  test("the id is built from a per-process counter, not a clock", () => {
-    // The counter, the increment, and the id — the three lines P2-1's fix stands on.
-    expect(SOURCE).toContain("let meterSequence = 0;");
-    expect(SOURCE).toMatch(/meterSequence\s*\+=\s*1/);
-    expect(SOURCE).toMatch(
-      /const transactionId = `llm:\$\{billing\.externalCustomerKey\}:\$\{meterSequence\}`/,
+describe("probe f: the meter's outbox write (static contract, index.ts)", () => {
+  test("the finish writes usage facts to the outbox, not directly to Lago or credits", () => {
+    // b616ccaa made the write awaited inside a try; the remediation plan kept the await and
+    // made the failure decisive — logged with both stable ids, then rethrown (see below).
+    expect(SOURCE).toMatch(/await usageOutbox\.record\(\{/);
+    expect(SOURCE).not.toMatch(/void billingService\s*\n?\s*\.recordUsage/);
+    expect(SOURCE).not.toMatch(/void billing\.creditWriter\s*\n?\s*\.consumeCredits/);
+  });
+
+  test("an unusable finish writes nothing and KEEPS the reservation for reconciliation", () => {
+    // The reservation-first contract after the remediation: an invalid or over-bound usage
+    // report is a distinct settlement failure. Nothing is written, the hold is never
+    // released as no_usage, and the failure is thrown so the run cannot report success.
+    expect(SOURCE).toMatch(/logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/);
+    expect(SOURCE).toMatch(/throw new ModelUsageSettlementError\(/);
+    expect(SOURCE).not.toMatch(
+      /releaseReservation\(\s*\n\s*reservation\.reservationId,\s*\n\s*"no_usage",/,
     );
   });
 
-  test("Date.now() is gone from the id: the old P2-1 shape survives only as a comment", () => {
-    // The comment documents the replacement; every OTHER line must be free of the old shape.
-    const codeLines = SOURCE.split("\n").filter((line) => !line.trim().startsWith("*"));
-    for (const line of codeLines) {
-      expect(line).not.toMatch(/llm-.*Date\.now\(\)/);
-      expect(line).not.toMatch(/Date\.now\(\).*llm-/);
-    }
-  });
-
-  test("a zero-token finish mints no id at all", () => {
-    expect(SOURCE).toContain("if (input === 0 && output === 0) return;");
-  });
-
-  test("the report is fire-and-forget: a metering miss never fails the run", () => {
-    expect(SOURCE).toMatch(/void billingService\s*\n?\s*\.recordUsage/);
-  });
-
-  test("the comment's two promises are the code's two properties", () => {
-    // different calls → different ids (the sequence increments per reported finish)
-    expect(SOURCE).toContain("the sequence increments per reported finish");
-    // the id is minted once — the report itself carries no caller-side retry
-    expect(SOURCE).toContain("minted once");
+  test("a failed durable write fails the run instead of vanishing into a log line", () => {
+    expect(SOURCE).toMatch(/await usageOutbox\.record\(/);
+    // The catch logs through the runtime's established logger path AND propagates: a
+    // completed billed stream may never be reported as successful when its finish usage
+    // fact failed to persist.
+    expect(SOURCE).toMatch(
+      /logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/,
+    );
+    expect(SOURCE).toMatch(/usageOutboxWriteFailureCode\(error\)/);
   });
 });
 
-describe("probe f: the id grammar the sequence produces (behavioral)", () => {
-  test("same key: the sequence is strictly monotonic across same-millisecond finishes", () => {
-    // The whole point of the counter: two finishes in the SAME tick still number apart,
-    // which a Date.now()-based id could never promise.
-    let meterSequence = 0;
-    const key = "deployment-key-a";
-    const ids = Array.from({ length: 50 }, () => {
-      meterSequence += 1;
-      return `llm:${key}:${meterSequence}`;
-    });
-    for (let i = 1; i < ids.length; i += 1) {
-      expect(ids[i]).not.toBe(ids[i - 1]);
-    }
-    expect(new Set(ids).size).toBe(50);
-    // And the numeric tail is exactly 1..50, in order.
-    expect(ids.map((id) => Number(id.split(":")[2]))).toEqual(
-      Array.from({ length: 50 }, (_, i) => i + 1),
+describe("probe f: the event id grammar the stream uses (behavioral)", () => {
+  test("UUID-shaped ids remain distinct across two calls", () => {
+    const ids = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    ];
+    expect(ids[0]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
-  });
-
-  test("different keys: the namespaces never collide, even at the same seq", () => {
-    const a = (seq: number) => `llm:deployment-a:${seq}`;
-    const b = (seq: number) => `llm:deployment-b:${seq}`;
-    expect(a(7)).not.toBe(b(7));
-    // A key containing a colon would be ambiguous: `llm:a:b:1` — the deployment key grammar
-    // (deploymentExternalCustomerId derives from a tenant id) is the guard, noted here as the
-    // boundary of the format's promise, not a defect of this batch.
-    expect(`llm:${"a:b"}:1`.split(":").length).toBe(4);
-  });
-
-  test("the id carries no timestamp: identical inputs at different wall times are identical ids at the same seq — and the provider dedupe holds", () => {
-    // Two identical-usage calls a minute apart under the OLD scheme produced two different ids
-    // (double metering). Under the counter, the id depends on the CALL COUNT alone.
-    const idAt = (seq: number, _wallClockIrrelevant: number) => `llm:key:${seq}`;
-    expect(idAt(3, 1_791_900_000_000)).toBe("llm:key:3");
-    expect(idAt(3, 1_791_900_060_000)).toBe("llm:key:3");
-    expect(idAt(3, 1_791_900_000_000)).toBe(idAt(3, 1_791_900_060_000));
+    expect(ids[1]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(ids[0]).not.toBe(ids[1]);
   });
 });
