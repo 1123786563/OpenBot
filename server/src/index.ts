@@ -3147,7 +3147,19 @@ const billing =
             // service holds — the pass audits those collaborators and must not read through
             // them. Scoped to the deployment's customer key, the same key the purchase
             // guard's uncached read uses, so audit and gate agree about "live".
-            reconciler: createReconciler(database, externalCustomerKey),
+            // The reconciliation pass (T7): over the database directly, not the deps the
+            // service holds — the pass audits those collaborators and must not read through
+            // them. Scoped to the deployment's customer key, the same key the purchase
+            // guard's uncached read uses, so audit and gate agree about "live". The catalog
+            // lookup prices each plan's expected allowance in scaled integer units (the same
+            // arithmetic the grantor below uses), so the pass can audit that a paid order's
+            // plan payout actually landed at the priced amount.
+            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
+              const entry = settings.planCatalog.get(planCode);
+              return entry && entry.credits > 0
+                ? Math.round(entry.credits * CREDIT_SCALE)
+                : null;
+            }),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({

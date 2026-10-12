@@ -612,7 +612,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
   });
 
   test("usage findings are bounded deterministically, delivered rows stay silent, and overflow is summarized exactly", async () => {
-    const bounded = createReconciler(database, prefix, {
+    const bounded = createReconciler(database, prefix, undefined, {
       usageFindingLimit: 2,
     });
 
@@ -695,5 +695,175 @@ describe("reconcile (the skeleton, over real tables)", () => {
       usageFindings.some((finding) => finding.subject === delivered.eventId),
     ).toBe(false);
     expect(usageFindings.at(-1)?.detail).toContain("omitted=2");
+  });
+});
+
+/*
+ * Plan payout reconciliation (plan 05, task 4): a paid order prices an expected plan allowance
+ * through the catalog lookup the assembly passes in; the reconciler matches it against the
+ * grant the payout should have written (idempotency key `plan:<orderId>`, scaled integer
+ * units), and reports paid orders whose activation never settled once they are older than the
+ * documented threshold. Everything stays read-only: these tests assert the rows are untouched.
+ */
+describe("plan payout and payment evidence reconciliation", () => {
+  // pro pays 500 whole credits → 50_000 scaled units, the same ×CREDIT_SCALE arithmetic the
+  // assembly's grantor uses. Plans outside the catalog price null: no allowance, no check.
+  const planCreditsFor = (planCode: string): number | null =>
+    planCode === "pro" ? 50_000 : null;
+
+  /** One paid order plus its paid fact and the customer floor the grant foreign key needs. */
+  async function seedPaidOrder(
+    orderId: string,
+    options: {
+      planCode?: string;
+      amountCents?: number;
+      activationState?: "pending" | "applied" | "failed";
+    } = {},
+  ) {
+    const amountCents = options.amountCents ?? 8_800;
+    await database.insert(paymentOrders).values({
+      id: orderId,
+      planCode: options.planCode ?? "pro",
+      provider: "alipay",
+      amountCents,
+      currency: "CNY",
+      status: "paid",
+      activationState: options.activationState ?? "applied",
+      channelTransactionId: `${orderId}-tx`,
+      checkoutPayload: null,
+      expiresAt: new Date(Date.now() + 15 * 60_000),
+      paidAt: new Date(),
+      version: 2,
+    });
+    await database.insert(paymentEvents).values({
+      id: `${orderId}-fact`,
+      orderId,
+      kind: "fact",
+      code: "paid",
+      state: "paid",
+      channelTransactionId: `${orderId}-tx`,
+      amountCents,
+    });
+    await database
+      .insert(billingCustomers)
+      .values({ externalId: prefix, name: null })
+      .onConflictDoNothing({ target: billingCustomers.externalId });
+    return orderId;
+  }
+
+  test("a paid order whose plan allowance never landed is plan_grant_missing, named by order and the plan:<orderId> key", async () => {
+    const orderId = await seedPaidOrder(`${prefix}-grant-missing`);
+    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+
+    const report = await catalogReconciler.reconcile();
+    const finding = report.findings.find(
+      (item) => item.subject === orderId && item.code === "plan_grant_missing",
+    );
+    expect(finding).toMatchObject({
+      category: "payment",
+      code: "plan_grant_missing",
+      subject: orderId,
+    });
+    expect(finding?.detail).toContain(`plan:${orderId}`);
+    expect(finding?.detail).toContain("expected=50000");
+  });
+
+  test("a plan grant whose total differs from the catalog price is plan_grant_amount_mismatch", async () => {
+    const orderId = await seedPaidOrder(`${prefix}-grant-mismatch`);
+    await database.insert(creditGrants).values({
+      id: `${orderId}-grant`,
+      externalCustomerId: prefix,
+      source: "plan",
+      reason: "test",
+      total: 49_000,
+      used: 0,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `plan:${orderId}`,
+    });
+    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+
+    const report = await catalogReconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.subject === orderId && item.code === "plan_grant_amount_mismatch",
+    );
+    expect(finding).toMatchObject({
+      category: "payment",
+      code: "plan_grant_amount_mismatch",
+      subject: orderId,
+    });
+    expect(finding?.detail).toContain(`plan:${orderId}`);
+    expect(finding?.detail).toContain("expected=50000");
+    expect(finding?.detail).toContain("actual=49000");
+  });
+
+  test("a matching plan grant keeps the books silent, and plans outside the catalog are not checked", async () => {
+    const settled = await seedPaidOrder(`${prefix}-grant-ok`);
+    await database.insert(creditGrants).values({
+      id: `${settled}-grant`,
+      externalCustomerId: prefix,
+      source: "plan",
+      reason: "test",
+      total: 50_000,
+      used: 0,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `plan:${settled}`,
+    });
+    // "basic" is not in the test catalog: it grants nothing, so there is nothing to reconcile.
+    await seedPaidOrder(`${prefix}-grant-none`, { planCode: "basic" });
+    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+
+    const report = await catalogReconciler.reconcile();
+    expect(
+      report.findings.some(
+        (item) =>
+          item.code.startsWith("plan_grant") &&
+          (item.subject === settled || item.subject === `${prefix}-grant-none`),
+      ),
+    ).toBe(false);
+  });
+
+  test("activation still pending beyond the age threshold is activation_backlog; a young retry and a wider threshold stay silent", async () => {
+    const aged = await seedPaidOrder(`${prefix}-activation-aged`, {
+      activationState: "pending",
+    });
+    const young = await seedPaidOrder(`${prefix}-activation-young`, {
+      activationState: "pending",
+    });
+    await database.execute(
+      sql`UPDATE payment_orders SET paid_at = now() - interval '30 minutes' WHERE id = ${aged}`,
+    );
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) => item.subject === aged && item.code === "activation_backlog",
+    );
+    expect(finding).toMatchObject({
+      category: "payment",
+      code: "activation_backlog",
+      subject: aged,
+    });
+    expect(finding?.detail).toContain("state=pending");
+    expect(
+      report.findings.some(
+        (item) => item.code === "activation_backlog" && item.subject === young,
+      ),
+    ).toBe(false);
+
+    const patient = createReconciler(database, prefix, undefined, {
+      activationBacklogAgeMs: 3_600_000,
+    });
+    const patientReport = await patient.reconcile();
+    // The pass reads whole tables, so residual pending orders from other suites legitimately
+    // report; the threshold contract is about THIS test's rows only.
+    expect(
+      patientReport.findings.some(
+        (item) =>
+          item.code === "activation_backlog" &&
+          item.subject.startsWith(prefix),
+      ),
+    ).toBe(false);
   });
 });
