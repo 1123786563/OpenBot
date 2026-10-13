@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import type { PaymentOrderRecord, PaymentStore } from "../src/billing/payments/types";
+import type {
+  PaymentOrderReadScope,
+  PaymentOrderRecord,
+  PaymentStore,
+} from "../src/billing/payments/types";
 import {
   createBillingStatementRoutes,
   statementQueryInput,
@@ -111,12 +115,20 @@ function order(over: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
     expiresAt: new Date("2026-10-01T00:15:00.000Z"),
     periodStart: new Date(PERIOD_START),
     periodEnd: new Date(PERIOD_END),
+    paidAt: new Date("2026-10-01T00:05:00.000Z"),
     terminalAt: new Date("2026-10-01T00:05:00.000Z"),
     createdBy: "user-admin",
     createdAt: new Date("2026-10-01T00:01:00.000Z"),
     version: 1,
     ...over,
-  };
+  } as PaymentOrderRecord;
+}
+
+function matchesScope(
+  row: PaymentOrderRecord,
+  scope: PaymentOrderReadScope | undefined,
+): boolean {
+  return !scope || row.createdBy === scope.actorId;
 }
 
 /** A payment ledger over a fixed list, recording the window it was asked for. */
@@ -124,7 +136,8 @@ function fakeOrders(rows: PaymentOrderRecord[]) {
   const calls: { from: Date | null; to: Date | null }[] = [];
   const store = {
     insertOrder: async () => order(),
-    readOrder: async (id: string) => rows.find((row) => row.id === id) ?? null,
+    readOrder: async (id: string, scope?: PaymentOrderReadScope) =>
+      rows.find((row) => row.id === id && matchesScope(row, scope)) ?? null,
     readPendingOrder: async () => null,
     readLatestPaidOrder: async () => null,
     readLatestLiveOrder: async () => null,
@@ -143,19 +156,26 @@ function fakeOrders(rows: PaymentOrderRecord[]) {
       to: Date | null;
       limit: number;
       offset: number;
+      scope?: PaymentOrderReadScope;
     }) => {
       calls.push({ from: input.from, to: input.to });
       return rows
         .filter(
           (row) =>
+            matchesScope(row, input.scope) &&
             (!input.from || row.createdAt >= input.from) &&
             (!input.to || row.createdAt <= input.to),
         )
         .slice(input.offset, input.offset + input.limit);
     },
-    countOrdersInWindow: async (input: { from: Date | null; to: Date | null }) =>
+    countOrdersInWindow: async (input: {
+      from: Date | null;
+      to: Date | null;
+      scope?: PaymentOrderReadScope;
+    }) =>
       rows.filter(
         (row) =>
+          matchesScope(row, input.scope) &&
           (!input.from || row.createdAt >= input.from) &&
           (!input.to || row.createdAt <= input.to),
       ).length,
@@ -261,6 +281,76 @@ describe("invoices", () => {
     expect(page.invoices[0]?.periodStart).toBe(PERIOD_START);
   });
 
+  test("historical paid orders keep their own stored periods when the current plan moved on", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-august",
+        createdAt: new Date("2026-08-15T00:01:00.000Z"),
+        periodStart: new Date("2026-08-01T00:00:00.000Z"),
+        periodEnd: new Date("2026-09-01T00:00:00.000Z"),
+      }),
+      order({
+        id: "po-september",
+        createdAt: new Date("2026-09-15T00:01:00.000Z"),
+        periodStart: new Date("2026-09-01T00:00:00.000Z"),
+        periodEnd: new Date("2026-10-01T00:00:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+
+    const page = await statements.invoices({ from: null, to: null, page: 1 });
+
+    expect(page.invoices.map((invoice) => invoice.periodStart)).toEqual([
+      "2026-08-01T00:00:00.000Z",
+      "2026-09-01T00:00:00.000Z",
+    ]);
+    expect(page.invoices.map((invoice) => invoice.periodEnd)).toEqual([
+      "2026-09-01T00:00:00.000Z",
+      "2026-10-01T00:00:00.000Z",
+    ]);
+  });
+
+  test("expired and canceled orders do not expose a paid settlement time", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-expired",
+        status: "expired",
+        activationState: "pending",
+        channelTransactionId: null,
+        paidAt: null,
+        terminalAt: new Date("2026-09-01T00:05:00.000Z"),
+      }),
+      order({
+        id: "po-canceled",
+        status: "canceled",
+        activationState: "pending",
+        channelTransactionId: null,
+        paidAt: null,
+        terminalAt: new Date("2026-09-02T00:05:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+
+    const page = await statements.invoices({ from: null, to: null, page: 1 });
+    const expiredInvoice = page.invoices.find(
+      (invoice) => invoice.invoiceId === "po-expired",
+    );
+    const canceledInvoice = page.invoices.find(
+      (invoice) => invoice.invoiceId === "po-canceled",
+    );
+
+    expect(expiredInvoice?.settledAt).toBeNull();
+    expect(canceledInvoice?.settledAt).toBeNull();
+  });
+
   test("an empty window is one empty page, never page 1 of 0", async () => {
     const { store } = fakeOrders([]);
     const statements = createBillingStatements({
@@ -313,6 +403,43 @@ describe("invoices", () => {
       { label: "pro", quantity: 1, amountCents: 19900 },
     ]);
   });
+
+  test("statement reads only expose orders created by the authenticated actor", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-member",
+        createdBy: MEMBER.id,
+        createdAt: new Date("2026-10-02T00:01:00.000Z"),
+      }),
+      order({
+        id: "po-other",
+        createdBy: "user-other",
+        createdAt: new Date("2026-10-01T00:01:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map(),
+      orders: store,
+    });
+
+    const page = await statements.invoices(
+      { from: null, to: null, page: 1 },
+      { actorId: MEMBER.id },
+    );
+
+    expect(page.invoices.map((invoice) => invoice.invoiceId)).toEqual([
+      "po-member",
+    ]);
+    expect(await statements.invoice("po-member", { actorId: MEMBER.id })).toMatchObject(
+      {
+        invoiceId: "po-member",
+      },
+    );
+    expect(
+      await statements.invoice("po-other", { actorId: MEMBER.id }),
+    ).toBeNull();
+  });
 });
 
 describe("statement routes", () => {
@@ -335,7 +462,7 @@ describe("statement routes", () => {
   }
 
   const withOrders = () => {
-    const { store } = fakeOrders([order()]);
+    const { store } = fakeOrders([order({ createdBy: MEMBER.id })]);
     return createBillingStatements({
       service: fakeService(ACTIVE, USAGE),
       quotas: new Map([["pro", QUOTAS]]),
@@ -397,6 +524,44 @@ describe("statement routes", () => {
     };
     expect(body.invoice.invoiceId).toBe("po-aaaaaaaaaaaaaaaa");
     expect(body.invoice.lines).toHaveLength(1);
+  });
+
+  test("bill list and detail return only the signed-in actor's orders", async () => {
+    const { store } = fakeOrders([
+      order({
+        id: "po-member",
+        createdBy: MEMBER.id,
+        createdAt: new Date("2026-10-02T00:01:00.000Z"),
+      }),
+      order({
+        id: "po-other",
+        createdBy: "user-other",
+        createdAt: new Date("2026-10-01T00:01:00.000Z"),
+      }),
+    ]);
+    const statements = createBillingStatements({
+      service: fakeService(ACTIVE, USAGE),
+      quotas: new Map([["pro", QUOTAS]]),
+      orders: store,
+    });
+
+    const list = await app(statements, MEMBER).request("/api/billing/invoices");
+    expect(list.status).toBe(200);
+    expect(
+      ((await list.json()) as { invoices: Array<{ invoiceId: string }> }).invoices.map(
+        (invoice) => invoice.invoiceId,
+      ),
+    ).toEqual(["po-member"]);
+
+    const own = await app(statements, MEMBER).request(
+      "/api/billing/invoices/po-member",
+    );
+    expect(own.status).toBe(200);
+
+    const other = await app(statements, MEMBER).request(
+      "/api/billing/invoices/po-other",
+    );
+    expect(other.status).toBe(404);
   });
 });
 

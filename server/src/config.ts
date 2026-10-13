@@ -1235,6 +1235,55 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
  * That is refused here, at boot, with the sentence that names the fix — the same reasoning as every
  * other partial configuration in this file: the mistake belongs where somebody is looking.
  */
+export type BillingCreditRate = {
+  numerator: bigint;
+  denominator: bigint;
+};
+
+export type BillingCreditPolicyIssue = {
+  key: string;
+  reason:
+    | "missing"
+    | "invalid_json"
+    | "invalid_shape"
+    | "negative"
+    | "zero_denominator"
+    | "out_of_range";
+};
+
+export type BillingModelCreditClassConfig = {
+  rate: BillingCreditRate;
+  maximumTokens: bigint;
+  maximumCostUnits: bigint;
+};
+
+export type BillingModelCreditPolicyEntry = {
+  input: BillingModelCreditClassConfig;
+  output: BillingModelCreditClassConfig;
+  maximumReservationUnits: bigint;
+};
+
+export type BillingCodeRunCreditPolicyConfig = {
+  rate: BillingCreditRate;
+  maximumTokens: bigint;
+  maximumReservationUnits: bigint;
+};
+
+export type BillingCreditPolicyConfig =
+  | {
+      configured: false;
+      mode: "hard_cap";
+      issues: readonly BillingCreditPolicyIssue[];
+    }
+  | {
+      configured: true;
+      mode: "hard_cap";
+      models: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
+      codeRun: BillingCodeRunCreditPolicyConfig;
+    };
+
+const MAX_STORED_CREDIT_UNITS = 2_147_483_647n;
+
 export type LagoBillingConfig = {
   /** The provider origin, for example `https://api.getlago.com`. No path, no query, no fragment. */
   apiUrl: string;
@@ -1259,6 +1308,13 @@ export type LagoBillingConfig = {
   planQuotas: ReadonlyMap<string, readonly BillingQuotaEntry[]>;
   /** Plan code → the catalog entry the upgrade dialog shows (name, credits, cycles, pricing). */
   planCatalog: ReadonlyMap<string, PlanCatalogEntry>;
+  /**
+   * The hard-cap credit policy block for metered work.
+   *
+   * Never defaulted. A deployment that has not supplied approved rates and token ceilings keeps the
+   * billing provider configured while metered work remains later-refusable on `configured: false`.
+   */
+  creditPolicy: BillingCreditPolicyConfig;
   /** One request's ceiling, when the default 10s is not what this deployment wants. */
   requestTimeoutMs?: number;
 };
@@ -1325,6 +1381,7 @@ function billingConfig(
   const planEntitlements = billingPlanEntitlements(environment);
   const planQuotas = billingPlanQuotas(environment);
   const planCatalog = billingPlanCatalog(environment);
+  const creditPolicy = billingCreditPolicyConfig(environment);
   const allowPrivateHosts = billingPrivateHostsAllowed(environment);
 
   const timeoutRaw = optional(environment, "LAGO_REQUEST_TIMEOUT_MS");
@@ -1348,8 +1405,304 @@ function billingConfig(
     planEntitlements,
     planQuotas,
     planCatalog,
+    creditPolicy,
     ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   };
+}
+
+function billingCreditPolicyConfig(
+  environment: Environment,
+): BillingCreditPolicyConfig {
+  const issues: BillingCreditPolicyIssue[] = [];
+  const modelRates = jsonObjectEnvironment(
+    environment,
+    "BILLING_MODEL_CREDIT_RATES",
+    issues,
+  );
+  const modelMaximums = jsonObjectEnvironment(
+    environment,
+    "BILLING_MODEL_MAX_RESERVATION_TOKENS",
+    issues,
+  );
+  const codeRunRate = jsonValueEnvironment(
+    environment,
+    "BILLING_CODE_RUN_CREDIT_RATE",
+    issues,
+  );
+  const codeRunMaximumTokens = exactWholeNumber(
+    optional(environment, "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS"),
+    "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+    issues,
+  );
+
+  const models = new Map<string, BillingModelCreditPolicyEntry>();
+  if (modelRates !== undefined || modelMaximums !== undefined) {
+    const modelIds = new Set<string>([
+      ...Object.keys(modelRates ?? {}),
+      ...Object.keys(modelMaximums ?? {}),
+    ]);
+    for (const modelId of modelIds) {
+      const rateRecord = modelRates?.[modelId];
+      const maximumRecord = modelMaximums?.[modelId];
+      if (rateRecord === undefined) {
+        issues.push({
+          key: `BILLING_MODEL_CREDIT_RATES.${modelId}`,
+          reason: "missing",
+        });
+        continue;
+      }
+      if (maximumRecord === undefined) {
+        issues.push({
+          key: `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+          reason: "missing",
+        });
+        continue;
+      }
+      const parsedRateRecord = objectRecord(
+        rateRecord,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}`,
+        issues,
+      );
+      const parsedMaximumRecord = objectRecord(
+        maximumRecord,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+        issues,
+      );
+      if (parsedRateRecord === undefined || parsedMaximumRecord === undefined) {
+        continue;
+      }
+      const inputRate = exactRate(
+        parsedRateRecord.input,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}.input`,
+        issues,
+      );
+      const outputRate = exactRate(
+        parsedRateRecord.output,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}.output`,
+        issues,
+      );
+      const inputMaximumTokens = exactWholeNumber(
+        parsedMaximumRecord.input,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}.input`,
+        issues,
+      );
+      const outputMaximumTokens = exactWholeNumber(
+        parsedMaximumRecord.output,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}.output`,
+        issues,
+      );
+      if (
+        inputRate === undefined ||
+        outputRate === undefined ||
+        inputMaximumTokens === undefined ||
+        outputMaximumTokens === undefined
+      ) {
+        continue;
+      }
+      const inputMaximumCostUnits = ceilingProduct(
+        inputMaximumTokens,
+        inputRate,
+      );
+      const outputMaximumCostUnits = ceilingProduct(
+        outputMaximumTokens,
+        outputRate,
+      );
+      const maximumReservationUnits =
+        inputMaximumCostUnits + outputMaximumCostUnits;
+      if (
+        maximumReservationUnits === 0n ||
+        maximumReservationUnits > MAX_STORED_CREDIT_UNITS
+      ) {
+        issues.push({
+          key: `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+          reason: "out_of_range",
+        });
+        continue;
+      }
+      models.set(modelId, {
+        input: {
+          rate: inputRate,
+          maximumTokens: inputMaximumTokens,
+          maximumCostUnits: inputMaximumCostUnits,
+        },
+        output: {
+          rate: outputRate,
+          maximumTokens: outputMaximumTokens,
+          maximumCostUnits: outputMaximumCostUnits,
+        },
+        maximumReservationUnits,
+      });
+    }
+  }
+  if (
+    issues.length === 0 &&
+    modelRates !== undefined &&
+    modelMaximums !== undefined &&
+    models.size === 0
+  ) {
+    issues.push({ key: "BILLING_MODEL_CREDIT_RATES", reason: "missing" });
+  }
+
+  const parsedCodeRunRate =
+    codeRunRate === undefined
+      ? undefined
+      : exactRate(codeRunRate, "BILLING_CODE_RUN_CREDIT_RATE", issues);
+  const codeRunMaximumReservationUnits =
+    parsedCodeRunRate === undefined || codeRunMaximumTokens === undefined
+      ? undefined
+      : ceilingProduct(codeRunMaximumTokens, parsedCodeRunRate);
+  if (
+    codeRunMaximumReservationUnits !== undefined &&
+    codeRunMaximumReservationUnits > MAX_STORED_CREDIT_UNITS
+  ) {
+    issues.push({
+      key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+      reason: "out_of_range",
+    });
+  }
+  if (
+    issues.length > 0 ||
+    parsedCodeRunRate === undefined ||
+    codeRunMaximumTokens === undefined ||
+    codeRunMaximumReservationUnits === undefined
+  ) {
+    return {
+      configured: false,
+      mode: "hard_cap",
+      issues,
+    };
+  }
+
+  return {
+    configured: true,
+    mode: "hard_cap",
+    models,
+    codeRun: {
+      rate: parsedCodeRunRate,
+      maximumTokens: codeRunMaximumTokens,
+      maximumReservationUnits: codeRunMaximumReservationUnits,
+    },
+  };
+}
+
+function jsonValueEnvironment(
+  environment: Environment,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): unknown {
+  const raw = optional(environment, key);
+  if (raw === undefined) {
+    issues.push({ key, reason: "missing" });
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    issues.push({ key, reason: "invalid_json" });
+    return undefined;
+  }
+}
+
+function jsonObjectEnvironment(
+  environment: Environment,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): Record<string, unknown> | undefined {
+  const parsed = jsonValueEnvironment(environment, key, issues);
+  if (parsed === undefined) return undefined;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    issues.push({ key, reason: "invalid_shape" });
+    return undefined;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function objectRecord(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    issues.push({ key, reason: "invalid_shape" });
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function exactRate(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): BillingCreditRate | undefined {
+  if (value === undefined) {
+    issues.push({ key, reason: "missing" });
+    return undefined;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    issues.push({ key, reason: "invalid_shape" });
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const numerator = exactWholeNumber(
+    record.numerator,
+    `${key}.numerator`,
+    issues,
+  );
+  const denominator = exactWholeNumber(
+    record.denominator,
+    `${key}.denominator`,
+    issues,
+  );
+  if (denominator === 0n) {
+    issues.push({ key: `${key}.denominator`, reason: "zero_denominator" });
+    return undefined;
+  }
+  if (numerator === undefined || denominator === undefined) {
+    return undefined;
+  }
+  return { numerator, denominator };
+}
+
+function exactWholeNumber(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): bigint | undefined {
+  if (value === undefined) {
+    issues.push({ key, reason: "missing" });
+    return undefined;
+  }
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || !Number.isSafeInteger(value)) {
+      issues.push({ key, reason: "out_of_range" });
+      return undefined;
+    }
+    if (value < 0) {
+      issues.push({ key, reason: "negative" });
+      return undefined;
+    }
+    return BigInt(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^-?\d+$/.test(trimmed)) {
+      issues.push({ key, reason: "out_of_range" });
+      return undefined;
+    }
+    const parsed = BigInt(trimmed);
+    if (parsed < 0n) {
+      issues.push({ key, reason: "negative" });
+      return undefined;
+    }
+    return parsed;
+  }
+  issues.push({ key, reason: "out_of_range" });
+  return undefined;
+}
+
+function ceilingProduct(value: bigint, rate: BillingCreditRate): bigint {
+  if (value === 0n || rate.numerator === 0n) return 0n;
+  return (value * rate.numerator + rate.denominator - 1n) / rate.denominator;
 }
 
 /**

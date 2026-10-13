@@ -31,6 +31,28 @@ unconfigured.
 `COPILOTKIT_LICENSE_TOKEN` is optional: managed Intelligence issues no licence token, and a
 self-hosted Intelligence that has one sets this and has it forwarded to the runtime.
 
+## Billing credit hard-cap inputs
+
+Deployments that meter model or code-run usage must supply the hard-cap pricing block explicitly.
+Nothing in the server invents a placeholder price or token ceiling any more: if any applicable key
+is absent or malformed, the billing provider can still be configured, but later metered work must
+refuse before provider or sandbox execution until real values are supplied.
+
+| Variable | Meaning |
+| --- | --- |
+| `BILLING_MODEL_CREDIT_RATES` | JSON object: model id → `{ "input": { "numerator": ..., "denominator": ... }, "output": { ... } }`. Units: scaled credit units per token (`CREDIT_SCALE = 100`). |
+| `BILLING_MODEL_MAX_RESERVATION_TOKENS` | JSON object: model id → `{ "input": ..., "output": ... }`. Units: whole tokens reserved up front for one model call's maximum admitted input/output usage. |
+| `BILLING_CODE_RUN_CREDIT_RATE` | JSON object `{ "numerator": ..., "denominator": ... }`. Units: scaled credit units per code-run token. |
+| `BILLING_CODE_RUN_MAX_RESERVATION_TOKENS` | Whole-token ceiling for one code run's maximum admitted usage. |
+
+All four keys above are deployment inputs for the approved hard-cap policy. Rates are exact
+rationals, not floating-point decimals: the server computes each maximum reservation with integer
+ceiling arithmetic and keeps any fractional remainder for later settlement work rather than rounding
+through binary floating point. Every integer may be supplied either as a JSON safe integer or as a
+decimal string; values outside JavaScript's safe-integer range must be quoted as strings to stay
+exact. Negative values, zero denominators, malformed JSON, and shape mismatches leave the block
+unconfigured instead of defaulting to a free rate.
+
 `MANAGED_AGENT_AG_UI_URL` names the Bot in the box: the default endpoint for coworkers created in
 the product. It needs `MANAGED_AGENT_TOKEN` beside it, or the server refuses to start. Unset, the
 server starts without a managed Bot, the shipped Risk Analyst coworker is omitted, and creating a

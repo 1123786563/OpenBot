@@ -29,6 +29,7 @@ import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../../audit";
 import type { AppVariables } from "../../auth/guards";
 import { readBodyCapped } from "../raw-body";
+import { billingReadScopeOf } from "../routes";
 import { BillingError } from "../types";
 import {
   type CallbackOutcome,
@@ -98,6 +99,8 @@ async function callbackAnswer(
         headers: { "content-type": provider.contentType },
       });
     }
+    case "settlement-refused":
+      return fail(409);
     case "unknown-provider":
       return context.json({ error: "Unknown payment provider." }, 404);
     case "unverified":
@@ -182,6 +185,15 @@ export function createPaymentRoutes(deps: {
           400,
         );
       }
+      if (error.refusal.reason === "pending-purchase") {
+        return context.json(
+          {
+            error: "Another purchase is already pending for this deployment.",
+            pendingPlanCode: error.refusal.pendingPlanCode,
+          },
+          409,
+        );
+      }
       return context.json(
         {
           error: "This deployment already has an active subscription.",
@@ -206,11 +218,14 @@ export function createPaymentRoutes(deps: {
     );
   });
   routes.get("/purchases/current", async (context) => {
-    return context.json(await deps.service.readCurrentOrder());
+    return context.json(await deps.service.readCurrentOrder(billingReadScopeOf(context)));
   });
 
   routes.get("/purchases/:id", async (context) => {
-    const { order } = await deps.service.readOrder(context.req.param("id"));
+    const { order } = await deps.service.readOrder(
+      context.req.param("id"),
+      billingReadScopeOf(context),
+    );
     if (!order) {
       return context.json({ error: "No such purchase." }, 404);
     }

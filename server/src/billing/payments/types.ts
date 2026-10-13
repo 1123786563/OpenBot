@@ -20,11 +20,27 @@ export type PaymentOrderStatus =
   | "canceled"
   | "expired";
 
-/** Activation is a property of a paid order, orthogonal to its money state. */
+/**
+ * Activation is a property of a paid order, orthogonal to its money state.
+ *
+ * `failed` is the durable "owner claimed, not yet landed" state as well as "last activation
+ * attempt failed": once a paid order wins an overlapping entitlement period, it leaves `pending`
+ * before any external side effect so later overlapping collections can no longer steal ownership.
+ */
 export type PaymentActivationState = "pending" | "applied" | "failed";
 
 /** The two channels v1 collects through. */
 export type PaymentProviderId = "alipay" | "wechat";
+
+/** The durable result of deciding whether one paid channel fact may settle an order. */
+export type PaymentSettlementResult =
+  | { kind: "claimed" }
+  | { kind: "duplicate" }
+  | {
+      kind: "refused";
+      reason: "amount-mismatch" | "blocked" | "late";
+    }
+  | { kind: "retryable-failure" };
 
 /** One order, as the store holds it. */
 export type PaymentOrder = {
@@ -43,6 +59,8 @@ export type PaymentOrder = {
   /** The period the paid order buys, when known. */
   periodStart: Date | null;
   periodEnd: Date | null;
+  /** When money landed on the order. Null unless the order actually reached `paid`. */
+  paidAt: Date | null;
   /**
    * When the order reached a terminal money state (paid, blocked, canceled, expired). The anchor
    * for the late-payment fulfilment window: an expired order may still be paid inside
@@ -60,6 +78,11 @@ export type PaymentOrder = {
 export type PaymentCheckout =
   | { kind: "qrcode"; payload: string }
   | { kind: "redirect"; url: string };
+
+/** The signed-in actor whose own payment rows may be read. */
+export type PaymentOrderReadScope = {
+  actorId: string;
+};
 
 /** One order, as the HTTP surface spells it. Times ISO-8601, amounts integer cents, no drift. */
 export type PaymentOrderView = {
@@ -157,10 +180,10 @@ export type PaymentStore = {
   /**
    * Insert a fresh pending order, or hand back the one that already exists. The store generates
    * the order id itself (short, collision retried), so the caller never sees a database unique
-   * violation; and the pending-pair partial unique index ((plan, provider) WHERE status='pending')
-   * makes a concurrent purchase of the same pair answer the winner's row — `conflict:
-   * "pending-pair"` — instead of opening a second payable order. The replay answer is not an
-   * error: the caller shows the existing order.
+   * violation; and the pending-scope partial unique index (deployment_scope WHERE status='pending')
+   * makes a concurrent purchase answer the winner's row instead of opening a second payable order.
+   * `pending-pair` means the winner matches the requested plan/provider and is replayed;
+   * `pending-purchase` means another plan or provider owns the deployment slot.
    */
   insertOrder(input: {
     planCode: string;
@@ -170,9 +193,17 @@ export type PaymentStore = {
     expiresAt: Date;
     createdBy: string | null;
     checkoutPayload: string | null;
-  }): Promise<{ order: PaymentOrderRecord; conflict: "pending-pair" | null }>;
+  }): Promise<{
+    order: PaymentOrderRecord;
+    conflict: "pending-pair" | "pending-purchase" | null;
+  }>;
   /** The one order an out-trade number names, or null. */
-  readOrder(id: string): Promise<PaymentOrderRecord | null>;
+  readOrder(
+    id: string,
+    scope?: PaymentOrderReadScope,
+  ): Promise<PaymentOrderRecord | null>;
+  /** The deployment's pending purchase, regardless of plan or provider. */
+  readPendingPurchase(): Promise<PaymentOrderRecord | null>;
   /** The newest order for one (plan, provider) pair still pending — the replay lookup. */
   readPendingOrder(
     planCode: string,
@@ -191,7 +222,9 @@ export type PaymentStore = {
     excludeOrderId?: string,
   ): Promise<PaymentOrderRecord | null>;
   /** The newest order still live (pending or paid) — what "current purchase" means. */
-  readLatestLiveOrder(): Promise<PaymentOrderRecord | null>;
+  readLatestLiveOrder(
+    scope?: PaymentOrderReadScope,
+  ): Promise<PaymentOrderRecord | null>;
   /** Attach the checkout artifact after the channel session opens (order first, code second). */
   setCheckoutPayload(id: string, payload: string): Promise<void>;
   /**
@@ -201,9 +234,8 @@ export type PaymentStore = {
   cancelOrder(id: string, expectedVersion: number): Promise<boolean>;
   /**
    * One CAS on the order row plus the fact insert, one transaction. `claimed: false` means the
-   * version moved under us (someone else confirmed this very callback): the caller answers
-   * duplicate-success, not failure. `alreadyKnown: true` means the channel transaction id is
-   * already recorded as a paid fact — a replay from a different delivery.
+   * version moved or the fact was already known. Only `alreadyKnown: true` confirms a committed
+   * duplicate; a plain CAS miss is not proof of settlement and must be retried after a fresh read.
    */
   confirmPaid(input: {
     id: string;
@@ -249,7 +281,32 @@ export type PaymentStore = {
   recordActivation(
     id: string,
     activationState: PaymentActivationState,
+    period?: { start: Date; end: Date } | null,
   ): Promise<void>;
+  /**
+   * Resolve and DURABLY claim which overlapping paid order owns the entitlement period, under row
+   * locks at the database boundary. When no owner exists yet, the deterministic winner leaves
+   * `pending` inside this transaction before any external side effect runs, so a later overlapping
+   * settlement cannot steal ownership.
+   */
+  resolveActivationOwnership(orderId: string): Promise<
+    | {
+        outcome: "owner";
+        order: PaymentOrderRecord;
+      }
+    | {
+        outcome: "duplicate";
+        order: PaymentOrderRecord;
+        ownerOrder: PaymentOrderRecord;
+      }
+    | {
+        outcome: "unknown" | "not-paid";
+      }
+  >;
+  /** The paid order already holding one channel transaction id, for duplicate evidence detail. */
+  readPaidOrderByTransaction(
+    channelTransactionId: string,
+  ): Promise<PaymentOrderRecord | null>;
   /** Pending orders past their expiry, for the sweeper's query-first pass. */
   listExpiredPendingOrders(
     now: Date,
@@ -269,11 +326,13 @@ export type PaymentStore = {
     to: Date | null;
     limit: number;
     offset: number;
+    scope?: PaymentOrderReadScope;
   }): Promise<readonly PaymentOrderRecord[]>;
   /** How many orders the same window holds, for the pager. */
   countOrdersInWindow(input: {
     from: Date | null;
     to: Date | null;
+    scope?: PaymentOrderReadScope;
   }): Promise<number>;
   /**
    * Paid orders whose activation has not landed — `pending` OR `failed` — for the sweeper's

@@ -9,16 +9,18 @@ import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
- * QA batch-1 probe (c), FINAL ARBITER: the sequential cross-provider double payment, through
- * the real service against the real PostgreSQL. The point under test is subtle and worth
- * spelling out:
+ * QA batch-1 probe (c), FINAL ARBITER, aligned with the deployment-scoped purchase semantics:
+ * the sequential cross-provider double payment, through the real service against the real
+ * PostgreSQL. The point under test is subtle and worth spelling out:
  *
- *   The service's duplicate_paid check runs AFTER our own confirm, reading `readLatestPaidOrder`
- *   (terminalAt DESC). After OUR confirm, the newest paid row on the plan is US — unless another
- *   order's terminalAt is later. In a sequential double payment (order A paid at T1, order B paid
- *   at T2 > T1), B's own confirm makes B the latest, so the check may see only itself and never
- *   fire. Whether P1-1's "跨单重复支付记异常" actually holds on the sequential path is decided
- *   HERE, against real SQL ordering — an in-memory double with a tied clock cannot answer it.
+ *   The entitlement-ownership resolution runs AFTER our own confirm. In a sequential double
+ *   payment (order A paid at T1, order B paid at T2 > T1), B's own confirm makes B the newest
+ *   paid row on the plan — a newest-paid-order lookup can only ever see B itself. The current
+ *   design answers that with `resolveActivationOwnership`: overlapping paid orders are locked
+ *   and the earliest claimant keeps the entitlement. Whether P1-1's "跨单重复支付记异常"
+ *   holds on the sequential path — B stays paid, is HELD from activation, and carries a durable
+ *   duplicate_paid finding naming A — is decided HERE, against real SQL ordering. An in-memory
+ *   double with a tied clock cannot answer it.
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const store = createPaymentStore(database);
@@ -74,7 +76,11 @@ function serviceFor(provider: PaymentProvider) {
       async getPlan() {
         return { found: true, interval: "monthly", currency: "CNY" };
       },
-      async ensureSubscription() {},
+      async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
     },
     externalCustomerKey: "qa-deployment",
     activePlanCode: async () => null,
@@ -118,7 +124,6 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
   const paidA = await store.readOrder(a.id);
   expect(paidA?.status).toBe("paid");
   const aAnoms = await anomaliesOn(a.id);
-  console.log("A anomalies:", JSON.stringify(aAnoms));
   expect(aAnoms).toHaveLength(0);
 
   // REAL time passes between the two payments — the exact sequencing the terminalAt ordering
@@ -138,16 +143,25 @@ test("sequential double payment (cross-provider): both paid, and the duplicate i
     kind: "success",
   });
 
-  // The money is never swallowed: B is paid and activated.
+  // The money is never swallowed: B is paid. But the entitlement owner stays A — the second
+  // collection is held from activation.
   const paidB = await store.readOrder(b.id);
   expect(paidB?.status).toBe("paid");
-  expect(paidB?.activationState).toBe("applied");
+  expect(paidA?.activationState).toBe("applied");
+  expect(paidB?.activationState).not.toBe("applied");
 
-  // THE contract (P1-1's fix): a duplicate_paid anomaly names the second order, so
-  // reconciliation can see the double collection. If this fails, the cross-order detection
+  // THE contract (P1-1's fix): a duplicate_paid anomaly names the second order and the owner,
+  // so reconciliation can see the double collection. If this fails, the cross-order detection
   // only works in a concurrent race and the sequential case is still invisible.
   const bAnomalies = await anomaliesOn(b.id);
   const duplicate = bAnomalies.filter((row) => row.code === "duplicate_paid");
   expect(duplicate.length).toBeGreaterThanOrEqual(1);
   expect(duplicate[0]?.detail).toContain(a.id);
+
+  // And the recovery seam stays open: a held duplicate is still visible to the activation
+  // sweep's retry list, while the owner is not.
+  const pendingActivation = await store.listPaidPendingActivationOrders(100);
+  const pendingIds = pendingActivation.map((order) => order.id);
+  expect(pendingIds).toContain(b.id);
+  expect(pendingIds).not.toContain(a.id);
 });

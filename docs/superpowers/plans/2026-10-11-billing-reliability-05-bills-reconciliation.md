@@ -31,15 +31,15 @@
 - The approved duplicate-collection disposition is manual resolution: retain every paid fact, do not refund automatically, and do not issue the same entitlement twice.
 - Verify the existing `AuthenticatedActor.id` / `payment_orders.created_by` contract; these decisions are already recorded in the design.
 
-- [ ] **Step 1: Verify the selected owner key in the auth and payment contracts**
+- [x] **Step 1: Verify the selected owner key in the auth and payment contracts**
 
 Read `AuthenticatedActor.id`, the purchase route's `createdBy: context.var.actor.id`, and `payment_orders.created_by`. Confirm this is the stable owner key available to invoice and purchase reads; if an established tenant-bearing actor contract is found, use it instead and record why.
 
-- [ ] **Step 2: Record access and duplicate-payment decisions**
+- [x] **Step 2: Record access and duplicate-payment decisions**
 
 Record user-scoped owner reads and manual handling of later collections in the design. State explicitly that there is no automatic refund or second entitlement payout.
 
-- [ ] **Step 3: Verify no decision gate remains open**
+- [x] **Step 3: Verify no decision gate remains open**
 
 Expected: Task 3 can apply `createdBy` ownership checks consistently; no route authorization or paid-order disposition is based on an unspecified policy.
 
@@ -63,7 +63,7 @@ Expected: Task 3 can apply `createdBy` ownership checks consistently; no route a
 - Invoice period fields come from the matching order snapshot. `providerPeriodOf()` is removed from invoice rendering and remains available to current plan usage only.
 - Add immutable `plan_name_snapshot` if product requires historical display names; store the fallback plan code at order creation when no configured localized name is available.
 
-- [ ] **Step 1: Add two-order historical-period and terminal-status tests**
+- [x] **Step 1: Add two-order historical-period and terminal-status tests**
 
 Use the `fakeOrders` helper in `billing-statements.test.ts` with two paid orders from distinct months and an active subscription in a third period. Assert each invoice keeps its own stored period; assert an expired/canceled order has null paid settlement time.
 
@@ -75,21 +75,21 @@ expect(page.invoices.map((invoice) => invoice.periodStart)).toEqual([
 expect(expiredInvoice?.settledAt).toBeNull();
 ```
 
-- [ ] **Step 2: Run statement tests and verify the current-period override**
+- [x] **Step 2: Run statement tests and verify the current-period override**
 
 Run: `bun test server/tests/billing-statements.test.ts`
 Expected: FAIL because current provider period is applied to every row and terminal time is used for all statuses.
 
-- [ ] **Step 3: Add paid timestamp and preserve order period snapshots**
+- [x] **Step 3: Add paid timestamp and preserve order period snapshots**
 
 Set `paidAt` in the same CAS update that moves an order to paid. Generate an additive migration with an explicit backfill for existing paid orders. Ensure the period snapshot uses the exact period returned by Lago activation when available; retain a clearly marked order-time fallback only if the provider gives no period. Remove `providerPeriod` from `invoiceOf`.
 
-- [ ] **Step 4: Verify statements and old-data migration behavior**
+- [x] **Step 4: Verify statements and old-data migration behavior**
 
 Run: `bun test server/tests/billing-statements.test.ts server/tests/payment-service.test.ts`
 Expected: PASS; historical order periods do not change when the current subscription period changes, and only paid orders expose `settledAt`.
 
-- [ ] **Step 5: Commit invoice snapshot semantics**
+- [x] **Step 5: Commit invoice snapshot semantics**
 
 ```bash
 git add server/src/db/schema/payment.ts server/drizzle server/src/billing/payments/types.ts server/src/billing/payments/store.ts server/src/billing/payments/service.ts server/src/billing/statements.ts server/src/billing/types.ts app/src/lib/billing/invoices.ts server/tests/billing-statements.test.ts server/tests/payment-store.integration.test.ts
@@ -113,25 +113,25 @@ git commit -m "fix(billing): preserve historical invoice periods and paid time" 
 - User-scoped policy filters invoice and order queries by authenticated `actor.id` mapped to `payment_orders.created_by`, and returns 404 for rows outside that scope to avoid leaking existence.
 - Pending checkout payload is returned only when the pending order's `createdBy` matches the authenticated actor; mutating routes remain admin-only.
 
-- [ ] **Step 1: Add route tests for the selected policy**
+- [x] **Step 1: Add route tests for the selected policy**
 
 Seed two owners and assert each can read only invoices/orders and checkout material created by that actor, receiving 404 for the other's IDs. Assert admin-only mutating routes remain admin-only.
 
-- [ ] **Step 2: Run route tests and verify the current visibility**
+- [x] **Step 2: Run route tests and verify the current visibility**
 
 Run: `bun test server/tests/billing-statements.test.ts server/tests/payment-routes.test.ts server/tests/billing-routes.test.ts`
 Expected: FAIL for the selected policy's prohibited read.
 
-- [ ] **Step 3: Implement one scope predicate at the store/read seam**
+- [x] **Step 3: Implement one scope predicate at the store/read seam**
 
 Pass the authenticated actor/scope from routes into the statement/order read methods. Do not filter only in the UI. Keep admin authorization for create/cancel actions, independent of read scope.
 
-- [ ] **Step 4: Verify list/detail/checkout access**
+- [x] **Step 4: Verify list/detail/checkout access**
 
 Run: `bun test server/tests/billing-statements.test.ts server/tests/payment-routes.test.ts server/tests/billing-routes.test.ts`
 Expected: PASS; list, detail, and QR visibility all follow the same approved policy.
 
-- [ ] **Step 5: Commit access-scope enforcement**
+- [x] **Step 5: Commit access-scope enforcement**
 
 ```bash
 git add server/src/billing/routes.ts server/src/billing/payments/routes.ts server/src/billing/statements.ts server/src/billing/payments/store.ts server/src/db/schema/payment.ts server/drizzle server/tests/billing-statements.test.ts server/tests/payment-routes.test.ts server/tests/billing-routes.test.ts
@@ -151,25 +151,25 @@ git commit -m "fix(billing): enforce approved bill access scope" -m "Co-authored
 - Report findings for paid orders whose activation remains pending/failed beyond a named age threshold, and paid/applied orders whose expected `plan:<orderId>` grant is absent or has a different amount.
 - Preserve current checks for paid facts, transaction mismatch, live subscription presence, and credit identity.
 
-- [ ] **Step 1: Add real-table tests for missing and mismatched plan grants**
+- [x] **Step 1: Add real-table tests for missing and mismatched plan grants**
 
 Create a paid order with an expected allowance but no matching idempotency key, and another with the key but wrong amount. Assert distinct stable finding codes and order IDs.
 
-- [ ] **Step 2: Run the reconciliation integration test and verify these findings are absent**
+- [x] **Step 2: Run the reconciliation integration test and verify these findings are absent**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-reconcile.integration.test.ts`
 Expected: FAIL because current reconciliation does not inspect expected plan payout or activation age.
 
-- [ ] **Step 3: Extend the reconciler with exact expected-grant joins**
+- [x] **Step 3: Extend the reconciler with exact expected-grant joins**
 
 Pass the parsed plan catalog from assembly, multiply whole credits by `CREDIT_SCALE` using integer arithmetic, and match `credit_grants.idempotency_key = "plan:" || payment_orders.id`. Return a missing or amount-mismatch finding. Add a configurable, documented activation-age threshold; do not mark young retries as incidents.
 
-- [ ] **Step 4: Verify new and existing payment findings**
+- [x] **Step 4: Verify new and existing payment findings**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-reconcile.integration.test.ts server/tests/payment-service.test.ts`
 Expected: PASS; the report identifies missing/mismatched grants and retains all existing payment three-way findings.
 
-- [ ] **Step 5: Commit activation/grant reconciliation**
+- [x] **Step 5: Commit activation/grant reconciliation**
 
 ```bash
 git add server/src/billing/reconcile.ts server/src/billing/types.ts server/src/index.ts server/tests/billing-reconcile.integration.test.ts
@@ -190,25 +190,25 @@ git commit -m "feat(billing): reconcile paid plan credit payouts" -m "Co-authore
 - Aggregate count conversion remains exact: sums returned from PostgreSQL use decimal strings and `BigInt`, not `Number` over unbounded `SUM(bigint)`.
 - Reconciliation remains read-only and includes checked counts by category so an empty findings array is meaningful.
 
-- [ ] **Step 1: Add one integration test per finding category**
+- [x] **Step 1: Add one integration test per finding category**
 
 Seed two paid orders for one plan, a mismatched payment fact amount/currency if those facts are stored, and a usage outbox row with an old pending target. Assert each finding names the order/event IDs.
 
-- [ ] **Step 2: Run reconciliation tests and verify findings are missing**
+- [x] **Step 2: Run reconciliation tests and verify findings are missing**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-reconcile.integration.test.ts`
 Expected: FAIL because current findings cover only paid-fact linkage, live-subscription presence, and grant/ledger sum equality.
 
-- [ ] **Step 3: Implement read-only evidence checks**
+- [x] **Step 3: Implement read-only evidence checks**
 
 Join paid facts to orders and compare stored integer money facts; detect more than one paid order per plan/scope; read the usage outbox target states; change grant/ledger aggregates to `BigInt` comparisons. Map duplicate-paid findings to the policy chosen in Task 1 without issuing a refund or mutation.
 
-- [ ] **Step 4: Verify findings and route response**
+- [x] **Step 4: Verify findings and route response**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-reconcile.integration.test.ts server/tests/billing-routes.test.ts`
 Expected: PASS; each injected mismatch yields one stable finding, aggregate totals remain exact, and database rows are unchanged by reconcile.
 
-- [ ] **Step 5: Commit expanded reconciliation**
+- [x] **Step 5: Commit expanded reconciliation**
 
 ```bash
 git add server/src/billing/reconcile.ts server/src/billing/types.ts server/src/billing/routes.ts server/tests/billing-reconcile.integration.test.ts server/tests/billing-routes.test.ts
