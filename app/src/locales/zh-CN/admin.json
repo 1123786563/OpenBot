@@ -87,7 +87,9 @@
     "people": "人员",
     "identityProviders": "身份提供方",
     "audit": "审计",
-    "approvals": "批准"
+    "approvals": "批准",
+    "market": "市场",
+    "knowledge": "知识库"
   },
   "audit": {
     "title": "审计",
