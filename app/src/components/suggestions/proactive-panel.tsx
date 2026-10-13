@@ -6,7 +6,9 @@ import {
   IconRadar,
 } from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { Fragment, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -55,19 +57,21 @@ import {
 import { queryClient } from "@/query-client";
 
 const intervals = [
-  { minutes: 60, label: "Every hour" },
-  { minutes: 240, label: "Every 4 hours" },
-  { minutes: 720, label: "Twice a day" },
-  { minutes: 1440, label: "Once a day" },
-];
+  { minutes: 60, key: "proactive.interval.hour" },
+  { minutes: 240, key: "proactive.interval.fourHours" },
+  { minutes: 720, key: "proactive.interval.twiceADay" },
+  { minutes: 1440, key: "proactive.interval.daily" },
+] as const;
 /** The label map, so a closed trigger says "Every 4 hours" rather than 240. */
-const intervalItems = intervals.map((interval) => ({
-  value: interval.minutes,
-  label: interval.label,
-}));
-const intervalLabel = (minutes: number) =>
-  intervals.find((interval) => interval.minutes === minutes)?.label ??
-  `Every ${minutes} minutes`;
+const intervalItems = (t: TFunction<"agents">) =>
+  intervals.map((interval) => ({
+    value: interval.minutes,
+    label: t(interval.key),
+  }));
+const intervalLabel = (t: TFunction<"agents">, minutes: number) => {
+  const interval = intervals.find((item) => item.minutes === minutes);
+  return interval ? t(interval.key) : t("proactive.everyMinutes", { minutes });
+};
 /** Next steps a Bot proposed from background research: start one as a task, or dismiss it. */
 export function SuggestionsInbox({
   agentId,
@@ -75,6 +79,7 @@ export function SuggestionsInbox({
   /** Only this Bot's suggestions, and nothing at all when it has none. */
   agentId?: string;
 } = {}) {
+  const { t } = useTranslation("agents");
   const suggestions = useQuery(proactiveSuggestionsQueryOptions());
   const shown = (suggestions.data ?? []).filter(
     (suggestion) => agentId === undefined || suggestion.agentId === agentId,
@@ -82,10 +87,10 @@ export function SuggestionsInbox({
   const bots = useQuery(agentListQueryOptions());
   const act = useMutation(resolveSuggestionMutationOptions(queryClient));
   const botName = (id: string) =>
-    bots.data?.find((bot) => bot.id === id)?.name ?? "Your Bot";
+    bots.data?.find((bot) => bot.id === id)?.name ?? t("proactive.yourBot");
   if (agentId !== undefined && shown.length === 0) return null;
   return (
-    <PageSection title="Suggested next steps">
+    <PageSection title={t("proactive.suggestedTitle")}>
       {suggestions.isPending ? null : suggestions.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {suggestions.error.message}
@@ -113,7 +118,12 @@ export function SuggestionsInbox({
                     {new Date(suggestion.createdAt).toLocaleString()}
                     {suggestion.sourceApp || suggestion.sourceLink ? (
                       <>
-                        {" · "}From {suggestion.sourceApp ?? "a connected app"}
+                        {" · "}
+                        {t("proactive.from", {
+                          source:
+                            suggestion.sourceApp ??
+                            t("proactive.aConnectedApp"),
+                        })}
                         {suggestion.sourceLink && (
                           <>
                             {" · "}
@@ -122,7 +132,7 @@ export function SuggestionsInbox({
                               target="_blank"
                               rel="noreferrer"
                             >
-                              Open record
+                              {t("proactive.openRecord")}
                             </a>
                           </>
                         )}
@@ -139,7 +149,7 @@ export function SuggestionsInbox({
                           act.mutate({ id: suggestion.id, action: "start" })
                         }
                       >
-                        Start as task
+                        {t("proactive.startAsTask")}
                       </Button>
                       <Button
                         size="sm"
@@ -149,7 +159,7 @@ export function SuggestionsInbox({
                           act.mutate({ id: suggestion.id, action: "dismiss" })
                         }
                       >
-                        Dismiss
+                        {t("proactive.dismiss")}
                       </Button>
                     </div>
                   </ItemFooter>
@@ -159,10 +169,7 @@ export function SuggestionsInbox({
           ))}
         </PageRows>
       ) : (
-        <PageEmpty>
-          No suggestions right now. Bots with background research on will
-          suggest next steps here.
-        </PageEmpty>
+        <PageEmpty>{t("proactive.none")}</PageEmpty>
       )}
       {act.error && (
         <p role="alert" className="mt-4 text-destructive text-sm">
@@ -185,6 +192,7 @@ export function ProactiveResearchSettings({
   /** Only this Bot's research, and a new one is this Bot's without asking. */
   agentId?: string;
 } = {}) {
+  const { t } = useTranslation("agents");
   const settings = useQuery(proactiveSettingsQueryOptions());
   const bots = useQuery(agentListQueryOptions());
   const [adding, setAdding] = useState(false);
@@ -196,18 +204,18 @@ export function ProactiveResearchSettings({
       action={
         <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
           <IconPlus />
-          Turn on research
+          {t("proactive.researchAction")}
         </Button>
       }
-      description="On by default once you start a conversation with just this Bot: it looks through the apps it can already read every four hours, forms memories for you to review and suggests next steps. It can only read: it cannot send messages, change anything in an app, or use a browser or computer. Turn it off or remove it and it stays that way."
-      title="Background research"
+      description={t("proactive.intro")}
+      title={t("proactive.title")}
     >
       {settings.isPending ? null : settings.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {settings.error.message}
         </p>
       ) : shown.length === 0 ? (
-        <PageEmpty>Background research is off.</PageEmpty>
+        <PageEmpty>{t("proactive.offMessage")}</PageEmpty>
       ) : (
         <PageRows>
           {shown.map((setting, index) => (
@@ -242,6 +250,7 @@ function TurnOnResearchDialog({
   fixedBot?: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("agents");
   const bots = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
   const [pickedBot, setAgentId] = useState("");
@@ -258,10 +267,9 @@ function TurnOnResearchDialog({
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Turn on background research</DialogTitle>
+          <DialogTitle>{t("proactive.turnOnResearch")}</DialogTitle>
           <DialogDescription>
-            It reads on a schedule and delivers what it suggests to a channel it
-            is in.
+            {t("proactive.dialogDescription")}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="mt-4 overflow-y-auto">
@@ -280,7 +288,9 @@ function TurnOnResearchDialog({
             <FieldGroup>
               {fixedBot === undefined ? (
                 <Field>
-                  <FieldLabel htmlFor={`${id}-bot`}>Bot</FieldLabel>
+                  <FieldLabel htmlFor={`${id}-bot`}>
+                    {t("proactive.botLabel")}
+                  </FieldLabel>
                   <Select
                     items={bots.data?.map((bot) => ({
                       value: bot.id,
@@ -294,7 +304,7 @@ function TurnOnResearchDialog({
                     value={agentId || null}
                   >
                     <SelectTrigger className="w-full" id={`${id}-bot`}>
-                      <SelectValue placeholder="Choose a Bot" />
+                      <SelectValue placeholder={t("proactive.chooseBot")} />
                     </SelectTrigger>
                     <SelectContent>
                       {bots.data?.map((bot) => (
@@ -308,7 +318,7 @@ function TurnOnResearchDialog({
               ) : null}
               <Field>
                 <FieldLabel htmlFor={`${id}-channel`}>
-                  Deliver suggestions to
+                  {t("proactive.deliverTo")}
                 </FieldLabel>
                 <Select
                   items={eligibleChannels.map((channel) => ({
@@ -320,7 +330,7 @@ function TurnOnResearchDialog({
                   value={channelId || null}
                 >
                   <SelectTrigger className="w-full" id={`${id}-channel`}>
-                    <SelectValue placeholder="Choose a channel" />
+                    <SelectValue placeholder={t("proactive.chooseChannel")} />
                   </SelectTrigger>
                   <SelectContent>
                     {eligibleChannels.map((channel) => (
@@ -332,9 +342,11 @@ function TurnOnResearchDialog({
                 </Select>
               </Field>
               <Field>
-                <FieldLabel htmlFor={`${id}-interval`}>How often</FieldLabel>
+                <FieldLabel htmlFor={`${id}-interval`}>
+                  {t("proactive.howOften")}
+                </FieldLabel>
                 <Select
-                  items={intervalItems}
+                  items={intervalItems(t)}
                   onValueChange={(value) => {
                     if (value !== null) setIntervalMinutes(value);
                   }}
@@ -349,7 +361,7 @@ function TurnOnResearchDialog({
                         key={interval.minutes}
                         value={interval.minutes}
                       >
-                        {interval.label}
+                        {t(interval.key)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -357,14 +369,14 @@ function TurnOnResearchDialog({
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${id}-focus`}>
-                  What to look for (optional)
+                  {t("proactive.focusLabel")}
                 </FieldLabel>
                 <Input
                   id={`${id}-focus`}
                   maxLength={1000}
                   value={focus}
                   onChange={(event) => setFocus(event.target.value)}
-                  placeholder="Open issues assigned to me and questions waiting on me"
+                  placeholder={t("proactive.focusPlaceholder")}
                 />
               </Field>
             </FieldGroup>
@@ -377,7 +389,7 @@ function TurnOnResearchDialog({
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={onClose} size="sm" variant="outline">
-            Cancel
+            {t("proactive.cancel")}
           </Button>
           <Button
             disabled={add.isPending || !agentId || !channelId}
@@ -385,7 +397,7 @@ function TurnOnResearchDialog({
             size="sm"
             type="submit"
           >
-            Turn on background research
+            {t("proactive.turnOnResearch")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -394,12 +406,14 @@ function TurnOnResearchDialog({
 }
 
 /** Whether it is on, and when it runs next. Stated rather than captured, so it follows the query. */
-function researchStatus(setting: ProactiveSetting) {
+function researchStatus(setting: ProactiveSetting, t: TFunction<"agents">) {
   return !setting.enabled
-    ? "Off"
+    ? t("proactive.off")
     : setting.lastStatus === "running"
-      ? "Researching now"
-      : `Next ${new Date(setting.nextRunAt).toLocaleString()}`;
+      ? t("proactive.researchingNow")
+      : t("proactive.next", {
+          date: new Date(setting.nextRunAt).toLocaleString(),
+        });
 }
 
 /**
@@ -414,6 +428,7 @@ function SettingRow({
   setting: ProactiveSetting;
   botName: string;
 }) {
+  const { t } = useTranslation("agents");
   const [open, setOpen] = useState(false);
   const id = useId();
   const change = useMutation(
@@ -421,8 +436,8 @@ function SettingRow({
   );
   const summary = [
     setting.focus,
-    intervalLabel(setting.intervalMinutes),
-    researchStatus(setting),
+    intervalLabel(t, setting.intervalMinutes),
+    researchStatus(setting, t),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -460,7 +475,7 @@ function SettingRow({
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Background research</DialogTitle>
+            <DialogTitle>{t("proactive.title")}</DialogTitle>
             <DialogDescription>
               {setting.focus ? `${botName} · ${setting.focus}` : botName}
             </DialogDescription>
@@ -471,10 +486,12 @@ function SettingRow({
                 <IconClock />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{researchStatus(setting)}</ItemTitle>
+                <ItemTitle>{researchStatus(setting, t)}</ItemTitle>
                 {setting.lastRunAt && (
                   <ItemDescription>
-                    Last ran {new Date(setting.lastRunAt).toLocaleString()}
+                    {t("proactive.lastRan", {
+                      date: new Date(setting.lastRunAt).toLocaleString(),
+                    })}
                     {setting.lastStatus === "succeeded"
                       ? ""
                       : ` (${setting.lastStatus})`}
@@ -488,11 +505,13 @@ function SettingRow({
               </p>
             )}
             <Field>
-              <FieldLabel htmlFor={`${id}-interval`}>How often</FieldLabel>
+              <FieldLabel htmlFor={`${id}-interval`}>
+                {t("proactive.howOften")}
+              </FieldLabel>
               {/* Writes on pick: one value, no draft worth holding. */}
               <Select
                 disabled={change.isPending}
-                items={intervalItems}
+                items={intervalItems(t)}
                 onValueChange={(minutes) => {
                   if (minutes !== null && minutes !== setting.intervalMinutes)
                     change.mutate({
@@ -508,7 +527,7 @@ function SettingRow({
                 <SelectContent>
                   {intervals.map((interval) => (
                     <SelectItem key={interval.minutes} value={interval.minutes}>
-                      {interval.label}
+                      {t(interval.key)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -532,7 +551,7 @@ function SettingRow({
                 )
               }
             >
-              Remove
+              {t("proactive.remove")}
             </Button>
             <Button
               size="sm"
@@ -542,7 +561,7 @@ function SettingRow({
                 change.mutate({ setting, change: { kind: "toggle" } })
               }
             >
-              {setting.enabled ? "Turn off" : "Turn on"}
+              {setting.enabled ? t("proactive.turnOff") : t("proactive.turnOn")}
             </Button>
             <Button
               size="sm"
@@ -551,7 +570,7 @@ function SettingRow({
                 change.mutate({ setting, change: { kind: "run" } })
               }
             >
-              Run now
+              {t("proactive.runNow")}
             </Button>
           </DialogFooter>
         </DialogContent>

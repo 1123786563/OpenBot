@@ -95,6 +95,10 @@
     "title": "Audit",
     "description": "Every action a Bot took, and every one this deployment's policy refused.",
     "refresh": "Refresh",
+    "exporting": "Exporting…",
+    "exportCsv": "Export CSV",
+    "exportCapped": "The file holds the newest {{count}} events, not all of them. Narrow the filter or the dates to export the rest.",
+    "exportFailed": "Could not export audit events",
     "loadError": "The audit trail could not be loaded.",
     "noMatches": "No events match this filter yet.",
     "when": "When",
@@ -306,7 +310,9 @@
       "replaceWarning": "This key already holds a live credential. Saving replaces it, and the one it replaces is revoked.",
       "saveError": "Could not save the credential. Try again.",
       "saving": "Saving…",
-      "save": "Save credential"
+      "save": "Save credential",
+      "providerPlaceholder": "OpenAI",
+      "keyIdPlaceholder": "production"
     },
     "fields": {
       "type": "Type",
@@ -478,6 +484,18 @@
     "saving": "Saving…",
     "save": "Save Learning settings",
     "saved": "Settings saved.",
+    "automatic": {
+      "assigned": "OpenBot assigned this Intelligence project's \"{{container}}\" container automatically. Change it here at any time.",
+      "absent": "This Intelligence project has no \"{{container}}\" Learning container yet, so nothing is collected.",
+      "notEntitled": "This Intelligence project's plan does not include Learning, so no container was assigned.",
+      "unavailable": "OpenBot could not ask Intelligence for this project's Learning container. It tries again."
+    },
+    "setup": {
+      "creating": "Creating…",
+      "create": "Create the {{container}} container",
+      "usesCredential": "Uses the credential this deployment was given, never the runtime key.",
+      "toCreateIt": "To create it:"
+    },
     "targetFields": {
       "container": "{{label}} container ID",
       "containerAria": "{{label}} container ID",
@@ -487,7 +505,7 @@
     },
     "participation": {
       "title": "Participation",
-      "description": "Changes to container assignments apply to new threads. Existing threads keep their first assignment. Containers must already exist in the same Intelligence project.",
+      "description": "Changes to container assignments apply to new threads. Existing threads keep their first assignment. Containers must already exist in the same Intelligence project. Until anything is saved here, OpenBot assigns that project's openbot container automatically.",
       "enable": "Enable Automatic Learning and skill delivery",
       "default": "Default",
       "idHint": "An empty default leaves unmapped Bots out. IDs use 1–64 lowercase letters, numbers, and single hyphens. Leave revision empty to follow the latest published skills.",

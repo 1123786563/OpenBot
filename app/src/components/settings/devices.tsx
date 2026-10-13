@@ -1,6 +1,7 @@
 import { IconDeviceMobile, IconSend } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -20,6 +21,7 @@ import {
   deliveryQueryOptions,
   removePushDeviceMutationOptions,
 } from "@/lib/delivery";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { queryClient } from "@/query-client";
 
 const PLATFORM: Record<"ios" | "android", string> = {
@@ -29,13 +31,14 @@ const PLATFORM: Record<"ios" | "android", string> = {
 
 /** The phones that receive push notifications for every one of the person's Bots. */
 export function NativeDevices() {
+  const { t } = useTranslation("settings");
   const reach = useQuery(deliveryQueryOptions());
   const remove = useMutation(removePushDeviceMutationOptions(queryClient));
   const error = reach.error ?? remove.error;
   return (
     <PageSection
-      description="Sign in to the OpenBot app on your phone and turn on notifications to add it here."
-      title="Your devices"
+      description={t("devices.description")}
+      title={t("devices.title")}
     >
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -44,7 +47,7 @@ export function NativeDevices() {
       ) : null}
       {reach.isPending || !reach.data ? null : reach.data.devices.length ===
         0 ? (
-        <PageEmpty>No devices yet.</PageEmpty>
+        <PageEmpty>{t("devices.empty")}</PageEmpty>
       ) : (
         <PageRows>
           {reach.data.devices.map((device, index) => (
@@ -64,7 +67,7 @@ export function NativeDevices() {
                     size="sm"
                     variant="outline"
                   >
-                    Remove
+                    {t("devices.remove")}
                   </Button>
                 </ItemActions>
               </Item>
@@ -78,9 +81,11 @@ export function NativeDevices() {
 
 /** What was sent to the person outside the web app, most recent first, with any failure. */
 export function RecentDeliveries() {
+  const { t } = useTranslation("settings");
+  const { formatDateTime } = useDateTime();
   const reach = useQuery(deliveryQueryOptions());
   return (
-    <PageSection title="Recent deliveries">
+    <PageSection title={t("devices.recentTitle")}>
       {reach.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {reach.error.message}
@@ -88,7 +93,7 @@ export function RecentDeliveries() {
       ) : null}
       {reach.isPending || !reach.data ? null : reach.data.deliveries.length ===
         0 ? (
-        <PageEmpty>No deliveries yet.</PageEmpty>
+        <PageEmpty>{t("devices.noDeliveries")}</PageEmpty>
       ) : (
         <PageRows>
           {reach.data.deliveries.map((delivery, index) => (
@@ -103,8 +108,7 @@ export function RecentDeliveries() {
                     {delivery.transport} · {delivery.kind}
                   </ItemTitle>
                   <ItemDescription>
-                    {delivery.state} ·{" "}
-                    {new Date(delivery.createdAt).toLocaleString()}
+                    {delivery.state} · {formatDateTime(delivery.createdAt)}
                   </ItemDescription>
                   {delivery.error ? (
                     <ItemDescription className="line-clamp-none text-destructive">

@@ -173,6 +173,92 @@
     "saved": "已保存",
     "save": "保存"
   },
+  "devices": {
+    "title": "你的设备",
+    "description": "在手机上登录 OpenBot 应用并开启通知，设备就会出现在这里。",
+    "empty": "还没有设备。",
+    "remove": "移除",
+    "recentTitle": "最近的送达",
+    "noDeliveries": "还没有送达记录。"
+  },
+  "githubSources": {
+    "title": "GitHub 事件",
+    "description": "注册一个仓库，然后使用下面的地址和相同的密钥在 GitHub 中添加它的 Webhook。这样职责就可以由它的某个事件（如 issues.opened）触发。",
+    "add": "添加仓库",
+    "empty": "尚未连接任何仓库。",
+    "disconnect": "断开连接",
+    "cancel": "取消",
+    "connect": "连接事件",
+    "secretHint": "在 GitHub 中添加 Webhook 时请使用相同的密钥。",
+    "repositoryLabel": "仓库",
+    "repositoryPlaceholder": "owner/repository",
+    "secretLabel": "Webhook 密钥"
+  },
+  "linkedAccounts": {
+    "title": "已关联的账号",
+    "loadError": "无法加载你的已关联账号：{{error}}",
+    "providersError": "无法检查哪些账号可以关联：{{error}}",
+    "slackCodeError": "无法创建 Slack 关联码：{{error}}",
+    "githubError": "无法连接 GitHub：{{error}}",
+    "linkSlackTitle": "关联你的 Slack 账号",
+    "copied": "已复制",
+    "copy": "复制",
+    "copyFailed": "复制失败。请自行选中代码并复制。",
+    "codeExpiry": "该代码只能使用一次，10 分钟后过期。",
+    "done": "完成",
+    "notLinked": "未关联",
+    "connect": "关联",
+    "connectAria": "关联 {{title}}",
+    "disconnect": "取消关联",
+    "disconnectAria": "取消关联 {{title}}",
+    "disconnectError": "无法取消关联 {{title}}：{{error}}",
+    "linked": "已关联",
+    "needsReconnect": "需要重新连接",
+    "needsReconnectHandle": "需要重新连接 · @{{handle}}"
+  },
+  "updateRouting": {
+    "title": "更新发送到哪里",
+    "description": "你不在时每类更新发送到哪里。网页端始终显示全部内容。",
+    "loadError": "无法加载更新发送设置。",
+    "notSetUp": "未配置",
+    "byAria": "{{kind}} · {{transport}}",
+    "kinds": {
+      "progress": {
+        "title": "进展",
+        "description": "你没有盯着的工作带来的回复和结果。"
+      },
+      "decision": {
+        "title": "决策",
+        "description": "Bot 在行动前需要获得的批准。"
+      },
+      "question": {
+        "title": "提问",
+        "description": "Bot 向你提出并正在等待回答的问题。"
+      }
+    },
+    "transports": {
+      "push": "推送",
+      "slack": "Slack",
+      "teams": "Microsoft Teams",
+      "sms": "短信"
+    }
+  },
+  "notificationsPage": {
+    "title": "通知",
+    "description": "你不在时所有 Bot 的更新通过哪些方式触达你。每个 Bot 发送多少由它自己的页面决定。"
+  },
+  "memoryPage": {
+    "title": "记忆",
+    "description": "你的 Bot 对你的了解。你告诉它们的事实会到达每个 Bot；Bot 自行学到的内容只留在那个 Bot。"
+  },
+  "teamBots": {
+    "title": "与你共享的 Bot",
+    "description": "别人与你共享的 Bot 会使用共享者的已连接应用；只有你在它展示的卡片上允许过，才会使用你的。",
+    "yourAnswers": "你的授权",
+    "cleared": "已清除。每个 Bot 都会再次询问。",
+    "forget": "忘记这些授权，让每个 Bot 再次询问。",
+    "clear": "清除"
+  },
   "hotkeys": {
     "new-chat": {
       "label": "新聊天",

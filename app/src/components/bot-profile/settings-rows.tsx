@@ -12,6 +12,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
   Item,
@@ -62,6 +63,7 @@ type Row = {
  * that changes it. Sharing is for its owner, administrators, and anyone it is published to.
  */
 export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
+  const { t } = useTranslation("agents");
   const me = useQuery(currentUserQueryOptions()).data;
   const routines = useQuery(routinesQueryOptions());
   const plugins = useQuery(agentPluginsQueryOptions(agent.id));
@@ -80,22 +82,22 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
   const rows: Row[] = [
     {
       to: "/bots/$agentId/responsibilities",
-      title: "Responsibilities",
+      title: t("botSettings.rows.responsibilities"),
       icon: IconTargetArrow,
       summary: goals.data
         ? countLabel(
             goals.data.filter(
               (goal) => goal.agentId === agent.id && goal.status === "active",
             ).length,
-            "active",
-            "active",
-            "None active",
+            t("botSettings.count.active"),
+            t("botSettings.count.active"),
+            t("botSettings.count.noneActive"),
           )
         : "",
     },
     {
       to: "/bots/$agentId/reach",
-      title: "Reaching you",
+      title: t("botSettings.rows.reach"),
       icon: IconDeviceMobile,
       summary: reach.data
         ? reachSummary(
@@ -109,7 +111,7 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
     },
     {
       to: "/bots/$agentId/memory",
-      title: "Memory",
+      title: t("botSettings.rows.memory"),
       icon: IconBrain,
       summary:
         sources.data && research.data
@@ -124,7 +126,7 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
     },
     {
       to: "/bots/$agentId/approvals",
-      title: "Approval rules",
+      title: t("botSettings.rows.approvals"),
       icon: IconChecks,
       summary: approvals.data
         ? countLabel(
@@ -132,29 +134,29 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
               (rule) =>
                 rule.botId !== "*" && ruleCoversBot(rule.botId, agent.id),
             ).length,
-            "rule",
-            "rules",
-            "No rules",
+            t("botSettings.count.ruleOne"),
+            t("botSettings.count.ruleMany"),
+            t("botSettings.count.noRules"),
           )
         : "",
     },
     {
       to: "/bots/$agentId/routines",
-      title: "Routines",
+      title: t("botSettings.rows.routines"),
       icon: IconClock,
       summary: routines.data
         ? countLabel(
             routines.data.routines.filter((row) => row.agentId === agent.id)
               .length,
-            "routine",
-            "routines",
-            "No routines",
+            t("botSettings.count.routineOne"),
+            t("botSettings.count.routineMany"),
+            t("botSettings.count.noRoutines"),
           )
         : "",
     },
     {
       to: "/bots/$agentId/access",
-      title: "Skills and access",
+      title: t("botSettings.rows.access"),
       icon: IconPuzzle,
       summary: plugins.data
         ? accessSummary(
@@ -167,7 +169,7 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
       ? [
           {
             to: "/bots/$agentId/sharing" as const,
-            title: "Sharing",
+            title: t("botSettings.rows.sharing"),
             icon: IconUsersGroup,
             summary: teamBots.data
               ? sharingSummary(published, agent.visibility)
@@ -177,14 +179,14 @@ export function BotSettingsRows({ agent }: { agent: AgentProfile }) {
       : []),
     {
       to: "/bots/$agentId/setup",
-      title: "Setup",
+      title: t("botSettings.rows.setup"),
       icon: IconSettings,
       summary: setupSummary(agent),
     },
   ];
 
   return (
-    <PageSection title="Settings for this Bot">
+    <PageSection title={t("botSettings.title")}>
       <PageRows>
         {rows.map(({ to, title, icon: Icon, summary }, index) => (
           <Fragment key={to}>

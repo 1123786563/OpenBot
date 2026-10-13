@@ -5,7 +5,9 @@ import {
   IconShieldCheck,
 } from "@tabler/icons-react";
 import type { UseMutationResult } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,19 +35,50 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  type ApprovalRuleInput,
-  type ApprovalRuleRow,
-  BEHAVIOUR_LABELS,
-  type HostCommandPolicy,
-  type RuleBehaviour,
+import type {
+  ApprovalRuleInput,
+  ApprovalRuleRow,
+  HostCommandPolicy,
+  RuleBehaviour,
 } from "@/lib/approvals";
 
-export const HOST_LABELS: Record<HostCommandPolicy, string> = {
-  ask: "Ask every time",
-  allow: "Always allow",
-  never: "Never",
-};
+const HOST_KEYS = {
+  ask: "hostPolicy.ask",
+  allow: "hostPolicy.alwaysAllow",
+  never: "hostPolicy.never",
+} as const satisfies Record<HostCommandPolicy, string>;
+
+const BEHAVIOUR_KEYS = {
+  allow: "behaviour.allow",
+  pre_approved: "behaviour.preApproved",
+  ask: "behaviour.ask",
+  hand_off: "behaviour.handOff",
+} as const satisfies Record<RuleBehaviour, string>;
+
+/** How commands on a computer are handled, translated for the person reading them. */
+export function hostLabels(
+  t: TFunction<"approvals">,
+): Record<HostCommandPolicy, string> {
+  return {
+    ask: t(HOST_KEYS.ask),
+    allow: t(HOST_KEYS.allow),
+    never: t(HOST_KEYS.never),
+  };
+}
+
+/** The behaviours a rule is offered under, each saying it is the team's where it is. */
+function behaviourLabels(
+  t: TFunction<"approvals">,
+  team: boolean,
+): Record<RuleBehaviour, string> {
+  const suffix = team ? t("teamRuleSuffix") : "";
+  return {
+    allow: t(BEHAVIOUR_KEYS.allow) + suffix,
+    pre_approved: t(BEHAVIOUR_KEYS.pre_approved) + suffix,
+    ask: t(BEHAVIOUR_KEYS.ask) + suffix,
+    hand_off: t(BEHAVIOUR_KEYS.hand_off) + suffix,
+  };
+}
 
 /**
  * One value from a fixed set of labelled choices: a rule's behaviour, or how commands on a computer
@@ -89,14 +122,6 @@ export function LabelSelect<T extends string>({
   );
 }
 
-/** The behaviours a team rule is offered under, each saying it is the team's. */
-const TEAM_BEHAVIOUR_LABELS = Object.fromEntries(
-  Object.entries(BEHAVIOUR_LABELS).map(([key, label]) => [
-    key,
-    `${label} (team rule)`,
-  ]),
-) as Record<RuleBehaviour, string>;
-
 /**
  * One saved rule, as a row: what it matches, and what a Bot does about it. A locked rule — a team
  * rule seen by a member, or a personal rule the team has switched off — states its behaviour and
@@ -117,13 +142,18 @@ export function RuleRow({
   onRevoke: () => void;
   onChange: (behaviour: RuleBehaviour) => void;
 }) {
-  const labels = team ? TEAM_BEHAVIOUR_LABELS : BEHAVIOUR_LABELS;
+  const { t } = useTranslation("approvals");
+  const labels = behaviourLabels(t, Boolean(team));
   // The tool is the title; the rest of what the rule matches is the line beneath, never clamped,
   // since two rules for one tool differ only there.
   const match = [
-    rule.effect !== "*" ? rule.effect : null,
-    rule.scope !== "*" ? `on ${rule.scope}` : null,
-    rule.botId !== "*" ? `for ${rule.botId}` : null,
+    rule.effect !== "*"
+      ? t("ruleEffectSuffix", { effect: rule.effect })
+      : null,
+    rule.scope !== "*"
+      ? t("ruleScopeSuffix", { scope: rule.scope })
+      : null,
+    rule.botId !== "*" ? t("ruleBotSuffix", { bot: rule.botId }) : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -139,7 +169,7 @@ export function RuleRow({
             {match}
           </ItemDescription>
         ) : null}
-        {locked ? <ItemDescription>Locked</ItemDescription> : null}
+        {locked ? <ItemDescription>{t("locked")}</ItemDescription> : null}
       </ItemContent>
       <ItemActions>
         {locked ? (
@@ -150,7 +180,7 @@ export function RuleRow({
           <>
             <LabelSelect
               disabled={disabled}
-              label={`Behaviour for ${rule.toolRef}`}
+              label={t("behaviourFor", { tool: rule.toolRef })}
               labels={labels}
               onChange={onChange}
               value={rule.behaviour}
@@ -161,7 +191,7 @@ export function RuleRow({
               size="sm"
               variant="outline"
             >
-              Remove
+              {t("remove")}
             </Button>
           </>
         )}
@@ -196,6 +226,7 @@ export function RuleForm({
   /** The Bot every rule from this form is for, already known from the page it is on. */
   forBot?: string;
 }) {
+  const { t } = useTranslation("approvals");
   const blank = forBot ? { ...EMPTY_RULE, botId: forBot } : EMPTY_RULE;
   const [rule, setRule] = useState<ApprovalRuleInput>(blank);
   const [open, setOpen] = useState(false);
@@ -233,9 +264,7 @@ export function RuleForm({
         </ItemMedia>
         <ItemContent>
           <ItemTitle>{label}</ItemTitle>
-          <ItemDescription>
-            A tool or app, and what a Bot does before using it.
-          </ItemDescription>
+          <ItemDescription>{t("form.rowDescription")}</ItemDescription>
         </ItemContent>
         <ItemActions>
           <IconChevronRight className="size-4 text-muted-foreground" />
@@ -245,10 +274,7 @@ export function RuleForm({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{label}</DialogTitle>
-            <DialogDescription>
-              * matches anything, so mcp/gmail/* is every Gmail tool and a
-              target of *.example.com is every page on that site.
-            </DialogDescription>
+            <DialogDescription>{t("form.wildcardHint")}</DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
             {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
@@ -264,17 +290,19 @@ export function RuleForm({
               <FieldGroup>
                 {field(
                   "toolRef",
-                  "Tool or app",
+                  t("form.toolOrApp"),
                   "mcp/gmail/*, computer_click, host/*",
                 )}
-                {field("effect", "Kind of action", "* , write, read, delegate")}
-                {field("scope", "Target", "*, a site, a folder, a Bot name")}
-                {botField ? field("botId", "Bot", "* for every Bot") : null}
+                {field("effect", t("form.kindOfAction"), "* , write, read, delegate")}
+                {field("scope", t("form.target"), t("form.targetHint"))}
+                {botField ? field("botId", t("form.bot"), t("form.botHint")) : null}
                 <Field>
-                  <FieldLabel htmlFor={`${id}-behaviour`}>Behaviour</FieldLabel>
+                  <FieldLabel htmlFor={`${id}-behaviour`}>
+                    {t("form.behaviour")}
+                  </FieldLabel>
                   <LabelSelect
                     id={`${id}-behaviour`}
-                    labels={BEHAVIOUR_LABELS}
+                    labels={behaviourLabels(t, false)}
                     onChange={(behaviour) =>
                       setRule((prior) => ({ ...prior, behaviour }))
                     }
@@ -291,7 +319,7 @@ export function RuleForm({
           </DialogBody>
           <DialogFooter className="mt-4">
             <Button onClick={close} size="sm" variant="outline">
-              Cancel
+              {t("form.cancel")}
             </Button>
             <Button
               disabled={save.isPending || !rule.toolRef.trim()}
@@ -299,7 +327,7 @@ export function RuleForm({
               size="sm"
               type="submit"
             >
-              Save rule
+              {t("form.saveRule")}
             </Button>
           </DialogFooter>
         </DialogContent>

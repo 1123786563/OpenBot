@@ -47,14 +47,22 @@
     "optionPublic": "Public"
   },
   "access": {
-    "loadError": "What this coworker may reach could not be loaded.",
-    "intro": "What this coworker may reach when it works. Granted by an administrator on the Plugins screens; anything not listed is refused when called.",
-    "nothingGranted": "Nothing granted yet",
+    "loadError": "What this Bot may reach could not be loaded.",
+    "intro": "What this Bot may reach when it works. Anything not listed is refused when called.",
+    "nothingGranted": "Nothing granted yet. An administrator grants apps from the Plugins screens; until then this Bot can converse, and nothing more.",
     "nothingGrantedDescription": "An administrator grants connectors and skills from the Plugins screens. Until then this coworker can converse, and nothing more.",
     "andMore": " and {{remaining}} more",
     "toolSingular": "tool",
     "toolPlural": "tools",
-    "skill": "Skill"
+    "skill": "Skill",
+    "granted": "Granted",
+    "skills": {
+      "title": "Your skills",
+      "intro": "A skill this Bot carries is offered in its composer as /name.",
+      "loadError": "Could not load your skills.",
+      "empty": "You have not written a skill yet.",
+      "writeOne": "Write one"
+    }
   },
   "connection": {
     "builtIn": "Runs on this deployment's own Bot. Nothing to connect and nothing to authenticate: its tool calls are covered by the deployment's own credential.",
@@ -63,25 +71,69 @@
   "manage": {
     "pinned": "Pinned",
     "pin": "Pin",
-    "pinnedDescription": "At the top of your agents list. This changes nothing for anyone else.",
-    "pinDescription": "Keep it at the top of your agents list. This changes nothing for anyone else.",
+    "pinnedDescription": "At the top of your Bots list. Nobody else's list changes.",
+    "pinDescription": "Keep it at the top of your Bots list. Nobody else's list changes.",
     "unpinning": "Unpinning…",
     "pinning": "Pinning…",
     "unpin": "Unpin",
     "hidden": "Hidden",
     "hide": "Hide",
-    "hiddenDescription": "Hidden from your agents list. This changes nothing for anyone else.",
-    "hideDescription": "Take it off your agents list. This changes nothing for anyone else.",
+    "hiddenDescription": "Folded under Hidden on your Bots list. Nobody else's list changes.",
+    "hideDescription": "Take it off your Bots list. Nobody else's list changes.",
     "unhiding": "Unhiding…",
     "hiding": "Hiding…",
     "unhide": "Unhide",
     "duplicate": "Duplicate",
-    "duplicateDescription": "A copy of your own, with no key and no channels.",
+    "duplicateDescription": "A copy of your own, with no key and no conversations.",
     "duplicating": "Duplicating…",
     "delete": "Delete",
     "cannotBeUndone": "This cannot be undone.",
     "deleteTitle": "Delete {{name}}?",
-    "deleting": "Deleting…"
+    "deleting": "Deleting…",
+    "title": "Manage",
+    "assignedPinned": "Assigned to you by an administrator, so it stays at the top of your Bots list.",
+    "assignedHidden": "Assigned to you by an administrator, so it cannot be hidden.",
+    "cancel": "Cancel",
+    "deleteForEveryone": "For everyone. This cannot be undone.",
+    "resetEntry": {
+      "title": "Reset",
+      "description": "Delete your conversations with it, what it remembers for you, and its scheduled work. You see what will go first."
+    },
+    "reset": {
+      "title": "Reset {{name}}?",
+      "description": "This deletes what {{name}} has with you, and only with you. Nobody else's conversations or data are touched. It cannot be undone.",
+      "countError": "Could not count what a reset would delete.",
+      "done": "Done. {{name}} starts fresh with you.",
+      "nothingToDelete": "There is nothing of yours to delete.",
+      "willDelete": "This will delete:",
+      "sharedKept_one": "{{count}} conversation is shared with other people or Bots and will be kept.",
+      "sharedKept_other": "{{count}} conversations are shared with other people or Bots and will be kept.",
+      "ownMemoriesKept": "Your own memories, the ones you told a Bot directly, are kept.",
+      "close": "Close",
+      "cancel": "Cancel",
+      "resetting": "Resetting…",
+      "deleteAndReset": "Delete and reset"
+    },
+    "resetItems": {
+      "conversations_one": "{{count}} conversation",
+      "conversations_other": "{{count}} conversations",
+      "memorySources_one": "{{count}} memory source",
+      "memorySources_other": "{{count}} memory sources",
+      "memories_one": "{{count}} imported memory",
+      "memories_other": "{{count}} imported memories",
+      "routines_one": "{{count}} routine",
+      "routines_other": "{{count}} routines",
+      "responsibilities_one": "{{count}} responsibility",
+      "responsibilities_other": "{{count}} responsibilities",
+      "followUps_one": "{{count}} scheduled follow-up",
+      "followUps_other": "{{count}} scheduled follow-ups",
+      "formedMemories_one": "{{count}} memory it formed",
+      "formedMemories_other": "{{count}} memories it formed",
+      "backgroundResearch_one": "{{count}} background research",
+      "backgroundResearch_other": "{{count}} background research",
+      "standingApprovals_one": "{{count}} standing permission",
+      "standingApprovals_other": "{{count}} standing permissions"
+    }
   },
   "callback": {
     "title": "Calling tools back",
@@ -181,7 +233,7 @@
     "dismiss": "Dismiss",
     "none": "No suggestions right now. Bots with background research on will suggest next steps here.",
     "title": "Background research",
-    "intro": "A Bot you opt in looks through the apps it can already read, forms memories for you to review and suggests next steps. It can only read: it cannot send messages, change anything in an app, or use a browser or computer.",
+    "intro": "On by default once you start a conversation with just this Bot: it looks through the apps it can already read every four hours, forms memories for you to review and suggests next steps. It can only read: it cannot send messages, change anything in an app, or use a browser or computer. Turn it off or remove it and it stays that way.",
     "botLabel": "Bot",
     "chooseBot": "Choose a Bot",
     "deliverTo": "Deliver suggestions to",
@@ -198,6 +250,11 @@
     "turnOff": "Turn off",
     "turnOn": "Turn on",
     "remove": "Remove",
+    "researchAction": "Turn on research",
+    "offMessage": "Background research is off.",
+    "dialogDescription": "It reads on a schedule and delivers what it suggests to a channel it is in.",
+    "cancel": "Cancel",
+    "everyMinutes": "Every {{minutes}} minutes",
     "interval": {
       "hour": "Every hour",
       "fourHours": "Every 4 hours",
@@ -209,25 +266,39 @@
     "pinned": "Pinned",
     "yourAgents": "Your agents",
     "newAgent": "New agent",
-    "allPinned": "Your agents are all pinned above.",
-    "loadError": "Your agents couldn't be loaded.",
+    "allPinned": "Your Bots are all pinned above.",
+    "loadError": "Could not load your Bots.",
     "noneCreated": "You don't have any agents created.",
     "explore": "Explore agents",
     "sharedAllPinned": "The agents shared with you are all pinned above.",
     "sharedLoadError": "Agents shared with you couldn't be loaded.",
-    "noneShared": "Nobody has shared an agent with you yet.",
-    "hidden": "Hidden"
+    "noneShared": "Nobody has shared a Bot with you yet.",
+    "hidden": "Hidden",
+    "needsYou": "Needs you",
+    "yours": "Yours",
+    "sharedWithYou": "Shared with you",
+    "allWaiting": "Your Bots are all under Needs you.",
+    "noneYet": "You have no Bots of your own yet.",
+    "show": "Show",
+    "hide": "Hide",
+    "hiddenDescription_one": "{{count}} Bot you took off this list. Nobody else's list changed.",
+    "hiddenDescription_other": "{{count}} Bots you took off this list. Nobody else's list changed.",
+    "paused": "Paused"
   },
   "memory": {
     "title": "Memory",
     "description": "Review what your Bots remember, and choose which connected apps can contribute facts.",
     "rememberFact": "Remember a fact",
+    "reachesAll": "It reaches every one of your Bots.",
     "factLabel": "Something you want your Bots to know",
     "factPlaceholder": "I prefer meetings in the morning.",
     "remember": "Remember",
     "yourMemories": "Your memories",
     "loadingMemories": "Loading memories…",
     "noMemories": "You have no memories yet.",
+    "yourBot": "your Bot",
+    "keptInIntelligence": "Kept in Intelligence",
+    "cancel": "Cancel",
     "card": {
       "disabled": "Disabled",
       "formedAwaiting": "Formed by your Bot · awaiting review",
@@ -241,11 +312,18 @@
       "confirm": "Confirm",
       "disable": "Disable",
       "enable": "Enable",
-      "forget": "Forget"
+      "forget": "Forget",
+      "formedBy": "Formed by {{name}}",
+      "awaitingReview": " · awaiting review",
+      "edit": "Edit",
+      "editTitle": "Edit memory",
+      "memoryLabel": "Memory",
+      "cancel": "Cancel",
+      "useAria": "Use this memory: {{content}}"
     },
     "sources": {
       "title": "Connected app sources",
-      "description": "Opt in to a read from an app your Bot can already access. Enabled sources refresh every 15 minutes. Their facts are available to the selected Bot.",
+      "description": "Each app you connected in your own account that this Bot can read becomes a source on its own, and you can add more. Enabled sources refresh every 15 minutes, and their facts are available to this Bot only. Turn one off or remove it and it stays that way.",
       "numberError": "Enter a number for {{name}}.",
       "simpleSettings": "Choose an action with simple search settings.",
       "checkSettings": "Check the source settings.",
@@ -260,11 +338,17 @@
       "addAndSync": "Add and sync source",
       "upToDate": "Up to date",
       "disabled": "Disabled",
-      "lastRead": "Last read {{when}}",
+      "lastRead": " · Last read {{when}}",
       "syncNow": "Sync now",
       "disable": "Disable",
       "enable": "Enable",
-      "remove": "Remove"
+      "remove": "Remove",
+      "addSource": "Add source",
+      "empty": "No connected app sources yet.",
+      "addTitle": "Add a source",
+      "addDescription": "It is read now, and then every 15 minutes while it is enabled.",
+      "cancel": "Cancel",
+      "readAria": "Read {{title}}"
     },
     "loadError": "Your memories could not be loaded."
   },
@@ -513,6 +597,169 @@
       "assignAria": "Assign {{bot}} to a group",
       "groupPlaceholder": "Group, or *",
       "assign": "Assign"
+    }
+  },
+  "attention": {
+    "questions_one": "{{count}} question",
+    "questions_other": "{{count}} questions",
+    "approvals_one": "{{count}} approval",
+    "approvals_other": "{{count}} approvals",
+    "handoffs_one": "{{count}} stalled hand-off",
+    "handoffs_other": "{{count}} stalled hand-offs",
+    "unread": "{{count}} unread",
+    "needsYouName": "{{name}} needs you",
+    "paused": "Paused",
+    "badge_one": "{{count}} thing needs you",
+    "badge_other": "{{count}} things need you",
+    "unreadMessages": "Unread messages"
+  },
+  "botSubpage": {
+    "titleFallback": "Bot",
+    "unreachable": "This Bot is not one you can reach."
+  },
+  "botProfile": {
+    "forYou": "For you",
+    "stateLoadError": "Could not load this Bot's state.",
+    "active": "Active",
+    "activeOn": "Paused. No routine, responsibility, hand-off or follow-up starts for you, and what was running has stopped.",
+    "activeOff": "Runs its routines, responsibilities, hand-offs and follow-ups for you.",
+    "notifications": {
+      "title": "Notifications",
+      "badgesAlways": "Sidebar badges always show."
+    },
+    "notify": {
+      "all": "Everything",
+      "needsInput": "Only when it needs me",
+      "none": "Nothing (badges only)"
+    },
+    "browserNotifications": {
+      "title": "Browser notifications",
+      "off": "Off in this browser. Turn them on to hear when a Bot needs you.",
+      "turnOn": "Turn on"
+    },
+    "message": {
+      "title": "Message {{name}}",
+      "description": "Start a conversation."
+    }
+  },
+  "agentProfile": {
+    "loadError": "Could not load this coworker.",
+    "private": "Private",
+    "public": "Public",
+    "systemOwned": "System owned",
+    "role": "Role",
+    "startNewChannel": "Start new channel",
+    "open": "Open {{name}}"
+  },
+  "botSettings": {
+    "title": "Settings for this Bot",
+    "rows": {
+      "responsibilities": "Responsibilities",
+      "reach": "Reaching you",
+      "memory": "Memory",
+      "approvals": "Approval rules",
+      "routines": "Routines",
+      "access": "Skills and access",
+      "sharing": "Sharing",
+      "setup": "Setup"
+    },
+    "count": {
+      "active": "active",
+      "noneActive": "None active",
+      "ruleOne": "rule",
+      "ruleMany": "rules",
+      "noRules": "No rules",
+      "routineOne": "routine",
+      "routineMany": "routines",
+      "noRoutines": "No routines"
+    }
+  },
+  "setup": {
+    "identity": "Identity",
+    "visibility": "Visibility",
+    "privateHint": "Only you can see it and start conversations with it.",
+    "publicHint": "Everyone in the deployment can find and use it.",
+    "systemOwned": "System owned",
+    "systemOwnedDescription": "Ships with this deployment rather than belonging to a person.",
+    "connection": "Connection",
+    "builtIn": "Built in",
+    "endpoint": "Endpoint",
+    "builtInDescription": "Runs on this deployment's own Bot. Nothing to connect and nothing to authenticate."
+  },
+  "sharing": {
+    "publishedTitle": "Published",
+    "toWholeTeam": "To the whole team",
+    "toList": "To {{list}}",
+    "privateChats": "Each chat with it is private to the person having it.",
+    "hiddenDraft": "Hidden from teammates until it has a real name and a description.",
+    "link": "Link",
+    "linkDescription": "Opens a private chat with it.",
+    "notPublishedPublic": "Not published to the team. It is public, so everyone in the deployment can already use it.",
+    "notPublishedMine": "Not published. Only you can use it.",
+    "notPublished": "Not published.",
+    "publishNote": "Publishing does not change its visibility, and it can be undone.",
+    "publishedToTitle": "Who it is published to",
+    "publish": "Publish",
+    "audience": "Audience",
+    "person": "person",
+    "people": "people",
+    "group": "group",
+    "groups": "groups",
+    "publishedToLabel": "Published to",
+    "commaSeparated": "Comma separated",
+    "cancel": "Cancel",
+    "assignDescription": "An assigned Bot is pinned at the top of every member's Bots list. Use * for the whole team.",
+    "notAssigned": "Not assigned to any group.",
+    "remove": "Remove",
+    "assignTo": "Assign to a group",
+    "assignDialog": "Assign {{name}} to a group",
+    "assignDialogDescription": "It is pinned at the top of every member's Bots list.",
+    "wholeTeamPlaceholder": "* for the whole team"
+  },
+  "pages": {
+    "bots": {
+      "title": "Bots",
+      "description": "Every Bot you can reach: what each is doing, what it needs from you, and whether it is paused.",
+      "newBot": "New Bot"
+    },
+    "profile": {
+      "back": "Bots",
+      "description": "What this Bot is doing for you, and how it is set up."
+    },
+    "access": {
+      "title": "Skills and access",
+      "description": "The skills, apps and other Bots this Bot may use."
+    },
+    "approvals": {
+      "title": "Approval rules",
+      "description": "What this Bot may do without asking you first."
+    },
+    "memory": {
+      "title": "Memory",
+      "description": "Which connected apps feed this Bot facts, and the background research it does for you.",
+      "settingsIntro": "What your Bots remember about you is in",
+      "settingsLink": "Settings → Memory",
+      "settingsOutro": "."
+    },
+    "reach": {
+      "title": "Reaching you",
+      "description": "Continue a conversation with this Bot in Slack, Microsoft Teams, or by text message."
+    },
+    "responsibilities": {
+      "title": "Responsibilities",
+      "description": "Lasting goals this Bot works on for you, what started each run, and what it found."
+    },
+    "routines": {
+      "title": "Routines",
+      "description": "What this Bot does for you on a schedule. Switch one off, run it now, or delete it."
+    },
+    "setup": {
+      "title": "Setup",
+      "description": "Who this Bot is, who can find it, and where it runs."
+    },
+    "sharing": {
+      "title": "Sharing",
+      "description": "Who else can use this Bot. Each chat with it is private to the person having it."
     }
   }
 }

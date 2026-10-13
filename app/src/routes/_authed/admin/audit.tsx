@@ -8,7 +8,6 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
-import { TableSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import {
@@ -73,6 +72,7 @@ const FILTERS = [
 
 function AuditPage() {
   const { t } = useTranslation("admin");
+  const { formatNumber } = useDateTime();
   const [search, setSearch] = useState<string>(FILTERS[0].search);
   const events = useQuery(auditEventsQueryOptions(search));
   const rows = (events.data?.events ?? []) as AuditEvent[];
@@ -93,7 +93,7 @@ function AuditPage() {
     setExportCapped(null);
     try {
       const response = await client(auditExportUrl(search), {
-        fallback: "Could not export audit events",
+        fallback: t("audit.exportFailed"),
       });
       // A file that stopped early must say so, or it reads as the whole trail.
       const capped = Number(response.headers.get("x-audit-export-truncated"));
@@ -109,9 +109,7 @@ function AuditPage() {
       URL.revokeObjectURL(url);
     } catch (error) {
       setExportError(
-        error instanceof Error
-          ? error.message
-          : "Could not export audit events",
+        error instanceof Error ? error.message : t("audit.exportFailed"),
       );
     } finally {
       setExporting(false);
@@ -135,11 +133,11 @@ function AuditPage() {
             variant="outline"
           >
             <IconDownload />
-            {exporting ? "Exporting…" : "Export CSV"}
+            {exporting ? t("audit.exporting") : t("audit.exportCsv")}
           </Button>
           <Button onClick={() => events.refetch()} size="sm" variant="ghost">
             <IconRefresh />
-            Refresh
+            {t("audit.refresh")}
           </Button>
         </div>
       }
@@ -170,8 +168,7 @@ function AuditPage() {
         ) : null}
         {exportCapped ? (
           <p className="mt-4 text-muted-foreground text-sm" role="status">
-            The file holds the newest {exportCapped.toLocaleString()} events,
-            not all of them. Narrow the filter or the dates to export the rest.
+            {t("audit.exportCapped", { count: formatNumber(exportCapped) })}
           </p>
         ) : null}
         {events.isPending ? null : events.isError ? (

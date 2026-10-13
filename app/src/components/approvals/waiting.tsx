@@ -1,6 +1,7 @@
 import { IconHandStop, IconMessageQuestion } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,7 @@ import { queryClient } from "@/query-client";
  * decision.
  */
 export function WaitingForYou({ agentId }: { agentId?: string }) {
+  const { t } = useTranslation("approvals");
   const inbox = useQuery(approvalInboxOptions());
   const agents = useQuery(agentListQueryOptions());
   const botName = (id: string) =>
@@ -61,7 +63,8 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle className="line-clamp-none">
-                    {botName(question.botId)} asks: {question.question}
+                    {t("questionAsks", { bot: botName(question.botId) })}
+                    {question.question}
                   </ItemTitle>
                   {question.why ? (
                     <ItemDescription className="line-clamp-none">
@@ -71,14 +74,14 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                 </ItemContent>
                 <ItemFooter className="flex-col items-start">
                   <Textarea
-                    aria-label="Your answer"
+                    aria-label={t("yourAnswer")}
                     onChange={(event) =>
                       setAnswers((prior) => ({
                         ...prior,
                         [question.id]: event.target.value,
                       }))
                     }
-                    placeholder="Your answer"
+                    placeholder={t("yourAnswer")}
                     value={answers[question.id] ?? ""}
                   />
                   <Button
@@ -91,7 +94,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                     }
                     size="sm"
                   >
-                    Send answer
+                    {t("sendAnswer")}
                   </Button>
                 </ItemFooter>
               </Item>
@@ -106,7 +109,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                 </ItemMedia>
                 <ItemContent className="min-w-0">
                   <ItemTitle className="line-clamp-none">
-                    {botName(request.action.botId)} wants to{" "}
+                    {t("wantsTo", { bot: botName(request.action.botId) })}
                     {request.action.toolRef
                       .replace(/^computer_|^host\//, "")
                       .replaceAll("_", " ")}
@@ -117,7 +120,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                   {request.action.policy ? (
                     <p className="text-sm">
                       {request.action.policy.behaviour === "hand_off"
-                        ? "Handed to you: "
+                        ? t("handedToYou")
                         : ""}
                       {request.action.policy.reason}
                     </p>
@@ -135,7 +138,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                       }
                       size="sm"
                     >
-                      I did it myself
+                      {t("decision.handled")}
                     </Button>
                     <Button
                       disabled={decision.isPending}
@@ -145,7 +148,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                       size="sm"
                       variant="outline"
                     >
-                      Don't do it
+                      {t("decision.dontDoIt")}
                     </Button>
                   </ItemFooter>
                 ) : (
@@ -160,7 +163,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                       }
                       size="sm"
                     >
-                      Allow once
+                      {t("decision.allowOnce")}
                     </Button>
                     <Button
                       disabled={decision.isPending}
@@ -173,7 +176,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                       size="sm"
                       variant="outline"
                     >
-                      Always allow here
+                      {t("decision.alwaysAllowHere")}
                     </Button>
                     <Button
                       disabled={decision.isPending}
@@ -183,7 +186,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                       size="sm"
                       variant="outline"
                     >
-                      Deny
+                      {t("decision.deny")}
                     </Button>
                   </ItemFooter>
                 )}
@@ -201,6 +204,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
  * waits: the sidebar's badge already said whether to look.
  */
 export function BotNeedsYou({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("approvals");
   const inbox = useQuery(approvalInboxOptions());
   const waiting =
     (inbox.data?.questions ?? []).some(
@@ -212,7 +216,7 @@ export function BotNeedsYou({ agentId }: { agentId: string }) {
     );
   if (!waiting) return null;
   return (
-    <PageSection title="Needs you">
+    <PageSection title={t("needsYou")}>
       <WaitingForYou agentId={agentId} />
     </PageSection>
   );

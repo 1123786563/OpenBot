@@ -1,6 +1,7 @@
 import { IconPlugConnected, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -58,6 +59,7 @@ import { queryClient } from "@/query-client";
  * rather than in the dialog, so the Bot's read actions are already loaded when it opens.
  */
 export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
+  const { t } = useTranslation("agents");
   const sources = useQuery(memorySourcesQueryOptions());
   const bots = useQuery(agentListQueryOptions());
   const [adding, setAdding] = useState(false);
@@ -111,18 +113,18 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
           variant="ghost"
         >
           <IconPlus />
-          Add source
+          {t("memory.sources.addSource")}
         </Button>
       }
-      description="Each app you connected in your own account that this Bot can read becomes a source on its own, and you can add more. Enabled sources refresh every 15 minutes, and their facts are available to this Bot only. Turn one off or remove it and it stays that way."
-      title="Connected app sources"
+      description={t("memory.sources.description")}
+      title={t("memory.sources.title")}
     >
       {sources.isPending ? null : sources.error ? (
         <p role="alert" className="mt-4 text-destructive text-sm">
           {sources.error.message}
         </p>
       ) : shown.length === 0 ? (
-        <PageEmpty>No connected app sources yet.</PageEmpty>
+        <PageEmpty>{t("memory.sources.empty")}</PageEmpty>
       ) : (
         <PageRows>
           {shown.map((source, index) => (
@@ -137,11 +139,13 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                   <ItemDescription>
                     {source.enabled
                       ? source.syncStatus === "succeeded"
-                        ? "Up to date"
+                        ? t("memory.sources.upToDate")
                         : source.syncStatus
-                      : "Disabled"}
+                      : t("memory.sources.disabled")}
                     {source.lastSyncAt
-                      ? ` · Last read ${new Date(source.lastSyncAt).toLocaleString()}`
+                      ? t("memory.sources.lastRead", {
+                          when: new Date(source.lastSyncAt).toLocaleString(),
+                        })
                       : ""}
                   </ItemDescription>
                   {source.syncError && (
@@ -160,7 +164,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                           action.mutate({ sourceId: source.id, name: "sync" })
                         }
                       >
-                        Sync now
+                        {t("memory.sources.syncNow")}
                       </Button>
                       <Button
                         size="sm"
@@ -169,7 +173,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                           action.mutate({ sourceId: source.id, name: "remove" })
                         }
                       >
-                        Remove
+                        {t("memory.sources.remove")}
                       </Button>
                     </div>
                   </ItemFooter>
@@ -177,7 +181,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                 <ItemActions>
                   {/* Binary and immediate: it refreshes, or stops refreshing, when switched. */}
                   <Switch
-                    aria-label={`Read ${source.title}`}
+                    aria-label={t("memory.sources.readAria", {
+                      title: source.title,
+                    })}
                     checked={source.enabled}
                     disabled={action.isPending}
                     onCheckedChange={(enabled) =>
@@ -201,9 +207,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
       <Dialog onOpenChange={setAdding} open={adding}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add a source</DialogTitle>
+            <DialogTitle>{t("memory.sources.addTitle")}</DialogTitle>
             <DialogDescription>
-              It is read now, and then every 15 minutes while it is enabled.
+              {t("memory.sources.addDescription")}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4 overflow-y-auto">
@@ -224,7 +230,11 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                     ) {
                       const number = Number(value);
                       if (!Number.isFinite(number))
-                        throw new Error(`Enter a number for ${setting.name}.`);
+                        throw new Error(
+                          t("memory.sources.numberError", {
+                            name: setting.name,
+                          }),
+                        );
                       values[setting.name] = number;
                     } else if (setting.schema.type === "boolean")
                       values[setting.name] = value === "true";
@@ -234,9 +244,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                         .map((entry) => entry.trim())
                         .filter(Boolean);
                     else if (setting.schema.type === "object")
-                      throw new Error(
-                        "Choose an action with simple search settings.",
-                      );
+                      throw new Error(t("memory.sources.simpleSettings"));
                     else values[setting.name] = value;
                   }
                   setError("");
@@ -258,7 +266,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                   setError(
                     cause instanceof Error
                       ? cause.message
-                      : "Check the source settings.",
+                      : t("memory.sources.checkSettings"),
                   );
                 }
               }}
@@ -266,7 +274,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
               <FieldGroup>
                 {fixedBot === undefined ? (
                   <Field>
-                    <FieldLabel htmlFor={`${id}-bot`}>Bot</FieldLabel>
+                    <FieldLabel htmlFor={`${id}-bot`}>
+                      {t("memory.sources.bot")}
+                    </FieldLabel>
                     <Select
                       items={bots.data?.map((bot) => ({
                         value: bot.id,
@@ -280,7 +290,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                       value={agentId || null}
                     >
                       <SelectTrigger className="w-full" id={`${id}-bot`}>
-                        <SelectValue placeholder="Choose a Bot" />
+                        <SelectValue
+                          placeholder={t("memory.sources.chooseBot")}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {bots.data?.map((bot) => (
@@ -294,7 +306,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                 ) : null}
                 <Field>
                   <FieldLabel htmlFor={`${id}-action`}>
-                    Connected app action
+                    {t("memory.sources.action")}
                   </FieldLabel>
                   <Select
                     items={tools.data?.map((tool) => ({
@@ -309,7 +321,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                     value={toolRef || null}
                   >
                     <SelectTrigger className="w-full" id={`${id}-action`}>
-                      <SelectValue placeholder="Choose a read action" />
+                      <SelectValue
+                        placeholder={t("memory.sources.chooseAction")}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {tools.data?.map((tool) => (
@@ -324,14 +338,16 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                   ) : null}
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor={`${id}-name`}>Source name</FieldLabel>
+                  <FieldLabel htmlFor={`${id}-name`}>
+                    {t("memory.sources.sourceName")}
+                  </FieldLabel>
                   <Input
                     id={`${id}-name`}
                     required
                     maxLength={160}
                     value={title}
                     onChange={(event) => setTitle(event.target.value)}
-                    placeholder="My project documents"
+                    placeholder={t("memory.sources.sourceNamePlaceholder")}
                   />
                 </Field>
                 {settings.map(({ name, schema }) => (
@@ -353,7 +369,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
                           className="w-full"
                           id={`${id}-arg-${name}`}
                         >
-                          <SelectValue placeholder="Choose a value" />
+                          <SelectValue
+                            placeholder={t("memory.sources.chooseValue")}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {(schema.enum ?? ["true", "false"]).map((value) => (
@@ -400,7 +418,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
               size="sm"
               variant="outline"
             >
-              Cancel
+              {t("memory.sources.cancel")}
             </Button>
             <Button
               disabled={add.isPending || !toolRef}
@@ -408,7 +426,9 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
               size="sm"
               type="submit"
             >
-              {add.isPending ? "Reading source…" : "Add and sync source"}
+              {add.isPending
+                ? t("memory.sources.reading")
+                : t("memory.sources.addAndSync")}
             </Button>
           </DialogFooter>
         </DialogContent>

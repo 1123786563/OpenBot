@@ -155,7 +155,18 @@
     "people": "成员：",
     "leaveAria": "退出此群组",
     "removePersonAria": "移除 {{email}}",
-    "leave": "退出"
+    "leave": "退出",
+    "open": "打开 {{name}}",
+    "people": {
+      "title": "此群组中的人",
+      "description": "这里的每个人都能看到完整对话，其中的每个 Bot 都会回答他们。",
+      "started": "创建了此群组",
+      "leave": "离开",
+      "remove": "移除",
+      "addPlaceholder": "通过邮箱添加某人",
+      "count_one": "{{count}} 人",
+      "count_other": "{{count}} 人"
+    }
   },
   "groupDetail": {
     "groupFallback": "群组"
