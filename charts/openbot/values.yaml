@@ -620,7 +620,9 @@ secrets:
   # Intelligence missing.
   intelligenceApiKey: ""
   # Optional. Managed Intelligence issues no licence token; set this only for a self-hosted
-  # Intelligence that has one, and it is passed to the server as COPILOTKIT_LICENSE_TOKEN.
+  # Intelligence that has one, and it is passed to the server as COPILOTKIT_LICENSE_TOKEN. From a
+  # store, name `license-token` in `externalSecrets.data` instead; it is passed the same way. That
+  # Intelligence needs the licence on its own deployment too, or it refuses memory.
   licenseToken: ""
   # Optional. One key for the whole deployment, for Composio, the broker holding people's accounts for
   # a few hundred apps (docs/plugins/composio.md). Passed to the server alone as COMPOSIO_API_KEY.

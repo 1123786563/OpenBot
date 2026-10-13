@@ -418,12 +418,18 @@ and in whatever holds the release, which is not where `KEY_ENCRYPTION_KEY` belon
     secretKeyRef:
       name: {{ include "openbot.secretName" . }}
       key: intelligence-api-key
-{{- if .Values.secrets.licenseToken }}
+{{- /* From a store or an existingSecret too: emitted for the literal alone, a synced token reached
+     the Secret and never the pod, and a self-hosted Intelligence ran unlicensed. */}}
+{{- $license := include "openbot.secretKeySource" (dict "root" . "key" "license-token" "literal" .Values.secrets.licenseToken) }}
+{{- if $license }}
 - name: COPILOTKIT_LICENSE_TOKEN
   valueFrom:
     secretKeyRef:
       name: {{ include "openbot.secretName" . }}
       key: license-token
+      {{- if eq $license "unknown" }}
+      optional: true
+      {{- end }}
 {{- end }}
 {{- with .Values.config.managedAgent.url }}
 - name: MANAGED_AGENT_AG_UI_URL

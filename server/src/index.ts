@@ -268,6 +268,7 @@ import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
 import { createModelCompleter } from "./routing/model";
+import { reportIntelligenceEntitlement } from "./intelligence-entitlement-check";
 import { createSelfHostBanner } from "./self-host-banner";
 import { createTeamBots } from "./team-bots/team-bots";
 import {
@@ -3037,6 +3038,12 @@ auditRoutineStore(routineStore, bootAuditStore);
 const selfHostBannerIntelligence = createIntelligenceClient(
   config.runtime.intelligence,
 );
+
+// Said once, at boot, whether Intelligence will let this deployment use what it is licensed for. A
+// self-hosted Intelligence without a licence refuses memory quietly; this is the line that says why.
+void reportIntelligenceEntitlement({
+  entitlements: () => selfHostBannerIntelligence.getRuntimeEntitlements(),
+});
 
 const identityGithubCallback =
   config.githubApp && config.publicUrl

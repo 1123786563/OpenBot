@@ -29,6 +29,24 @@ Newest first. `Unreleased` is what is on `main` and not yet tagged.
   `OPENBOT_MEMORY_SOURCE_DEFAULTS=false` and `OPENBOT_PROACTIVE_DEFAULTS=false` (Helm: `config.memory.*`)
   prevent it.
 
+### A licence token from a store reaches the server
+
+The Helm chart passed `COPILOTKIT_LICENSE_TOKEN` to the server only when `secrets.licenseToken` was
+written as a literal. A token synced through `externalSecrets`, which the chart's own EKS example
+does, reached the Secret and never the pod, so a self-hosted deployment ran unlicensed with nothing
+saying why. It is now passed whenever `externalSecrets.data` names `license-token`, and as an optional
+reference with `secrets.existingSecret`, where the chart cannot see the Secret's keys. The chart's
+CI check now also fails a render in which a store syncs a key that nothing reads.
+
+### OpenBot says at boot when Intelligence will refuse memory
+
+A self-hosted Intelligence needs its own licence. Without one it answers every runtime entitlement
+read with `RUNTIME_ENTITLEMENTS_SELF_HOSTED_MISCONFIGURED` and refuses memory, while conversations
+carry on and nothing in OpenBot's log says why. The server now asks once at start-up and logs
+`intelligence-entitlement-not-ready` with the code and where the licence goes, and
+`intelligence-entitlement-unreadable` when Intelligence cannot be asked. Start-up does not wait for
+the answer.
+
 ### The server says at boot when its key cannot call the configured model
 
 A key without access to the tenant package's `default_model` passed every start-up check and failed at
