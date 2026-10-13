@@ -17,8 +17,75 @@
 
 import { getLogger } from "../../../shared/logger";
 import type { CraftConfig } from "./config";
+import type { AgentSandboxFileApi } from "./sandbox-gateway";
 
 const logger = getLogger("server");
+
+/**
+ * The attachments section appended to AGENTS.md when the session's attachments/
+ * directory is non-empty — onyx `ATTACHMENTS_SECTION_CONTENT`
+ * (sandbox/util/agent_instructions.py:46-75), verbatim including the heading.
+ */
+export const ATTACHMENTS_SECTION_CONTENT = `## Attachments (PRIORITY)
+
+The \`attachments/\` directory contains files that the user has explicitly
+uploaded during this session. **These files are critically important** and
+should be treated as high-priority context.
+
+### Why Attachments Matter
+
+- The user deliberately chose to upload these files, signaling they are directly relevant to the task
+- These files often contain the specific data, requirements, or examples the user wants you to work with
+- They may include spreadsheets, documents, images, or code that should inform your work
+
+### Required Actions
+
+**At the start of every task, you MUST:**
+
+1. **Check for attachments**: List the contents of \`attachments/\` to see what the user has provided
+2. **Read and analyze each file**: Thoroughly examine every attachment to understand its contents and relevance
+3. **Reference attachment content**: Use the information from attachments to inform your responses and outputs
+
+### File Handling
+
+- Uploaded files may be in various formats: CSV, JSON, PDF, images, text files, etc.
+- For spreadsheets and data files, examine the structure, columns, and sample data
+- For documents, extract key information and requirements
+- For images, analyze and describe their content
+- For code files, understand the logic and patterns
+
+**Do NOT ignore user uploaded files.** They are there for a reason and likely
+contain exactly what you need to complete the task successfully.`;
+
+const ATTACHMENTS_SECTION_HEADING = "## Attachments (PRIORITY)";
+
+/**
+ * onyx's post-write step (docker_sandbox_manager.py:1585-1589): when the session's
+ * attachments/ directory is non-empty, AGENTS.md gains "\n\n" + ATTACHMENTS_SECTION_CONTENT.
+ * Idempotent — an AGENTS.md already carrying the heading is left alone. An absent
+ * attachments directory (the gateway's 404) or an absent AGENTS.md means "nothing to do",
+ * not an error. Returns whether the section was appended.
+ */
+export async function appendAttachmentsSectionIfMissing(
+  api: Pick<AgentSandboxFileApi, "listFiles" | "readFile" | "writeFile">,
+  directory: string,
+  attachmentsDir = "attachments",
+): Promise<boolean> {
+  let entries: string[];
+  try {
+    entries = await api.listFiles(`${directory}/${attachmentsDir}`);
+  } catch {
+    return false;
+  }
+  if (entries.length === 0) return false;
+  const path = `${directory}/AGENTS.md`;
+  const current = await api.readFile(path);
+  if (current === null || current.includes(ATTACHMENTS_SECTION_HEADING)) {
+    return false;
+  }
+  await api.writeFile(path, `${current}\n\n${ATTACHMENTS_SECTION_CONTENT}`);
+  return true;
+}
 
 /** Provider display name mapping (onyx parity). */
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
