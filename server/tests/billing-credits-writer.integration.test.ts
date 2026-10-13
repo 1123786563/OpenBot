@@ -635,4 +635,62 @@ describe("reservations", () => {
       .where(eq(creditLedger.externalCustomerId, customer));
     expect(row).toEqual({ credits: 160, applied: 100 });
   });
+
+  /*
+   * Expired-hold capacity (2026-10-13 audit F4, absorbing OCR round-5 Item 1): a hold whose
+   * expiry has passed no longer occupies capacity, because the work it was admitted for either
+   * finished long ago or never will — reconciliation reports the stuck row for an operator, and
+   * a live deployment must not run out of purchasable capacity to holds time has already voided.
+   */
+  test("an expired hold no longer occupies capacity: a fresh reserve succeeds against capacity held only by expired holds", async () => {
+    const customer = `${prefix}-expired-capacity`;
+    await seedGrant(customer, 1_000, "expired-capacity");
+    // Hold 700 of the 1000, then let time void it (the writer never writes a past expiry —
+    // the row is aged the way a crashed finish would leave it).
+    const stuckId = reservedId(
+      await reserve(customer, "expired-stuck", 700),
+    );
+    await database.execute(
+      sql`UPDATE credit_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${stuckId}`,
+    );
+
+    // The new call must get its 700: capacity accounting skips the expired hold.
+    const fresh = await reserve(customer, "expired-fresh", 700);
+    expect(fresh).toMatchObject({ reserved: true });
+    expect(await writer.availableBalance(customer)).toBe(300);
+
+    // A late settlement of the expired hold still charges honestly: its own allocation draws
+    // in full (grant capacity is still there — the fresh hold has not settled). If BOTH holds
+    // then settle, the second draw is clamped by what the grant has left, the same honest
+    // overdraw rule a post-paid miss gets.
+    const settled = await writer.settleReservation({
+      reservationId: stuckId,
+      actual: whole(700),
+      title: "late finish",
+    });
+    expect(settled.chargedCents).toBe(700);
+    expect(settled.appliedCents).toBe(700);
+    expect(settled.releasedCents).toBe(0);
+    const overlapped = await writer.settleReservation({
+      reservationId: (fresh as { reserved: true; reservationId: string })
+        .reservationId,
+      actual: whole(700),
+      title: "overlap finish",
+    });
+    expect(overlapped.chargedCents).toBe(700);
+    expect(overlapped.appliedCents).toBe(300);
+  });
+
+  test("reserveCredits refuses an expiry in the past at admission", async () => {
+    const customer = `${prefix}-past-expiry`;
+    await seedGrant(customer, 1_000, "past-expiry");
+    expect(
+      writer.reserveCredits({
+        externalCustomerId: customer,
+        idempotencyKey: `${prefix}-past-expiry-hold`,
+        maximumCents: 100,
+        expiresAt: new Date(Date.now() - 60_000),
+      }),
+    ).rejects.toThrow(TypeError);
+  });
 });

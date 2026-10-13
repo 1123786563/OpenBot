@@ -160,6 +160,7 @@ import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import { createRequestTracking } from "./telemetry/request-tracking";
+import { withUsageOrigin } from "./usage-origin";
 import { createTraceMiddleware } from "./telemetry/trace-middleware";
 import type { PackageStatusReader } from "./tenant-package";
 import {
@@ -803,6 +804,17 @@ export function createApp(
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
+  /*
+   * The usage-origin floor (2026-10-13 audit, F6): a signed-in person's request context says
+   * `web`, so the usage facts its model calls and code runs record carry the caller they
+   * really came from. Registered after the gate so only requests that got this far are named.
+   * Hono composes handlers in registration order, so this covers exactly the usage-bearing
+   * API surfaces mounted BELOW this point (the CopilotKit runtime, the workshop, the channels
+   * — all of them); the earlier-mounted /api/capabilities, /api/auth/*, desktop-connection and
+   * provider-proxy surfaces never pass through here, record no usage today, and any future
+   * usage-bearing surface must mount below this line or name its own origin.
+   */
+  app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", (context) =>
     auth
@@ -1532,7 +1544,13 @@ export function createApp(
        * the fatigue rule owns it. `run()` never throws by contract; this swallow only guards against
        * that contract being wrong without turning a bug there into an unhandled rejection here.
        */
-      void routineRunner.run(routineRunId).catch(() => {});
+      // The worker's bearer dispatch is an API surface, not a person's session. This route is
+      // deliberately not under /api/* (see the comment above it), so no session `web` floor
+      // applies here — naming `api` is what puts the turns this fans out on their usage facts
+      // at all.
+      void withUsageOrigin("api", () => routineRunner.run(routineRunId)).catch(
+        () => {},
+      );
       return context.json({ accepted: true }, 202);
     });
   }

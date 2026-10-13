@@ -3470,7 +3470,7 @@ if (billing !== undefined && usageOutbox !== undefined) {
             inputTokens: charged.inputTokens,
             outputTokens: charged.outputTokens,
             model: modelId,
-            client: "web",
+            client: input.client,
             occurredAt: input.occurredAt,
             reservationId: reservation.reservationId,
             actualCostNumerator: charged.actual.numerator.toString(),

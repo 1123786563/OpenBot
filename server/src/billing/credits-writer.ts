@@ -279,10 +279,11 @@ export function createCreditWriter(database: Database): CreditWriter {
         input.maximumCents <= 0 ||
         input.maximumCents > MAX_STORED_UNITS ||
         !Number.isFinite(input.expiresAt.getTime()) ||
+        input.expiresAt.getTime() <= Date.now() ||
         input.idempotencyKey.length === 0
       ) {
         throw new TypeError(
-          "reserveCredits needs a positive 32-bit scaled amount, a real expiry and a key.",
+          "reserveCredits needs a positive 32-bit scaled amount, a future expiry and a key.",
         );
       }
       await ensureCustomer(database, input.externalCustomerId);
@@ -687,8 +688,23 @@ async function lockCustomer(tx: Tx, externalId: string) {
     .for("update");
 }
 
-/** Live grants, soonest expiry first, with capacity left after used units and active holds. */
+/**
+ * Live grants, soonest expiry first, with capacity left after used units and active holds.
+ *
+ * An "active" hold is reserved AND not yet expired (audit F4): a hold whose expiry has passed
+ * no longer occupies capacity — the work it was admitted for either finished or never will,
+ * and reconciliation reports the stuck row for an operator. A late settlement of an expired
+ * hold still charges honestly; the settle path's own `min(allocation.amount, total - used)`
+ * clamp keeps the grants from going negative exactly the way a post-paid overdraw is kept
+ * honest.
+ *
+ * One clock per computation: the grant-liveness filter and the hold-expiry filter below are
+ * bound to the SAME app-side instant (a parameter), never the database's `now()` — app and
+ * database clocks skew, and a skewed pair would let a reservation be admitted against
+ * capacity an expired hold already vacated (or refuse one that is still live).
+ */
 async function freeGrants(db: Reader, externalId: string, lock: boolean) {
+  const at = new Date();
   const query = db
     .select({
       id: creditGrants.id,
@@ -698,14 +714,14 @@ async function freeGrants(db: Reader, externalId: string, lock: boolean) {
         select sum(a.amount)::int
         from credit_reservation_allocations a
         join credit_reservations r on r.id = a.reservation_id
-        where a.grant_id = credit_grants.id and r.status = 'reserved'
+        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > ${at}
       ), 0)`,
     })
     .from(creditGrants)
     .where(
       and(
         eq(creditGrants.externalCustomerId, externalId),
-        gt(creditGrants.expiresAt, new Date()),
+        gt(creditGrants.expiresAt, at),
       ),
     )
     .orderBy(

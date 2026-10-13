@@ -355,36 +355,39 @@ export function createReconciler(
       /*
        * ── Invariant 2: the credit identity, per customer. Both sums come from SQL (one
        *    round trip each, exact integers — the report must not introduce its own rounding
-       *    while auditing someone else's), grouped by the customer key.
+       *    while auditing someone else's), grouped by the customer key. The sums are read
+       *    as decimal STRINGS and compared as BigInt end to end: the columns are 32-bit, so
+       *    a customer's history can sum past Number.MAX_SAFE_INTEGER, and a Number() in the
+       *    middle would round two sums a single unit apart into equality (audit F1).
        */
       const usedByCustomer = await database
         .select({
           customer: creditGrants.externalCustomerId,
-          total: sql<number>`COALESCE(SUM(${creditGrants.used}), 0)::bigint`,
+          total: sql<string>`COALESCE(SUM(${creditGrants.used}), 0)::bigint`,
         })
         .from(creditGrants)
         .groupBy(creditGrants.externalCustomerId);
       const appliedByCustomer = await database
         .select({
           customer: creditLedger.externalCustomerId,
-          total: sql<number>`COALESCE(SUM(${creditLedger.applied}), 0)::bigint`,
+          total: sql<string>`COALESCE(SUM(${creditLedger.applied}), 0)::bigint`,
         })
         .from(creditLedger)
         .groupBy(creditLedger.externalCustomerId);
 
       const usedMap = new Map(
-        usedByCustomer.map((row) => [row.customer, Number(row.total)]),
+        usedByCustomer.map((row) => [row.customer, BigInt(row.total)]),
       );
       const appliedMap = new Map(
-        appliedByCustomer.map((row) => [row.customer, Number(row.total)]),
+        appliedByCustomer.map((row) => [row.customer, BigInt(row.total)]),
       );
       const customers = new Set([
         ...usedMap.keys(),
         ...appliedMap.keys(),
       ]);
       for (const customer of customers) {
-        const used = usedMap.get(customer) ?? 0;
-        const applied = appliedMap.get(customer) ?? 0;
+        const used = usedMap.get(customer) ?? 0n;
+        const applied = appliedMap.get(customer) ?? 0n;
         if (used !== applied) {
           findings.push({
             category: "credits",
@@ -515,21 +518,46 @@ export function createReconciler(
        *    inference that anything but `delivered` succeeded.
        */
       const [usageCounts] = await database.execute(sql<{
-        pendingLago: number;
-        pendingCredits: number;
-        blockedLago: number;
-        blockedCredits: number;
+        pendingLago: string;
+        pendingCredits: string;
+        blockedLago: string;
+        blockedCredits: string;
       }>`
         SELECT
-          (SELECT COUNT(*)::int FROM usage_outbox WHERE lago_status = 'pending') AS "pendingLago",
-          (SELECT COUNT(*)::int FROM usage_outbox WHERE credits_status = 'pending') AS "pendingCredits",
-          (SELECT COUNT(*)::int FROM usage_outbox WHERE lago_status = 'blocked') AS "blockedLago",
-          (SELECT COUNT(*)::int FROM usage_outbox WHERE credits_status = 'blocked') AS "blockedCredits"
+          (SELECT COUNT(*)::bigint FROM usage_outbox WHERE lago_status = 'pending') AS "pendingLago",
+          (SELECT COUNT(*)::bigint FROM usage_outbox WHERE credits_status = 'pending') AS "pendingCredits",
+          (SELECT COUNT(*)::bigint FROM usage_outbox WHERE lago_status = 'blocked') AS "blockedLago",
+          (SELECT COUNT(*)::bigint FROM usage_outbox WHERE credits_status = 'blocked') AS "blockedCredits"
       `);
-      usageDeliveryTargets.pending.lago = usageCounts?.pendingLago ?? 0;
-      usageDeliveryTargets.pending.credits = usageCounts?.pendingCredits ?? 0;
-      usageDeliveryTargets.blocked.lago = usageCounts?.blockedLago ?? 0;
-      usageDeliveryTargets.blocked.credits = usageCounts?.blockedCredits ?? 0;
+      // Exact COUNT reads (audit F2: ::int wraps at 2^31 rows). The report's checked counts stay
+      // numbers for the admin route's shape, so the conversion carries a guard that refuses
+      // rather than silently overflowing — a report that understates its own backlog by 2^32
+      // rows is worse than one that fails loudly.
+      const exactCount = (value: string | undefined, label: string): number => {
+        const parsed = Number(value ?? "0");
+        if (!Number.isSafeInteger(parsed)) {
+          throw new RangeError(
+            `usage_outbox ${label} count is not a safe integer (${value}); the report refuses to round a backlog it cannot represent`,
+          );
+        }
+        return parsed;
+      };
+      usageDeliveryTargets.pending.lago = exactCount(
+        usageCounts?.pendingLago,
+        "pending lago",
+      );
+      usageDeliveryTargets.pending.credits = exactCount(
+        usageCounts?.pendingCredits,
+        "pending credits",
+      );
+      usageDeliveryTargets.blocked.lago = exactCount(
+        usageCounts?.blockedLago,
+        "blocked lago",
+      );
+      usageDeliveryTargets.blocked.credits = exactCount(
+        usageCounts?.blockedCredits,
+        "blocked credits",
+      );
 
       const actionableUsageTargetCount = sumUsageTargets(usageDeliveryTargets);
       const usageRows =
