@@ -43,7 +43,7 @@ import {
   knowledgeKeys,
 } from "@/lib/knowledge";
 
-export const Route = createFileRoute("/_authed/_app/knowledge/")({
+export const Route = createFileRoute("/_authed/admin/knowledge/")({
   component: KnowledgeIndexPage,
 });
 
@@ -98,7 +98,7 @@ function KnowledgeIndexPage() {
                     <ItemContent>
                       <ItemTitle>
                         <Link
-                          to="/knowledge/$kbId"
+                          to="/admin/knowledge/$kbId"
                           params={{ kbId: kb.id }}
                           className="underline-offset-4 hover:underline"
                         >

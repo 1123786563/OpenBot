@@ -62,7 +62,7 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { uploadCommands, useUploadTasksFor } from "@/lib/upload-queue/store";
 
-export const Route = createFileRoute("/_authed/_app/knowledge/$kbId")({
+export const Route = createFileRoute("/_authed/admin/knowledge/$kbId")({
   component: KnowledgeDetailPage,
 });
 
@@ -86,7 +86,7 @@ function KnowledgeDetailPage() {
 
   return (
     <PageShell
-      backButton={{ label: t("back"), linkProps: { to: "/knowledge" } }}
+      backButton={{ label: t("back"), linkProps: { to: "/admin/knowledge" } }}
       title={kb.data?.name ?? t("back")}
       description={t("detail.description")}
       width="wide"
