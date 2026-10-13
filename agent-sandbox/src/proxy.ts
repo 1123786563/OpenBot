@@ -283,6 +283,32 @@ export function createProxyHandler(
       return Response.json({ ok: true, botId });
     }
 
+    // GET /file: the PROXY answers absence itself. The upstream opencode-serve answers
+    // 500 — not 404 — for a path that does not exist, and a caller cannot tell an absent
+    // directory from a broken runtime (craft's managed-skills sweep normalizes 404 to
+    // "fresh workspace, nothing to clear" and refuses its ack on anything else, so first
+    // provisioning always answered stale until a reload). The filesystem is the proxy's
+    // own fact: an absent path gets the honest 404 here, and everything that exists —
+    // file or directory — still takes the upstream's listing/content shape.
+    if (url.pathname === "/file" && request.method === "GET") {
+      const path = url.searchParams.get("path") ?? "";
+      if (!path || path.startsWith("/") || path.split("/").includes("..")) {
+        return Response.json(
+          {
+            error:
+              "The path must be a plain relative path inside the workspace.",
+          },
+          { status: 400 },
+        );
+      }
+      const target = join(env.workspaceDir, "bots", botId, path);
+      const info = await stat(target).catch(() => null);
+      if (info === null) {
+        return Response.json({ error: "Not found." }, { status: 404 });
+      }
+      // Exists (file or directory): fall through to the upstream forward below.
+    }
+
     // POST /file (B5's writeFile verb): the PROXY writes the file, contained. There is no
     // upstream verb for this — forwarding it answers the SPA's 200-from-nothing, which a
     // caller reads as success while nothing lands (the isolation smoke caught exactly this).

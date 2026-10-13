@@ -353,7 +353,7 @@ company-search(组织知识技能)曾维持 BLOCKED(OpenBot 知识域无可供�
 - ✅ fixed:`builtinSkillFilesFor` 把模块自身 `index.ts` 推进 agent 工作区(顶层文件剔除)。
 - ✅ fixed:start-webapp.sh 在 agent-sandbox 镜像 env `BUN_INSTALL=/usr/local`(root 属主)下 bun install 必 AccessDenied —— 脚本现自带 `BUN_INSTALL_CACHE_DIR=${…:-$HOME/.bun/install-cache}` 兜底(裸跑 live 复验通过)。
 - ✅ fixed:失败 install 留空 `node_modules`,重跑跳过 install 直接 spawn —— install 判定改 `[ ! -x node_modules/.bin/next ]`。
-- ⚠️ 记录(agent-sandbox 域,未修):网关 `GET /file` 转发上游,对**不存在的目录**答 500 而非 404 → craft 首次 provisioning 的 managed-skills 清点走"拒 ack"分支(保守语义,按 OCR round-2 修复设计工作),`skills_stale` 恒 true 直到一次 reload(实测 reload 自愈 → false)。修法在上游/网关侧的不存在路径 404 化。
+- ✅ fixed(agent-sandbox 侧,后续提交):网关 `GET /file` 曾转发上游,对**不存在的目录**答 500 而非 404 → craft 首次 provisioning 的 managed-skills 清点走"拒 ack"分支、`skills_stale` 恒 true 直到一次 reload。修复:proxy 对 GET /file 本地 stat,缺失路径直接 404(存在路径照常转发);同轮修复镜像 `BUN_INSTALL=/usr/local` 残留(`BUN_INSTALL_CACHE_DIR` 指向运行用户家目录)。live 复验:首次 provisioning `skills_stale` 直接 false;裸跑 start-webapp.sh install+ready 全通。
 
 ### connector skill 必要文本偏差(D5 推导,逐文件头注释 + 本表双记录)
 

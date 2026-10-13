@@ -287,6 +287,34 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(escapeAttempt.status).toBe(400);
   });
 
+  test("GET /file answers absence 404 itself — the upstream's 500-for-absent must not leak (craft's skills sweep)", async () => {
+    // The upstream opencode-serve answers 500, not 404, for a path that does not exist;
+    // craft's managed-skills sweep normalizes 404 to "fresh workspace" and refuses its
+    // ack on anything else, so a leaked 500 left every first provisioning stale until a
+    // reload. The proxy owns the filesystem fact: absence is answered here, before any
+    // runtime is spawned or dialed.
+    const absent = await call("/file?path=no-such-dir", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(absent.status).toBe(404);
+    // The escaping path is refused on this verb too.
+    const escapeAttempt = await call("/file?path=../workspace", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(escapeAttempt.status).toBe(400);
+    // A path that EXISTS is not answered locally — it falls through toward the upstream
+    // (here: no runtime can spawn in this harness, so the honest shape is the runtime
+    // refusal, distinctly not this branch's 404).
+    const present = await call("/file?path=data.csv", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(present.status).not.toBe(404);
+    expect(present.status).not.toBe(400);
+  });
+
   test("POST /file carries binary bodies past the 256KB relay cap (craft's upload road)", async () => {
     // The craft upload default allows 50MB files; the JSON relay cap stays at 256KB. The
     // file verb must ride its own ceiling — a 300KB binary body crosses the old line.
