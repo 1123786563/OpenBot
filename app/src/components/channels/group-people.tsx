@@ -1,6 +1,7 @@
 import { IconUser, IconUsers } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,6 +34,7 @@ import {
  * here. Everyone added sees the whole conversation.
  */
 export function GroupPeopleButton({ channelId }: { channelId: string }) {
+  const { t } = useTranslation("channels");
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
@@ -49,7 +51,7 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
   const iCreated = people.some(
     (person) => person.creator && person.userId === me?.id,
   );
-  const count = `${people.length} ${people.length === 1 ? "person" : "people"}`;
+  const count = t("group.people.count", { count: people.length });
 
   return (
     <>
@@ -65,10 +67,9 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
       <Dialog onOpenChange={setOpen} open={open}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>People in this group</DialogTitle>
+            <DialogTitle>{t("group.people.title")}</DialogTitle>
             <DialogDescription>
-              Everyone here sees the whole conversation, and every Bot in it
-              answers them.
+              {t("group.people.description")}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4 grid gap-4 overflow-y-auto">
@@ -85,10 +86,14 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                       </ItemMedia>
                       <ItemContent>
                         <ItemTitle>
-                          {self ? "You" : (person.name ?? person.email)}
+                          {self
+                            ? t("group.you")
+                            : (person.name ?? person.email)}
                         </ItemTitle>
                         <ItemDescription>
-                          {person.creator ? "Started this group" : person.email}
+                          {person.creator
+                            ? t("group.people.started")
+                            : person.email}
                         </ItemDescription>
                       </ItemContent>
                       {removable ? (
@@ -96,15 +101,19 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                           <Button
                             aria-label={
                               self
-                                ? "Leave this group"
-                                : `Remove ${person.email}`
+                                ? t("group.leaveAria")
+                                : t("group.removePersonAria", {
+                                    email: person.email,
+                                  })
                             }
                             disabled={remove.isPending}
                             onClick={() => remove.mutate(person.userId)}
                             size="sm"
                             variant="outline"
                           >
-                            {self ? "Leave" : "Remove"}
+                            {self
+                              ? t("group.people.leave")
+                              : t("group.people.remove")}
                           </Button>
                         </ItemActions>
                       ) : null}
@@ -121,9 +130,9 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
               }}
             >
               <Input
-                aria-label="Their email"
+                aria-label={t("group.emailAria")}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="Add someone by email"
+                placeholder={t("group.people.addPlaceholder")}
                 type="email"
                 value={email}
               />
@@ -132,7 +141,7 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
                 size="sm"
                 type="submit"
               >
-                Add
+                {t("group.add")}
               </Button>
             </form>
             {add.error || remove.error ? (

@@ -1021,5 +1021,9 @@
     "everyone": "所有人",
     "whoMayUse": "谁可以通过此 Bot 使用共享账户",
     "outsideInput": "外部输入（邮件、Slack、webhook）可以使用它"
+  },
+  "approvals": {
+    "title": "审批",
+    "description": "成员的 Bots 在行动前必须先请求什么、适用于所有人的规则，以及使用共享账户的请求。"
   }
 }

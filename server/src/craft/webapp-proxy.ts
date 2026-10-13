@@ -30,7 +30,6 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
-import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
 import type { CraftConfig } from "./config";
 import {
   collectWorkspaceFiles,
@@ -68,9 +67,13 @@ const logger = getLogger("server");
  * Request headers never forwarded to the LLM-authored app, matched by lowercase key — onyx's
  * `EXCLUDED_REQUEST_HEADERS`, plus the header the gateway itself uses for auth. Prefix
  * exclusions (sec-fetch-*, x-forwarded-*, …) keep browser context and ingress identity out.
+ * `accept-encoding` is stripped so the upstream answers uncompressed: the response side drops
+ * `content-encoding` (see EXCLUDED_RESPONSE_HEADERS), and a gzip body without that header is
+ * binary garbage in the preview iframe.
  */
 const EXCLUDED_REQUEST_HEADERS = new Set([
   "host",
+  "accept-encoding",
   "content-length",
   "connection",
   "keep-alive",
@@ -129,6 +132,16 @@ function stripRequestHeaders(source: Headers): Headers {
   return headers;
 }
 
+/**
+ * The dev preview's CSP. The workshop's DEV_CSP_ALLOW_LISTED is 'self'-only scripts,
+ * which kills Next.js dev hydration stone dead: the RSC payload rides inline
+ * scripts (self.__next_f.push) and the refresh/turbopack runtimes need eval. A
+ * dev preview of LLM-authored code is exactly the 'unsafe-inline' + 'unsafe-eval'
+ * shape; everything else stays as tight as the workshop's.
+ */
+const WEBAPP_DEV_CSP =
+  "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; object-src 'none'; base-uri 'none'";
+
 export type ProxyWebappResult = {
   status: number;
   headers: Headers;
@@ -175,7 +188,7 @@ export async function proxyWebappRequest(input: {
     "content-type",
     upstream.headers.get("content-type") ?? "text/html",
   );
-  responseHeaders.set("content-security-policy", DEV_CSP_ALLOW_LISTED);
+  responseHeaders.set("content-security-policy", WEBAPP_DEV_CSP);
   return {
     status: upstream.status,
     headers: responseHeaders,
@@ -268,7 +281,6 @@ export function createWebappProxyRoutes(
     // The shared handler serves both route shapes, so the params are read by name with a
     // fallback (a matched route always carries the session id; "" degrades to the 404 below).
     const sessionId = context.req.param("sessionId") ?? "";
-    const rel = context.req.param("path") ?? "";
     const { session, botId, conn } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!botId || !conn) {
@@ -300,7 +312,12 @@ export function createWebappProxyRoutes(
 
     const result = await proxyWebappRequest({
       upstreamBaseUrl: `http://${upstreamHost}:${port}`,
-      path: rel,
+      // The full mount path, not the bare suffix: the scaffold's basePath equals
+      // this route's mount (/api/craft/sessions/<id>/webapp), so the dev server
+      // resolves the same URL the browser asked for. Forwarding the suffix alone
+      // maps the iframe's root entry to the upstream "/" — whose basePath
+      // redirect points right back here, a 307 loop.
+      path: context.req.path,
       query: context.req.url.includes("?")
         ? context.req.url.slice(context.req.url.indexOf("?"))
         : "",

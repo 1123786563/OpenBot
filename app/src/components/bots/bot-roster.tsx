@@ -37,6 +37,7 @@ import {
  * This replaces three screens — Bots, Agents and Team Bots — that listed the same Bots three ways.
  */
 export function BotRoster() {
+  const { t } = useTranslation("agents");
   const agents = useQuery(agentListQueryOptions());
   const hidden = useQuery(agentListQueryOptions(true));
   const attention = useQuery(botAttentionQueryOptions());
@@ -47,7 +48,7 @@ export function BotRoster() {
   if (agents.data === undefined) {
     return (
       <p className="mt-6 text-destructive text-sm" role="alert">
-        Could not load your Bots.
+        {t("roster.loadError")}
       </p>
     );
   }
@@ -64,33 +65,33 @@ export function BotRoster() {
   return (
     <>
       {needsYou.length ? (
-        <PageSection title="Needs you">
+        <PageSection title={t("roster.needsYou")}>
           <RosterRows agents={needsYou} byId={byId} />
         </PageSection>
       ) : null}
       {pinned.length ? (
-        <PageSection title="Pinned">
+        <PageSection title={t("roster.pinned")}>
           <RosterRows agents={pinned} byId={byId} />
         </PageSection>
       ) : null}
-      <PageSection title="Yours">
+      <PageSection title={t("roster.yours")}>
         {yours.length ? (
           <RosterRows agents={yours} byId={byId} />
         ) : (
           <PageEmpty>
             {yoursPinned
-              ? "Your Bots are all pinned above."
+              ? t("roster.allPinned")
               : yoursWaiting
-                ? "Your Bots are all under Needs you."
-                : "You have no Bots of your own yet."}
+                ? t("roster.allWaiting")
+                : t("roster.noneYet")}
           </PageEmpty>
         )}
       </PageSection>
-      <PageSection title="Shared with you">
+      <PageSection title={t("roster.sharedWithYou")}>
         {shared.length ? (
           <RosterRows agents={shared} byId={byId} />
         ) : (
-          <PageEmpty>Nobody has shared a Bot with you yet.</PageEmpty>
+          <PageEmpty>{t("roster.noneShared")}</PageEmpty>
         )}
       </PageSection>
       {hidden.data?.length ? (
@@ -111,16 +112,17 @@ function HiddenSection({
   agents: AgentProfile[];
   byId: Map<string, BotAttention>;
 }) {
+  const { t } = useTranslation("agents");
   const [open, setOpen] = useState(false);
   return (
     <PageSection
       action={
         <Button onClick={() => setOpen(!open)} size="sm" variant="ghost">
-          {open ? "Hide" : "Show"}
+          {open ? t("roster.hide") : t("roster.show")}
         </Button>
       }
-      description={`${agents.length} ${agents.length === 1 ? "Bot" : "Bots"} you took off this list. Nobody else's list changed.`}
-      title="Hidden"
+      description={t("roster.hiddenDescription", { count: agents.length })}
+      title={t("roster.hidden")}
     >
       {open ? <RosterRows agents={agents} byId={byId} /> : null}
     </PageSection>

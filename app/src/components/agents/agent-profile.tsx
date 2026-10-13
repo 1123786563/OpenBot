@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ function ProfileSkeleton() {
  */
 export function AgentProfile({ agentId }: { agentId: string }) {
   /** The full dialog, opened over the chat rather than navigating away from it. */
+  const { t } = useTranslation("agents");
   const navigate = useNavigate();
   const agent = useQuery(agentQueryOptions(agentId));
 
@@ -57,7 +59,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   if (agent.error || !agent.data) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        Could not load this coworker.
+        {t("agentProfile.loadError")}
       </p>
     );
   }
@@ -82,14 +84,20 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </div>
 
         <div className="flex flex-wrap justify-center gap-1.5">
-          <Tag>{profile.visibility === "private" ? "Private" : "Public"}</Tag>
-          {profile.systemOwned ? <Tag>System owned</Tag> : null}
+          <Tag>
+            {profile.visibility === "private"
+              ? t("agentProfile.private")
+              : t("agentProfile.public")}
+          </Tag>
+          {profile.systemOwned ? (
+            <Tag>{t("agentProfile.systemOwned")}</Tag>
+          ) : null}
         </div>
       </header>
 
       <section className="grid gap-2">
         <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Role
+          {t("agentProfile.role")}
         </h2>
         <p className="text-sm whitespace-pre-wrap text-pretty">
           {profile.roleDescription}
@@ -103,7 +111,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             void navigate({ search: { agent: agentId }, to: "/channel/new" })
           }
         >
-          Start new channel
+          {t("agentProfile.startNewChannel")}
         </Button>
         <Button
           className="w-full text-sm!"
@@ -112,7 +120,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
           )}
           variant="outline"
         >
-          Open {profile.name}
+          {t("agentProfile.open", { name: profile.name })}
         </Button>
       </div>
     </div>

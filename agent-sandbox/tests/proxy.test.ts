@@ -125,6 +125,14 @@ describe("proxy", () => {
     expect(await response.json()).toEqual({ id: "ses_4600" });
   });
 
+  test("GET /doc forwards upstream — craft's chip health-check rides it (fix: forever-provisioning)", async () => {
+    // craft 的 sandbox-status 芯片用 GET /doc 探活：白名单漏掉它时上游活着也只会拿到
+    // 404，healthCheck() 永远 false，active 会话被永久判成 provisioning（“沙箱初始化中…”）。
+    const response = await call("/doc", { headers: botHeaders });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ openapi: "3.1.0", served: "4600" });
+  });
+
   test("a path outside the allow-list is 404 upstream-untouched", async () => {
     const response = await call("/admin", { headers: botHeaders });
     expect(response.status).toBe(404);
