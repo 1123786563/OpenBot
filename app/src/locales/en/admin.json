@@ -87,7 +87,9 @@
     "people": "People",
     "identityProviders": "Identity providers",
     "audit": "Audit",
-    "approvals": "Approvals"
+    "approvals": "Approvals",
+    "market": "Market",
+    "knowledge": "Knowledge"
   },
   "audit": {
     "title": "Audit",

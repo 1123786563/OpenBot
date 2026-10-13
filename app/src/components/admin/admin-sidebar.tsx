@@ -1,5 +1,6 @@
 import {
   IconArrowLeft,
+  IconBook2,
   IconBuildingBank,
   IconChecks,
   IconCode,
@@ -10,6 +11,7 @@ import {
   IconListDetails,
   IconPuzzle,
   IconShieldCheck,
+  IconShoppingBag,
   IconUsers,
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
@@ -75,6 +77,16 @@ const GROUPS = [
         title: "sidebar.skills",
         icon: IconFileText,
         linkOptions: { to: "/admin/skills" },
+      },
+      {
+        title: "sidebar.market",
+        icon: IconShoppingBag,
+        linkOptions: { to: "/market" },
+      },
+      {
+        title: "sidebar.knowledge",
+        icon: IconBook2,
+        linkOptions: { to: "/knowledge" },
       },
       {
         title: "sidebar.learning",

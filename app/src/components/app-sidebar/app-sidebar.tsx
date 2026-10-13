@@ -6,6 +6,7 @@ import {
   IconSearch,
   IconSettings,
   IconShieldLock,
+  IconWand,
 } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
@@ -384,6 +385,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <IconBox />
               </div>
               <span className="text-sm trackint-tight">Skills</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* Craft: the autonomous-build surface, fork-only. Same footer row as Bots and Skills. */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/craft"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconWand />
+              </div>
+              <span className="text-sm">Craft</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
