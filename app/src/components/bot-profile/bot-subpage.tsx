@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type * as React from "react";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
 import { type AgentProfile, agentQueryOptions } from "@/lib/agents/queries";
 
@@ -20,11 +21,12 @@ export function BotSubpage({
   description: string;
   children: (agent: AgentProfile) => React.ReactNode;
 }) {
+  const { t } = useTranslation("agents");
   const agent = useQuery(agentQueryOptions(agentId));
   return (
     <PageShell
       backButton={{
-        label: agent.data?.name ?? "Bot",
+        label: agent.data?.name ?? t("botSubpage.titleFallback"),
         linkProps: { params: { agentId }, to: "/bots/$agentId" },
       }}
       description={description}
@@ -32,7 +34,7 @@ export function BotSubpage({
     >
       {agent.isPending ? null : agent.error ? (
         <p className="mt-6 text-destructive text-sm" role="alert">
-          This Bot is not one you can reach.
+          {t("botSubpage.unreachable")}
         </p>
       ) : (
         children(agent.data)

@@ -95,6 +95,10 @@
     "title": "审计",
     "description": "Bot 做过的每一个操作，以及本部署策略拒绝过的每一个操作。",
     "refresh": "刷新",
+    "exporting": "导出中…",
+    "exportCsv": "导出 CSV",
+    "exportCapped": "该文件只包含最新的 {{count}} 条事件，并非全部。缩小筛选条件或日期范围即可导出其余部分。",
+    "exportFailed": "无法导出审计事件",
     "loadError": "无法加载审计记录。",
     "noMatches": "尚无事件匹配此筛选条件。",
     "when": "时间",
@@ -306,7 +310,9 @@
       "replaceWarning": "此密钥已持有一个有效凭据。保存会替换它，被替换的那个将被撤销。",
       "saveError": "无法保存凭据。请重试。",
       "saving": "保存中…",
-      "save": "保存凭据"
+      "save": "保存凭据",
+      "providerPlaceholder": "OpenAI",
+      "keyIdPlaceholder": "production"
     },
     "fields": {
       "type": "类型",
@@ -478,6 +484,18 @@
     "saving": "保存中…",
     "save": "保存学习设置",
     "saved": "设置已保存。",
+    "automatic": {
+      "assigned": "OpenBot 已自动为这个 Intelligence 项目分配了“{{container}}”容器。你可以随时在这里更改。",
+      "absent": "这个 Intelligence 项目还没有“{{container}}”学习容器，因此不会收集任何内容。",
+      "notEntitled": "这个 Intelligence 项目的套餐不含 Learning，因此未分配容器。",
+      "unavailable": "OpenBot 无法向 Intelligence 询问这个项目的学习容器。它会自动重试。"
+    },
+    "setup": {
+      "creating": "创建中…",
+      "create": "创建 {{container}} 容器",
+      "usesCredential": "使用提供给本部署的凭据，绝不使用运行时密钥。",
+      "toCreateIt": "创建方法："
+    },
     "targetFields": {
       "container": "{{label}}容器 ID",
       "containerAria": "{{label}}容器 ID",
@@ -487,7 +505,7 @@
     },
     "participation": {
       "title": "参与",
-      "description": "容器分配的更改只应用于新线程。已有线程保留其首次分配。容器必须已存在于同一个 Intelligence 项目中。",
+      "description": "容器分配的更改只应用于新线程。已有线程保留其首次分配。容器必须已存在于同一个 Intelligence 项目中。在这里保存任何设置之前，OpenBot 会自动分配该项目的 openbot 容器。",
       "enable": "启用自动学习与技能交付",
       "default": "默认",
       "idHint": "默认留空会让未映射的 Bot 不参与。ID 使用 1–64 个小写字母、数字和单个连字符。修订版本留空表示跟随最新发布的技能。",

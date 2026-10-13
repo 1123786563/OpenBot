@@ -2,6 +2,7 @@ import { IconEyeCheck, IconHandStop, IconTerminal2 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -28,7 +29,7 @@ import {
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { queryClient } from "@/query-client";
-import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
+import { hostLabels, LabelSelect, RuleForm, RuleRow } from "./rules";
 
 /**
  * The person's own approval settings: whether their Bots ask before changing things, and the rules
@@ -36,6 +37,7 @@ import { HOST_LABELS, LabelSelect, RuleForm, RuleRow } from "./rules";
  * administrators change them in Admin → Approvals. Rules for a single Bot are on that Bot's page.
  */
 export function ApprovalSettings() {
+  const { t } = useTranslation("approvals");
   const inbox = useQuery(approvalInboxOptions());
   const me = useQuery(currentUserQueryOptions()).data;
   const agents = useQuery(agentListQueryOptions());
@@ -80,28 +82,28 @@ export function ApprovalSettings() {
       ) : null}
       {me?.role === "admin" ? (
         <p className="mt-6 text-muted-foreground text-sm">
-          Team settings and shared account requests are in{" "}
+          {t("adminNotePrefix")}{" "}
           <Link className="underline underline-offset-4" to="/admin/approvals">
-            Admin → Approvals
+            {t("adminNoteLink")}
           </Link>
           .
         </p>
       ) : null}
-      <PageSection title="Before a Bot acts">
+      <PageSection title={t("beforeTitle")}>
         <PageRows>
           <Item size="sm">
             <ItemMedia variant="icon">
               <IconHandStop />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>Ask before making changes</ItemTitle>
+              <ItemTitle>{t("askBeforeChanges.title")}</ItemTitle>
               <ItemDescription>
-                Review a Bot's changes to websites, connected apps, and files.
+                {t("askBeforeChanges.description")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
               <Switch
-                aria-label="Ask before making changes"
+                aria-label={t("askBeforeChanges.title")}
                 checked={inbox.data?.enabled ?? false}
                 disabled={inbox.isLoading || preferences.isPending}
                 onCheckedChange={(enabled) => preferences.mutate({ enabled })}
@@ -116,16 +118,15 @@ export function ApprovalSettings() {
                   <IconEyeCheck />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle id="auto-review-title">Auto-review</ItemTitle>
+                  <ItemTitle id="auto-review-title">
+                    {t("autoReview.title")}
+                  </ItemTitle>
                   <ItemDescription
                     className="line-clamp-none"
                     id="auto-review-description"
                   >
-                    {enforced ? "Required by your team. " : ""}
-                    Before an action that could affect your accounts or share
-                    information, a model checks it against what you asked for,
-                    your rules and the safety requirements. If it cannot decide,
-                    it asks you.
+                    {enforced ? t("autoReview.requiredByTeam") : ""}
+                    {t("autoReview.description")}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
@@ -148,22 +149,23 @@ export function ApprovalSettings() {
                   <IconTerminal2 />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle>Commands on your computer</ItemTitle>
+                  <ItemTitle>{t("hostCommands.title")}</ItemTitle>
                   <ItemDescription className="line-clamp-none">
                     {inbox.data.hostCommands &&
                     inbox.data.hostCommands !==
                       inbox.data.preferences.hostCommands
-                      ? `Your team limits this to "${HOST_LABELS[inbox.data.hostCommands]}". `
+                      ? t("hostCommands.teamLimit", {
+                          policy: hostLabels(t)[inbox.data.hostCommands],
+                        })
                       : ""}
-                    The OpenBot desktop app still shows each command before it
-                    runs on your computer.
+                    {t("hostCommands.description")}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <LabelSelect
                     disabled={preferences.isPending}
-                    label="Commands on your computer"
-                    labels={HOST_LABELS}
+                    label={t("hostCommands.title")}
+                    labels={hostLabels(t)}
                     onChange={(hostCommands) =>
                       preferences.mutate({ hostCommands })
                     }
@@ -178,21 +180,17 @@ export function ApprovalSettings() {
       <PageSection
         description={
           <>
-            The strictest matching rule wins, so an "ask" rule beats an "allow"
-            one. Team rules are locked. Changing a password, security settings
-            and payments are always handed to you. Rules for a single Bot are on{" "}
+            {t("rules.descriptionPrefix")}{" "}
             <Link className="underline underline-offset-4" to="/bots">
-              that Bot's page
+              {t("rules.descriptionLink")}
             </Link>
-            .
-            {rulesOff
-              ? " Your team has switched personal rules off, so they are kept but do not apply."
-              : ""}
+            {t("rules.descriptionSuffix")}
+            {rulesOff ? t("rules.offNote") : ""}
           </>
         }
-        title="Rules for every Bot"
+        title={t("rules.everyBotTitle")}
       >
-        {saved === 0 ? <PageEmpty>No rules saved.</PageEmpty> : null}
+        {saved === 0 ? <PageEmpty>{t("rules.none")}</PageEmpty> : null}
         {saved > 0 || canAdd ? (
           <PageRows>
             {teamRules.map((rule, index) => (
@@ -225,7 +223,11 @@ export function ApprovalSettings() {
             {canAdd ? (
               <>
                 {saved > 0 ? <Separator /> : null}
-                <RuleForm botField={false} label="Add a rule" save={addRule} />
+                <RuleForm
+                  botField={false}
+                  label={t("rules.add")}
+                  save={addRule}
+                />
               </>
             ) : null}
           </PageRows>
@@ -233,8 +235,8 @@ export function ApprovalSettings() {
       </PageSection>
       {agents.data !== undefined && otherBots.length > 0 ? (
         <PageSection
-          description="These name no Bot you can open, but they still apply to any Bot they match. Remove the ones you no longer want."
-          title="Rules for other Bots"
+          description={t("rules.otherBotsDescription")}
+          title={t("rules.otherBotsTitle")}
         >
           <PageRows>
             {otherBots.map((rule, index) => (

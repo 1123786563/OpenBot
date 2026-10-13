@@ -7,7 +7,9 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,22 +45,24 @@ import {
 } from "@/lib/bot-lifecycle/queries";
 import { queryClient } from "@/query-client";
 
+/* Key literals stay literal so `t(...)` sees a known key, not `string`. */
+const RESET_LINES = {
+  conversations: "manage.resetItems.conversations",
+  memorySources: "manage.resetItems.memorySources",
+  memories: "manage.resetItems.memories",
+  routines: "manage.resetItems.routines",
+  responsibilities: "manage.resetItems.responsibilities",
+  followUps: "manage.resetItems.followUps",
+  formedMemories: "manage.resetItems.formedMemories",
+  backgroundResearch: "manage.resetItems.backgroundResearch",
+  standingApprovals: "manage.resetItems.standingApprovals",
+} as const satisfies Partial<Record<keyof ResetPlan, string>>;
+
 /** Each count the notice lists, in the words the person reads, skipping the kinds with nothing. */
-function resetLines(plan: ResetPlan): string[] {
-  const lines: [number, string, string][] = [
-    [plan.conversations, "conversation", "conversations"],
-    [plan.memorySources, "memory source", "memory sources"],
-    [plan.memories, "imported memory", "imported memories"],
-    [plan.routines, "routine", "routines"],
-    [plan.responsibilities, "responsibility", "responsibilities"],
-    [plan.followUps, "scheduled follow-up", "scheduled follow-ups"],
-    [plan.formedMemories, "memory it formed", "memories it formed"],
-    [plan.backgroundResearch, "background research", "background research"],
-    [plan.standingApprovals, "standing permission", "standing permissions"],
-  ];
-  return lines
-    .filter(([count]) => count > 0)
-    .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`);
+function resetLines(plan: ResetPlan, t: TFunction<"agents">): string[] {
+  return (Object.keys(RESET_LINES) as (keyof typeof RESET_LINES)[])
+    .filter((kind) => plan[kind] > 0)
+    .map((kind) => t(RESET_LINES[kind], { count: plan[kind] }));
 }
 
 function ResetDialog({
@@ -70,37 +74,38 @@ function ResetDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const { t } = useTranslation("agents");
   const plan = useQuery({
     ...botResetPlanQueryOptions(agent.id),
     enabled: open,
   });
   const reset = useMutation(resetBotMutationOptions(queryClient));
-  const lines = plan.data ? resetLines(plan.data) : [];
+  const lines = plan.data ? resetLines(plan.data, t) : [];
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Reset {agent.name}?</DialogTitle>
+          <DialogTitle>{t("manage.reset.title", { name: agent.name })}</DialogTitle>
           <DialogDescription>
-            This deletes what {agent.name} has with you, and only with you.
-            Nobody else's conversations or data are touched. It cannot be
-            undone.
+            {t("manage.reset.description", { name: agent.name })}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="mt-4 overflow-y-auto">
           {plan.isPending ? null : plan.error ? (
             <p className="text-destructive text-sm" role="alert">
-              Could not count what a reset would delete.
+              {t("manage.reset.countError")}
             </p>
           ) : reset.isSuccess ? (
-            <p className="text-sm">Done. {agent.name} starts fresh with you.</p>
+            <p className="text-sm">
+              {t("manage.reset.done", { name: agent.name })}
+            </p>
           ) : (
             <div className="grid gap-2 text-sm">
               {lines.length === 0 ? (
-                <p>There is nothing of yours to delete.</p>
+                <p>{t("manage.reset.nothingToDelete")}</p>
               ) : (
                 <>
-                  <p>This will delete:</p>
+                  <p>{t("manage.reset.willDelete")}</p>
                   <ul className="list-disc pl-5">
                     {lines.map((line) => (
                       <li key={line}>{line}</li>
@@ -110,13 +115,13 @@ function ResetDialog({
               )}
               {plan.data.sharedConversationsKept > 0 ? (
                 <p className="text-muted-foreground">
-                  {plan.data.sharedConversationsKept} conversation
-                  {plan.data.sharedConversationsKept === 1 ? " is" : "s are"}{" "}
-                  shared with other people or Bots and will be kept.
+                  {t("manage.reset.sharedKept", {
+                    count: plan.data.sharedConversationsKept,
+                  })}
                 </p>
               ) : null}
               <p className="text-muted-foreground">
-                Your own memories, the ones you told a Bot directly, are kept.
+                {t("manage.reset.ownMemoriesKept")}
               </p>
             </div>
           )}
@@ -132,7 +137,7 @@ function ResetDialog({
             size="sm"
             variant="outline"
           >
-            {reset.isSuccess ? "Close" : "Cancel"}
+            {reset.isSuccess ? t("manage.reset.close") : t("manage.reset.cancel")}
           </Button>
           {reset.isSuccess ? null : (
             <Button
@@ -141,7 +146,9 @@ function ResetDialog({
               size="sm"
               variant="destructive"
             >
-              {reset.isPending ? "Resetting…" : "Delete and reset"}
+              {reset.isPending
+                ? t("manage.reset.resetting")
+                : t("manage.reset.deleteAndReset")}
             </Button>
           )}
         </DialogFooter>
@@ -167,6 +174,7 @@ export function ManageSection({
   onDuplicated: (copyId: string) => void;
   onDeleted: () => void;
 }) {
+  const { t } = useTranslation("agents");
   const setPinned = useMutation(setAgentPinnedMutationOptions(queryClient));
   const setHidden = useMutation(setAgentHiddenMutationOptions(queryClient));
   const duplicate = useMutation(duplicateAgentMutationOptions(queryClient));
@@ -178,7 +186,7 @@ export function ManageSection({
   const assigned = agent.assignedToMe === true;
 
   return (
-    <PageSection title="Manage">
+    <PageSection title={t("manage.title")}>
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {error.message}
@@ -190,18 +198,18 @@ export function ManageSection({
             <IconPin />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>Pinned</ItemTitle>
+            <ItemTitle>{t("manage.pinned")}</ItemTitle>
             <ItemDescription>
               {assigned
-                ? "Assigned to you by an administrator, so it stays at the top of your Bots list."
+                ? t("manage.assignedPinned")
                 : agent.pinned
-                  ? "At the top of your Bots list. Nobody else's list changes."
-                  : "Keep it at the top of your Bots list. Nobody else's list changes."}
+                  ? t("manage.pinnedDescription")
+                  : t("manage.pinDescription")}
             </ItemDescription>
           </ItemContent>
           <ItemActions>
             <Switch
-              aria-label="Pinned"
+              aria-label={t("manage.pinned")}
               checked={agent.pinned || assigned}
               disabled={assigned || setPinned.isPending}
               onCheckedChange={(pinned) =>
@@ -216,18 +224,18 @@ export function ManageSection({
             <IconEyeOff />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>Hidden</ItemTitle>
+            <ItemTitle>{t("manage.hidden")}</ItemTitle>
             <ItemDescription>
               {assigned
-                ? "Assigned to you by an administrator, so it cannot be hidden."
+                ? t("manage.assignedHidden")
                 : agent.hidden
-                  ? "Folded under Hidden on your Bots list. Nobody else's list changes."
-                  : "Take it off your Bots list. Nobody else's list changes."}
+                  ? t("manage.hiddenDescription")
+                  : t("manage.hideDescription")}
             </ItemDescription>
           </ItemContent>
           <ItemActions>
             <Switch
-              aria-label="Hidden"
+              aria-label={t("manage.hidden")}
               checked={agent.hidden}
               disabled={assigned || setHidden.isPending}
               onCheckedChange={async (hidden) => {
@@ -254,9 +262,9 @@ export function ManageSection({
             <IconCopy />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>Duplicate</ItemTitle>
+            <ItemTitle>{t("manage.duplicate")}</ItemTitle>
             <ItemDescription>
-              A copy of your own, with no key and no conversations.
+              {t("manage.duplicateDescription")}
             </ItemDescription>
           </ItemContent>
         </Item>
@@ -269,10 +277,9 @@ export function ManageSection({
             <IconRefresh />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle>Reset</ItemTitle>
+            <ItemTitle>{t("manage.resetEntry.title")}</ItemTitle>
             <ItemDescription>
-              Delete your conversations with it, what it remembers for you, and
-              its scheduled work. You see what will go first.
+              {t("manage.resetEntry.description")}
             </ItemDescription>
           </ItemContent>
           <ItemActions>
@@ -292,9 +299,9 @@ export function ManageSection({
                 <IconTrash />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Delete</ItemTitle>
+                <ItemTitle>{t("manage.delete")}</ItemTitle>
                 <ItemDescription>
-                  For everyone. This cannot be undone.
+                  {t("manage.deleteForEveryone")}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
@@ -308,8 +315,8 @@ export function ManageSection({
       <Dialog onOpenChange={setDeleteOpen} open={deleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete {agent.name}?</DialogTitle>
-            <DialogDescription>This cannot be undone.</DialogDescription>
+            <DialogTitle>{t("manage.deleteTitle", { name: agent.name })}</DialogTitle>
+            <DialogDescription>{t("manage.cannotBeUndone")}</DialogDescription>
           </DialogHeader>
           {remove.error ? (
             <DialogBody className="mt-4">
@@ -324,7 +331,7 @@ export function ManageSection({
               size="sm"
               variant="outline"
             >
-              Cancel
+              {t("manage.cancel")}
             </Button>
             <Button
               disabled={remove.isPending}
@@ -335,7 +342,7 @@ export function ManageSection({
               size="sm"
               variant="destructive"
             >
-              {remove.isPending ? "Deleting…" : "Delete"}
+              {remove.isPending ? t("manage.deleting") : t("manage.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

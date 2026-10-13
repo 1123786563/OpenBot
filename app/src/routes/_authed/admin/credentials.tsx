@@ -109,9 +109,9 @@ function CredentialsPage() {
       <Dialog onOpenChange={setAdding} open={adding}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add credential</DialogTitle>
+            <DialogTitle>{t("credentials.dialog.title")}</DialogTitle>
             <DialogDescription>
-              Held for this deployment and never shown again once saved.
+              {t("credentials.dialog.description")}
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="mt-4">
@@ -182,7 +182,9 @@ function CredentialsPage() {
                           onChange={(event) =>
                             field.handleChange(event.target.value)
                           }
-                          placeholder="OpenAI"
+                          placeholder={t(
+                            "credentials.dialog.providerPlaceholder",
+                          )}
                           value={field.state.value}
                         />
                         {isInvalid ? (
@@ -209,7 +211,7 @@ function CredentialsPage() {
                           onChange={(event) =>
                             field.handleChange(event.target.value)
                           }
-                          placeholder="production"
+                          placeholder={t("credentials.dialog.keyIdPlaceholder")}
                           value={field.state.value}
                         />
                         {isInvalid ? (
@@ -268,15 +270,14 @@ function CredentialsPage() {
               {([kind, provider, keyId]) =>
                 liveCredentialFor(credentials.data, kind, provider, keyId) ? (
                   <p className="text-amber-600 text-sm dark:text-amber-500">
-                    This key already holds a live credential. Saving replaces
-                    it, and the one it replaces is revoked.
+                    {t("credentials.dialog.replaceWarning")}
                   </p>
                 ) : null
               }
             </form.Subscribe>
             {createCredential.error ? (
               <p className="text-destructive text-sm" role="alert">
-                Could not save the credential. Try again.
+                {t("credentials.dialog.saveError")}
               </p>
             ) : null}
           </DialogBody>
@@ -287,7 +288,7 @@ function CredentialsPage() {
               type="button"
               variant="ghost"
             >
-              Cancel
+              {t("credentials.cancel")}
             </Button>
             <form.Subscribe
               selector={(state) => [state.canSubmit, state.isSubmitting]}
@@ -302,8 +303,8 @@ function CredentialsPage() {
                   type="submit"
                 >
                   {isSubmitting || createCredential.isPending
-                    ? "Saving…"
-                    : "Save credential"}
+                    ? t("credentials.dialog.saving")
+                    : t("credentials.dialog.save")}
                 </Button>
               )}
             </form.Subscribe>

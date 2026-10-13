@@ -1,6 +1,7 @@
 import { IconShare } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,13 +21,12 @@ import {
   sharedUseRequestsQueryOptions,
 } from "@/lib/plugins/shared-use";
 
-const WHY: Record<SharedUseRequestReason, string> = {
-  refused_call:
-    "A call was refused because this Bot reaches more people than approved.",
-  publish: "Its owner widened who can reach it.",
-  trigger: "Its owner added a trigger that lets outside input steer it.",
-  grant: "It was granted the app's actions.",
-};
+const WHY = {
+  refused_call: "sharedUse.why.refusedCall",
+  publish: "sharedUse.why.publish",
+  trigger: "sharedUse.why.trigger",
+  grant: "sharedUse.why.grant",
+} as const satisfies Record<SharedUseRequestReason, string>;
 
 /**
  * Requests to use a shared account, for an administrator to approve or decline: one row each,
@@ -34,6 +34,7 @@ const WHY: Record<SharedUseRequestReason, string> = {
  * for anyone else, or when nothing is waiting.
  */
 export function SharedUseRequests() {
+  const { t } = useTranslation("approvals");
   const queryClient = useQueryClient();
   const me = useQuery(currentUserQueryOptions()).data;
   const isAdmin = me?.role === "admin";
@@ -42,62 +43,68 @@ export function SharedUseRequests() {
   if (!isAdmin || !requests.data?.length) return null;
 
   return (
-    <PageSection title="Shared account requests">
+    <PageSection title={t("sharedUse.title")}>
       {decide.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {decide.error.message}
         </p>
       ) : null}
       <PageRows>
-        {requests.data.map((request, index) => (
-          <Fragment key={request.id}>
-            {index > 0 ? <Separator /> : null}
-            <Item size="sm">
-              <ItemMedia variant="icon">
-                <IconShare />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle className="line-clamp-none">
-                  {request.botName} wants the shared {request.title} account
-                </ItemTitle>
-                <ItemDescription className="line-clamp-none">
-                  {WHY[request.reason as SharedUseRequestReason] ??
-                    request.reason}
-                </ItemDescription>
-                <p className="text-sm">
-                  Now:{" "}
-                  {request.current
-                    ? describeApproval(request.current)
-                    : "Not approved"}
-                </p>
-                <p className="text-sm">
-                  Asked: {describeApproval(request.proposed)}
-                </p>
-              </ItemContent>
-              <ItemFooter className="justify-start">
-                <Button
-                  disabled={decide.isPending}
-                  onClick={() =>
-                    decide.mutate({ id: request.id, decision: "approve" })
-                  }
-                  size="sm"
-                >
-                  Approve
-                </Button>
-                <Button
-                  disabled={decide.isPending}
-                  onClick={() =>
-                    decide.mutate({ id: request.id, decision: "decline" })
-                  }
-                  size="sm"
-                  variant="outline"
-                >
-                  Decline
-                </Button>
-              </ItemFooter>
-            </Item>
-          </Fragment>
-        ))}
+        {requests.data.map((request, index) => {
+          const why = WHY[request.reason as SharedUseRequestReason];
+          return (
+            <Fragment key={request.id}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconShare />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle className="line-clamp-none">
+                    {t("sharedUse.wantsAccount", {
+                      bot: request.botName,
+                      account: request.title,
+                    })}
+                  </ItemTitle>
+                  <ItemDescription className="line-clamp-none">
+                    {why ? t(why) : request.reason}
+                  </ItemDescription>
+                  <p className="text-sm">
+                    {t("sharedUse.nowLabel")}{" "}
+                    {request.current
+                      ? describeApproval(request.current)
+                      : t("sharedUse.notApproved")}
+                  </p>
+                  <p className="text-sm">
+                    {t("sharedUse.askedLabel")}{" "}
+                    {describeApproval(request.proposed)}
+                  </p>
+                </ItemContent>
+                <ItemFooter className="justify-start">
+                  <Button
+                    disabled={decide.isPending}
+                    onClick={() =>
+                      decide.mutate({ id: request.id, decision: "approve" })
+                    }
+                    size="sm"
+                  >
+                    {t("sharedUse.approve")}
+                  </Button>
+                  <Button
+                    disabled={decide.isPending}
+                    onClick={() =>
+                      decide.mutate({ id: request.id, decision: "decline" })
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t("sharedUse.decline")}
+                  </Button>
+                </ItemFooter>
+              </Item>
+            </Fragment>
+          );
+        })}
       </PageRows>
     </PageSection>
   );

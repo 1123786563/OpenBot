@@ -1,6 +1,7 @@
 import { IconRoute } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import {
   Item,
@@ -21,33 +22,34 @@ import {
 } from "@/lib/bot-lifecycle/queries";
 import { queryClient } from "@/query-client";
 
-const KIND_LABEL: Record<UpdateKind, { title: string; description: string }> = {
+const KIND_LABEL = {
   progress: {
-    title: "Progress",
-    description: "Replies and results from work you were not watching.",
+    title: "updateRouting.kinds.progress.title",
+    description: "updateRouting.kinds.progress.description",
   },
   decision: {
-    title: "Decisions",
-    description: "Approvals a Bot needs before it acts.",
+    title: "updateRouting.kinds.decision.title",
+    description: "updateRouting.kinds.decision.description",
   },
   question: {
-    title: "Questions",
-    description: "Things a Bot asked you and is waiting on.",
+    title: "updateRouting.kinds.question.title",
+    description: "updateRouting.kinds.question.description",
   },
-};
+} as const satisfies Record<UpdateKind, { title: string; description: string }>;
 
-const TRANSPORTS: { id: UpdateTransport; label: string }[] = [
-  { id: "push", label: "Push" },
-  { id: "slack", label: "Slack" },
-  { id: "teams", label: "Microsoft Teams" },
-  { id: "sms", label: "SMS" },
-];
+const TRANSPORTS = [
+  { id: "push", label: "updateRouting.transports.push" },
+  { id: "slack", label: "updateRouting.transports.slack" },
+  { id: "teams", label: "updateRouting.transports.teams" },
+  { id: "sms", label: "updateRouting.transports.sms" },
+] as const satisfies readonly { id: UpdateTransport; label: string }[];
 
 /**
  * Which channels each kind of update may use, for every one of the person's Bots at once. How much
  * a given Bot sends is that Bot's own Notifications setting, on its page.
  */
 export function UpdateRoutingSection() {
+  const { t } = useTranslation("settings");
   const routing = useQuery(updateRoutingQueryOptions());
   const reach = useQuery(deliveryQueryOptions());
   const save = useMutation(setUpdateRoutingMutationOptions(queryClient));
@@ -62,12 +64,12 @@ export function UpdateRoutingSection() {
     reach.data ? reach.data.available[transport] : true;
   return (
     <PageSection
-      description="Where each kind of update goes when you are not looking. The web always shows everything."
-      title="Where updates go"
+      description={t("updateRouting.description")}
+      title={t("updateRouting.title")}
     >
       {routing.isPending || reach.isPending ? null : routing.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          Could not load where your updates go.
+          {t("updateRouting.loadError")}
         </p>
       ) : (
         <PageRows>
@@ -83,9 +85,9 @@ export function UpdateRoutingSection() {
                     <IconRoute />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{KIND_LABEL[kind].title}</ItemTitle>
+                    <ItemTitle>{t(KIND_LABEL[kind].title)}</ItemTitle>
                     <ItemDescription>
-                      {KIND_LABEL[kind].description}
+                      {t(KIND_LABEL[kind].description)}
                     </ItemDescription>
                   </ItemContent>
                   <ItemFooter className="flex-wrap justify-start gap-x-6 gap-y-3 pl-8">
@@ -95,15 +97,19 @@ export function UpdateRoutingSection() {
                         key={transport.id}
                       >
                         <Switch
-                          aria-label={`${KIND_LABEL[kind].title} by ${transport.label}`}
+                          aria-label={t("updateRouting.byAria", {
+                            kind: t(KIND_LABEL[kind].title),
+                            transport: t(transport.label),
+                          })}
                           checked={
                             configured(transport.id) && allowed(transport.id)
                           }
                           disabled={save.isPending || !configured(transport.id)}
                           onCheckedChange={(checked) => {
-                            const next = TRANSPORTS.map((t) => t.id).filter(
-                              (id) =>
-                                id === transport.id ? checked : allowed(id),
+                            const next = TRANSPORTS.map(
+                              (choice) => choice.id,
+                            ).filter((id) =>
+                              id === transport.id ? checked : allowed(id),
                             );
                             save.mutate({
                               kind,
@@ -116,10 +122,10 @@ export function UpdateRoutingSection() {
                           size="sm"
                         />
                         <span className="flex flex-col leading-tight whitespace-nowrap">
-                          {transport.label}
+                          {t(transport.label)}
                           {configured(transport.id) ? null : (
                             <span className="text-muted-foreground text-xs">
-                              Not set up
+                              {t("updateRouting.notSetUp")}
                             </span>
                           )}
                         </span>

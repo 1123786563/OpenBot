@@ -324,7 +324,7 @@ function IdentityProvidersPage() {
               type="button"
               variant="outline"
             >
-              Cancel
+              {t("identityProviders.cancel")}
             </Button>
             <Button
               disabled={register.isPending}
@@ -332,7 +332,9 @@ function IdentityProvidersPage() {
               size="sm"
               type="submit"
             >
-              {register.isPending ? "Adding…" : "Add"}
+              {register.isPending
+                ? t("identityProviders.dialog.adding")
+                : t("identityProviders.dialog.add")}
             </Button>
           </DialogFooter>
         </DialogContent>

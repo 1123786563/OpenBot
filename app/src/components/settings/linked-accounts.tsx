@@ -1,6 +1,8 @@
 import { IconBrandGithub, IconBrandSlack, IconLink } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import i18next from "i18next";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,12 +38,16 @@ import {
 import { queryClient } from "@/query-client";
 
 export function linkedAccountDescription(account: LinkedAccount): string {
+  // Exported for tests that call it with no component in scope, so the translator is bound
+  // from the shared instance rather than passed in; `LinkedAccountRow` re-invokes this on
+  // every render, which keeps the sentence following the active language.
+  const t = i18next.getFixedT<"settings">(null, "settings");
   if (account.status === "needs_reconnect") {
     return account.handle
-      ? `Needs reconnecting · @${account.handle}`
-      : "Needs reconnecting";
+      ? t("linkedAccounts.needsReconnectHandle", { handle: account.handle })
+      : t("linkedAccounts.needsReconnect");
   }
-  return account.handle ? `@${account.handle}` : "Linked";
+  return account.handle ? `@${account.handle}` : t("linkedAccounts.linked");
 }
 
 const providerIcons = {
@@ -140,6 +146,7 @@ export function connectGithubPending(mutation: {
  * this deployment recognises you when a message or an event arrives from somewhere else.
  */
 export function LinkedAccountsSection() {
+  const { t } = useTranslation("settings");
   const links = useQuery(linkedAccountsQueryOptions());
   const providers = useQuery(identityProvidersQueryOptions());
   const issueCode = useMutation(issueSlackCodeMutationOptions());
@@ -188,7 +195,7 @@ export function LinkedAccountsSection() {
     },
   };
   return (
-    <PageSection title="Linked accounts">
+    <PageSection title={t("linkedAccounts.title")}>
       {state.entries.length > 0 ? (
         <PageRows>
           {state.entries.map((entry, index) => (
@@ -212,22 +219,28 @@ export function LinkedAccountsSection() {
       ) : null}
       {state.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
-          Your linked accounts could not be loaded: {state.error}
+          {t("linkedAccounts.loadError", { error: state.error })}
         </p>
       ) : null}
       {state.providersError ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
-          Could not check which accounts can be linked: {state.providersError}
+          {t("linkedAccounts.providersError", {
+            error: state.providersError,
+          })}
         </p>
       ) : null}
       {issueCode.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
-          Could not create a Slack link code: {issueCode.error.message}
+          {t("linkedAccounts.slackCodeError", {
+            error: issueCode.error.message,
+          })}
         </p>
       ) : null}
       {connectGithub.error ? (
         <p className="mt-2 text-destructive text-sm" role="alert">
-          Could not connect GitHub: {connectGithub.error.message}
+          {t("linkedAccounts.githubError", {
+            error: connectGithub.error.message,
+          })}
         </p>
       ) : null}
       <Dialog
@@ -238,7 +251,7 @@ export function LinkedAccountsSection() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Link your Slack account</DialogTitle>
+            <DialogTitle>{t("linkedAccounts.linkSlackTitle")}</DialogTitle>
           </DialogHeader>
           <DialogBody className="mt-4">
             {issued ? (
@@ -260,23 +273,25 @@ export function LinkedAccountsSection() {
                       setCopyFailed(!ok);
                     }}
                   >
-                    {copied ? "Copied" : "Copy"}
+                    {copied
+                      ? t("linkedAccounts.copied")
+                      : t("linkedAccounts.copy")}
                   </Button>
                 </div>
                 {copyFailed ? (
                   <p className="text-destructive" role="alert">
-                    Couldn't copy. Select the code and copy it yourself.
+                    {t("linkedAccounts.copyFailed")}
                   </p>
                 ) : null}
                 <p className="text-muted-foreground">
-                  The code works once and expires in 10 minutes.
+                  {t("linkedAccounts.codeExpiry")}
                 </p>
               </div>
             ) : null}
           </DialogBody>
           <DialogFooter className="mt-4">
             <Button size="sm" onClick={closeDialog}>
-              Done
+              {t("linkedAccounts.done")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -297,6 +312,7 @@ function AvailableAccountRow({
   pending: boolean;
   onConnect: () => void;
 }) {
+  const { t } = useTranslation("settings");
   const Icon = providerIcon(provider);
   return (
     <Item size="sm">
@@ -305,17 +321,17 @@ function AvailableAccountRow({
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{title}</ItemTitle>
-        <ItemDescription>Not linked</ItemDescription>
+        <ItemDescription>{t("linkedAccounts.notLinked")}</ItemDescription>
       </ItemContent>
       <ItemActions>
         <Button
-          aria-label={`Connect ${title}`}
+          aria-label={t("linkedAccounts.connectAria", { title })}
           size="sm"
           variant="outline"
           disabled={pending}
           onClick={onConnect}
         >
-          Connect
+          {t("linkedAccounts.connect")}
         </Button>
       </ItemActions>
     </Item>
@@ -327,6 +343,7 @@ function AvailableAccountRow({
  * row mid-request nor overwrites its error.
  */
 function LinkedAccountRow({ account }: { account: LinkedAccount }) {
+  const { t } = useTranslation("settings");
   const unlink = useMutation(unlinkMutationOptions(queryClient));
   const Icon = providerIcon(account.provider);
   return (
@@ -341,19 +358,24 @@ function LinkedAccountRow({ account }: { account: LinkedAccount }) {
         </ItemContent>
         <ItemActions>
           <Button
-            aria-label={`Disconnect ${account.title}`}
+            aria-label={t("linkedAccounts.disconnectAria", {
+              title: account.title,
+            })}
             size="sm"
             variant="outline"
             disabled={unlink.isPending}
             onClick={() => unlink.mutate(account.id)}
           >
-            Disconnect
+            {t("linkedAccounts.disconnect")}
           </Button>
         </ItemActions>
       </Item>
       {unlink.error ? (
         <p className="px-3 pb-2 text-destructive text-sm" role="alert">
-          Could not disconnect {account.title}: {unlink.error.message}
+          {t("linkedAccounts.disconnectError", {
+            title: account.title,
+            error: unlink.error.message,
+          })}
         </p>
       ) : null}
     </>

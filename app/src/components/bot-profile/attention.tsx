@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type BotAttention,
   botAttentionQueryOptions,
@@ -11,17 +13,15 @@ export function needsInput(bot: BotAttention): number {
 }
 
 /** What the badge says, in words, for the row's accessible name and its tooltip. */
-export function attentionSummary(bot: BotAttention): string {
+export function attentionSummary(
+  bot: BotAttention,
+  t: TFunction<"agents">,
+): string {
   const parts: string[] = [];
-  if (bot.questions)
-    parts.push(`${bot.questions} question${bot.questions === 1 ? "" : "s"}`);
-  if (bot.approvals)
-    parts.push(`${bot.approvals} approval${bot.approvals === 1 ? "" : "s"}`);
-  if (bot.handoffs)
-    parts.push(
-      `${bot.handoffs} stalled hand-off${bot.handoffs === 1 ? "" : "s"}`,
-    );
-  if (bot.unread) parts.push(`${bot.unread} unread`);
+  if (bot.questions) parts.push(t("attention.questions", { count: bot.questions }));
+  if (bot.approvals) parts.push(t("attention.approvals", { count: bot.approvals }));
+  if (bot.handoffs) parts.push(t("attention.handoffs", { count: bot.handoffs }));
+  if (bot.unread) parts.push(t("attention.unread", { count: bot.unread }));
   return parts.join(", ");
 }
 
@@ -30,6 +30,7 @@ export function attentionSummary(bot: BotAttention): string {
  * did not mute this Bot. Badges show either way; this is the interruption, and it is opt-in.
  */
 function useAttentionNotifications(bots: BotAttention[] | undefined) {
+  const { t } = useTranslation("agents");
   const seen = useRef<Map<string, number> | null>(null);
   useEffect(() => {
     if (!bots) return;
@@ -51,15 +52,15 @@ function useAttentionNotifications(bots: BotAttention[] | undefined) {
       if (bot.notify === "none" || now <= (previous.get(bot.agentId) ?? 0))
         continue;
       try {
-        new Notification(`${bot.name} needs you`, {
-          body: attentionSummary(bot),
+        new Notification(t("attention.needsYouName", { name: bot.name }), {
+          body: attentionSummary(bot, t),
           tag: `openbot-attention-${bot.agentId}`,
         });
       } catch {
         // A browser that refuses the constructor still has the badge.
       }
     }
-  }, [bots]);
+  }, [bots, t]);
 }
 
 /**
@@ -73,6 +74,7 @@ function useAttentionNotifications(bots: BotAttention[] | undefined) {
  * Renders nothing when nothing is waiting, so a quiet day costs the sidebar nothing.
  */
 export function BotsNavBadge() {
+  const { t } = useTranslation("agents");
   const attention = useQuery(botAttentionQueryOptions());
   useAttentionNotifications(attention.data);
   const bots = attention.data ?? [];
@@ -80,7 +82,7 @@ export function BotsNavBadge() {
   if (waiting > 0) {
     return (
       <span
-        aria-label={`${waiting} ${waiting === 1 ? "thing needs" : "things need"} you`}
+        aria-label={t("attention.badge", { count: waiting })}
         className="ml-auto rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums"
         role="img"
       >
@@ -91,7 +93,7 @@ export function BotsNavBadge() {
   if (bots.some((bot) => bot.unread > 0)) {
     return (
       <span
-        aria-label="Unread messages"
+        aria-label={t("attention.unreadMessages")}
         className="ml-auto size-2 rounded-full bg-primary"
         role="img"
       />

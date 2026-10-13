@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -133,12 +134,13 @@ function RosterRows({
   agents: AgentProfile[];
   byId: Map<string, BotAttention>;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <PageRows>
       {agents.map((agent, index) => {
         const state = byId.get(agent.id);
         const summary = state
-          ? [state.paused ? "Paused" : "", attentionSummary(state)]
+          ? [state.paused ? t("roster.paused") : "", attentionSummary(state, t)]
               .filter(Boolean)
               .join(" · ")
           : "";

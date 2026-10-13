@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
 import { MemoryList, RememberFact } from "@/components/memory/memories";
 
@@ -7,11 +8,12 @@ export const Route = createFileRoute("/_authed/settings/memory")({
 });
 
 function MemorySettingsPage() {
+  const { t } = useTranslation("settings");
   return (
     <PageShell
       action={<RememberFact />}
-      description="What your Bots know about you. Facts you tell them reach every Bot; what a Bot learns stays with that Bot."
-      title="Memory"
+      description={t("memoryPage.description")}
+      title={t("memoryPage.title")}
     >
       <MemoryList />
     </PageShell>

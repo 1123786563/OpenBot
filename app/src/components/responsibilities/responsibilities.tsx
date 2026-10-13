@@ -1,6 +1,7 @@
 import { IconChevronRight, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -38,6 +39,7 @@ import {
  * many values and a settings screen that edits many values in place turns back into a form.
  */
 export function BotResponsibilities({ agentId }: { agentId?: string }) {
+  const { t } = useTranslation("routines");
   const goals = useQuery(responsibilitiesQueryOptions());
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -51,10 +53,10 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
       action={
         <Button onClick={() => setCreating(true)} size="sm" variant="ghost">
           <IconPlus />
-          New responsibility
+          {t("responsibilities.new.heading")}
         </Button>
       }
-      title="Goals"
+      title={t("responsibilities.title")}
     >
       {/* Pending, error, empty, rows — pending first, so no sentence asserts anything mid-fetch. */}
       {goals.isPending ? null : goals.error ? (
@@ -64,8 +66,8 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
       ) : shown.length === 0 ? (
         <PageEmpty>
           {agentId
-            ? "No responsibilities for this Bot yet."
-            : "You have no responsibilities yet."}
+            ? t("responsibilities.emptyForBot")
+            : t("responsibilities.empty")}
         </PageEmpty>
       ) : (
         <PageRows>
@@ -109,6 +111,7 @@ function ResponsibilityRow({
   goal: ResponsibilityRecord;
   onOpen: () => void;
 }) {
+  const { t } = useTranslation("routines");
   const triggers = useQuery(triggersQueryOptions(goal.id));
   const Icon = STATUS[goal.status].icon;
   return (
@@ -118,7 +121,7 @@ function ResponsibilityRow({
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{goal.title}</ItemTitle>
-        <ItemDescription>{summaryFor(goal, triggers.data)}</ItemDescription>
+        <ItemDescription>{summaryFor(t, goal, triggers.data)}</ItemDescription>
       </ItemContent>
       <ItemActions>
         <IconChevronRight className="size-4 text-muted-foreground" />

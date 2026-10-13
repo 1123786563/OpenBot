@@ -1,6 +1,7 @@
 import { IconBrandGithub, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -42,6 +43,7 @@ import { queryClient } from "@/query-client";
  * inputs, so it is a dialog opened from the section's action.
  */
 export function GithubSources() {
+  const { t } = useTranslation("settings");
   const bindings = useQuery(githubBindingsQueryOptions());
   const remove = useMutation(removeGithubBindingMutationOptions(queryClient));
   const [adding, setAdding] = useState(false);
@@ -51,11 +53,11 @@ export function GithubSources() {
       action={
         <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
           <IconPlus />
-          Add a repository
+          {t("githubSources.add")}
         </Button>
       }
-      description="Register a repository, then add its webhook in GitHub using the address below and the same secret. A responsibility can then start on one of its events, such as issues.opened."
-      title="GitHub events"
+      description={t("githubSources.description")}
+      title={t("githubSources.title")}
     >
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -64,7 +66,7 @@ export function GithubSources() {
       ) : null}
       {bindings.isPending || !bindings.data ? null : bindings.data.length ===
         0 ? (
-        <PageEmpty>No repositories connected.</PageEmpty>
+        <PageEmpty>{t("githubSources.empty")}</PageEmpty>
       ) : (
         <PageRows>
           {bindings.data.map((binding, index) => (
@@ -87,7 +89,7 @@ export function GithubSources() {
                     size="sm"
                     variant="outline"
                   >
-                    Disconnect
+                    {t("githubSources.disconnect")}
                   </Button>
                 </ItemActions>
               </Item>
@@ -104,6 +106,7 @@ export function GithubSources() {
  * A repository and the webhook secret GitHub will sign its events with.
  */
 function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation("settings");
   const formId = useId();
   const [repository, setRepository] = useState("");
   const [secret, setSecret] = useState("");
@@ -112,10 +115,8 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add a repository</DialogTitle>
-          <DialogDescription>
-            Use the same secret when you add the webhook in GitHub.
-          </DialogDescription>
+          <DialogTitle>{t("githubSources.add")}</DialogTitle>
+          <DialogDescription>{t("githubSources.secretHint")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="mt-4">
           {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
@@ -139,20 +140,20 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor={`${formId}-repository`}>
-                  Repository
+                  {t("githubSources.repositoryLabel")}
                 </FieldLabel>
                 <Input
                   autoFocus
                   id={`${formId}-repository`}
                   onChange={(event) => setRepository(event.target.value)}
-                  placeholder="owner/repository"
+                  placeholder={t("githubSources.repositoryPlaceholder")}
                   required
                   value={repository}
                 />
               </Field>
               <Field>
                 <FieldLabel htmlFor={`${formId}-secret`}>
-                  Webhook secret
+                  {t("githubSources.secretLabel")}
                 </FieldLabel>
                 <Input
                   autoComplete="new-password"
@@ -173,7 +174,7 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={onClose} size="sm" variant="outline">
-            Cancel
+            {t("githubSources.cancel")}
           </Button>
           <Button
             disabled={create.isPending}
@@ -181,7 +182,7 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
             size="sm"
             type="submit"
           >
-            Connect events
+            {t("githubSources.connect")}
           </Button>
         </DialogFooter>
       </DialogContent>

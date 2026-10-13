@@ -450,11 +450,12 @@ function RouteComponent() {
  * card it shows you. This forgets every one of those answers, so each such Bot asks again.
  */
 function TeamBotConsents() {
+  const { t } = useTranslation("settings");
   const clear = useMutation(clearTeamBotConsentsMutationOptions());
   return (
     <PageSection
-      description="A Bot someone shared with you uses their connected apps, and yours only where you allowed it on the card it showed you."
-      title="Bots shared with you"
+      description={t("teamBots.description")}
+      title={t("teamBots.title")}
     >
       {clear.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -464,11 +465,9 @@ function TeamBotConsents() {
       <PageRows>
         <Item size="sm">
           <ItemContent>
-            <ItemTitle>Your answers</ItemTitle>
+            <ItemTitle>{t("teamBots.yourAnswers")}</ItemTitle>
             <ItemDescription>
-              {clear.isSuccess
-                ? "Cleared. Each will ask again."
-                : "Forget them, so each asks again."}
+              {clear.isSuccess ? t("teamBots.cleared") : t("teamBots.forget")}
             </ItemDescription>
           </ItemContent>
           <ItemActions>
@@ -478,7 +477,7 @@ function TeamBotConsents() {
               size="sm"
               variant="outline"
             >
-              Clear
+              {t("teamBots.clear")}
             </Button>
           </ItemActions>
         </Item>

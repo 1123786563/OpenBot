@@ -1049,11 +1049,11 @@ function NetworkDialog({
               type="button"
               variant="destructive"
             >
-              Remove policy
+              {t("enterprise.network.removePolicy")}
             </Button>
           ) : null}
           <Button onClick={onClose} size="sm" type="button" variant="outline">
-            Cancel
+            {t("enterprise.cancel")}
           </Button>
           <Button
             disabled={
@@ -1063,7 +1063,7 @@ function NetworkDialog({
             size="sm"
             type="submit"
           >
-            {save.isPending ? "Saving…" : "Save"}
+            {save.isPending ? t("enterprise.saving") : t("enterprise.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

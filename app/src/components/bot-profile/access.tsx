@@ -2,6 +2,7 @@ import { IconApps, IconBox, IconChevronRight } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { HandoffPanel } from "@/components/agents/handoff-panel";
 import {
   PageEmpty,
@@ -81,6 +82,7 @@ export function AccessSections({ agent }: { agent: AgentProfile }) {
  * skill on a Bot they own, and neither half alone is enough.
  */
 function YourSkills({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("agents");
   const me = useQuery(currentUserQueryOptions()).data;
   const page = useQuery(pluginsPageQueryOptions());
   const grant = useMutation(setPluginGrantMutationOptions(queryClient));
@@ -89,8 +91,8 @@ function YourSkills({ agentId }: { agentId: string }) {
   );
   return (
     <PageSection
-      description="A skill this Bot carries is offered in its composer as /name."
-      title="Your skills"
+      description={t("access.skills.intro")}
+      title={t("access.skills.title")}
     >
       {grant.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
@@ -99,13 +101,13 @@ function YourSkills({ agentId }: { agentId: string }) {
       ) : null}
       {page.isPending ? null : page.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          Could not load your skills.
+          {t("access.skills.loadError")}
         </p>
       ) : skills.length === 0 ? (
         <PageEmpty>
-          You have not written a skill yet.{" "}
+          {t("access.skills.empty")}{" "}
           <Link className="underline underline-offset-4" to="/skills">
-            Write one
+            {t("access.skills.writeOne")}
           </Link>
           .
         </PageEmpty>
@@ -151,13 +153,14 @@ function YourSkills({ agentId }: { agentId: string }) {
  * granted by an administrator, who gets a link to where that is decided.
  */
 function Granted({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("agents");
   const me = useQuery(currentUserQueryOptions()).data;
   const plugins = useQuery(agentPluginsQueryOptions(agentId));
   if (plugins.isPending) return null;
   if (!plugins.data) {
     return (
       <p className="mt-6 text-destructive text-sm" role="alert">
-        What this Bot may reach could not be loaded.
+        {t("access.loadError")}
       </p>
     );
   }
@@ -165,14 +168,11 @@ function Granted({ agentId }: { agentId: string }) {
   const skills = plugins.data.skills;
   return (
     <PageSection
-      description="What this Bot may reach when it works. Anything not listed is refused when called."
-      title="Granted"
+      description={t("access.intro")}
+      title={t("access.granted")}
     >
       {connectors.length === 0 && skills.length === 0 ? (
-        <PageEmpty>
-          Nothing granted yet. An administrator grants apps from the Plugins
-          screens; until then this Bot can converse, and nothing more.
-        </PageEmpty>
+        <PageEmpty>{t("access.nothingGranted")}</PageEmpty>
       ) : (
         <PageRows>
           {connectors.map(([key, labels], index) => (
@@ -196,12 +196,17 @@ function Granted({ agentId }: { agentId: string }) {
                   <ItemTitle>{connectorName(key)}</ItemTitle>
                   <ItemDescription>
                     {labels.slice(0, 4).join(", ")}
-                    {labels.length > 4 ? ` and ${labels.length - 4} more` : ""}
+                    {labels.length > 4
+                      ? t("access.andMore", { remaining: labels.length - 4 })
+                      : ""}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <span className="text-muted-foreground text-sm tabular-nums">
-                    {labels.length} {labels.length === 1 ? "tool" : "tools"}
+                    {labels.length}{" "}
+                    {labels.length === 1
+                      ? t("access.toolSingular")
+                      : t("access.toolPlural")}
                   </span>
                   {me?.role === "admin" ? (
                     <IconChevronRight className="size-4 text-muted-foreground" />
@@ -222,7 +227,9 @@ function Granted({ agentId }: { agentId: string }) {
                   <ItemDescription>{skill.summary}</ItemDescription>
                 </ItemContent>
                 <ItemActions>
-                  <span className="text-muted-foreground text-sm">Skill</span>
+                  <span className="text-muted-foreground text-sm">
+                    {t("access.skill")}
+                  </span>
                 </ItemActions>
               </Item>
             </Fragment>

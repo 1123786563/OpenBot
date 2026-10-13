@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
@@ -31,19 +32,24 @@ const selectClass = "w-full rounded-md border bg-background px-3 py-2 text-sm";
 function automaticMessage(
   automatic: LearningAutoAssignState | null | undefined,
   settings: LearningSettings,
+  t: TFunction<"admin">,
 ): string | undefined {
   if (!automatic) return undefined;
   if (
     automatic.state === "assigned" &&
     settings.defaultTarget?.containerId === automatic.containerId
   )
-    return `OpenBot assigned this Intelligence project's "${automatic.containerId}" container automatically. Change it here at any time.`;
+    return t("learning.automatic.assigned", {
+      container: automatic.containerId,
+    });
   if (automatic.state === "absent")
-    return `This Intelligence project has no "${automatic.containerId}" Learning container yet, so nothing is collected.`;
+    return t("learning.automatic.absent", {
+      container: automatic.containerId,
+    });
   if (automatic.state === "not_entitled")
-    return "This Intelligence project's plan does not include Learning, so no container was assigned.";
+    return t("learning.automatic.notEntitled");
   if (automatic.state === "unavailable")
-    return "OpenBot could not ask Intelligence for this project's Learning container. It tries again.";
+    return t("learning.automatic.unavailable");
   return undefined;
 }
 
@@ -108,6 +114,7 @@ function ContainerSetup({
 }: {
   automatic: Extract<LearningAutoAssignState, { state: "absent" }>;
 }) {
+  const { t } = useTranslation("admin");
   const queryClient = useQueryClient();
   const create = useMutation({
     mutationFn: createLearningContainer,
@@ -126,12 +133,13 @@ function ContainerSetup({
             onClick={() => create.mutate()}
           >
             {create.isPending
-              ? "Creating…"
-              : `Create the ${automatic.containerId} container`}
+              ? t("learning.setup.creating")
+              : t("learning.setup.create", {
+                  container: automatic.containerId,
+                })}
           </Button>
           <span className="text-muted-foreground">
-            Uses the credential this deployment was given, never the runtime
-            key.
+            {t("learning.setup.usesCredential")}
           </span>
         </div>
       )}
@@ -142,7 +150,7 @@ function ContainerSetup({
       )}
       {automatic.instructions && (
         <p>
-          <span className="font-medium">To create it: </span>
+          <span className="font-medium">{t("learning.setup.toCreateIt")}</span>{" "}
           {automatic.instructions}
         </p>
       )}
@@ -170,7 +178,7 @@ export function LearningPage() {
   // About what is saved, so it steps aside while an edit is in progress.
   const automaticNote =
     settingsQuery.data && !draft
-      ? automaticMessage(automatic.data, settingsQuery.data)
+      ? automaticMessage(automatic.data, settingsQuery.data, t)
       : undefined;
   const save = useMutation({
     mutationFn: saveLearningSettings,
@@ -202,8 +210,8 @@ export function LearningPage() {
       description={t("learning.description")}
     >
       <PageSection
-        title="Participation"
-        description="Changes to container assignments apply to new threads. Existing threads keep their first assignment. Containers must already exist in the same Intelligence project. Until anything is saved here, OpenBot assigns that project's openbot container automatically."
+        title={t("learning.participation.title")}
+        description={t("learning.participation.description")}
       >
         {settingsQuery.isPending && (
           <p role="status">{t("learning.loading")}</p>

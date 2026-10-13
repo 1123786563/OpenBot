@@ -8,6 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { BotNeedsYou } from "@/components/approvals/waiting";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -44,11 +45,12 @@ import { queryClient } from "@/query-client";
 import { BotActivitySections } from "./activity";
 import { BotPausedBanner } from "./pause-banner";
 
-const NOTIFY_LABEL: Record<BotNotify, string> = {
-  all: "Everything",
-  needs_input: "Only when it needs me",
-  none: "Nothing (badges only)",
-};
+/* Key literals stay literal so `t(...)` sees a known key, not `string`. */
+const NOTIFY_LABEL = {
+  all: "botProfile.notify.all",
+  needs_input: "botProfile.notify.needsInput",
+  none: "botProfile.notify.none",
+} as const satisfies Record<BotNotify, string>;
 
 /** A Bot's own page: its state for you, what it is doing, its settings, and what can be done to it. */
 export function BotProfile({
@@ -62,7 +64,14 @@ export function BotProfile({
   /** Pin, hide, duplicate, reset, delete. */
   manage?: React.ReactNode;
 }) {
+  const { t } = useTranslation("agents");
   const lifecycle = useQuery(botLifecycleQueryOptions(agent.id));
+  // The label map, its values translated from the key literals above.
+  const notifyLabels: Record<BotNotify, string> = {
+    all: t(NOTIFY_LABEL.all),
+    needs_input: t(NOTIFY_LABEL.needs_input),
+    none: t(NOTIFY_LABEL.none),
+  };
   const pause = useMutation(setBotPausedMutationOptions(queryClient));
   const notify = useMutation(setBotNotifyMutationOptions(queryClient));
   const [permission, setPermission] = useState<string>(() => {
@@ -93,7 +102,7 @@ export function BotProfile({
       <BotNeedsYou agentId={agent.id} />
       <SuggestionsInbox agentId={agent.id} />
 
-      <PageSection title="For you">
+      <PageSection title={t("botProfile.forYou")}>
         {/* Whether this Bot's Shared-app calls are being refused right now, with the button that
             asks an administrator. About its present reach, so it lives here, not only where
             publishing happens. */}
@@ -102,7 +111,7 @@ export function BotProfile({
         ) : null}
         {lifecycle.isPending ? null : lifecycle.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            Could not load this Bot's state.
+            {t("botProfile.stateLoadError")}
           </p>
         ) : (
           <PageRows>
@@ -113,16 +122,16 @@ export function BotProfile({
               <ItemContent>
                 {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
                     the row showed the word "Paused" beside a switch that was off for a running Bot. */}
-                <ItemTitle>Active</ItemTitle>
+                <ItemTitle>{t("botProfile.active")}</ItemTitle>
                 <ItemDescription>
                   {lifecycle.data.paused
-                    ? "Paused. No routine, responsibility, hand-off or follow-up starts for you, and what was running has stopped."
-                    : "Runs its routines, responsibilities, hand-offs and follow-ups for you."}
+                    ? t("botProfile.activeOn")
+                    : t("botProfile.activeOff")}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <Switch
-                  aria-label="Active"
+                  aria-label={t("botProfile.active")}
                   checked={!lifecycle.data.paused}
                   disabled={pause.isPending}
                   onCheckedChange={(active) =>
@@ -137,17 +146,17 @@ export function BotProfile({
                 <IconBell />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Notifications</ItemTitle>
+                <ItemTitle>{t("botProfile.notifications.title")}</ItemTitle>
                 <ItemDescription>
-                  {NOTIFY_LABEL[lifecycle.data.notify]}. Sidebar badges always
-                  show.
+                  {t(NOTIFY_LABEL[lifecycle.data.notify])}.{" "}
+                  {t("botProfile.notifications.badgesAlways")}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <Select
                   disabled={notify.isPending}
                   // The label map, so the closed trigger says "Everything" rather than the raw value.
-                  items={NOTIFY_LABEL}
+                  items={notifyLabels}
                   onValueChange={(next) => {
                     if (next === lifecycle.data.notify) return;
                     notify.mutate({
@@ -157,13 +166,13 @@ export function BotProfile({
                   }}
                   value={lifecycle.data.notify}
                 >
-                  <SelectTrigger aria-label="Notifications">
+                  <SelectTrigger aria-label={t("botProfile.notifications.title")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
                       <SelectItem key={value} value={value}>
-                        {NOTIFY_LABEL[value]}
+                        {notifyLabels[value]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -178,10 +187,9 @@ export function BotProfile({
                     <IconBell />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>Browser notifications</ItemTitle>
+                    <ItemTitle>{t("botProfile.browserNotifications.title")}</ItemTitle>
                     <ItemDescription>
-                      Off in this browser. Turn them on to hear when a Bot needs
-                      you.
+                      {t("botProfile.browserNotifications.off")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -196,7 +204,7 @@ export function BotProfile({
                       size="sm"
                       variant="outline"
                     >
-                      Turn on
+                      {t("botProfile.browserNotifications.turnOn")}
                     </Button>
                   </ItemActions>
                 </Item>
@@ -211,8 +219,10 @@ export function BotProfile({
                 <IconMessage />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>Message {agent.name}</ItemTitle>
-                <ItemDescription>Start a conversation.</ItemDescription>
+                <ItemTitle>{t("botProfile.message.title", { name: agent.name })}</ItemTitle>
+                <ItemDescription>
+                  {t("botProfile.message.description")}
+                </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <IconChevronRight className="size-4 text-muted-foreground" />

@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -23,6 +24,7 @@ import { RuleForm, RuleRow } from "./rules";
  * `botId` is the Bot's id, or a pattern covering it.
  */
 export function BotApprovalRules({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("approvals");
   const inbox = useQuery(approvalInboxOptions());
   const addRule = useMutation(createApprovalRuleMutationOptions(queryClient));
   const changeRule = useMutation(
@@ -46,28 +48,29 @@ export function BotApprovalRules({ agentId }: { agentId: string }) {
     <PageSection
       description={
         <>
-          The strictest matching rule wins, so an "ask" rule beats an "allow"
-          one. Rules for every Bot are in{" "}
-          <Link
-            className="underline underline-offset-4"
-            to="/settings/approvals"
-          >
-            Settings → Approvals
-          </Link>
-          .
-          {rulesOff
-            ? " Your team has switched personal rules off, so they are kept but do not apply."
-            : ""}
+          <Trans
+            components={{
+              link: (
+                <Link
+                  className="underline underline-offset-4"
+                  to="/settings/approvals"
+                />
+              ),
+            }}
+            i18nKey="rules.botDescription"
+            t={t}
+          />
+          {rulesOff ? t("rules.offNote") : ""}
         </>
       }
-      title="Rules"
+      title={t("rules.title")}
     >
       {error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
           {error.message}
         </p>
       ) : null}
-      {saved === 0 ? <PageEmpty>No rules for this Bot.</PageEmpty> : null}
+      {saved === 0 ? <PageEmpty>{t("rules.noneForBot")}</PageEmpty> : null}
       {saved > 0 || canAdd ? (
         <PageRows>
           {team.map((rule, index) => (
@@ -103,7 +106,7 @@ export function BotApprovalRules({ agentId }: { agentId: string }) {
               <RuleForm
                 botField={false}
                 forBot={agentId}
-                label="Add a rule"
+                label={t("rules.add")}
                 save={addRule}
               />
             </>
