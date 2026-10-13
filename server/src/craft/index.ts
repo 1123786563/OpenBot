@@ -116,6 +116,7 @@ export {
   personalUnconnectedApps,
   type ResolvedCraftManagedContent,
   USER_LIBRARY_DIR,
+  WEB_TEMPLATE_DIR,
 } from "./managed-content";
 export { CraftSessionManager } from "./manager";
 export { generateSessionName } from "./naming";

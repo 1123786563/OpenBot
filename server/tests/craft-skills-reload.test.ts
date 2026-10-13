@@ -83,7 +83,7 @@ function liveContent(
     ),
     mcpConfigHash: craftMcpFingerprint([]),
     libraryFiles: new Map(),
-    ...overrides,
+    webTemplateFiles: new Map(),    ...overrides,
   };
 }
 
