@@ -684,6 +684,75 @@ describe("the model usage bound contract (pre-call admission)", () => {
     }
   });
 
+  test("a fit is applied before counting and the fitted request reaches the provider", async () => {
+    const { calls, model } = recordingModel({ inputTokens: 1, outputTokens: 1 });
+    const original = {
+      prompt: [
+        { role: "system", content: "sys" },
+        { role: "user", content: "old ".repeat(200) },
+        { role: "assistant", content: "old answer" },
+        { role: "user", content: "new question" },
+      ],
+    };
+    const fitted = {
+      prompt: [
+        { role: "system", content: "sys" },
+        { role: "user", content: "new question" },
+      ],
+    };
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 50n,
+        countInputTokens: (params: unknown) => {
+          // The counter must see the FITTED request, not the original.
+          expect(params).toEqual(fitted);
+          return 20;
+        },
+        fit: () => fitted,
+      },
+      output: { enforced: "provider_cap", maximumTokens: 100n },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream(original);
+      for await (const _part of result.stream) {
+        // Drain the stream: settlement happens on the finish part.
+      }
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ prompt: fitted.prompt });
+      expect(phases).toEqual([{ phase: "finish" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a fit that cannot bring the request under the bound leaves it refused", async () => {
+    const { calls, model } = recordingModel();
+    const { phases, lifecycle } = recordingLifecycle({
+      input: {
+        enforced: "counted",
+        maximumTokens: 10n,
+        countInputTokens: () => 11,
+        fit: (params: unknown) => params,
+      },
+      output: { enforced: "provider_cap", maximumTokens: 100n },
+    });
+    try {
+      setModelUsageGate(async () => lifecycle);
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      await expect(wrapped.doStream({ prompt: [] })).rejects.toMatchObject({
+        name: "ModelUsageRefusalError",
+        code: "input_over_limit",
+      });
+      expect(calls).toHaveLength(0);
+      expect(phases).toEqual([{ phase: "fail", reason: "bound_refused" }]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
   test("an output cap this provider cannot enforce is refused before the provider call", async () => {
     const { calls, model } = recordingModel();
     const { phases, lifecycle } = recordingLifecycle({
