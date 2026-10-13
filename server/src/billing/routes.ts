@@ -22,6 +22,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { CreditWriter } from "./credits-writer";
 import type { Credits } from "./credits";
+import type { PaymentOrderReadScope } from "./payments/types";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
 
@@ -29,6 +30,12 @@ import { BillingError, type BillingService } from "./types";
 type RequireAdmin = (
   context: Context<{ Variables: AppVariables }>,
 ) => Response | undefined;
+
+export function billingReadScopeOf(
+  context: Context<{ Variables: AppVariables }>,
+): PaymentOrderReadScope {
+  return { actorId: context.var.actor.id };
+}
 
 /**
  * The provider's deliveries. One route, no session, no body-parsing middleware: the service reads
@@ -127,12 +134,15 @@ export function createBillingStatementRoutes(deps: {
         from: parsed.data.from ? new Date(parsed.data.from) : null,
         to: parsed.data.to ? new Date(parsed.data.to) : null,
         page: parsed.data.page,
-      }),
+      }, billingReadScopeOf(context)),
     );
   });
 
   routes.get("/invoices/:id", async (context) => {
-    const invoice = await deps.statements.invoice(context.req.param("id"));
+    const invoice = await deps.statements.invoice(
+      context.req.param("id"),
+      billingReadScopeOf(context),
+    );
     if (!invoice) {
       return context.json({ error: "No such bill." }, 404);
     }
@@ -220,6 +230,15 @@ function billingStatus(error: BillingError): 503 | 400 {
   return error.code === "unreachable" || error.code === "unconfigured"
     ? 503
     : 400;
+}
+
+function countFindingCodes(
+  findings: readonly { code: string }[],
+): Record<string, number> {
+  return findings.reduce<Record<string, number>>((counts, finding) => {
+    counts[finding.code] = (counts[finding.code] ?? 0) + 1;
+    return counts;
+  }, {});
 }
 
 /**
@@ -350,8 +369,9 @@ export function createBillingAdminRoutes(deps: {
   /*
    * The reconciliation pass, on demand (T7): POST because it is an action with a side-effect
    * trail (the audit row and the service's log line), read-only in its books. The answer IS
-   * the report — counts first, findings with their codes — so an operator reads the books'
-   * agreement in one round trip. No scheduler: v1 reconciles when asked.
+   * the report — counts first, findings with their codes, including distinct pending-vs-blocked
+   * usage-delivery backlog evidence — so an operator reads the books' agreement in one round
+   * trip. No scheduler: v1 reconciles when asked.
    */
   routes.post("/reconcile", async (context) => {
     const denied = deps.requireAdmin(context);
@@ -362,12 +382,15 @@ export function createBillingAdminRoutes(deps: {
         eventType: "billing.reconciled",
         targetType: "billing",
         actorUserId: context.var.actor.id,
-        // The trail carries the counts and the finding codes (not the sentences): enough to
-        // answer "when did we last look, and did the books agree" without duplicating the
-        // report's evidence into the audit log.
+        // The trail carries the checked counts and a compact code histogram, not the full
+        // findings array: enough to answer "when did we last look, and what kinds of drift
+        // existed" without duplicating a potentially large event-id list into the audit log.
+        // Usage backlog findings keep pending and blocked distinct here too; the operator can
+        // tell retryable drift from manual-review drift, and `checked.usageFindings` says when
+        // the report itself omitted additional event ids.
         payload: {
           checked: report.checked,
-          findings: report.findings.map((finding) => finding.code),
+          findingCounts: countFindingCodes(report.findings),
         },
       });
     }

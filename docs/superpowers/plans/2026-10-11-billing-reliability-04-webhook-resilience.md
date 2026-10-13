@@ -34,7 +34,7 @@
 - `handleWebhook` answers 503 for retryable Lago read or database write failures; it writes no inbox row on failure.
 - A successful duplicate inbox insert race returns 200 duplicate only after the projection refresh was completed or another worker has already completed it.
 
-- [ ] **Step 1: Add tests for projection and inbox write failures**
+- [x] **Step 1: Add tests for projection and inbox write failures**
 
 Wrap the existing `memoryBillingStore()` and make `upsertSubscription` throw once; assert the first delivery returns 503, inbox remains empty, and retry returns 200 with projection and inbox present. Add a second test where `recordWebhookEvent` throws once after refresh and verify a retry re-runs the idempotent refresh and records the inbox.
 
@@ -45,21 +45,21 @@ expect(retry.status).toBe(200);
 expect(store.inbox.size).toBe(1);
 ```
 
-- [ ] **Step 2: Run webhook tests and verify failure handling is incorrect**
+- [x] **Step 2: Run webhook tests and verify failure handling is incorrect**
 
 Run: `bun test server/tests/billing-webhook.test.ts`
 Expected: FAIL because generic store errors are not classified as retryable webhook failures.
 
-- [ ] **Step 3: Type persistence failures at the store/service seam**
+- [x] **Step 3: Type persistence failures at the store/service seam**
 
 Wrap database operation failures as `BillingPersistenceError` at `createBillingStore` methods used in webhook refresh and inbox writes. In `handleWebhook`, translate that type to fixed 503 output, leave the inbox untouched, and log the stable code. Keep signature/shape failures as 401/400 and do not blanket-convert all service bugs into retries.
 
-- [ ] **Step 4: Verify failure, replay, and out-of-order tests**
+- [x] **Step 4: Verify failure, replay, and out-of-order tests**
 
 Run: `bun test server/tests/billing-webhook.test.ts server/tests/billing-store.integration.test.ts`
 Expected: PASS; both storage-failure paths retry, known completed events do not re-read, and out-of-order deliveries still refresh from current provider state.
 
-- [ ] **Step 5: Commit the webhook retry behavior**
+- [x] **Step 5: Commit the webhook retry behavior**
 
 ```bash
 git add server/src/billing/service.ts server/src/billing/types.ts server/src/billing/store.ts server/tests/billing-webhook.test.ts server/tests/billing-store.integration.test.ts
@@ -80,25 +80,25 @@ git commit -m "fix(billing): retry webhook persistence failures" -m "Co-authored
 - The atomic transaction contains the local customer/subscription upserts and inbox insertion, so concurrent duplicate deliveries do not leave a completed inbox record without the projection.
 - If an object type has no local projection work, recording its inbox event is still a valid completed result.
 
-- [ ] **Step 1: Add a real database failure/atomicity test**
+- [x] **Step 1: Add a real database failure/atomicity test**
 
 Use a transaction-scoped test to force the final inbox insertion to fail after staging subscription updates. After rollback, assert neither new subscription projection nor inbox row committed.
 
-- [ ] **Step 2: Run the store integration test and verify current writes are split**
+- [x] **Step 2: Run the store integration test and verify current writes are split**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-store.integration.test.ts`
 Expected: FAIL because projection upserts and inbox insert currently use separate database operations.
 
-- [ ] **Step 3: Put local projection updates and inbox insert in one transaction**
+- [x] **Step 3: Put local projection updates and inbox insert in one transaction**
 
 Keep Lago customer/subscription reads before the database transaction. Pass the authoritative projection records and event identity to one store operation. Use `ON CONFLICT` for duplicate event IDs, then return the durable winner result.
 
-- [ ] **Step 4: Verify rollback and replay**
+- [x] **Step 4: Verify rollback and replay**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-store.integration.test.ts server/tests/billing-webhook.test.ts`
 Expected: PASS; transaction failures leave no partial local projection/inbox state and retries converge.
 
-- [ ] **Step 5: Commit the atomic projection/inbox operation**
+- [x] **Step 5: Commit the atomic projection/inbox operation**
 
 ```bash
 git add server/src/billing/store.ts server/src/billing/service.ts server/src/db/client.ts server/tests/billing-store.integration.test.ts server/tests/billing-webhook.test.ts

@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createLagoClient } from "../src/billing/lago";
 import { createBillingService } from "../src/billing/service";
+import { createBillingStore } from "../src/billing/store";
+import { BillingPersistenceError } from "../src/billing/types";
 import { createWebhookVerifier } from "../src/billing/webhook-signature";
+import type { Database } from "../src/db/client";
 import { memoryBillingStore } from "./support/billing";
 
 // A stand-in signing key for the stub endpoint; referenced, never inlined at a call site.
@@ -72,7 +76,10 @@ function reReadStub() {
   return { state, fetchStub };
 }
 
-function webhookFixture() {
+function webhookFixture(
+  store = memoryBillingStore(),
+  log?: (message: string) => void,
+) {
   const stub = reReadStub();
   const client = createLagoClient({
     baseUrl: "https://lago.stub.test",
@@ -80,7 +87,6 @@ function webhookFixture() {
     fetch: stub.fetchStub,
     assertTarget: async () => {},
   });
-  const store = memoryBillingStore();
   const service = createBillingService({
     config: { externalCustomerKey: "deployment-1", webhookMode: "hmac" },
     client,
@@ -91,6 +97,7 @@ function webhookFixture() {
     planEntitlements: new Map([
       ["pro", [{ code: "intelligence" }, { code: "teams" }]],
     ]),
+    ...(log ? { log } : {}),
   });
   return { stub, store, service };
 }
@@ -132,6 +139,60 @@ function signedDelivery(
 }
 
 describe("createBillingService.handleWebhook", () => {
+  test("a wrapped SQL transient failure returns fixed 503 and retries the whole delivery", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    const failure = new DrizzleQueryError(
+      "sensitive query",
+      ["sensitive parameter"],
+      new Bun.SQL.PostgresError("sensitive database failure", {
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno: "40001",
+      }),
+    );
+    const failedStore = createBillingStore({
+      transaction: () => Promise.reject(failure),
+    } as unknown as Database);
+    const apply = store.applyWebhookProjection.bind(store);
+    let failNext = true;
+    store.applyWebhookProjection = (input) => {
+      if (failNext) {
+        failNext = false;
+        return failedStore.applyWebhookProjection(input);
+      }
+      return apply(input);
+    };
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const deliver = () =>
+      signedDelivery("evt-wrapped-sql", "subscription.created", {
+        external_customer_id: "deployment-1",
+      });
+    const first = await service.handleWebhook(deliver());
+    expect(first.status).toBe(503);
+    expect(await first.json()).toEqual({
+      error: "Billing webhook could not be applied.",
+    });
+    expect(store.inbox.size).toBe(0);
+    expect(store.customers.size).toBe(0);
+    expect(store.subscriptions.size).toBe(0);
+    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+    const retry = await service.handleWebhook(deliver());
+    expect(retry.status).toBe(200);
+    expect(stub.state.reads).toBe(2);
+    expect(store.inbox.size).toBe(1);
+    expect(store.subscriptions.size).toBe(1);
+  });
+
   test("an unsigned delivery is refused before anything else happens", async () => {
     const { stub, store, service } = webhookFixture();
     const response = await service.handleWebhook(
@@ -177,6 +238,66 @@ describe("createBillingService.handleWebhook", () => {
     expect(stub.state.reads).toBe(1); // the inbox answered; the provider was not asked again
   });
 
+  test("an insert race reports duplicate only after refreshing the projection", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const applyWebhookProjection = store.applyWebhookProjection.bind(store);
+    store.applyWebhookProjection = async (input) => {
+      await applyWebhookProjection(input);
+      return "duplicate";
+    };
+
+    const response = await service.handleWebhook(
+      signedDelivery("evt-insert-race", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "duplicate" });
+    expect(stub.state.reads).toBe(1);
+    expect(store.subscriptions.size).toBe(1);
+    expect(store.inbox.size).toBe(1);
+  });
+
+  test("concurrent deliveries commit once in the in-memory store too", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        service.handleWebhook(
+          signedDelivery("evt-memory-race", "subscription.created", {
+            external_customer_id: "deployment-1",
+          }),
+        ),
+      ),
+    );
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    const bodies = await Promise.all(
+      responses.map((response) => response.json()),
+    );
+    expect(bodies.map((body) => body.status).sort()).toEqual([
+      "duplicate",
+      "processed",
+    ]);
+    expect(store.inbox.size).toBe(1);
+    expect(store.customers.size).toBe(1);
+    expect(store.subscriptions.size).toBe(1);
+  });
+
   test("a re-read that fails transiently leaves no inbox row and is retried whole", async () => {
     const { stub, store, service } = webhookFixture();
     stub.state.list = [
@@ -197,6 +318,7 @@ describe("createBillingService.handleWebhook", () => {
     expect(first.status).toBe(503); // the provider is asked to retry the delivery
     expect(store.inbox.size).toBe(0); // nothing was recorded as done
     expect([...store.subscriptions.values()]).toEqual([]);
+    expect(store.customers.size).toBe(0);
 
     const retry = await service.handleWebhook(
       signedDelivery("evt-1", "subscription.created", {
@@ -214,6 +336,126 @@ describe("createBillingService.handleWebhook", () => {
         status: "active",
       },
     ]);
+  });
+
+  test("a subscription projection write failure leaves the inbox empty and retries refresh", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const upsertSubscription = store.upsertSubscription.bind(store);
+    let failNext = true;
+    store.upsertSubscription = async (input) => {
+      if (failNext) {
+        failNext = false;
+        throw new BillingPersistenceError("subscription_upsert");
+      }
+      return upsertSubscription(input);
+    };
+
+    const first = await service.handleWebhook(
+      signedDelivery("evt-write", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(first.status).toBe(503);
+    expect(await first.json()).toEqual({
+      error: "Billing webhook could not be applied.",
+    });
+    expect(store.inbox.size).toBe(0);
+
+    const retry = await service.handleWebhook(
+      signedDelivery("evt-write", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(retry.status).toBe(200);
+    expect(store.inbox.size).toBe(1);
+    expect([...store.subscriptions.values()]).toEqual([
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ]);
+  });
+
+  test("an inbox write failure rolls back the projection and leaves the event replayable", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    const recordWebhookEvent = store.recordWebhookEvent.bind(store);
+    let failNext = true;
+    store.recordWebhookEvent = async (input) => {
+      if (failNext) {
+        failNext = false;
+        throw new BillingPersistenceError("webhook_record");
+      }
+      return recordWebhookEvent(input);
+    };
+
+    const first = await service.handleWebhook(
+      signedDelivery("evt-inbox-write", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(first.status).toBe(503);
+    expect(store.inbox.size).toBe(0);
+    expect(store.subscriptions.size).toBe(0);
+    expect(store.customers.size).toBe(0);
+
+    const retry = await service.handleWebhook(
+      signedDelivery("evt-inbox-write", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(retry.status).toBe(200);
+    expect(stub.state.reads).toBe(2);
+    expect(store.subscriptions.size).toBe(1);
+    expect(store.inbox.size).toBe(1);
+    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+  });
+
+  test("an unknown store error is not classified as retryable", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    store.applyWebhookProjection = async () => {
+      throw new Error("unexpected programming failure");
+    };
+
+    const response = await service.handleWebhook(
+      signedDelivery("evt-programming-error", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Billing webhook could not be applied.",
+    });
+    expect(store.inbox.size).toBe(0);
   });
 
   test("an out-of-order delivery cannot walk a projection backwards", async () => {
@@ -264,6 +506,45 @@ describe("createBillingService.handleWebhook", () => {
     expect(store.customers.get("deployment-1")).toEqual({
       name: "Renamed Deployment",
     });
+  });
+
+  test("all authoritative reads finish before the local atomic operation starts", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.customers.set("deployment-1", "Authoritative Name");
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "terminated",
+      },
+    ];
+    const applyWebhookProjection = store.applyWebhookProjection.bind(store);
+    let applied = false;
+    store.applyWebhookProjection = async (input) => {
+      expect(stub.state.customerReads).toBe(1);
+      expect(stub.state.reads).toBe(1);
+      expect(store.customers.size).toBe(0);
+      expect(store.subscriptions.size).toBe(0);
+      expect(input).toMatchObject({
+        customer: { externalId: "deployment-1", name: "Authoritative Name" },
+        subscriptions: stub.state.list,
+        event: { provider: "lago", eventId: "evt-atomic-read" },
+      });
+      applied = true;
+      return applyWebhookProjection(input);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-atomic-read", "subscription.created", {
+        external_customer_id: "deployment-1",
+        status: "active",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(applied).toBe(true);
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe(
+      "terminated",
+    );
   });
 
   test("records the delivery's idempotency key alongside the event", async () => {

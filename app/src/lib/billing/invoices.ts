@@ -28,6 +28,7 @@ export type BillingInvoice = {
   status: InvoiceStatus;
   method: "alipay" | "wechat";
   issuedAt: string;
+  /** When money landed. Null unless the order actually settled as paid. */
   settledAt: string | null;
   channelTransactionId: string | null;
 };
