@@ -70,7 +70,7 @@ import { queryClient } from "@/query-client";
  * the deployment has and who to ask.
  */
 
-export const Route = createFileRoute("/_authed/_app/market")({
+export const Route = createFileRoute("/_authed/admin/market")({
   component: MarketPage,
 });
 

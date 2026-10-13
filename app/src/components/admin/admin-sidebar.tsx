@@ -81,12 +81,12 @@ const GROUPS = [
       {
         title: "sidebar.market",
         icon: IconShoppingBag,
-        linkOptions: { to: "/market" },
+        linkOptions: { to: "/admin/market" },
       },
       {
         title: "sidebar.knowledge",
         icon: IconBook2,
-        linkOptions: { to: "/knowledge" },
+        linkOptions: { to: "/admin/knowledge" },
       },
       {
         title: "sidebar.learning",
