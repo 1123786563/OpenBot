@@ -1,6 +1,7 @@
 import {
   IconArrowLeft,
   IconBuildingBank,
+  IconChecks,
   IconCode,
   IconDeviceDesktop,
   IconFileText,
@@ -49,6 +50,11 @@ const GROUPS = [
         title: "sidebar.boundaries",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
+      },
+      {
+        title: "Approvals",
+        icon: IconChecks,
+        linkOptions: { to: "/admin/approvals" },
       },
       {
         title: "sidebar.computers",

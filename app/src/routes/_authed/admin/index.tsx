@@ -1,5 +1,6 @@
 import {
   IconBuildingBank,
+  IconChecks,
   IconChevronRight,
   IconCode,
   IconDeviceDesktop,
@@ -58,6 +59,12 @@ const SECTIONS = [
         description: "overview.reach.boundaries.description",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
+      },
+      {
+        title: "Approvals",
+        description: "What every member's Bots must ask before acting.",
+        icon: IconChecks,
+        linkOptions: { to: "/admin/approvals" },
       },
       {
         title: "overview.reach.computers.title",
