@@ -73,6 +73,15 @@ export type SetupSessionWorkspaceInput = {
    * the unavailable observation. The plugin ships either way.
    */
   webappPort?: number | null;
+  /**
+   * The base url the sandbox's tools dial back on (the MCP relay's own base —
+   * same fallback chain the boot file resolves). Non-null → the company-search
+   * CLI's two non-secret identity files land under .opencode/: the session tag
+   * (the same value the opencode.json mcp block stamps) and this base. No
+   * credential ever enters the workspace — the relay resolves the owner from
+   * the tag alone.
+   */
+  mcpRelayBaseUrl?: string | null;
 };
 
 export type WorkspaceApi = {
@@ -167,6 +176,22 @@ export async function setupSessionWorkspace(
     }),
   );
   await api.writeFile(`${root}/opencode.json`, opencodeJson);
+
+  // The sandbox-side CLI identity (onyx-cli of the company-search skill): the
+  // session tag the relay authenticates, and the base it dials. Both non-secret
+  // — the tag names a row, and the base is the deployment's public address —
+  // so the workspace carries no credential (the relay resolves the owner from
+  // the tag, the same trust model as the MCP relay).
+  if (input.mcpRelayBaseUrl) {
+    await api.writeFile(
+      `${root}/.opencode/craft-session`,
+      input.sessionId,
+    );
+    await api.writeFile(
+      `${root}/.opencode/craft-api-base`,
+      input.mcpRelayBaseUrl,
+    );
+  }
 }
 
 /**

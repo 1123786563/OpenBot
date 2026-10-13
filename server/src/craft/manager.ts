@@ -130,6 +130,8 @@ export type SessionManagerDeps = {
    * failed resolution surfaces as null on the degrading paths and propagates on provisioning.
    */
   managedContentFor?: CraftManagedContentResolver;
+  /** The base the sandbox dials back on (MCP relay + company-search CLI). */
+  mcpRelayBaseUrl?: string | null;
 };
 
 export class CraftSessionManager {
@@ -287,6 +289,7 @@ export class CraftSessionManager {
       userName,
       organizationInstructions: this.deps.organizationInstructions ?? null,
       llmConfigFor: (s) => this.deps.llmConfigFor(s),
+      mcpRelayBaseUrl: this.deps.mcpRelayBaseUrl ?? this.config.mcpRelayBaseUrl,
       // Managed content resolves inside the provisioning envelope: a failed
       // resolution fails the session (nothing is built off a payload the
       // deployment could not stand behind), and the push acks only on success.

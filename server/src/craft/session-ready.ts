@@ -80,6 +80,8 @@ export type EnsureSessionReadyInput = {
   managedContentResolver?: CraftManagedContentResolver;
   /** The craft runtime config — workspace generation reads it (explicit DI, no globals). */
   config: CraftConfig;
+  /** The base the sandbox dials back on (MCP relay + company-search CLI). */
+  mcpRelayBaseUrl?: string | null;
 };
 
 /**
@@ -233,6 +235,7 @@ export async function ensureSessionReady(
         organizationInstructions: input.organizationInstructions,
         agentsTemplate: await agentsTemplate(),
         webappPort: session.nextjsPort,
+        mcpRelayBaseUrl: input.mcpRelayBaseUrl,
         managedContent: managedContent
           ? {
               connectableAppsSection: managedContent.connectableAppsSection,
