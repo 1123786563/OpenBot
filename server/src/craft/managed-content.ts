@@ -56,6 +56,14 @@ export type ResolvedCraftManagedContent = CraftManagedContent & {
    * agent-visible skill surface, not a person's saved files).
    */
   libraryFiles: ReadonlyMap<string, Uint8Array>;
+  /**
+   * The web app scaffold template (onyx's image-baked `/workspace/templates/
+   * outputs/web`), pushed to `.openbot/web-template/` so start-webapp.sh can
+   * scaffold `outputs/web` on first start. Un-hashed like the library: the
+   * template is static server content, not part of the agent-visible skill
+   * surface, so it must not drive the staleness reload.
+   */
+  webTemplateFiles: ReadonlyMap<string, Uint8Array>;
 };
 
 /**
@@ -79,6 +87,12 @@ export type CraftManagedContentSources = {
   skillFilesFor?(userId: string): Promise<ReadonlyMap<string, Uint8Array>>;
   /** The user's library files. Default: none. */
   libraryFilesFor?(userId: string): Promise<ReadonlyMap<string, Uint8Array>>;
+  /**
+   * The web app scaffold template (onyx's image template, restored). Default:
+   * the server-bundled `assets/craft/web-template/` tree, read once and cached.
+   * Static — the userId is accepted for source symmetry, not consulted.
+   */
+  webTemplateFilesFor?(userId: string): Promise<ReadonlyMap<string, Uint8Array>>;
   /** The user's craft MCP servers (Task 3's seam). Default: none. */
   mcpServersFor?(userId: string): Promise<readonly CraftMCPServerConfig[]>;
 };
@@ -98,13 +112,16 @@ export function createCraftManagedContentResolver(
   sources: CraftManagedContentSources,
 ): CraftManagedContentResolver {
   return async (session) => {
-    const [apps, skillFiles, libraryFiles, mcpServers] = await Promise.all([
-      sources.connectableAppsFor(session.userId),
-      sources.skillFilesFor?.(session.userId) ?? new Map<string, Uint8Array>(),
-      sources.libraryFilesFor?.(session.userId) ??
-        new Map<string, Uint8Array>(),
-      sources.mcpServersFor?.(session.userId) ?? [],
-    ]);
+    const [apps, skillFiles, libraryFiles, webTemplateFiles, mcpServers] =
+      await Promise.all([
+        sources.connectableAppsFor(session.userId),
+        sources.skillFilesFor?.(session.userId) ?? new Map<string, Uint8Array>(),
+        sources.libraryFilesFor?.(session.userId) ??
+          new Map<string, Uint8Array>(),
+        sources.webTemplateFilesFor?.(session.userId) ??
+          defaultWebTemplateFiles(),
+        sources.mcpServersFor?.(session.userId) ?? [],
+      ]);
     const connectableAppsSection = buildConnectableAppsList(apps);
     const files = skillFiles instanceof Map ? skillFiles : new Map(skillFiles);
     return {
@@ -118,8 +135,44 @@ export function createCraftManagedContentResolver(
       mcpConfigHash: craftMcpFingerprint(mcpServers),
       libraryFiles:
         libraryFiles instanceof Map ? libraryFiles : new Map(libraryFiles),
+      webTemplateFiles:
+        webTemplateFiles instanceof Map
+          ? webTemplateFiles
+          : new Map(webTemplateFiles),
     };
   };
+}
+
+/**
+ * Reads the server-bundled web template (`assets/craft/web-template/`, the
+ * byte-verbatim copy of onyx's image template) into a file map, once per
+ * process. Dotfiles are included (the template ships `.oxlintrc.json`); an
+ * absent directory resolves to an empty map so a deployment without the
+ * assets tree degrades to "no template", never a crash.
+ */
+let webTemplateFilesCache: ReadonlyMap<string, Uint8Array> | null = null;
+async function defaultWebTemplateFiles(): Promise<
+  ReadonlyMap<string, Uint8Array>
+> {
+  if (webTemplateFilesCache !== null) return webTemplateFilesCache;
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../../assets/craft/web-template/", import.meta.url);
+  const files = new Map<string, Uint8Array>();
+  const walk = async (dir: URL, prefix: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const child = new URL(`${entry.name}/`, dir);
+      if (entry.isDirectory()) {
+        await walk(child, rel);
+      } else if (entry.isFile()) {
+        files.set(rel, new Uint8Array(await readFile(new URL(entry.name, dir))));
+      }
+    }
+  };
+  await walk(root, "").catch(() => undefined);
+  webTemplateFilesCache = files;
+  return files;
 }
 
 /** The skill path that gates the AGENTS.md Company-knowledge section. */
@@ -179,6 +232,8 @@ export type ManagedContentFileApi = {
 /** The managed mounts, as paths inside one session's workspace root. */
 export const MANAGED_SKILLS_DIR = ".opencode/skills";
 export const USER_LIBRARY_DIR = "user_library";
+/** Where the web app scaffold template lands (read by start-webapp.sh). */
+export const WEB_TEMPLATE_DIR = ".openbot/web-template";
 
 /**
  * A skill-relative path as the materializer accepts it, or null when the entry
@@ -212,7 +267,10 @@ function containedRelativePath(path: string): string | null {
 export async function materializeManagedContent(
   api: ManagedContentFileApi,
   root: string,
-  content: Pick<ResolvedCraftManagedContent, "skillFiles" | "libraryFiles">,
+  content: Pick<
+    ResolvedCraftManagedContent,
+    "skillFiles" | "libraryFiles" | "webTemplateFiles"
+  >,
 ): Promise<boolean> {
   const skillsRoot = `${root}/${MANAGED_SKILLS_DIR}`;
   let skillsHydrated = true;
@@ -283,6 +341,29 @@ export async function materializeManagedContent(
       logger.warn(
         { error, path, root },
         "[craft] failed to push user library file",
+      );
+    }
+  }
+
+  // The web template leg rides the library's contract: pushed on every setup
+  // (first setup included — start-webapp.sh scaffolds from it), never hashed,
+  // and a failed write degrades to "no scaffold template" rather than failing
+  // hydration (the template is static; it is not a staleness input).
+  for (const [path, bytes] of content.webTemplateFiles) {
+    const rel = containedRelativePath(path);
+    if (rel === null) {
+      logger.warn(
+        { path, root },
+        "[craft] rejecting path-escaping web template entry",
+      );
+      continue;
+    }
+    try {
+      await api.writeFileBytes(`${root}/${WEB_TEMPLATE_DIR}/${rel}`, bytes);
+    } catch (error) {
+      logger.warn(
+        { error, path, root },
+        "[craft] failed to push web template file",
       );
     }
   }

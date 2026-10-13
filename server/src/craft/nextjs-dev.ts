@@ -18,8 +18,12 @@
  * second process beside the script's. The script IS the process owner now.
  *
  * Environment substitutions (documented in the port contract, §3.5):
- * - no image outputs template: a missing `outputs/web` scaffold is honest guidance, not
- *   a template copy (the scaffold is the agent's job per AGENTS.md);
+ * - no image-baked template, but onyx's scaffold semantics are restored: the
+ *   template ships with the server (`assets/craft/web-template/`, the
+ *   byte-verbatim onyx tree) and materializes into the session at
+ *   `.openbot/web-template/`; start copies it to `outputs/web` when the app
+ *   does not exist yet (onyx's `cp -r /workspace/templates/outputs/*`), and
+ *   only when neither exists is a missing scaffold reported;
  * - `bun install` without the image cache bootstrap flags (no BUN_IMAGE_CACHE_DIR);
  * - SESSION_PATH is normalized to an absolute path so bot-relative session dirs (the
  *   agent-sandbox mode) survive the script's own `cd`.
@@ -68,11 +72,18 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
     # one beside its retry) can't both spawn a second dev server.
     flock -x 9
 
-    # No image template ships in this environment: the scaffold under
-    # outputs/web is the agent's own (see AGENTS.md).
+    # onyx's scaffold semantics, restored: the template ships with the session
+    # (materialized under .openbot/web-template by the managed-content push)
+    # instead of a template baked into the sandbox image.
     if [ ! -f "$SESSION_PATH/outputs/web/package.json" ]; then
-        echo "no web app scaffold found - build your web app under outputs/web first (outputs/web/package.json), then call webapp start again" >&2
-        exit 1
+        if [ -f "$SESSION_PATH/.openbot/web-template/package.json" ]; then
+            echo "Copying outputs template"
+            mkdir -p "$SESSION_PATH/outputs"
+            cp -R "$SESSION_PATH/.openbot/web-template" "$SESSION_PATH/outputs/web"
+        else
+            echo "no web app scaffold found - build your web app under outputs/web first (outputs/web/package.json), then call webapp start again" >&2
+            exit 1
+        fi
     fi
 
     NEXTJS_PID=""

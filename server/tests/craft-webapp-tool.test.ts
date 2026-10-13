@@ -164,6 +164,7 @@ type WebappArgs = { action: string; lines?: number };
 /** One session dir with the files a scenario needs; returns its path. */
 function makeSessionDir(files: Record<string, string>): string {
   const dir = join(workRoot, `s-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
   for (const [rel, content] of Object.entries(files)) {
     const target = join(dir, rel);
     mkdirSync(dirname(target), { recursive: true });
@@ -721,6 +722,139 @@ describe("webapp tool behaviors (F5 B–E)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ②b scaffold-on-start (onyx semantics restored: cp from the session template)
+// ---------------------------------------------------------------------------
+
+describe("start scaffolds outputs/web from the session template", () => {
+  /** A free port + the generated script + the PATH shims, ready to run. */
+  async function scaffoldHarness(
+    files: Record<string, string>,
+  ): Promise<{ dir: string; port: number; restore: () => void }> {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response("ok") });
+    const port = probe.port;
+    probe.stop(true);
+    const dir = makeSessionDir(files);
+    writeFileSync(
+      join(dir, "start-webapp.sh"),
+      buildWebappBootstrapScript({ sessionDirectory: dir, port }),
+    );
+    const { shimDir, procCwdDir } = makeScriptShims(port);
+    const originalPath = process.env.PATH;
+    const originalProcCwd = process.env.CRAFT_WEBAPP_TEST_PROC_CWD;
+    process.env.PATH = `${shimDir}:${originalPath}`;
+    process.env.CRAFT_WEBAPP_TEST_PROC_CWD = procCwdDir;
+    return {
+      dir,
+      port,
+      restore: () => {
+        process.env.PATH = originalPath;
+        if (originalProcCwd === undefined) {
+          delete process.env.CRAFT_WEBAPP_TEST_PROC_CWD;
+        } else {
+          process.env.CRAFT_WEBAPP_TEST_PROC_CWD = originalProcCwd;
+        }
+        try {
+          const pid = Number.parseInt(
+            readFileSync(join(dir, "nextjs.pid"), "utf8").trim(),
+            10,
+          );
+          if (Number.isFinite(pid)) process.kill(pid, "SIGKILL");
+        } catch {
+          // no pid file / already gone
+        }
+      },
+    };
+  }
+
+  test("empty workspace + .openbot/web-template: start scaffolds, byte-exact (dotfiles + binary included)", async () => {
+    const iconBytes = Buffer.from([
+      0x00, 0x01, 0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0x0a,
+    ]);
+    const harness = await scaffoldHarness({
+      ".openbot/web-template/package.json": '{"name":"template-web"}\n',
+      ".openbot/web-template/.oxlintrc.json": '{"rules":{}}\n',
+      ".openbot/web-template/app/page.tsx": "export default () => null;\n",
+    });
+    writeFileSync(
+      join(harness.dir, ".openbot/web-template/app/favicon.ico"),
+      iconBytes,
+    );
+    try {
+      const output = await runBootstrapScript(harness.dir);
+      expect(output).toContain("Copying outputs template");
+      // The scaffolded tree is the template, byte for byte.
+      expect(
+        readFileSync(join(harness.dir, "outputs/web/package.json"), "utf8"),
+      ).toBe('{"name":"template-web"}\n');
+      expect(
+        readFileSync(join(harness.dir, "outputs/web/.oxlintrc.json"), "utf8"),
+      ).toBe('{"rules":{}}\n');
+      expect(
+        readFileSync(join(harness.dir, "outputs/web/app/page.tsx"), "utf8"),
+      ).toBe("export default () => null;\n");
+      expect(
+        readFileSync(join(harness.dir, "outputs/web/app/favicon.ico")),
+      ).toEqual(iconBytes);
+      // And the run proceeded into install/start (the shimmed bun serves).
+      expect(output).toContain(
+        `web app dev server running on port ${harness.port}`,
+      );
+    } finally {
+      harness.restore();
+    }
+  }, 30000);
+
+  test("an existing outputs/web is never overwritten by the template", async () => {
+    const harness = await scaffoldHarness({
+      "outputs/web/package.json": '{"name":"agent-built"}\n',
+      ".openbot/web-template/package.json": '{"name":"template-web"}\n',
+    });
+    try {
+      const output = await runBootstrapScript(harness.dir);
+      expect(output).not.toContain("Copying outputs template");
+      expect(
+        readFileSync(join(harness.dir, "outputs/web/package.json"), "utf8"),
+      ).toBe('{"name":"agent-built"}\n');
+      expect(output).toContain(
+        `web app dev server running on port ${harness.port}`,
+      );
+    } finally {
+      harness.restore();
+    }
+  }, 30000);
+
+  test("no app AND no template: the original missing-scaffold error, exit 1", async () => {
+    const harness = await scaffoldHarness({});
+    try {
+      const proc = Bun.spawn(["bash", "start-webapp.sh"], {
+        cwd: harness.dir,
+        env: { ...process.env },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      expect(code).toBe(1);
+      expect(`${out}${err}`).toContain(
+        "no web app scaffold found - build your web app under outputs/web first (outputs/web/package.json), then call webapp start again",
+      );
+      expect(readFileSync(join(harness.dir, ".nextjs-port"), "utf8")).toBe(
+        `${harness.port}\n`,
+      );
+      // No scaffold appeared out of nowhere.
+      expect(() =>
+        readFileSync(join(harness.dir, "outputs/web/package.json")),
+      ).toThrow();
+    } finally {
+      harness.restore();
+    }
+  }, 15000);
+});
+
+// ---------------------------------------------------------------------------
 // ③ the generated start-webapp.sh (fixture F5 F, environment-adapted)
 // ---------------------------------------------------------------------------
 
@@ -791,13 +925,25 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
     );
   });
 
-  test("environment substitution: no image template — a missing scaffold is honest guidance", () => {
-    // OpenBot's sandbox image carries no outputs template; the scaffold is the
-    // agent's job (AGENTS.md), so a missing package.json says so instead of
-    // copying /workspace/templates/outputs.
+  test("environment substitution: the scaffold template ships with the session, not the image", () => {
+    // OpenBot's sandbox image carries no outputs template; the byte-verbatim
+    // onyx tree ships with the server and materializes into the session at
+    // .openbot/web-template (managed-content push), so start scaffolds from
+    // there — onyx's cp semantics restored — and only reports a missing
+    // scaffold when neither the app nor the template exists.
     expect(script).not.toContain("/workspace/templates/outputs");
-    expect(script).toMatch(
-      /outputs\/web scaffold|build your web app under outputs\/web/,
+    expect(script).toContain(
+      'if [ ! -f "$SESSION_PATH/outputs/web/package.json" ]; then',
+    );
+    expect(script).toContain(
+      'if [ -f "$SESSION_PATH/.openbot/web-template/package.json" ]; then',
+    );
+    expect(script).toContain('echo "Copying outputs template"');
+    expect(script).toContain(
+      'cp -R "$SESSION_PATH/.openbot/web-template" "$SESSION_PATH/outputs/web"',
+    );
+    expect(script).toContain(
+      "no web app scaffold found - build your web app under outputs/web first (outputs/web/package.json), then call webapp start again",
     );
   });
 

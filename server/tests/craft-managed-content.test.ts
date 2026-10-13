@@ -66,6 +66,10 @@ function sources(
 ): CraftManagedContentSources {
   return {
     connectableAppsFor: async () => [],
+    // The template leg defaults to empty here so per-leg assertions (exact
+    // file sets, hydration booleans) stay about their own leg; the bundled
+    // default source has its own dedicated test.
+    webTemplateFilesFor: async () => new Map<string, Uint8Array>(),
     ...overrides,
   };
 }
@@ -175,6 +179,43 @@ describe("createCraftManagedContentResolver", () => {
       session(),
     );
     expect(content?.skillsHash).toBe(without?.skillsHash);
+  });
+
+  test("web template files ride along un-hashed (not part of the agent-visible skill surface)", async () => {
+    const template = new Map([
+      ["package.json", encoder.encode('{"name":"web"}')],
+      ["app/page.tsx", encoder.encode("export default () => null;")],
+    ]);
+    const resolver = createCraftManagedContentResolver(
+      sources({ webTemplateFilesFor: async () => template }),
+    );
+    const content = await resolver(session());
+    expect(content?.webTemplateFiles).toBe(template);
+    // The template is static server content: it must not enter the skills
+    // hash, or a template bump would hot-reload every live session.
+    const without = await createCraftManagedContentResolver(
+      sources({ webTemplateFilesFor: async () => new Map() }),
+    )(session());
+    expect(content?.skillsHash).toBe(without?.skillsHash);
+  });
+
+  test("the default web template source reads the server-bundled onyx tree (dotfiles included)", async () => {
+    // Explicit undefined override: the sources() factory injects an empty
+    // template leg by default (see its comment), so this test must opt out
+    // to exercise the bundled default.
+    const content = await createCraftManagedContentResolver(
+      sources({ webTemplateFilesFor: undefined }),
+    )(session());
+    expect(content?.webTemplateFiles.has("package.json")).toBe(true);
+    expect(content?.webTemplateFiles.has("bun.lock")).toBe(true);
+    expect(content?.webTemplateFiles.has(".oxlintrc.json")).toBe(true);
+    // The tree is much larger than a stub — the ported onyx template.
+    expect(content?.webTemplateFiles.size).toBeGreaterThan(50);
+    // Cached: a second resolution answers the same map instance.
+    const again = await createCraftManagedContentResolver(
+      sources({ webTemplateFilesFor: undefined }),
+    )(session());
+    expect(again?.webTemplateFiles).toBe(content?.webTemplateFiles);
   });
 
   test("a failing app source propagates (resolution must succeed before AGENTS.md)", async () => {
@@ -307,6 +348,48 @@ describe("materializeManagedContent", () => {
     expect(api.files.get("cs-mc/user_library/notes/todo.md")).toEqual(
       encoder.encode("buy milk"),
     );
+  });
+
+  test("delivers web template files under .openbot/web-template (the start-webapp.sh scaffold source)", async () => {
+    const api = memoryFileApi();
+    const content = await contentWith({
+      webTemplateFilesFor: async () =>
+        new Map([
+          ["package.json", encoder.encode('{"name":"web"}')],
+          [".oxlintrc.json", encoder.encode("{}")],
+          ["app/page.tsx", encoder.encode("page")],
+        ]),
+    });
+    const hydrated = await materializeManagedContent(api, "cs-mc", content);
+    expect(hydrated).toBe(true);
+    expect(api.files.get("cs-mc/.openbot/web-template/package.json")).toEqual(
+      encoder.encode('{"name":"web"}'),
+    );
+    expect(
+      api.files.get("cs-mc/.openbot/web-template/.oxlintrc.json"),
+    ).toEqual(encoder.encode("{}"));
+    expect(
+      api.files.get("cs-mc/.openbot/web-template/app/page.tsx"),
+    ).toEqual(encoder.encode("page"));
+  });
+
+  test("rejects path-escaping web template entries; a failed template write never fails hydration", async () => {
+    const api = memoryFileApi({ failPaths: /page\.tsx$/ });
+    const content = await contentWith({
+      webTemplateFilesFor: async () =>
+        new Map([
+          ["../escape.tsx", encoder.encode("no")],
+          ["package.json", encoder.encode("{}")],
+          ["app/page.tsx", encoder.encode("doomed")],
+        ]),
+    });
+    // The template leg is the library's contract: pushed best-effort, never
+    // hashed — a failed write degrades to "no scaffold", not a retry loop.
+    const hydrated = await materializeManagedContent(api, "cs-mc", content);
+    expect(hydrated).toBe(true);
+    expect([...api.files.keys()]).toEqual([
+      "cs-mc/.openbot/web-template/package.json",
+    ]);
   });
 
   test("clears the skills tree before writing (a removed skill must not linger)", async () => {

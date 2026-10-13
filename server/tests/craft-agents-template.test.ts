@@ -160,14 +160,20 @@ describe("AGENTS.template.md calibration", () => {
     );
   });
 
-  test("environment substitution, enumerated: the agent scaffolds before start (no image template)", () => {
+  test("environment substitution: onyx's scaffold semantics restored (the tool scaffolds)", () => {
     const rendered = render();
-    // onyx's "It scaffolds outputs/web" is FALSE here — the sandbox image ships
-    // no outputs template, so scaffold ownership is the agent's and the rule
-    // says so explicitly.
-    expect(rendered).toContain("scaffold it under");
-    expect(rendered).toContain("`outputs/web` FIRST, then call the `webapp`");
-    expect(rendered).not.toContain("It scaffolds `outputs/web`");
+    // onyx's "It scaffolds outputs/web" is TRUE again: the template ships with
+    // the server and materializes into the session (.openbot/web-template), so
+    // the webapp tool scaffolds on start exactly as onyx's image template did.
+    // The paragraph is onyx's lines 20-24 verbatim.
+    expect(rendered).toContain(
+      "- No web server is running initially. If your deliverable is a web app, call the `webapp`\n" +
+        '  tool with `action: "start"` FIRST. It scaffolds `outputs/web`, installs deps, starts the\n' +
+        "  dev server, and reports the port; safe to call repeatedly, and `status`/`logs` diagnose\n" +
+        "  problems. (If the tool is unavailable, run `bash start-webapp.sh` from the session root.)\n" +
+        "  Never run `bun run dev` or start your own server.",
+    );
+    expect(rendered).not.toContain("scaffold it under");
   });
 
   test("workspace layout names start-webapp.sh as the tool's fallback", () => {
@@ -178,12 +184,16 @@ describe("AGENTS.template.md calibration", () => {
 
   test("the Outputs paragraph routes web apps through the tool + fallback", () => {
     const rendered = render();
-    expect(rendered).toContain("calling the `webapp` tool with");
-    expect(rendered).toContain("(fallback: `bash start-webapp.sh`)");
+    // onyx's lines 112-118 verbatim: the tool scaffolds.
+    expect(rendered).toContain(
+      'A web app requires calling the `webapp` tool with `action: "start"` before building. It\n' +
+        "scaffolds `outputs/web`, installs deps, and starts the dev server (fallback: `bash\n" +
+        "start-webapp.sh`). Once running, it renders live (Next.js 16.1.1, React 19, Tailwind,\n" +
+        "Recharts, shadcn/ui); read `outputs/web/AGENTS.md` for its specs and styling before\n" +
+        "building.",
+    );
     expect(rendered).toContain("Once running, it renders live");
-    // The tool does not scaffold here either — same enumerated substitution.
-    expect(rendered).not.toContain("It\nscaffolds `outputs/web`");
-    expect(rendered).toContain("scaffolding `outputs/web`");
+    expect(rendered).not.toContain("scaffolding `outputs/web` (Next.js");
   });
 
   test("keeps the onyx turn-budget notice marker verbatim", () => {
