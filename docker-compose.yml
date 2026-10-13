@@ -536,7 +536,11 @@ services:
       # Unset means OpenAI. Set, any endpoint speaking the same API; BOT_MODEL
       # is sent to it verbatim.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_CONTAINER_BASE_URL:-${OPENAI_BASE_URL:-}}
+      # Unset means OpenAI. Set, any endpoint speaking the same API; BOT_MODEL
+      # is sent to it verbatim. AGENT_TRPC_BASE_URL is this Bot's OWN override:
+      # a deployment can point it at GLM (or any OpenAI-compatible endpoint)
+      # without moving every other Bot off the shared chain here.
+      OPENAI_BASE_URL: ${AGENT_TRPC_BASE_URL:-${OPENAI_CONTAINER_BASE_URL:-${OPENAI_BASE_URL:-}}}
       # The bots.agent-trpc row's gpt-5.5 unless a deployment names its own.
       BOT_MODEL: ${AGENT_TRPC_MODEL:-}
     healthcheck:
