@@ -4850,3 +4850,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 log.info({ port }, "OpenBot server listening on http://127.0.0.1");
+
