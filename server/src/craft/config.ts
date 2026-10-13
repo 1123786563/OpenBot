@@ -85,9 +85,16 @@ export type CraftConfig = {
   /** Where attachments live inside a session workspace; also the prompt-part allow-list root. */
   readonly attachmentsDirectory: string;
 
-  // ── sandbox lifecycle (kept for parity; the reaper itself is a later phase) ─
+  // ── sandbox lifecycle (the idle reaper reads both below) ────────────────────
   readonly sandboxIdleTimeoutSeconds: number;
   readonly sandboxHeartbeatRefreshIntervalSeconds: number;
+  /** Gate the idle reaper's periodic sweep — false = the reaper never starts. */
+  readonly idleReaperEnabled: boolean;
+  /**
+   * The reaper's sweep cadence (onyx's celery beat SANDBOX_IDLE_CLEANUP_INTERVAL_SECONDS). A
+   * session that goes quiet just past the idle boundary is caught within one cadence.
+   */
+  readonly idleReaperIntervalSeconds: number;
   readonly sandboxNextjsPortStart: number;
   readonly sandboxNextjsPortEnd: number;
 
@@ -103,6 +110,13 @@ export type CraftConfig = {
    * wire never races the client's own timeout (onyx: SANDBOX_APPROVAL_WAIT_MARGIN_SECONDS).
    */
   readonly sandboxApprovalWaitMarginSeconds: number;
+  /**
+   * Comma-separated opencode tool names whose permission.asked routes through the approval
+   * rendezvous instead of auto-allow (`OPENBOT_CRAFT_APPROVAL_GATED_TOOLS`; default empty =
+   * every ask is still auto-allowed, the phase-1 posture). Rendered into the session's
+   * opencode.json as an "ask" rule for the whole tool.
+   */
+  readonly approvalGatedTools: readonly string[];
 
   // ── SSE / opencode-serve ───────────────────────────────────────────────────
   /** SSE + runner-liveness base cadence (SSE_KEEPALIVE_INTERVAL). */
@@ -176,6 +190,14 @@ export type CraftConfig = {
    */
   readonly sandboxBotId: string;
 
+  /**
+   * Operator override for the base url the per-user craft MCP set stamps into session
+   * opencode.json entries (the relay's origin — the sandbox's opencode dials it and it
+   * attaches credentials). Unset = derive from the deployment's public url at the
+   * wiring (the boot file), which is the honest default for a co-located deployment.
+   */
+  readonly mcpRelayBaseUrl: string;
+
   // ── phase-2 gates (webapp proxy / scheduled tasks) ────────────────────────
   /** Gate the crafting UI's webapp reverse-proxy (Preview tab). */
   readonly webappProxyEnabled: boolean;
@@ -196,6 +218,12 @@ export type CraftConfig = {
    * remainder is the wrap-up window (TURN_SOFT_BUDGET_FRACTION == 0.4 of the hard cap).
    */
   readonly interactiveTurnSoftBudgetSeconds: number;
+  /**
+   * This close to the hard cap the turn-budget plugin's converge steer escalates to finish-now
+   * (onyx TURN_FINAL_NOTICE_MARGIN_SECONDS == 10 min). Derives the stamp's
+   * final_deadline = max(soft, hard − margin); contract, not a knob.
+   */
+  readonly turnFinalNoticeMarginSeconds: number;
   /**
    * Redis TTL of the turn record + active-turn pointer. Floor is cap + reclaim slack so a live
    * turn's admission block never evaporates under it (1800s + 900s = 2700s).
@@ -253,6 +281,11 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     "OPENBOT_CRAFT_OPENCODE_DISABLED_TOOLS",
     "question",
   );
+  const approvalGatedToolsRaw = stringEnv(
+    env,
+    "OPENBOT_CRAFT_APPROVAL_GATED_TOOLS",
+    "",
+  );
 
   const maxUploadFileSizeMb = intEnv(
     env,
@@ -274,6 +307,11 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       .map((tool) => tool.trim())
       .filter((tool) => tool.length > 0),
 
+    approvalGatedTools: approvalGatedToolsRaw
+      .split(",")
+      .map((tool) => tool.trim())
+      .filter((tool) => tool.length > 0),
+
     maxUploadFileSizeMb,
     maxUploadFileSizeBytes: maxUploadFileSizeMb * 1024 * 1024,
     maxUploadFilesPerSession: intEnv(
@@ -291,6 +329,12 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       3600,
     ),
     sandboxHeartbeatRefreshIntervalSeconds: 60,
+    idleReaperEnabled: boolEnv(env, "OPENBOT_CRAFT_IDLE_REAPER_ENABLED", true),
+    idleReaperIntervalSeconds: intEnv(
+      env,
+      "OPENBOT_CRAFT_IDLE_REAPER_INTERVAL_SECONDS",
+      60,
+    ),
     sandboxNextjsPortStart: intEnv(
       env,
       "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START",
@@ -402,6 +446,8 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       ? stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft")
       : "craft",
 
+    mcpRelayBaseUrl: stringEnv(env, "OPENBOT_CRAFT_MCP_RELAY_BASE_URL", ""),
+
     // ── phase-2 gates ─────────────────────────────────────────────────────────
     webappProxyEnabled: boolEnv(
       env,
@@ -420,6 +466,7 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     interactiveTurnSoftBudgetSeconds: Math.floor(
       0.4 * interactiveTurnHardCapSeconds,
     ), // 720s
+    turnFinalNoticeMarginSeconds: 10 * 60, // 600s, onyx timeouts.py parity
     activeTurnTtlSeconds:
       interactiveTurnHardCapSeconds + turnReclaimSlackSeconds, // 2700s
     requestIdTtlSeconds:

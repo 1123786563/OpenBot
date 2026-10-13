@@ -481,8 +481,14 @@ export function createInProcessTurnStateStore(
       turns.delete(turnId);
       return null;
     }
-    // Copy so callers can't mutate stored state without saving.
-    return { ...entry.turn, attachments: [...entry.turn.attachments] };
+    // Copy so callers can't mutate stored state without saving. `reclaimed` is
+    // claim-local (see the field's docblock): the Redis store strips it on save, so the
+    // copy resets it here — reads never resurrect a stale reclaim flag.
+    return {
+      ...entry.turn,
+      reclaimed: false,
+      attachments: [...entry.turn.attachments],
+    };
   };
 
   const put = (turn: InteractiveTurn, ttlSeconds: number) => {

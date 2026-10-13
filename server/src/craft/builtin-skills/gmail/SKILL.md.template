@@ -1,0 +1,95 @@
+<!-- Ported from onyx skills/builtin/gmail/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     gmail_api.py helper and its command examples are replaced by the user's
+     connected Gmail MCP server tools, and onyx's cloud-scope blocks are
+     pre-resolved to the non-cloud branch (OpenBot deployments are never
+     cloud-scope; the catalogued Gmail server's scopes are whatever the
+     administrator granted). Domain guidance (search syntax, labels, drafts,
+     threads, attachments, error discipline) is onyx verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: gmail
+description: Read, search, send, and draft email from the connected user's Gmail via the Gmail MCP server.
+---
+
+# Gmail
+
+Call the Gmail API as the connected user through the Gmail MCP server
+connected to this session. The session's MCP relay attaches the user's
+credential on every call; never ask for or handle credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Read tools (messages, threads, labels, drafts, profile) run freely. The
+writes are sending, modifying labels, trashing, and the draft operations;
+there is no permanent message delete. `me` is always the connected user.
+
+Prefer drafts when an email needs the user's review: a draft saves an email
+without sending it, so the user can check and send it from Gmail.
+
+### List / search messages
+
+Lists message headers (From, Subject, Date, snippet). Search takes Gmail
+search syntax (e.g. `is:unread from:boss@x.com newer_than:7d`).
+
+### One message
+
+Full message with its decoded plain-text body.
+
+### Read a thread
+
+A whole conversation, each message with its decoded plain-text body.
+
+### Send a message (write)
+
+### Create a draft (write, not sent)
+
+Saves an email without sending it — the user can review and send it from
+Gmail.
+
+### List labels
+
+### Modify labels on a message (write)
+
+Add or remove label IDs. Mark read by removing `UNREAD`; archive by removing
+`INBOX`.
+
+### Trash a message (write, reversible)
+
+### Profile
+
+### Drafts
+
+List drafts (each summarised like a message), or read one with its decoded
+body.
+
+### Update a draft (write, not sent)
+
+Updating a draft replaces the whole draft.
+
+### Delete / send a draft (write)
+
+Deleting a draft permanently removes it. Sending a draft sends the existing
+draft as an email.
+
+### Download an attachment
+
+Attachment ids come from a message's payload parts (fetch the message first);
+binary bytes are never printed to stdout — ask for a file output when the
+tool offers one.
+
+## Output
+
+Tool results are JSON. List tools return the items and whether more existed
+past the limit; failures include Google's error (with `code` and `message`) —
+surface the error rather than retrying blindly.
+
+## Notes
+
+- Message bodies are returned decoded from base64url; for multipart messages
+  the first `text/plain` part is used.
+- Common system label IDs: `INBOX`, `UNREAD`, `STARRED`, `SENT`, `TRASH`,
+  `SPAM`, `IMPORTANT`.

@@ -6,12 +6,14 @@
  *
  * - KEEPALIVES: a comment line (`: keepalive`) every 15s, so proxies and clients that time out
  *   on read-silence stay attached through the gaps between heartbeats.
- * - THE FAMILY FILTER: only the five product families (message_chunk, thought, tool_call,
- *   progress, prompt_response) pass through, per the live capture in docs/sse-samples.md —
- *   `plugin.added` alone was 15% of a real turn's traffic, and the workshop's process view has
- *   no use for it. Filtering here, at the single choke point, means every consumer downstream
- *   (B8's gateway, B9's translator, F5's stream view) inherits the decision without each
- *   re-implementing it and each getting it slightly differently.
+ * - THE FAMILY FILTER: only the product families (message_chunk, thought, tool_call,
+ *   progress, prompt_response, permission) pass through, per the live capture in
+ *   docs/sse-samples.md — `plugin.added` alone was 15% of a real turn's traffic, and the
+ *   workshop's process view has no use for it. Filtering here, at the single choke point,
+ *   means every consumer downstream (B8's gateway, B9's translator, F5's stream view)
+ *   inherits the decision without each re-implementing it and each getting it slightly
+ *   differently. `permission` is the control-plane exception: the craft server routes
+ *   approval/connect_app decisions off permission.asked, so it must survive the filter.
  */
 import { familyOf, parseSandboxEvent } from "./events";
 
@@ -27,6 +29,12 @@ export type SseForwardOptions = {
   keepaliveMs?: number;
   /** The upstream path; opencode serves its event bus at /event. */
   upstreamPath?: string;
+  /**
+   * The already-encoded query string to append (`"?directory=…"`). opencode
+   * scopes /event per ?directory= — a directory-scoped session's events only
+   * publish on the scoped stream, so the caller's scope must ride through.
+   */
+  upstreamQuery?: string | null;
   /** Called for every forwarded block — the proxy's activity clock for this Bot. */
   onEvent?: () => void;
   /** Called exactly once when the forwarded stream ends, however it ends. */
@@ -48,7 +56,7 @@ export async function forwardEvents(
   let upstream: Response;
   try {
     upstream = await doFetch(
-      `http://127.0.0.1:${options.upstreamPort}${options.upstreamPath ?? "/event"}`,
+      `http://127.0.0.1:${options.upstreamPort}${options.upstreamPath ?? "/event"}${options.upstreamQuery ?? ""}`,
     );
   } catch {
     // A refused connection is an answer, not an exception the caller has to catch: the same
@@ -98,7 +106,9 @@ export async function forwardEvents(
         for (;;) {
           const { done, value } = await reader.read();
           if (done) {
-            guard(() => controller.enqueue(encoder.encode(": upstream closed\n\n")));
+            guard(() =>
+              controller.enqueue(encoder.encode(": upstream closed\n\n")),
+            );
             closed = true;
             try {
               controller.close();
@@ -169,13 +179,11 @@ export async function forwardEvents(
  * One upstream SSE block, forwarded or dropped.
  *
  * A block is `data: {...}` (opencode sends no event:/id: lines). It passes when its event
- * family is one of the five the product consumes; heartbeats, plugin noise, session metadata
+ * family is one of the six the product consumes; heartbeats, plugin noise, session metadata
  * and unknown future types are dropped here — the single place that decision lives.
  */
 export function forwardBlock(block: string): string | null {
-  const dataLine = block
-    .split("\n")
-    .find((line) => line.startsWith("data:"));
+  const dataLine = block.split("\n").find((line) => line.startsWith("data:"));
   if (!dataLine) return null;
   const payload = dataLine.slice("data:".length).trim();
   if (!payload) return null;

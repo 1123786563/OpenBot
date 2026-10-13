@@ -50,6 +50,7 @@ import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
 import { Route as AuthedAppCraftIndexRouteImport } from './routes/_authed/_app/craft/index'
 import { Route as AuthedAppCraftSessionIdRouteImport } from './routes/_authed/_app/craft/$sessionId'
+import { Route as AuthedAppCraftTasksRouteImport } from './routes/_authed/_app/craft/tasks'
 import { Route as AuthedAppGroupChannelIdRouteImport } from './routes/_authed/_app/group/$channelId'
 import { Route as AuthedAppGroupNewRouteImport } from './routes/_authed/_app/group/new'
 import { Route as AuthedAppKnowledgeIndexRouteImport } from './routes/_authed/_app/knowledge.index'
@@ -273,6 +274,11 @@ const AuthedAppCraftSessionIdRoute = AuthedAppCraftSessionIdRouteImport.update({
   path: '/craft/$sessionId',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppCraftTasksRoute = AuthedAppCraftTasksRouteImport.update({
+  id: '/craft/tasks',
+  path: '/craft/tasks',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
 const AuthedAppGroupChannelIdRoute = AuthedAppGroupChannelIdRouteImport.update({
   id: '/group/$channelId',
   path: '/group/$channelId',
@@ -401,6 +407,7 @@ export interface FileRoutesByFullPath {
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
   '/craft/$sessionId': typeof AuthedAppCraftSessionIdRoute
+  '/craft/tasks': typeof AuthedAppCraftTasksRoute
   '/group/$channelId': typeof AuthedAppGroupChannelIdRoute
   '/group/new': typeof AuthedAppGroupNewRoute
   '/knowledge/$kbId': typeof AuthedAppKnowledgeKbIdRoute
@@ -456,6 +463,7 @@ export interface FileRoutesByTo {
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
   '/craft/$sessionId': typeof AuthedAppCraftSessionIdRoute
+  '/craft/tasks': typeof AuthedAppCraftTasksRoute
   '/group/$channelId': typeof AuthedAppGroupChannelIdRoute
   '/group/new': typeof AuthedAppGroupNewRoute
   '/knowledge/$kbId': typeof AuthedAppKnowledgeKbIdRoute
@@ -516,6 +524,7 @@ export interface FileRoutesById {
   '/_authed/_app/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/_authed/_app/channel/new': typeof AuthedAppChannelNewRoute
   '/_authed/_app/craft/$sessionId': typeof AuthedAppCraftSessionIdRoute
+  '/_authed/_app/craft/tasks': typeof AuthedAppCraftTasksRoute
   '/_authed/_app/group/$channelId': typeof AuthedAppGroupChannelIdRoute
   '/_authed/_app/group/new': typeof AuthedAppGroupNewRoute
   '/_authed/_app/knowledge/$kbId': typeof AuthedAppKnowledgeKbIdRoute
@@ -575,6 +584,7 @@ export interface FileRouteTypes {
     | '/channel/$channelId'
     | '/channel/new'
     | '/craft/$sessionId'
+    | '/craft/tasks'
     | '/group/$channelId'
     | '/group/new'
     | '/knowledge/$kbId'
@@ -630,6 +640,7 @@ export interface FileRouteTypes {
     | '/channel/$channelId'
     | '/channel/new'
     | '/craft/$sessionId'
+    | '/craft/tasks'
     | '/group/$channelId'
     | '/group/new'
     | '/knowledge/$kbId'
@@ -689,6 +700,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/channel/$channelId'
     | '/_authed/_app/channel/new'
     | '/_authed/_app/craft/$sessionId'
+    | '/_authed/_app/craft/tasks'
     | '/_authed/_app/group/$channelId'
     | '/_authed/_app/group/new'
     | '/_authed/_app/knowledge/$kbId'
@@ -1005,6 +1017,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppCraftSessionIdRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/craft/tasks': {
+      id: '/_authed/_app/craft/tasks'
+      path: '/craft/tasks'
+      fullPath: '/craft/tasks'
+      preLoaderRoute: typeof AuthedAppCraftTasksRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/group/$channelId': {
       id: '/_authed/_app/group/$channelId'
       path: '/group/$channelId'
@@ -1211,6 +1230,7 @@ interface AuthedAppRouteChildren {
   AuthedAppChannelChannelIdRoute: typeof AuthedAppChannelChannelIdRoute
   AuthedAppChannelNewRoute: typeof AuthedAppChannelNewRoute
   AuthedAppCraftSessionIdRoute: typeof AuthedAppCraftSessionIdRoute
+  AuthedAppCraftTasksRoute: typeof AuthedAppCraftTasksRoute
   AuthedAppGroupChannelIdRoute: typeof AuthedAppGroupChannelIdRoute
   AuthedAppGroupNewRoute: typeof AuthedAppGroupNewRoute
   AuthedAppKnowledgeKbIdRoute: typeof AuthedAppKnowledgeKbIdRoute
@@ -1235,6 +1255,7 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppChannelChannelIdRoute: AuthedAppChannelChannelIdRoute,
   AuthedAppChannelNewRoute: AuthedAppChannelNewRoute,
   AuthedAppCraftSessionIdRoute: AuthedAppCraftSessionIdRoute,
+  AuthedAppCraftTasksRoute: AuthedAppCraftTasksRoute,
   AuthedAppGroupChannelIdRoute: AuthedAppGroupChannelIdRoute,
   AuthedAppGroupNewRoute: AuthedAppGroupNewRoute,
   AuthedAppKnowledgeKbIdRoute: AuthedAppKnowledgeKbIdRoute,

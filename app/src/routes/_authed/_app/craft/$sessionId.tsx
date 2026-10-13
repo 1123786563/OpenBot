@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ChatPanel } from "@/components/craft/chat-panel";
 import { OutputPanel } from "@/components/craft/output-panel";
+import { SandboxStatusIndicator } from "@/components/craft/sandbox-status-indicator";
 import { SessionSidebar } from "@/components/craft/session-sidebar";
 import { craftSessionQueryOptions } from "@/lib/craft/queries";
 
@@ -25,10 +26,13 @@ function CraftSessionView() {
     <div className="flex min-h-0 flex-1">
       <SessionSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center border-b border-border px-4">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
           <h1 className="truncate text-sm font-medium">
             {session.data?.name ?? t("session.untitled")}
           </h1>
+          <div className="ml-auto">
+            <SandboxStatusIndicator sessionId={sessionId} />
+          </div>
         </header>
         <div className="min-h-0 flex-1 border-r border-border">
           <ChatPanel sessionId={sessionId} />

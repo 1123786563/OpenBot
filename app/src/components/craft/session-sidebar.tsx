@@ -1,4 +1,10 @@
-import { IconPencil, IconPlus, IconTrash, IconWand } from "@tabler/icons-react";
+import {
+  IconCalendarClock,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  IconWand,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -59,15 +65,26 @@ export function SessionSidebar() {
           <IconWand className="size-4 text-muted-foreground" />
           {t("session.title")}
         </span>
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label={t("session.new")}
-          disabled={create.isPending}
-          onClick={() => create.mutate()}
-        >
-          <IconPlus />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          {/* onyx's SidebarTab: the roster's sibling destination, one click away. */}
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={t("tasks.nav")}
+            render={(props) => <Link to="/craft/tasks" {...props} />}
+          >
+            <IconCalendarClock />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={t("session.new")}
+            disabled={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            <IconPlus />
+          </Button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {sessions.isPending ? (

@@ -1,0 +1,86 @@
+<!-- Ported from onyx skills/builtin/notion/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     notion_api.py REST wrapper and its command examples are replaced by the
+     user's connected Notion MCP server tools. Domain guidance (pages, data
+     sources, blocks, comments, archive semantics, error discipline) is onyx
+     verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: notion
+description: Search, read, and write Notion pages, databases, blocks, and comments on the connected user's behalf via the Notion MCP server.
+---
+
+# Notion
+
+Call Notion as the connected user through the Notion MCP server connected to
+this session. The session's MCP relay attaches the user's credential on every
+call; never ask for or handle credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Read tools (the connected user, users, search, pages, blocks, databases,
+queries) run freely. The writes are creating pages, appending content,
+commenting, updating pages, updating blocks, and deleting blocks. Read tools
+that paginate should be capped with a result limit to keep your context
+small.
+
+### The connected user
+
+### Users
+
+### Search pages and data sources
+
+The query is optional — omit it to list everything the integration can
+access. Filter to pages or data sources when you know which you need.
+
+### Read a page
+
+### Read a page/block's child blocks (its content)
+
+### List a database's data sources
+
+A database contains one or more data sources; each has an `id` and a `name`.
+Use a data source id to read its schema or query its rows.
+
+### Read a data source's schema
+
+### Query a data source's rows
+
+### Create a page (write)
+
+A new page needs a parent (a page or a data source), a title, and optionally
+a first paragraph of text.
+
+### Append content to a page/block (write)
+
+### Comment on a page (write)
+
+### Update a page's title/icon, or archive it (write)
+
+Archiving moves the page to trash; restoring brings it back.
+
+### Update or archive a block (write)
+
+Replacing a paragraph block's content requires the block to be a paragraph.
+
+### Delete a block (write)
+
+Moves the block to trash. To archive/restore a whole page, update the page.
+
+## Output
+
+Tool results are JSON. List tools return the items and whether more existed
+past the limit; failures return the HTTP status and message — surface the
+error rather than retrying blindly.
+
+## Notes
+
+- IDs are Notion object ids (UUIDs), with or without dashes. Get them from
+  search, block, database, or query output.
+- The integration's capabilities (read / write / comment) are set by the
+  administrator on the Notion integration. A 401 / 403 usually means the
+  integration lacks the needed capability or hasn't been shared with the
+  page — tell the user rather than retrying.

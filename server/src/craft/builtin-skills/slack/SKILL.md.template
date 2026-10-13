@@ -1,0 +1,65 @@
+<!-- Ported from onyx skills/builtin/slack/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     slack_api.py helper and its command examples are replaced by the user's
+     connected Slack MCP server tools. Domain guidance (IDs, scopes, search,
+     upload flow, error discipline) is onyx verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: slack
+description: Read, search, post, and upload files to Slack on the connected user's behalf via the Slack MCP server.
+---
+
+# Slack
+
+Call Slack as the connected user through the Slack MCP server connected to
+this session. The session's MCP relay attaches the user's credential on every
+call; never ask for or handle credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Read tools (channels, history, replies, users, search) run freely; posting
+and uploading are the writes. Read tools that paginate should be capped with
+a result limit to keep your context small.
+
+### List channels
+
+### Read channel messages
+
+Channel messages come newest-first in pages; cap the count.
+
+### Read thread replies
+
+Thread replies are addressed by the parent message's timestamp
+(e.g. `1700000000.000100`).
+
+### List workspace users
+
+### Look up one user
+
+### Search messages
+
+Workspace-wide message search (e.g. `deploy failed`).
+
+### Post a message (write)
+
+### Upload a file (write)
+
+Shares a local file into the channel/DM; name the channel, the file, an
+optional comment, and an optional thread timestamp to reply in a thread.
+
+## Output
+
+Tool results are JSON. Read tools return the items and whether more existed
+past the limit; failures carry Slack's `error` code (e.g.
+`not_in_channel`, `missing_scope`) — surface `error` rather than retrying
+blindly.
+
+## Notes
+
+- Channels/users are referenced by ID (e.g. `C…`, `U…`); resolve names via
+  the channels / users tools first.
+- Scopes were chosen by the admin. You cannot widen them; on
+  `missing_scope`, tell the user which scope is needed.

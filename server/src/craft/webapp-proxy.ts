@@ -5,24 +5,47 @@
  * Three endpoints:
  * - GET /sessions/:id/webapp-info    — has_webapp / webapp_url / status / ready
  * - GET /sessions/:id/webapp/*        — reverse-proxy the session's dev server
- * - GET /sessions/:id/webapp-download — the scaffolded webapp as a tar.gz
+ * - GET /sessions/:id/webapp-download — the scaffolded webapp as a ZIP (T5: onyx parity)
  *
  * onyx points a Next.js dev server at a backend-reserved port and proxies to it with header
  * hygiene (hop-by-hop + credentials stripped, no set-cookie forwarding) and a relaxed CSP for
- * dev tooling. OpenBot reaches the agent-sandbox dev server pool (`POST /devserver/start`) and
- * streams through the same hygiene — the workspace-preview's two-tier CSP is reused word for
- * word so the dev road and this one can't drift.
+ * dev tooling. OpenBot's restored webapp tool runs the same shape: the session's dev server
+ * is the script-managed process bound to the reserved `craft_sessions.nextjs_port` (see
+ * nextjs-dev.ts), and this proxy ATTACHES to that port — status and preview report the same
+ * port by construction, and a down server is an honest 503 (onyx's webapp_proxy refuses too)
+ * rather than a second spawned process beside the managed one.
+ *
+ * WHERE THE PORT LIVES (finding F-E): the dev server listens INSIDE the sandbox (the
+ * container the agent-sandbox gateway fronts), not on the API server's own loopback —
+ * dialing `http://127.0.0.1:{port}` from the server never reached it in the host-server +
+ * docker-sandbox topology (live: in-container 200, host 000 → ready永false / preview 503).
+ * The reachability paths (the ready probe and the proxy upstream) therefore dial the
+ * SANDBOX host — the gateway connection's host (config.sandboxGatewayBaseUrl, else the
+ * per-bot connection baseUrl), the one machine every craft file call already reaches and
+ * the one the reserved port range is published from. The tool/status semantics are
+ * untouched: the webapp tool still reports the same reserved port from the sandbox's own
+ * script/pid state.
  */
 
-import { gzipSync } from "node:zlib";
-import { Hono, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { DEV_CSP_ALLOW_LISTED } from "../workshop/preview";
 import type { CraftConfig } from "./config";
-import { startNextjsDevServer } from "./nextjs-dev";
+import {
+  collectWorkspaceFiles,
+  type WorkspaceFileEntry,
+  WorkspaceListingError,
+} from "./directory-archive";
+import { webappDevServerReady, webappUpstreamHost } from "./nextjs-dev";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
+import {
+  buildContentDisposition,
+  sanitizeZipBasename,
+  zipEntries,
+} from "./zip-archive";
 
 export type WebappProxyRoutesDeps = {
   config: CraftConfig;
@@ -35,8 +58,11 @@ export type WebappProxyRoutesDeps = {
   ) => { baseUrl: string; token: string | null } | null;
 };
 
-const WEBAPP_COMMAND = "bun run dev";
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
+/** The headless refusal: no reserved port, no webapp support (onyx parity). */
+const WEBAPP_NO_SUPPORT_ERROR = "This session has no web-app support.";
+
+const logger = getLogger("server");
 
 /**
  * Request headers never forwarded to the LLM-authored app, matched by lowercase key — onyx's
@@ -157,61 +183,6 @@ export async function proxyWebappRequest(input: {
   };
 }
 
-/**
- * A minimal POSIX-ustar writer + gzip — enough for the webapp-download tar.gz. There is no
- * tar dependency in the tree, and the archive's contract is "a browser can open it", which an
- * 8.3-name, single-pass, no-longpath writer satisfies for a scaffolded webapp.
- */
-export function tarGzip(
-  entries: { path: string; bytes: Uint8Array }[],
-): Uint8Array {
-  const encoder = new TextEncoder();
-  const chunks: Uint8Array[] = [];
-  const push = (buf: Uint8Array) => chunks.push(buf);
-
-  const octal = (value: number, width: number): string =>
-    `${value
-      .toString(8)
-      .padStart(width - 1, "0")
-      .slice(0, width - 1)} `;
-
-  for (const entry of entries) {
-    const header = new Uint8Array(512);
-    const write = (offset: number, value: string) =>
-      header.set(encoder.encode(value).slice(0, 512 - offset), offset);
-
-    write(0, entry.path.slice(0, 100));
-    write(100, "0000644"); // mode
-    write(108, "0000000"); // uid
-    write(116, "0000000"); // gid
-    write(124, octal(entry.bytes.length, 12)); // size (octal, 11 digits + space)
-    write(136, "00000000000"); // mtime
-    header[156] = "0".charCodeAt(0); // typeflag: regular file
-    write(257, "ustar");
-    write(263, "00");
-
-    // checksum: spaces first, then the sum-of-bytes in octal.
-    let sum = 0;
-    for (let i = 0; i < 512; i++) sum += header[i];
-    write(148, `${sum.toString(8).padStart(6, "0")}\0 `);
-
-    push(header);
-    push(entry.bytes);
-    const padding = (512 - (entry.bytes.length % 512)) % 512;
-    if (padding > 0) push(new Uint8Array(padding));
-  }
-  push(new Uint8Array(1024)); // two zero blocks: end of archive
-
-  const total = chunks.reduce((n, chunk) => n + chunk.length, 0);
-  const joined = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return new Uint8Array(gzipSync(joined));
-}
-
 function hasWebappScaffold(paths: string[]): boolean {
   return paths.some(
     (path) => path.endsWith("/package.json") || path.endsWith("package.json"),
@@ -262,45 +233,73 @@ export function createWebappProxyRoutes(
     const hasWebapp =
       (listing?.length ?? 0) > 0 && hasWebappScaffold(listing ?? []);
 
+    // onyx's ready judgment (manager.py:1570-1593): any answer on the managed
+    // port counts — the same port the webapp tool reports and the proxy below
+    // routes to, so status and preview can never disagree. The dial goes to the
+    // SANDBOX host (F-E): the reserved port lives inside the sandbox, not on this
+    // server's loopback.
+    const ready =
+      hasWebapp &&
+      session.nextjsPort !== null &&
+      (await webappDevServerReady({
+        host: webappUpstreamHost(
+          deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+        ),
+        port: session.nextjsPort as number,
+      }));
+
     return context.json({
       has_webapp: hasWebapp,
       webapp_url: `/api/craft/sessions/${sessionId}/webapp`,
       status: "running",
-      ready: false, // the iframe's first fetch lazily starts the dev server
+      ready,
     });
   });
 
   // ── GET /sessions/:id/webapp/* — the reverse proxy ──────────────────────────
-  app.get("/sessions/:sessionId/webapp/*", async (context) => {
+  // `:path{.+}` not `*`: Hono 4.13's bare wildcard matches but `param("*")` reads null;
+  // the named regex param is the readable multi-segment shape (see artifact-routes). The
+  // bare `/webapp` registration keeps the iframe's root URL (webapp-info answers exactly
+  // that shape) served — a regex param alone would 404 the empty path.
+  const proxyWebapp = async (
+    context: Context<{ Variables: AppVariables }, string>,
+  ) => {
     const actor = context.var.actor;
-    const sessionId = context.req.param("sessionId");
-    const rel = context.req.param("*") ?? "";
+    // The shared handler serves both route shapes, so the params are read by name with a
+    // fallback (a matched route always carries the session id; "" degrades to the 404 below).
+    const sessionId = context.req.param("sessionId") ?? "";
+    const rel = context.req.param("path") ?? "";
     const { session, botId, conn } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!botId || !conn) {
       return context.json({ error: "The sandbox is not available." }, 503);
     }
 
-    const directory = sessionDirectory(
-      sessionId,
-      deps.config.sessionDirectoryMode,
+    // Attach, never spawn: the session's reserved port is the managed process's
+    // routing contract — the webapp tool's start-webapp.sh owns the one process
+    // per session, and the preview refuses rather than double-spawning beside it.
+    const port = session.nextjsPort;
+    if (port === null) {
+      return context.json({ error: WEBAPP_NO_SUPPORT_ERROR }, 503);
+    }
+    // The reserved port lives INSIDE the sandbox: the probe and the proxy both
+    // dial the sandbox host (the gateway connection's host), never this server's
+    // own loopback (F-E).
+    const upstreamHost = webappUpstreamHost(
+      deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
     );
-    // For agent-sandbox the dev-server dir must be Bot-relative (it refuses absolutes);
-    // in absolute mode the same segment arithmetic still stays inside the workspace.
-    const devDir = `${directory}/outputs/web`;
-    const started = await startNextjsDevServer({
-      botId,
-      baseUrl: conn.baseUrl,
-      token: conn.token,
-      dir: devDir,
-      command: WEBAPP_COMMAND,
-    });
-    if (!started.ok) {
-      return context.json({ error: started.error }, 503);
+    if (!(await webappDevServerReady({ host: upstreamHost, port }))) {
+      return context.json(
+        {
+          error:
+            "The web app is not running. Ask the agent to call the webapp tool with action 'start'.",
+        },
+        503,
+      );
     }
 
     const result = await proxyWebappRequest({
-      upstreamBaseUrl: `http://127.0.0.1:${started.port}`,
+      upstreamBaseUrl: `http://${upstreamHost}:${port}`,
       path: rel,
       query: context.req.url.includes("?")
         ? context.req.url.slice(context.req.url.indexOf("?"))
@@ -311,14 +310,19 @@ export function createWebappProxyRoutes(
       status: result.status,
       headers: result.headers,
     });
-  });
+  };
+  app.get("/sessions/:sessionId/webapp/:path{.+}", proxyWebapp);
+  app.get("/sessions/:sessionId/webapp", proxyWebapp);
 
-  // ── GET /sessions/:id/webapp-download — the scaffolded webapp as tar.gz ─────
+  // ── GET /sessions/:id/webapp-download — the scaffolded webapp as a ZIP ──────
+  // onyx api.py:681-708 + manager.py:1595-1636: every None shape (no session, no
+  // sandbox, no outputs/web) answers the same 404 "Webapp not found" — an
+  // ownership probe reads as absence, exactly onyx's indistinct refusal.
   app.get("/sessions/:sessionId/webapp-download", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
     const { session, botId } = await resolve(sessionId, actor.id);
-    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!session) return context.json({ error: "Webapp not found" }, 404);
     if (!botId) return context.json({ error: "Webapp not found" }, 404);
 
     const directory = sessionDirectory(
@@ -329,32 +333,47 @@ export function createWebappProxyRoutes(
     if (!fileApi) return context.json({ error: "Webapp not found" }, 404);
 
     const root = `${directory}/outputs/web`;
-    const listing = await fileApi.listFiles(root).catch(() => [] as string[]);
-    const prefix = root.endsWith("/") ? root : `${root}/`;
-
-    const entries: { path: string; bytes: Uint8Array }[] = [];
-    for (const path of listing) {
-      if (path.startsWith("/") || path.includes("/../")) continue;
-      if (isHiddenSegment(path)) continue;
-      const relPath = path.startsWith(prefix)
-        ? path.slice(prefix.length)
-        : path;
-      if (!relPath) continue;
-      const bytes = await fileApi.readFileBytes(path).catch(() => null);
-      if (bytes === null) continue;
-      entries.push({ path: relPath, bytes });
+    // The same recursive walk the download-directory route packs with (F6 §C): the
+    // gateway's listing is one level, so `collectWorkspaceFiles` rebuilds onyx's
+    // outputs/web walk over repeated listings — hidden subtrees pruned whole,
+    // unreadable files skipped, arcnames relative to outputs/web.
+    let entries: WorkspaceFileEntry[];
+    try {
+      entries = await collectWorkspaceFiles(fileApi, root);
+    } catch (error) {
+      // outputs/web doesn't exist — onyx's list_directory ValueError → None → 404.
+      // Only the listing's own failure wears that mask; a walk that could not be
+      // completed says so (502), because the directory DID answer.
+      if (error instanceof WorkspaceListingError) {
+        return context.json({ error: "Webapp not found" }, 404);
+      }
+      logger.warn(
+        {
+          sessionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "[craft] webapp archive failed",
+      );
+      return context.json(
+        { error: "The webapp archive could not be built." },
+        502,
+      );
     }
-    if (entries.length === 0) {
-      return context.json({ error: "Webapp not found" }, 404);
-    }
+    // A directory whose visible files are all filtered away is an EMPTY zip, not a
+    // 404 — onyx distinguishes "outputs/web is missing" (None) from "holds nothing
+    // downloadable" (a zero-entry archive).
 
-    const archive = tarGzip(entries);
+    const archive = zipEntries(entries);
+    // manager.py:1634-1636: the session's name (or a session-{id[:8]} stem),
+    // sanitized with allow_dots=False — dots are unsafe in a download's stem there.
+    const stem = session.name || `session-${sessionId.slice(0, 8)}`;
+    const filename = `${sanitizeZipBasename(stem, { allowDots: false })}-webapp.zip`;
     return new Response(archive as unknown as BodyInit, {
       status: 200,
       headers: {
-        "content-type": "application/gzip",
+        "content-type": "application/zip",
         "content-length": String(archive.byteLength),
-        "content-disposition": `attachment; filename="webapp.tar.gz"`,
+        "content-disposition": buildContentDisposition(filename),
       },
     });
   });
@@ -362,8 +381,152 @@ export function createWebappProxyRoutes(
   return app;
 }
 
-function isHiddenSegment(path: string): boolean {
-  return path
-    .split("/")
-    .some((segment) => segment.startsWith(".") || segment.startsWith("._"));
+// ── HMR websocket proxy (onyx webapp_proxy.py:235-321, 387-398) ────────────────
+//
+// Next.js dev's hot-reload channel is a websocket, and an upgrade is not a request/response —
+// Hono never sees it, so this half lives beside the boot file's upgrade dispatcher (the same
+// place the computer-stream proxy terminates) rather than in the routes above. The auth is the
+// HTTP proxy's own, applied by hand: the signed-in actor plus the session's ownership lookup.
+//
+// The upgrade header stays in EXCLUDED_REQUEST_HEADERS above — that blacklist guards the HTTP
+// fetch proxy, where forwarding a stray upgrade ask would be a smuggling vector. The HMR socket
+// is a deliberately separate endpoint, exactly onyx's split between `_proxy_request` and
+// `_proxy_webapp_hmr_websocket`.
+
+/** onyx's websocket route shape under OpenBot's mount: /api/craft/sessions/:id/webapp/_next/webpack-hmr. */
+const WEBAPP_HMR_PATH = /^\/api\/craft\/sessions\/([^/]+)\/webapp\/_next\/webpack-hmr$/;
+
+/** The session id an HMR upgrade names, or null when the path is not the HMR endpoint. */
+export function webappHmrSessionIdFromPath(pathname: string): string | null {
+  return WEBAPP_HMR_PATH.exec(pathname)?.[1] ?? null;
 }
+
+/**
+ * onyx `_webapp_hmr_query_string`: only the `id` entries survive to the dev server — the rest of
+ * the client's query is HMR-unrelated and never crosses the trust boundary.
+ */
+export function webappHmrQueryString(query: string): string {
+  const kept = new URLSearchParams();
+  for (const [key, value] of new URLSearchParams(query).entries()) {
+    if (key === "id") kept.append(key, value);
+  }
+  const encoded = kept.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+/**
+ * onyx `_webapp_hmr_websocket_url`, minus the base-path join: OpenBot's scaffold serves on the
+ * port root (the HTTP proxy above forwards paths verbatim), so the HMR endpoint is the dev
+ * server's own `/_next/webpack-hmr`.
+ */
+export function webappHmrUpstreamUrl(input: {
+  host: string;
+  port: number;
+  query: string;
+}): string {
+  return `ws://${input.host}:${input.port}/_next/webpack-hmr${webappHmrQueryString(input.query)}`;
+}
+
+export type WebappHmrDeps = Pick<
+  WebappProxyRoutesDeps,
+  "config" | "store" | "botIdFor" | "sandboxConnectionFor"
+>;
+
+export type WebappHmrResolution =
+  | { ok: true; upstreamUrl: string }
+  | { ok: false; status: 401 | 404 | 503; error: string };
+
+/**
+ * The HMR upgrade's authorization + target resolution — the same refusal shapes the HTTP proxy
+ * answers, checked before `server.upgrade` commits the connection (onyx `_check_webapp_access`
+ * → `WebSocketException(1008)`; an HTTP refusal before the upgrade is the Bun-shaped equivalent).
+ */
+export async function resolveWebappHmrUpgrade(
+  deps: WebappHmrDeps,
+  input: { sessionId: string; actor: { id: string } | null; query: string },
+): Promise<WebappHmrResolution> {
+  if (!input.actor) {
+    return { ok: false, status: 401, error: "Sign in first." };
+  }
+  const session = await deps.store.getSession(input.sessionId, input.actor.id);
+  if (!session) {
+    return { ok: false, status: 404, error: "Session not found" };
+  }
+  const botId = await deps.botIdFor(input.sessionId);
+  const conn = botId ? deps.sandboxConnectionFor(botId) : null;
+  if (!botId || !conn) {
+    return { ok: false, status: 503, error: "The sandbox is not available." };
+  }
+  if (session.nextjsPort === null) {
+    return { ok: false, status: 503, error: WEBAPP_NO_SUPPORT_ERROR };
+  }
+  // The reserved port lives INSIDE the sandbox (F-E): dial the sandbox host, never loopback.
+  return {
+    ok: true,
+    upstreamUrl: webappHmrUpstreamUrl({
+      host: webappUpstreamHost(deps.config.sandboxGatewayBaseUrl || conn.baseUrl),
+      port: session.nextjsPort,
+      query: input.query,
+    }),
+  };
+}
+
+/** What an upgraded HMR socket carries: where to connect inward, and the socket once opened. */
+export type WebappHmrSocketData = {
+  upstream: string;
+  hmr: true;
+  inward?: WebSocket;
+  /**
+   * Frames the client sent while the inward dial was still connecting. onyx accepts the client
+   * socket only AFTER the upstream connects, so this situation cannot arise there; Bun completes
+   * the client handshake at `server.upgrade`, so the equivalent is to hold those early frames
+   * and flush them on inward open rather than drop them.
+   */
+  pending?: (string | Buffer)[];
+};
+
+type WebappHmrSocket = {
+  data: WebappHmrSocketData;
+  send(data: string | ArrayBuffer): unknown;
+  close(): unknown;
+};
+
+/**
+ * The client↔upstream bridge, onyx's `_pump_webapp_to_upstream` / `_pump_upstream_to_webapp`:
+ * frames forward unbuffered in both directions, and either side's close or error ends the other
+ * (onyx's FIRST_COMPLETED + cancel pairing). A failed inward dial surfaces as the client's
+ * socket closing, onyx's refusal-with-1011 shape.
+ */
+export const webappHmrSocketHandlers = {
+  open(ws: WebappHmrSocket) {
+    const inward = new WebSocket(ws.data.upstream);
+    ws.data.inward = inward;
+    ws.data.pending = [];
+    inward.onopen = () => {
+      const pending = ws.data.pending ?? [];
+      ws.data.pending = undefined;
+      for (const frame of pending) inward.send(frame);
+    };
+    inward.onmessage = (event) => {
+      try {
+        ws.send(event.data as string | ArrayBuffer);
+      } catch {
+        inward.close();
+      }
+    };
+    inward.onclose = () => ws.close();
+    inward.onerror = () => ws.close();
+  },
+  message(ws: WebappHmrSocket, raw: string | Buffer) {
+    const inward = ws.data.inward;
+    if (inward?.readyState === 1) {
+      inward.send(raw);
+    } else if (inward?.readyState === 0) {
+      ws.data.pending?.push(raw);
+    }
+  },
+  close(ws: WebappHmrSocket) {
+    ws.data.pending = undefined;
+    ws.data.inward?.close();
+  },
+};

@@ -44,6 +44,8 @@ import {
 } from "./events/types";
 import type { CraftSessionManager } from "./manager";
 import { type CraftStore, newCraftId } from "./store";
+import { eventToSse, SSE_KEEPALIVE } from "./streaming";
+import { CRAFT_SSE_HEADERS } from "./turn-routes";
 
 const logger = getLogger("server");
 
@@ -286,6 +288,25 @@ export type CraftScheduledTaskStore = {
   listRuns(taskId: string, limit?: number): Promise<CraftScheduledTaskRunRow[]>;
   latestRun(taskId: string): Promise<CraftScheduledTaskRunRow | undefined>;
   hasInFlightRun(taskId: string): Promise<boolean>;
+  /**
+   * The newest run linked to a session, with its task's name — the session-view banner's one
+   * lookup (onyx `get_scheduled_run_context`). Scoped by the task's owner: a run another user's
+   * task produced is invisible, exactly as onyx's join does.
+   */
+  getRunContextForSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<ScheduledRunContext | undefined>;
+};
+
+/** onyx's `ScheduledRunContextResponse` row: what the banner renders. */
+export type ScheduledRunContext = {
+  runId: string;
+  taskId: string;
+  taskName: string;
+  status: CraftScheduledTaskRunStatus;
+  startedAt: Date;
+  finishedAt: Date | null;
 };
 
 export function createCraftScheduledTaskStore(
@@ -450,6 +471,34 @@ export function createCraftScheduledTaskStore(
         )
         .limit(1);
       return rows.length > 0;
+    },
+
+    async getRunContextForSession(sessionId, userId) {
+      const rows = await db
+        .select({ run: craftScheduledTaskRuns, task: craftScheduledTasks })
+        .from(craftScheduledTaskRuns)
+        .innerJoin(
+          craftScheduledTasks,
+          eq(craftScheduledTaskRuns.taskId, craftScheduledTasks.id),
+        )
+        .where(
+          and(
+            eq(craftScheduledTaskRuns.sessionId, sessionId),
+            eq(craftScheduledTasks.userId, userId),
+          ),
+        )
+        .orderBy(desc(craftScheduledTaskRuns.startedAt))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return undefined;
+      return {
+        runId: row.run.id,
+        taskId: row.task.id,
+        taskName: row.task.name,
+        status: row.run.status,
+        startedAt: row.run.startedAt,
+        finishedAt: row.run.finishedAt,
+      };
     },
   };
 }
@@ -1015,14 +1064,25 @@ export function createScheduledTaskRoutes(
     return context.body(null, 204);
   });
 
-  // ── POST /scheduled-tasks/:id/run ─────────────────────────────────────────
-  app.post("/scheduled-tasks/:id/run", async (context) => {
-    const task = await resolveTask(context, context.req.param("id"));
-    if (!task) return context.json({ error: "Scheduled task not found" }, 404);
-    const run = await deps.tasks.insertRun(task.id, "manual_run_now", "queued");
-    deps.enqueueRun(run.id);
-    return context.json({ run_id: run.id, status: run.status });
-  });
+  // ── POST /scheduled-tasks/:id/run(+/run-now) ──────────────────────────────
+  // One handler, two names: onyx's verb is `/{task_id}/run-now`; `/run` is this port's
+  // earlier name, kept answering so existing clients do not break on the rename.
+  app.on(
+    "POST",
+    ["/scheduled-tasks/:id/run", "/scheduled-tasks/:id/run-now"],
+    async (context) => {
+      const task = await resolveTask(context, context.req.param("id"));
+      if (!task)
+        return context.json({ error: "Scheduled task not found" }, 404);
+      const run = await deps.tasks.insertRun(
+        task.id,
+        "manual_run_now",
+        "queued",
+      );
+      deps.enqueueRun(run.id);
+      return context.json({ run_id: run.id, status: run.status });
+    },
+  );
 
   // ── GET /scheduled-tasks/:id/runs ─────────────────────────────────────────
   app.get("/scheduled-tasks/:id/runs", async (context) => {
@@ -1034,6 +1094,189 @@ export function createScheduledTaskRoutes(
       : RUNS_DEFAULT_PAGE_SIZE;
     const runs = await deps.tasks.listRuns(task.id, limit);
     return context.json({ items: runs.map(runResponse) });
+  });
+
+  return app;
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled-run observation routes (onyx session/api.py:838-983)
+// ---------------------------------------------------------------------------
+
+/** The data frames that end the stream, byte-identical to the turn SSE contract. */
+const TERMINAL_STREAM_EVENT_TYPES = new Set(["prompt_response", "error"]);
+
+function formatStreamError(detail: string): string {
+  const payload = {
+    type: "error",
+    message: detail,
+    timestamp: new Date().toISOString(),
+  };
+  return `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export type ScheduledRunRoutesDeps = {
+  tasks: CraftScheduledTaskStore;
+  /** Session reads WITHOUT the activity bump — the poll must not feed the idle clock. */
+  store: CraftStore;
+  config: CraftConfig;
+  manager: CraftSessionManager;
+  /** Resolves the Bot whose sandbox hosts the session (live attach routing). */
+  botIdFor: (sessionId: string) => Promise<string | null>;
+};
+
+/**
+ * The two session-scoped observation endpoints a scheduled run's viewer uses, mounted beside the
+ * task routes under the same `enableScheduledTasks` gate:
+ *
+ * - `GET /sessions/:sessionId/scheduled-run-context` — the banner's one read. 404 means "this
+ *   session is not a scheduled run, behave normally" (onyx's exact contract).
+ * - `GET /sessions/:sessionId/scheduled-run-events` — the live attach. Same wire as the turn SSE
+ *   (`event: message` frames, keepalive comments, terminal close): poll until the run's session
+ *   carries an opencode id, then subscribe to the same bus stream the executor drives —
+ *   translate-only, never persisting (the durable rows are the executor's, onyx §7.3-8).
+ */
+export function createScheduledRunRoutes(
+  requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  deps: ScheduledRunRoutesDeps,
+): Hono<{ Variables: AppVariables }> {
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.use("*", requireUser);
+
+  // ── GET /sessions/:sessionId/scheduled-run-context ────────────────────────
+  app.get("/sessions/:sessionId/scheduled-run-context", async (context) => {
+    const runContext = await deps.tasks.getRunContextForSession(
+      context.req.param("sessionId"),
+      context.var.actor.id,
+    );
+    if (!runContext) {
+      return context.json(
+        { error: "Session has no scheduled-run context" },
+        404,
+      );
+    }
+    return context.json({
+      run_id: runContext.runId,
+      task_id: runContext.taskId,
+      task_name: runContext.taskName,
+      status: runContext.status,
+      started_at: runContext.startedAt.toISOString(),
+      finished_at: runContext.finishedAt
+        ? runContext.finishedAt.toISOString()
+        : null,
+    });
+  });
+
+  // ── GET /sessions/:sessionId/scheduled-run-events ─────────────────────────
+  app.get("/sessions/:sessionId/scheduled-run-events", async (context) => {
+    const userId = context.var.actor.id;
+    const sessionId = context.req.param("sessionId");
+
+    const runContext = await deps.tasks.getRunContextForSession(
+      sessionId,
+      userId,
+    );
+    if (!runContext) {
+      return context.json(
+        { error: "Session has no scheduled-run context" },
+        404,
+      );
+    }
+    if (runContext.status !== "running") {
+      // onyx: CONFLICT — a queued/succeeded/failed run has no live stream to attach to.
+      return context.json({ error: "Scheduled run is not running" }, 409);
+    }
+    const runId = runContext.runId;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        let live = true;
+        const guard = (text: string) => {
+          if (!live) return;
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            // Client gone; the abort path closes us out.
+          }
+        };
+
+        void (async () => {
+          try {
+            // Phase 1: the executor links run.session_id just before it resolves and persists
+            // the session's opencode id — keep the stream alive across that short handoff so a
+            // fast click from the run table attaches without a visible error (onyx's loop).
+            let session: Awaited<ReturnType<typeof deps.store.findSession>>;
+            for (;;) {
+              if (!live) return;
+              const run = await deps.tasks.getRun(runId);
+              if (run?.status !== "running") return; // resolved mid-poll; rows are the truth
+              session = await deps.store.findSession(sessionId, userId);
+              if (!session) {
+                guard(formatStreamError("Session not found"));
+                return;
+              }
+              if (session.opencodeSessionId) break;
+              guard(SSE_KEEPALIVE);
+              await sleep(deps.config.pollIntervalSeconds * 1000);
+            }
+
+            // Live attach: translate-only forwarding over the same bus the executor drives.
+            const botId = await deps.botIdFor(sessionId);
+            if (!botId) {
+              guard(
+                formatStreamError("No sandbox configured for this session."),
+              );
+              return;
+            }
+            const events = deps.manager.subscribeToExistingSessionEvents({
+              session,
+              botId,
+              keepaliveSeconds: deps.config.sseKeepaliveIntervalSeconds,
+            });
+            for await (const event of events) {
+              if (!live) return;
+              const frame = eventToSse(event);
+              guard(frame);
+              const chunkType = isKeepalive(event)
+                ? null
+                : isBuildPacket(event)
+                  ? event.type
+                  : isPromptResponse(event)
+                    ? "prompt_response"
+                    : isSandboxError(event)
+                      ? "error"
+                      : "unknown";
+              if (
+                chunkType !== null &&
+                TERMINAL_STREAM_EVENT_TYPES.has(chunkType)
+              ) {
+                return;
+              }
+              // The run resolved without a terminal frame (executor crashed mid-drive): end
+              // cleanly — the messages endpoint holds the durable truth (onyx's per-chunk check).
+              const run = await deps.tasks.getRun(runId);
+              if (run?.status !== "running") return;
+            }
+          } catch (error) {
+            guard(formatStreamError(String(error)));
+          } finally {
+            live = false;
+            try {
+              controller.close();
+            } catch {
+              // Already closed by client disconnect.
+            }
+          }
+        })();
+      },
+    });
+
+    return new Response(stream, { status: 200, headers: CRAFT_SSE_HEADERS });
   });
 
   return app;

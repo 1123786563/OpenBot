@@ -3,12 +3,15 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconCode,
+  IconExternalLink,
   IconSearch,
   IconSettings,
   IconTools,
   IconWand,
 } from "@tabler/icons-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { SubagentStatus } from "@/lib/craft/streaming-kernel";
 import type { CraftToolKind, CraftToolStatus } from "@/lib/craft/types";
 import { cn } from "@/lib/utils";
 import { DiffBody } from "../tool-cards/diff-body";
@@ -18,6 +21,10 @@ import { DiffBody } from "../tool-cards/diff-body";
  * inputs, a diff, or the raw output. Status drives the indicator — pending/in-progress spin, a
  * completed call checks, a failed one crosses — so a transcript glance shows what happened and what
  * is still happening (onyx's tool card).
+ *
+ * A `task` call additionally carries the subagent it spawned: a status row under the header names
+ * the child's live state and offers the click-through to its read-only transcript (onyx's
+ * TaskBody; simplified to a row, no animated affordances).
  */
 
 const KIND_ICON: Record<CraftToolKind, typeof IconTools> = {
@@ -29,6 +36,12 @@ const KIND_ICON: Record<CraftToolKind, typeof IconTools> = {
   other: IconCode,
 };
 
+const SUBAGENT_STATUS_LABEL = {
+  running: "subagent.status.running",
+  done: "subagent.status.done",
+  failed: "subagent.status.failed",
+} as const satisfies Record<SubagentStatus, string>;
+
 export type ToolCardProps = {
   title: string;
   toolKind: CraftToolKind;
@@ -39,6 +52,11 @@ export type ToolCardProps = {
     | { type: "diff"; path: string; oldText: string; newText: string }
     | { type: "content"; content: unknown }
   >;
+  /** The subagent this `task` call spawned, when the card's progress named one. */
+  subagentSessionId?: string;
+  subagentStatus?: SubagentStatus;
+  /** Opens the subagent's read-only transcript; absent renders the card without the affordance. */
+  onViewSubagent?: () => void;
 };
 
 export function ToolCall({
@@ -48,7 +66,11 @@ export function ToolCall({
   rawInput,
   rawOutput,
   content,
+  subagentSessionId,
+  subagentStatus,
+  onViewSubagent,
 }: ToolCardProps) {
+  const { t } = useTranslation("craft");
   const [open, setOpen] = useState(false);
   const KindIcon = KIND_ICON[toolKind] ?? IconTools;
 
@@ -70,6 +92,32 @@ export function ToolCall({
           )}
         />
       </button>
+      {subagentSessionId ? (
+        <div className="flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+          <StatusMark
+            status={
+              subagentStatus === "done"
+                ? "completed"
+                : subagentStatus === "failed"
+                  ? "failed"
+                  : "in_progress"
+            }
+          />
+          <span className="truncate">
+            {t(SUBAGENT_STATUS_LABEL[subagentStatus ?? "running"])}
+          </span>
+          {onViewSubagent ? (
+            <button
+              type="button"
+              className="ml-auto flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              onClick={onViewSubagent}
+            >
+              <IconExternalLink className="size-3" />
+              {t("subagent.view")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {open ? (
         <div className="space-y-2 border-t border-border px-3 py-2 text-xs">
           {rawInput !== undefined && rawInput !== null ? (
