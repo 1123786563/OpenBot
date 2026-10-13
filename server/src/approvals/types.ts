@@ -216,6 +216,18 @@ export type ApprovalStore = {
     id: string,
     decision: ApprovalDecision,
   ): Promise<ApprovalRecord>;
+  /**
+   * Record a person's decision on a pending request without `decide`'s orchestration effects:
+   * no `approval.resume` work item for the worker queue and no always-rule write. The craft
+   * rendezvous decides through this — its parked waiter is woken by the announce/wake signals,
+   * not the worker, and an "always" grant has no craft-side effect (the sandbox answers the ask
+   * "once" either way). Row write, audit trail, and idempotency guard are `decide`'s.
+   */
+  decideQuiet(
+    ownerUserId: string,
+    id: string,
+    decision: "allow_once" | "allow_always" | "deny",
+  ): Promise<ApprovalRecord>;
   consume(ownerUserId: string, id: string, digest: string): Promise<boolean>;
   saveResult(
     ownerUserId: string,

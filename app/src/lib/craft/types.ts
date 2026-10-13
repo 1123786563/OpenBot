@@ -36,6 +36,16 @@ export type CraftMessage = {
   created_at: string;
 };
 
+/**
+ * One uploaded attachment — the wire shape both the upload response's `path` feeds and the
+ * send-message body carries (`{name, path, mime_type}`, onyx's MessageAttachment).
+ */
+export type CraftAttachment = {
+  name: string;
+  path: string;
+  mime_type: string;
+};
+
 /** The six gallery kinds `artifactTypeFor` classifies a produced file into. */
 export type CraftArtifactType =
   | "csv"
@@ -162,6 +172,22 @@ export type CraftCompactionPacket = {
   timestamp: string;
 };
 
+/** A gated permission is waiting on a decision — revalidate the live approvals list. */
+export type CraftApprovalRequestedPacket = {
+  type: "approval_requested";
+  approval_id: string;
+  session_id: string;
+  timestamp: string;
+};
+
+/** A subagent session was spawned by the turn's `task` tool — seeds the subagent map. */
+export type CraftSubagentStartedPacket = {
+  type: "subagent_started";
+  subagent_session_id: string;
+  parent_session_id: string;
+  timestamp: string;
+};
+
 /** One frame the turn SSE can deliver (`event: message` data payload). */
 export type CraftStreamPacket =
   | CraftAgentMessageChunk
@@ -172,7 +198,9 @@ export type CraftStreamPacket =
   | CraftPromptResponse
   | CraftErrorPacket
   | CraftContextUsagePacket
-  | CraftCompactionPacket;
+  | CraftCompactionPacket
+  | CraftApprovalRequestedPacket
+  | CraftSubagentStartedPacket;
 
 /** What a `webapp-info` read answers with. */
 export type CraftWebappInfo = {
@@ -180,6 +208,25 @@ export type CraftWebappInfo = {
   webapp_url: string | null;
   status: string;
   ready: boolean;
+};
+
+/**
+ * The sandbox lifecycle values the status chip renders — onyx's SandboxStatus enum verbatim
+ * (backend db/enums.py). "restoring" is client-owned (the wake fetch's in-flight window) and
+ * "terminated" can only arrive from a future sandbox backend; the endpoint itself answers the
+ * other four, or null when no sandbox backs the session.
+ */
+export type CraftSandboxStatus =
+  | "provisioning"
+  | "running"
+  | "sleeping"
+  | "restoring"
+  | "terminated"
+  | "failed";
+
+/** What `GET /sessions/:id/sandbox-status` answers — onyx's SandboxStatusResponse. */
+export type CraftSandboxStatusResponse = {
+  status: CraftSandboxStatus | null;
 };
 
 /** A pending approval the session is waiting on, as the live read returns it. */
@@ -195,4 +242,91 @@ export type CraftApproval = {
     scope: string;
     args: unknown;
   };
+};
+
+// ── scheduled tasks (server: craft/scheduled-tasks.ts, onyx interfaces.ts) ──
+
+export type CraftScheduledTaskStatus = "active" | "paused";
+
+export type CraftScheduledTaskRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "awaiting_approval";
+
+export type CraftScheduledTaskTriggerSource = "scheduled" | "manual_run_now";
+
+export type CraftScheduledTaskEditorMode =
+  | "interval"
+  | "daily_weekly"
+  | "advanced";
+
+export type CraftIntervalUnit = "minutes" | "hours" | "days";
+
+/** The three editor payloads, one per `editor_mode` (onyx interfaces.ts verbatim). */
+export type CraftIntervalPayload = {
+  unit: CraftIntervalUnit;
+  every: number;
+  /** "HH:MM" — required when unit is "days". */
+  time_of_day?: string | null;
+};
+
+export type CraftDailyWeeklyPayload = {
+  /** "HH:MM". */
+  time_of_day: string;
+  /** Cron weekday convention (0=Sunday..6=Saturday); empty/omitted means every day. */
+  weekdays?: number[];
+};
+
+export type CraftAdvancedPayload = {
+  cron: string;
+};
+
+export type CraftEditorPayload =
+  | CraftIntervalPayload
+  | CraftDailyWeeklyPayload
+  | CraftAdvancedPayload;
+
+/** One row of `GET /scheduled-tasks/:id/runs`, and the `last_run` field everywhere. */
+export type CraftScheduledRunSummary = {
+  id: string;
+  status: CraftScheduledTaskRunStatus;
+  trigger_source: CraftScheduledTaskTriggerSource;
+  started_at: string;
+  finished_at: string | null;
+  session_id: string | null;
+  summary: string | null;
+  skip_reason: string | null;
+  error_class: string | null;
+};
+
+export type CraftScheduledTaskListItem = {
+  id: string;
+  name: string;
+  human_readable_schedule: string;
+  cron_expression: string;
+  editor_mode: CraftScheduledTaskEditorMode;
+  status: CraftScheduledTaskStatus;
+  next_run_at: string | null;
+  last_run: CraftScheduledRunSummary | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** The detail read adds the prompt and the next-3-fires preview. */
+export type CraftScheduledTaskDetail = CraftScheduledTaskListItem & {
+  prompt: string;
+  next_runs: string[];
+};
+
+/** The session-view banner's one read (`GET /sessions/:id/scheduled-run-context`). */
+export type CraftScheduledRunContext = {
+  run_id: string;
+  task_id: string;
+  task_name: string;
+  status: CraftScheduledTaskRunStatus;
+  started_at: string;
+  finished_at: string | null;
 };

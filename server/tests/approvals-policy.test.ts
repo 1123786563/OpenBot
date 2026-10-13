@@ -461,6 +461,14 @@ function memoryStore(options: {
       });
       return row;
     },
+    decideQuiet: async (_owner, id, decision) => {
+      const row = requests.get(id) as ApprovalRecord;
+      Object.assign(row, {
+        decision,
+        status: decision === "deny" ? "denied" : "approved",
+      });
+      return row;
+    },
     consume: async () => true,
     saveResult: async () => true,
     finish: async () => undefined,

@@ -16,17 +16,17 @@
 
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
+import type { CraftApprovalSignals } from "./approval-signals";
+import type { CraftConnectAppSignals } from "./connect-app";
 import type { CraftConfig } from "./config";
 import { isBuildPacket } from "./events/packets";
 import { isKeepalive, isPromptResponse, isSandboxError } from "./events/types";
 import type { CraftSessionManager } from "./manager";
-import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { eventToSse, SSE_KEEPALIVE } from "./streaming";
 import type { TurnExecutor } from "./turn-executor";
 import type { TurnStateStore } from "./turn-state";
 import { TURN_STATUS_FAILED } from "./turn-state";
-import { sessionDirectory } from "./workspace";
 
 /** The SSE headers every craft stream sends (the workshop's four-piece set + type). */
 export const CRAFT_SSE_HEADERS: Record<string, string> = {
@@ -53,9 +53,12 @@ export type TurnRoutesDeps = {
   manager: CraftSessionManager;
   turnState: TurnStateStore;
   executor: TurnExecutor;
-  gateway: SandboxGateway;
   /** Resolves the Bot whose sandbox hosts a session (live attach routing). */
   botIdFor: (sessionId: string) => Promise<string | null>;
+  /** Approval announce/wake signals; the stream merges announces into SSE when gating is on. */
+  approvalSignals?: CraftApprovalSignals | null;
+  /** The connect-app handshake's KV — its announce drain feeds the attach stream. */
+  connectAppSignals?: CraftConnectAppSignals | null;
 };
 
 export function createTurnRoutes(
@@ -180,6 +183,20 @@ export function createTurnRoutes(
               session: attachedSession,
               botId,
               keepaliveSeconds: config.sseKeepaliveIntervalSeconds,
+              // onyx's announce merge: approval cards ride the same SSE stream. The
+              // drain is inert unless gated tools are configured.
+              announceDrain:
+                deps.approvalSignals && config.approvalGatedTools.length > 0
+                  ? () => deps.approvalSignals!.drainAnnouncements(sessionId)
+                  : null,
+              // connect_app asks are in the permissions template (not a gated-
+              // tools config), so the drain is wired whenever the KV is.
+              connectAppAnnounceDrain: deps.connectAppSignals
+                ? () =>
+                    (deps.connectAppSignals as CraftConnectAppSignals).drainAnnouncements(
+                      sessionId,
+                    )
+                : null,
             });
             for await (const event of events) {
               if (!live) return;
@@ -244,8 +261,6 @@ export function createTurnRoutes(
     return new Response(stream, { status: 200, headers: CRAFT_SSE_HEADERS });
   });
 
-  void sessionDirectory;
-  void deps.gateway;
   return app;
 }
 

@@ -1318,7 +1318,9 @@ export function createPluginStore(options: PluginStoreOptions) {
    */
   const openConnectorBroker = options.openConnector?.broker ?? null;
   function brokerFor(provider: BrokeredProvenance): ConnectedAppBroker | null {
-    return provider === "open-connector" ? openConnectorBroker : broker ?? null;
+    return provider === "open-connector"
+      ? openConnectorBroker
+      : (broker ?? null);
   }
 
   /*
@@ -4730,9 +4732,7 @@ export function createPluginStore(options: PluginStoreOptions) {
      * names no broker on its own. A caller that had to re-derive it would re-read this row to get
      * what this method already read once.
      */
-    async accountsOn(
-      serverId: string,
-    ): Promise<{
+    async accountsOn(serverId: string): Promise<{
       toolkit: string;
       provider: BrokeredProvenance;
       accounts: AccountRef[];
@@ -4742,9 +4742,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         .from(mcpServers)
         .where(eq(mcpServers.id, serverId))
         .limit(1);
-      const toolkit = row
-        ? brokerToolkitOf(row.provenance, row.url)
-        : null;
+      const toolkit = row ? brokerToolkitOf(row.provenance, row.url) : null;
       // The provenance guard is unreachable for a row whose toolkit parsed — `brokerToolkitOf`
       // answers null for every non-brokered provenance — but it is what hands the predicate below
       // the narrowed type, so the impossibility is spelled rather than cast.
@@ -5016,7 +5014,9 @@ export function createPluginStore(options: PluginStoreOptions) {
             summary: input.summary,
             instructions: input.instructions,
             ...(input.icon === undefined ? {} : { icon: input.icon }),
-            ...(input.category === undefined ? {} : { category: input.category }),
+            ...(input.category === undefined
+              ? {}
+              : { category: input.category }),
             updatedAt: new Date(),
           },
         });
@@ -5386,6 +5386,69 @@ export function createPluginStore(options: PluginStoreOptions) {
         scope: row.scope,
         connectedAt: iso(row.connectedAt) ?? "",
       }));
+    },
+
+    /**
+     * A person's MCP-wire connection for one server: the url to dial and the credential for ONE
+     * forwarded call, or null when there is none to have.
+     *
+     * WHO CALLS THIS. Craft's sandbox-side MCP relay (server/craft/mcp-relay.ts): the session's
+     * opencode.json points its MCP client at the relay instead of the vendor, and the relay needs
+     * exactly what the workshop's own tool loop would resolve — the same {@link requireServer}
+     * gates, the same {@link connectionTokenFor} brokered and revoked-credential handling — so
+     * there is one place that turns a person plus a server into a call, not two.
+     *
+     * WHY ONLY THE MCP WIRE. A JSON-RPC forward is honest only against a server that speaks MCP
+     * over HTTP; a brokered or REST transport's url is a different door, and forwarding protocol
+     * bytes at it would be a wrong call wearing a right one's credential. Those transports keep
+     * their own callers and this stays null for them.
+     *
+     * NULL RATHER THAN A THROW for the two refusals a caller can only fail closed on — the server
+     * is unknown here, or this person has no usable connection — because the caller's boundary is
+     * a 403 either way and the sentence that explains it belongs to the surface the person is
+     * looking at, not the wire. Everything else propagates: a database fault is not "you are not
+     * connected".
+     */
+    /**
+     * The catalogue's MCP-wire servers, as the craft per-user set's membership half: which rows
+     * speak JSON-RPC over HTTP at their url, and nothing else. No credential is read — connection
+     * state is the caller's fact ({@link connectionsFor} / {@link brokeredConnectionsFor}) and the
+     * credential itself is {@link mcpWireConnectionFor}'s, decrypted only when a call forwards.
+     *
+     * WHY MEMBERSHIP NEEDS THIS AT ALL: craft's config offers a server to the sandbox as an MCP
+     * entry, and an entry the relay would refuse is a tool that never lists — the permanently
+     * failed MCP client this schema refuses to create anywhere else. Filtering to the MCP wire
+     * here is what keeps the offered set and the forwardable set the same set.
+     */
+    async mcpWireServersFor(): Promise<Array<{ id: string; title: string }>> {
+      const servers: Array<{ id: string; title: string }> = [];
+      for (const row of await this.listServers()) {
+        const resolved = await requireServer(row.id).catch(() => null);
+        if (resolved !== null && resolved.access.transport === "mcp") {
+          servers.push({ id: row.id, title: row.title });
+        }
+      }
+      return servers;
+    },
+
+    async mcpWireConnectionFor(
+      userId: string,
+      serverId: string,
+    ): Promise<{ url: string; token: string | null } | null> {
+      try {
+        const { row, entry, access } = await requireServer(serverId);
+        if (access.transport !== "mcp") return null;
+        const { token } = await connectionTokenFor(row, entry, userId, access);
+        return { url: row.url, token: token ?? null };
+      } catch (error) {
+        if (
+          error instanceof PluginRefusedError ||
+          error instanceof CatalogueEntryUnknownError
+        ) {
+          return null;
+        }
+        throw error;
+      }
     },
 
     /**
@@ -5783,9 +5846,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         .orderBy(asc(mcpServers.id));
       const answering = await brokeredAppRowsAt(
         marked
-          .filter(
-            (row) => brokerToolkitOf(row.provenance, row.url) !== null,
-          )
+          .filter((row) => brokerToolkitOf(row.provenance, row.url) !== null)
           .map((row) => row.url),
       );
       const shared = marked.filter(
@@ -6417,7 +6478,8 @@ export function createPluginStore(options: PluginStoreOptions) {
       // no client for the broker this row names has nobody to have connected anybody at, so there
       // is nothing here to ask.
       const client = brokerFor(provider);
-      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
+      if (!client)
+        throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
 
       const connected = await client.isConnected({
         account: input.account,
@@ -6738,7 +6800,8 @@ export function createPluginStore(options: PluginStoreOptions) {
       // broker this app is enabled through has nobody to connect anybody at, and the refusal must
       // happen before the values are touched at all.
       const client = brokerFor(provider);
-      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
+      if (!client)
+        throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
 
       /*
        * THE ACCOUNT AS THIS BROKER KNOWS IT, which for a person at OpenConnector is the alias minted
@@ -7166,7 +7229,8 @@ export function createPluginStore(options: PluginStoreOptions) {
     }> {
       const provider = input.provider ?? "composio";
       const client = brokerFor(provider);
-      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
+      if (!client)
+        throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
 
       /*
        * AN OPENCONNECTER APP HAS NOTHING THIS PRESS COULD EVER DO, and the refusal names that
@@ -7494,7 +7558,8 @@ export function createPluginStore(options: PluginStoreOptions) {
     }): Promise<{ vendorRevocationRequested: boolean }> {
       const provider = input.provider ?? "composio";
       const client = brokerFor(provider);
-      if (!client) throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
+      if (!client)
+        throw new BrokerUnconfiguredError(BROKER_ROW[provider].vendor);
 
       /*
        * Keyed on the url and on the one row that answers for it — see {@link brokeredAppKind}.
@@ -7794,20 +7859,22 @@ export function createPluginStore(options: PluginStoreOptions) {
        * already gone at the broker, so the table claims a connection this person does not have.
        */
       if (withdrawn.length > 0) {
-        await database.delete(brokeredConnections).where(
-          and(
-            eq(brokeredConnections.holder, "person"),
-            eq(brokeredConnections.userId, userId),
-            or(
-              ...withdrawn.map((entry) =>
-                and(
-                  eq(brokeredConnections.provider, entry.provider),
-                  eq(brokeredConnections.app, entry.toolkit),
+        await database
+          .delete(brokeredConnections)
+          .where(
+            and(
+              eq(brokeredConnections.holder, "person"),
+              eq(brokeredConnections.userId, userId),
+              or(
+                ...withdrawn.map((entry) =>
+                  and(
+                    eq(brokeredConnections.provider, entry.provider),
+                    eq(brokeredConnections.app, entry.toolkit),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
+          );
       }
 
       for (const connection of withdrawn) {

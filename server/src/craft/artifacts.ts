@@ -13,6 +13,7 @@
  */
 
 import { type ArtifactType, artifactTypeFor } from "../workshop/artifacts";
+import { isHiddenWorkspacePath } from "./directory-archive";
 import type { AgentSandboxFileApi } from "./sandbox-gateway";
 
 export type FileEntry = {
@@ -41,11 +42,12 @@ function stripAnchor(path: string, anchor: string): string {
   return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
-const isHiddenOrTemp = (path: string): boolean =>
-  path
-    .split("/")
-    .filter((segment) => segment.length > 0)
-    .some((segment) => segment.startsWith(".") || segment.startsWith("._"));
+/**
+ * onyx's `_is_hidden_workspace_entry` over a whole path (see directory-archive.ts) — the
+ * SAME predicate the download archives filter with (fixture F6 §C), so the Files tab and
+ * a downloaded ZIP can never disagree about what exists.
+ */
+const isHiddenOrTemp = isHiddenWorkspacePath;
 
 /**
  * Read a workspace file's text, or null when absent/non-text — the phase-2

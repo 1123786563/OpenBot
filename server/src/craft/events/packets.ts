@@ -4,9 +4,9 @@
  *
  * All packets ride SSE as `event: message` records with a `type` field distinguishing them, a
  * snake_case body (wire parity with onyx's pydantic model_dump), and a `timestamp` (ISO UTC)
- * stamped at construction. The two packets whose flows are out of the first phase
- * (ApprovalRequested, ConnectAppRequest) keep their types so the union and the SSE serializer
- * are already shaped for them.
+ * stamped at construction. ApprovalRequested carries the gated-permission announce (see
+ * approval-gate.ts); ConnectAppRequest carries the connect-app handshake's announce (see
+ * connect-app.ts).
  */
 import { type SandboxEvent, SSEKeepalive } from "./types";
 
@@ -69,6 +69,25 @@ export function errorPacket(message: string): ErrorPacket {
   return { packetKind: "error", type: "error", message, timestamp: nowIso() };
 }
 
+/**
+ * The announce a gated permission.asked turns into: one frame telling the client an approval
+ * row is waiting (the producer pushes it onto the session's announce list; the live SSE stream
+ * drains that list and forwards this packet, which the frontend answers by refetching the
+ * live approvals list).
+ */
+export function approvalRequestedPacket(
+  approvalId: string,
+  sessionId: string,
+): ApprovalRequestedPacket {
+  return {
+    packetKind: "approval_requested",
+    type: "approval_requested",
+    approval_id: approvalId,
+    session_id: sessionId,
+    timestamp: nowIso(),
+  };
+}
+
 export function subagentStartedPacket(
   subagentSessionId: string,
   parentSessionId: string,
@@ -78,6 +97,28 @@ export function subagentStartedPacket(
     type: "subagent_started",
     subagent_session_id: subagentSessionId,
     parent_session_id: parentSessionId,
+    timestamp: nowIso(),
+  };
+}
+
+/**
+ * The connect-app card a live stream emits for an announced request (onyx
+ * packets.py:78-89; the live worker pops the announce and wraps it in this
+ * packet). `reason` null stays null on the wire — onyx serializes with
+ * model_dump_json(by_alias=True) and NO exclude_none, so `"reason": null` is
+ * present when the ask carried none.
+ */
+export function connectAppRequestPacket(
+  requestId: string,
+  externalAppId: number,
+  reason: string | null,
+): ConnectAppRequestPacket {
+  return {
+    packetKind: "connect_app_request",
+    type: "connect_app_request",
+    request_id: requestId,
+    external_app_id: externalAppId,
+    reason,
     timestamp: nowIso(),
   };
 }

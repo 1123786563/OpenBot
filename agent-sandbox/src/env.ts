@@ -24,6 +24,13 @@ export type SandboxEnv = {
   model: string;
   /** The largest upstream body the proxy will relay, in bytes. */
   maxResponseBytes: number;
+  /**
+   * The largest single file POST /file may write, in bytes. A different ceiling from
+   * maxResponseBytes on purpose: uploads (craft attachments) legitimately run to tens of
+   * megabytes, while the relay cap protects the small JSON verbs. Default 50 MiB, matching
+   * the craft layer's per-file upload default (onyx MAX_UPLOAD_FILE_SIZE_BYTES parity).
+   */
+  maxUploadBytes: number;
   /** Idle budget for a per-bot opencode serve before the sweep stops it. */
   upstreamIdleMs: number;
   /**
@@ -46,7 +53,10 @@ export type SandboxEnv = {
 
 const required = (env: Record<string, string | undefined>, name: string) => {
   const value = env[name]?.trim();
-  if (!value) throw new Error(`${name} must be set: the sandbox refuses to start without it.`);
+  if (!value)
+    throw new Error(
+      `${name} must be set: the sandbox refuses to start without it.`,
+    );
   return value;
 };
 
@@ -77,7 +87,9 @@ const optionalNonNegativeNumber = (
   return parsed;
 };
 
-export function sandboxEnvFrom(env: Record<string, string | undefined>): SandboxEnv {
+export function sandboxEnvFrom(
+  env: Record<string, string | undefined>,
+): SandboxEnv {
   return {
     token: required(env, "SANDBOX_TOKEN"),
     port: optionalNumber(env, "SANDBOX_PORT", 4300),
@@ -87,13 +99,26 @@ export function sandboxEnvFrom(env: Record<string, string | undefined>): Sandbox
     providerBaseUrl: required(env, "SANDBOX_PROVIDER_BASE_URL"),
     providerApiKey: required(env, "SANDBOX_PROVIDER_API_KEY"),
     model: required(env, "SANDBOX_MODEL"),
-    maxResponseBytes: optionalNumber(env, "SANDBOX_MAX_RESPONSE_BYTES", 262_144),
+    maxResponseBytes: optionalNumber(
+      env,
+      "SANDBOX_MAX_RESPONSE_BYTES",
+      262_144,
+    ),
+    maxUploadBytes: optionalNumber(env, "SANDBOX_MAX_UPLOAD_BYTES", 52_428_800),
     upstreamIdleMs: optionalNumber(env, "SANDBOX_UPSTREAM_IDLE_MS", 600_000),
-    activityTimeoutMs: optionalNumber(env, "SANDBOX_ACTIVITY_TIMEOUT_MS", 300_000),
+    activityTimeoutMs: optionalNumber(
+      env,
+      "SANDBOX_ACTIVITY_TIMEOUT_MS",
+      300_000,
+    ),
     sweepIntervalMs: optionalNumber(env, "SANDBOX_SWEEP_INTERVAL_MS", 60_000),
     upstreamPortBase: optionalNumber(env, "SANDBOX_UPSTREAM_PORT_BASE", 4400),
     devserverPortBase: optionalNumber(env, "SANDBOX_DEVSERVER_PORT_BASE", 4600),
     devserverMax: Math.floor(optionalNumber(env, "SANDBOX_DEVSERVER_MAX", 8)),
-    workspaceTtlMs: optionalNonNegativeNumber(env, "SANDBOX_WORKSPACE_TTL_MS", 0),
+    workspaceTtlMs: optionalNonNegativeNumber(
+      env,
+      "SANDBOX_WORKSPACE_TTL_MS",
+      0,
+    ),
   };
 }

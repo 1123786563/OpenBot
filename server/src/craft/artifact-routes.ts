@@ -31,7 +31,7 @@ export type ArtifactRoutesDeps = {
  * Join a URL-supplied relative path onto the session directory, resolving `.`/`..` and refusing
  * any walk that would escape it. Returns null on traversal; the route turns that into a 400.
  */
-function safeJoin(directory: string, rel: string): string | null {
+export function safeJoin(directory: string, rel: string): string | null {
   const segments = rel
     .replace(/^\/+/, "")
     .split("/")
@@ -144,10 +144,13 @@ export function createArtifactRoutes(
   });
 
   // ── GET /sessions/:id/artifacts/*path — stream one artifact ───────────────
-  app.get("/sessions/:sessionId/artifacts/*", async (context) => {
+  // `:path{.+}` not `*`: Hono 4.13's bare wildcard matches but `param("*")` reads null,
+  // which would silently resolve every download to the session root (latent bug this fix
+  // closes); the named regex param is the readable multi-segment shape.
+  app.get("/sessions/:sessionId/artifacts/:path{.+}", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
-    const rel = context.req.param("*") ?? "";
+    const rel = context.req.param("path") ?? "";
     const { session, fileApi } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!fileApi) return context.json({ error: "Artifact not found" }, 404);
@@ -185,10 +188,10 @@ export function createArtifactRoutes(
   });
 
   // ── GET /sessions/:id/export-docx/*path — markdown → .docx ─────────────────
-  app.get("/sessions/:sessionId/export-docx/*", async (context) => {
+  app.get("/sessions/:sessionId/export-docx/:path{.+}", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
-    const rel = context.req.param("*") ?? "";
+    const rel = context.req.param("path") ?? "";
     const { session, fileApi } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!fileApi) return context.json({ error: "File not found" }, 404);
@@ -240,10 +243,10 @@ export function createArtifactRoutes(
   // Divergence note: onyx's `pptx-preview` renders a finished .pptx to slide images via
   // sandbox soffice/pdftoppm; OpenBot instead exports the markdown straight to a deck
   // (see the port plan §7). The URL is kept so the frontend surface stays stable.
-  app.get("/sessions/:sessionId/pptx-preview/*", async (context) => {
+  app.get("/sessions/:sessionId/pptx-preview/:path{.+}", async (context) => {
     const actor = context.var.actor;
     const sessionId = context.req.param("sessionId");
-    const rel = context.req.param("*") ?? "";
+    const rel = context.req.param("path") ?? "";
     const { session, fileApi } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!fileApi) return context.json({ error: "File not found" }, 404);

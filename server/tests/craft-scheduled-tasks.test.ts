@@ -150,6 +150,22 @@ function fakeTasks(): MemTasks {
           (r.status === "queued" || r.status === "running"),
       );
     },
+    async getRunContextForSession(sessionId, userId) {
+      const run = runs.find((r) => r.sessionId === sessionId);
+      if (!run) return undefined;
+      const task = tasks.find(
+        (t) => t.id === run.taskId && t.userId === userId,
+      );
+      if (!task) return undefined;
+      return {
+        runId: run.id,
+        taskId: task.id,
+        taskName: task.name,
+        status: run.status,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+      };
+    },
   };
 }
 

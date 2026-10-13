@@ -174,6 +174,13 @@ services:
       # control and the published loopback keeps the surface off routed networks.
       - "127.0.0.1:${SANDBOX_PORT:-4300}:4300"
       - "[::1]:${SANDBOX_PORT:-4300}:4300"
+      # Craft's per-session webapp dev servers (start-webapp.sh) bind the reserved range
+      # OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_[START|END] (default 3010-3100) inside this
+      # container; the API server on the host probes/previews them at the gateway base's
+      # host, so the range publishes to loopback exactly like the gateway port above.
+      # Keep in step with the craft config's reserved range if it is re-tuned.
+      - "127.0.0.1:3010-3100:3010-3100"
+      - "[::1]:3010-3100:3010-3100"
     # Unprivileged, cap-less, no privilege escalation — the same posture Craft's Docker backend
     # provisions its per-user sandboxes with (docker_sandbox_manager.py).
     user: "1000:1000"

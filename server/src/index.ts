@@ -183,11 +183,30 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
+import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+import type { CraftKbSearch } from "./craft/kb-search-relay";
+import { projectKbSearchResults } from "./craft/kb-search-relay";
+import {
+  createCraftManagedContentResolver,
+  personalUnconnectedApps,
+} from "./craft/managed-content";
+import { resolveCraftMcpServers } from "./craft/mcp-servers";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
-import { type CraftRoutesFactory, createCraftRoutes } from "./craft/routes";
+import {
+  type CraftRoutesFactory,
+  createCraftRoutes,
+  stopCraftIdleReaper,
+} from "./craft/routes";
+import { createCraftStore } from "./craft/store";
+import {
+  type WebappHmrSocketData,
+  resolveWebappHmrUpgrade,
+  webappHmrSessionIdFromPath,
+  webappHmrSocketHandlers,
+} from "./craft/webapp-proxy";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -222,6 +241,8 @@ import {
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
 import { knowledgeServiceConfig } from "./knowledge/config";
+import { knowledgeRequest } from "./knowledge/client";
+import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
@@ -3771,6 +3792,172 @@ const craftEffectiveConfig = sandboxUrl
       ),
     })
   : craftConfig;
+/*
+ * Craft's managed content (AGENTS.md app guidance + skill fileset + fingerprints), answered
+ * for the session's user — never the deployment-wide Bot id. Both live legs resolve below:
+ * the connectable-apps list (personal servers not yet connected) and the per-user craft MCP
+ * set (the personal servers that ARE connected, each entry stamped with the relay url), so
+ * mcp_config_hash fingerprints the resolved set. The one leg still absent is the
+ * company-search skill: OpenBot's knowledge domain has no path the craft sandbox can call
+ * (credentials stay out of agent-readable workspace files), so no such file ships and the
+ * AGENTS.md Company-knowledge section stays out until a backed implementation lands.
+ */
+/*
+ * The relay origin the per-user MCP set stamps into session opencode.json: the
+ * operator's explicit override first, then the deployment's public url (the
+ * same address deliveryProviders resolve against), then the loopback default —
+ * the sandbox's opencode dials this and the relay attaches credentials, so it
+ * must be an address that deployment's sandboxes can reach.
+ */
+const craftMcpRelayBaseUrl =
+  craftEffectiveConfig.mcpRelayBaseUrl ||
+  config.publicUrl ||
+  config.auth?.baseUrl ||
+  `http://localhost:${config.port}`;
+/*
+ * The craft company-search leg (D1): the knowledge domain over the same
+ * service-to-service credential the knowledge routes use. The sources section
+ * lists the deployment's knowledge bases (the KB domain is deployment-tenant);
+ * the search fans out per KB, merges, and projects onyx-cli's result contract.
+ * An unwired knowledge service holds the skill back entirely (null) — the
+ * AGENTS.md Company-knowledge section stays out with it.
+ */
+const craftKnowledgeBases = async (): Promise<
+  Array<{ id: string; name: string; description: string | null }> | null
+> => {
+  if (!knowledgeService) return null;
+  try {
+    const response = await knowledgeRequest(knowledgeService, "/kb");
+    const body = (await response.json()) as {
+      items?: Array<{
+        id: string;
+        name: string;
+        description?: string | null;
+      }>;
+    };
+    return (body.items ?? []).map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description ?? null,
+    }));
+  } catch {
+    return null;
+  }
+};
+const craftCompanySearchSourcesSection = async (): Promise<string | null> => {
+  const kbs = await craftKnowledgeBases();
+  return kbs === null ? null : buildAvailableSourcesSection(kbs);
+};
+const craftKbSearch: CraftKbSearch | null = knowledgeService
+  ? async ({ query, sourceTypes, days }) => {
+      const kbs = (await craftKnowledgeBases()) ?? [];
+      if (kbs.length === 0) return { status: "ok", results: [] };
+      const settled = await Promise.allSettled(
+        kbs.map((kb) =>
+          knowledgeRequest(
+            knowledgeService!,
+            `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                query,
+                top_k: 20,
+                score_threshold: 0,
+                hybrid: true,
+              }),
+            },
+          ).then(
+            (response) =>
+              response.json() as Promise<{
+                results: KnowledgeSearchResult[];
+              }>,
+          ),
+        ),
+      );
+      // A KB domain that answers nothing at all is "unavailable" (the relay's
+      // 503 shape); per-KB failures degrade to that KB contributing nothing.
+      const perKb = settled.flatMap((entry) =>
+        entry.status === "fulfilled" ? entry.value.results : [],
+      );
+      if (
+        perKb.length === 0 &&
+        settled.every((entry) => entry.status === "rejected")
+      ) {
+        return { status: "unavailable" };
+      }
+      return {
+        status: "ok",
+        results: projectKbSearchResults(perKb, { days, sourceTypes }),
+      };
+    }
+  : null;
+const craftManagedContentFor = createCraftManagedContentResolver({
+  connectableAppsFor: async (userId) => {
+    const [servers, held, brokered] = await Promise.all([
+      pluginStore.listServers(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return personalUnconnectedApps(
+      servers,
+      new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+    );
+  },
+  /*
+   * The builtin skills (onyx's $ONYX/skills/builtin): pptx and
+   * craft-documentation ship to everyone; a connector skill ships only when
+   * the user has connected the matching MCP server (onyx's
+   * connected-apps-only rule) — the personal connection set above is the same
+   * fact the connectable list inverts. company-search ships when the
+   * knowledge domain backs it, its sources section rendering the deployment's
+   * knowledge bases (onyx renders the user's connector sources; OpenBot's KB
+   * domain is deployment-tenant — the ruled D1 shape).
+   */
+  skillFilesFor: async (userId) => {
+    const [held, brokered, sourcesSection] = await Promise.all([
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+      craftCompanySearchSourcesSection(),
+    ]);
+    return builtinSkillFilesFor({
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+    });
+  },
+  /*
+   * The per-user craft MCP set (the contract's C3 ruling): personal-account
+   * servers the user HAS connected — the same connection fact the connectable
+   * list inverts. Each entry's url is the RELAY route, never the vendor
+   * endpoint: the credential attaches on the server side (mcp-relay.ts), so
+   * none can enter a workspace file. Unconnected servers are dropped entirely,
+   * onyx's unauthenticated-drop, because the relay would refuse their calls.
+   */
+  mcpServersFor: async (userId) => {
+    const [wireServers, held, brokered] = await Promise.all([
+      pluginStore.mcpWireServersFor(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return resolveCraftMcpServers({
+      servers: wireServers.map((server) => ({
+        id: server.id,
+        name: server.title,
+      })),
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      relayBaseUrl: craftMcpRelayBaseUrl,
+    });
+  },
+});
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
   ? ({ requireUser }) =>
       createCraftRoutes({
@@ -3797,9 +3984,41 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           userNameFor: async (userId) =>
             (await peopleStore.find(userId))?.name ?? null,
           generateName: craftGenerateName,
+          // The managed-content layer over the plugins domain: connectable apps are
+          // the enabled connector rows that act in the person's own account and that
+          // they have NOT connected yet (onyx's get_connectable_apps_for_user —
+          // shared/deployment-account apps answer for everybody and never appear).
+          managedContentFor: craftManagedContentFor,
+          // The relay's credential resolution: the plugins domain's own
+          // per-person connection handling (MCP-wire servers only), decrypted
+          // per forwarded call and never written anywhere the agent reads.
+          mcpConnectionFor: (userId, serverId) =>
+            pluginStore.mcpWireConnectionFor(userId, serverId),
+          kbSearch: craftKbSearch,
+          mcpRelayBaseUrl: craftMcpRelayBaseUrl,
         },
       })
   : undefined;
+
+/*
+ * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a
+ * request/response, so this half terminates in the boot file's upgrade dispatcher beside the
+ * computer-stream proxy — but it resolves through the SAME facts the HTTP webapp proxy uses
+ * (the deployment's sandbox Bot, its gateway connection, the session's reserved port), so the
+ * two surfaces can never route the same session to different upstreams.
+ */
+const craftWebappHmrDeps =
+  craftEffectiveConfig.enabled && craftEffectiveConfig.webappProxyEnabled
+    ? {
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+        sandboxConnectionFor: () =>
+          sandboxUrl && sandboxToken
+            ? { baseUrl: sandboxUrl, token: sandboxToken }
+            : null,
+      }
+    : undefined;
 
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
@@ -4154,16 +4373,21 @@ type StreamData = {
 };
 
 /**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
+ * Bun takes exactly one WebSocket handler for the server, and three features need one: the app
+ * proxies the computer stream and the craft webapp's HMR socket, and it pushes channel activity
+ * through Hono's adapter. So this one dispatches on what the upgrade attached — an HMR socket
+ * carries `hmr`, a stream proxy socket carries `upstream` without it, a Hono socket carries
+ * neither — rather than any feature quietly taking the slot and breaking the others on connect.
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
+type SocketData = StreamData | WebappHmrSocketData | ChannelSocket["data"];
 
 const isProxiedStream = (data: SocketData): data is StreamData =>
-  typeof (data as StreamData).upstream === "string";
+  typeof (data as StreamData).upstream === "string" &&
+  (data as WebappHmrSocketData).hmr !== true;
+
+const isHmrSocket = (data: SocketData): data is WebappHmrSocketData =>
+  (data as WebappHmrSocketData).hmr === true;
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
 const asChannelSocket = (ws: { data: SocketData }) =>
@@ -4176,11 +4400,13 @@ serve<SocketData>({
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }
-    // The workshop's event streams outlive the default request timeout by design: their
-    // connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
-    // default — without this raise, every quiet stream is cut before its first keepalive.
+    // The workshop's and craft's event streams outlive the default request timeout by design:
+    // their connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
+    // default — without this raise, every quiet stream is cut before its first keepalive
+    // (craft's turn attach, parked on a connect_app ask, is exactly that quiet stream).
     if (
-      url.pathname.startsWith("/api/workshop/") &&
+      (url.pathname.startsWith("/api/workshop/") ||
+        url.pathname.startsWith("/api/craft/")) &&
       url.pathname.endsWith("/events")
     ) {
       server.timeout(request, 255);
@@ -4258,10 +4484,45 @@ serve<SocketData>({
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
     }
+    const hmrSessionId =
+      craftWebappHmrDeps !== undefined
+        ? webappHmrSessionIdFromPath(url.pathname)
+        : null;
+    if (
+      hmrSessionId !== null &&
+      craftWebappHmrDeps !== undefined &&
+      request.headers.get("upgrade")?.toLowerCase() === "websocket"
+    ) {
+      // The webapp proxy's own auth, applied by hand because middleware does not run on an
+      // upgrade (the stream branch above sets the precedent). Every refusal lands BEFORE the
+      // upgrade commits — onyx's `_check_webapp_access` → WebSocketException(1008), answered
+      // here as plain HTTP statuses while the request is still a request.
+      const actor = await resolveRequestActor(request).catch(() => null);
+      const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
+        sessionId: hmrSessionId,
+        actor,
+        query: url.search,
+      });
+      if (!decision.ok) {
+        return new Response(decision.error, { status: decision.status });
+      }
+      if (
+        server.upgrade(request, {
+          data: { upstream: decision.upstreamUrl, hmr: true as const },
+        })
+      ) {
+        return undefined as unknown as Response;
+      }
+      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
     return app.fetch(request, { server });
   },
   websocket: {
     open(ws) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.open(asChannelSocket(ws));
         return;
@@ -4342,6 +4603,13 @@ serve<SocketData>({
       inward.onerror = () => ws.close();
     },
     message(ws, raw) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.message(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+          raw,
+        );
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.message(asChannelSocket(ws), raw);
         return;
@@ -4349,6 +4617,10 @@ serve<SocketData>({
       if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
     },
     close(ws, code, reason) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.close(asChannelSocket(ws), code, reason);
         return;
@@ -4381,6 +4653,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // Craft's idle reaper (started by the craft route assembly, held at that module's scope).
+    stopCraftIdleReaper();
     void Promise.allSettled([
       channelActivityListener.stop(),
       policyListener.stop(),

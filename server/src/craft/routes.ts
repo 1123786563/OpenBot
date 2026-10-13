@@ -8,28 +8,44 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
+import { createAuditStore, recordAuditEvent } from "../audit";
 import type { ApprovalStore } from "../approvals/types";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
+import { createCraftApprovalSignals } from "./approval-signals";
 import { createCraftApprovalRoutes } from "./approvals";
+import { createConnectAppRoutes } from "./connect-app-routes";
+import { createCraftConnectAppSignals } from "./connect-app";
+import {
+  createCraftMcpRelayApp,
+  type CraftMcpConnectionResolver,
+} from "./mcp-relay";
 import { createArtifactRoutes } from "./artifact-routes";
 import type { CraftConfig } from "./config";
+import { createFileRoutes } from "./file-routes";
 import { createInterruptFence } from "./interrupt";
+import type { CraftKbSearch } from "./kb-search-relay";
+import { createCraftKbSearchRelayApp } from "./kb-search-relay";
 import { createSessionFlowLocks } from "./locks";
+import type { CraftManagedContentResolver } from "./managed-content";
 import { CraftSessionManager } from "./manager";
 import { createMessageRoutes } from "./message-routes";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import { createSandboxGateway } from "./sandbox-gateway";
 import {
   createCraftScheduledTaskStore,
+  createScheduledRunRoutes,
   createScheduledTaskRoutes,
   fireAndForgetRun,
   startCraftScheduledTaskSweeper,
 } from "./scheduled-tasks";
 import { createSessionRoutes } from "./session-routes";
+import { type CraftIdleReaper, startCraftIdleReaper } from "./snapshot";
 import { createObjectStore } from "./storage/object-store";
+import type { CraftSessionRow, CraftStore } from "./store";
 import { createCraftStore } from "./store";
+import { createSubagentRoutes } from "./subagent-routes";
 import { createTurnExecutor } from "./turn-executor";
 import { createTurnRoutes } from "./turn-routes";
 import { createTurnStateStore } from "./turn-state";
@@ -61,6 +77,46 @@ export type CraftRoutesDeps = {
   organizationInstructions?: string | null;
   /** Optional one-shot LLM call for session naming (deterministic fallback without it). */
   generateName?: (system: string, user: string) => Promise<string>;
+  /**
+   * The deployment's current managed-content fingerprints (skills payload + craft MCP set)
+   * to compare a session's recorded hashes against — the seam the manager's staleness
+   * contract and `skills_stale` derive through. onyx reads these off the sandbox row. When
+   * unset, both derive from the resolver below instead; when neither is wired the answer is
+   * the stable null pair (nothing pushed → nothing stale, the honest answer while no
+   * managed-content pipeline is wired).
+   */
+  managedContentHashesFor?: (
+    session: CraftSessionRow,
+  ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
+  /**
+   * Resolves the session owner's managed content (connectable-apps section, skill
+   * fileset, craft MCP set, fingerprints) — the real managed-content layer. When wired,
+   * `skills_stale` derives from it unless an explicit hashes seam overrides, and the
+   * reload path re-pushes the content it resolves.
+   */
+  managedContentFor?: CraftManagedContentResolver;
+  /**
+   * The connector domain's credential resolution for the MCP relay (the trusted
+   * side): the vendor url + the owner's decrypted credential for one forwarded
+   * call, or null. Unset = the relay answers 403 not_authorized for everything
+   * (fail closed — the mcp set stays empty in that wiring anyway).
+   */
+  mcpConnectionFor?: CraftMcpConnectionResolver | null;
+  /**
+   * The owner-scoped knowledge search for the company-search relay (the kb-search
+   * shape): one query in, the merged onyx-cli result projection out. Unset = the
+   * relay answers 503 (knowledge unavailable — the skill does not ship in that
+   * wiring anyway).
+   */
+  kbSearch?: CraftKbSearch | null;
+  /** The base the sandbox dials back on (MCP relay + company-search CLI files). */
+  mcpRelayBaseUrl?: string | null;
+  /**
+   * The store override: production leaves it unset and the assembly derives the standard
+   * store from `db`; an alternate assembly (the tests' in-memory rows) hands over its own
+   * so the factory's wiring — not a specific store — is what gets exercised.
+   */
+  store?: CraftStore;
 };
 
 /**
@@ -71,6 +127,20 @@ export type CraftRoutesFactory = (input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
 }) => Hono<{ Variables: AppVariables }>;
 
+/**
+ * The process's one idle reaper, started by the first craft assembly and replaced by any later
+ * one (a second mount stops the first — the interval is process-global, the route tree is not).
+ * Held at module scope so `stopCraftIdleReaper` can give the boot file's shutdown hook the off
+ * switch; the timer itself is unref'd, so a stop-less exit never hangs on it either.
+ */
+let runningIdleReaper: CraftIdleReaper | null = null;
+
+/** Stop the assembled idle reaper (boot-file shutdown hook). Idempotent. */
+export function stopCraftIdleReaper(): void {
+  runningIdleReaper?.stop();
+  runningIdleReaper = null;
+}
+
 export function createCraftRoutes(input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   deps: CraftRoutesDeps;
@@ -79,7 +149,7 @@ export function createCraftRoutes(input: {
   const { config, db, redis } = deps;
 
   // ── the wiring (one assembly; everything below is dependency order) ──
-  const store = createCraftStore(db);
+  const store = deps.store ?? createCraftStore(db);
   const objectStore = createObjectStore(config.storage);
   const gateway = createSandboxGateway({
     config,
@@ -88,6 +158,34 @@ export function createCraftRoutes(input: {
       return conn ? { botId, baseUrl: conn.baseUrl, token: conn.token } : null;
     },
   });
+  // The approval rendezvous signals (announce + wake), Redis-backed when the
+  // deployment runs multi-replica, in-process otherwise — turn-state's shape.
+  const approvalSignals = createCraftApprovalSignals({ redis });
+  // The connect-app handshake's KV (pending stash + announce), same shape.
+  const connectAppSignals = createCraftConnectAppSignals({ redis });
+  /**
+   * The ONE hashes derivation the whole assembly shares — the manager's staleness
+   * contract (reload/reconcile) and `skills_stale` both read through it, so the two can
+   * never disagree: an explicit hashes function wins (cheap reads), a full resolver is
+   * derived from, and neither wired is the stable null pair (nothing pushed → nothing
+   * stale). Forcing a null pair here instead would freeze `skills/reload` into a
+   * permanent no-op while `skills_stale` kept answering true — no convergence.
+   */
+  const resolver = deps.managedContentFor ?? null;
+  const managedContentHashesFor = async (
+    session: CraftSessionRow,
+  ): Promise<{ skillsHash: string | null; mcpConfigHash: string | null }> => {
+    if (deps.managedContentHashesFor) {
+      return deps.managedContentHashesFor(session);
+    }
+    const content = resolver ? await resolver(session).catch(() => null) : null;
+    return content
+      ? {
+          skillsHash: content.skillsHash,
+          mcpConfigHash: content.mcpConfigHash,
+        }
+      : { skillsHash: null, mcpConfigHash: null };
+  };
   const manager = new CraftSessionManager({
     config,
     store,
@@ -95,6 +193,12 @@ export function createCraftRoutes(input: {
     llmConfigFor: async (session) => deps.llmConfigFor(session),
     botIdFor: (sessionId) => deps.botIdFor(sessionId),
     organizationInstructions: deps.organizationInstructions ?? null,
+    approvals: deps.approvals,
+    approvalSignals,
+    connectAppSignals,
+    managedContentFor: deps.managedContentFor,
+    managedContentHashesFor,
+    mcpRelayBaseUrl: deps.mcpRelayBaseUrl ?? config.mcpRelayBaseUrl,
   });
   const turnState = createTurnStateStore({ redis, config });
   const fence = createInterruptFence(redis);
@@ -107,9 +211,40 @@ export function createCraftRoutes(input: {
     turnState,
     fence,
     botIdFor: deps.botIdFor,
+    gateway,
   });
 
   const app = new Hono<{ Variables: AppVariables }>();
+
+  // The MCP relay mounts BEFORE requireUser: its caller is the sandbox's
+  // opencode MCP client, which authenticates with the session-tag header the
+  // relay itself validates (an unattributable tag is a 403, never a dial).
+  // Registered first so Hono's registration-order matching lets it answer
+  // without the user guard ever running for these paths.
+  app.route(
+    "/",
+    createCraftMcpRelayApp({
+      store,
+      sessionMcpServersFor: async (session) => {
+        const content = resolver
+          ? await resolver(session).catch(() => null)
+          : null;
+        return content?.mcpServers ?? [];
+      },
+      resolveConnection: deps.mcpConnectionFor ?? (async () => null),
+    }),
+  );
+
+  // The company-search relay mounts on the same pre-guard tier: its caller is
+  // the session's onyx-cli, authenticating with the same session-tag header.
+  // Unset wiring = 503 for everything (the skill never shipped in that build).
+  if (deps.kbSearch) {
+    app.route(
+      "/",
+      createCraftKbSearchRelayApp({ store, search: deps.kbSearch }),
+    );
+  }
+
   app.use("*", requireUser);
 
   // Enabled-gate: everything below 503s (not 404s) when the flag is off mid-flight,
@@ -134,6 +269,8 @@ export function createCraftRoutes(input: {
       botIdFor: deps.botIdFor,
       generateName: deps.generateName,
       userNameFor: deps.userNameFor,
+      turnState,
+      managedContentHashesFor,
     }),
   );
   app.route(
@@ -150,14 +287,23 @@ export function createCraftRoutes(input: {
   );
   app.route(
     "/",
+    createSubagentRoutes(requireUser, {
+      store,
+      manager,
+      botIdFor: deps.botIdFor,
+    }),
+  );
+  app.route(
+    "/",
     createTurnRoutes(requireUser, {
       config,
       store,
       manager,
       turnState,
       executor,
-      gateway,
       botIdFor: deps.botIdFor,
+      approvalSignals,
+      connectAppSignals,
     }),
   );
   app.route(
@@ -171,10 +317,33 @@ export function createCraftRoutes(input: {
   );
   app.route(
     "/",
+    createFileRoutes(requireUser, {
+      config,
+      store,
+      gateway,
+      botIdFor: deps.botIdFor,
+    }),
+  );
+  app.route(
+    "/",
     createCraftApprovalRoutes(requireUser, {
       config,
       store,
       approvals: deps.approvals,
+      signals: approvalSignals,
+    }),
+  );
+  app.route(
+    "/",
+    createConnectAppRoutes(requireUser, {
+      config,
+      store,
+      gateway,
+      botIdFor: deps.botIdFor,
+      signals: connectAppSignals,
+      audit: {
+        insert: (event) => recordAuditEvent(createAuditStore(db), event),
+      },
     }),
   );
   if (config.webappProxyEnabled) {
@@ -187,6 +356,22 @@ export function createCraftRoutes(input: {
         botIdFor: deps.botIdFor,
         sandboxConnectionFor: deps.sandboxConnectionFor,
       }),
+    );
+  }
+  if (config.idleReaperEnabled) {
+    // The sleep half of sleep/wake, started at assembly beside the routes it serves. The sweep
+    // snapshots each quiet session then flips it idle through the guarded CAS — never touching
+    // the shared Bot sandbox itself (the divergence snapshot.ts documents). A live interactive
+    // turn keeps a session awake even when its row is quiet; an errored check does too
+    // (fail-closed), so `hasActiveTurn` throws are "still busy", not "skip the check".
+    runningIdleReaper?.stop();
+    runningIdleReaper = startCraftIdleReaper(
+      { config, store, gateway, objectStore },
+      {
+        botIdFor: deps.botIdFor,
+        hasActiveTurn: async ({ id, userId }) =>
+          (await turnState.getActiveTurn({ sessionId: id, userId })) !== null,
+      },
     );
   }
   if (config.enableScheduledTasks) {
@@ -208,6 +393,16 @@ export function createCraftRoutes(input: {
       createScheduledTaskRoutes(requireUser, {
         tasks,
         enqueueRun,
+      }),
+    );
+    app.route(
+      "/",
+      createScheduledRunRoutes(requireUser, {
+        tasks,
+        store,
+        config,
+        manager,
+        botIdFor: deps.botIdFor,
       }),
     );
   }

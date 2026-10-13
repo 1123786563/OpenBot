@@ -656,6 +656,13 @@ export const auditEventTypes = [
    * "when did we last look, and did the books agree" is answerable from the trail alone.
    */
   "billing.reconciled",
+  /**
+   * A craft session's owner answered a connect_app card (connected/declined; the session,
+   * the app id and the decision in the payload). The handshake itself rides ephemeral KV
+   * (onyx parity — no approval row), so this audit row is the one durable record that a
+   * decision was asked for and made.
+   */
+  "craft.connect_app_decided",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
