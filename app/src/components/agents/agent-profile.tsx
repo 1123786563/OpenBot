@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Link, useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
-import { AgentDialog } from "@/components/agents/agent-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentQueryOptions } from "@/lib/agents/queries";
@@ -49,9 +47,7 @@ function ProfileSkeleton() {
  * two places to maintain and a sidebar that scrolled past the conversation it sat beside.
  */
 export function AgentProfile({ agentId }: { agentId: string }) {
-  const { t } = useTranslation("agents");
   /** The full dialog, opened over the chat rather than navigating away from it. */
-  const [managing, setManaging] = useState(false);
   const navigate = useNavigate();
   const agent = useQuery(agentQueryOptions(agentId));
 
@@ -61,7 +57,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   if (agent.error || !agent.data) {
     return (
       <p className="p-8 text-sm text-destructive" role="alert">
-        {t("profile.loadError")}
+        Could not load this coworker.
       </p>
     );
   }
@@ -86,18 +82,14 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         </div>
 
         <div className="flex flex-wrap justify-center gap-1.5">
-          <Tag>
-            {profile.visibility === "private"
-              ? t("visibility.optionPrivate")
-              : t("visibility.optionPublic")}
-          </Tag>
-          {profile.systemOwned ? <Tag>{t("general.systemOwned")}</Tag> : null}
+          <Tag>{profile.visibility === "private" ? "Private" : "Public"}</Tag>
+          {profile.systemOwned ? <Tag>System owned</Tag> : null}
         </div>
       </header>
 
       <section className="grid gap-2">
-        <h2 className="text-xs font-medium text-muted-foreground">
-          {t("fields.role")}
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Role
         </h2>
         <p className="text-sm whitespace-pre-wrap text-pretty">
           {profile.roleDescription}
@@ -111,22 +103,18 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             void navigate({ search: { agent: agentId }, to: "/channel/new" })
           }
         >
-          {t("profile.startNewChannel")}
+          Start new channel
         </Button>
         <Button
           className="w-full text-sm!"
-          onClick={() => setManaging(true)}
+          render={(props) => (
+            <Link {...props} params={{ agentId }} to="/bots/$agentId" />
+          )}
           variant="outline"
         >
-          {t("profile.manage")}
+          Open {profile.name}
         </Button>
       </div>
-
-      <AgentDialog
-        agentId={agentId}
-        onClose={() => setManaging(false)}
-        open={managing}
-      />
     </div>
   );
 }

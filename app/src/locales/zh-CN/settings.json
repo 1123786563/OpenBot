@@ -9,7 +9,10 @@
     "passwords": "密码",
     "componentsGallery": "组件库",
     "plansUsage": "套餐与积分",
-    "invoices": "账单管理"
+    "invoices": "账单管理",
+    "notifications": "通知",
+    "approvals": "批准",
+    "memory": "记忆"
   },
   "billing": {
     "retry": "重试",

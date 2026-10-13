@@ -589,6 +589,27 @@
       "when": 1791785648977,
       "tag": "0083_naive_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1791785649977,
+      "tag": "0084_identity_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1791785650977,
+      "tag": "0085_memory_on_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1791785651977,
+      "tag": "0086_default_opt_outs",
+      "breakpoints": true
     }
   ]
 }

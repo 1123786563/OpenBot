@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useDateTime } from "@/lib/i18n/datetime";
 import {
+  createLearningContainer,
+  learningAutomaticQueryOptions,
   learningDeliveryQueryOptions,
   learningKeys,
   learningOverviewQueryOptions,
@@ -15,6 +17,7 @@ import {
   saveLearningSettings,
 } from "@/lib/learning/queries";
 import type {
+  LearningAutoAssignState,
   LearningSettings,
   LearningTarget,
 } from "../../../../../shared/learning";
@@ -23,6 +26,26 @@ export const Route = createFileRoute("/_authed/admin/learning")({
   component: LearningPage,
 });
 const selectClass = "w-full rounded-md border bg-background px-3 py-2 text-sm";
+
+/** What automatic assignment found, in words, or nothing when there is nothing to say. */
+function automaticMessage(
+  automatic: LearningAutoAssignState | null | undefined,
+  settings: LearningSettings,
+): string | undefined {
+  if (!automatic) return undefined;
+  if (
+    automatic.state === "assigned" &&
+    settings.defaultTarget?.containerId === automatic.containerId
+  )
+    return `OpenBot assigned this Intelligence project's "${automatic.containerId}" container automatically. Change it here at any time.`;
+  if (automatic.state === "absent")
+    return `This Intelligence project has no "${automatic.containerId}" Learning container yet, so nothing is collected.`;
+  if (automatic.state === "not_entitled")
+    return "This Intelligence project's plan does not include Learning, so no container was assigned.";
+  if (automatic.state === "unavailable")
+    return "OpenBot could not ask Intelligence for this project's Learning container. It tries again.";
+  return undefined;
+}
 
 function TargetFields({
   target,
@@ -76,11 +99,63 @@ function TargetFields({
   );
 }
 
+/**
+ * The missing container, and how it gets made: a button when this deployment holds a credential that
+ * can create it, and always the exact steps for an operator, since the runtime key cannot.
+ */
+function ContainerSetup({
+  automatic,
+}: {
+  automatic: Extract<LearningAutoAssignState, { state: "absent" }>;
+}) {
+  const queryClient = useQueryClient();
+  const create = useMutation({
+    mutationFn: createLearningContainer,
+    onSuccess: async (next) => {
+      queryClient.setQueryData(learningKeys.automatic, next);
+      await queryClient.invalidateQueries({ queryKey: learningKeys.all });
+    },
+  });
+  return (
+    <div className="grid gap-2 rounded-md border p-3 text-sm">
+      {automatic.canCreate && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            disabled={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            {create.isPending
+              ? "Creating…"
+              : `Create the ${automatic.containerId} container`}
+          </Button>
+          <span className="text-muted-foreground">
+            Uses the credential this deployment was given, never the runtime
+            key.
+          </span>
+        </div>
+      )}
+      {(create.error || automatic.createError) && (
+        <p role="alert" className="text-destructive">
+          {create.error?.message ?? automatic.createError}
+        </p>
+      )}
+      {automatic.instructions && (
+        <p>
+          <span className="font-medium">To create it: </span>
+          {automatic.instructions}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function LearningPage() {
   const { t } = useTranslation("admin");
   const { formatDateTime } = useDateTime();
   const queryClient = useQueryClient();
   const settingsQuery = useQuery(learningSettingsQueryOptions());
+  const automatic = useQuery(learningAutomaticQueryOptions());
   const agents = useQuery(agentListQueryOptions());
   const hiddenAgents = useQuery(agentListQueryOptions(true));
   const roster = [...(agents.data ?? []), ...(hiddenAgents.data ?? [])];
@@ -92,6 +167,11 @@ export function LearningPage() {
   );
   const delivery = useQuery(learningDeliveryQueryOptions(selected));
   const settings = draft ?? settingsQuery.data;
+  // About what is saved, so it steps aside while an edit is in progress.
+  const automaticNote =
+    settingsQuery.data && !draft
+      ? automaticMessage(automatic.data, settingsQuery.data)
+      : undefined;
   const save = useMutation({
     mutationFn: saveLearningSettings,
     onSuccess: async (next) => {
@@ -122,8 +202,8 @@ export function LearningPage() {
       description={t("learning.description")}
     >
       <PageSection
-        title={t("learning.participation.title")}
-        description={t("learning.participation.description")}
+        title="Participation"
+        description="Changes to container assignments apply to new threads. Existing threads keep their first assignment. Containers must already exist in the same Intelligence project. Until anything is saved here, OpenBot assigns that project's openbot container automatically."
       >
         {settingsQuery.isPending && (
           <p role="status">{t("learning.loading")}</p>
@@ -158,6 +238,14 @@ export function LearningPage() {
                 change({ ...settings, defaultTarget })
               }
             />
+            {automaticNote && (
+              <p role="status" className="text-sm">
+                {automaticNote}
+              </p>
+            )}
+            {!draft && automatic.data?.state === "absent" && (
+              <ContainerSetup automatic={automatic.data} />
+            )}
             <p className="text-muted-foreground text-sm">
               {t("learning.participation.idHint")}
             </p>

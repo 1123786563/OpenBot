@@ -1,286 +1,70 @@
 import {
   IconBell,
+  IconChevronRight,
   IconMessage,
   IconPlayerPause,
-  IconRefresh,
-  IconRoute,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
-import { useTranslation } from "react-i18next";
+import type * as React from "react";
+import { useState } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { BotNeedsYou } from "@/components/approvals/waiting";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
+import { SuggestionsInbox } from "@/components/suggestions/proactive-panel";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Item,
   ItemActions,
   ItemContent,
   ItemDescription,
-  ItemFooter,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import type { AgentProfile } from "@/lib/agents/queries";
 import {
-  resetBotMutationOptions,
   setBotNotifyMutationOptions,
   setBotPausedMutationOptions,
-  setUpdateRoutingMutationOptions,
 } from "@/lib/bot-lifecycle/mutations";
 import {
   type BotNotify,
   botLifecycleQueryOptions,
-  botResetPlanQueryOptions,
-  type ResetPlan,
-  type UpdateKind,
-  type UpdateTransport,
-  updateRoutingQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
 import { queryClient } from "@/query-client";
 import { BotActivitySections } from "./activity";
 import { BotPausedBanner } from "./pause-banner";
 
-/* Key literals stay literal (`as const satisfies`) so `t(...)` sees a known key, not `string`. */
-const NOTIFY_LABEL = {
-  all: "profile.notify.all",
-  needs_input: "profile.notify.needsInput",
-  none: "profile.notify.none",
-} as const satisfies Record<BotNotify, string>;
+const NOTIFY_LABEL: Record<BotNotify, string> = {
+  all: "Everything",
+  needs_input: "Only when it needs me",
+  none: "Nothing (badges only)",
+};
 
-const KIND_LABEL = {
-  progress: {
-    title: "profile.updateKind.progress.title",
-    description: "profile.updateKind.progress.description",
-  },
-  decision: {
-    title: "profile.updateKind.decision.title",
-    description: "profile.updateKind.decision.description",
-  },
-  question: {
-    title: "profile.updateKind.question.title",
-    description: "profile.updateKind.question.description",
-  },
-} as const satisfies Record<UpdateKind, { title: string; description: string }>;
-
-const TRANSPORTS = [
-  { id: "push", label: "profile.transport.push" },
-  { id: "slack", label: "profile.transport.slack" },
-  { id: "teams", label: "profile.transport.teams" },
-  { id: "sms", label: "profile.transport.sms" },
-] as const satisfies readonly { id: UpdateTransport; label: string }[];
-
-const selectClass = "h-8 rounded-md border bg-background px-2 text-sm";
-
-/** Each count the notice lists, in the words the person reads, skipping the kinds with nothing. */
-function resetLines(plan: ResetPlan) {
-  const lines = [
-    [plan.conversations, "profile.resetItems.conversations"],
-    [plan.memorySources, "profile.resetItems.memorySources"],
-    [plan.memories, "profile.resetItems.memories"],
-    [plan.routines, "profile.resetItems.routines"],
-    [plan.responsibilities, "profile.resetItems.responsibilities"],
-    [plan.followUps, "profile.resetItems.followUps"],
-    [plan.formedMemories, "profile.resetItems.formedMemories"],
-    [plan.backgroundResearch, "profile.resetItems.backgroundResearch"],
-    [plan.standingApprovals, "profile.resetItems.standingApprovals"],
-  ] as const;
-  return lines
-    .filter(([count]) => count > 0)
-    .map(([count, key]) => ({ count, key }));
-}
-
-function ResetDialog({
+/** A Bot's own page: its state for you, what it is doing, its settings, and what can be done to it. */
+export function BotProfile({
   agent,
-  onOpenChange,
-  open,
+  settings,
+  manage,
 }: {
   agent: AgentProfile;
-  onOpenChange: (open: boolean) => void;
-  open: boolean;
+  /** The "Settings for this Bot" card. */
+  settings?: React.ReactNode;
+  /** Pin, hide, duplicate, reset, delete. */
+  manage?: React.ReactNode;
 }) {
-  const { t } = useTranslation("computer");
-  const plan = useQuery({
-    ...botResetPlanQueryOptions(agent.id),
-    enabled: open,
-  });
-  const reset = useMutation(resetBotMutationOptions(queryClient));
-  const lines = plan.data ? resetLines(plan.data) : [];
-  return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {t("profile.reset.title", { name: agent.name })}
-          </DialogTitle>
-          <DialogDescription>
-            {t("profile.reset.description", { name: agent.name })}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody className="mt-4 overflow-y-auto">
-          {plan.isPending ? null : plan.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {t("profile.reset.countError")}
-            </p>
-          ) : reset.isSuccess ? (
-            <p className="text-sm">
-              {t("profile.reset.done", { name: agent.name })}
-            </p>
-          ) : (
-            <div className="grid gap-2 text-sm">
-              {lines.length === 0 ? (
-                <p>{t("profile.reset.nothingToDelete")}</p>
-              ) : (
-                <>
-                  <p>{t("profile.reset.willDelete")}</p>
-                  <ul className="list-disc pl-5">
-                    {lines.map((line) => (
-                      <li key={line.key}>
-                        {t(line.key, { count: line.count })}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {plan.data.sharedConversationsKept > 0 ? (
-                <p className="text-muted-foreground">
-                  {t("profile.reset.sharedKept", {
-                    count: plan.data.sharedConversationsKept,
-                  })}
-                </p>
-              ) : null}
-              <p className="text-muted-foreground">
-                {t("profile.reset.ownMemoriesKept")}
-              </p>
-            </div>
-          )}
-          {reset.error ? (
-            <p className="mt-2 text-destructive text-sm" role="alert">
-              {reset.error.message}
-            </p>
-          ) : null}
-        </DialogBody>
-        <DialogFooter className="mt-4">
-          <Button
-            onClick={() => onOpenChange(false)}
-            size="sm"
-            variant="outline"
-          >
-            {reset.isSuccess
-              ? t("profile.reset.close")
-              : t("profile.reset.cancel")}
-          </Button>
-          {reset.isSuccess ? null : (
-            <Button
-              disabled={!plan.data || lines.length === 0 || reset.isPending}
-              onClick={() => reset.mutate(agent.id)}
-              size="sm"
-              variant="destructive"
-            >
-              {reset.isPending
-                ? t("profile.reset.resetting")
-                : t("profile.reset.deleteAndReset")}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function UpdateRoutingSection() {
-  const { t } = useTranslation("computer");
-  const routing = useQuery(updateRoutingQueryOptions());
-  const save = useMutation(setUpdateRoutingMutationOptions(queryClient));
-  return (
-    <PageSection
-      description={t("profile.routing.description")}
-      title={t("profile.routing.title")}
-    >
-      {routing.isPending ? null : routing.error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {t("profile.routing.loadError")}
-        </p>
-      ) : (
-        <PageRows>
-          {(Object.keys(KIND_LABEL) as UpdateKind[]).map((kind, index) => {
-            const current = routing.data[kind];
-            const allowed = (transport: UpdateTransport) =>
-              current === "all" || current.includes(transport);
-            return (
-              <Fragment key={kind}>
-                {index > 0 ? <Separator /> : null}
-                <Item size="sm">
-                  <ItemMedia variant="icon">
-                    <IconRoute />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle>{t(KIND_LABEL[kind].title)}</ItemTitle>
-                    <ItemDescription>
-                      {t(KIND_LABEL[kind].description)}
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemFooter className="gap-4 pl-8">
-                    {TRANSPORTS.map((transport) => (
-                      <div
-                        className="flex items-center gap-2 text-sm"
-                        key={transport.id}
-                      >
-                        <Switch
-                          aria-label={t("profile.transportAria", {
-                            kind: t(KIND_LABEL[kind].title),
-                            transport: t(transport.label),
-                          })}
-                          checked={allowed(transport.id)}
-                          disabled={save.isPending}
-                          onCheckedChange={(checked) => {
-                            const next = TRANSPORTS.map((t) => t.id).filter(
-                              (id) =>
-                                id === transport.id ? checked : allowed(id),
-                            );
-                            save.mutate({
-                              kind,
-                              transports:
-                                next.length === TRANSPORTS.length
-                                  ? "all"
-                                  : next,
-                            });
-                          }}
-                          size="sm"
-                        />
-                        {t(transport.label)}
-                      </div>
-                    ))}
-                  </ItemFooter>
-                </Item>
-              </Fragment>
-            );
-          })}
-        </PageRows>
-      )}
-    </PageSection>
-  );
-}
-
-/** A Bot's own page: its state for you, what it is doing, and the lifecycle controls. */
-export function BotProfile({ agent }: { agent: AgentProfile }) {
-  const { t } = useTranslation("computer");
   const lifecycle = useQuery(botLifecycleQueryOptions(agent.id));
   const pause = useMutation(setBotPausedMutationOptions(queryClient));
   const notify = useMutation(setBotNotifyMutationOptions(queryClient));
-  const [resetOpen, setResetOpen] = useState(false);
   const [permission, setPermission] = useState<string>(() => {
     try {
       return typeof Notification === "undefined"
@@ -306,13 +90,19 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
         <BotPausedBanner agentId={agent.id} />
       </div>
 
-      <PageSection title={t("profile.forYou")}>
+      <BotNeedsYou agentId={agent.id} />
+      <SuggestionsInbox agentId={agent.id} />
+
+      <PageSection title="For you">
+        {/* Whether this Bot's Shared-app calls are being refused right now, with the button that
+            asks an administrator. About its present reach, so it lives here, not only where
+            publishing happens. */}
         {agent.canManage ? (
           <SharedAppNotice botId={agent.id} reason="publish" />
         ) : null}
         {lifecycle.isPending ? null : lifecycle.error ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
-            {t("profile.stateLoadError")}
+            Could not load this Bot's state.
           </p>
         ) : (
           <PageRows>
@@ -321,20 +111,22 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconPlayerPause />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{t("profile.paused.title")}</ItemTitle>
+                {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
+                    the row showed the word "Paused" beside a switch that was off for a running Bot. */}
+                <ItemTitle>Active</ItemTitle>
                 <ItemDescription>
                   {lifecycle.data.paused
-                    ? t("profile.paused.on")
-                    : t("profile.paused.off")}
+                    ? "Paused. No routine, responsibility, hand-off or follow-up starts for you, and what was running has stopped."
+                    : "Runs its routines, responsibilities, hand-offs and follow-ups for you."}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
                 <Switch
-                  aria-label={t("profile.paused.title")}
-                  checked={lifecycle.data.paused}
+                  aria-label="Active"
+                  checked={!lifecycle.data.paused}
                   disabled={pause.isPending}
-                  onCheckedChange={(paused) =>
-                    pause.mutate({ agentId: agent.id, paused })
+                  onCheckedChange={(active) =>
+                    pause.mutate({ agentId: agent.id, paused: !active })
                   }
                 />
               </ItemActions>
@@ -345,31 +137,37 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconBell />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{t("profile.notifications.title")}</ItemTitle>
+                <ItemTitle>Notifications</ItemTitle>
                 <ItemDescription>
-                  {t(NOTIFY_LABEL[lifecycle.data.notify])}.{" "}
-                  {t("profile.notifications.badgesAlways")}
+                  {NOTIFY_LABEL[lifecycle.data.notify]}. Sidebar badges always
+                  show.
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
-                <select
-                  aria-label={t("profile.notifications.title")}
-                  className={selectClass}
+                <Select
                   disabled={notify.isPending}
-                  onChange={(event) =>
+                  // The label map, so the closed trigger says "Everything" rather than the raw value.
+                  items={NOTIFY_LABEL}
+                  onValueChange={(next) => {
+                    if (next === lifecycle.data.notify) return;
                     notify.mutate({
                       agentId: agent.id,
-                      notify: event.target.value as BotNotify,
-                    })
-                  }
+                      notify: next as BotNotify,
+                    });
+                  }}
                   value={lifecycle.data.notify}
                 >
-                  {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
-                    <option key={value} value={value}>
-                      {t(NOTIFY_LABEL[value])}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger aria-label="Notifications">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {NOTIFY_LABEL[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </ItemActions>
             </Item>
             {permission === "default" ? (
@@ -380,11 +178,10 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                     <IconBell />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>
-                      {t("profile.browserNotifications.title")}
-                    </ItemTitle>
+                    <ItemTitle>Browser notifications</ItemTitle>
                     <ItemDescription>
-                      {t("profile.browserNotifications.off")}
+                      Off in this browser. Turn them on to hear when a Bot needs
+                      you.
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -399,7 +196,7 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                       size="sm"
                       variant="outline"
                     >
-                      {t("profile.browserNotifications.turnOn")}
+                      Turn on
                     </Button>
                   </ItemActions>
                 </Item>
@@ -414,38 +211,20 @@ export function BotProfile({ agent }: { agent: AgentProfile }) {
                 <IconMessage />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>
-                  {t("profile.message.title", { name: agent.name })}
-                </ItemTitle>
-                <ItemDescription>
-                  {t("profile.message.description")}
-                </ItemDescription>
+                <ItemTitle>Message {agent.name}</ItemTitle>
+                <ItemDescription>Start a conversation.</ItemDescription>
               </ItemContent>
-            </Item>
-            <Separator />
-            <Item
-              render={
-                <button onClick={() => setResetOpen(true)} type="button" />
-              }
-              size="sm"
-            >
-              <ItemMedia variant="icon">
-                <IconRefresh />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>{t("profile.resetEntry.title")}</ItemTitle>
-                <ItemDescription>
-                  {t("profile.resetEntry.description")}
-                </ItemDescription>
-              </ItemContent>
+              <ItemActions>
+                <IconChevronRight className="size-4 text-muted-foreground" />
+              </ItemActions>
             </Item>
           </PageRows>
         )}
       </PageSection>
 
       <BotActivitySections agentId={agent.id} />
-      <UpdateRoutingSection />
-      <ResetDialog agent={agent} onOpenChange={setResetOpen} open={resetOpen} />
+      {settings}
+      {manage}
     </>
   );
 }

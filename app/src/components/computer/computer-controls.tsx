@@ -44,6 +44,11 @@ export function ComputerControlButton({
   );
 }
 
+/**
+ * The header's way into the Computer: an icon that opens and closes it, with a dot when the
+ * Computer wants the person. Taking and handing back control happen inside the Computer, where the
+ * person can see what they are taking over; the Computer opens itself once for each new prompt.
+ */
 export function ComputerChatControls({
   computerId,
   open,
@@ -73,33 +78,23 @@ export function ComputerChatControls({
     if (promptKey) onOpenChange(true);
   }, [promptKey, onOpenChange]);
   return (
-    <div className="flex items-start gap-1.5">
-      <Button
-        size="sm"
-        variant={open ? "secondary" : "ghost"}
-        aria-label={
-          open ? t("controls.closeComputer") : t("controls.openComputer")
-        }
-        aria-expanded={open}
-        disabled={!computerId}
-        onClick={() => onOpenChange(!open)}
-      >
-        <IconDeviceDesktop className="size-4" />
-        {t("controls.computer")}
-        {needsYou ? (
-          <span
-            className="size-2 rounded-full bg-amber-500"
-            role="img"
-            aria-label={t("controls.needsYou")}
-          />
-        ) : null}
-      </Button>
-      {computerId ? (
-        <ComputerControlButton
-          computerId={computerId}
-          onTakeControl={() => onOpenChange(true)}
+    <Button
+      aria-expanded={open}
+      aria-label={open ? "Close Computer" : "Open Computer"}
+      className={open ? "relative bg-foreground/5" : "relative"}
+      disabled={!computerId}
+      onClick={() => onOpenChange(!open)}
+      size="icon"
+      variant="ghost"
+    >
+      <IconDeviceDesktop className="size-4.5" />
+      {needsYou ? (
+        <span
+          aria-label="Needs you"
+          className="absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ring-background"
+          role="img"
         />
       ) : null}
-    </div>
+    </Button>
   );
 }
