@@ -1,8 +1,8 @@
 import {
   IconBolt,
   IconBook2,
-  IconBox,
   IconBrain,
+  IconBox,
   IconChecks,
   IconDeviceMobile,
   IconLogout,
@@ -73,7 +73,7 @@ import {
   type MessageListEmphasis,
   useMessageListEmphasis,
 } from "@/lib/settings/message-list";
-import { BotAttentionList } from "../bot-profile/attention";
+import { BotsNavBadge } from "../bot-profile/attention";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
@@ -617,8 +617,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarGroup>
             {/* The roster itself: unlabelled, below the destinations, exactly where it was. */}
             <SidebarGroup className="gap-px">
-              {/* Bots that need you, or that you paused. See bot-profile/attention.tsx. */}
-              <BotAttentionList />
               {/*
                * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
                * used yet needs telling how to start. A roster that simply does not match what is in
@@ -678,6 +676,45 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu className="gap-px">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/bots"
+                  activeProps={{ className: "bg-foreground/5" }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBolt />
+              </div>
+              <span className="text-sm">Bots</span>
+              {/* What waits on you across every Bot; Bots lists them first. */}
+              <BotsNavBadge />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* Beside Bots rather than inside Admin: writing a skill is something anybody does. */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/skills"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBox />
+              </div>
+              <span className="text-sm trackint-tight">Skills</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger

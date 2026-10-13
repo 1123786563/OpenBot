@@ -1,13 +1,22 @@
-import { IconHistory, IconPlayerPlay, IconTrash } from "@tabler/icons-react";
+import {
+  IconClock,
+  IconHistory,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { TFunction } from "i18next";
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { PageSection } from "@/components/layout/page-shell";
+import { Fragment, useState } from "react";
+import {
+  PageEmpty,
+  PageRows,
+  PageSection,
+} from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -15,19 +24,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
   Item,
   ItemActions,
   ItemContent,
   ItemDescription,
   ItemFooter,
+  ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -53,10 +58,7 @@ import { queryClient } from "@/query-client";
  * right now" — which is also what a run stuck open after repeated dispatch failures looks like from
  * here. Neither is a failure, so neither gets the destructive tone; only `status: "failed"` does.
  */
-function lastRunLabel(
-  t: TFunction<"routines">,
-  lastRun: RoutineRecord["lastRun"],
-): {
+function lastRunLabel(lastRun: RoutineRecord["lastRun"]): {
   text: string;
   className: string;
   /** The chip's dot, which carries the tone so the text can stay readable. */
@@ -64,36 +66,36 @@ function lastRunLabel(
 } {
   if (lastRun === null) {
     return {
-      text: t("lastRun.never"),
+      text: "Never run yet",
       className: "text-muted-foreground",
       dot: "bg-muted-foreground/40",
     };
   }
   if (lastRun.status === null) {
     return {
-      text: t("lastRun.running"),
+      text: "Running…",
       className: "text-muted-foreground",
       dot: "animate-pulse bg-muted-foreground",
     };
   }
-  const when = lastRun.at ? relativeTime(lastRun.at) : t("lastRun.recently");
+  const when = lastRun.at ? relativeTime(lastRun.at) : "recently";
   if (lastRun.status === "failed") {
     return {
-      text: t("lastRun.failed", { when }),
+      text: `Failed ${when}`,
       className: "text-destructive",
       dot: "bg-destructive",
     };
   }
   if (lastRun.status === "skipped") {
     return {
-      text: t("lastRun.skipped", { when }),
+      text: `Skipped ${when}`,
       className: "text-amber-600 dark:text-amber-500",
       dot: "bg-amber-500",
     };
   }
   if (lastRun.status === "succeeded") {
     return {
-      text: t("lastRun.ran", { when }),
+      text: `Ran ${when}`,
       className: "text-muted-foreground",
       dot: "bg-emerald-500",
     };
@@ -102,7 +104,7 @@ function lastRunLabel(
   // success — the contract typing (`RoutineRunOutcome | null`) makes a fourth outcome a build-time
   // error, but this is the runtime fallback if that ever slips through.
   return {
-    text: t("lastRun.finished", { when }),
+    text: `Finished ${when}`,
     className: "text-muted-foreground",
     dot: "bg-muted-foreground/40",
   };
@@ -110,7 +112,7 @@ function lastRunLabel(
 
 /**
  * One fact about a routine, worn as a small pill so the footer reads as a row of states rather
- * than a sentence. On the muted item the pill's own background is what keeps it legible.
+ * than a sentence.
  */
 function Chip({
   className,
@@ -131,35 +133,34 @@ function Chip({
   );
 }
 
-const RUN_STATUS = {
+const RUN_STATUS: Record<
+  RoutineRunRecord["status"],
+  { text: string; dot: string; className: string }
+> = {
   running: {
-    key: "runs.running",
+    text: "Running",
     dot: "animate-pulse bg-muted-foreground",
     className: "",
   },
-  succeeded: { key: "runs.succeeded", dot: "bg-emerald-500", className: "" },
+  succeeded: { text: "Succeeded", dot: "bg-emerald-500", className: "" },
   failed: {
-    key: "runs.failed",
+    text: "Failed",
     dot: "bg-destructive",
     className: "text-destructive",
   },
   skipped: {
-    key: "runs.skipped",
+    text: "Skipped",
     dot: "bg-amber-500",
     className: "text-amber-600 dark:text-amber-500",
   },
-  waiting: { key: "runs.waiting", dot: "bg-sky-500", className: "" },
-} as const satisfies Record<
-  RoutineRunRecord["status"],
-  { key: string; dot: string; className: string }
->;
+  waiting: { text: "Waiting for you", dot: "bg-sky-500", className: "" },
+};
 
 /** Every firing of one routine, newest first, each linking to the thread it ran in. */
 function RoutineRuns({ routine }: { routine: RoutineRecord }) {
-  const { t } = useTranslation("routines");
   const runs = useQuery(routineRunsQueryOptions(routine.id));
-  if (runs.isPending)
-    return <p className="text-muted-foreground text-xs">{t("runs.loading")}</p>;
+  // Pending renders nothing: "No runs yet." would otherwise flash for the fetch.
+  if (runs.isPending) return null;
   if (runs.error)
     return (
       <p className="text-destructive text-xs" role="alert">
@@ -167,7 +168,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
       </p>
     );
   if (!runs.data?.length)
-    return <p className="text-muted-foreground text-xs">{t("runs.none")}</p>;
+    return <p className="text-muted-foreground text-xs">No runs yet.</p>;
   return (
     <ul className="flex w-full flex-col gap-1.5">
       {runs.data.map((run) => {
@@ -184,14 +185,14 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
               )}
             >
               <span className={cn("size-1.5 rounded-full", status.dot)} />
-              {t(status.key)}
+              {status.text}
             </span>
             <span className="text-muted-foreground">
               {run.source === "run_now"
-                ? t("runs.source.runNow")
+                ? "Run now"
                 : run.source === "trigger"
-                  ? t("runs.source.triggered")
-                  : t("runs.source.scheduled")}{" "}
+                  ? "Triggered"
+                  : "Scheduled"}{" "}
               · {relativeTime(run.startedAt)}
             </span>
             {routine.channel.gone ? null : (
@@ -200,7 +201,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
                 params={{ channelId: routine.channel.id }}
                 to="/channel/$channelId"
               >
-                {t("runs.openThread")}
+                Open thread
               </Link>
             )}
             {run.error ? (
@@ -219,7 +220,7 @@ function RoutineRuns({ routine }: { routine: RoutineRecord }) {
  * The signed-in person's standing instructions: a switch to stop one taking effect, and a delete
  * that ends it for good.
  *
- * Scoped by `agentId` on a Bot's own dialog, unscoped on the Routines page. One query either way —
+ * Scoped by `agentId` on a Bot's Routines page, unscoped on the Routines page. One query either way —
  * the list is owner-scoped and small, so the scope is a filter here rather than a second endpoint.
  */
 export function RoutinesList({
@@ -228,10 +229,9 @@ export function RoutinesList({
 }: {
   /** Show only the routines this Bot carries out. Absent shows all of the person's. */
   agentId?: string;
-  /** Inside a dialog, where the page section's own top margin is somebody else's spacing. */
+  /** Where the page section's own top margin is somebody else's spacing. */
   embedded?: boolean;
 } = {}) {
-  const { t } = useTranslation("routines");
   const routines = useQuery(routinesQueryOptions());
   const setEnabled = useMutation(setRoutineEnabledMutationOptions(queryClient));
   const deleteRoutine = useMutation(deleteRoutineMutationOptions(queryClient));
@@ -250,71 +250,86 @@ export function RoutinesList({
   return (
     <PageSection className={embedded ? "mt-0" : undefined}>
       {setEnabled.error || runNow.error ? (
-        <p className="text-destructive text-sm" role="alert">
+        <p className="mt-4 text-destructive text-sm" role="alert">
           {setEnabled.error?.message ?? runNow.error?.message}
         </p>
       ) : null}
 
+      {/* A fact about the deployment rather than a row to act on, so said as a sentence. */}
       {noWorker ? (
-        <Item
-          variant="muted"
-          className="mb-2 border-amber-500/40 bg-amber-500/5"
-          role="alert"
-        >
-          <ItemContent>
-            <ItemTitle className="text-amber-600 dark:text-amber-500">
-              {t("workerStalled.title")}
-            </ItemTitle>
-            <ItemDescription>
-              {sweep?.lastSweptAt
-                ? t("workerStalled.lastChecked", {
-                    when: relativeTime(sweep.lastSweptAt),
-                  })
-                : t("workerStalled.neverChecked")}
-            </ItemDescription>
-          </ItemContent>
-        </Item>
+        <p className="mt-4 text-muted-foreground text-sm" role="alert">
+          <span className="font-medium text-amber-600 dark:text-amber-500">
+            Nothing is running these.
+          </span>{" "}
+          {sweep?.lastSweptAt
+            ? `The routines worker last checked ${relativeTime(sweep.lastSweptAt)}. Until it is running again, none of these will fire.`
+            : "No routines worker has ever checked in, so none of these will fire. A deployment needs one running to carry them out."}
+        </p>
       ) : null}
 
       {/* Pending renders nothing: the empty-state sentence would otherwise flash for the fetch. */}
       {routines.isPending ? null : routines.error ? (
         <p className="mt-4 text-destructive text-sm" role="alert">
-          {t("loadError")}
+          Your routines could not be loaded.
         </p>
       ) : rows.length === 0 ? (
-        <Empty className="h-[180px] border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle className="text-muted-foreground">
-              {agentId ? t("empty.agentTitle") : t("empty.title")}
-            </EmptyTitle>
-            <EmptyDescription>
-              {agentId ? t("empty.agentHint") : t("empty.hint")}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <PageEmpty>
+          {agentId
+            ? 'Nothing scheduled for this coworker. Ask it in a channel — "every weekday at 9, …" — and it will appear here.'
+            : 'Nothing scheduled. Ask a Bot — "every weekday at 9, …" — and it will appear here.'}
+        </PageEmpty>
       ) : (
-        <div className="flex flex-col gap-2">
-          {rows.map((routine) => {
-            const lastRun = lastRunLabel(t, routine.lastRun);
+        <PageRows>
+          {rows.map((routine, index) => {
+            const lastRun = lastRunLabel(routine.lastRun);
             return (
-              <Item key={routine.id} variant="muted">
-                {/* Paused reads at a glance: the content dims, and a chip below says the word. */}
-                <ItemContent className={routine.enabled ? "" : "opacity-60"}>
-                  <ItemTitle>
-                    {routine.schedule}
-                    <span className="font-normal text-muted-foreground text-xs">
-                      {routine.timezone}
-                    </span>
-                  </ItemTitle>
-                  <ItemDescription className="line-clamp-2">
-                    {routine.instruction}
-                  </ItemDescription>
-                  {/* A set, so it wraps onto its own line rather than crowding the title. */}
-                  <ItemFooter>
-                    <div className="flex flex-wrap items-center gap-1.5">
+              <Fragment key={routine.id}>
+                {index > 0 ? <Separator /> : null}
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    {routine.enabled ? <IconClock /> : <IconPlayerPause />}
+                  </ItemMedia>
+                  {/* Paused reads at a glance: the content dims, and a chip below says the word. */}
+                  <ItemContent className={routine.enabled ? "" : "opacity-60"}>
+                    <ItemTitle>
+                      {routine.schedule}
+                      <span className="font-normal text-muted-foreground text-xs">
+                        {routine.timezone}
+                      </span>
+                    </ItemTitle>
+                    <ItemDescription>{routine.instruction}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    {/*
+                     * Binary and immediate: it takes effect when switched, there is no save.
+                     * Disabled only while its own write is in flight, so switching one routine
+                     * does not freeze the rest of the list — the same idiom the per-tool plugins
+                     * page uses for its per-Bot grant switches.
+                     */}
+                    <Switch
+                      aria-label={`Enable the routine scheduled ${routine.schedule}`}
+                      checked={routine.enabled}
+                      disabled={
+                        setEnabled.isPending &&
+                        setEnabled.variables?.id === routine.id
+                      }
+                      onCheckedChange={(next) =>
+                        setEnabled.mutate({ id: routine.id, enabled: next })
+                      }
+                    />
+                  </ItemActions>
+                  {/* Two sets — where it stands, and what can be done to it — so they wrap onto a
+                      line of their own rather than crowding the title. */}
+                  <ItemFooter className="flex-wrap">
+                    <div
+                      className={cn(
+                        "flex flex-wrap items-center gap-1.5",
+                        routine.enabled ? "" : "opacity-60",
+                      )}
+                    >
                       {routine.channel.gone ? (
                         <Chip className="border-destructive/40 text-destructive">
-                          {t("channelGone")}
+                          This channel is gone
                         </Chip>
                       ) : (
                         // Where it posts is a place, so the chip goes there.
@@ -323,7 +338,7 @@ export function RoutinesList({
                           to="/channel/$channelId"
                         >
                           <Chip className="text-muted-foreground transition-colors hover:text-foreground">
-                            {routine.channel.name ?? t("unnamedChannel")}
+                            {routine.channel.name ?? "Unnamed channel"}
                           </Chip>
                         </Link>
                       )}
@@ -340,9 +355,7 @@ export function RoutinesList({
                        * takes its place, so the switch's state has a word as well as a position.
                        */}
                       {!routine.enabled ? (
-                        <Chip className="text-muted-foreground">
-                          {t("paused")}
-                        </Chip>
+                        <Chip className="text-muted-foreground">Paused</Chip>
                       ) : new Date(routine.nextRunAt).getTime() <=
                         Date.now() ? (
                         /*
@@ -351,104 +364,83 @@ export function RoutinesList({
                          */
                         <Chip className="text-amber-600 dark:text-amber-500">
                           <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                          {t("due")}
+                          Due
                         </Chip>
                       ) : (
                         <Chip className="text-muted-foreground">
-                          {t("next", { when: relativeTime(routine.nextRunAt) })}
+                          Next {relativeTime(routine.nextRunAt)}
                         </Chip>
                       )}
                     </div>
+                    <div className="flex items-center gap-1">
+                      {/*
+                       * Run now is the Test button, and it does real work: the Bot carries out the
+                       * instruction in the channel right away. Offered only while the routine is
+                       * on, because a paused routine never runs.
+                       */}
+                      <Button
+                        aria-label={`Run the routine scheduled ${routine.schedule} now`}
+                        disabled={
+                          !routine.enabled ||
+                          (runNow.isPending && runNow.variables === routine.id)
+                        }
+                        onClick={() =>
+                          runNow.mutate(routine.id, {
+                            onSuccess: () => setHistoryId(routine.id),
+                          })
+                        }
+                        size="sm"
+                        title={
+                          routine.enabled
+                            ? "Runs it for real, now: the Bot does the work and posts in the channel."
+                            : "Paused routines never run. Switch it on first."
+                        }
+                        type="button"
+                        variant="outline"
+                      >
+                        <IconPlayerPlay />
+                        Run now
+                      </Button>
+                      <Button
+                        aria-expanded={historyId === routine.id}
+                        aria-label={`Run history for the routine scheduled ${routine.schedule}`}
+                        onClick={() =>
+                          setHistoryId(
+                            historyId === routine.id ? null : routine.id,
+                          )
+                        }
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <IconHistory />
+                        History
+                      </Button>
+                      <Button
+                        aria-label={`Delete the routine scheduled ${routine.schedule}`}
+                        onClick={() => {
+                          deleteRoutine.reset();
+                          setConfirmingId(routine.id);
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <IconTrash />
+                        Delete
+                      </Button>
+                    </div>
                   </ItemFooter>
                   {historyId === routine.id ? (
-                    <div className="mt-2 border-border border-t pt-2">
+                    <div className="basis-full border-border border-t pt-2">
                       <RoutineRuns routine={routine} />
                     </div>
                   ) : null}
-                </ItemContent>
-                <ItemActions>
-                  {/*
-                   * Run now is the Test button, and it does real work: the Bot carries out the
-                   * instruction in the channel right away. Offered only while the routine is on,
-                   * because a paused routine never runs.
-                   */}
-                  <Button
-                    aria-label={t("actions.runNowAria", {
-                      schedule: routine.schedule,
-                    })}
-                    disabled={
-                      !routine.enabled ||
-                      (runNow.isPending && runNow.variables === routine.id)
-                    }
-                    onClick={() =>
-                      runNow.mutate(routine.id, {
-                        onSuccess: () => setHistoryId(routine.id),
-                      })
-                    }
-                    size="sm"
-                    title={
-                      routine.enabled
-                        ? t("actions.runNowTitle")
-                        : t("actions.runNowPausedTitle")
-                    }
-                    type="button"
-                    variant="outline"
-                  >
-                    <IconPlayerPlay />
-                    {t("actions.runNow")}
-                  </Button>
-                  <Button
-                    aria-expanded={historyId === routine.id}
-                    aria-label={t("actions.historyAria", {
-                      schedule: routine.schedule,
-                    })}
-                    onClick={() =>
-                      setHistoryId(historyId === routine.id ? null : routine.id)
-                    }
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <IconHistory />
-                  </Button>
-                  {/*
-                   * Binary and immediate: it takes effect when switched, there is no save.
-                   * Disabled only while its own write is in flight, so switching one routine
-                   * does not freeze the rest of the list — the same idiom the per-tool plugins
-                   * page uses for its per-Bot grant switches.
-                   */}
-                  <Switch
-                    aria-label={t("actions.enableAria", {
-                      schedule: routine.schedule,
-                    })}
-                    checked={routine.enabled}
-                    disabled={
-                      setEnabled.isPending &&
-                      setEnabled.variables?.id === routine.id
-                    }
-                    onCheckedChange={(next) =>
-                      setEnabled.mutate({ id: routine.id, enabled: next })
-                    }
-                  />
-                  <Button
-                    aria-label={t("actions.deleteAria", {
-                      schedule: routine.schedule,
-                    })}
-                    onClick={() => {
-                      deleteRoutine.reset();
-                      setConfirmingId(routine.id);
-                    }}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <IconTrash />
-                  </Button>
-                </ItemActions>
-              </Item>
+                </Item>
+              </Fragment>
             );
           })}
-        </div>
+        </PageRows>
       )}
 
       {/*
@@ -467,23 +459,27 @@ export function RoutinesList({
             UI would otherwise render a nested dialog with no backdrop at all. */}
         <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
           <DialogHeader>
-            <DialogTitle>
-              {t("delete.title", { schedule: confirming?.schedule ?? "" })}
-            </DialogTitle>
-            <DialogDescription>{t("delete.description")}</DialogDescription>
+            <DialogTitle>Delete "{confirming?.schedule}"?</DialogTitle>
+            <DialogDescription>
+              This standing instruction stops for good. Nothing further runs on
+              this schedule, and there is no undo.
+            </DialogDescription>
           </DialogHeader>
           {deleteRoutine.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {deleteRoutine.error.message}
-            </p>
+            <DialogBody className="mt-4">
+              <p className="text-destructive text-sm" role="alert">
+                {deleteRoutine.error.message}
+              </p>
+            </DialogBody>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <Button
               onClick={() => setConfirmingId(null)}
               size="sm"
-              variant="ghost"
+              type="button"
+              variant="outline"
             >
-              {t("delete.cancel")}
+              Cancel
             </Button>
             <Button
               disabled={deleteRoutine.isPending}
@@ -494,11 +490,10 @@ export function RoutinesList({
                 });
               }}
               size="sm"
+              type="button"
               variant="destructive"
             >
-              {deleteRoutine.isPending
-                ? t("delete.deleting")
-                : t("delete.confirm")}
+              {deleteRoutine.isPending ? "Deleting…" : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

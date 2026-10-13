@@ -1,6 +1,9 @@
 import {
   IconArrowLeft,
+  IconBell,
+  IconBrain,
   IconChartBar,
+  IconChecks,
   IconKey,
   IconLayoutGrid,
   IconPlug,
@@ -30,6 +33,27 @@ const ITEMS = [
     /* `/settings` prefixes every other route here, and would otherwise light up on all of them. */
     exact: true,
     linkOptions: { to: "/settings" },
+  },
+  {
+    /* Where updates go for every Bot at once; how much each Bot sends is on that Bot's page. */
+    title: "sidebar.notifications",
+    icon: IconBell,
+    exact: false,
+    linkOptions: { to: "/settings/notifications" },
+  },
+  {
+    /* Whether Bots ask first, and rules for every Bot. Team settings are an administrator's. */
+    title: "sidebar.approvals",
+    icon: IconChecks,
+    exact: false,
+    linkOptions: { to: "/settings/approvals" },
+  },
+  {
+    /* What your Bots know about you, across all of them. */
+    title: "sidebar.memory",
+    icon: IconBrain,
+    exact: false,
+    linkOptions: { to: "/settings/memory" },
   },
   {
     /*
