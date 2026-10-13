@@ -3,7 +3,7 @@ import {
   IconPlayerStopFilled,
   IconSend,
 } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import type { CraftAttachment } from "@/lib/craft/types";
@@ -15,6 +15,10 @@ import { AttachmentTray, useAttachments } from "./attachment-input";
  * road: pick files, watch each chip upload, send once every chip has settled. The send stays
  * disabled while any attachment is PENDING/UPLOADING, so a turn never references a file that
  * failed to land.
+ *
+ * The draft is optionally controlled (`draft`/`onDraftChange`): the empty state's suggestion
+ * pills write into it, and a changed `focusSignal` focuses the textarea — the person keeps the
+ * trigger (nothing is sent for them), but a click lands in an already-focused box ready to edit.
  */
 export function Composer({
   sessionId,
@@ -23,6 +27,9 @@ export function Composer({
   onSend,
   onInterrupt,
   onInputFocus,
+  draft: controlledDraft,
+  onDraftChange,
+  focusSignal = 0,
 }: {
   /** The session uploads land in; absent disables the attach road (no session, no upload). */
   sessionId?: string;
@@ -35,13 +42,24 @@ export function Composer({
   onInterrupt: () => void | Promise<void>;
   /** Input focus — the wake-on-intent hook the panel wires (a sleeping sandbox wakes here). */
   onInputFocus?: () => void;
+  /** Controlled draft (the suggestion pills write here); uncontrolled when absent. */
+  draft?: string;
+  onDraftChange?: (value: string) => void;
+  /** Bump to focus the textarea — the pill click's second half. */
+  focusSignal?: number;
 }) {
   const { t } = useTranslation("craft");
-  const [draft, setDraft] = useState("");
+  const [internalDraft, setInternalDraft] = useState("");
+  const draft = controlledDraft ?? internalDraft;
+  const setDraft = onDraftChange ?? setInternalDraft;
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const attachments = useAttachments(sessionId ?? "");
+
+  useEffect(() => {
+    if (focusSignal > 0) ref.current?.focus();
+  }, [focusSignal]);
 
   const submit = async () => {
     const content = draft.trim();
@@ -99,7 +117,7 @@ export function Composer({
           value={draft}
           disabled={disabled}
           rows={1}
-          placeholder="What should your agent build?"
+          placeholder={t("composer.placeholder")}
           onFocus={onInputFocus}
           className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
           onChange={(event) => {
