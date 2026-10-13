@@ -260,7 +260,7 @@ describe("AGENTS.template.md calibration", () => {
     );
   });
 
-  // ── company knowledge (BLOCKED: no backed company-search skill yet) ─────────
+  // ── company knowledge (gated on the backed company-search skill) ────────────
 
   test("the company-knowledge section stays out while no backed skill ships", () => {
     const rendered = render({

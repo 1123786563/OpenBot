@@ -175,7 +175,9 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
-import { builtinSkillFilesFor } from "./craft/builtin-skills";
+import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+import type { CraftKbSearch } from "./craft/kb-search-relay";
+import { projectKbSearchResults } from "./craft/kb-search-relay";
 import {
   createCraftManagedContentResolver,
   personalUnconnectedApps,
@@ -231,6 +233,8 @@ import {
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
 import { knowledgeServiceConfig } from "./knowledge/config";
+import { knowledgeRequest } from "./knowledge/client";
+import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
@@ -3671,6 +3675,84 @@ const craftMcpRelayBaseUrl =
   config.publicUrl ||
   config.auth?.baseUrl ||
   `http://localhost:${config.port}`;
+/*
+ * The craft company-search leg (D1): the knowledge domain over the same
+ * service-to-service credential the knowledge routes use. The sources section
+ * lists the deployment's knowledge bases (the KB domain is deployment-tenant);
+ * the search fans out per KB, merges, and projects onyx-cli's result contract.
+ * An unwired knowledge service holds the skill back entirely (null) — the
+ * AGENTS.md Company-knowledge section stays out with it.
+ */
+const craftKnowledgeBases = async (): Promise<
+  Array<{ id: string; name: string; description: string | null }> | null
+> => {
+  if (!knowledgeService) return null;
+  try {
+    const response = await knowledgeRequest(knowledgeService, "/kb");
+    const body = (await response.json()) as {
+      items?: Array<{
+        id: string;
+        name: string;
+        description?: string | null;
+      }>;
+    };
+    return (body.items ?? []).map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description ?? null,
+    }));
+  } catch {
+    return null;
+  }
+};
+const craftCompanySearchSourcesSection = async (): Promise<string | null> => {
+  const kbs = await craftKnowledgeBases();
+  return kbs === null ? null : buildAvailableSourcesSection(kbs);
+};
+const craftKbSearch: CraftKbSearch | null = knowledgeService
+  ? async ({ query, sourceTypes, days }) => {
+      const kbs = (await craftKnowledgeBases()) ?? [];
+      if (kbs.length === 0) return { status: "ok", results: [] };
+      const settled = await Promise.allSettled(
+        kbs.map((kb) =>
+          knowledgeRequest(
+            knowledgeService!,
+            `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                query,
+                top_k: 20,
+                score_threshold: 0,
+                hybrid: true,
+              }),
+            },
+          ).then(
+            (response) =>
+              response.json() as Promise<{
+                results: KnowledgeSearchResult[];
+              }>,
+          ),
+        ),
+      );
+      // A KB domain that answers nothing at all is "unavailable" (the relay's
+      // 503 shape); per-KB failures degrade to that KB contributing nothing.
+      const perKb = settled.flatMap((entry) =>
+        entry.status === "fulfilled" ? entry.value.results : [],
+      );
+      if (
+        perKb.length === 0 &&
+        settled.every((entry) => entry.status === "rejected")
+      ) {
+        return { status: "unavailable" };
+      }
+      return {
+        status: "ok",
+        results: projectKbSearchResults(perKb, { days, sourceTypes }),
+      };
+    }
+  : null;
 const craftManagedContentFor = createCraftManagedContentResolver({
   connectableAppsFor: async (userId) => {
     const [servers, held, brokered] = await Promise.all([
@@ -3691,20 +3773,24 @@ const craftManagedContentFor = createCraftManagedContentResolver({
    * craft-documentation ship to everyone; a connector skill ships only when
    * the user has connected the matching MCP server (onyx's
    * connected-apps-only rule) — the personal connection set above is the same
-   * fact the connectable list inverts. company-search stays out until its
-   * backed implementation lands (Phase 4.2).
+   * fact the connectable list inverts. company-search ships when the
+   * knowledge domain backs it, its sources section rendering the deployment's
+   * knowledge bases (onyx renders the user's connector sources; OpenBot's KB
+   * domain is deployment-tenant — the ruled D1 shape).
    */
   skillFilesFor: async (userId) => {
-    const [held, brokered] = await Promise.all([
+    const [held, brokered, sourcesSection] = await Promise.all([
       pluginStore.connectionsFor(userId),
       pluginStore.brokeredConnectionsFor(userId),
+      craftCompanySearchSourcesSection(),
     ]);
-    return builtinSkillFilesFor(
-      new Set([
+    return builtinSkillFilesFor({
+      connectedServerIds: new Set([
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),
       ]),
-    );
+      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+    });
   },
   /*
    * The per-user craft MCP set (the contract's C3 ruling): personal-account
@@ -3769,6 +3855,8 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           // per forwarded call and never written anywhere the agent reads.
           mcpConnectionFor: (userId, serverId) =>
             pluginStore.mcpWireConnectionFor(userId, serverId),
+          kbSearch: craftKbSearch,
+          mcpRelayBaseUrl: craftMcpRelayBaseUrl,
         },
       })
   : undefined;

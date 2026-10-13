@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# onyx-cli (company-search) — OpenBot's sandbox-side half of the company-search
+# skill. onyx's CLI dialed the onyx search API with a credential the egress
+# proxy injected; OpenBot has no egress proxy, so this thin forwarder dials the
+# session's kb-search relay instead:
+#   POST {api-base}/api/craft/kb-search
+#   X-Onyx-Mcp-Session: <session tag>   (read from .opencode/craft-session)
+# The session tag names a row — it is not a credential, and none ever enters
+# the workspace. The flag set is onyx's verbatim; --no-query-expansion is
+# accepted for compatibility (no rewriting step to skip).
+
+set -euo pipefail
+
+die() { echo "onyx-cli: $*" >&2; exit 1; }
+
+SESSION_ROOT="$(pwd)"
+TAG_FILE="$SESSION_ROOT/.opencode/craft-session"
+BASE_FILE="$SESSION_ROOT/.opencode/craft-api-base"
+[ -f "$TAG_FILE" ] || die "no session tag at .opencode/craft-session — is this a craft session workspace?"
+[ -f "$BASE_FILE" ] || die "no api base at .opencode/craft-api-base — this deployment's craft tools are not wired"
+
+SUBCOMMAND="${1:-}"
+[ "$SUBCOMMAND" = "search" ] || die "usage: onyx-cli search \"<query>\" [\"<query>\" ...] [--source a,b] [--days N] [--no-query-expansion]"
+shift
+
+QUERIES=()
+SOURCE_ARGS=()
+DAYS=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --source)
+      [ $# -ge 2 ] || die "--source needs a value"
+      SOURCE_ARGS+=("$2"); shift 2 ;;
+    --source=*)
+      SOURCE_ARGS+=("${1#--source=}"); shift ;;
+    --days)
+      [ $# -ge 2 ] || die "--days needs a value"
+      DAYS="$2"; shift 2 ;;
+    --days=*)
+      DAYS="${1#--days=}"; shift ;;
+    --no-query-expansion)
+      shift ;; # accepted for onyx-cli compatibility; nothing to skip
+    -*)
+      die "unknown flag: $1" ;;
+    *)
+      QUERIES+=("$1"); shift ;;
+  esac
+done
+[ "${#QUERIES[@]}" -gt 0 ] || die "at least one query is required"
+[ "${#QUERIES[@]}" -le 3 ] || die "at most 3 queries per call"
+
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Assemble the relay body: queries, optional source filter, optional days.
+BODY="{\"queries\":["
+SEP=""
+for q in "${QUERIES[@]}"; do
+  BODY="${BODY}${SEP}\"$(json_escape "$q")\""
+  SEP=","
+done
+BODY="${BODY}]"
+if [ "${#SOURCE_ARGS[@]}" -gt 0 ]; then
+  BODY="${BODY},\"source\":["
+  SEP=""
+  for s in "${SOURCE_ARGS[@]}"; do
+    IFS=',' read -r -a PARTS <<< "$s"
+    for p in "${PARTS[@]}"; do
+      p="$(printf '%s' "$p" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      [ -n "$p" ] || continue
+      BODY="${BODY}${SEP}\"$(json_escape "$p")\""
+      SEP=","
+    done
+  done
+  BODY="${BODY}]"
+fi
+[ -z "$DAYS" ] || BODY="${BODY},\"days\":${DAYS}"
+BODY="${BODY}}"
+
+STATUS="$(curl -sS -o .onyx-cli-output.json -w '%{http_code}' \
+  -X POST "$(cat "$BASE_FILE")/api/craft/kb-search" \
+  -H "X-Onyx-Mcp-Session: $(cat "$TAG_FILE")" \
+  -H "content-type: application/json" \
+  --data-binary "$BODY")" || die "could not reach the craft api"
+
+case "$STATUS" in
+  200) cat .onyx-cli-output.json; rm -f .onyx-cli-output.json; exit 0 ;;
+  *) cat .onyx-cli-output.json >&2 || echo "onyx-cli: request failed (HTTP $STATUS)" >&2
+     rm -f .onyx-cli-output.json; exit 1 ;;
+esac

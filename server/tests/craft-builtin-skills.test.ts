@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildAvailableSourcesSection,
   builtinSkillFilesFor,
+  NO_SOURCES_SECTION,
+  renderCompanySearchSkill,
   renderConnectorSkillTemplate,
   serverBacksConnectorSkill,
 } from "../src/craft/builtin-skills/index";
+import { companySearchSkillAvailable } from "../src/craft/managed-content";
 import {
   createCraftManagedContentResolver,
   type CraftManagedContentSources,
@@ -59,7 +63,7 @@ const baseConfig: CraftConfig = loadCraftConfig({});
 
 describe("builtinSkillFilesFor", () => {
   test("unconditional skills ship verbatim: pptx tree + craft-documentation", async () => {
-    const files = await builtinSkillFilesFor(new Set());
+    const files = await builtinSkillFilesFor({ connectedServerIds: new Set() });
     expect(files.has("pptx/SKILL.md")).toBe(true);
     expect(files.has("pptx/charts.md")).toBe(true);
     expect(files.has("pptx/scripts/office/pack.py")).toBe(true);
@@ -71,14 +75,14 @@ describe("builtinSkillFilesFor", () => {
   });
 
   test("no connections ship no connector skills", async () => {
-    const files = await builtinSkillFilesFor(new Set());
+    const files = await builtinSkillFilesFor({ connectedServerIds: new Set() });
     for (const skill of CONNECTOR_SKILLS) {
       expect(files.has(`${skill}/SKILL.md`)).toBe(false);
     }
   });
 
   test("a connection ships exactly its own connector skill", async () => {
-    const files = await builtinSkillFilesFor(new Set(["github"]));
+    const files = await builtinSkillFilesFor({ connectedServerIds: new Set(["github"]) });
     expect(files.has("github/SKILL.md")).toBe(true);
     for (const skill of CONNECTOR_SKILLS) {
       if (skill !== "github") {
@@ -88,16 +92,16 @@ describe("builtinSkillFilesFor", () => {
   });
 
   test("brokered ids (composio-github / open-connector-slack) back their skill", async () => {
-    const files = await builtinSkillFilesFor(
-      new Set(["composio-github", "open-connector-slack"]),
-    );
+    const files = await builtinSkillFilesFor({
+      connectedServerIds: new Set(["composio-github", "open-connector-slack"]),
+    });
     expect(files.has("github/SKILL.md")).toBe(true);
     expect(files.has("slack/SKILL.md")).toBe(true);
     expect(files.has("notion/SKILL.md")).toBe(false);
   });
 
   test("connector templates render on load: no .template suffix, no placeholder", async () => {
-    const files = await builtinSkillFilesFor(new Set([...CONNECTOR_SKILLS]));
+    const files = await builtinSkillFilesFor({ connectedServerIds: new Set([...CONNECTOR_SKILLS]) });
     for (const skill of CONNECTOR_SKILLS) {
       const rendered = new TextDecoder().decode(files.get(`${skill}/SKILL.md`));
       expect(rendered).not.toContain("{{");
@@ -105,6 +109,56 @@ describe("builtinSkillFilesFor", () => {
       // The divergence ledger the port-parity plan mandates travels with the file.
       expect(rendered).toContain("Ported from onyx");
     }
+  });
+
+  test("company-search ships only with a sources section, CLI riding along", async () => {
+    // No knowledge wiring: the skill is held back entirely.
+    const without = await builtinSkillFilesFor({ connectedServerIds: new Set() });
+    expect(without.has("company-search/SKILL.md")).toBe(false);
+    expect(without.has("company-search/onyx-cli")).toBe(false);
+
+    const files = await builtinSkillFilesFor({
+      connectedServerIds: new Set(),
+      companySearchSourcesSection: NO_SOURCES_SECTION,
+    });
+    const rendered = new TextDecoder().decode(files.get("company-search/SKILL.md"));
+    expect(rendered).not.toContain("{{");
+    expect(rendered).toContain("## Sources Available in This Session");
+    expect(rendered).toContain(NO_SOURCES_SECTION);
+    // The CLI ships beside the skill (onyx's bundled onyx-cli).
+    expect(files.has("company-search/onyx-cli")).toBe(true);
+    const cli = new TextDecoder().decode(files.get("company-search/onyx-cli"));
+    expect(cli).toContain("/api/craft/kb-search");
+    expect(cli).toContain("X-Onyx-Mcp-Session");
+  });
+});
+
+// ── company-search rendering ────────────────────────────────────────────────
+
+describe("buildAvailableSourcesSection / renderCompanySearchSkill", () => {
+  test("onyx's no-sources line when the deployment has no KBs", () => {
+    expect(buildAvailableSourcesSection([])).toBe(NO_SOURCES_SECTION);
+  });
+
+  test("KB list → onyx's `- \\`name\\` — description` lines", () => {
+    expect(
+      buildAvailableSourcesSection([
+        { name: "Marketing wiki", description: "launch copy" },
+        { name: "Runbooks", description: null },
+      ]),
+    ).toBe("- `Marketing wiki` — launch copy\n- `Runbooks`");
+  });
+
+  test("rendering replaces the placeholder; unresolved markup fails loudly", () => {
+    const rendered = renderCompanySearchSkill(
+      "## Sources\n\n{{AVAILABLE_SOURCES_SECTION}}\n\n## Usage\n",
+      "- `kb` — things",
+    );
+    expect(rendered).toContain("- `kb` — things");
+    expect(rendered).not.toContain("{{");
+    expect(() =>
+      renderCompanySearchSkill("{{OTHER_PLACEHOLDER}}", "x"),
+    ).toThrow(/Unresolved skill-template markup/);
   });
 });
 
@@ -152,7 +206,7 @@ describe("managed-content skills leg integration", () => {
     const empty = await createCraftManagedContentResolver(sources())(session());
     const withSkills = await createCraftManagedContentResolver(
       sources({
-        skillFilesFor: () => builtinSkillFilesFor(new Set(["github"])),
+        skillFilesFor: () => builtinSkillFilesFor({ connectedServerIds: new Set(["github"]) }),
       }),
     )(session());
     expect(withSkills?.skillFiles.has("github/SKILL.md")).toBe(true);
@@ -161,13 +215,37 @@ describe("managed-content skills leg integration", () => {
 
   test("a connection change flips the hash: the connector gate is hash-visible", async () => {
     const before = await createCraftManagedContentResolver(
-      sources({ skillFilesFor: () => builtinSkillFilesFor(new Set()) }),
+      sources({ skillFilesFor: () => builtinSkillFilesFor({ connectedServerIds: new Set() }) }),
     )(session());
     const after = await createCraftManagedContentResolver(
       sources({
-        skillFilesFor: () => builtinSkillFilesFor(new Set(["slack"])),
+        skillFilesFor: () => builtinSkillFilesFor({ connectedServerIds: new Set(["slack"]) }),
       }),
     )(session());
     expect(after?.skillsHash).not.toBe(before?.skillsHash);
+  });
+
+  test("shipping company-search flips the Company-knowledge gate green (D1 closeout)", async () => {
+    const without = await createCraftManagedContentResolver(
+      sources({
+        skillFilesFor: () =>
+          builtinSkillFilesFor({
+            connectedServerIds: new Set(),
+          }),
+      }),
+    )(session());
+    expect(companySearchSkillAvailable(without!)).toBe(false);
+
+    const withSkill = await createCraftManagedContentResolver(
+      sources({
+        skillFilesFor: () =>
+          builtinSkillFilesFor({
+            connectedServerIds: new Set(),
+            companySearchSourcesSection: NO_SOURCES_SECTION,
+          }),
+      }),
+    )(session());
+    expect(withSkill?.skillFiles.has("company-search/SKILL.md")).toBe(true);
+    expect(companySearchSkillAvailable(withSkill!)).toBe(true);
   });
 });
