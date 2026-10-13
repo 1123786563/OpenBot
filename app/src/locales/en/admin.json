@@ -1021,5 +1021,9 @@
     "everyone": "Everyone",
     "whoMayUse": "Who may use the shared account through this Bot",
     "outsideInput": "Outside input (email, Slack, webhooks) may use it"
+  },
+  "approvals": {
+    "title": "Approvals",
+    "description": "What members' Bots must ask before acting, rules for everyone, and requests to use shared accounts."
   }
 }

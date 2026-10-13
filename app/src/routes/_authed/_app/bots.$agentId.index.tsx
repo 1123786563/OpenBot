@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { ManageSection } from "@/components/bot-profile/manage";
 import { BotProfile } from "@/components/bot-profile/profile";
 import { BotSettingsRows } from "@/components/bot-profile/settings-rows";
@@ -11,19 +12,23 @@ export const Route = createFileRoute("/_authed/_app/bots/$agentId/")({
 });
 
 function BotProfilePage() {
+  const { t } = useTranslation("agents");
   const { agentId } = Route.useParams();
   const navigate = useNavigate();
   const agent = useQuery(agentQueryOptions(agentId));
   const toRoster = () => void navigate({ to: "/bots" });
   return (
     <PageShell
-      backButton={{ label: "Bots", linkProps: { to: "/bots" } }}
-      description="What this Bot is doing for you, and how it is set up."
-      title={agent.data?.name ?? "Bot"}
+      backButton={{
+        label: t("pages.profile.back"),
+        linkProps: { to: "/bots" },
+      }}
+      description={t("pages.profile.description")}
+      title={agent.data?.name ?? t("botSubpage.titleFallback")}
     >
       {agent.isPending ? null : agent.error ? (
         <p className="mt-6 text-destructive text-sm" role="alert">
-          This Bot is not one you can reach.
+          {t("botSubpage.unreachable")}
         </p>
       ) : (
         <BotProfile

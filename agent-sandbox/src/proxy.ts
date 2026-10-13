@@ -61,6 +61,11 @@ const ALLOWED = new Set([
   "POST /webapp/stop",
   "GET /webapp/file",
   "GET /runtimes",
+  // craft's sandbox-status chip health-check rides the upstream's own /doc (the liveness
+  // probe OpencodeServeClient.healthCheck speaks): a missing entry here meant the runtime
+  // could be up and the chip still read provisioning forever — “沙箱初始化中…” with a live
+  // sandbox behind it. Same verb the proxy's internal probe uses, now open to its callers.
+  "GET /doc",
   // The WS passthrough (B15b): the dev road's live half, gated like every other verb.
   "GET /preview/ws",
   "GET /workspace/snapshot",

@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
   PageEmpty,
@@ -39,6 +40,7 @@ import { queryClient } from "@/query-client";
  * its own, and nothing at all when there is nothing to say to somebody who cannot change it.
  */
 export function HandoffPanel({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("agents");
   const handoff = useQuery(agentHandoffQueryOptions(agentId));
   const agents = useQuery(agentListQueryOptions());
   /*
@@ -72,26 +74,23 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
         /* The current answer at a glance, so the list below is detail rather than homework. */
         grantable && total > 0 ? (
           <span className="text-muted-foreground text-sm tabular-nums">
-            {granted} of {total}
+            {t("handoff.grantedOf", { granted, total })}
           </span>
         ) : null
       }
-      description="Who this Bot may ask, not who may ask it. What the asked Bot says comes back into the conversation that asked, relayed and attributed."
-      title="Bots it may ask"
+      description={t("handoff.intro")}
+      title={t("handoff.title")}
     >
       {/* Facts about the deployment rather than rows to act on, so said as sentences. */}
       {enabled ? null : (
         <PageEmpty>
-          Switched off for this deployment. These grants are kept but none takes
-          effect until handing work between Bots is switched back on.
+          {t("handoff.switchedOff")} {t("handoff.switchedOffDescription")}
         </PageEmpty>
       )}
 
       {grantable ? null : (
         <PageEmpty>
-          This coworker cannot hand work on. This deployment has nowhere to
-          record which Bots it may hand work to, so there is nothing to grant
-          it. It can still be asked by Bots that can.
+          {t("handoff.cannotGrant")} {t("handoff.cannotGrantDescription")}
         </PageEmpty>
       )}
 
@@ -103,8 +102,7 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
 
       {grantable && total === 0 ? (
         <PageEmpty>
-          No other Bot here yet. When this deployment has more Bots, this is
-          where this one is allowed to ask them.
+          {t("handoff.noOthers")} {t("handoff.noOthersDescription")}
         </PageEmpty>
       ) : null}
       {candidates.length > 0 ? (
@@ -129,13 +127,17 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
                    */}
                   <ItemDescription>
                     {candidate.hidden
-                      ? `${candidate.title} · hidden from your roster`
+                      ? t("handoff.hiddenFromRoster", {
+                          title: candidate.title,
+                        })
                       : candidate.title}
                   </ItemDescription>
                 </ItemContent>
                 <ItemActions>
                   <Switch
-                    aria-label={`Let this Bot ask ${candidate.name}`}
+                    aria-label={t("handoff.letAsk", {
+                      name: candidate.name,
+                    })}
                     checked={reachable.includes(candidate.id)}
                     disabled={!canGrant || setGrant.isPending}
                     onCheckedChange={(next: boolean) =>
@@ -153,9 +155,7 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
         </PageRows>
       ) : null}
 
-      {canGrant ? null : (
-        <PageEmpty>An administrator decides which Bots may be asked.</PageEmpty>
-      )}
+      {canGrant ? null : <PageEmpty>{t("handoff.adminDecides")}</PageEmpty>}
     </PageSection>
   );
 }

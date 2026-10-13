@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { AccessSections } from "@/components/bot-profile/access";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 
@@ -7,12 +8,13 @@ export const Route = createFileRoute("/_authed/_app/bots/$agentId/access")({
 });
 
 function AccessPage() {
+  const { t } = useTranslation("agents");
   const { agentId } = Route.useParams();
   return (
     <BotSubpage
       agentId={agentId}
-      description="The skills, apps and other Bots this Bot may use."
-      title="Skills and access"
+      description={t("pages.access.description")}
+      title={t("pages.access.title")}
     >
       {(agent) => <AccessSections agent={agent} />}
     </BotSubpage>

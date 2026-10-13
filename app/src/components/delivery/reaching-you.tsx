@@ -7,6 +7,7 @@ import {
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
   PageRows,
@@ -88,26 +89,27 @@ type HeldLink = ChatLink & {
   expiresAt: number;
 };
 
-const TRANSPORT: Record<
-  Transport,
-  { link: string; icon: typeof IconBrandSlack; summary: string }
-> = {
+/** Keys in the `agents` namespace: the row title and the one-line why for each transport. */
+const TRANSPORT = {
   slack: {
-    link: "Link Slack",
+    link: "reachability.connect.linkSlack",
     icon: IconBrandSlack,
-    summary: "Continue a conversation from Slack.",
+    summary: "reachability.connect.summarySlack",
   },
   teams: {
-    link: "Link Microsoft Teams",
+    link: "reachability.connect.linkTeams",
     icon: IconBrandTeams,
-    summary: "Continue a conversation from Microsoft Teams.",
+    summary: "reachability.connect.summaryTeams",
   },
   sms: {
-    link: "Connect a phone",
+    link: "reachability.connect.connectPhone",
     icon: IconDeviceMobileMessage,
-    summary: "Continue a conversation by text message.",
+    summary: "reachability.connect.summarySms",
   },
-};
+} as const satisfies Record<
+  Transport,
+  { link: string; icon: typeof IconBrandSlack; summary: string }
+>;
 
 /**
  * Continuing a conversation in Slack, Microsoft Teams or by text message. Given a Bot, only that
@@ -118,6 +120,7 @@ const TRANSPORT: Record<
  * a phone number — and the answer is a code to send back.
  */
 export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
+  const { t } = useTranslation("agents");
   const reach = useQuery(deliveryQueryOptions());
   const bots = useQuery(agentListQueryOptions());
   // People read Bots by name; the id is what the list used to show.
@@ -156,40 +159,39 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
     (transport === "sms" && challengeId !== "");
   const summary = (transport: Transport) => {
     if (transport === "sms" && challengeId) {
-      return "A verification code is on its way. Enter it to finish.";
+      return t("reachability.connect.codeOnWay");
     }
     if (heldLink(transport)) {
-      return "A link code is waiting to be sent. Open this to see it again.";
+      return t("reachability.connect.linkWaiting");
     }
-    if (open(transport)) return TRANSPORT[transport].summary;
+    if (open(transport)) return t(TRANSPORT[transport].summary);
     return transport === "sms"
-      ? "Text messages are not set up on this deployment."
-      : "An administrator needs to pair OpenBot with OpenTag before Slack or Teams can be linked.";
+      ? t("reachability.connect.smsNotSetUp")
+      : t("reachability.connect.adminPairing");
   };
 
   return (
     <>
       {fixedBot === undefined ? (
         <p className="mt-6 text-muted-foreground text-sm">
-          Your devices, recent deliveries, and where each kind of update goes
-          are in{" "}
+          {t("reachability.connect.settingsIntro")}{" "}
           <Link
             className="underline underline-offset-4"
             to="/settings/notifications"
           >
-            Settings → Notifications
+            {t("reachability.connect.settingsLink")}
           </Link>
-          .
+          {t("reachability.connect.settingsOutro")}
         </p>
       ) : null}
-      <PageSection title="Connected destinations">
+      <PageSection title={t("reachability.destinations.title")}>
         {listError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {listError.message}
           </p>
         ) : null}
         {reach.isPending || !destinations ? null : destinations.length === 0 ? (
-          <PageEmpty>No destinations connected.</PageEmpty>
+          <PageEmpty>{t("reachability.destinations.none")}</PageEmpty>
         ) : (
           <PageRows>
             {destinations.map((binding, index) => {
@@ -212,7 +214,7 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
                       <ItemDescription>
                         {botName(binding.agentId)}
                         {binding.optedOutAt
-                          ? " · Replied STOP; text START to resume"
+                          ? t("reachability.destinations.optedOutSuffix")
                           : null}
                       </ItemDescription>
                     </ItemContent>
@@ -223,7 +225,7 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
                         size="sm"
                         variant="outline"
                       >
-                        Disconnect
+                        {t("reachability.destinations.disconnect")}
                       </Button>
                     </ItemActions>
                   </Item>
@@ -234,8 +236,8 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
         )}
       </PageSection>
       <PageSection
-        description="In a channel other people can read, the Bot answers you in a direct message instead."
-        title="Connect a conversation"
+        description={t("reachability.connect.directNote")}
+        title={t("reachability.connect.title")}
       >
         {reach.data ? (
           <PageRows>
@@ -260,7 +262,7 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
                       <Icon />
                     </ItemMedia>
                     <ItemContent>
-                      <ItemTitle>{TRANSPORT[transport].link}</ItemTitle>
+                      <ItemTitle>{t(TRANSPORT[transport].link)}</ItemTitle>
                       <ItemDescription>{summary(transport)}</ItemDescription>
                     </ItemContent>
                     {opens ? (
@@ -321,6 +323,7 @@ function ConnectDialog({
   onLinked: (link: HeldLink) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("agents");
   const formId = useId();
   const channels = useInfiniteQuery(channelListQueryOptions());
   // Reopened with a link message still held, the dialog shows the conversation it links.
@@ -362,16 +365,15 @@ function ConnectDialog({
     <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{TRANSPORT[transport].link}</DialogTitle>
+          <DialogTitle>{t(TRANSPORT[transport].link)}</DialogTitle>
           <DialogDescription>
-            An account or phone number reaches one conversation at a time.
-            Linking it here moves it from wherever it is linked now.
+            {t("reachability.connect.dialogDescription")}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="mt-4 grid gap-4 overflow-y-auto">
           <Field>
             <FieldLabel htmlFor={`${formId}-conversation`}>
-              Conversation
+              {t("reachability.connect.conversation")}
             </FieldLabel>
             <Select
               items={Object.fromEntries(
@@ -387,7 +389,9 @@ function ConnectDialog({
               value={channelId || null}
             >
               <SelectTrigger className="w-full" id={`${formId}-conversation`}>
-                <SelectValue placeholder="Choose a conversation" />
+                <SelectValue
+                  placeholder={t("reachability.connect.chooseConversation")}
+                />
               </SelectTrigger>
               <SelectContent>
                 {conversations.map((channel) => (
@@ -400,7 +404,9 @@ function ConnectDialog({
           </Field>
           {fixedBot === undefined ? (
             <Field>
-              <FieldLabel htmlFor={`${formId}-bot`}>Bot</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-bot`}>
+                {t("reachability.connect.bot")}
+              </FieldLabel>
               <Select
                 items={Object.fromEntries(
                   (selected?.agentIds ?? []).map((id) => [id, botName(id)]),
@@ -411,7 +417,9 @@ function ConnectDialog({
                 value={pickedBot || null}
               >
                 <SelectTrigger className="w-full" id={`${formId}-bot`}>
-                  <SelectValue placeholder="Choose a Bot" />
+                  <SelectValue
+                    placeholder={t("reachability.connect.chooseBot")}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {selected?.agentIds.map((id) => (
@@ -430,7 +438,7 @@ function ConnectDialog({
               size="sm"
               variant="outline"
             >
-              Load more conversations
+              {t("reachability.connect.loadMore")}
             </Button>
           ) : null}
           {transport === "sms" ? (
@@ -446,7 +454,7 @@ function ConnectDialog({
               >
                 <Field>
                   <FieldLabel htmlFor={`${formId}-phone`}>
-                    Phone number
+                    {t("reachability.connect.phone")}
                   </FieldLabel>
                   <div className="flex items-center gap-2">
                     <Input
@@ -464,7 +472,7 @@ function ConnectDialog({
                       type="submit"
                       variant={challengeId ? "outline" : "default"}
                     >
-                      Send verification code
+                      {t("reachability.connect.sendCode")}
                     </Button>
                   </div>
                 </Field>
@@ -487,7 +495,7 @@ function ConnectDialog({
                 >
                   <Field>
                     <FieldLabel htmlFor={`${formId}-code`}>
-                      Verification code
+                      {t("reachability.connect.codeAria")}
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <Input
@@ -502,7 +510,7 @@ function ConnectDialog({
                         size="sm"
                         type="submit"
                       >
-                        Confirm phone
+                        {t("reachability.connect.confirmPhone")}
                       </Button>
                     </div>
                   </Field>
@@ -513,10 +521,13 @@ function ConnectDialog({
             <Item size="sm" variant="muted">
               <ItemContent>
                 <ItemDescription className="line-clamp-none">
-                  Send this message to the OpenBot app in{" "}
-                  {linked.platform === "teams" ? "Microsoft Teams" : "Slack"}{" "}
-                  within {Math.ceil((linked.expiresAt - Date.now()) / 60_000)}{" "}
-                  minutes. It links that account to this conversation and Bot.
+                  {t("reachability.connect.linkInstructions", {
+                    minutes: Math.ceil(
+                      (linked.expiresAt - Date.now()) / 60_000,
+                    ),
+                    platform:
+                      linked.platform === "teams" ? "Microsoft Teams" : "Slack",
+                  })}
                 </ItemDescription>
                 <ItemTitle className="break-all font-mono">
                   {linked.command}
@@ -531,7 +542,9 @@ function ConnectDialog({
                   size="sm"
                   variant="outline"
                 >
-                  {copied ? "Copied" : "Copy"}
+                  {copied
+                    ? t("reachability.connect.copied")
+                    : t("reachability.connect.copy")}
                 </Button>
               </ItemActions>
             </Item>
@@ -544,7 +557,7 @@ function ConnectDialog({
         </DialogBody>
         <DialogFooter className="mt-4">
           <Button onClick={onClose} size="sm" variant="outline">
-            Close
+            {t("reachability.connect.close")}
           </Button>
           {/* A phone's two steps each submit their own field, beside it. */}
           {transport === "sms" ? null : (
@@ -553,7 +566,7 @@ function ConnectDialog({
               onClick={() => startLink(transport)}
               size="sm"
             >
-              {TRANSPORT[transport].link}
+              {t(TRANSPORT[transport].link)}
             </Button>
           )}
         </DialogFooter>

@@ -1,5 +1,6 @@
 import { IconPlus } from "@tabler/icons-react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { CreateAgentDialog } from "@/components/agents/create-agent-dialog";
 import { BotRoster } from "@/components/bots/bot-roster";
@@ -13,6 +14,7 @@ export const Route = createFileRoute("/_authed/_app/bots/")({
 });
 
 function BotsPage() {
+  const { t } = useTranslation("agents");
   const { new: creating } = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
@@ -25,11 +27,11 @@ function BotsPage() {
           size="lg"
         >
           <IconPlus />
-          New Bot
+          {t("pages.bots.newBot")}
         </Button>
       }
-      description="Every Bot you can reach: what each is doing, what it needs from you, and whether it is paused."
-      title="Bots"
+      description={t("pages.bots.description")}
+      title={t("pages.bots.title")}
     >
       <BotRoster />
       <CreateAgentDialog

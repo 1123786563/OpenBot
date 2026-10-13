@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
 
@@ -9,12 +10,13 @@ export const Route = createFileRoute(
 });
 
 function ResponsibilitiesPage() {
+  const { t } = useTranslation("agents");
   const { agentId } = Route.useParams();
   return (
     <BotSubpage
       agentId={agentId}
-      description="Lasting goals this Bot works on for you, what started each run, and what it found."
-      title="Responsibilities"
+      description={t("pages.responsibilities.description")}
+      title={t("pages.responsibilities.title")}
     >
       {(agent) => <BotResponsibilities agentId={agent.id} />}
     </BotSubpage>
