@@ -1,0 +1,58 @@
+<!-- Ported from onyx skills/builtin/google-drive/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     gdrive_api.py / gsheets_api.py / gslides_api.py helpers, their per-API
+     guide files (drive.md, docs.md, sheets.md, slides.md), and the
+     cloud-scope block are replaced by the user's connected Google Drive MCP
+     server tools — the catalogued Drive connector is read-only, so the
+     write guidance is dropped with it. Domain guidance (file ids, reading
+     Google-native files, error discipline) is onyx verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: google-drive
+description: Search, read, and organize the connected user's Google Drive — including Google Docs, Sheets, and Slides — via the Google Drive MCP server.
+---
+
+# Google Drive
+
+Call the Google Drive, Docs, Sheets, and Slides APIs as the connected user
+through the Google Drive MCP server connected to this session. The session's
+MCP relay attaches the user's credential on every call; never ask for or
+handle credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+The catalogued Drive connector is **read-only**: searching, listing, reading,
+and organizing run freely; there is no write path. To edit or create files,
+tell the user to make the change themselves or connect a server with write
+tools.
+
+### Search Drive
+
+Search by name across the user's Drive; results carry file ids, names, and
+mime types.
+
+### List a folder's contents
+
+### Read a file
+
+Reading a Google-native file returns its content in a usable text form:
+Docs → markdown, Sheets → CSV, Slides → plain text. Other files (e.g. PDFs)
+are returned as binary or a download link depending on the tool.
+
+### One file's metadata
+
+## Output
+
+Tool results are JSON. List tools return the items and whether more existed
+past the limit; failures include Google's error (with `code` and `message`) —
+surface the error rather than retrying blindly.
+
+## Notes
+
+- Files and folders are referenced by id, not by path; get ids from search or
+  a folder listing first.
+- An empty search result does not mean the file is absent — the user's Drive
+  may simply hold nothing matching; say so rather than retrying.
