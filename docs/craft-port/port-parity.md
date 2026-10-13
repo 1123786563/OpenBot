@@ -293,9 +293,9 @@
 - **勘误(措辞)**:webapp 工具 description 保持 onyx 逐字节 "it scaffolds outputs/web, installs dependencies…",而脚本实际**把 scaffold 推迟给 agent**(无 `outputs/web/package.json` 时 `exit 1` + 指引文案)。AGENTS.md 指引补偿(已测);真实现场已复现脚本两侧行为。
 - **勘误(fixture)**:`fixtures/webapp-tool.md` §F 的模板拷贝(`cp -r /workspace/templates/outputs/*`,Next 模板)与 dev-server 三环境变量(`ONYX_WEBAPP_PORT/BASE_PATH/ALLOWED_DEV_ORIGINS`)两条在 OpenBot 环境**结构性不可满足**(无镜像模板、无 pod 内 env 注入)——fixture 已加 Erratum E1 注记,断言以脚本结构等价物(flock/pid/探活/ready 行)为准。
 
-### BLOCKED 沿袭(未变化)
+### BLOCKED 沿袭(已于 §⑦ 解除一项)
 
-company-search(组织知识技能)维持 BLOCKED:OpenBot 知识域无可供沙箱调用而不泄凭证的路径;`COMPANY_KNOWLEDGE_SECTION` 钉住,AGENTS.md 公司知识段仅当 backed skill 落地才渲染。**全量 parity 在此解决 + F-B/F-C/F-D/F-E 修复前不得宣称。**
+company-search(组织知识技能)曾维持 BLOCKED(OpenBot 知识域无可供沙箱调用而不泄凭证的路径);**D1 修复后解除**(见 §⑦:kb-search 中继 + 会话标识非密文件,凭证不进工作区)。browser / image-generation 两项仍 BLOCKED(解锁条件见 §⑦)。
 
 ### 真实现场 finding 摘要(详见 remediation-verification.md §4/§0)
 
@@ -312,7 +312,35 @@ company-search(组织知识技能)维持 BLOCKED:OpenBot 知识域无可供沙�
 
 ---
 
-## 附:文档间关系
+## ⑦ D1–D7 复刻差异修复 Delta(2026-10-13,提交 `00535763..461cb0b6`)
+
+> 增量基线:复刻差异修复计划(black-panther,onyx 源逐字比对驱动)。逐字性证据:`diff -rq` 全绿(web 模板 82 文件、pptx 66 文件、craft-documentation);文本常量逐字(Attachments 段、Company knowledge 段、AGENTS 模板回改两处)。测试:518 craft(35 文件)+ 329 kb + typecheck 全绿。
+
+### 消除的差异
+
+| # | 差异 | 修复 | 逐字性 |
+|---|---|---|---|
+| D7 | AGENTS.md 无 Attachments (PRIORITY) 段 | `ATTACHMENTS_SECTION_CONTENT` 逐字移植(onyx `agent_instructions.py:46-75`),onyx 两个写入时机都补(setup 后追加 + 上传后追加,幂等,404=空) | ✅ 渲染字节一致(TS 反引号转义外) |
+| D2 | webapp scaffold 行为缺失(镜像无模板,AGENTS.md 曾改口"agent 自建") | onyx 模板树 82 文件**逐字节入仓**(`server/assets/craft/web-template/`),managed-content 第三推送腿物化到 `.openbot/web-template`(不进 skillsHash),start-webapp.sh 恢复 `cp` scaffold 语义;AGENTS.template.md 回改两处为 onyx 原文 | ✅ `diff -rq` 0 差异;模板与插件描述矛盾消除 |
+| D3(部分) | 内置 skills 全缺 | pptx(66 文件)+craft-documentation 逐字节入仓无条件发货;8 个 connector skill 保留 onyx 操作指导、egress CLI/API 段改写为 MCP 工具(见下"必要文本偏差"),仅当对应 MCP server 已连接才发货(catalogue key / `composio-` / `open-connector-` slug 三形态);进 skillsHash → 连接变化触发 staleness reload | pptx/craft-documentation ✅ 逐字;connector 为**裁决过的必要偏差** |
+| D6 | webapp 预览无 HMR websocket 代理 | `/_next/webpack-hmr` upgrade 分支挂 boot 分发器(onyx 实际代理路径集,query 只留 `id`),会话鉴权 + 归属复用 HTTP 代理同一事实源,双向帧不缓冲,早到帧缓存到内侧连接建立 | ✅ 与 onyx `_webapp_hmr_*` 逐条对齐 |
+| D1 | company-search 无后端(skill 不发货,AGENTS.md 公司知识段缺席) | 见 §⑥ BLOCKED 沿袭的**解除**:`POST /api/craft/kb-search` 中继(mcp-relay 同一 session-tag 信任模型,403 `not_authorized` 同语义)+ 沙箱侧 `onyx-cli` 薄转发(flag 集逐字)+ SKILL.md 模板逐字 + `AVAILABLE_SOURCES_SECTION` 渲染部署 KB 列表;skill 发货即 `companySearchSkillAvailable` 门控转绿,AGENTS.md 公司知识段恢复渲染(钉住的 `COMPANY_KNOWLEDGE_SECTION` 本就逐字) | SKILL.md 正文逐字;渲染结果 vs onyx 生成文本:段落级逐字,sources 列表语义为部署 KB(见偏差表) |
+
+### 保留的差异(裁决 + 解锁条件)
+
+| # | 差异 | 理由 / 解锁条件 |
+|---|---|---|
+| D4 | 共享 workspace 快照(onyx 每会话独立容器卷) | OpenBot 单 bot 目录模型;解锁 = agent-sandbox 侧每会话目录隔离,超出 server 范围 |
+| D5 | 无 egress 网络层 / 凭证注入 | 架构差异(凭证走 server 侧 mcp-relay,不进沙箱);connector skill 文本与 company-search CLI 形态都由此推导。解锁 = 上线 egress/网关注入后可无缝切回 onyx 原始形态(skill 文件头注释已逐处记录) |
+| browser skill | BLOCKED | 依赖沙箱镜像内 `browser-cli.sh` + Chromium(agent-sandbox 镜像变更);解锁 = 镜像携带浏览器栈 |
+| image-generation skill | BLOCKED | 依赖 onyx 服务端 image provider 配置面,OpenBot 无对应域;解锁 = OpenBot 建立图像生成域 |
+| company-search 服务端行为 | 无 LLM 相关性过滤、无 query expansion | KB 检索域为 RRF 检索;`--no-query-expansion` 接受但 no-op,结果可能比 onyx 宽(top-20 截断兜底) |
+| company-search sources 语义 | 列部署 KB 名(onyx 列 per-user connector sources);`--source` 过滤 KB 域文档型(file/url/text) | OpenBot KB 域为部署租户(无 per-user KB 权限面);`source_type`/`updated_at` 已进 KB retrieve metadata |
+| onyx-cli 调用形态 | Usage 行为工作区路径(`bash .opencode/skills/company-search/onyx-cli ...`) | onyx CLI 在镜像 PATH;OpenBot CLI 随会话物化且无 exec 位,SKILL.md 头注释记录 |
+
+### connector skill 必要文本偏差(D5 推导,逐文件头注释 + 本表双记录)
+
+8 个 connector(github/gmail/google-calendar/google-drive/hubspot/linear/notion/slack)共同形态:frontmatter `description` 改为 MCP 措辞、egress 认证段删除(改述"中继逐调用附挂凭证")、CLI/API 命令示例段替换为"调用已连接 MCP 服务器工具"的操作指导;领域知识(对象模型、ID 引用、分页、scope 语义、错误纪律)逐字保留。`{{ACTION_AVAILABILITY_SECTION}}` 保留占位、渲染为空(onyx 非 cloud + 无 admin 逐动作策略面的分支);gmail/google-drive 的 cloud-scope 块预解析为非 cloud 分支。linear/slack 的 `*_api.py` 包装器、google-drive 的 4 个 CLI 指南 md **不移植**(依赖 egress 凭证,沙箱内不可运行)。
 
 - 一期(基础移植)差异全表与部署接入:`README.md`(§四 16 处 + §五装配)。
 - 移植前架构分析与完整映射建议:`architecture-analysis.md`。
