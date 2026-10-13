@@ -380,3 +380,153 @@ export function createWebappProxyRoutes(
 
   return app;
 }
+
+// ── HMR websocket proxy (onyx webapp_proxy.py:235-321, 387-398) ────────────────
+//
+// Next.js dev's hot-reload channel is a websocket, and an upgrade is not a request/response —
+// Hono never sees it, so this half lives beside the boot file's upgrade dispatcher (the same
+// place the computer-stream proxy terminates) rather than in the routes above. The auth is the
+// HTTP proxy's own, applied by hand: the signed-in actor plus the session's ownership lookup.
+//
+// The upgrade header stays in EXCLUDED_REQUEST_HEADERS above — that blacklist guards the HTTP
+// fetch proxy, where forwarding a stray upgrade ask would be a smuggling vector. The HMR socket
+// is a deliberately separate endpoint, exactly onyx's split between `_proxy_request` and
+// `_proxy_webapp_hmr_websocket`.
+
+/** onyx's websocket route shape under OpenBot's mount: /api/craft/sessions/:id/webapp/_next/webpack-hmr. */
+const WEBAPP_HMR_PATH = /^\/api\/craft\/sessions\/([^/]+)\/webapp\/_next\/webpack-hmr$/;
+
+/** The session id an HMR upgrade names, or null when the path is not the HMR endpoint. */
+export function webappHmrSessionIdFromPath(pathname: string): string | null {
+  return WEBAPP_HMR_PATH.exec(pathname)?.[1] ?? null;
+}
+
+/**
+ * onyx `_webapp_hmr_query_string`: only the `id` entries survive to the dev server — the rest of
+ * the client's query is HMR-unrelated and never crosses the trust boundary.
+ */
+export function webappHmrQueryString(query: string): string {
+  const kept = new URLSearchParams();
+  for (const [key, value] of new URLSearchParams(query).entries()) {
+    if (key === "id") kept.append(key, value);
+  }
+  const encoded = kept.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+/**
+ * onyx `_webapp_hmr_websocket_url`, minus the base-path join: OpenBot's scaffold serves on the
+ * port root (the HTTP proxy above forwards paths verbatim), so the HMR endpoint is the dev
+ * server's own `/_next/webpack-hmr`.
+ */
+export function webappHmrUpstreamUrl(input: {
+  host: string;
+  port: number;
+  query: string;
+}): string {
+  return `ws://${input.host}:${input.port}/_next/webpack-hmr${webappHmrQueryString(input.query)}`;
+}
+
+export type WebappHmrDeps = Pick<
+  WebappProxyRoutesDeps,
+  "config" | "store" | "botIdFor" | "sandboxConnectionFor"
+>;
+
+export type WebappHmrResolution =
+  | { ok: true; upstreamUrl: string }
+  | { ok: false; status: 401 | 404 | 503; error: string };
+
+/**
+ * The HMR upgrade's authorization + target resolution — the same refusal shapes the HTTP proxy
+ * answers, checked before `server.upgrade` commits the connection (onyx `_check_webapp_access`
+ * → `WebSocketException(1008)`; an HTTP refusal before the upgrade is the Bun-shaped equivalent).
+ */
+export async function resolveWebappHmrUpgrade(
+  deps: WebappHmrDeps,
+  input: { sessionId: string; actor: { id: string } | null; query: string },
+): Promise<WebappHmrResolution> {
+  if (!input.actor) {
+    return { ok: false, status: 401, error: "Sign in first." };
+  }
+  const session = await deps.store.getSession(input.sessionId, input.actor.id);
+  if (!session) {
+    return { ok: false, status: 404, error: "Session not found" };
+  }
+  const botId = await deps.botIdFor(input.sessionId);
+  const conn = botId ? deps.sandboxConnectionFor(botId) : null;
+  if (!botId || !conn) {
+    return { ok: false, status: 503, error: "The sandbox is not available." };
+  }
+  if (session.nextjsPort === null) {
+    return { ok: false, status: 503, error: WEBAPP_NO_SUPPORT_ERROR };
+  }
+  // The reserved port lives INSIDE the sandbox (F-E): dial the sandbox host, never loopback.
+  return {
+    ok: true,
+    upstreamUrl: webappHmrUpstreamUrl({
+      host: webappUpstreamHost(deps.config.sandboxGatewayBaseUrl || conn.baseUrl),
+      port: session.nextjsPort,
+      query: input.query,
+    }),
+  };
+}
+
+/** What an upgraded HMR socket carries: where to connect inward, and the socket once opened. */
+export type WebappHmrSocketData = {
+  upstream: string;
+  hmr: true;
+  inward?: WebSocket;
+  /**
+   * Frames the client sent while the inward dial was still connecting. onyx accepts the client
+   * socket only AFTER the upstream connects, so this situation cannot arise there; Bun completes
+   * the client handshake at `server.upgrade`, so the equivalent is to hold those early frames
+   * and flush them on inward open rather than drop them.
+   */
+  pending?: (string | Buffer)[];
+};
+
+type WebappHmrSocket = {
+  data: WebappHmrSocketData;
+  send(data: string | ArrayBuffer): unknown;
+  close(): unknown;
+};
+
+/**
+ * The client↔upstream bridge, onyx's `_pump_webapp_to_upstream` / `_pump_upstream_to_webapp`:
+ * frames forward unbuffered in both directions, and either side's close or error ends the other
+ * (onyx's FIRST_COMPLETED + cancel pairing). A failed inward dial surfaces as the client's
+ * socket closing, onyx's refusal-with-1011 shape.
+ */
+export const webappHmrSocketHandlers = {
+  open(ws: WebappHmrSocket) {
+    const inward = new WebSocket(ws.data.upstream);
+    ws.data.inward = inward;
+    ws.data.pending = [];
+    inward.onopen = () => {
+      const pending = ws.data.pending ?? [];
+      ws.data.pending = undefined;
+      for (const frame of pending) inward.send(frame);
+    };
+    inward.onmessage = (event) => {
+      try {
+        ws.send(event.data as string | ArrayBuffer);
+      } catch {
+        inward.close();
+      }
+    };
+    inward.onclose = () => ws.close();
+    inward.onerror = () => ws.close();
+  },
+  message(ws: WebappHmrSocket, raw: string | Buffer) {
+    const inward = ws.data.inward;
+    if (inward?.readyState === 1) {
+      inward.send(raw);
+    } else if (inward?.readyState === 0) {
+      ws.data.pending?.push(raw);
+    }
+  },
+  close(ws: WebappHmrSocket) {
+    ws.data.pending = undefined;
+    ws.data.inward?.close();
+  },
+};

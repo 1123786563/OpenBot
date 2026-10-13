@@ -189,6 +189,13 @@ import {
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "./craft/routes";
+import { createCraftStore } from "./craft/store";
+import {
+  type WebappHmrSocketData,
+  resolveWebappHmrUpgrade,
+  webappHmrSessionIdFromPath,
+  webappHmrSocketHandlers,
+} from "./craft/webapp-proxy";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -3745,6 +3752,26 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
       })
   : undefined;
 
+/*
+ * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a
+ * request/response, so this half terminates in the boot file's upgrade dispatcher beside the
+ * computer-stream proxy — but it resolves through the SAME facts the HTTP webapp proxy uses
+ * (the deployment's sandbox Bot, its gateway connection, the session's reserved port), so the
+ * two surfaces can never route the same session to different upstreams.
+ */
+const craftWebappHmrDeps =
+  craftEffectiveConfig.enabled && craftEffectiveConfig.webappProxyEnabled
+    ? {
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+        sandboxConnectionFor: () =>
+          sandboxUrl && sandboxToken
+            ? { baseUrl: sandboxUrl, token: sandboxToken }
+            : null,
+      }
+    : undefined;
+
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
  * per-model facts: OpenBot's runtime model is a wire id, not a models.dev entry, so the
@@ -4098,16 +4125,21 @@ type StreamData = {
 };
 
 /**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
+ * Bun takes exactly one WebSocket handler for the server, and three features need one: the app
+ * proxies the computer stream and the craft webapp's HMR socket, and it pushes channel activity
+ * through Hono's adapter. So this one dispatches on what the upgrade attached — an HMR socket
+ * carries `hmr`, a stream proxy socket carries `upstream` without it, a Hono socket carries
+ * neither — rather than any feature quietly taking the slot and breaking the others on connect.
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
+type SocketData = StreamData | WebappHmrSocketData | ChannelSocket["data"];
 
 const isProxiedStream = (data: SocketData): data is StreamData =>
-  typeof (data as StreamData).upstream === "string";
+  typeof (data as StreamData).upstream === "string" &&
+  (data as WebappHmrSocketData).hmr !== true;
+
+const isHmrSocket = (data: SocketData): data is WebappHmrSocketData =>
+  (data as WebappHmrSocketData).hmr === true;
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
 const asChannelSocket = (ws: { data: SocketData }) =>
@@ -4204,10 +4236,45 @@ serve<SocketData>({
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
     }
+    const hmrSessionId =
+      craftWebappHmrDeps !== undefined
+        ? webappHmrSessionIdFromPath(url.pathname)
+        : null;
+    if (
+      hmrSessionId !== null &&
+      craftWebappHmrDeps !== undefined &&
+      request.headers.get("upgrade")?.toLowerCase() === "websocket"
+    ) {
+      // The webapp proxy's own auth, applied by hand because middleware does not run on an
+      // upgrade (the stream branch above sets the precedent). Every refusal lands BEFORE the
+      // upgrade commits — onyx's `_check_webapp_access` → WebSocketException(1008), answered
+      // here as plain HTTP statuses while the request is still a request.
+      const actor = await resolveRequestActor(request).catch(() => null);
+      const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
+        sessionId: hmrSessionId,
+        actor,
+        query: url.search,
+      });
+      if (!decision.ok) {
+        return new Response(decision.error, { status: decision.status });
+      }
+      if (
+        server.upgrade(request, {
+          data: { upstream: decision.upstreamUrl, hmr: true as const },
+        })
+      ) {
+        return undefined as unknown as Response;
+      }
+      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
     return app.fetch(request, { server });
   },
   websocket: {
     open(ws) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.open(asChannelSocket(ws));
         return;
@@ -4288,6 +4355,13 @@ serve<SocketData>({
       inward.onerror = () => ws.close();
     },
     message(ws, raw) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.message(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+          raw,
+        );
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.message(asChannelSocket(ws), raw);
         return;
@@ -4295,6 +4369,10 @@ serve<SocketData>({
       if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
     },
     close(ws, code, reason) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.close(asChannelSocket(ws), code, reason);
         return;
