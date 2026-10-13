@@ -16,6 +16,10 @@
       "computers": {
         "title": "Computers",
         "description": "The machines Bots run their tools on."
+      },
+      "approvals": {
+        "title": "Approvals",
+        "description": "What every member's Bots must ask before acting."
       }
     },
     "do": {
@@ -82,7 +86,8 @@
     "playground": "Playground",
     "people": "People",
     "identityProviders": "Identity providers",
-    "audit": "Audit"
+    "audit": "Audit",
+    "approvals": "Approvals"
   },
   "audit": {
     "title": "Audit",

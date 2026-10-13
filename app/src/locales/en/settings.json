@@ -9,7 +9,10 @@
     "passwords": "Passwords",
     "componentsGallery": "Components gallery",
     "plansUsage": "Plans & credits",
-    "invoices": "Bills"
+    "invoices": "Bills",
+    "notifications": "Notifications",
+    "approvals": "Approvals",
+    "memory": "Memory"
   },
   "billing": {
     "retry": "Retry",
