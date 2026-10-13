@@ -68,6 +68,9 @@ describe("builtinSkillFilesFor", () => {
     expect(files.has("pptx/charts.md")).toBe(true);
     expect(files.has("pptx/scripts/office/pack.py")).toBe(true);
     expect(files.has("craft-documentation/SKILL.md")).toBe(true);
+    // The module's own source never ships (smoke: index.ts once landed in a
+    // session's skills directory).
+    expect(files.has("index.ts")).toBe(false);
     // The whole onyx pptx tree (66 files), not a trimmed stub.
     let pptxCount = 0;
     for (const path of files.keys()) if (path.startsWith("pptx/")) pptxCount++;
