@@ -19,7 +19,9 @@
   "preview": {
     "title": "Web app preview",
     "loading": "Checking for a web app…",
-    "empty": "No web app yet. Ask the agent to build one."
+    "emptyTitle": "Waiting for the first web app",
+    "emptyHint": "The web app the agent builds renders here, live.",
+    "emptyTabs": "Workspace files land under Files; downloads under Artifacts."
   },
   "files": {
     "loading": "Reading outputs…",
@@ -34,9 +36,18 @@
   },
   "chat": {
     "loading": "Loading the conversation…",
-    "empty": "Ask the agent to build something.",
+    "emptyTitle": "What should the agent build?",
+    "emptyHint": "Describe what you want — the agent builds it in its own sandbox and ships a web app, files, and artifacts.",
+    "suggest": {
+      "landing": "Build a landing page",
+      "tool": "Make a small tool",
+      "report": "Turn data into a report"
+    },
     "usage": "{{tokens}} tokens used",
     "compacted": "Context compacted."
+  },
+  "composer": {
+    "placeholder": "What should your agent build?"
   },
   "approvals": {
     "waiting": "Waiting for your approval",
