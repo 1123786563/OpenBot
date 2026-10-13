@@ -103,7 +103,14 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
         # a dead pid never outlives this run.
         rm -f "$SESSION_PATH/nextjs.pid"
         cd "$SESSION_PATH/outputs/web"
-        if [ ! -d node_modules ]; then
+        # bun's install tempdir follows BUN_INSTALL when the image sets it
+        # (agent-sandbox exports BUN_INSTALL=/usr/local, root-owned), which
+        # fails install with AccessDenied — pin the cache under $HOME unless
+        # the deployment already chose one.
+        export BUN_INSTALL_CACHE_DIR="\${BUN_INSTALL_CACHE_DIR:-\$HOME/.bun/install-cache}"
+        # Not [ -d node_modules ]: a failed install leaves an empty directory
+        # behind, and rerunning would skip straight to a spawn with no bins.
+        if [ ! -x node_modules/.bin/next ]; then
             echo "Installing dependencies with bun..."
             bun install
         fi

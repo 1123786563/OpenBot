@@ -913,6 +913,15 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
     expect(script).toContain("-H 0.0.0.0");
     expect(script).toContain("Installing dependencies with bun...");
     expect(script).toContain("bun install");
+    // The image's BUN_INSTALL=/usr/local (root-owned) redirects bun's install
+    // tempdir into an unwritable path — the script pins the cache under $HOME
+    // (smoke-verified: install fails with AccessDenied without this line).
+    expect(script).toContain(
+      'export BUN_INSTALL_CACHE_DIR="${BUN_INSTALL_CACHE_DIR:-$HOME/.bun/install-cache}"',
+    );
+    // A failed install leaves an empty node_modules behind; .bin/next is the
+    // honest "installed" test so a rerun reinstalls instead of spawning blind.
+    expect(script).toContain("if [ ! -x node_modules/.bin/next ]; then");
   });
 
   test("readiness poll: 90s deadline, curl probe on the reserved port", () => {

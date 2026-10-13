@@ -338,6 +338,23 @@ company-search(组织知识技能)曾维持 BLOCKED(OpenBot 知识域无可供�
 | company-search sources 语义 | 列部署 KB 名(onyx 列 per-user connector sources);`--source` 过滤 KB 域文档型(file/url/text) | OpenBot KB 域为部署租户(无 per-user KB 权限面);`source_type`/`updated_at` 已进 KB retrieve metadata |
 | onyx-cli 调用形态 | Usage 行为工作区路径(`bash .opencode/skills/company-search/onyx-cli ...`) | onyx CLI 在镜像 PATH;OpenBot CLI 随会话物化且无 exec 位,SKILL.md 头注释记录 |
 
+### 冒烟复核(2026-10-13 live,D1/D2/D3/D6 全 PASS;修复提交 67677e1a)
+
+真实拓扑:OpenBot server(host 3099,single-user + craft enabled)+ agent-sandbox(openbot-agent-sandbox:latest,docker compose,发布 3011-3098)+ stub KB 服务(host 3998,受控两库)。
+
+| 面 | live 证据 |
+|---|---|
+| D3 | skills 目录:pptx 全树 + craft-documentation + company-search(SKILL.md+onyx-cli);无 MCP 连接 → 无 connector skill ✓ |
+| D1 | AGENTS.md Company knowledge 段(onyx 逐字)注入;sources 段渲染 KB 列表;`.opencode/craft-session`/`craft-api-base` 非密标识文件;沙箱内 onyx-cli:单 query `{results}`(跨 2 KB 合并、score 序)、多 query `{searches}` 参数序、`--days 7` 滤旧文档、`--source text` 滤型、无 tag/坏 tag → 403 `not_authorized`、>3 query → 400 ✓ |
+| D2 | `.openbot/web-template` 82 文件物化;空 outputs/web 跑 start-webapp.sh → "Copying outputs template" → 模板树落盘 → bun install(314 包)→ dev server PID/ready 行逐字节 ✓ |
+| D6 | HMR upgrade:未知会话握手前 404;live 会话 upgrade → **turbopack HMR 帧双向转发**(`turbopack-connected`/`isrManifest`);client close 1000;kill dev server → 客户端收 close(对端关闭传播)✓ |
+
+**冒烟 findings(3 个 server 侧已修 + 1 个 agent-sandbox 域记录)**:
+- ✅ fixed:`builtinSkillFilesFor` 把模块自身 `index.ts` 推进 agent 工作区(顶层文件剔除)。
+- ✅ fixed:start-webapp.sh 在 agent-sandbox 镜像 env `BUN_INSTALL=/usr/local`(root 属主)下 bun install 必 AccessDenied —— 脚本现自带 `BUN_INSTALL_CACHE_DIR=${…:-$HOME/.bun/install-cache}` 兜底(裸跑 live 复验通过)。
+- ✅ fixed:失败 install 留空 `node_modules`,重跑跳过 install 直接 spawn —— install 判定改 `[ ! -x node_modules/.bin/next ]`。
+- ⚠️ 记录(agent-sandbox 域,未修):网关 `GET /file` 转发上游,对**不存在的目录**答 500 而非 404 → craft 首次 provisioning 的 managed-skills 清点走"拒 ack"分支(保守语义,按 OCR round-2 修复设计工作),`skills_stale` 恒 true 直到一次 reload(实测 reload 自愈 → false)。修法在上游/网关侧的不存在路径 404 化。
+
 ### connector skill 必要文本偏差(D5 推导,逐文件头注释 + 本表双记录)
 
 8 个 connector(github/gmail/google-calendar/google-drive/hubspot/linear/notion/slack)共同形态:frontmatter `description` 改为 MCP 措辞、egress 认证段删除(改述"中继逐调用附挂凭证")、CLI/API 命令示例段替换为"调用已连接 MCP 服务器工具"的操作指导;领域知识(对象模型、ID 引用、分页、scope 语义、错误纪律)逐字保留。`{{ACTION_AVAILABILITY_SECTION}}` 保留占位、渲染为空(onyx 非 cloud + 无 admin 逐动作策略面的分支);gmail/google-drive 的 cloud-scope 块预解析为非 cloud 分支。linear/slack 的 `*_api.py` 包装器、google-drive 的 4 个 CLI 指南 md **不移植**(依赖 egress 凭证,沙箱内不可运行)。

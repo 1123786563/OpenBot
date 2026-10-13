@@ -63,6 +63,25 @@ export function renderConnectorSkillTemplate(template: string): string {
     "{{ACTION_AVAILABILITY_SECTION}}\n\n",
     "",
   );
+  return assertNoUnresolvedMarkup(rendered);
+}
+
+/**
+ * Render the company-search SKILL.md — onyx's `render_company_search_skill`:
+ * the sources section (the deployment's knowledge bases) fills the
+ * placeholder; onyx's no-sources line is kept verbatim.
+ */
+export function renderCompanySearchSkill(
+  template: string,
+  sourcesSection: string,
+): string {
+  return assertNoUnresolvedMarkup(
+    template.replace("{{AVAILABLE_SOURCES_SECTION}}", sourcesSection),
+  );
+}
+
+/** onyx rendering.py's rule: unresolved markup never ships to the agent. */
+function assertNoUnresolvedMarkup(rendered: string): string {
   if (rendered.includes("{{")) {
     const offending = rendered
       .split("\n")
@@ -72,16 +91,40 @@ export function renderConnectorSkillTemplate(template: string): string {
   return rendered;
 }
 
+/** onyx's no-sources line (rendering.py build_available_sources_section). */
+export const NO_SOURCES_SECTION =
+  "No connected sources available for this user.";
+
+/** The KB list → the sources section body (onyx's `- \`source\` — description` lines). */
+export function buildAvailableSourcesSection(
+  kbs: readonly { name: string; description?: string | null }[],
+): string {
+  if (kbs.length === 0) return NO_SOURCES_SECTION;
+  return kbs
+    .map((kb) =>
+      kb.description
+        ? `- \`${kb.name}\` — ${kb.description}`
+        : `- \`${kb.name}\``,
+    )
+    .join("\n");
+}
+
+/** The company-search skill's files, kept apart from the gated connector set. */
+const COMPANY_SEARCH_SKILL = "company-search";
+
 type BuiltinSkillTree = ReadonlyMap<string, Uint8Array>;
 
 let builtinSkillTreeCache: BuiltinSkillTree | null = null;
+let companySearchTemplate: string | null = null;
 
 /**
  * The whole builtin-skills tree, read once per process. pptx and
  * craft-documentation pass through verbatim; a connector's
  * `<skill>/SKILL.md.template` renders (see above) and lands as
- * `<skill>/SKILL.md`. An absent directory resolves to an empty map so a
- * deployment without the tree degrades to "no builtin skills", never a crash.
+ * `<skill>/SKILL.md`. The company-search SKILL.md.template is kept raw —
+ * its sources section is per-deployment and renders at delivery time.
+ * An absent directory resolves to an empty map so a deployment without the
+ * tree degrades to "no builtin skills", never a crash.
  */
 async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
   if (builtinSkillTreeCache !== null) return builtinSkillTreeCache;
@@ -92,6 +135,9 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      // Top-level files are this module's own source (index.ts), not skill
+      // content — every shipped file lives under a skill directory.
+      if (prefix === "" && !entry.isDirectory()) continue;
       const child = new URL(`${entry.name}/`, dir);
       if (entry.isDirectory()) {
         await walk(child, rel);
@@ -99,7 +145,9 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
         const bytes = new Uint8Array(
           await readFile(new URL(entry.name, dir)),
         );
-        if (rel.endsWith(TEMPLATE_SUFFIX)) {
+        if (rel === `${COMPANY_SEARCH_SKILL}/SKILL.md.template`) {
+          companySearchTemplate = new TextDecoder().decode(bytes);
+        } else if (rel.endsWith(TEMPLATE_SUFFIX)) {
           const rendered = renderConnectorSkillTemplate(
             new TextDecoder().decode(bytes),
           );
@@ -118,28 +166,66 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
   return files;
 }
 
+/** The per-user builtin skill fileset inputs. */
+export type BuiltinSkillFilesInput = {
+  /**
+   * Catalogue keys / brokered slugs of the MCP servers this user has
+   * connected — the connector skills' gate.
+   */
+  connectedServerIds: ReadonlySet<string>;
+  /**
+   * The rendered sources section for company-search, or undefined to hold the
+   * skill back entirely (knowledge domain not wired — the AGENTS.md Company
+   * knowledge section stays out with it, onyx's no-backed-skill rule).
+   */
+  companySearchSourcesSection?: string;
+};
+
 /**
  * The per-user builtin skill fileset for the managed-content skills leg:
  * pptx and craft-documentation unconditionally, a connector skill only when
  * the user has connected the matching MCP server (onyx ships a connector
- * skill only for connected apps).
+ * skill only for connected apps), and company-search only when the knowledge
+ * domain backs it (its sources section renders here, per deployment).
  */
 export async function builtinSkillFilesFor(
-  connectedServerIds: ReadonlySet<string>,
+  input: BuiltinSkillFilesInput,
 ): Promise<ReadonlyMap<string, Uint8Array>> {
   const tree = await loadBuiltinSkillTree();
   const files = new Map<string, Uint8Array>();
   for (const [path, bytes] of tree) {
     const skill = path.split("/", 1)[0];
+    if (skill === COMPANY_SEARCH_SKILL) {
+      // Held back as a unit: the SKILL.md renders only with a sources section
+      // (the branch below), and the CLI ships with it or not at all.
+      continue;
+    }
     if (
       CONNECTOR_SKILLS.has(skill) &&
-      ![...connectedServerIds].some((id) =>
+      ![...input.connectedServerIds].some((id) =>
         serverBacksConnectorSkill(id, skill),
       )
     ) {
       continue;
     }
     files.set(path, bytes);
+  }
+  if (
+    input.companySearchSourcesSection !== undefined &&
+    companySearchTemplate !== null
+  ) {
+    const encoder = new TextEncoder();
+    files.set(
+      `${COMPANY_SEARCH_SKILL}/SKILL.md`,
+      encoder.encode(
+        renderCompanySearchSkill(
+          companySearchTemplate,
+          input.companySearchSourcesSection,
+        ),
+      ),
+    );
+    const cli = tree.get(`${COMPANY_SEARCH_SKILL}/onyx-cli`);
+    if (cli !== undefined) files.set(`${COMPANY_SEARCH_SKILL}/onyx-cli`, cli);
   }
   return files;
 }
