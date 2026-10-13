@@ -9,7 +9,11 @@
  * every operation here is a mkdir/write that converges on the same completed workspace.
  */
 
-import { generateAgentInstructions } from "./agent-instructions";
+import { getLogger } from "../../../shared/logger";
+import {
+  appendAttachmentsSectionIfMissing,
+  generateAgentInstructions,
+} from "./agent-instructions";
 import type { CraftConfig } from "./config";
 import { writeConnectAppPlugin } from "./connect-app-plugin";
 import { writeWebappBootstrapScript } from "./nextjs-dev";
@@ -24,6 +28,8 @@ import { writeTurnBudgetPlugin } from "./turn-budget";
 import { writeWebappPlugin } from "./webapp-plugin";
 
 export const SESSIONS_ROOT = "/workspace/sessions";
+
+const logger = getLogger("server");
 
 /**
  * The session's directory anchor — the `?directory=` scope key for opencode-serve AND the
@@ -74,6 +80,10 @@ export type WorkspaceApi = {
   writeFile(path: string, content: string): Promise<void>;
   /** Ensure a directory exists. */
   mkdir(path: string): Promise<void>;
+  /** List a directory (the attachments-section probe); absent on write-only views. */
+  listFiles?(path: string): Promise<string[]>;
+  /** Read a text file's contents, or null when absent; absent on write-only views. */
+  readFile?(path: string): Promise<string | null>;
 };
 
 /**
@@ -107,6 +117,27 @@ export async function setupSessionWorkspace(
       input.managedContent?.companySearchSkillAvailable ?? false,
   });
   await api.writeFile(`${root}/AGENTS.md`, agentsMd);
+
+  // onyx's post-write step (docker_sandbox_manager.py:1585-1589): a session that already
+  // has attachments gets the priority section appended. Best-effort — a failed append must
+  // not fail the workspace setup (the next setup/upload retry converges it).
+  if (api.listFiles && api.readFile) {
+    try {
+      await appendAttachmentsSectionIfMissing(
+        { listFiles: api.listFiles, readFile: api.readFile, writeFile: api.writeFile },
+        root,
+        input.config.attachmentsDirectory,
+      );
+    } catch (error) {
+      logger.warn(
+        {
+          sessionId: input.sessionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "[craft] attachments section append failed during workspace setup",
+      );
+    }
+  }
 
   // The managed plugins ship in the workspace itself (agent-sandbox's image
   // cannot carry them); the opencode.json below points opencode at them.

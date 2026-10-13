@@ -17,6 +17,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
+import { appendAttachmentsSectionIfMissing } from "./agent-instructions";
 import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
@@ -209,6 +210,23 @@ export function createFileRoutes(
       );
     });
     await deps.store.updateSessionActivity(sessionId).catch(() => undefined); // heartbeat parity: an upload is user activity
+
+    // onyx appends the attachments priority section to AGENTS.md once attachments exist
+    // (docker_sandbox_manager.py:1585-1589). Best-effort: the upload already landed, so a
+    // failed append must not fail it — the next upload or setup retry converges it.
+    await appendAttachmentsSectionIfMissing(
+      fileApi,
+      directory,
+      attachmentsDir,
+    ).catch((error) => {
+      logger.warn(
+        {
+          sessionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "[craft] attachments section append failed after upload",
+      );
+    });
 
     return context.json(
       {
