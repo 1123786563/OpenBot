@@ -513,6 +513,39 @@ services:
       timeout: 5s
       retries: 5
 
+  # The trpc-agent-go Bot: the same Bot contract on a Go framework, exposed as
+  # another AG-UI endpoint. Registered from the workbench like any
+  # bring-your-own agent (http://localhost:4204/ag-ui); nothing here touches
+  # the enterprise go-runtime candidate below, which is a different image with
+  # a different trust model.
+  agent-trpc:
+    build:
+      # The repository root, because the default model lives in
+      # shared/model-providers.json and rides along in the image.
+      context: .
+      dockerfile: agent-trpc/Dockerfile.bot
+    image: ${AGENT_TRPC_IMAGE:-openbot-agent-trpc:latest}
+    pull_policy: ${IMAGE_PULL_POLICY:-build}
+    ports:
+      # Loopback, for the same reason as agent-bot above.
+      - "127.0.0.1:${AGENT_TRPC_PORT:-4204}:4204"
+      - "[::1]:${AGENT_TRPC_PORT:-4204}:4204"
+    environment:
+      # Same server-to-Bot request boundary as agent-bot above.
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:-}
+      # Unset means OpenAI. Set, any endpoint speaking the same API; BOT_MODEL
+      # is sent to it verbatim.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_CONTAINER_BASE_URL:-${OPENAI_BASE_URL:-}}
+      # The bots.agent-trpc row's gpt-5.5 unless a deployment names its own.
+      BOT_MODEL: ${AGENT_TRPC_MODEL:-}
+    healthcheck:
+      # Exec-form: the image is distroless, so the binary probes itself.
+      test: ["CMD", "/agent-trpc-bot", "-healthcheck", "http://localhost:4204/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # The Go runtime candidate (docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md):
   # a verification-candidate execution runtime the ENTERPRISE entry's run gateway dials.
   # Off by default — the `go-runtime` profile only starts when asked for:

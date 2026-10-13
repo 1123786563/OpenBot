@@ -1,0 +1,20 @@
+# The workbench Bot's container image: one static binary plus the spec file
+# its default model lives in. Multi-stage so the toolchain never ships.
+#
+# Built with the REPOSITORY ROOT as context (the compose service does), so
+# shared/model-providers.json can ride along; the enterprise candidate keeps
+# its own Dockerfile with its own smaller context.
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY agent-trpc/go.mod agent-trpc/go.sum ./
+RUN go mod download
+COPY agent-trpc/cmd ./cmd
+COPY agent-trpc/internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/agent-trpc-bot ./cmd/bot
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/agent-trpc-bot /agent-trpc-bot
+COPY shared/model-providers.json /spec/model-providers.json
+# The model-providers path is absolute in the image; everything else is env.
+ENTRYPOINT ["/agent-trpc-bot"]
+CMD ["-model-providers=/spec/model-providers.json"]
