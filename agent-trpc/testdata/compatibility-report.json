@@ -1,0 +1,917 @@
+{
+  "commit": "dd9ae0b3a7ff0d8e521575b46713c9b529746073",
+  "go_version": "go version go1.26.3 darwin/arm64",
+  "workspace_digest": {
+    "dirty": true,
+    "summary": [
+      "M .github/workflows/ci.yml",
+      " M .gitignore",
+      " M .zcode/lago-e2e/openbot.env",
+      " M .zcode/lago-e2e/server.log",
+      " M app/src/components/settings/settings-sidebar.tsx",
+      " M app/src/locales/en/settings.json",
+      " M app/src/locales/zh-CN/settings.json",
+      " M app/src/routeTree.gen.ts",
+      " M bun.lock",
+      " M docker-compose.yml",
+      " M package.json",
+      " M server/drizzle/meta/_journal.json",
+      " M server/package.json",
+      " M server/scripts/enterprise-test-db.ts",
+      " M server/src/auth/index.ts",
+      " M server/src/billing/lago.ts",
+      " M server/src/billing/routes.ts",
+      " M server/src/billing/service.ts",
+      " M server/src/billing/types.ts",
+      " M server/src/channels/attachments.ts",
+      " M server/src/config.ts",
+      " M server/src/copilot.ts",
+      " M server/src/plugins/openconnector-adapter.ts",
+      " M server/tests/auth-mobile-scheme.integration.test.ts",
+      " M server/tests/billing-lago-client.test.ts",
+      " M server/tests/billing-routes.test.ts",
+      " M server/tests/copilot.test.ts",
+      " M server/tests/enterprise-controls.integration.test.ts",
+      " M server/tests/openconnector-adapter.test.ts",
+      " M server/tests/tool-selection.integration.test.ts",
+      " M shared/enterprise/contracts.ts",
+      "?? app/src/lib/billing/",
+      "?? app/src/routes/_authed/settings/billing.tsx",
+      "?? app/src/routes/_authed/settings/usage.tsx",
+      "?? docker/lago/",
+      "?? docker/pgvector-partman.Dockerfile",
+      "?? docs/.DS_Store",
+      "?? gui-test-screenshots/",
+      "?? server/drizzle/0057_enterprise_identity_grants.sql",
+      "?? server/drizzle/meta/0057_snapshot.json",
+      "?? server/src/enterprise/app.ts",
+      "?? server/src/enterprise/auth-route-profile.ts",
+      "?? server/src/enterprise/bootstrap.ts",
+      "?? server/src/enterprise/config.ts",
+      "?? server/src/enterprise/index.ts",
+      "?? server/src/enterprise/tenancy/routes.ts",
+      "?? server/tests/enterprise/mobile/",
+      "?? server/tests/enterprise/tenancy/app.test.ts",
+      "?? server/tests/enterprise/tenancy/auth-config-compat.test.ts",
+      "?? server/tests/enterprise/tenancy/bootstrap.test.ts",
+      "?? server/tests/enterprise/tenancy/config.test.ts",
+      "?? server/tsconfig.enterprise-tests.json",
+      "?? shared/enterprise/mobile-contracts.ts",
+      "?? shared/enterprise/mobile-schemas.test.ts",
+      "?? shared/enterprise/mobile-schemas.ts"
+    ]
+  },
+  "document_baseline": {
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "805ca0d150b22d31a7ba63672951d770981006cde9afc095507e66348cd93d2e",
+    "server/scripts/enterprise-runtime-probe.ts": "505da46557b58433f2eca68398a7ce48d273ac6a3f0c459ba72a213790dd7936",
+    "runtime-go/cmd/runtime/main.go": "ac325430fd49869df3d958e46ea740c8347b8d20149558684f356c02c624e941",
+    "runtime-go/internal/adapter/agui_test.go": "550271dc6f56d5ffbb7274057f232dc1997b397ea4b136847f76734b6e681df7",
+    "runtime-go/internal/adapter/agui.go": "3048e7b089444220c90f14c8f62b01dacfd31a2ed2f1a4b78d60d423da7565af",
+    "runtime-go/internal/adapter/backpressure_test.go": "544af6ce63ee1a0cafc26b7f22769bc711918b7e816520a014b69b0392f6026b",
+    "runtime-go/internal/adapter/waitmapping.go": "26b5bf1fb6eda66980287de53d084f84edb06a494f6bf5c6fdf15fe81ad704e1",
+    "runtime-go/internal/callback/client_test.go": "0322097b06159d2efdc705bbed075168d2bc5e089ea72e21aba46cb1bee2f340",
+    "runtime-go/internal/callback/client.go": "44e3d8b3b998dcf60ae9539ed966ca2683030885bd600c635aed6ad5c78eebcd",
+    "runtime-go/internal/identity/context_test.go": "c9cd3b801ab07c84257cc2a32170c4e8a6c836dd34a3dc41c9cf07acfe81fce9",
+    "runtime-go/internal/identity/context.go": "9fc0a382ffbb13832998aafdecc5609edf531a2a16b7778f285347e7c288ca4f",
+    "runtime-go/internal/runtimeconfig/config_test.go": "5b90c8e81d2fbda90ad5a3cf1030a1fa74238ae5938314549446d870670069a7",
+    "runtime-go/internal/runtimeconfig/config.go": "164958cf7b9054550d18134be657b5244a81769508345437bb234f9ba6a83ed4",
+    "runtime-go/internal/server/auth_test.go": "30faaf75c2468bc80ea635e4de39ea556c95370dbaccf0d189d658b6c96b8c33",
+    "runtime-go/internal/server/auth.go": "808d8d97744b6f9bf7fdb6b4fd17efe5bba50e863bd2733f725f2377f96d087f",
+    "runtime-go/internal/server/cancel_test.go": "07f10446b55088fd09979818f3e650c7c3476b393a52d9030982a92302a6894f",
+    "runtime-go/internal/server/cancel.go": "3070f7dffcdadfe982c26972ff9e38914f081a75ba4a8b5d8d820acd27640960",
+    "runtime-go/internal/server/executions_test.go": "2c8b2086e37d761b5e5a8e6650cb64c50a2c243812ed1c5cbb9f1951624d95c2",
+    "runtime-go/internal/server/executions.go": "0fef8ed169a98a8eee316bffa29d4fd3626e741c5b483bec1dd27cc26cfdc743",
+    "runtime-go/internal/server/health_test.go": "ad1f04c3cc1d68f251f383bdd392d90dee198429e72001f70c47a021d9e4c040",
+    "runtime-go/internal/server/health.go": "abf1deee86dcec5c3624cfaf4d2f6f04b36a2e98961f86e37c56cc0e08980f1e",
+    "runtime-go/internal/server/inputguard_test.go": "76c4f2e56eb79bc177caf80fa8fe0fd2db0585ed65094f07eb7ee3a677394989",
+    "runtime-go/internal/server/inputguard.go": "e6635b1eb642e58258e1ac9a6e80868656700905a0547649eeb53b0ad90596ed",
+    "runtime-go/internal/server/runs_test.go": "b22cf35b59b9b235db09afe6364c7d0879ac9e25b616eb9d9b1de59dac14df59",
+    "runtime-go/internal/server/runs.go": "a2dba8a6991310a1a7b1979fafdca8c3d9ca9d222522aca2b552641b288ed8df",
+    "runtime-go/internal/trustedinput/input_test.go": "9f736157c6ad9593e4562260903131bc80f92cda42ecd9e001e8aebe8a172faf",
+    "runtime-go/internal/trustedinput/input.go": "88c5d6525c03003d44e494f4d6b20f433268f096bbce300edbe2942972a4df89"
+  },
+  "dependency_graph_digest": {
+    "goModSha256": "aa869ff54106a5a4b53ff3aa55940639326b7708ce73e16e69747443093ec43a",
+    "goSumSha256": "1cb4a7ff4ddf45ebf0b34dc393744254c47106b2f465884859f2369956aa0950",
+    "goSumLines": 169,
+    "moduleCount": 119
+  },
+  "sdk_versions": {
+    "@ag-ui/client": "1.0.1",
+    "github.com/ag-ui-protocol/ag-ui/sdks/community/go": "v0.0.0-20260514093510-e9e910b230b9",
+    "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
+    "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
+  },
+  "environment": {
+    "platform": "darwin/arm64",
+    "bun": "1.4.2",
+    "network": "every spawned Go command runs with GOPROXY=off (module cache only); the probe talks to localhost fakes and nothing else"
+  },
+  "modules": [
+    {
+      "path": "openbot/runtime-go",
+      "version": "(main)",
+      "indirect": false
+    },
+    {
+      "path": "cel.dev/expr",
+      "version": "v0.25.1",
+      "indirect": true
+    },
+    {
+      "path": "cloud.google.com/go/compute/metadata",
+      "version": "v0.9.0",
+      "indirect": true
+    },
+    {
+      "path": "connectrpc.com/connect",
+      "version": "v1.18.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
+      "version": "v1.17.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/Azure/azure-sdk-for-go/sdk/azidentity",
+      "version": "v1.7.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/Azure/azure-sdk-for-go/sdk/internal",
+      "version": "v1.10.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/AzureAD/microsoft-authentication-library-for-go",
+      "version": "v1.2.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp",
+      "version": "v1.30.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/ag-ui-protocol/ag-ui/sdks/community/go",
+      "version": "v0.0.0-20260514093510-e9e910b230b9",
+      "indirect": false
+    },
+    {
+      "path": "github.com/antihax/optional",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/bmatcuk/doublestar/v4",
+      "version": "v4.9.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/bufbuild/protocompile",
+      "version": "v0.14.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/cenkalti/backoff/v4",
+      "version": "v4.3.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/cespare/xxhash/v2",
+      "version": "v2.3.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/clbanning/mxj",
+      "version": "v1.8.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/cncf/xds/go",
+      "version": "v0.0.0-20251210132809-ee656c7534f5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/creack/pty",
+      "version": "v1.1.24",
+      "indirect": true
+    },
+    {
+      "path": "github.com/davecgh/go-spew",
+      "version": "v1.1.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/decred/dcrd/dcrec/secp256k1/v4",
+      "version": "v4.4.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/go-control-plane",
+      "version": "v0.14.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/go-control-plane/envoy",
+      "version": "v1.36.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/go-control-plane/ratelimit",
+      "version": "v0.1.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/envoyproxy/protoc-gen-validate",
+      "version": "v1.3.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/getkin/kin-openapi",
+      "version": "v0.124.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-ego/gse",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-jose/go-jose/v4",
+      "version": "v4.1.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-logr/logr",
+      "version": "v1.4.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-logr/stdr",
+      "version": "v1.2.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-openapi/jsonpointer",
+      "version": "v0.20.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/go-openapi/swag",
+      "version": "v0.22.8",
+      "indirect": true
+    },
+    {
+      "path": "github.com/goccy/go-json",
+      "version": "v0.10.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/golang-jwt/jwt/v5",
+      "version": "v5.2.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/golang/glog",
+      "version": "v1.2.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/golang/protobuf",
+      "version": "v1.5.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/gomutex/godocx",
+      "version": "v0.1.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/gonfva/docxlib",
+      "version": "v0.0.0-20210517191039-d8f39cecf1ad",
+      "indirect": true
+    },
+    {
+      "path": "github.com/google/go-cmp",
+      "version": "v0.7.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/google/go-querystring",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/grpc-ecosystem/grpc-gateway/v2",
+      "version": "v2.22.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/hashicorp/errwrap",
+      "version": "v1.1.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/hashicorp/go-multierror",
+      "version": "v1.1.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/invopop/yaml",
+      "version": "v0.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/josharian/intern",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/kr/pretty",
+      "version": "v0.3.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/kr/text",
+      "version": "v0.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/kylelemons/godebug",
+      "version": "v1.1.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/blackmagic",
+      "version": "v1.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/httpcc",
+      "version": "v1.0.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/httprc",
+      "version": "v1.0.6",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/iter",
+      "version": "v1.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/jwx/v2",
+      "version": "v2.1.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/lestrrat-go/option",
+      "version": "v1.0.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mailru/easyjson",
+      "version": "v0.9.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mattn/go-sqlite3",
+      "version": "v1.14.32",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mitchellh/mapstructure",
+      "version": "v1.5.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mohae/deepcopy",
+      "version": "v0.0.0-20170929034955-c48cc78d4826",
+      "indirect": true
+    },
+    {
+      "path": "github.com/mozillazg/go-httpheader",
+      "version": "v0.2.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/openai/openai-go",
+      "version": "v1.12.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/panjf2000/ants/v2",
+      "version": "v2.10.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/perimeterx/marshmallow",
+      "version": "v1.1.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/pkg/browser",
+      "version": "v0.0.0-20240102092130-5ac0b6a4141c",
+      "indirect": true
+    },
+    {
+      "path": "github.com/planetscale/vtprotobuf",
+      "version": "v0.6.1-0.20240319094008-0393e58bdf10",
+      "indirect": true
+    },
+    {
+      "path": "github.com/pmezard/go-difflib",
+      "version": "v1.0.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/rogpeppe/fastuuid",
+      "version": "v1.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/rogpeppe/go-internal",
+      "version": "v1.14.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/santhosh-tekuri/jsonschema/v6",
+      "version": "v6.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/segmentio/asm",
+      "version": "v1.2.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/sirupsen/logrus",
+      "version": "v1.9.3",
+      "indirect": true
+    },
+    {
+      "path": "github.com/spiffe/go-spiffe/v2",
+      "version": "v2.6.0",
+      "indirect": true
+    },
+    {
+      "path": "github.com/stretchr/objx",
+      "version": "v0.5.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/stretchr/testify",
+      "version": "v1.11.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tencentyun/cos-go-sdk-v5",
+      "version": "v0.7.69",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/gjson",
+      "version": "v1.14.4",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/match",
+      "version": "v1.1.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/pretty",
+      "version": "v1.2.1",
+      "indirect": true
+    },
+    {
+      "path": "github.com/tidwall/sjson",
+      "version": "v1.2.5",
+      "indirect": true
+    },
+    {
+      "path": "github.com/vcaesar/cedar",
+      "version": "v0.20.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/yosida95/uritemplate/v3",
+      "version": "v3.0.2",
+      "indirect": true
+    },
+    {
+      "path": "github.com/yuin/goldmark",
+      "version": "v1.4.13",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/auto/sdk",
+      "version": "v1.2.1",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/contrib/detectors/gcp",
+      "version": "v1.39.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlptrace",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp",
+      "version": "v1.29.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/metric",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/sdk",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/sdk/metric",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/otel/trace",
+      "version": "v1.40.0",
+      "indirect": true
+    },
+    {
+      "path": "go.opentelemetry.io/proto/otlp",
+      "version": "v1.3.1",
+      "indirect": true
+    },
+    {
+      "path": "go.uber.org/goleak",
+      "version": "v1.3.0",
+      "indirect": true
+    },
+    {
+      "path": "go.uber.org/multierr",
+      "version": "v1.10.0",
+      "indirect": true
+    },
+    {
+      "path": "go.uber.org/zap",
+      "version": "v1.27.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/crypto",
+      "version": "v0.46.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/mod",
+      "version": "v0.30.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/net",
+      "version": "v0.48.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/oauth2",
+      "version": "v0.34.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/sync",
+      "version": "v0.19.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/sys",
+      "version": "v0.40.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/term",
+      "version": "v0.38.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/text",
+      "version": "v0.32.0",
+      "indirect": true
+    },
+    {
+      "path": "golang.org/x/tools",
+      "version": "v0.39.0",
+      "indirect": true
+    },
+    {
+      "path": "gonum.org/v1/gonum",
+      "version": "v0.16.0",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/appengine",
+      "version": "v1.6.8",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/genproto/googleapis/api",
+      "version": "v0.0.0-20251202230838-ff82c1b0f217",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/genproto/googleapis/rpc",
+      "version": "v0.0.0-20251202230838-ff82c1b0f217",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/grpc",
+      "version": "v1.79.3",
+      "indirect": true
+    },
+    {
+      "path": "google.golang.org/protobuf",
+      "version": "v1.36.10",
+      "indirect": true
+    },
+    {
+      "path": "gopkg.in/check.v1",
+      "version": "v1.0.0-20201130134442-10cb98267c6c",
+      "indirect": true
+    },
+    {
+      "path": "gopkg.in/yaml.v3",
+      "version": "v3.0.1",
+      "indirect": true
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-a2a-go",
+      "version": "v0.2.6-0.20260721084546-18c8244d0acb",
+      "indirect": true
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-a2a-go/v2",
+      "version": "v2.0.0-alpha.3.0.20260813112030-aed2c1f02f9c",
+      "indirect": true
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-agent-go",
+      "version": "v1.11.1-0.20260925110348-9bb1c42b968c",
+      "indirect": false
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-agent-go/server/agui",
+      "version": "v1.11.1-0.20260925110348-9bb1c42b968c",
+      "indirect": false
+    },
+    {
+      "path": "trpc.group/trpc-go/trpc-mcp-go",
+      "version": "v0.0.10",
+      "indirect": true
+    }
+  ],
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: which commit the candidate is probed at"
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: workspace difference summary (master §6 工作区差异摘要)"
+    },
+    {
+      "argv": [
+        "go",
+        "version"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: toolchain version"
+    },
+    {
+      "argv": [
+        "go",
+        "list",
+        "-m",
+        "-e",
+        "-f",
+        "{{.Path}} {{if .Version}}{{.Version}}{{else}}(main){{end}} {{.Indirect}}",
+        "all"
+      ],
+      "exitCode": 0,
+      "purpose": "environment: the frozen module graph (go list -m all)"
+    },
+    {
+      "argv": [
+        "go",
+        "build",
+        "-o",
+        "/var/folders/_8/x5vdz8d97cld_s1yp0th3zr00000gn/T/openbot-runtime-probe-PSmvd6/openbot-runtime",
+        "./cmd/runtime"
+      ],
+      "exitCode": 0,
+      "purpose": "candidate build: compile the REAL cmd/runtime binary"
+    },
+    {
+      "argv": [
+        "ps",
+        "-o",
+        "rss=",
+        "-p",
+        "67937"
+      ],
+      "exitCode": 0,
+      "purpose": "measurement: resident set size of the candidate process"
+    },
+    {
+      "argv": [
+        "ps",
+        "-o",
+        "rss=",
+        "-p",
+        "67937"
+      ],
+      "exitCode": 0,
+      "purpose": "measurement: resident set size of the candidate process"
+    },
+    {
+      "argv": [
+        "ps",
+        "-o",
+        "rss=",
+        "-p",
+        "67937"
+      ],
+      "exitCode": 0,
+      "purpose": "measurement: resident set size of the candidate process"
+    }
+  ],
+  "exit_codes": {
+    "probe": 0
+  },
+  "evidence_refs": [
+    "runtime-go/testdata/compatibility-report.json (this artifact, written only by the probe)",
+    "runtime-go/cmd/runtime/main.go (the REAL binary this probe built and launched: strict config, run gate, auth, input guard, expert router, execution/cancel routes)",
+    "server/scripts/enterprise-runtime-probe.ts (the probe that wrote it)",
+    "server/tests/enterprise/runtime-contract.test.ts (TS HttpAgent over the same real binary)",
+    "server/tests/enterprise/runtime-artifacts.test.ts (asserts this artifact's R4 shape)",
+    "runtime-go/internal/adapter/agui_test.go (Go-side semantics, incl. RUN_ERROR and leak refusal)",
+    "runtime-go/internal/adapter/waitmapping.go (the R4-A wait mapping: suspension → RUN_FINISHED interrupt outcome on the locked protocol fields)",
+    "runtime-go/internal/adapter/backpressure_test.go (the bounded-queue mechanism proof: a stalled consumer blocks the provider; nothing is lost)",
+    "runtime-go/internal/server/auth_test.go (identity and run-binding refusals)",
+    "runtime-go/dependency-review.json (the dependency risk record the G1b gate must close)"
+  ],
+  "limitations": [
+    "the R4-A 断流/重连 row (transport break is not cancellation; E3-ledger resume rebuilds by seq; duplicate proposals deduped; beyond the retention window a snapshot) needs the E3 event ledger to exist — this probe's SSE transport has no persistent event log to resume from, so only the transport-break-is-terminal half is exercised (the cancel and restart checks); seq-重建/去重/快照 remain G1b evidence with E1–E3",
+    "the R4-A 重启/旧租约 row: this probe proves the G1a half (a restarted process holds no state it could lie about — the old run's cancel 404s); actually injecting E2/D2/P3 faults (lost lease revival, old-fencing submission refusal against a persistent ledger) is G1b evidence this probe cannot produce",
+    "the backpressure check proves the MECHANISM at probe scale (one localhost fake provider, 2 MiB deterministic stream, one stalled consumer): the runtime blocked its producer rather than buffering (Go-side mechanism proof: TestSlowConsumerBlocksTheProviderAndLosesNothing) and delivered every byte and the terminal after catch-up. It is NOT a capacity measurement: concurrency/queue-bound thresholds await the SRE-approved load run",
+    "the wait check covers the governed-tool waits this runtime can produce (approval required, receipt pending); multi-interrupt aggregation and resume-entry semantics (a new run answering interrupts) are E-domain protocol work not exercised here",
+    "load measurements are partial (rssBytes, firstEventMs, cancelLagMs, streamDurationMs, slow-consumer stall RSS/bytes on one localhost fake provider); the full R4 load set (active connections/runs, model concurrency, queue bounds, payload sizes, hardware/image) and pre-approved thresholds are outstanding — measurements alone cannot pass a capacity gate",
+    "G1b/G2 evidence sets (T1–T3/E1–E4/P2–P4/D2/D4, D5/business acceptance, and the dependency risk closure in runtime-go/dependency-review.json) are not produced by this probe"
+  ],
+  "checks": {
+    "identity": {
+      "status": "passed",
+      "evidence": "real binary /health/ready -> 200 (want 200); no-credential request -> 401, forged capability -> 401 (both want 401); provider requests during the refusals: 0 (want 0)"
+    },
+    "trusted_input": {
+      "status": "passed",
+      "evidence": "a valid assertion minted for run_binding/thread_binding presented against a body claiming run_somebody_elses -> 403 (want 403, identity bound to a different run); provider requests so far: 0 (want 0)"
+    },
+    "text": {
+      "status": "passed",
+      "evidence": "events=RUN_STARTED,TEXT_MESSAGE_START,TEXT_MESSAGE_CONTENT,TEXT_MESSAGE_CONTENT,TEXT_MESSAGE_END,RUN_FINISHED; joined text=\"probe-stream-ok\"; first event echoed threadId=thread_stream runId=run_stream"
+    },
+    "tool": {
+      "status": "passed",
+      "evidence": "prepare/execute crossings on the fake tool plane: 1 operation (probe_governed on run_callback), 1 receipt (succeeded), effects=1; run carried TOOL_CALL_START and finished with text \"callback-observed\""
+    },
+    "wait": {
+      "status": "passed",
+      "evidence": "approval-required governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_d31ddfba-a4bf-4e30-a1a8-78abeda0ce69\" (want the plane's operation op_d31ddfba-a4bf-4e30-a1a8-78abeda0ce69), reason=\"tool_approval\" (want \"tool_approval\"), toolCallId matches the stream's TOOL_CALL_START (\"call_probe\"); receipt-pending governed call -> terminal RUN_FINISHED with outcome.type=\"interrupt\"; interrupt id=\"op_af610219-94f2-4369-951b-785ae0f2c6ad\" (want the plane's operation op_af610219-94f2-4369-951b-785ae0f2c6ad), reason=\"operation_receipt_pending\" (want \"operation_receipt_pending\"), receipt status=\"submitted\" (want \"submitted\", the spend crossed but froze); platform mapping: wait run -> waiting_approval (want waiting_approval), receipt run -> suspended_reconciliation (want suspended_reconciliation), plain success -> succeeded (want succeeded); plane effects stayed at 1 (nothing succeeded beyond the tool check)"
+    },
+    "error": {
+      "status": "passed",
+      "evidence": "provider 500 -> events=RUN_STARTED,RUN_ERROR (terminal RUN_ERROR required); provider's error body 'leak-bait-secret-detail' present in events: false (want false)"
+    },
+    "cancel": {
+      "status": "passed",
+      "evidence": "POST /cancel -> 200 {\"status\":\"cancel_requested\"} (want 200 cancel_requested); the cancelled run's stream settled 1ms after the cancel"
+    },
+    "backpressure": {
+      "status": "passed",
+      "evidence": "a consumer stalled 4000ms mid-run received the whole stream afterwards: 520 events, joined deltas byte-identical to the 2097152-byte fixture (2097152 bytes joined, 2170587 bytes on the wire), 1 TOOL_CALL_START with its succeeded receipt intact, exactly one terminal last; runtime RSS during the stall 28966912 vs 31883264 at the stall's start (bounded, want <32 MiB growth); provider asked 2 times (want 2: the tool call, then the long answer). Mechanism proof (a stalled consumer blocks the producer; nothing buffered): runtime-go internal/adapter TestSlowConsumerBlocksTheProviderAndLosesNothing"
+    },
+    "restart": {
+      "status": "passed",
+      "evidence": "after killing and restarting the candidate, the old run's cancel -> 404 (want 404: the restarted process holds no state it could lie about)"
+    }
+  },
+  "gates": {
+    "G1a": {
+      "status": "passed",
+      "evidence": [
+        "all nine R4 check categories ran and passed against the REAL cmd/runtime binary",
+        "measurements recorded in this artifact (no capacity threshold is approved by a probe)",
+        "server/tests/enterprise/runtime-contract.test.ts",
+        "runtime-go/internal/adapter/agui_test.go",
+        "runtime-go/internal/adapter/waitmapping.go + backpressure_test.go"
+      ]
+    },
+    "G1b": {
+      "status": "not_run",
+      "evidence": [
+        "G1b evidence (T1–T3, E1–E4, P2–P4, D2/D4, and current dependency risk closure) is not produced by this probe",
+        "runtime-go/dependency-review.json (open reachable-vulnerability record the gate must answer)"
+      ]
+    },
+    "G2": {
+      "status": "not_run",
+      "evidence": [
+        "G2 depends on G1b plus D5/business acceptance with capacity and recovery evidence; nothing in this probe executed it"
+      ]
+    }
+  },
+  "measurements": {
+    "rssBytes": 25477120,
+    "firstEventMs": 7,
+    "cancelLagMs": 1,
+    "streamDurationMs": 10,
+    "slowConsumerStallRssBytes": 28966912,
+    "slowConsumerStreamBytes": 2170587,
+    "slowConsumerStallMs": 4000
+  },
+  "reviewers": {
+    "G1a": {
+      "required": [
+        "技术",
+        "运行",
+        "QA"
+      ],
+      "signed": []
+    },
+    "G1b": {
+      "required": [
+        "安全",
+        "运行",
+        "SRE",
+        "技术"
+      ],
+      "signed": []
+    },
+    "G2": {
+      "required": [
+        "产品",
+        "业务",
+        "技术",
+        "安全",
+        "SRE"
+      ],
+      "signed": []
+    }
+  }
+}
