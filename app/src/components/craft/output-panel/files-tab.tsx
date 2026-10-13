@@ -6,14 +6,16 @@ import { craftFilesQueryOptions } from "@/lib/craft/queries";
 import type { CraftFileEntry } from "@/lib/craft/types";
 
 /**
- * The session's workspace as a read-only tree. A directory folds open and fetches its children
- * lazily under the path's own cache key; files show their name. There is deliberately no upload and
- * no editor here — the agent writes the files, and this answers "what does it hold now".
+ * The session's outputs as a read-only tree — the deliverables the agent writes, anchored at
+ * `outputs/` so the startup scaffolding (AGENTS.md, opencode.json, attachments/) never clutters
+ * the view. A directory folds open and fetches its children lazily under the path's own cache
+ * key; files show their name. There is deliberately no upload and no editor here — the agent
+ * writes the files, and this answers "what does it hold now".
  */
 export function FilesTab({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const root = useQuery(craftFilesQueryOptions(sessionId, ""));
+  const root = useQuery(craftFilesQueryOptions(sessionId, "outputs"));
 
   const toggle = (path: string) => {
     setExpanded((previous) => {

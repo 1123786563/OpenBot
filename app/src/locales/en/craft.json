@@ -22,9 +22,9 @@
     "empty": "No web app yet. Ask the agent to build one."
   },
   "files": {
-    "loading": "Reading the workspace…",
+    "loading": "Reading outputs…",
     "error": "The file tree could not be loaded.",
-    "empty": "The workspace is empty."
+    "empty": "No outputs yet."
   },
   "artifacts": {
     "loading": "Collecting artifacts…",
