@@ -463,6 +463,8 @@ export function useBuildStreaming(sessionId: string): {
   streamMessage(
     content: string,
     attachments?: CraftAttachment[],
+    /** Fires once the send is durable — after send-message persisted the user row, before the stream. */
+    onSent?: () => void | Promise<void>,
   ): Promise<void>;
   interruptStreaming(): Promise<void>;
   streamTurnEvents(turnId: string): Promise<void>;
@@ -536,8 +538,14 @@ export function useBuildStreaming(sessionId: string): {
   }, [runStream, sessionId]);
 
   const streamMessage = useCallback(
-    async (content: string, attachments?: CraftAttachment[]) => {
+    async (
+      content: string,
+      attachments?: CraftAttachment[],
+      /** Fires once the send is durable — after send-message persisted the user row, before the stream. */
+      onSent?: () => void | Promise<void>,
+    ) => {
       const turn = await sendMessage(sessionId, content, attachments);
+      await onSent?.();
       await streamTurnEvents(turn.turn_id);
     },
     [sessionId, streamTurnEvents],

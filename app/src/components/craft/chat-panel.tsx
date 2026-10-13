@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { decideCraftApproval, listLiveApprovals } from "@/lib/craft/client";
+import { decideCraftApproval, generateSessionName, listLiveApprovals } from "@/lib/craft/client";
 import {
   craftKeys,
   craftMessagesQueryOptions,
@@ -119,7 +119,26 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     content: string,
     attachments?: { name: string; path: string; mime_type: string }[],
   ) => {
-    await streamMessage(content, attachments);
+    // onyx's naming trigger, FE-shaped: an unnamed session is titled by the LLM once its
+    // first user message is durable. onSent fires after send-message persisted the row (so
+    // the naming read always sees it), and the generation races the turn — the sidebar's
+    // title lands in seconds, not at turn end. A session the person already named is never
+    // re-titled, and a failed generation stays silent: naming is best-effort and the next
+    // send of an unnamed session retries it.
+    const unnamed = session.data?.name == null;
+    await streamMessage(content, attachments, () => {
+      if (!unnamed) return;
+      void generateSessionName(sessionId)
+        .then(async () => {
+          await queryClient.invalidateQueries({
+            queryKey: craftKeys.list(),
+          });
+          await queryClient.invalidateQueries({
+            queryKey: craftKeys.session(sessionId),
+          });
+        })
+        .catch(() => undefined);
+    });
     await queryClient.invalidateQueries({
       queryKey: craftKeys.messages(sessionId),
     });
