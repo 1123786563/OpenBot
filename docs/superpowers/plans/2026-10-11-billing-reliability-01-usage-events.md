@@ -203,3 +203,22 @@ Expected: PASS; pending usage is visible and reconciliation creates no delivery 
 git add server/src/billing/reconcile.ts server/src/billing/types.ts server/src/billing/routes.ts server/tests/billing-reconcile.integration.test.ts server/tests/billing-routes.test.ts
 git commit -m "feat(billing): reconcile pending usage delivery" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
+
+## As-built notes (2026-10-13 audit, F7)
+
+The plan text above keeps its original intent; the delivered mechanism differs in two named places:
+
+- **Credit delivery is a reservation settlement, not `consumeCredits`.** Task 2's interface
+  paragraph names `CreditWriter.consumeCredits` with `idempotencyKey = "usage:" + eventId` for
+  the credits target. As built (commit `b616ccaa`, "enforce reservations before metered work"),
+  the credits target calls `CreditWriter.settleReservation` on the reservation the model gate
+  opened at admission: the `usage:<eventId>` key belongs to the **reservation** (it is what
+  `reserveCredits` receives), and the settlement's own idempotency is `reservation:<id>` — a
+  replayed delivery settles the same hold once and answers the first result. Per-target
+  idempotency is unchanged: each target marks its own state on the outbox row.
+- **Pending retry order rotates by `updated_at`, not creation time.** Task 1's table
+  requirements say "index pending target states plus creation time". As built (commit
+  `195ca54b`, "rotate pending usage retries"), the pending read orders by `updated_at` (event
+  id as tiebreak): every failed attempt refreshes `updated_at`, so a hot-failing event rotates
+  to the back of the batch instead of starving every younger event behind it. Creation time
+  stays on the row as a fact; it is not the retry order.

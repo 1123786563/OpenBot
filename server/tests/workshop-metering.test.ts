@@ -6,6 +6,7 @@ import {
   UsageChargeError,
 } from "../src/workshop/metering";
 import type { UsageOutbox, UsageOutboxInput } from "../src/billing/usage-outbox";
+import { withUsageOrigin } from "../src/usage-origin";
 
 /**
  * The metering pipeline's contract (I4): one run, one provider event — and no provider at
@@ -50,7 +51,9 @@ describe("reportCodeRunUsage (I4: single source, idempotent, silent without bill
       inputTokens: 4845,
       outputTokens: 4,
       model: "glm-4.6",
-      client: "web",
+      // No request context stands behind this call, so it names unknown (audit F6: a named
+      // unknown, never a wrong "web").
+      client: "unknown",
       occurredAt: RUN.occurredAt,
       runId: "cr-test-1",
       botId: "bot-1",
@@ -161,5 +164,21 @@ describe("reportCodeRunUsage (I4: single source, idempotent, silent without bill
     await expect(reportCodeRunUsage(broken, RUN as never)).rejects.toThrow(
       "usage-outbox down",
     );
+  });
+});
+
+/*
+ * Usage source attribution (2026-10-13 audit, F6): the outbox row's `client` must name the
+ * surface the run really came from. An established origin rides through; a call with no
+ * request context behind it is a named `unknown`, never a wrong "web".
+ */
+describe("usage source attribution (F6)", () => {
+  test("a code run records the caller's real origin; an origin-less context names unknown", async () => {
+    const { outbox, calls } = fakeOutbox();
+    await reportCodeRunUsage(outbox, RUN as never);
+    await withUsageOrigin("cli", () =>
+      reportCodeRunUsage(outbox, RUN as never),
+    );
+    expect(calls.map((call) => call.client)).toEqual(["unknown", "cli"]);
   });
 });

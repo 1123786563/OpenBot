@@ -214,3 +214,17 @@ Expected: PASS; each injected mismatch yields one stable finding, aggregate tota
 git add server/src/billing/reconcile.ts server/src/billing/types.ts server/src/billing/routes.ts server/tests/billing-reconcile.integration.test.ts server/tests/billing-routes.test.ts
 git commit -m "feat(billing): reconcile payment and usage evidence" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
+
+## As-built notes (2026-10-13 audit, F7)
+
+The plan text above keeps its original intent; the delivered mechanism differs in one named place:
+
+- **Duplicate collections are surfaced from `duplicate_paid` anomaly rows, not counted per
+  plan/scope.** Task 4's reconciliation bullet says "detect more than one paid order per
+  plan/scope". As built (commit `c3c2a206`, "reconcile payment and usage evidence"), the
+  callback/activation path records the overlap as a `payment_events` anomaly row with code
+  `duplicate_paid` at write time (it wins the paid-fact idempotency race against the owned
+  order), and reconciliation reads those rows and reports each as a `duplicate_paid_order`
+  finding. Reading recorded evidence instead of counting paid orders keeps legitimate
+  sequential repurchases (expire, then buy the same plan again) out of the findings — a count
+  cannot tell a second concurrent entitlement from a second subscription period.

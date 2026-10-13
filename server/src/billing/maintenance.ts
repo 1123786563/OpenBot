@@ -3,7 +3,9 @@
  * first pass, then an interval, timers unref'd so housekeeping never holds the process open. Passes
  * never overlap, and a failed pass is logged by error name only and retried on the next tick.
  *
- * Nothing starts this in production yet: it waits for the delivery targets to be assembled.
+ * Started in production by the billing assembly (server/src/index.ts wires
+ * `startUsageDeliverySweeps` whenever the usage outbox exists) — the delivery targets it
+ * sweeps are the Lago and credits targets that same assembly builds.
  */
 import type { UsageDelivery } from "./usage-delivery";
 

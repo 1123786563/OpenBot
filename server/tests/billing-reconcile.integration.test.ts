@@ -1,4 +1,11 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -39,6 +46,17 @@ const mine = <T extends { subject: string }>(findings: readonly T[]) =>
   findings.filter((finding) => finding.subject.startsWith(prefix));
 
 afterAll(async () => {
+  // The teardown also deletes the precision suite's millions of seeded rows, so the heaviest
+  // delete goes first and gets the whole budget — and it carries the same slow-case timeout
+  // the seeding tests do. A timeout that strands half the rows turns the NEXT run's first test
+  // into a false timeout over the residue, so nothing slow follows the big delete.
+  //
+  // One customer delete cascades the credit side (grants, ledger, reservations, allocations,
+  // remainders all reference billing_customers ON DELETE CASCADE); the payment side carries no
+  // customer key, so its two tables are named explicitly.
+  await database
+    .delete(billingCustomers)
+    .where(like(billingCustomers.externalId, `${prefix}%`));
   await database
     .delete(usageOutbox)
     .where(like(usageOutbox.eventId, `${prefix}%`));
@@ -48,20 +66,8 @@ afterAll(async () => {
   await database
     .delete(paymentOrders)
     .where(like(paymentOrders.id, `${prefix}%`));
-  await database
-    .delete(creditLedger)
-    .where(like(creditLedger.externalCustomerId, `${prefix}%`));
-  await database
-    .delete(creditGrants)
-    .where(like(creditGrants.externalCustomerId, `${prefix}%`));
-  await database
-    .delete(billingSubscriptions)
-    .where(like(billingSubscriptions.externalCustomerId, `${prefix}%`));
-  await database
-    .delete(billingCustomers)
-    .where(eq(billingCustomers.externalId, prefix));
   await database.$client.close();
-});
+}, 240_000);
 
 afterEach(async () => {
   await database
@@ -756,6 +762,136 @@ describe("reconcile (the skeleton, over real tables)", () => {
       usageFindings.some((finding) => finding.subject === delivered.eventId),
     ).toBe(false);
     expect(usageFindings.at(-1)?.detail).toContain("omitted=2");
+  });
+});
+
+/*
+ * Exact arithmetic at the identity and count seams (2026-10-13 audit, F1/F2): the two SUMs and
+ * the four usage-outbox COUNTs must reach comparison as exact integers. Above
+ * Number.MAX_SAFE_INTEGER a SUM read through Number() rounds to the nearest double — two sums a
+ * unit apart compare equal and the divergence finding silently disappears — and a COUNT(*)::int
+ * wraps at 2^31 rows. The grant and ledger columns are 32-bit integers, so crossing 2^53 takes
+ * 2^53 / (2^31-1) ≈ 4.19M max-value rows, seeded server-side in one round trip each with
+ * generate_series (client-side row-by-row would make the precision test a load test).
+ */
+describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () => {
+  const huge = `${prefix}-huge`;
+  // (2^31-1) × 2^22 = 2^53 − 2^22; one make-up row of 2^22 units brings the sum to exactly 2^53.
+  const FULL = 2_147_483_647;
+  const ROWS = 4_194_304; // 2^22
+  const MAKE_UP = 4_194_304;
+
+  // Seed and reconcile each walk millions of rows: these cases carry their own timeout
+  // (bun's default 5s is tuned for unit tests, not generate_series).
+  const SLOW = 240_000;
+
+  beforeAll(async () => {
+    await database
+      .insert(billingCustomers)
+      .values({ externalId: huge, name: null })
+      .onConflictDoNothing({ target: billingCustomers.externalId });
+    await database.execute(sql`
+      INSERT INTO credit_grants
+        (id, external_customer_id, source, total, used, expires_at, status, idempotency_key)
+      SELECT
+        ${huge} || '-g-' || g::text, ${huge}, 'promo', ${FULL}, ${FULL},
+        now() + interval '1 day', 'active', ${huge} || '-gk-' || g::text
+      FROM generate_series(1, ${ROWS}) g
+    `);
+    await database.execute(sql`
+      INSERT INTO credit_ledger
+        (id, external_customer_id, title, idempotency_key, credits, applied)
+      SELECT
+        ${huge} || '-l-' || g::text, ${huge}, 'precision-audit', ${huge} || '-lk-' || g::text, ${FULL}, ${FULL}
+      FROM generate_series(1, ${ROWS}) g
+    `);
+  }, SLOW);
+
+  test("a one-unit split at 2^53 magnitude fires the finding with exact decimal strings", async () => {
+    // Grants sum to exactly 2^53 = 9007199254740992; the ledger's make-up row carries one more
+    // unit, so its sum is 9007199254740993 — beyond MAX_SAFE_INTEGER by exactly the split.
+    await database.insert(creditGrants).values({
+      id: `${huge}-g-makeup`,
+      externalCustomerId: huge,
+      source: "promo",
+      reason: "precision-audit",
+      total: MAKE_UP,
+      used: MAKE_UP,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `${huge}-gk-makeup`,
+    });
+    await database.insert(creditLedger).values({
+      id: `${huge}-l-makeup`,
+      externalCustomerId: huge,
+      title: "precision-audit",
+      requestId: null,
+      idempotencyKey: `${huge}-lk-makeup`,
+      credits: MAKE_UP + 1,
+      applied: MAKE_UP + 1,
+    });
+
+    const report = await reconciler.reconcile();
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "grants_ledger_divergence" && item.subject === huge,
+    );
+    expect(finding).toBeDefined();
+    // The exact decimal strings, not a float's idea of them (9007199254740992 loses the split).
+    expect(finding?.detail).toContain("9007199254740992");
+    expect(finding?.detail).toContain("9007199254740993");
+    expect(finding?.detail).toContain("off by 1");
+  }, SLOW);
+
+  test("the identity agrees at 2^53 magnitude and stays silent", async () => {
+    // The make-up ledger row loses the one extra unit: both sums are exactly 2^53.
+    await database
+      .update(creditLedger)
+      .set({ applied: MAKE_UP, credits: MAKE_UP })
+      .where(eq(creditLedger.id, `${huge}-l-makeup`));
+
+    const report = await reconciler.reconcile();
+    expect(
+      report.findings.find(
+        (item) =>
+          item.code === "grants_ledger_divergence" && item.subject === huge,
+      ),
+    ).toBeUndefined();
+  }, SLOW);
+
+  test("usage delivery target counts report exact values (F2)", async () => {
+    // The counts are whole-table (an estimate is not an audit), so the assertion is on the
+    // DELTA this test's rows add — neighbours in a shared database stay invisible, exactly
+    // like the finding assertions above.
+    const before = await reconciler.reconcile();
+    const a = usageEvent(`${prefix}-count-exact-a`);
+    const b = usageEvent(`${prefix}-count-exact-b`);
+    const c = usageEvent(`${prefix}-count-exact-c`);
+    await outbox.record(a);
+    await outbox.record(b);
+    await outbox.record(c);
+    await outbox.markLagoDelivered(a.eventId);
+    await outbox.recordDeliveryFailure(a.eventId, "credits", "retry_later");
+    await outbox.markLagoDelivered(b.eventId);
+    await outbox.recordDeliveryFailure(b.eventId, "credits", "retry_later");
+    await outbox.markCreditsDelivered(c.eventId);
+    await outbox.blockDelivery(c.eventId, "lago", "manual_review");
+
+    const report = await reconciler.reconcile();
+    const beforeTargets = before.checked.usageDeliveryTargets;
+    const afterTargets = report.checked.usageDeliveryTargets;
+    expect(
+      afterTargets.pending.credits - beforeTargets.pending.credits,
+    ).toBe(2);
+    expect(
+      afterTargets.blocked.lago - beforeTargets.blocked.lago,
+    ).toBe(1);
+    expect(
+      afterTargets.pending.lago - beforeTargets.pending.lago,
+    ).toBe(0);
+    expect(
+      afterTargets.blocked.credits - beforeTargets.blocked.credits,
+    ).toBe(0);
   });
 });
 
