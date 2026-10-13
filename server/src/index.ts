@@ -175,6 +175,7 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
+import { builtinSkillFilesFor } from "./craft/builtin-skills";
 import {
   createCraftManagedContentResolver,
   personalUnconnectedApps,
@@ -3679,6 +3680,26 @@ const craftManagedContentFor = createCraftManagedContentResolver({
     ]);
     return personalUnconnectedApps(
       servers,
+      new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+    );
+  },
+  /*
+   * The builtin skills (onyx's $ONYX/skills/builtin): pptx and
+   * craft-documentation ship to everyone; a connector skill ships only when
+   * the user has connected the matching MCP server (onyx's
+   * connected-apps-only rule) — the personal connection set above is the same
+   * fact the connectable list inverts. company-search stays out until its
+   * backed implementation lands (Phase 4.2).
+   */
+  skillFilesFor: async (userId) => {
+    const [held, brokered] = await Promise.all([
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return builtinSkillFilesFor(
       new Set([
         ...held.map((row) => row.serverId),
         ...brokered.map((row) => row.serverId),

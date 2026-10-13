@@ -1,0 +1,75 @@
+<!-- Ported from onyx skills/builtin/github/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the `gh` CLI
+     section — commands and the egress-auth paragraph — is replaced by the
+     user's connected GitHub MCP server tools. Domain guidance (object model,
+     search, pagination, scopes, output discipline) is onyx verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: github
+description: Read repositories, issues, and pull requests, open new issues, and add comments in GitHub on the user's behalf via the connected GitHub MCP server.
+---
+
+# GitHub
+
+Act as the connected user through the GitHub MCP server connected to this
+session. **You are already authenticated** — the session's MCP relay attaches
+the user's GitHub credential on every call. Never ask for or handle
+credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Call the connected GitHub server's tools. Read tools (repos, issues, pull
+requests, search) run freely; write tools may pause for the user's approval.
+
+### The connected user
+
+Identify the account you are acting as before anything user-specific.
+
+### Repositories
+
+View a repository's details or list the user's repositories.
+
+### Issues
+
+List a repository's issues (filter by state), view one with its comments.
+
+### Pull requests
+
+List a repository's PRs (filter by state), view one with its comments.
+
+### Search
+
+Search repositories, issues, and PRs with GitHub search qualifiers
+(e.g. `language:python stars:>500`, `repo:owner/repo is:open label:bug`).
+
+### Open an issue (write)
+
+Create an issue with a title and body.
+
+### Comment on an issue or PR (write)
+
+Add a comment to an issue or a PR.
+
+### Arbitrary API calls
+
+If the server exposes a generic API tool, pass user input as structured
+fields/variables, not by string-formatting into a path or query.
+
+## Output
+
+Tool results are JSON. Use list/search limits to cap results and keep your
+context small. A failed call returns an error — surface the error rather than
+retrying blindly.
+
+## Notes
+
+- **HTTPS only.** SSH and `github.com` git remotes are unreachable from here,
+  so `git clone`/`push` against GitHub will fail. Stay on the tools above.
+- **Scopes are fixed** by what the administrator granted. An operation
+  needing a scope you don't have returns `403 / Resource not accessible` —
+  tell the user rather than retrying.
+- A write that isn't pre-approved may pause for the user's approval; if a call
+  is blocked or returns `401`, report it instead of looping.
