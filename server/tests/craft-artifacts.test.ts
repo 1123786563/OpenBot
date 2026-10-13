@@ -15,7 +15,8 @@ function fileApi(
   return {
     listFiles: async () => [],
     writeFile: async () => undefined,
-    deletePath: async () => undefined,
+    writeFileBytes: async () => undefined,
+    deletePath: async () => false,
     readFile: async () => null,
     readFileBytes: async () => null,
     ...overrides,
@@ -71,6 +72,25 @@ describe("listFiles (Files tab, one directory)", () => {
     expect(entries.map((e) => [e.path, e.kind])).toEqual([
       ["outputs/app", "dir"],
       ["outputs/report.html", "file"],
+    ]);
+  });
+
+  test("filters with onyx's HIDDEN_PATTERNS, the same predicate the ZIP walk uses (F6 §C)", async () => {
+    const api = fileApi({
+      listFiles: async () => [
+        `${DIRECTORY}/outputs/report.md`,
+        `${DIRECTORY}/outputs/node_modules/pkg/index.js`, // HIDDEN_PATTERNS dir
+        `${DIRECTORY}/outputs/.env`, // dot file
+        `${DIRECTORY}/outputs/nextjs.log`, // HIDDEN_PATTERNS file name
+        `${DIRECTORY}/outputs/src/app/page.tsx`,
+      ],
+    });
+    const entries = await listFiles("bot-1", DIRECTORY, "outputs", api);
+    // The file tree a user browses and the archive a user downloads can never
+    // disagree about what exists — onyx runs both through _is_hidden_workspace_entry.
+    expect(entries.map((e) => e.path)).toEqual([
+      "outputs/src",
+      "outputs/report.md",
     ]);
   });
 });

@@ -1,6 +1,6 @@
 {
   "title": "Approvals",
-  "description": "Choose what your Bots may do, and review actions waiting for you.",
+  "description": "Whether your Bots ask before they change things, and rules that apply to all of them.",
   "hostPolicy": {
     "ask": "Ask every time",
     "alwaysAllow": "Always allow",
@@ -47,21 +47,32 @@
     "waiting": "Waiting for your approval",
     "onScope": "on {{scope}}"
   },
+  "beforeTitle": "Before a Bot acts",
+  "needsYou": "Needs you",
   "rules": {
     "title": "Rules",
-    "description": "The strictest matching rule wins, so an \"ask\" rule beats an \"allow\" one. Team rules are locked. Changing a password, security settings and payments are always handed to you.",
+    "botDescription": "The strictest matching rule wins, so an \"ask\" rule beats an \"allow\" one. Rules for every Bot are in <link>Settings → Approvals</link>.",
     "offNote": " Your team has switched personal rules off, so they are kept but do not apply.",
     "none": "No rules saved.",
-    "add": "Add a rule"
+    "noneForBot": "No rules for this Bot.",
+    "everyBotTitle": "Rules for every Bot",
+    "otherBotsTitle": "Rules for other Bots",
+    "otherBotsDescription": "These name no Bot you can open, but they still apply to any Bot they match. Remove the ones you no longer want.",
+    "add": "Add a rule",
+    "descriptionPrefix": "Rules for a single Bot are on",
+    "descriptionLink": "that Bot's page",
+    "descriptionSuffix": "."
   },
   "teamRuleSuffix": " (team rule)",
   "behaviourFor": "Behaviour for {{tool}}",
-  "ruleEffectSuffix": ", {{effect}}",
-  "ruleScopeSuffix": " on {{scope}}",
-  "ruleBotSuffix": " for {{bot}}",
+  "ruleEffectSuffix": "{{effect}}",
+  "ruleScopeSuffix": "on {{scope}}",
+  "ruleBotSuffix": "for {{bot}}",
   "locked": "Locked",
   "remove": "Remove",
   "form": {
+    "rowDescription": "A tool or app, and what a Bot does before using it.",
+    "wildcardHint": "* matches anything, so mcp/gmail/* is every Gmail tool and a target of *.example.com is every page on that site.",
     "toolOrApp": "Tool or app",
     "kindOfAction": "Kind of action",
     "target": "Target",
@@ -69,6 +80,7 @@
     "bot": "Bot",
     "botHint": "* for every Bot",
     "behaviour": "Behaviour",
+    "cancel": "Cancel",
     "saveRule": "Save rule"
   },
   "teamSettings": {
@@ -79,6 +91,9 @@
       "title": "Commands on members' computers, at most",
       "description": "A member's own stricter setting still applies."
     },
+    "rulesTitle": "Team rules",
+    "rulesDescription": "These apply to every member's Bots, and members cannot change them.",
+    "noRules": "No team rules.",
     "addTeamRule": "Add a team rule"
   },
   "sharedUse": {
@@ -95,5 +110,7 @@
     "askedLabel": "Asked:",
     "approve": "Approve",
     "decline": "Decline"
-  }
+  },
+  "adminNotePrefix": "Team settings and shared account requests are in",
+  "adminNoteLink": "Admin → Approvals"
 }

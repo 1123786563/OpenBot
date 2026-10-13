@@ -1,5 +1,6 @@
 import {
   IconBuildingBank,
+  IconChecks,
   IconChevronRight,
   IconCode,
   IconDeviceDesktop,
@@ -58,6 +59,12 @@ const SECTIONS = [
         description: "overview.reach.boundaries.description",
         icon: IconShieldCheck,
         linkOptions: { to: "/admin/boundaries" },
+      },
+      {
+        title: "overview.reach.approvals.title",
+        description: "overview.reach.approvals.description",
+        icon: IconChecks,
+        linkOptions: { to: "/admin/approvals" },
       },
       {
         title: "overview.reach.computers.title",

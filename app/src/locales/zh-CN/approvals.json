@@ -1,6 +1,6 @@
 {
   "title": "审批",
-  "description": "决定你的 Bots 可以做什么，并查看等待你处理的操作。",
+  "description": "你的 Bots 是否会在做出更改前先询问，以及适用于所有 Bots 的规则。",
   "hostPolicy": {
     "ask": "每次询问",
     "alwaysAllow": "始终允许",
@@ -32,7 +32,7 @@
   "sendAnswer": "发送回答",
   "loading": "正在加载审批…",
   "nothingPending": "没有需要你批准的操作。",
-  "wantsTo": "{{bot}} 想要",
+  "wantsTo": "{{bot}} 想要 ",
   "handedToYou": "已转交给你：",
   "decision": {
     "handled": "我自己做了",
@@ -47,21 +47,32 @@
     "waiting": "等待你的批准",
     "onScope": "作用于 {{scope}}"
   },
+  "beforeTitle": "Bot 行动之前",
+  "needsYou": "需要你处理",
   "rules": {
     "title": "规则",
-    "description": "最严格的匹配规则优先，因此“询问”规则会压过“允许”规则。团队规则处于锁定状态。更改密码、安全设置和付款始终会转交给你。",
+    "botDescription": "最严格的匹配规则优先，因此“询问”规则会压过“允许”规则。所有 Bot 的规则都在<link>设置 → 审批</link>中。",
     "offNote": "你的团队已关闭个人规则，因此它们会被保留但不会生效。",
     "none": "没有保存的规则。",
-    "add": "添加规则"
+    "noneForBot": "此 Bot 没有规则。",
+    "everyBotTitle": "所有 Bot 的规则",
+    "otherBotsTitle": "其他 Bot 的规则",
+    "otherBotsDescription": "这些规则没有指向你能打开的任何 Bot，但仍会应用于它们匹配的任何 Bot。请移除你不再想要的规则。",
+    "add": "添加规则",
+    "descriptionPrefix": "单个 Bot 的规则位于",
+    "descriptionLink": "该 Bot 的页面",
+    "descriptionSuffix": "。"
   },
   "teamRuleSuffix": "（团队规则）",
   "behaviourFor": "{{tool}} 的行为",
-  "ruleEffectSuffix": "，{{effect}}",
-  "ruleScopeSuffix": "，作用于 {{scope}}",
-  "ruleBotSuffix": "，用于 {{bot}}",
+  "ruleEffectSuffix": "{{effect}}",
+  "ruleScopeSuffix": "作用于 {{scope}}",
+  "ruleBotSuffix": "用于 {{bot}}",
   "locked": "已锁定",
   "remove": "移除",
   "form": {
+    "rowDescription": "一个工具或应用，以及 Bot 在使用它之前会做什么。",
+    "wildcardHint": "* 匹配任意内容，因此 mcp/gmail/* 表示所有 Gmail 工具，目标 *.example.com 表示该网站上的所有页面。",
     "toolOrApp": "工具或应用",
     "kindOfAction": "操作类型",
     "target": "目标",
@@ -69,6 +80,7 @@
     "bot": "Bot",
     "botHint": "* 表示所有 Bot",
     "behaviour": "行为",
+    "cancel": "取消",
     "saveRule": "保存规则"
   },
   "teamSettings": {
@@ -79,6 +91,9 @@
       "title": "成员电脑上命令的上限",
       "description": "成员自己更严格的设置仍然生效。"
     },
+    "rulesTitle": "团队规则",
+    "rulesDescription": "这些规则适用于每位成员的 Bots，成员无法更改它们。",
+    "noRules": "没有团队规则。",
     "addTeamRule": "添加团队规则"
   },
   "sharedUse": {
@@ -95,5 +110,7 @@
     "askedLabel": "请求：",
     "approve": "批准",
     "decline": "拒绝"
-  }
+  },
+  "adminNotePrefix": "团队设置与共享账号申请位于",
+  "adminNoteLink": "Admin → Approvals"
 }

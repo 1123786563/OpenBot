@@ -24,8 +24,16 @@ export type AgentSandboxFileApi = {
   listFiles(path: string): Promise<string[]>;
   /** Write one text file at an absolute workspace path. */
   writeFile(path: string, content: string): Promise<void>;
-  /** Delete a file or directory tree. */
-  deletePath(path: string): Promise<void>;
+  /**
+   * Write one file's raw bytes (binary-safe uploads). The gateway's POST /file writes the body
+   * verbatim, so the bytes land byte-for-byte — the channel the upload endpoint needs.
+   */
+  writeFileBytes(path: string, bytes: Uint8Array): Promise<void>;
+  /**
+   * Delete one file; true when deleted, false when absent (the gateway's DELETE /file refuses
+   * directories with the same 404 as absence, mirroring onyx's `[ -f ] && rm` semantics).
+   */
+  deletePath(path: string): Promise<boolean>;
   /** Read a text file's contents, or null when absent/non-text. */
   readFile(path: string): Promise<string | null>;
   /** Read a file's raw bytes, or null when absent (binary-safe artifact download). */
@@ -137,10 +145,34 @@ export function createSandboxGateway(
             body: content,
           });
         },
-        async deletePath(path) {
+        async writeFileBytes(path, bytes) {
+          // The raw-bytes twin of writeFile: the body rides as-is (no content-type text
+          // coercion), so a binary attachment round-trips exactly.
           await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "DELETE",
-          }).catch(() => undefined);
+            method: "POST",
+            body: bytes as unknown as BodyInit,
+          });
+        },
+        async deletePath(path) {
+          // 404 is the honest "absent" (and the gateway's answer for a directory too —
+          // onyx parity), so it resolves false rather than throwing; other failures raise.
+          const response = await doFetch(
+            `${base}/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "DELETE",
+              headers,
+              signal: AbortSignal.timeout(
+                config.opencodeServeRequestTimeoutSeconds * 1000,
+              ),
+            },
+          );
+          if (response.status === 404) return false;
+          if (!response.ok) {
+            throw new Error(
+              `Sandbox DELETE /file answered ${response.status}.`,
+            );
+          }
+          return true;
         },
         async readFile(path) {
           // opencode answers /file/content with a JSON envelope ({type:"text",
@@ -215,6 +247,8 @@ export function createSandboxGateway(
         // The gateway's write creates parent directories; mkdir is a no-op kept
         // for the workspace API's shape.
         mkdir: async () => undefined,
+        listFiles: (path) => fileApi.listFiles(path),
+        readFile: (path) => fileApi.readFile(path),
       };
     },
 

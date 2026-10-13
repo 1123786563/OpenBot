@@ -1,5 +1,32 @@
 import { describe, expect, test } from "bun:test";
-import { proxyWebappRequest, tarGzip } from "../src/craft/webapp-proxy";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { inflateRawSync } from "node:zlib";
+import type { MiddlewareHandler } from "hono";
+import type { AppVariables } from "../src/auth/guards";
+import { loadCraftConfig } from "../src/craft/config";
+import type {
+  AgentSandboxFileApi,
+  SandboxGateway,
+} from "../src/craft/sandbox-gateway";
+import type { CraftSessionRow, CraftStore } from "../src/craft/store";
+import {
+  createWebappProxyRoutes,
+  proxyWebappRequest,
+} from "../src/craft/webapp-proxy";
+import {
+  buildContentDisposition,
+  sanitizeZipBasename,
+  zipEntries,
+} from "../src/craft/zip-archive";
 
 describe("proxyWebappRequest", () => {
   test("streams the body with a dev-road CSP and strips hop-by-hop + credential headers", async () => {
@@ -65,12 +92,546 @@ describe("proxyWebappRequest", () => {
   });
 });
 
-describe("tarGzip", () => {
-  test("emits a gzip stream (magic bytes)", () => {
-    const bytes = new TextEncoder().encode("<html></html>");
-    const buf = tarGzip([{ path: "index.html", bytes }]);
-    expect(buf.length).toBeGreaterThan(0);
-    expect(buf[0]).toBe(0x1f);
-    expect(buf[1]).toBe(0x8b);
+// ── zip-archive — the onyx primitives behind both download routes ─────────────
+
+describe("sanitizeZipBasename (onyx manager.py:159-163, F6 table)", () => {
+  test.each([
+    // [input, allowDots, expected] — the fixture's four rows, mechanically derived.
+    ["My Project!", false, "My_Project_"],
+    ["my.lib", true, "my.lib"],
+    ["my.lib", false, "my_lib"],
+    ["../../etc", true, ".._.._etc"],
+  ] as const)(
+    "sanitize(%p, allowDots=%p) = %p",
+    (input, allowDots, expected) => {
+      expect(sanitizeZipBasename(input, { allowDots })).toBe(expected);
+    },
+  );
+
+  test("keeps unicode letters and digits (python isalnum semantics)", () => {
+    expect(sanitizeZipBasename("项目 App", { allowDots: false })).toBe(
+      "项目_App",
+    );
+  });
+});
+
+describe("buildContentDisposition (onyx serving.py:103-115)", () => {
+  test("an ASCII-safe name answers fallback + RFC 5987 identical", () => {
+    expect(buildContentDisposition("outputs.zip")).toBe(
+      `attachment; filename="outputs.zip"; filename*=UTF-8''outputs.zip`,
+    );
+  });
+
+  test("a unicode name answers an ASCII fallback and a percent-encoded true name", () => {
+    // Two non-ASCII chars → two fallback underscores; sanitize's own _ (the space)
+    // is the third.
+    expect(buildContentDisposition("项目_App-webapp.zip")).toBe(
+      `attachment; filename="___App-webapp.zip"; filename*=UTF-8''%E9%A1%B9%E7%9B%AE_App-webapp.zip`,
+    );
+  });
+
+  test("control chars and quotes are scrubbed before anything else", () => {
+    // serving.py:49 — \x00-\x1f, \x7f, ", \, / each become one _.
+    expect(buildContentDisposition('a"b\\c/d')).toBe(
+      `attachment; filename="a_b_c_d"; filename*=UTF-8''a_b_c_d`,
+    );
+    expect(buildContentDisposition("\x01\x7f")).toBe(
+      `attachment; filename="__"; filename*=UTF-8''__`,
+    );
+    expect(buildContentDisposition("  ")).toBe(
+      `attachment; filename="download"; filename*=UTF-8''download`,
+    );
+  });
+});
+
+describe("zipEntries (the writer)", () => {
+  test("emits the ZIP signatures: local header first, EOCD last", () => {
+    const buf = zipEntries([
+      { path: "a.txt", bytes: new TextEncoder().encode("hello") },
+    ]);
+    expect(buf[0]).toBe(0x50);
+    expect(buf[1]).toBe(0x4b);
+    expect(buf[2]).toBe(0x03);
+    expect(buf[3]).toBe(0x04);
+    expect(buf.subarray(buf.length - 22, buf.length - 18)).toEqual(
+      new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+    );
+  });
+
+  test("round-trips entries through the independent reader with CRCs intact", () => {
+    const members = readZip(
+      zipEntries([
+        { path: "deep/nested/one.txt", bytes: new TextEncoder().encode("one") },
+        { path: "页面/ファイル.bin", bytes: new Uint8Array([0, 255, 16]) },
+      ]),
+    );
+    expect(members.map((m) => m.name)).toEqual([
+      "deep/nested/one.txt",
+      "页面/ファイル.bin",
+    ]);
+    expect(members[1]?.bytes).toEqual(new Uint8Array([0, 255, 16]));
+  });
+
+  test("sets the UTF-8 name flag only for non-ASCII names (zipfile parity)", () => {
+    const ascii = zipEntries([
+      { path: "a.txt", bytes: new TextEncoder().encode("x") },
+    ]);
+    const flag = Buffer.from(ascii).readUInt16LE(6);
+    expect(flag & 0x0800).toBe(0);
+
+    const unicode = zipEntries([
+      { path: "页面.txt", bytes: new TextEncoder().encode("x") },
+    ]);
+    expect(Buffer.from(unicode).readUInt16LE(6) & 0x0800).toBe(0x0800);
+  });
+
+  test("an empty entry list is a valid empty archive (EOCD only)", () => {
+    const buf = zipEntries([]);
+    expect(buf.length).toBe(22);
+    expect(readZip(buf)).toEqual([]);
+  });
+});
+
+// ── GET /sessions/:id/webapp-download — the ZIP contract (fixture F6 B) ────────
+//
+// onyx `session/api.py:681-708` + `manager.py:1595-1636`: application/zip, a
+// session-derived `*-webapp.zip` filename (`_sanitize_zip_basename(name or
+// session-{id[:8]}, allow_dots=False)`), the outputs/web walk with onyx's hidden
+// filter, and 404 "Webapp not found" for every None shape (no session, no
+// sandbox, no outputs/web — onyx's route does not distinguish them).
+
+const SESSION_ID = "cs-111122223333";
+const DIRECTORY = `/workspace/sessions/${SESSION_ID}`;
+const WEBAPP = `${DIRECTORY}/outputs/web`;
+
+function fakeRequireUser(): MiddlewareHandler<{ Variables: AppVariables }> {
+  return async (context, next) => {
+    context.set("actor", { id: "u1", email: "u1@example.com", role: "user" });
+    await next();
+  };
+}
+
+function sessionRow(
+  name: string | null,
+  nextjsPort: number | null = null,
+): CraftSessionRow {
+  return {
+    id: SESSION_ID,
+    userId: "u1",
+    name,
+    status: "active",
+    lastActivityAt: new Date(),
+    createdAt: new Date(),
+    nextjsPort,
+    sharingScope: "private",
+    origin: "INTERACTIVE",
+    opencodeSessionId: null,
+    agentProvider: null,
+    agentModel: null,
+    skillsHash: null,
+    mcpConfigHash: null,
+  };
+}
+
+function storeWithSession(
+  name: string | null,
+  ownerUserId = "u1",
+  nextjsPort: number | null = null,
+): CraftStore {
+  return {
+    async getSession(id: string, userId: string) {
+      return id === SESSION_ID && userId === ownerUserId
+        ? sessionRow(name, nextjsPort)
+        : undefined;
+    },
+    async updateSessionActivity() {},
+  } as unknown as CraftStore;
+}
+
+/** In-memory sandbox (values may be text or raw bytes); the listing answers the REAL
+ * gateway shape — one level per call, immediate children as full paths (finding F-C). */
+function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
+  const files = new Map<string, Uint8Array>();
+  for (const [path, value] of Object.entries(initial)) {
+    files.set(
+      path,
+      typeof value === "string" ? new TextEncoder().encode(value) : value,
+    );
+  }
+  const api: AgentSandboxFileApi = {
+    async listFiles(path: string) {
+      const prefix = `${path}/`;
+      const children = new Set<string>();
+      for (const key of files.keys()) {
+        if (!key.startsWith(prefix)) continue;
+        const rest = key.slice(prefix.length);
+        const first = rest.split("/")[0];
+        children.add(rest.includes("/") ? `${prefix}${first}` : key);
+      }
+      if (children.size === 0) throw new Error(`not found: ${path}`);
+      return [...children];
+    },
+    async writeFile() {},
+    async writeFileBytes() {},
+    async deletePath() {
+      return false;
+    },
+    async readFile() {
+      return null;
+    },
+    async readFileBytes(path) {
+      return files.get(path) ?? null;
+    },
+  };
+  return api;
+}
+
+const gatewayWith = (api: AgentSandboxFileApi): SandboxGateway =>
+  ({ fileApiFor: () => api }) as unknown as SandboxGateway;
+
+const downloadRoutes = (
+  api: AgentSandboxFileApi,
+  sessionName: string | null | undefined = "My Project!",
+  ownerUserId?: string,
+) =>
+  createWebappProxyRoutes(fakeRequireUser(), {
+    config: loadCraftConfig({}),
+    store: storeWithSession(
+      sessionName === undefined ? null : sessionName,
+      ownerUserId,
+    ),
+    gateway: gatewayWith(api),
+    botIdFor: async () => "craft-bot",
+    sandboxConnectionFor: () => null,
+  });
+
+/** The F6 input tree, webapp face: visible files, hidden files, unicode name, binary. */
+const LOGO_BYTES = (() => {
+  const bytes = new Uint8Array(512);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7 + 13) & 0xff;
+  return bytes;
+})();
+
+const webappTree = (): Record<string, string | Uint8Array> => ({
+  [`${WEBAPP}/package.json`]: '{"name":"web"}',
+  [`${WEBAPP}/src/app/page.tsx`]: "export default function Page() {}",
+  [`${WEBAPP}/src/页面.tsx`]: "export const 名 = 1;", // unicode filename round-trip
+  [`${WEBAPP}/logo.bin`]: LOGO_BYTES, // binary member
+  [`${WEBAPP}/node_modules/pkg/index.js`]: "hidden", // HIDDEN_PATTERNS dir, pruned whole
+  [`${WEBAPP}/.env`]: "hidden", // dot file, pruned
+  [`${WEBAPP}/.next/cache/id-123.js`]: "hidden", // hidden dir, pruned whole
+  [`${WEBAPP}/nextjs.log`]: "hidden", // HIDDEN_PATTERNS file name
+});
+
+// A minimal ZIP reader — the writer's independent inverse: EOCD → central
+// directory records → local-header data offsets, inflate + CRC-32 verify.
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let crc = -1;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ -1) >>> 0;
+}
+
+function readZip(
+  buffer: Uint8Array,
+): Array<{ name: string; bytes: Uint8Array; method: number }> {
+  const view = Buffer.from(buffer);
+  let eocd = -1;
+  for (
+    let at = view.length - 22;
+    at >= Math.max(0, view.length - 66_000);
+    at--
+  ) {
+    if (
+      view[at] === 0x50 &&
+      view[at + 1] === 0x4b &&
+      view[at + 2] === 0x05 &&
+      view[at + 3] === 0x06
+    ) {
+      eocd = at;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("no end-of-central-directory record");
+
+  const count = view.readUInt16LE(eocd + 10);
+  let at = view.readUInt32LE(eocd + 16);
+  const out: Array<{ name: string; bytes: Uint8Array; method: number }> = [];
+  for (let i = 0; i < count; i++) {
+    if (view.readUInt32LE(at) !== 0x02014b50)
+      throw new Error(`bad central record at ${at}`);
+    const method = view.readUInt16LE(at + 10);
+    const crc = view.readUInt32LE(at + 16);
+    const compSize = view.readUInt32LE(at + 20);
+    const size = view.readUInt32LE(at + 24);
+    const nameLen = view.readUInt16LE(at + 28);
+    const extraLen = view.readUInt16LE(at + 30);
+    const commentLen = view.readUInt16LE(at + 32);
+    const localOffset = view.readUInt32LE(at + 42);
+    const name = new TextDecoder().decode(
+      view.subarray(at + 46, at + 46 + nameLen),
+    );
+
+    const localNameLen = view.readUInt16LE(localOffset + 26);
+    const localExtraLen = view.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+    const comp = view.subarray(dataStart, dataStart + compSize);
+    const bytes = new Uint8Array(
+      method === 8 ? inflateRawSync(comp) : (comp as Buffer),
+    );
+    if (bytes.length !== size) throw new Error(`size mismatch for ${name}`);
+    if (crc32(bytes) !== crc) throw new Error(`crc mismatch for ${name}`);
+    out.push({ name, bytes, method });
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+describe("webapp-download (ZIP contract)", () => {
+  test("answers application/zip with the sanitized session-derived filename", async () => {
+    const app = downloadRoutes(memoryFileApi(webappTree()));
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    // "My Project!" → space and ! each become one _ (F6 sanitize table, allow_dots=False);
+    // serving.py:103-115 answers ASCII fallback + RFC 5987 filename*.
+    expect(response.headers.get("content-disposition")).toBe(
+      `attachment; filename="My_Project_-webapp.zip"; filename*=UTF-8''My_Project_-webapp.zip`,
+    );
+  });
+
+  test("packs outputs/web as a ZIP: nested + binary + unicode members, hidden pruned", async () => {
+    const app = downloadRoutes(memoryFileApi(webappTree()));
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+    expect(response.status).toBe(200);
+
+    const members = readZip(new Uint8Array(await response.arrayBuffer()));
+    // File members only (onyx writestr loop — no directory placeholder entries),
+    // arcnames relative to outputs/web, hidden entries absent.
+    expect(members.map((m) => m.name).sort()).toEqual([
+      "logo.bin",
+      "package.json",
+      "src/app/page.tsx",
+      "src/页面.tsx",
+    ]);
+    expect(members.every((m) => !m.name.endsWith("/"))).toBe(true);
+
+    const logo = members.find((m) => m.name === "logo.bin");
+    expect(logo?.bytes).toEqual(LOGO_BYTES); // binary bytes byte-identical
+    const unicode = members.find((m) => m.name === "src/页面.tsx");
+    expect(unicode?.bytes).toEqual(
+      new TextEncoder().encode("export const 名 = 1;"),
+    );
+    expect(members.every((m) => m.method === 8)).toBe(true); // deflate
+  });
+
+  test("a webapp whose visible files are all hidden entries is an empty, valid ZIP", async () => {
+    const app = downloadRoutes(
+      memoryFileApi({
+        [`${WEBAPP}/.env`]: "hidden",
+        [`${WEBAPP}/node_modules/pkg/index.js`]: "hidden",
+      }),
+    );
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+
+    // The directory EXISTS (listing succeeds) and onyx's walk filters everything:
+    // a zero-entry zip, not a 404 (manager.py:1615-1632 — only a missing outputs/web
+    // is the None that answers 404).
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    const members = readZip(new Uint8Array(await response.arrayBuffer()));
+    expect(members).toEqual([]);
+  });
+
+  test("a missing outputs/web is 404 Webapp not found", async () => {
+    const app = downloadRoutes(
+      memoryFileApi({ [`${DIRECTORY}/outputs/report.md`]: "# no web" }),
+    );
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Webapp not found" });
+  });
+
+  test("a non-owner is refused (ownership 404, onyx's indistinct None body)", async () => {
+    // The store resolves only for the owner; actor u1 is someone else here —
+    // onyx's route maps every None (session, sandbox, web) to the same
+    // 404 "Webapp not found" (api.py:701-704).
+    const app = downloadRoutes(memoryFileApi(webappTree()), null, "owner");
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Webapp not found" });
+
+    const unknown = await app.request(
+      `/sessions/never-heard-of/webapp-download`,
+    );
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ error: "Webapp not found" });
+  });
+
+  test("an unnamed session falls back to the session-id stem", async () => {
+    const app = downloadRoutes(memoryFileApi(webappTree()), null);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+    expect(response.status).toBe(200);
+    // manager.py:1634-1636: session.name or f"session-{str(id)[:8]}".
+    expect(response.headers.get("content-disposition")).toBe(
+      `attachment; filename="session-cs-11112-webapp.zip"; filename*=UTF-8''session-cs-11112-webapp.zip`,
+    );
+  });
+
+  test("a unicode session name survives sanitize with an ASCII fallback", async () => {
+    const app = downloadRoutes(memoryFileApi(webappTree()), "项目 App");
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+    expect(response.status).toBe(200);
+    // sanitize keeps unicode letters (python isalnum semantics), space → _;
+    // serving.py answers "_" per non-ASCII char (two here) and RFC 5987 percent-escapes
+    // the true name (项 = %E9%A1%B9, 目 = %E7%9B%AE) — the third _ in the fallback is
+    // sanitize's own, for the space.
+    expect(response.headers.get("content-disposition")).toBe(
+      `attachment; filename="___App-webapp.zip"; filename*=UTF-8''%E9%A1%B9%E7%9B%AE_App-webapp.zip`,
+    );
+  });
+
+  test("a standard system reader accepts and extracts the archive", async () => {
+    const app = downloadRoutes(memoryFileApi(webappTree()));
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/webapp-download`,
+    );
+    expect(response.status).toBe(200);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+
+    const dir = mkdtempSync(join(tmpdir(), "craft-webapp-zip-"));
+    const archivePath = join(dir, "webapp.zip");
+    writeFileSync(archivePath, bytes);
+
+    // Check 1 — `unzip -t`: every member's structure and CRC verified by Info-ZIP.
+    const tested = spawnSync("unzip", ["-t", archivePath], {
+      encoding: "utf8",
+    });
+    expect(tested.status).toBe(0);
+
+    // Check 2 — macOS `ditto -x -k` (Archive Utility's engine) extracts it, and the
+    // binary + unicode members come back byte-identical. Skipped where ditto is absent.
+    if (existsSync("/usr/bin/ditto")) {
+      const outDir = join(dir, "out");
+      mkdirSync(outDir);
+      const extracted = spawnSync("ditto", ["-x", "-k", archivePath, outDir], {
+        encoding: "utf8",
+      });
+      expect(extracted.status).toBe(0);
+      expect(new Uint8Array(readFileSync(join(outDir, "logo.bin")))).toEqual(
+        LOGO_BYTES,
+      );
+      expect(existsSync(join(outDir, "src/页面.tsx"))).toBe(true);
+    }
+  });
+});
+
+// ── F-E: the preview and the ready probe dial the SANDBOX host, not host loopback ──
+//
+// In the host-server + docker-sandbox topology the dev server listens INSIDE the
+// container; dialing 127.0.0.1:{port} from the server never reaches it (live evidence:
+// in-container probe 200, host 000 — ready永false / preview 503). Both reachability
+// paths must dial the host the SANDBOX itself is reached on — the gateway connection's
+// host (config.sandboxGatewayBaseUrl, else the per-bot conn baseUrl), the same machine
+// the reserved port range is published from.
+
+describe("webapp preview reachability dials the sandbox host (F-E)", () => {
+  function previewRoutes(connBaseUrl: string) {
+    return createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("preview", "u1", 3011),
+      gateway: gatewayWith(
+        memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({ baseUrl: connBaseUrl, token: null }),
+    });
+  }
+
+  test("webapp-info ready and the preview proxy fetch the gateway host's reserved port", async () => {
+    const dialed: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      dialed.push(String(input));
+      return new Response("<html>app</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    }) as typeof fetch;
+    try {
+      const app = previewRoutes("http://sbox.internal:4300");
+      const info = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+      expect(info.status).toBe(200);
+      expect(((await info.json()) as { ready: boolean }).ready).toBe(true);
+
+      const page = await app.request(
+        `/sessions/${SESSION_ID}/webapp/index.html`,
+      );
+      expect(page.status).toBe(200);
+      expect(await page.text()).toBe("<html>app</html>");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    // Every dial went to the SANDBOX host's port — never the host's own loopback.
+    expect(dialed.length).toBeGreaterThan(0);
+    for (const url of dialed) {
+      expect(url.startsWith("http://sbox.internal:3011/")).toBe(true);
+    }
+  });
+
+  test("the sandbox host is taken from the config gateway URL when set, before the conn baseUrl", async () => {
+    const dialed: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      dialed.push(String(input));
+      return new Response("x", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const app = createWebappProxyRoutes(fakeRequireUser(), {
+        config: loadCraftConfig({
+          OPENBOT_CRAFT_SANDBOX_GATEWAY_URL: "http://gateway.host:4300",
+        }),
+        store: storeWithSession("preview", "u1", 3011),
+        gateway: gatewayWith(
+          memoryFileApi({ [`${WEBAPP}/package.json`]: '{"name":"web"}' }),
+        ),
+        botIdFor: async () => "craft-bot",
+        sandboxConnectionFor: () => ({
+          baseUrl: "http://other.host:4300",
+          token: null,
+        }),
+      });
+      const info = await app.request(`/sessions/${SESSION_ID}/webapp-info`);
+      expect(((await info.json()) as { ready: boolean }).ready).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(
+      dialed.every((url) => url.startsWith("http://gateway.host:3011/")),
+    ).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 # Craft → OpenBot 移植总览（功能对照说明）
 
-> onyx `backend/onyx/server/features/build/`（71 文件 / 27,584 行）→ OpenBot `server/src/craft/`（25 文件 / ~7,500 行 TS）
-> 本目录文档：`architecture-analysis.md`（架构与映射全表）｜`schema-notes.md`（数据库对照）｜`acceptance-report.md`（验收报告）
+> onyx `backend/onyx/server/features/build/`（71 文件 / 27,584 行）→ OpenBot `server/src/craft/`（44 文件 / ~13,800 行 TS，含 events/opencode/storage/templates 子目录；其中约 +5,400 行来自 craft-port-verify 分支的 9 个校准任务）
+> 本目录文档：`port-parity.md`（**当前状态的权威对照**：功能映射/依赖/调用链/差异全表）｜`architecture-analysis.md`（架构与映射全表）｜`schema-notes.md`（数据库对照）｜`acceptance-report.md`（验收报告）
 
 ## 一、功能对照（原实现 → OpenBot 实现）
 
@@ -18,11 +18,12 @@
 | `db/build_session.py` 等 | `db/schema/craft.ts` + `craft/store.ts` | 一对一：三表 + CAS（finalize WHERE status='initializing'；端口 23505 重试） |
 | `configs.py` + `timeouts.py` | `craft/config.ts` | 一对一：OPENBOT_CRAFT_* 前缀，派生族照搬 |
 | k8s/docker 沙箱后端（4,754 行） | 不移植 | 取舍：agent-sandbox 服务 + sandbox_instances 表已覆盖生命周期 |
-| 审批 / 定时任务 / external_apps+OAuth / user_library / 快照 sleep-wake / webapp_proxy / docx/pptx | 不移植（一期） | 取舍：OpenBot 已有 approvals/workshop schedule/plugins 体系；沙箱常驻则无需 sleep/restore。restore 端点留 no-op 兼容 |
+| ~~审批~~ / ~~定时任务~~ / ~~快照 sleep-wake~~ / ~~docx/pptx~~ / ~~webapp_proxy~~ | **已落地**（craft-port-verify 分支） | 审批 = permission.asked 生产者 + announce/wake 信号（`approvals.ts`/`approval-gate.ts`/`approval-signals.ts`）；定时任务 7+3 端点 + sweeper；快照/idle reaper + sandbox-status；上传/删除/目录下载；docx/pptx 导出复用既有依赖。详见 `port-parity.md` |
+| external_apps+OAuth / user_library / connect_app / craft_gateway / debug | 不移植 | 取舍：OpenBot 无对应外部应用域与推送管线；AGENTS 模板对应段落随之一并裁剪（port-parity.md Task 1） |
 
 ## 二、配置与依赖清单
 
-**零新增 npm 依赖**（package.json 未动）——复用 hono/drizzle-orm/项目内 RedisPort。
+**零新增 npm 依赖**（package.json 未动，craft-port-verify 分支亦未动）——复用 hono/drizzle-orm/zod/项目内 RedisPort，以及四个既有依赖：`docx`、`pptxgenjs`（export.ts）、`cron-parser`（scheduled-tasks.ts）、`@aws-sdk/client-s3`（storage/object-store.ts 动态 import，快照对象存储）。依赖实况见 `port-parity.md` §③。
 
 环境变量（前缀 `OPENBOT_CRAFT_*`，语义对照 onyx `configs.py`）：
 
@@ -37,6 +38,9 @@
 | `OPENBOT_CRAFT_OPENCODE_PROMPT_ENDPOINT` | "prompt_async" | 新增（装配）：prompt 动词，agent-sandbox 用 "message" |
 | `OPENBOT_CRAFT_SESSION_DIRECTORY_MODE` | "absolute" | 新增（装配）：目录形状，agent-sandbox 用 "bot-relative" |
 | `OPENBOT_CRAFT_SANDBOX_BOT_ID` | "craft" | 新增（装配）：承载 craft 会话的 Bot（bot-id 规则校验，非法回落默认） |
+| `OPENBOT_CRAFT_IDLE_REAPER_ENABLED` | true | 新增：idle reaper（会话休眠清扫）总开关，false = 完全不启动 |
+| `OPENBOT_CRAFT_IDLE_REAPER_INTERVAL_SECONDS` | 60 | 新增：清扫节奏（对照 onyx celery beat SANDBOX_IDLE_CLEANUP_INTERVAL_SECONDS；30s 下限） |
+| `OPENBOT_CRAFT_SANDBOX_IDLE_TIMEOUT_SECONDS` | 3600 | SANDBOX_IDLE_TIMEOUT_SECONDS：心跳静默多久判 idle |
 | （派生，不可配）soft=720、runnerStale=90、activeTurnTtl=2700、requestIdTtl=3600 | — | 推导关系见 config.ts 注释 |
 
 注：装配侧（index.ts）在 `AGENT_SANDBOX_URL` 存在且上述三个拓扑变量未显式设置时，自动套用 agent-sandbox 形状（/events + message + bot-relative）——OpenBot 部署默认即正确，显式设置则完全尊重操作者。
@@ -77,6 +81,7 @@ craft 移植主体按 onyx 原生 opencode-serve 语义编写（`/event`、`/ses
 
 8. **botIdFor = 部署级固定 Bot**（`OPENBOT_CRAFT_SANDBOX_BOT_ID`，默认 `craft`）：craft_sessions 无 bot 关系列，全部会话路由到该 Bot 的沙箱 workspace。取值须满足 agent-sandbox 的 bot-id 规则（字母数字开头、仅 `[A-Za-z0-9_-]`、≤64），不合法配置在 loadCraftConfig 内回退默认值而非运行时 400。
 9. **llmConfigFor = runtimeModel 单模型目录**：以部署自身模型（runtimeModel + resolveRuntimeModelApiKey）构建单条目 CraftModelDescriptor catalog；apiBase 取 OPENAI_BASE_URL/ANTHROPIC_BASE_URL（按 provider），未配置时用 provider 官方端点（apiBase 必填，无默认则 opencode 无法建 provider）。context/output limit 给固定合理值（200k/32k）并注释——runtime model 是 wire id 无 models.dev 元数据，数值在接入模型元数据源后修正。
+10. **idle reaper 的释放步降级为"快照 + 会话置 idle"**（`craft/snapshot.ts` startCraftIdleReaper，装配于 craft routes，`OPENBOT_CRAFT_IDLE_REAPER_ENABLED` 默认 true、间隔 60s、idle 阈值 = `OPENBOT_CRAFT_SANDBOX_IDLE_TIMEOUT_SECONDS` 默认 3600s）：onyx 的 cleanup_idle_sandboxes_task 在快照后 terminate pod；OpenBot 的 agent-sandbox 拓扑下无逐会话沙箱可终止——所有会话共享单 Bot workspace，网关只有 `/workspace/snapshot`、`/workspace/restore` 与治理性的 `/workspace/reset`（会摧毁全部会话的现场），且网关自身已对空闲 per-Bot runtime 做再回收。故清扫链为：无活跃 turn（fail-closed，查 turnState）→ 快照 → `markSessionIdleIfStillIdle` CAS 置 idle（等价 onyx 二次扫描"仍 idle"），快照失败留 active 下轮重试；唤醒走既有 `GET /sessions/:id` 内的 wakeIfIdle（restore 快照 + idle→active）。配套新增 `GET /sessions/:id/sandbox-status`（`{status}`，从会话状态 + 网关可达性推导：initializing→provisioning、active+可达→running、active+不可达→provisioning（冷启动）、idle→sleeping、failed→failed、无 Bot 配置→null；terminated/restoring 为客户端侧状态）与前端状态芯片（轮询 provisioning 2s / running 30s，sleeping 时输入聚焦触发唤醒）。
 
 ## 五、部署接入（已装配至 app.ts / index.ts）
 

@@ -330,6 +330,7 @@ async function assembleSearchResults(
           title: knowledges.title,
           source: knowledges.source,
           type: knowledges.type,
+          updatedAt: knowledges.updatedAt,
         })
         .from(knowledges)
         .where(inArray(knowledges.id, docIds))
@@ -349,6 +350,10 @@ async function assembleSearchResults(
       metadata: {
         title: doc?.title ?? "",
         chunk_index: String(row.chunkIndex),
+        source_type: doc?.type ?? "",
+        // The craft company-search relay's citation contract (onyx-cli) reads
+        // updated_at for its --days filter; ISO string, WeKnora wire shape.
+        updated_at: (doc?.updatedAt ?? new Date(0)).toISOString(),
         ...(row.contextHeader !== ""
           ? { context_header: row.contextHeader }
           : {}),

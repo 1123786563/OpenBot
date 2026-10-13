@@ -23,8 +23,10 @@ import {
 } from "./events/types";
 import type { InterruptFence } from "./interrupt";
 import type { CraftSessionManager } from "./manager";
+import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { BuildStreamingState } from "./streaming";
+import { clearTurnDeadline, stampTurnDeadline } from "./turn-budget";
 import type { InteractiveTurn, TurnStateStore } from "./turn-state";
 import {
   TURN_STATUS_CANCELLED,
@@ -63,6 +65,8 @@ export type TurnExecutorDeps = {
   fence: InterruptFence;
   /** Resolves the Bot whose sandbox hosts a session (workspace + serve routing). */
   botIdFor: (sessionId: string) => Promise<string | null>;
+  /** The sandbox gateway — the turn-budget stamp/clear write through its file API. */
+  gateway: SandboxGateway;
 };
 
 export type TurnExecutor = {
@@ -80,6 +84,7 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
   async function driveOnePrompt(input: {
     turnId: string;
     sessionId: string;
+    userId: string;
     botId: string;
     runnerId: string | null;
     prompt: string;
@@ -121,14 +126,23 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       return interruptLatched;
     };
 
+    // The opencode session id is resolved on the session row before every
+    // prompt pass: the row is what the ATTACH stream and the decision endpoint
+    // key on, so re-minting here (a fresh id per turn) would strand every
+    // observer on the previous id — the attach would drain announces and
+    // keepalives but never the turn's own events, and conversation history
+    // would reset each turn. ensureSession still re-mints when the row's id
+    // has gone stale (a recycled sandbox), persisting the new id via the
+    // callback; continuations re-read and ride the same row.
+    const sessionRow = await store.getSession(input.sessionId, input.userId);
     const eventStream = manager.yieldSandboxEvents(
       {
         sessionId: input.sessionId,
         botId: input.botId,
+        // The permission gate is owner-scoped: the turn's user is who gets asked.
+        userId: input.userId,
         userMessageContent: input.prompt,
-        // The opencode session id is resolved on the session row by the drive loop
-        // before the first prompt; continuations rely on the same row.
-        opencodeSessionId: null,
+        opencodeSessionId: sessionRow?.opencodeSessionId ?? null,
         attachments: input.attachments,
         shouldInterrupt,
         shouldAbortOnTeardown: () => !ownershipLost,
@@ -256,6 +270,17 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       return; // ownership lost before we started
     }
 
+    // Turn-budget stamp — the point onyx guards with "only while holding the
+    // prompt slot": past the preflight checks and ownership, before the first
+    // prompt, once per turn (continuations never restamp). Best-effort; a
+    // failed write leaves the sandbox-side plugin inert, never blocks the turn.
+    await stampTurnDeadline({
+      gateway: deps.gateway,
+      botId,
+      sessionId,
+      config,
+    });
+
     const state = new BuildStreamingState(turn.turnIndex);
     let deadlineExceeded = false;
 
@@ -285,6 +310,7 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         result = await driveOnePrompt({
           turnId,
           sessionId,
+          userId,
           botId,
           runnerId,
           prompt: currentPrompt,
@@ -362,18 +388,31 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         runnerId,
       });
     } finally {
-      // True on every exit where this runner still owns the turn; false once a
-      // successor owns it (reclaim). A successor sets the active-turn pointer at
-      // creation, before it ever prompts, so this guard clears our fence exactly
-      // when no other turn can be mid-flight on this session.
+      // True on every exit where no other turn can be mid-flight on this
+      // session; false once a successor owns it (reclaim — it sets the
+      // active-turn pointer at creation, before it ever prompts). `active ===
+      // null` is OWNERSHIP TOO: our own finishTurn just cleared the pointer on
+      // every normal ending, so requiring it to still name THIS turn would
+      // never clear the fence — and a fence left set by an interrupt would
+      // cancel the session's next N turns until its TTL ran out (F-H).
       try {
         const active = await turnState.getActiveTurn({ sessionId, userId });
         const stillOwns =
-          active !== null &&
-          active.turnId === turnId &&
-          (runnerId === null || active.runnerId === runnerId);
+          active === null ||
+          (active.turnId === turnId &&
+            (runnerId === null || active.runnerId === runnerId));
         if (stillOwns) {
           await fence.clearInterrupt(sessionId).catch(() => undefined);
+          // Same ownership guard as onyx's clear_turn_deadline: a successor's
+          // fresh stamp (set at ITS turn start) must not be clobbered. Runs on
+          // every exit — success, failure, cancellation — so a failed next-turn
+          // restamp can never inherit this turn's deadlines.
+          await clearTurnDeadline({
+            gateway: deps.gateway,
+            botId,
+            sessionId,
+            config,
+          });
         }
       } catch {
         // Ownership check failed — leave the fence; its TTL is the backstop.

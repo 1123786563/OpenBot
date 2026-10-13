@@ -94,15 +94,63 @@ export type OpenTagAgentDeps = {
   approvals?: PairedApprovals;
   /** Slack trigger ingest; defaults to the responsibilities lane's `ingestSlackEvent`. */
   ingestSlack?: (event: SlackTriggerEvent) => Promise<unknown>;
+  /**
+   * OpenBot linked-account codes (Settings → Connected accounts) from a Slack sender. Reachability
+   * codes are checked first; this is used for any code that is not a live one (an expired or used
+   * Reachability code falls through too, matches no account code, and gets the usual expired reply).
+   * An account code is redeemed only in a direct message. One posted in a shared conversation is
+   * cancelled (`discard`), since anyone there could send it first and bind their own Slack account
+   * to its issuer: with a mention the issuer is told to make a new one; without one (an observed
+   * post) it is cancelled quietly and redacted before the Slack triggers see the message.
+   */
+  identity?: {
+    redeem(
+      code: string,
+      sender: { teamId: string; userId: string },
+    ): Promise<"linked" | "conflict" | "invalid">;
+    /** Cancels a live account code; true when one was cancelled. */
+    discard(code: string): Promise<boolean>;
+  };
 };
 
 const LINK =
   /\blink\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
+const LINKS = new RegExp(LINK.source, "gi");
+
+/**
+ * A channel post the app was not mentioned in: everyone there has seen any account code in it, so
+ * each one is cancelled, quietly (an observe run never replies). The codes are redacted rather than
+ * the message dropped, so the post still fires the owners' message triggers without carrying a
+ * code. A failed cancel is logged and never stops the triggers.
+ */
+async function withoutLinkCodes(
+  deps: OpenTagAgentDeps,
+  sender: { transport: ChatTransport },
+  text: string,
+) {
+  const codes = [...text.matchAll(LINKS)].map((m) => m[1]?.toLowerCase());
+  if (!codes.length) return text;
+  if (sender.transport === "slack" && deps.identity)
+    for (const code of codes) {
+      if (!code) continue;
+      try {
+        await deps.identity.discard(code);
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            type: "opentag-link-code-discard-error",
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          }),
+        );
+      }
+    }
+  return text.replace(LINKS, "link [code removed]");
+}
 const platformName = (transport: ChatTransport) =>
   transport === "teams" ? "Microsoft Teams" : "Slack";
 
 export function linkInstructions(transport: ChatTransport) {
-  return `I don't know who you are in OpenBot yet, so I did not run anything. In OpenBot, open Reachability, choose the conversation and Bot, pick ${platformName(transport)}, and send me the \`link <code>\` message it shows you.`;
+  return `I don't know who you are in OpenBot yet, so I did not run anything. In OpenBot, open the Bot's page, choose Reaching you and the conversation, pick ${platformName(transport)}, and send me the \`link <code>\` message it shows you.`;
 }
 
 export async function handleOpenTagRun(
@@ -218,12 +266,11 @@ async function answer(
     };
   // Something to watch, not to answer: feed the owner's Slack triggers and stay quiet.
   if (sender.observe) {
+    const text =
+      sender.observe === "message" ? latestUserMessage(input)?.text : undefined;
     await feedSlackTriggers(deps, sender, {
       type: sender.observe,
-      text:
-        sender.observe === "message"
-          ? latestUserMessage(input)?.text
-          : undefined,
+      text: text && (await withoutLinkCodes(deps, sender, text)),
     });
     return { text: "" };
   }
@@ -277,11 +324,11 @@ async function answer(
     const card = await approvalCard(deps, result.binding, approvalId);
     if (result.extras.approvals.length > 1)
       parts.push(
-        `${result.extras.approvals.length - 1} more approval request(s) are waiting in your OpenBot approval inbox.`,
+        `${result.extras.approvals.length - 1} more approval request(s) are waiting on the Bot's page in OpenBot.`,
       );
     if (card) return { text: parts.join("\n\n"), interrupt: card };
     parts.push(
-      "Your Bot is waiting for an approval. Open your OpenBot approval inbox to review it.",
+      "Your Bot is waiting for an approval. Open the Bot's page in OpenBot to review it.",
     );
   } else if (result.kind === "waiting" && !parts.length) {
     parts.push("Your Bot is waiting for a person. Open OpenBot to continue.");
@@ -328,7 +375,7 @@ async function answerPrivately(
   for (const approvalId of result.extras.approvals)
     await deps.router.notify(scope, {
       id: approvalId,
-      text: `${bot?.name ?? "Your Bot"} is waiting for your approval. Open your OpenBot approval inbox to review it.`,
+      text: `${bot?.name ?? "Your Bot"} is waiting for your approval. Open the Bot's page in OpenBot to review it.`,
       kind: "approval",
       requestId: approvalId,
     });
@@ -356,10 +403,42 @@ export async function answerOpenQuestion(
 
 async function link(
   deps: OpenTagAgentDeps,
-  sender: { transport: ChatTransport; realm: string; identity: string },
+  sender: {
+    transport: ChatTransport;
+    realm: string;
+    identity: string;
+    private: boolean;
+  },
   code: string,
 ) {
   const challenge = await deps.store.readChallenge(code);
+  if (!challenge && sender.transport === "slack" && deps.identity) {
+    // Anyone else in a shared conversation has now seen the code and could send it first, binding
+    // their own Slack account to its issuer, so an account code is only redeemed in a direct
+    // message and one posted here is cancelled (an unmentioned channel post is cancelled in
+    // `withoutLinkCodes`).
+    if (!sender.private) {
+      if (await deps.identity.discard(code))
+        return {
+          text: "That code was posted where others could see it, so I cancelled it. Create a new one in OpenBot and send it to me in a direct message.",
+        };
+      return {
+        text: "That link code expired, was already used, or is for another app. Create a new one in OpenBot.",
+      };
+    }
+    const outcome = await deps.identity.redeem(code, {
+      teamId: sender.realm,
+      userId: sender.identity,
+    });
+    if (outcome === "linked")
+      return {
+        text: "Linked your Slack account to OpenBot. You can see it under Settings → Connected accounts.",
+      };
+    if (outcome === "conflict")
+      return {
+        text: "This Slack account is already linked to another OpenBot user.",
+      };
+  }
   if (!challenge || challenge.transport !== sender.transport)
     return {
       text: "That link code expired, was already used, or is for another app. Create a new one in OpenBot.",
@@ -434,12 +513,12 @@ async function decideFromCard(
     };
   if (!deps.approvals)
     return {
-      text: "Approvals from chat are unavailable on this deployment. Decide in your OpenBot approval inbox.",
+      text: "Approvals from chat are unavailable on this deployment. Decide on the Bot's page in OpenBot.",
     };
   const person = parseChannelUser(resume.by);
   if (!person)
     return {
-      text: "This approval card did not say who answered it, so nothing was decided. Update OpenTag, or decide in your OpenBot approval inbox.",
+      text: "This approval card did not say who answered it, so nothing was decided. Update OpenTag, or decide on the Bot's page in OpenBot.",
     };
   // The clicker is mapped exactly like a message sender; OpenTag already refused anyone but the
   // named approver, and OpenBot then decides only as that binding's owner.

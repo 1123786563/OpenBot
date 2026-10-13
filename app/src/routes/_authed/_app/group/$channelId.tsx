@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { BotPausedBanner } from "@/components/bot-profile/pause-banner";
 import { ChannelAvatar } from "@/components/channels/avatar";
 import { GroupChat } from "@/components/channels/group-chat";
+import { GroupPeopleButton } from "@/components/channels/group-people";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
+import { useMarkOpenChannelRead } from "@/lib/channels/mark-read";
 import { channelQueryOptions } from "@/lib/channels/queries";
 
 /** A conversation with several Bots. The channel is an ordinary channel with more than one Bot. */
@@ -16,6 +18,7 @@ function RouteComponent() {
   const { t } = useTranslation("channels");
   const { channelId } = Route.useParams();
   const channel = useQuery(channelQueryOptions(channelId));
+  useMarkOpenChannelRead(channelId);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="sticky top-0 flex min-h-12 flex-row items-center gap-1.5 border-b border-border px-3 py-2">
@@ -27,6 +30,7 @@ function RouteComponent() {
         <span className="min-w-0 truncate text-sm tracking-tight">
           {channel.data?.name ?? t("groupDetail.groupFallback")}
         </span>
+        <GroupPeopleButton channelId={channelId} />
       </div>
       {(channel.data?.agentIds ?? []).map((agentId) => (
         <BotPausedBanner agentId={agentId} key={agentId} />

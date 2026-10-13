@@ -22,9 +22,9 @@
     "empty": "No web app yet. Ask the agent to build one."
   },
   "files": {
-    "loading": "Reading the workspace…",
+    "loading": "Reading outputs…",
     "error": "The file tree could not be loaded.",
-    "empty": "The workspace is empty."
+    "empty": "No outputs yet."
   },
   "artifacts": {
     "loading": "Collecting artifacts…",
@@ -42,5 +42,105 @@
     "waiting": "Waiting for your approval",
     "allowOnce": "Allow once",
     "deny": "Deny"
+  },
+  "subagent": {
+    "title": "Subagent",
+    "back": "Back to the conversation",
+    "view": "View subagent",
+    "empty": "The subagent has not produced any output yet.",
+    "status": {
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed"
+    }
+  },
+  "attachments": {
+    "add": "Attach files",
+    "list": "Attached files",
+    "uploading": "Uploading…",
+    "failed": "Failed",
+    "retry": "Retry upload",
+    "remove": "Remove"
+  },
+  "sandbox": {
+    "loading": "Finding sandbox…",
+    "provisioning": "Initializing sandbox…",
+    "running": "Sandbox running",
+    "sleeping": "Sandbox sleeping",
+    "restoring": "Restoring session…",
+    "terminated": "Sandbox terminated",
+    "failed": "Failed to provision sandbox"
+  },
+  "tasks": {
+    "nav": "Scheduled tasks",
+    "title": "Scheduled tasks",
+    "description": "Prompts the agent runs on a schedule, headless. Times are UTC.",
+    "new": "New task",
+    "newTitle": "New scheduled task",
+    "editTitle": "Edit scheduled task",
+    "editorHint": "The schedule compiles to a cron expression evaluated in UTC; the server refuses what it cannot schedule.",
+    "loading": "Loading scheduled tasks…",
+    "loadError": "The scheduled tasks could not be loaded.",
+    "empty": "No scheduled tasks yet. Create one to have the agent work on a schedule.",
+    "name": "Name",
+    "prompt": "Prompt",
+    "schedule": "Schedule",
+    "mode": {
+      "interval": "Interval",
+      "daily_weekly": "Daily / weekly",
+      "advanced": "Cron expression"
+    },
+    "every": "Every",
+    "unitLabel": "Unit",
+    "unit": {
+      "minutes": "minutes",
+      "hours": "hours",
+      "days": "days"
+    },
+    "timeOfDay": "Time (UTC)",
+    "weekdays": "Days of week",
+    "weekdaysHint": "Leave all unselected to run every day.",
+    "weekday": {
+      "sun": "Sun",
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat"
+    },
+    "cron": "Cron expression",
+    "cronHint": "Five fields, evaluated in UTC — e.g. 0 9 * * 1-5.",
+    "statusLabel": "Status",
+    "status": {
+      "active": "Active",
+      "paused": "Paused"
+    },
+    "runImmediately": "Run once immediately after saving",
+    "requiredError": "Name, prompt and — in cron mode — the expression are required.",
+    "save": "Save",
+    "create": "Create",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this task?",
+    "runNow": "Run now",
+    "runs": "Run history",
+    "runsEmpty": "No runs yet.",
+    "runStatus": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "awaiting_approval": "Awaiting approval"
+    },
+    "nextRun": "Next run",
+    "nextRuns": "Next runs",
+    "edit": "Edit",
+    "openSession": "Open session"
+  },
+  "banner": {
+    "queued": "Scheduled task \"{{name}}\" is queued",
+    "running": "Scheduled task \"{{name}}\" is running",
+    "awaitingApproval": "Scheduled task \"{{name}}\" is waiting for approval"
   }
 }

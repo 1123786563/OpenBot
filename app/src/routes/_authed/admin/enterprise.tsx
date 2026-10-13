@@ -15,7 +15,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -919,6 +919,7 @@ function NetworkDialog({
   const save = useMutation(setNetworkPolicyMutationOptions(queryClient));
   const remove = useMutation(removeNetworkPolicyMutationOptions(queryClient));
   const scopeId = initial.scopeKind === "group" ? group : "";
+  const formId = useId();
 
   return (
     <Dialog onOpenChange={(open) => (open ? undefined : onClose())} open>
@@ -930,22 +931,26 @@ function NetworkDialog({
               : t("enterprise.network.groupPolicyTitle")}
           </DialogTitle>
         </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            save.mutate(
-              {
-                scopeKind: initial.scopeKind,
-                scopeId,
-                mode,
-                rules: rulesFromText(rules),
-                locked,
-              },
-              { onSuccess: onClose },
-            );
-          }}
-        >
-          <DialogBody className="mt-4 space-y-4 overflow-y-auto">
+        <DialogBody className="mt-4 space-y-4 overflow-y-auto">
+          {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
+              direct child of DialogContent and keeps scrolling. */}
+          <form
+            className="flex flex-col gap-4"
+            id={formId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              save.mutate(
+                {
+                  scopeKind: initial.scopeKind,
+                  scopeId,
+                  mode,
+                  rules: rulesFromText(rules),
+                  locked,
+                },
+                { onSuccess: onClose },
+              );
+            }}
+          >
             {initial.scopeKind === "group" && !initial.scopeId ? (
               <div className="space-y-1.5">
                 <Label>{t("enterprise.network.groupLabelShort")}</Label>
@@ -1023,43 +1028,44 @@ function NetworkDialog({
                 />
               </div>
             ) : null}
-            {(save.error ?? remove.error) ? (
-              <p className="text-destructive text-sm" role="alert">
-                {(save.error ?? remove.error)?.message}
-              </p>
-            ) : null}
-          </DialogBody>
-          <DialogFooter className="mt-4">
-            {existing ? (
-              <Button
-                disabled={remove.isPending}
-                onClick={() =>
-                  remove.mutate(
-                    { scopeKind: initial.scopeKind, scopeId },
-                    { onSuccess: onClose },
-                  )
-                }
-                size="sm"
-                type="button"
-                variant="destructive"
-              >
-                {t("enterprise.network.removePolicy")}
-              </Button>
-            ) : null}
-            <Button onClick={onClose} size="sm" type="button" variant="outline">
-              {t("enterprise.cancel")}
-            </Button>
+          </form>
+          {(save.error ?? remove.error) ? (
+            <p className="text-destructive text-sm" role="alert">
+              {(save.error ?? remove.error)?.message}
+            </p>
+          ) : null}
+        </DialogBody>
+        <DialogFooter className="mt-4">
+          {existing ? (
             <Button
-              disabled={
-                save.isPending || (initial.scopeKind === "group" && !scopeId)
+              disabled={remove.isPending}
+              onClick={() =>
+                remove.mutate(
+                  { scopeKind: initial.scopeKind, scopeId },
+                  { onSuccess: onClose },
+                )
               }
               size="sm"
-              type="submit"
+              type="button"
+              variant="destructive"
             >
-              {save.isPending ? t("enterprise.saving") : t("enterprise.save")}
+              {t("enterprise.network.removePolicy")}
             </Button>
-          </DialogFooter>
-        </form>
+          ) : null}
+          <Button onClick={onClose} size="sm" type="button" variant="outline">
+            {t("enterprise.cancel")}
+          </Button>
+          <Button
+            disabled={
+              save.isPending || (initial.scopeKind === "group" && !scopeId)
+            }
+            form={formId}
+            size="sm"
+            type="submit"
+          >
+            {save.isPending ? t("enterprise.saving") : t("enterprise.save")}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

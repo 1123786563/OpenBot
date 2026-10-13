@@ -1,12 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
+  PageEmpty,
+  PageRows,
+  PageSection,
+} from "@/components/layout/page-shell";
 import {
   Item,
   ItemActions,
@@ -15,6 +15,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { handoffRoster } from "@/lib/agents/handoff-roster";
 import { setHandoffGrantMutationOptions } from "@/lib/agents/mutations";
@@ -22,6 +23,7 @@ import {
   agentHandoffQueryOptions,
   agentListQueryOptions,
 } from "@/lib/agents/queries";
+import { queryClient } from "@/query-client";
 
 /**
  * Which Bots this one may hand work to.
@@ -33,12 +35,12 @@ import {
  * DIRECTIONAL, and said so on the screen, because the pair is the one thing about this that is easy
  * to get backwards: this is who this Bot may ask, not who may ask it.
  *
- * One Item per candidate, with a Switch: the grant is one boolean that takes effect when switched,
- * which is exactly the row kind a Switch means everywhere else in this app.
+ * One row per candidate, with a Switch: the grant is one boolean that takes effect when switched,
+ * which is exactly the row kind a Switch means everywhere else in this app. A whole page section of
+ * its own, and nothing at all when there is nothing to say to somebody who cannot change it.
  */
 export function HandoffPanel({ agentId }: { agentId: string }) {
   const { t } = useTranslation("agents");
-  const queryClient = useQueryClient();
   const handoff = useQuery(agentHandoffQueryOptions(agentId));
   const agents = useQuery(agentListQueryOptions());
   /*
@@ -67,117 +69,93 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
   if (!canGrant && reachable.length === 0) return null;
 
   return (
-    <section className="grid gap-2">
-      <header className="flex items-baseline justify-between gap-2">
-        <h2 className="font-medium text-muted-foreground text-xs">
-          {t("handoff.title")}
-        </h2>
-        {/* The current answer at a glance, so the list below is detail rather than homework. */}
-        {grantable && total > 0 ? (
-          <span className="text-muted-foreground text-xs tabular-nums">
+    <PageSection
+      action={
+        /* The current answer at a glance, so the list below is detail rather than homework. */
+        grantable && total > 0 ? (
+          <span className="text-muted-foreground text-sm tabular-nums">
             {t("handoff.grantedOf", { granted, total })}
           </span>
-        ) : null}
-      </header>
-
-      <p className="text-muted-foreground text-sm">{t("handoff.intro")}</p>
-
+        ) : null
+      }
+      description={t("handoff.intro")}
+      title={t("handoff.title")}
+    >
+      {/* Facts about the deployment rather than rows to act on, so said as sentences. */}
       {enabled ? null : (
-        <Item variant="muted">
-          <ItemContent>
-            <ItemTitle>{t("handoff.switchedOff")}</ItemTitle>
-            {/*
-             * Unclamped: `ItemDescription` clips to two lines, which is right for a roster row
-             * whose description is a subtitle and wrong for an item that exists to explain. The
-             * sentence that gets cut is the one saying what to do about it.
-             */}
-            <ItemDescription className="line-clamp-none">
-              {t("handoff.switchedOffDescription")}
-            </ItemDescription>
-          </ItemContent>
-        </Item>
+        <PageEmpty>
+          {t("handoff.switchedOff")} {t("handoff.switchedOffDescription")}
+        </PageEmpty>
       )}
 
       {grantable ? null : (
-        <Item variant="muted">
-          <ItemContent>
-            <ItemTitle>{t("handoff.cannotGrant")}</ItemTitle>
-            {/* Unclamped for the same reason as above: three lines, and the third is the useful one. */}
-            <ItemDescription className="line-clamp-none">
-              {t("handoff.cannotGrantDescription")}
-            </ItemDescription>
-          </ItemContent>
-        </Item>
+        <PageEmpty>
+          {t("handoff.cannotGrant")} {t("handoff.cannotGrantDescription")}
+        </PageEmpty>
       )}
 
       {setGrant.error ? (
-        <p className="text-destructive text-sm" role="alert">
+        <p className="mt-4 text-destructive text-sm" role="alert">
           {setGrant.error.message}
         </p>
       ) : null}
 
       {grantable && total === 0 ? (
-        <Empty className="h-[180px] border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle className="text-muted-foreground">
-              {t("handoff.noOthers")}
-            </EmptyTitle>
-            <EmptyDescription>
-              {t("handoff.noOthersDescription")}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <PageEmpty>
+          {t("handoff.noOthers")} {t("handoff.noOthersDescription")}
+        </PageEmpty>
       ) : null}
       {candidates.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {candidates.map((candidate) => (
-            <Item key={candidate.id} size="sm" variant="muted">
-              <ItemMedia>
-                <AbstractAvatar
-                  name={candidate.name}
-                  seed={candidate.avatarSeed}
-                  size={28}
-                />
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>{candidate.name}</ItemTitle>
-                {/*
-                 * Said on the row, because otherwise it is a coworker that is not on your roster
-                 * appearing in a list with no explanation. It is here only because this Bot may
-                 * already ask it, and that is the sentence a person needs to decide what to do.
-                 */}
-                <ItemDescription>
-                  {candidate.hidden
-                    ? t("handoff.hiddenFromRoster", {
-                        title: candidate.title,
+        <PageRows>
+          {candidates.map((candidate, index) => (
+            <Fragment key={candidate.id}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia>
+                  <AbstractAvatar
+                    name={candidate.name}
+                    seed={candidate.avatarSeed}
+                    size={28}
+                  />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{candidate.name}</ItemTitle>
+                  {/*
+                   * Said on the row, because otherwise it is a coworker that is not on your roster
+                   * appearing in a list with no explanation. It is here only because this Bot may
+                   * already ask it, and that is the sentence a person needs to decide what to do.
+                   */}
+                  <ItemDescription>
+                    {candidate.hidden
+                      ? t("handoff.hiddenFromRoster", {
+                          title: candidate.title,
+                        })
+                      : candidate.title}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <Switch
+                    aria-label={t("handoff.letAsk", {
+                      name: candidate.name,
+                    })}
+                    checked={reachable.includes(candidate.id)}
+                    disabled={!canGrant || setGrant.isPending}
+                    onCheckedChange={(next: boolean) =>
+                      setGrant.mutate({
+                        agentId,
+                        ref: candidate.id,
+                        granted: next,
                       })
-                    : candidate.title}
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Switch
-                  aria-label={t("handoff.letAsk", { name: candidate.name })}
-                  checked={reachable.includes(candidate.id)}
-                  disabled={!canGrant || setGrant.isPending}
-                  onCheckedChange={(next: boolean) =>
-                    setGrant.mutate({
-                      agentId,
-                      ref: candidate.id,
-                      granted: next,
-                    })
-                  }
-                />
-              </ItemActions>
-            </Item>
+                    }
+                  />
+                </ItemActions>
+              </Item>
+            </Fragment>
           ))}
-        </div>
+        </PageRows>
       ) : null}
 
-      {canGrant ? null : (
-        <p className="text-muted-foreground text-xs">
-          {t("handoff.adminDecides")}
-        </p>
-      )}
-    </section>
+      {canGrant ? null : <PageEmpty>{t("handoff.adminDecides")}</PageEmpty>}
+    </PageSection>
   );
 }

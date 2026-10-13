@@ -58,7 +58,7 @@ const KIND_LABEL = {
 } as const satisfies Record<ActivityKind, string>;
 
 /** Where an item opens: its conversation when it has one, otherwise the screen that owns its kind. */
-function linkFor(item: ActivityItem) {
+function linkFor(item: ActivityItem, agentId: string) {
   if (item.channelId)
     return (
       <Link to="/channel/$channelId" params={{ channelId: item.channelId }} />
@@ -66,11 +66,11 @@ function linkFor(item: ActivityItem) {
   switch (item.kind) {
     case "approval":
     case "question":
-      return <Link to="/approvals" />;
+      return <Link params={{ agentId }} to="/bots/$agentId" />;
     case "responsibility":
-      return <Link to="/responsibilities" />;
+      return <Link params={{ agentId }} to="/bots/$agentId/responsibilities" />;
     case "routine":
-      return <Link to="/routines" />;
+      return <Link params={{ agentId }} to="/bots/$agentId/routines" />;
     default:
       return null;
   }
@@ -87,7 +87,7 @@ function ActivityRow({
   const stop = useMutation(stopHandoffMutationOptions(queryClient));
   const cancel = useMutation(cancelFollowUpMutationOptions(queryClient));
   const Icon = ICONS[item.kind];
-  const link = linkFor(item);
+  const link = linkFor(item, agentId);
   const when = relativeTime(item.at);
   const control = item.stoppable ? (
     <Button

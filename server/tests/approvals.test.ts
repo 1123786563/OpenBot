@@ -122,6 +122,16 @@ function storeFixture() {
         });
       return structuredClone(row);
     },
+    // decide minus the always-rule write — the side-effect-free path craft rides.
+    decideQuiet: async (owner, id, decision) => {
+      const row = require(owner, id);
+      if (row.status !== "pending")
+        throw new ApprovalRefusedError("This request was already decided.");
+      row.decision = decision;
+      row.status = decision === "deny" ? "denied" : "approved";
+      row.decidedAt = new Date();
+      return structuredClone(row);
+    },
     consume: async (owner, id, digest) => {
       const row = require(owner, id);
       if (row.action.actionDigest !== digest)
