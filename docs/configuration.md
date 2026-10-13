@@ -53,6 +53,13 @@ decimal string; values outside JavaScript's safe-integer range must be quoted as
 exact. Negative values, zero denominators, malformed JSON, and shape mismatches leave the block
 unconfigured instead of defaulting to a free rate.
 
+The input maximum for a chat model is enforced by the deployment itself (ADR-0001): the
+request is counted conservatively from serialized bytes and truncated — oldest non-system
+messages dropped, system block and latest turn kept — until the count fits, and a request
+that still cannot fit is refused before the provider is called. A tokenizer that produces
+more tokens than the conservative count surfaces at settlement as an over-bound hold for
+operator reconciliation rather than a silent charge.
+
 `MANAGED_AGENT_AG_UI_URL` names the Bot in the box: the default endpoint for coworkers created in
 the product. It needs `MANAGED_AGENT_TOKEN` beside it, or the server refuses to start. Unset, the
 server starts without a managed Bot, the shipped Risk Analyst coworker is omitted, and creating a

@@ -100,6 +100,10 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
+import {
+  countChatInputTokens,
+  fitChatInputRequest,
+} from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
 import { startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
@@ -3403,17 +3407,19 @@ if (billing !== undefined && usageOutbox !== undefined) {
        * The provider-bound contract, as it stands for the adapters this deployment actually
        * invokes. The built-in instance path is the OpenAI-compatible chat model: it maps
        * maxOutputTokens to max_tokens, which the chat-completions contract enforces, so the
-       * output cap is proven. Its input side offers neither an exact pre-call token count nor
-       * a configurable provider-enforced ceiling, so a billed call is refused before the
-       * provider — fail-closed, the same rule the code-run path applies until its sandbox
-       * enforces the budget. When a provable input bound exists (a provider count-tokens
-       * contract this adapter demonstrably honours), declare it here as `counted`.
+       * output cap is proven. Its input side has no provider-enforced ceiling, so the bound
+       * is the deployment's own (ADR-0001): a conservative bytes-based count that sits above
+       * a typical tokenizer, and a fit that drops the oldest non-system messages until the
+       * count fits the configured ceiling — the provider cannot be SENT more than the
+       * reservation prices by our own measure, and a tokenizer that beats the calibration
+       * surfaces at settlement as usage_over_bound for reconciliation.
        */
       bounds: {
         input: {
-          enforced: "unsupported" as const,
-          reason:
-            "the OpenAI-compatible chat adapter offers no exact pre-call input token count and enforces no configurable input ceiling",
+          enforced: "counted" as const,
+          maximumTokens: modelPolicy.input.maximumTokens,
+          countInputTokens: countChatInputTokens,
+          fit: fitChatInputRequest(modelPolicy.input.maximumTokens),
         },
         output: {
           enforced: "provider_cap" as const,
