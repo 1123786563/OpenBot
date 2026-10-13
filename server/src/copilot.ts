@@ -406,16 +406,24 @@ export type ModelUsageReport = {
  * How the input side of one billed call is provably bounded BEFORE the provider is called.
  *
  * A reservation is not a provider limit: admission needs a proof that billable input cannot
- * exceed the configured maximum. `counted` is an exact pre-call token count of the effective
- * provider request; `unsupported` names the capability this deployment cannot prove, and a
- * call that carries it is refused rather than approximated — a character count or a wrong
- * tokenizer is not an admission authority.
+ * exceed the configured maximum. `counted` is a conservative pre-call count of the effective
+ * provider request — with an optional `fit` that self-enforces the ceiling by shrinking the
+ * request before it is priced and sent (ADR-0001); a provider-side exact count, where one
+ * exists, remains the ideal. `unsupported` names the capability this deployment cannot prove,
+ * and a call that carries it is refused rather than approximated.
  */
 export type ModelUsageInputBound =
   | {
       enforced: "counted";
       maximumTokens: bigint;
       countInputTokens: (params: unknown) => number | Promise<number>;
+      /**
+       * The self-enforcing side of a conservative bound: given the params admission is about
+       * to price, return the request this call should actually send — truncated to the
+       * bound's own ceiling when the original would be refused. Absent when the bound cannot
+       * self-enforce; admission then refuses an over-limit request outright.
+       */
+      fit?: (params: unknown) => unknown;
     }
   | { enforced: "unsupported"; reason: string };
 
@@ -638,7 +646,13 @@ function meteredModel<T>(model: T): T {
           return refuse("output_bound_unsupported");
         let counted: number;
         try {
-          counted = await providerBounds.input.countInputTokens(params);
+          if (
+            providerBounds.input.enforced === "counted" &&
+            providerBounds.input.fit
+          ) {
+            request = providerBounds.input.fit(params);
+          }
+          counted = await providerBounds.input.countInputTokens(request);
         } catch (error) {
           // A count that THREW is a failed probe (dependency outage), not a missing
           // capability; the name alone is logged so the two stay distinguishable.
@@ -682,7 +696,7 @@ function meteredModel<T>(model: T): T {
             ? BigInt(requested)
             : cap;
         request = {
-          ...(params as Record<string, unknown>),
+          ...(request as Record<string, unknown>),
           maxOutputTokens: Number(effective),
         };
       }

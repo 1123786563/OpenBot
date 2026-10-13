@@ -1,20 +1,11 @@
 import {
   IconBolt,
-  IconBook2,
   IconBox,
-  IconBrain,
-  IconChecks,
-  IconDeviceMobile,
   IconLogout,
   IconPlus,
-  IconRobot,
   IconSearch,
   IconSettings,
   IconShieldLock,
-  IconShoppingBag,
-  IconTargetArrow,
-  IconUsers,
-  IconUsersGroup,
   IconWand,
 } from "@tabler/icons-react";
 import {
@@ -33,7 +24,6 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChannelAvatar } from "@/components/channels/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,15 +40,12 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { agentListQueryOptions } from "@/lib/agents/queries";
-import { approvalInboxOptions } from "@/lib/approvals";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -73,7 +60,7 @@ import {
   type MessageListEmphasis,
   useMessageListEmphasis,
 } from "@/lib/settings/message-list";
-import { BotAttentionList } from "../bot-profile/attention";
+import { BotsNavBadge } from "../bot-profile/attention";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
@@ -238,25 +225,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const channels = useInfiniteQuery(channelListQueryOptions());
-  // Read off the roster the app already holds, so the sidebar makes no request of its own for it.
-  const assignedTeamBots =
-    useQuery(agentListQueryOptions()).data?.filter((bot) => bot.assignedToMe) ??
-    [];
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
   const [search, setSearch] = useState("");
   const scrollRoot = useRef<HTMLDivElement>(null);
   const searching = search.trim().length > 0;
   const visibleChannels = pinnedFirst(matchingChannels(channels.data, search));
-  /*
-   * Approvals waiting on this person, for the sidebar badge. Reads the same cached query the
-   * /approvals page renders from; the query's own 10s poll keeps it fresh, and this component
-   * adds no request beyond that.
-   */
-  const pendingApprovals =
-    useQuery(approvalInboxOptions()).data?.requests.filter(
-      (request) => request.status === "pending",
-    ).length ?? 0;
   /*
    * FILTERING DOES NOT ANIMATE. Rows exit and relayout on every keystroke otherwise, which is a
    * list thrashing under somebody who is still typing — and the moving target is the very thing
@@ -277,7 +251,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem className="flex flex-row gap-1.5">
             <SidebarMenuButton
-              className="font-semibold text-sm tracking-tighter h-full leading-tight"
+              className="font-semibold text-[14px] tracking-tighter h-full leading-tight"
               render={(props) => (
                 <Link {...appLinkOptions} {...props}>
                   {appConfig.brand.productName}
@@ -285,7 +259,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               )}
             />
             <Button
-              aria-label={t("newConversation")}
               size="icon"
               variant="ghost"
               render={(props) => (
@@ -293,30 +266,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   {...props}
                   to="/channel/new"
                   activeProps={{
-                    className:
-                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+                    className: "bg-foreground/5",
                   }}
                 />
               )}
             >
               <IconPlus />
-            </Button>
-            <Button
-              aria-label={t("newGroupConversation")}
-              size="icon"
-              variant="ghost"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/group/new"
-                  activeProps={{
-                    className:
-                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                  }}
-                />
-              )}
-            >
-              <IconUsersGroup />
             </Button>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -339,354 +294,131 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
             <div className="w-full h-2" />
             {/*
-             * Destinations first, lists after — WorkBuddy's sidebar order. These used to sit
-             * in the footer; in WorkBuddy the fixed destinations (新建任务/助理/专家·技能·连接器…)
-             * open the sidebar and the conversation lists run underneath them, so the same order
-             * applies here. They scroll with the content exactly as WorkBuddy's own list does.
-             *
-             * GROUPED, not flat: eleven peers ask somebody to know which one is the one they
-             * want (the admin rail says this about its own ten, and it groups them). Bots is the
-             * primary destination and stands alone; the rest sort by the question they answer —
-             * "what can we build/install" (capabilities) vs "what is running and needs me"
-             * (oversight). The conversation roster follows, unlabelled, exactly as before.
+             * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
+             * used yet needs telling how to start. A roster that simply does not match what is in
+             * the box has to say so and quote it back — told "you don't have channels yet" while
+             * holding a typo, a person reads their conversations as gone.
              */}
-            <SidebarGroup className="gap-px">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/bots"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconRobot />
-                  </div>
-                  <span className="text-sm">{t("bots")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarGroup>
-            <SidebarGroup className="gap-px">
-              <SidebarGroupLabel>{t("groupCapabilities")}</SidebarGroupLabel>
-              <SidebarMenuItem>
-                {/* Beside Agents rather than inside Admin: writing a skill is something anybody does. */}
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/skills"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconBox />
-                  </div>
-                  <span className="text-sm tracking-tight">{t("skills")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                {/* Beside Skills: the marketplace is where a person goes to find one to install. */}
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/market"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconShoppingBag />
-                  </div>
-                  <span className="text-sm tracking-tight">{t("market")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/agents"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconBolt />
-                  </div>
-                  <span className="text-sm tracking-tight">{t("agents")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                {/* The autonomous build agent: a destination beside Skills, not a channel. */}
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/craft"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconWand />
-                  </div>
-                  <span className="text-sm tracking-tight">{t("craft")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/team-bots"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconUsers />
-                  </div>
-                  <span className="text-sm">{t("teamBots")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {/* Team Bots an administrator assigned to this person: always here, never hidden. */}
-              {assignedTeamBots.map((bot) => (
-                <SidebarMenuItem key={bot.id}>
-                  <SidebarMenuButton
-                    className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                    render={(props) => (
-                      <Link
-                        {...props}
-                        search={{ agent: bot.id }}
-                        to="/channel/new"
-                      />
-                    )}
-                  >
-                    <div className="size-[28px] flex items-center justify-center">
-                      <ChannelAvatar participantIds={[bot.id]} size={22} />
-                    </div>
-                    <span className="text-sm">{bot.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+            {searching && visibleChannels.length === 0 ? (
+              <div className="py-4">
+                <Empty className="border border-dashed min-h-[40dvh]">
+                  <EmptyHeader>
+                    <EmptyTitle>
+                      {channels.hasNextPage
+                        ? t("searchNoMatchLoaded")
+                        : t("searchNoMatch")}
+                    </EmptyTitle>
+                    <EmptyDescription className="text-pretty">
+                      {channels.hasNextPage
+                        ? t("searchNoMatchLoadOlder")
+                        : t("searchNoMatchNothing", {
+                            query: search.trim(),
+                          })}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </div>
+            ) : null}
+            {!searching && channels.data?.length === 0 ? (
+              <div className="py-4">
+                <Empty className="border border-dashed min-h-[40dvh]">
+                  <EmptyHeader>
+                    <EmptyTitle>{t("noChannelsTitle")}</EmptyTitle>
+                    <EmptyDescription className="text-pretty">
+                      {t("noChannelsDescription")}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </div>
+            ) : null}
+            <AnimatePresence initial={false}>
+              {visibleChannels.map((channel) => (
+                <ChannelRow
+                  emphasis={emphasis}
+                  key={channel.id}
+                  animateOrder={animateOrder}
+                  channel={channel}
+                />
               ))}
-            </SidebarGroup>
-            <SidebarGroup className="gap-px">
-              <SidebarGroupLabel>{t("groupGovernance")}</SidebarGroupLabel>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/reachability"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconDeviceMobile />
-                  </div>
-                  <span className="text-sm">{t("reachability")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {/* Routines live on each coworker's own dialog now, not as a nav destination: the
-                question "what does this Bot do on a schedule" is asked while looking at the Bot.
-                The /routines route still answers a direct link. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/responsibilities"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconTargetArrow />
-                  </div>
-                  <span className="text-sm">{t("responsibilities")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/knowledge"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconBook2 />
-                  </div>
-                  <span className="text-sm">{t("knowledge")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/memory"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconBrain />
-                  </div>
-                  <span className="text-sm">{t("memory")}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9"
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      to="/approvals"
-                      activeProps={{
-                        className:
-                          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                      }}
-                    />
-                  )}
-                >
-                  <div className="size-[28px] flex items-center justify-center">
-                    <IconChecks />
-                  </div>
-                  <span className="text-sm">{t("approvals")}</span>
-                  {/*
-                   * The waiting count, so a Bot blocked on an approval is visible from wherever
-                   * the person is — not only inside the conversation that asked. Same query (same
-                   * key, same 10s poll) the /approvals page reads, so the number cannot disagree
-                   * with the page it opens.
-                   */}
-                  {pendingApprovals > 0 ? (
-                    <span className="ml-auto rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums">
-                      {pendingApprovals}
-                    </span>
-                  ) : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarGroup>
-            {/* The roster itself: unlabelled, below the destinations, exactly where it was. */}
-            <SidebarGroup className="gap-px">
-              {/* Bots that need you, or that you paused. See bot-profile/attention.tsx. */}
-              <BotAttentionList />
-              {/*
-               * TWO DIFFERENT NOTHINGS, AND SAYING THE WRONG ONE IS ALARMING. A roster nobody has
-               * used yet needs telling how to start. A roster that simply does not match what is in
-               * the box has to say so and quote it back — told "you don't have channels yet" while
-               * holding a typo, a person reads their conversations as gone.
-               */}
-              {searching && visibleChannels.length === 0 ? (
-                <div className="py-4">
-                  <Empty className="border border-dashed min-h-[40dvh]">
-                    <EmptyHeader>
-                      <EmptyTitle>
-                        {channels.hasNextPage
-                          ? t("searchNoMatchLoaded")
-                          : t("searchNoMatch")}
-                      </EmptyTitle>
-                      <EmptyDescription className="text-pretty">
-                        {channels.hasNextPage
-                          ? t("searchNoMatchLoadOlder")
-                          : t("searchNoMatchNothing", {
-                              query: search.trim(),
-                            })}
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                </div>
-              ) : null}
-              {!searching && channels.data?.length === 0 ? (
-                <div className="py-4">
-                  <Empty className="border border-dashed min-h-[40dvh]">
-                    <EmptyHeader>
-                      <EmptyTitle>{t("noChannelsTitle")}</EmptyTitle>
-                      <EmptyDescription className="text-pretty">
-                        {t("noChannelsDescription")}
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                </div>
-              ) : null}
-              <AnimatePresence initial={false}>
-                {visibleChannels.map((channel) => (
-                  <ChannelRow
-                    emphasis={emphasis}
-                    key={channel.id}
-                    animateOrder={animateOrder}
-                    channel={channel}
-                  />
-                ))}
-              </AnimatePresence>
-              <ChannelPagination
-                query={channels}
-                scrollRoot={scrollRoot}
-                searching={searching}
-              />
-            </SidebarGroup>
+            </AnimatePresence>
+            <ChannelPagination
+              query={channels}
+              scrollRoot={scrollRoot}
+              searching={searching}
+            />
           </SidebarGroup>
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu className="gap-px">
           <SidebarMenuItem>
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/bots"
+                  activeProps={{ className: "bg-foreground/5" }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBolt />
+              </div>
+              <span className="text-sm">{t("bots")}</span>
+              {/* What waits on you across every Bot; Bots lists them first. */}
+              <BotsNavBadge />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* Beside Bots rather than inside Admin: writing a skill is something anybody does. */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/skills"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBox />
+              </div>
+              <span className="text-sm trackint-tight">{t("skills")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* Craft: the autonomous-build surface, fork-only. Same footer row as Bots and Skills. */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/craft"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconWand />
+              </div>
+              <span className="text-sm">{t("craft")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <SidebarMenuButton className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-10" />
+                  <SidebarMenuButton className="hover:bg-foreground/5 h-10" />
                 }
               >
                 <UserAvatar />
-                <span className="text-sm tracking-tight">
+                <span className="text-sm trackint-tight">
                   {currentUser?.name || currentUser?.email}
                 </span>
               </DropdownMenuTrigger>

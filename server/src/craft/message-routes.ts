@@ -23,9 +23,7 @@ import {
   type InteractiveTurn,
   InteractiveTurnLockError,
   TURN_STATUS_FAILED,
-  turnIsActive,
 } from "./turn-state";
-import { sessionDirectory } from "./workspace";
 
 type Json = Record<string, unknown>;
 
@@ -132,6 +130,11 @@ export function createMessageRoutes(
     // from idempotency check through turn create + commit). Releasing it after
     // the checks alone would let two concurrent sends both pass "no active
     // turn" and mint competing turns; the lock is the admission serializer.
+    // The lock is NOT reentrant: a failure finish must run after it unwinds
+    // (onyx releases the lock before finish_turn on the commit-failure path).
+    // Holder object — a plain `let` assigned inside the closure would narrow
+    // to `never` at the read below TS's closure-unaware flow analysis.
+    const pendingFailure: { turnId: string | null } = { turnId: null };
     let outcome: { response: Response } | { turn: InteractiveTurn };
     try {
       outcome = await deps.turnState.withActiveTurnLock(
@@ -162,6 +165,14 @@ export function createMessageRoutes(
               ),
             };
           }
+
+          // The interrupt fence belongs to the turn that WAS running; the
+          // check above just proved none is. Any still-set fence is stale (a
+          // crashed runner never ran its finally, or the teardown raced it) —
+          // clear it BEFORE admitting, or the leak cancels this turn within
+          // its first second. This is the fence's documented start-of-turn
+          // clear (interrupt.ts: "cleared at the start and end of each turn").
+          await deps.fence.clearInterrupt(sessionId).catch(() => undefined);
 
           // Attachments: validate paths under attachments/; only image/* ride
           // the prompt.
@@ -242,13 +253,11 @@ export function createMessageRoutes(
               messageMetadata,
             });
           } catch (error) {
-            await deps.turnState
-              .finishTurn({
-                turnId: turn.turnId,
-                status: TURN_STATUS_FAILED,
-                errorDetail: "Failed to persist user message.",
-              })
-              .catch(() => undefined);
+            // Deferred: finishTurn takes the same active-turn lock, which this
+            // body still holds — finishing here would deadlock until the lock
+            // wait expired and swallow the FAILED transition. The catch below
+            // finishes the turn once withActiveTurnLock has released.
+            pendingFailure.turnId = turn.turnId;
             throw error;
           }
           if (
@@ -264,6 +273,18 @@ export function createMessageRoutes(
         },
       );
     } catch (error) {
+      if (pendingFailure.turnId !== null) {
+        // The admission lock has unwound — finish the real turn id FAILED
+        // (onyx's commit-failure path) so a retry with the same
+        // client_request_id resolves this turn instead of duplicating the row.
+        await deps.turnState
+          .finishTurn({
+            turnId: pendingFailure.turnId,
+            status: TURN_STATUS_FAILED,
+            errorDetail: "Failed to persist user message.",
+          })
+          .catch(() => undefined);
+      }
       if (error instanceof InteractiveTurnLockError) {
         return context.json(
           { error: "This session is busy with a previous turn." },
@@ -311,7 +332,5 @@ export function createMessageRoutes(
     return context.json(turn ? interactiveTurnResponse(turn) : null);
   });
 
-  void turnIsActive;
-  void sessionDirectory;
   return app;
 }

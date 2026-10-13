@@ -36,7 +36,22 @@
  * comes from, and how to reach the agent-sandbox gateway.
  */
 
-export { generateAgentInstructions } from "./agent-instructions";
+export {
+  buildConnectableAppsList,
+  COMPANY_KNOWLEDGE_SECTION,
+  type ConnectableApp,
+  generateAgentInstructions,
+} from "./agent-instructions";
+export {
+  type CreateCraftPermissionGateInput,
+  createCraftPermissionGate,
+  isToolGated,
+} from "./approval-gate";
+export {
+  type CraftApprovalSignals,
+  createCraftApprovalSignals,
+  createInProcessApprovalSignals,
+} from "./approval-signals";
 export {
   type CraftApprovalCandidate,
   craftApprovalDigest,
@@ -57,6 +72,7 @@ export {
   UploadLimitExceededError,
 } from "./errors";
 export {
+  approvalRequestedPacket,
   type BuildPacket,
   compactionPacket,
   contextUsagePacket,
@@ -87,13 +103,32 @@ export {
   parseAgentSelection,
 } from "./llm-config";
 export { createSessionFlowLocks, type SessionFlowLocks } from "./locks";
+export {
+  type ConnectableAppServerRow,
+  type CraftManagedContent,
+  type CraftManagedContentResolver,
+  type CraftManagedContentSources,
+  companySearchSkillAvailable,
+  createCraftManagedContentResolver,
+  MANAGED_SKILLS_DIR,
+  type ManagedContentFileApi,
+  materializeManagedContent,
+  personalUnconnectedApps,
+  type ResolvedCraftManagedContent,
+  USER_LIBRARY_DIR,
+  WEB_TEMPLATE_DIR,
+} from "./managed-content";
 export { CraftSessionManager } from "./manager";
 export { generateSessionName } from "./naming";
 export { PodEventBus } from "./opencode/event-bus";
 export {
   OpencodeHttpError,
   OpencodeServeClient,
+  type PermissionAskedInfo,
+  type PermissionGate,
+  type PermissionGateDecision,
   type PromptAttachment,
+  parsePermissionAsked,
   TurnState,
   translateOpencodeEvent,
   turnStateForStream,
@@ -108,6 +143,7 @@ export {
   type CraftRoutesDeps,
   type CraftRoutesFactory,
   createCraftRoutes,
+  stopCraftIdleReaper,
 } from "./routes";
 export {
   createSandboxGateway,
@@ -163,6 +199,21 @@ export {
   persistSandboxEvent,
   SSE_KEEPALIVE,
 } from "./streaming";
+export {
+  clearTurnDeadline,
+  stampTurnDeadline,
+  TURN_BUDGET_CLEAR_JSON,
+  turnBudgetPluginSource,
+  turnBudgetStampJson,
+  turnBudgetStampPath,
+} from "./turn-budget";
+export {
+  CONNECT_APP_PLUGIN_RELPATH,
+  SESSION_CONNECT_APP_PLUGIN_SPEC,
+  SESSION_PLUGINS,
+  SESSION_TURN_BUDGET_PLUGIN_SPEC,
+  TURN_BUDGET_PLUGIN_RELPATH,
+} from "./session-plugins";
 export {
   createTurnExecutor,
   MAX_TIMEOUT_CONTINUATIONS,

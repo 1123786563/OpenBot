@@ -1,0 +1,15 @@
+{
+  "runId": "run_1",
+  "threadId": "thread_1",
+  "state": {},
+  "messages": [
+    {
+      "id": "msg_user_1",
+      "role": "user",
+      "content": "Answer the contract check."
+    }
+  ],
+  "tools": [],
+  "context": [],
+  "forwardedProps": {}
+}

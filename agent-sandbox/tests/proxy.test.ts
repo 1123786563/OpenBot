@@ -1,11 +1,10 @@
-import { afterAll } from "bun:test";
-import { describe, expect, test } from "bun:test";
-import { serve } from "bun";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { createProxyHandler, tokenMatches } from "../src/proxy";
+import { serve } from "bun";
 import { createBotRuntimes } from "../src/bot-runtimes";
 import { sandboxEnvFrom } from "../src/env";
+import { createProxyHandler, tokenMatches } from "../src/proxy";
 
 // 宿主机没有 /workspace（容器内的挂载点）：用一次性临时目录充当 volume。
 const workspaceDir = await mkdtemp(`${tmpdir()}/proxy-test-`);
@@ -23,13 +22,15 @@ const env = sandboxEnvFrom({
  * 假上游：占住 base 端口 4600，echo 出自己的端口。
  * 真 spawn 被替换掉，所以第一个 bot（alpha）的"opencode serve"就是这个 serve 的语义替身。
  */
+const eventUpstreamRequests: string[] = [];
 const upstream = serve({
   port: 4600,
   hostname: "127.0.0.1",
   fetch: async (request) => {
     const url = new URL(request.url);
     const port = url.port;
-    if (url.pathname === "/doc") return Response.json({ openapi: "3.1.0", served: port });
+    if (url.pathname === "/doc")
+      return Response.json({ openapi: "3.1.0", served: port });
     if (url.pathname === "/session" && request.method === "POST")
       return Response.json({ id: `ses_${port}` });
     if (url.pathname === "/file/content")
@@ -37,8 +38,10 @@ const upstream = serve({
         headers: { "content-length": String(300_000) },
       });
     // The event bus: a short burst of real captured shapes, then the stream ends. The proxy's
-    // keepalive and filter behaviour is what these tests observe.
+    // keepalive and filter behaviour is what these tests observe. The requested scope is
+    // captured for the directory-forwarding test (F-G).
     if (url.pathname === "/event") {
+      eventUpstreamRequests.push(`${url.pathname}${url.search}`);
       const samples = [
         `data: {"id":"e1","type":"server.heartbeat","properties":{}}\n\n`,
         `data: {"id":"e2","type":"message.part.delta","properties":{"sessionID":"s","messageID":"m","partID":"p","field":"text","delta":"你好"}}\n\n`,
@@ -92,7 +95,10 @@ process.on("exit", () => upstream.stop(true));
 
 const call = (path: string, init?: RequestInit) =>
   handler(new Request(`http://127.0.0.1:4300${path}`, init));
-const botHeaders = { "x-sandbox-token": "secret-token", "x-openbot-bot-id": "alpha" };
+const botHeaders = {
+  "x-sandbox-token": "secret-token",
+  "x-openbot-bot-id": "alpha",
+};
 
 describe("proxy", () => {
   test("rejects a request without the token", async () => {
@@ -117,6 +123,14 @@ describe("proxy", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ id: "ses_4600" });
+  });
+
+  test("GET /doc forwards upstream — craft's chip health-check rides it (fix: forever-provisioning)", async () => {
+    // craft 的 sandbox-status 芯片用 GET /doc 探活：白名单漏掉它时上游活着也只会拿到
+    // 404，healthCheck() 永远 false，active 会话被永久判成 provisioning（“沙箱初始化中…”）。
+    const response = await call("/doc", { headers: botHeaders });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ openapi: "3.1.0", served: "4600" });
   });
 
   test("a path outside the allow-list is 404 upstream-untouched", async () => {
@@ -167,15 +181,49 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(response.status).toBe(401);
   });
 
+  test("GET /events forwards the directory scope to the upstream (F-G)", async () => {
+    // opencode publishes a directory-scoped session's events only on the
+    // scoped stream; dropping the scope makes every craft turn invisible.
+    const response = await call("/events?directory=cs-scoped-9", {
+      headers: botHeaders,
+    });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(eventUpstreamRequests).toContain("/event?directory=cs-scoped-9");
+  });
+
   test("POST /session/:id/abort forwards to the upstream abort", async () => {
     const response = await call("/session/ses_1/abort", {
       method: "POST",
       headers: botHeaders,
     });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { aborted?: boolean; port?: string };
+    const body = (await response.json()) as {
+      aborted?: boolean;
+      port?: string;
+    };
     expect(body.aborted).toBe(true);
     expect(body.port).toBe("4600");
+  });
+
+  test("POST /session/:id/permissions/:permissionId forwards (F-G: the answer path)", async () => {
+    // Every permission answer — the connect_app decision endpoint's and the
+    // timeout fallback's — rides this verb; an unlisted verb is a silent 404
+    // that parks the turn forever (decide half cannot close).
+    const response = await call(
+      "/session/ses_1/permissions/perm_1?directory=/w",
+      {
+        method: "POST",
+        headers: { ...botHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ response: "reject" }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      echo: "/session/ses_1/permissions/perm_1",
+      method: "POST",
+      port: "4600",
+    });
   });
 
   test("the not-yet-implemented table is empty — every allow-listed verb is real (S4)", async () => {
@@ -193,9 +241,16 @@ describe("proxy: the workshop surface (S2/S5)", () => {
   test("GET /runtimes answers the roster this proxy holds (S6)", async () => {
     // One Bot is up (the shared upstream fake answers it), then the roster names it with the
     // fields an operator asks for — and nothing else, because the roster is read-only.
-    const warm = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
+    const warm = await call("/session", {
+      method: "POST",
+      headers: botHeaders,
+      body: "{}",
+    });
     expect(warm.status).toBe(200);
-    const response = await call("/runtimes", { method: "GET", headers: botHeaders });
+    const response = await call("/runtimes", {
+      method: "GET",
+      headers: botHeaders,
+    });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       bots: Array<{
@@ -232,12 +287,97 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(body.path).toBe("data.csv");
     expect(body.size).toBe(8); // "a,b\n1,2\n" — count the bytes, not the lines.
     // And an escaping path is refused before any write.
-    const escape = await call("/file?path=../x.csv", {
+    const escapeAttempt = await call("/file?path=../x.csv", {
       method: "POST",
       headers: { ...botHeaders, "content-type": "text/plain" },
       body: "x",
     });
-    expect(escape.status).toBe(400);
+    expect(escapeAttempt.status).toBe(400);
+  });
+
+  test("GET /file answers absence 404 itself — the upstream's 500-for-absent must not leak (craft's skills sweep)", async () => {
+    // The upstream opencode-serve answers 500, not 404, for a path that does not exist;
+    // craft's managed-skills sweep normalizes 404 to "fresh workspace" and refuses its
+    // ack on anything else, so a leaked 500 left every first provisioning stale until a
+    // reload. The proxy owns the filesystem fact: absence is answered here, before any
+    // runtime is spawned or dialed.
+    const absent = await call("/file?path=no-such-dir", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(absent.status).toBe(404);
+    // The escaping path is refused on this verb too.
+    const escapeAttempt = await call("/file?path=../workspace", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(escapeAttempt.status).toBe(400);
+    // A path that EXISTS is not answered locally — it falls through toward the upstream
+    // (here: no runtime can spawn in this harness, so the honest shape is the runtime
+    // refusal, distinctly not this branch's 404).
+    const present = await call("/file?path=data.csv", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(present.status).not.toBe(404);
+    expect(present.status).not.toBe(400);
+  });
+
+  test("POST /file carries binary bodies past the 256KB relay cap (craft's upload road)", async () => {
+    // The craft upload default allows 50MB files; the JSON relay cap stays at 256KB. The
+    // file verb must ride its own ceiling — a 300KB binary body crosses the old line.
+    const big = new Uint8Array(300_000).fill(7);
+    const response = await call("/file?path=attachment.bin", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "application/octet-stream" },
+      body: big,
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { size?: number };
+    expect(body.size).toBe(300_000);
+  });
+
+  test("DELETE /file deletes one contained file and refuses directories and escapes", async () => {
+    await call("/file?path=tmp/a.txt", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "x",
+    });
+    await call("/file?path=tmp/nested/b.txt", {
+      method: "POST",
+      headers: { ...botHeaders, "content-type": "text/plain" },
+      body: "y",
+    });
+
+    // A file deletes.
+    const file = await call("/file?path=tmp/a.txt", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(file.status).toBe(200);
+    // A directory is the same 404 as absence (onyx's `[ -f ] && rm` semantics).
+    const dir = await call("/file?path=tmp/nested", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(dir.status).toBe(404);
+    // The directory's file survived that refusal.
+    const survivor = await call("/file?path=tmp/nested/b.txt", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(survivor.status).toBe(200);
+    // Now absent — and an escaping path is refused before any delete.
+    const absent = await call("/file?path=tmp/a.txt", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(absent.status).toBe(404);
+    const escapeAttempt = await call("/file?path=../workspace/..", {
+      method: "DELETE",
+      headers: botHeaders,
+    });
+    expect(escapeAttempt.status).toBe(400);
   });
 });
 
@@ -267,8 +407,16 @@ describe("proxy with per-bot runtimes", () => {
   });
 
   test("同一 bot 的请求被路由到同一个上游端口", async () => {
-    const r1 = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
-    const r2 = await call("/session", { method: "POST", headers: botHeaders, body: "{}" });
+    const r1 = await call("/session", {
+      method: "POST",
+      headers: botHeaders,
+      body: "{}",
+    });
+    const r2 = await call("/session", {
+      method: "POST",
+      headers: botHeaders,
+      body: "{}",
+    });
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
     const b1 = (await r1.json()) as { id: string };

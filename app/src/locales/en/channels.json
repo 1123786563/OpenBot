@@ -155,7 +155,18 @@
     "people": "People:",
     "leaveAria": "Leave this group",
     "removePersonAria": "Remove {{email}}",
-    "leave": "leave"
+    "leave": "leave",
+    "open": "Open {{name}}",
+    "people": {
+      "title": "People in this group",
+      "description": "Everyone here sees the whole conversation, and every Bot in it answers them.",
+      "started": "Started this group",
+      "leave": "Leave",
+      "remove": "Remove",
+      "addPlaceholder": "Add someone by email",
+      "count_one": "{{count}} person",
+      "count_other": "{{count}} people"
+    }
   },
   "groupDetail": {
     "groupFallback": "Group"

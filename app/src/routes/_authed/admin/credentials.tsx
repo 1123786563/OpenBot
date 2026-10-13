@@ -2,7 +2,7 @@ import { IconPlus } from "@tabler/icons-react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -65,6 +65,7 @@ export const Route = createFileRoute("/_authed/admin/credentials")({
 function CredentialsPage() {
   const { t } = useTranslation("admin");
   const [adding, setAdding] = useState(false);
+  const formId = useId();
   const queryClient = useQueryClient();
   const credentials = useQuery(credentialListQueryOptions());
   const createCredential = useMutation(
@@ -107,20 +108,23 @@ function CredentialsPage() {
        */}
       <Dialog onOpenChange={setAdding} open={adding}>
         <DialogContent>
-          <form
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault();
-              form.handleSubmit();
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>{t("credentials.dialog.title")}</DialogTitle>
-              <DialogDescription>
-                {t("credentials.dialog.description")}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogBody className="mt-4">
+          <DialogHeader>
+            <DialogTitle>{t("credentials.dialog.title")}</DialogTitle>
+            <DialogDescription>
+              {t("credentials.dialog.description")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="mt-4">
+            {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
+                direct child of DialogContent and keeps scrolling. */}
+            <form
+              id={formId}
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                form.handleSubmit();
+              }}
+            >
               <FieldGroup className="sm:grid sm:grid-cols-2">
                 <form.Field name="kind">
                   {(field) => {
@@ -178,7 +182,9 @@ function CredentialsPage() {
                           onChange={(event) =>
                             field.handleChange(event.target.value)
                           }
-                          placeholder="OpenAI"
+                          placeholder={t(
+                            "credentials.dialog.providerPlaceholder",
+                          )}
                           value={field.state.value}
                         />
                         {isInvalid ? (
@@ -205,7 +211,7 @@ function CredentialsPage() {
                           onChange={(event) =>
                             field.handleChange(event.target.value)
                           }
-                          placeholder="production"
+                          placeholder={t("credentials.dialog.keyIdPlaceholder")}
                           value={field.state.value}
                         />
                         {isInvalid ? (
@@ -244,64 +250,65 @@ function CredentialsPage() {
                   }}
                 </form.Field>
               </FieldGroup>
-              {/*
-               * Said before the write, not after it.
-               *
-               * A key holds one live credential, so saving onto a key that already has one is a
-               * replacement: the old credential is revoked in the same transaction. The page calls
-               * this Add and has no rotate control, so without this line an administrator retires
-               * the credential an MCP server or an agent is currently authenticating with, and
-               * nothing on screen mentions it until something stops working.
-               */}
-              <form.Subscribe
-                selector={(state) => [
-                  state.values.kind,
-                  state.values.provider,
-                  state.values.keyId,
-                ]}
-              >
-                {([kind, provider, keyId]) =>
-                  liveCredentialFor(credentials.data, kind, provider, keyId) ? (
-                    <p className="text-amber-600 text-sm dark:text-amber-500">
-                      {t("credentials.dialog.replaceWarning")}
-                    </p>
-                  ) : null
-                }
-              </form.Subscribe>
-              {createCredential.error ? (
-                <p className="text-destructive text-sm" role="alert">
-                  {t("credentials.dialog.saveError")}
-                </p>
-              ) : null}
-            </DialogBody>
-            <DialogFooter className="mt-4">
-              <Button
-                onClick={() => setAdding(false)}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {t("credentials.cancel")}
-              </Button>
-              <form.Subscribe
-                selector={(state) => [state.canSubmit, state.isSubmitting]}
-              >
-                {([canSubmit, isSubmitting]) => (
-                  <Button
-                    disabled={
-                      !canSubmit || isSubmitting || createCredential.isPending
-                    }
-                    size="sm"
-                    type="submit"
-                  >
-                    {isSubmitting || createCredential.isPending
-                      ? t("credentials.dialog.saving")
-                      : t("credentials.dialog.save")}
-                  </Button>
-                )}
-              </form.Subscribe>
-            </DialogFooter>
-          </form>
+            </form>
+            {/*
+             * Said before the write, not after it.
+             *
+             * A key holds one live credential, so saving onto a key that already has one is a
+             * replacement: the old credential is revoked in the same transaction. The page calls
+             * this Add and has no rotate control, so without this line an administrator retires
+             * the credential an MCP server or an agent is currently authenticating with, and
+             * nothing on screen mentions it until something stops working.
+             */}
+            <form.Subscribe
+              selector={(state) => [
+                state.values.kind,
+                state.values.provider,
+                state.values.keyId,
+              ]}
+            >
+              {([kind, provider, keyId]) =>
+                liveCredentialFor(credentials.data, kind, provider, keyId) ? (
+                  <p className="text-amber-600 text-sm dark:text-amber-500">
+                    {t("credentials.dialog.replaceWarning")}
+                  </p>
+                ) : null
+              }
+            </form.Subscribe>
+            {createCredential.error ? (
+              <p className="text-destructive text-sm" role="alert">
+                {t("credentials.dialog.saveError")}
+              </p>
+            ) : null}
+          </DialogBody>
+          <DialogFooter className="mt-4">
+            <Button
+              onClick={() => setAdding(false)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {t("credentials.cancel")}
+            </Button>
+            <form.Subscribe
+              selector={(state) => [state.canSubmit, state.isSubmitting]}
+            >
+              {([canSubmit, isSubmitting]) => (
+                <Button
+                  disabled={
+                    !canSubmit || isSubmitting || createCredential.isPending
+                  }
+                  form={formId}
+                  size="sm"
+                  type="submit"
+                >
+                  {isSubmitting || createCredential.isPending
+                    ? t("credentials.dialog.saving")
+                    : t("credentials.dialog.save")}
+                </Button>
+              )}
+            </form.Subscribe>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -242,10 +242,9 @@ describe("deleteSnapshots", () => {
 });
 
 describe("idle reaper", () => {
-  test("snapshots an idle session and marks it idle", async () => {
+  test("snapshots an idle session and flips it idle through the guarded CAS", async () => {
     const objectStore = memStore();
-    const updates: Array<{ sessionId: string; patch: { status?: string } }> =
-      [];
+    const flips: Array<{ sessionId: string; before: Date }> = [];
     const store = fakeStore({
       listIdleSessions: async () => [sessionRow()],
       createSnapshot: async (input) =>
@@ -253,9 +252,9 @@ describe("idle reaper", () => {
           sessionId: input.sessionId,
           storagePath: input.storagePath,
         }),
-      updateSession: async (sessionId, patch) => {
-        updates.push({ sessionId, patch: patch as { status?: string } });
-        return sessionRow({ ...(patch as object) });
+      markSessionIdleIfStillIdle: async (sessionId, before) => {
+        flips.push({ sessionId, before });
+        return true;
       },
     });
     const gateway = fakeGateway({ snapshotArchiveFor: async () => bytes });
@@ -268,9 +267,8 @@ describe("idle reaper", () => {
     reaper.stop();
 
     expect(slept).toBe(1);
-    expect(updates).toEqual([
-      { sessionId: "cs-sess", patch: { status: "idle" } },
-    ]);
+    expect(flips).toHaveLength(1);
+    expect(flips[0]?.sessionId).toBe("cs-sess");
     expect(objectStore.values.size).toBe(1);
   });
 });

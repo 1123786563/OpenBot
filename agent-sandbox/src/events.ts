@@ -35,6 +35,11 @@ export const SANDBOX_EVENT_TYPES = [
   "catalog.updated",
   "reference.updated",
   "integration.updated",
+  // The permission handshake (opencode 1.15.x, onyx-verified shape): not in the
+  // workshop capture because no turn asked while it ran, but the craft server's
+  // approval routing consumes it — the filter must forward it or an asking turn
+  // parks with no egress at all (F-G).
+  "permission.asked",
 ] as const;
 
 export type SandboxEventType = (typeof SANDBOX_EVENT_TYPES)[number];
@@ -47,7 +52,10 @@ export type SandboxMessagePart = {
   type: string;
   /** tool parts only: which tool ("bash", "edit", …). */
   tool?: string;
-  state?: { status?: string; input?: unknown; raw?: string } & Record<string, unknown>;
+  state?: { status?: string; input?: unknown; raw?: string } & Record<
+    string,
+    unknown
+  >;
   /** text/reasoning parts only: the accumulated body of the part. */
   text?: string;
   time?: number;
@@ -107,13 +115,14 @@ export type SandboxEvent =
     }
   | { type: "unknown"; raw: unknown };
 
-/** The five product-facing families the translator (B9) maps events into. */
+/** The product-facing families the translator (B9) maps events into. */
 export type SandboxEventFamily =
   | "message_chunk"
   | "thought"
   | "tool_call"
   | "progress"
   | "prompt_response"
+  | "permission"
   | "other";
 
 /**
@@ -139,6 +148,10 @@ export function familyOf(event: SandboxEvent): SandboxEventFamily {
   }
   if (event.type === "session.status") return "progress";
   if (event.type === "session.idle") return "prompt_response";
+  // The control plane, not the process view: the server-side turn consumer
+  // routes approval/connect_app decisions off permission.asked, so it rides the
+  // gateway stream even though no product surface renders it.
+  if (event.type === "permission.asked") return "permission";
   return "other";
 }
 
@@ -163,7 +176,8 @@ export function parseSandboxEvent(line: string): SandboxEvent {
     event.properties && typeof event.properties === "object"
       ? (event.properties as Record<string, unknown>)
       : {};
-  const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : "";
+  const sessionID =
+    typeof properties.sessionID === "string" ? properties.sessionID : "";
 
   switch (event.type) {
     case "message.part.delta": {
@@ -194,7 +208,10 @@ export function parseSandboxEvent(line: string): SandboxEvent {
         id,
         sessionID,
         role: str(info?.role),
-        time: (info?.time ?? null) as { created?: number; completed?: number } | null,
+        time: (info?.time ?? null) as {
+          created?: number;
+          completed?: number;
+        } | null,
       };
     }
     case "session.status": {

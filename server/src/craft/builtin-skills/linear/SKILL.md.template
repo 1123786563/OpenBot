@@ -1,0 +1,70 @@
+<!-- Ported from onyx skills/builtin/linear/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     linear_api.py GraphQL wrapper and its command examples are replaced by
+     the user's connected Linear MCP server tools. Domain guidance (teams,
+     issue identifiers, workflow states, priorities, error discipline) is
+     onyx verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: linear
+description: Query and mutate Linear (issues, projects, teams) on the connected user's behalf via the Linear MCP server.
+---
+
+# Linear
+
+Call Linear as the connected user through the Linear MCP server connected to
+this session. The session's MCP relay attaches the user's credential on every
+call; never ask for or handle credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Read tools (the connected user, teams, issues, search, projects) run freely;
+creating an issue and commenting are the writes. Read tools that paginate
+should be capped with a result limit to keep your context small.
+
+### The connected user
+
+### Teams
+
+### Issues (filtered)
+
+Filter by team key, assignee, and workflow state.
+
+### One issue (by id or identifier)
+
+Issues are identified like `ENG-123`.
+
+### Search issues
+
+### Projects
+
+Projects list each project's linked teams.
+
+### Create an issue (write)
+
+A new issue needs a team id (from the teams tool), a title, and optionally a
+description, assignee user id, project id, workflow state, priority, labels,
+estimate, and a parent issue.
+
+The workflow state is accepted as a name (resolved case-insensitively against
+the team's states) or a state id. Priority is an int 0-4 (0 none, 1 urgent,
+2 high, 3 normal, 4 low).
+
+### Comment on an issue (write)
+
+## Output
+
+Tool results are JSON. List tools return the items and whether more existed
+past the limit; failures return GraphQL-style `errors` — surface the error
+rather than retrying blindly.
+
+## Notes
+
+- Creating an issue needs a team id (from the teams tool); the assignee takes
+  a user id, the project a project id (from the projects tool), and
+  labels/parent take label/issue ids.
+- If the server exposes a generic GraphQL tool, pass user input as variables,
+  not by string-formatting into the query.

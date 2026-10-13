@@ -216,6 +216,18 @@ export type ApprovalStore = {
     id: string,
     decision: ApprovalDecision,
   ): Promise<ApprovalRecord>;
+  /**
+   * Record a person's decision on a pending request without `decide`'s orchestration effects:
+   * no `approval.resume` work item for the worker queue and no always-rule write. The craft
+   * rendezvous decides through this — its parked waiter is woken by the announce/wake signals,
+   * not the worker, and an "always" grant has no craft-side effect (the sandbox answers the ask
+   * "once" either way). Row write, audit trail, and idempotency guard are `decide`'s.
+   */
+  decideQuiet(
+    ownerUserId: string,
+    id: string,
+    decision: "allow_once" | "allow_always" | "deny",
+  ): Promise<ApprovalRecord>;
   consume(ownerUserId: string, id: string, digest: string): Promise<boolean>;
   saveResult(
     ownerUserId: string,
@@ -315,7 +327,7 @@ export function approvalAction(candidate: ApprovalCandidate): ApprovalAction {
     !continuation.toolCallId
   )
     throw new ApprovalRefusedError(
-      "This action needs your approval, but it was not started from a conversation that can ask you. Nothing was done. Ask for it in a chat with this Bot, or change your rules in Approvals.",
+      "This action needs your approval, but it was not started from a conversation that can ask you. Nothing was done. Ask for it in a chat with this Bot, or change your rules in Settings → Approvals.",
     );
   if (
     ![

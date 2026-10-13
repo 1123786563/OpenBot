@@ -1,0 +1,409 @@
+[ocr] Summary: 41 file(s) reviewed, 18 comment(s), ~2101072 token(s) used (input: ~1941238, output: ~159834), cache(read: ~1578880, write: ~0), 8m21s elapsed
+[ocr] Session: 24c5f9d8-4045-4391-a1cf-bbcf69be1f56
+Review partially complete: 18 finding(s); 31 of 41 selected item(s) failed.
+
+─── server/src/craft/connect-app-routes.ts:70-82 ───
+[bug · high] 决策端点先执行破坏性的 takePending(原子 GET+DEL)再做归属校验:任何已认证用户只要持有他人 requestId(request_id 会出现在 SSE
+卡片、审计与日志中),即可在此处删除 pending 记录后以 404 退出——记录不回补,合法所有者后续决策将永远落入 no-op 200 分支,opencode 侧 permission.ask
+挂起直至超时,等同一次远程取消。同理 Branch 3 的 503(会话暂停)也会永久消耗记录而不回补。requestId 为 uuid4
+降低了可利用性,但正确不变量应是"鉴权通过后才发生副作用":先 loadPending 校验归属与状态,全部通过后再 take(同所有者并发重放时仍只有一个调用方 take 成功,幂等性不变)。
+
+-     const pending = await deps.signals.takePending(requestId).catch(() => null);
++     // Load first, authorize, THEN take: the destructive take must only fire
++     // for the owner of a live session — any earlier exit leaves the record
++     // intact, so a leaked requestId can no longer cancel someone's decision.
++     const pending = await deps.signals.loadPending(requestId);
+      if (pending === null) {
+        return context.json({ ok: true });
+      }
+  
+-     // Branch 2: scope to the caller's own session BEFORE touching their sandbox.
+      const session = await deps.store.getSession(
+        pending.build_session_id,
+        actor.id,
+      );
+      if (!session) {
+        return context.json({ error: "Connect request not found." }, 404);
++     }
++     if (session.status !== "active") {
++       return context.json({ error: "Sandbox is not running." }, 503);
++     }
++ 
++     // The take stays the idempotency gate: of two concurrent replays only one
++     // caller wins it; the loser lands here with null and no-ops.
++     const taken = await deps.signals.takePending(requestId);
++     if (taken === null) {
++       return context.json({ ok: true });
+      }
+
+
+─── server/src/craft/connect-app-routes.ts:115-129 ───
+[bug · medium] Branch 4 失败路径有两处薄弱点:(1) 回补 stashPending 失败时仅 warn,随后仍返回 502 "please try again"——但此时
+pending 已丢失,用户重试只会命中 no-op 分支收到 200,以为已提交而 opencode 实际永远无人应答,比显式失败更糟,建议将回补失败透传到响应(或返回不可重试的错误语义);(2)
+answerPermission 返回 response.ok,若实际是"已在 opencode 应用成功但响应超时/中断"的假阴性,回补后的重试会对同一 perm_id 二次 POST(此刻必然非
+2xx → answered=false → 再次回补),用户陷入重试循环直至 30 分钟 TTL 过期,需确认/文档化 serve-client 侧对重复应答的行为。
+
+-       await deps.signals
+-         .stashPending(requestId, pending)
+-         .catch((error: unknown) => {
++       let restored = true;
++       try {
++         await deps.signals.stashPending(requestId, pending);
++       } catch (error: unknown) {
++         restored = false;
+-           logger.warn(
++         logger.warn(
+-             { err: error instanceof Error ? error.message : String(error) },
++           { err: error instanceof Error ? error.message : String(error) },
+-             "[craft] connect_app pending re-stash failed",
++           "[craft] connect_app pending re-stash failed",
+-           );
++         );
+-         });
++       }
+        return context.json(
+          {
+            error:
+              "Could not reach the sandbox to apply your choice — please try again.",
++           // The pending record could not be restored: retrying will silently
++           // no-op, so the client must not treat this as retryable.
++           retryable: restored,
+          },
+          502,
+        );
+
+
+─── server/src/craft/connect-app.ts:141-146 ───
+[bug · medium] Redis 版 takePending 将 eval 失败(Redis 不可用等基础设施故障)折叠为 null,与"记录已过期/已应答"不可区分:决策端点会返回 200
+{ok:true},用户以为决策已生效并关闭卡片,而 pending 记录和挂起的回合原封未动。同文件中 stashPending/announceRequest 都让错误向上传播,唯独作为决策闸门的
+take 吞错语义不对——应让 eval 错误抛出,由调用方(路由)映射为 5xx,而不是伪装成幂等 no-op。
+
+      async takePending(requestId) {
+-       const raw = await redis
+-         .eval(TAKE_KEY, 1, pendingKey(requestId))
+-         .catch(() => null);
++       // Let infrastructure errors propagate — the decision endpoint must be
++       // able to tell "expired/already answered" (null) apart from "KV down"
++       // and answer 5xx instead of a false-success no-op.
++       const raw = await redis.eval(TAKE_KEY, 1, pendingKey(requestId));
+        return parsePending(raw);
+      },
+
+
+─── server/src/craft/connect-app.ts:263-270 ───
+[style · low] parseConnectAppAsk 使用两层嵌套三元表达式(违反"禁止嵌套三元"规范),且 Number.parseInt 对 "42abc" 之类输入会宽松解析出
+42,尾部残留字符被静默接受。建议改为 if 分支并对字符串做全量数字校验。
+
+-   const parsed =
+-     typeof raw === "number"
+-       ? Number.isInteger(raw)
+-         ? raw
+-         : Number.NaN
+-       : typeof raw === "string" && raw.trim() !== ""
+-         ? Number.parseInt(raw, 10)
+-         : Number.NaN;
++   let parsed = Number.NaN;
++   if (typeof raw === "number" && Number.isInteger(raw)) {
++     parsed = raw;
++   } else if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
++     parsed = Number.parseInt(raw, 10);
++   }
+
+
+─── server/src/craft/templates/connect-app.plugin.ts:113-116 ───
+[maintainability · low] execute 的 catch 将 context.ask 抛出的一切异常(传输失败、opencode
+内部错误等)一律按"用户已拒绝、不要重试"的文案返回,会误导 agent 放弃本可重试的路径。文件头已声明系 onyx 逐字移植,若维持逐字移植是有意为之,建议在此处补一条注释标明"decline
+文案也会在基础设施错误时触发",避免后续维护者把该字符串当作真实的用户拒绝信号。
+
+            } catch {
++             // NOTE: every failure lands here — transport errors and opencode
++             // internal errors are reported as a user decline too (onyx-verbatim
++             // behavior), so this string is not proof the user actually rejected.
+              // Return a normal result so the agent keeps control and picks an
+              // alternative, rather than letting the rejection abort the turn.
+              return (
+
+
+─── server/src/craft/opencode/serve-client.ts:1660-1678 ───
+[bug · medium] 超时兜底在完成"验证 + 拒绝"之前就把条目从 pendingConnectApp 删除,且 loadPending 的 .catch(() => null) 将 KV
+瞬时故障与"已被 decide 端点原子取走"混为一谈(connect-app.ts 的 redis 实现本身也把 get 异常吞成 null)。一旦 deadline 到达时 Redis
+抖动:条目已删、continue 跳过,拒绝永不发出也无重试;answerPermission 返回 false 时条目同样已丢失。后果是 opencode 侧 permission
+悬空,pendingConnectApp 清空后 inactivity 下限回落,turn 从"插件收到 decline 后继续执行"退化为撑到 inactivity 超时被
+abort——与本块注释声明的 fail-closed 契约相悖。建议调整顺序:仅在拒绝成功送达(rejected === true)或确认记录已被 decide
+端点取走后才删除条目,其余情况保留条目由下一轮循环重试(size > 0 会让 inactivity 下限继续抬高,不会提前掐断等待);如需严格区分"已决"与"读取失败",还需在
+connect-app.ts 的 loadPending seam 上补充错误语义。
+
+            if (entry.deadline > now) continue;
+-           pendingConnectApp.delete(permissionId);
+-           // Entries only exist when the connectApp rendezvous does — its
+-           // handler is the sole writer of this map.
+            const signals = connectApp?.signals ?? null;
+            if (signals !== null) {
+-             const stillPending = await signals
+-               .loadPending(entry.requestId)
+-               .catch(() => null);
+-             if (stillPending === null) continue;
++             const stillPending = await signals.loadPending(entry.requestId);
++             if (stillPending === null) {
++               // 仅在记录已被 decide 端点原子取走时删除;读取失败应保留条目重试。
++               pendingConnectApp.delete(permissionId);
++               continue;
++             }
+            }
+            const rejected = await this.answerPermission(
+              options.opencodeSessionId,
+              permissionId,
+              { allow: false, directory },
+            );
+-           if (rejected && signals !== null) {
++           if (rejected) {
++             pendingConnectApp.delete(permissionId);
++             if (signals !== null) {
+-             await signals.clearPending(entry.requestId).catch(() => undefined);
++               await signals.clearPending(entry.requestId).catch(() => undefined);
++             }
+            }
++           // rejected === false:保留条目,下一轮循环重试拒绝。
+
+
+─── server/src/craft/templates/webapp.plugin.ts:283-291 ───
+[bug · medium] restart 分支仅凭 nextjs.pid 的 `kill -0` 判活就 `process.kill(pid)`，缺少脚本侧同款的 /proc/<pid>/cwd
+身份校验（nextjs-dev.ts 的脚本注释已自陈该风险：陈旧 pid 文件可能指向沙箱内无关存活进程）。此时 restart 会误杀无关进程。建议在 kill
+前复用脚本的身份守卫（readlink /proc/<pid>/cwd 是否等于本会话的 outputs/web），kill 后同步删除 pid 文件。
+
+            if (args.action === "restart") {
+              const pid = await pidAlive(dir);
+-             if (pid !== null) {
++             // 与脚本自身同款的身份守卫：陈旧 pid 可能指向无关进程，误杀。
++             if (pid !== null && (await pidOwnsAppDir(pid, dir))) {
+                try {
+                  process.kill(pid);
+                } catch {}
++               await rm(`${dir}/${PID_REL}`, { force: true });
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            }
++ 
++           // async function pidOwnsAppDir(pid: number, dir: string): Promise<boolean> {
++           //   try {
++           //     return (await readlink(`/proc/${pid}/cwd`)) === `${dir}/${APP_DIR_REL}`;
++           //   } catch {
++           //     return false;
++           //   }
++           // }
+
+
+─── server/src/craft/templates/webapp.plugin.ts:129-135 ───
+[bug · medium] tailLog 的行数参数无下限保护：args.lines 仅被 min(args.lines, MAX_LOG_LINES) 封顶，schema 未限制下界。当
+agent 传 lines=0 时，`lines.slice(-0)` 等价于 `slice(0)`，会把整个无轮转、持续增长的 nextjs.log 全量注入观察文本，突破声明的 max 200
+语义，极端时撑爆 agent 上下文；status/logs 每次也是全量 readFile。建议加下界保护。
+
+  async function tailLog(dir: string, n: number): Promise<string | null> {
++   // slice(-0) === slice(0)：n 为 0/负数时会把整个日志塞进观察文本。
++   if (n <= 0) return null;
+    const logPath = `${dir}/${LOG_REL}`;
+    if (!(await pathExists(logPath))) return null;
+    const lines = (await readFile(logPath, "utf8")).split("\n");
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    return lines.slice(-n).join("\n");
+  }
+
+
+─── server/src/craft/templates/webapp.plugin.ts:217-220 ───
+[documentation · medium] 工具描述声称 action='start' "it scaffolds outputs/web"，但本次生成的
+start-webapp.sh（nextjs-dev.ts）明确不做脚手架——缺少 outputs/web/package.json 时直接失败并提示 agent 自行构建（有意的 onyx
+分歧："no image outputs template"）。该描述是 LLM 直接消费的工具契约，照其指引 agent 会在写任何代码前调用 start 并被拒绝，与脚本实际行为矛盾。建议改为与
+OpenBot 脚本一致的表述（要求先有脚手架，脚本只负责 install/启动）。
+
+          description:
+            "Manage this session's web-app dev server. Call with action='start' " +
+-           "BEFORE building a web app: it scaffolds outputs/web, installs " +
+-           "dependencies, starts the dev server, and waits until it serves. " +
++           "once your app lives under outputs/web (package.json present): it " +
++           "installs dependencies, starts the dev server, and waits until it " +
++           "serves. " +
+
+
+─── server/src/craft/webapp-proxy.ts:241-249 ───
+[style · low] `session.nextjsPort as number` 断言冗余：前面的 `session.nextjsPort !== null &&`
+短路已对该属性访问完成类型收窄。保留断言的隐患是：若日后判空条件被移除或改动，断言会掩盖 null 直达 URL 拼接，编译器不再兜底。建议删除断言、依赖类型收窄。
+
+      const ready =
+        hasWebapp &&
+        session.nextjsPort !== null &&
+        (await webappDevServerReady({
+          host: webappUpstreamHost(
+            deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+          ),
+-         port: session.nextjsPort as number,
++         port: session.nextjsPort,
+        }));
+
+
+─── server/src/craft/nextjs-dev.ts:51-53 ───
+[maintainability · low] sessionDirectory 被未加引号地内插进脚本首行（`SESSION_PATH=${sessionDirectory}`）。当前安全仅因
+newCraftId 生成的会话 id 是 `cs-<24位hex>`、绝对模式又固定前缀 /workspace/sessions——脚本正确性隐式依赖另一模块的 ID
+格式约定；一旦目录拼写未来引入空格或 shell 元字符，轻则赋值截断导致 pid/log/lock 写错位置，重则构成容器内 shell
+注入。下一行已正确使用引号，建议首行同样加引号，使脚本按构造安全。
+
+    return `#!/bin/bash
+- SESSION_PATH=${sessionDirectory}
++ SESSION_PATH="${sessionDirectory}"
+  # Normalize so bot-relative session dirs survive the script's own cd. The
+
+
+─── server/src/craft/opencode/serve-client.ts:1666-1675 ───
+[bug · medium] 超时兜底用 loadPending(只读)+ answerPermission + clearPending 三步做对账,与 decide 端点的
+takePending(原子 GET+DEL)→ 应答协议存在竞态:deadline 到期瞬间若用户恰好点击卡片,decide 端点先 take 并应答 allow,随后本循环仍会发出
+reject,opencode 收到互相矛盾的第二个答案(被丢弃的那个可能是用户的选择)。connect-app.ts 里 takePending 的文档明确写着"exactly ONE caller
+per requestId can ever see a non-null answer",超时兜底应通过 takePending 先原子认领记录再拒绝——这样也不再需要事后的
+clearPending 往返;若认领后 answerPermission 失败,可像 connect-app-routes.ts 一样重新 stash,保留用户重试的路径。
+
+              const stillPending = await signals
+-               .loadPending(entry.requestId)
++               .takePending(entry.requestId)
+                .catch(() => null);
+              if (stillPending === null) continue;
+            }
+            const rejected = await this.answerPermission(
+              options.opencodeSessionId,
+              permissionId,
+              { allow: false, directory },
+            );
++           if (rejected === false && signals !== null) {
++             // 认领后应答失败:重新放回 pending,与 decide 端点的重试语义一致。
++             await signals.stashPending(entry.requestId, stillPending!).catch(() => undefined);
++           }
+
+
+─── server/src/craft/opencode/serve-client.ts:1780-1790 ───
+[bug · low] answerPermission 吞掉所有异常并返回 boolean,但 deny 的三个调用点(ask 无 app id、无 rendezvous、announce 失败)都
+await 后忽略返回值。一旦应答请求失败,opencode 侧 permission 悬空,且此时 pendingConnectApp / pendingPermissions
+都没有条目、inactivity floor 不会抬高,turn 将在普通 timeoutMs 后以"Timeout waiting for activity"收场,而不是注释声称的"parked
+turn resumes with a decline"——fail-closed 意图静默失效。至少应在返回 false 时补一条 warn(与文件内其它失败路径的日志风格一致),或复用
+pending 机制安排重试。
+
+-             const deny = (reason: string): Promise<boolean> => {
++             const deny = async (reason: string): Promise<boolean> => {
+                getLogger("server").warn(
+                  { permissionId: info.permissionId, reason },
+                  "opencode-serve: denying connect_app permission",
+                );
+-               return this.answerPermission(
++               const rejected = await this.answerPermission(
+                  options.opencodeSessionId,
+                  info.permissionId,
+                  { allow: false, directory },
++               );
++               if (!rejected) {
++                 getLogger("server").warn(
++                   { permissionId: info.permissionId },
++                   "opencode-serve: connect_app deny failed; ask stays parked",
+-               );
++                 );
++               }
++               return rejected;
+              };
+
+
+─── server/src/craft/connect-app-routes.ts:56-58 ───
+[bug · low] .catch(() => ({})) 只兜底「解析抛错」,不兜底「可解析但非对象」的请求体:请求体为 JSON null 时 json() 正常 resolve 为
+null,随后 body.decision 抛 TypeError,处理器内未捕获,客户端收到 500 而非参数校验的 400。前置的 as 类型断言掩盖了这一空指针路径。
+
+-     const body = (await context.req.json().catch(() => ({}))) as {
++     const parsed: unknown = await context.req.json().catch(() => ({}));
++     const body = (
++       typeof parsed === "object" && parsed !== null ? parsed : {}
++     ) as {
+        decision?: unknown;
+      };
+
+
+─── server/src/craft/connect-app-routes.ts:148-153 ───
+[other · low] 此分支执行时决策已在沙箱生效、pending 已被 take 清除,这条 audit 行是本次决策唯一的持久记录(文件头与 audit.ts 对
+craft.connect_app_decided 的注释均如此定位);insert 失败仅 warn 后照常返回
+200,意味着决策产生了实际副作用却无任何持久痕迹,且无重试/补偿路径,审计缺口被静默吞掉。建议至少升级为 error 级日志并在消息中注明「决策已无持久记录」,或为写入失败提供重试/可观测性。
+
+
+
+─── server/src/craft/connect-app.ts:301-312 ───
+[maintainability · low] stash 成功而 announce 失败时,函数按契约抛错、调用方 deny 该 ask(回合恢复,fail-closed 正确);但
+requestId 因 throw 不会返回给任何调用者,pending 记录成为无人可达的孤儿,滞留至 30 分钟 TTL 才过期。「两条 KV 记录」的设计应成对出现/成对消失:建议对
+announceRequest 做 clearPending 回滚后重新抛出,保持两个记录的一致性。
+
+    await signals.stashPending(requestId, {
+      build_session_id: input.sessionId,
+      opencode_session_id: input.opencodeSessionId,
+      perm_id: input.permissionId,
+      directory: input.directory,
+      external_app_id: input.externalAppId,
+    });
++   try {
+-   await signals.announceRequest(input.sessionId, {
++     await signals.announceRequest(input.sessionId, {
+-     request_id: requestId,
++       request_id: requestId,
+-     external_app_id: input.externalAppId,
++       external_app_id: input.externalAppId,
+-     reason: input.reason,
++       reason: input.reason,
+-   });
++     });
++   } catch (error) {
++     await signals.clearPending(requestId).catch(() => undefined);
++     throw error;
++   }
+
+
+─── server/src/craft/connect-app.ts:219-225 ───
+[maintainability · low] pending 语义是 KV,但内存实现复用 push 追加,loadPending/takePending 读 values[0](先写者胜);而
+Redis 版用 SET 覆盖(后写者胜)。若同 requestId 发生内容不同的重复 stash,两个后端返回相反结果;Branch 4 失败回补也会在内存条目中累积重复值。文件头称内存版是
+Redis 版的 reference semantics,两者语义应一致——建议 stashPending 改为覆盖语义(values: [value]),push 仅保留给 announce
+列表使用。
+
+      async stashPending(requestId, pending) {
+-       push(
+-         pendingKey(requestId),
+-         JSON.stringify(pending),
+-         CONNECT_APP_PENDING_TTL_SECONDS,
+-       );
++       const key = pendingKey(requestId);
++       lists.set(key, {
++         values: [JSON.stringify(pending)],
++         expiresAt: Date.now() + CONNECT_APP_PENDING_TTL_SECONDS * 1000,
++       });
+      },
+
+
+─── server/src/craft/webapp-proxy.ts:288-290 ───
+[maintainability · low] 上游 host 解析策略 `deps.config.sandboxGatewayBaseUrl || conn.baseUrl` 在
+webapp-info 的 ready 探测和预览代理两处独立内联。本文件 F-E 修复的核心保证——status 与 preview
+永远拨同一个托管端口宿主——完全依赖这两处表达式保持逐字同步；任何一处单独改动（例如某处开始剥离端口、或调整回退顺序）都会让状态与预览悄然分叉，且编译器无法兜底。建议在
+createWebappProxyRoutes 作用域内提取一个 upstreamHostFor(conn) helper（或并入 resolve），使一致性由构造保证。
+
+-     const upstreamHost = webappUpstreamHost(
+-       deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+-     );
++     // 单一来源：webapp-info 的 ready 探测与预览代理共用同一 host 判定。
++     const upstreamHostFor = (conn: { baseUrl: string }): string =>
++       webappUpstreamHost(deps.config.sandboxGatewayBaseUrl || conn.baseUrl);
+
+
+LLM retry report summary: 13 of 89 requests affected -- 13 requests failed
+
+Review planning (5 requests):
+- server/src/audit.ts,server/src/auth/index.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/agent-instructions.ts,server/src/craft/session-plugins.ts,server/src/plugins/store.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/config.ts,server/src/craft/index.ts,server/src/craft/manager.ts,server/src/craft/routes.ts,server/src/craft/store.ts,server/src/index.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/directory-archive.ts,server/src/craft/file-routes.ts,server/src/craft/managed-content.ts,server/src/craft/zip-archive.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/mcp-relay.ts,server/src/craft/mcp-servers.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+
+Core review (8 requests):
+- agent-sandbox/src/events.ts,agent-sandbox/src/proxy.ts,agent-sandbox/src/sse.ts,docker-compose.yml: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/audit.ts,server/src/auth/index.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/agent-instructions.ts,server/src/craft/session-plugins.ts,server/src/plugins/store.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/artifacts.ts,server/src/craft/events/packets.ts,server/src/craft/skills.ts,server/src/craft/workspace.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- server/src/craft/config.ts,server/src/craft/index.ts,server/src/craft/manager.ts,server/src/craft/routes.ts,server/src/craft/store.ts,server/src/index.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> failed
+- ... and 3 more
+
+Per-attempt detail: --format json (retry_report).

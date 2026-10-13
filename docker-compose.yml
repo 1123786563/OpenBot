@@ -138,9 +138,10 @@ services:
       # shutdown notes tell you to use -- hands the container an empty string instead. Reaches only
       # a loopback-bound port; a deployment sets a real value in .env.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-openbot-dev-computer-token}
-      # `headed` runs full Chromium behind the same streamed screen, so a person taking the wheel
-      # gets a browser sites treat like their ordinary desktop browser. Headless remains the default.
-      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headless}
+      # Headed by default: full Chromium on the container's own X server, behind the same streamed
+      # screen, which bot checks such as Cloudflare's challenge far less than headless. `headless`
+      # still chooses headless, for a smaller footprint where the sites a Bot uses do not mind.
+      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headed}
       # How many Bots may hold a running browser at once, and how long an untouched one is kept.
       # A few hundred MB each, so on a deployment with many Bots these are the difference between
       # a container that holds steady and one that is killed for memory. Defaults are 8 and 30
@@ -174,6 +175,13 @@ services:
       # control and the published loopback keeps the surface off routed networks.
       - "127.0.0.1:${SANDBOX_PORT:-4300}:4300"
       - "[::1]:${SANDBOX_PORT:-4300}:4300"
+      # Craft's per-session webapp dev servers (start-webapp.sh) bind the reserved range
+      # OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_[START|END] (default 3010-3100) inside this
+      # container; the API server on the host probes/previews them at the gateway base's
+      # host, so the range publishes to loopback exactly like the gateway port above.
+      # Keep in step with the craft config's reserved range if it is re-tuned.
+      - "127.0.0.1:3010-3100:3010-3100"
+      - "[::1]:3010-3100:3010-3100"
     # Unprivileged, cap-less, no privilege escalation — the same posture Craft's Docker backend
     # provisions its per-user sandboxes with (docker_sandbox_manager.py).
     user: "1000:1000"
@@ -316,8 +324,8 @@ services:
       SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:-openbot-dev-supervisor-token}
       # Handed to every computer this creates, so the server and the computers share one secret.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-openbot-dev-computer-token}
-      # Forwarded into every per-Bot computer the supervisor creates.
-      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headless}
+      # Forwarded into every per-Bot computer the supervisor creates. Headed, as above.
+      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headed}
       COMPUTER_IMAGE: ${COMPUTER_IMAGE:-openbot-agent-computer:latest}
       # Which deployment the computers it creates belong to, so two stacks on one Docker host never
       # derive the same container and volume names for the same Bot.

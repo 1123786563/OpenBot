@@ -100,6 +100,10 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
+import {
+  countChatInputTokens,
+  fitChatInputRequest,
+} from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
 import { startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
@@ -136,7 +140,7 @@ import {
   createGroupStore,
   groupSourceForRun,
 } from "./channels/group";
-import { createChannelStore } from "./channels/routes";
+import { type ChannelStore, createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import {
@@ -183,11 +187,30 @@ import {
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
+import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+import type { CraftKbSearch } from "./craft/kb-search-relay";
+import { projectKbSearchResults } from "./craft/kb-search-relay";
+import {
+  createCraftManagedContentResolver,
+  personalUnconnectedApps,
+} from "./craft/managed-content";
+import { resolveCraftMcpServers } from "./craft/mcp-servers";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
-import { type CraftRoutesFactory, createCraftRoutes } from "./craft/routes";
+import {
+  type CraftRoutesFactory,
+  createCraftRoutes,
+  stopCraftIdleReaper,
+} from "./craft/routes";
+import { createCraftStore } from "./craft/store";
+import {
+  type WebappHmrSocketData,
+  resolveWebappHmrUpgrade,
+  webappHmrSessionIdFromPath,
+  webappHmrSocketHandlers,
+} from "./craft/webapp-proxy";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -217,20 +240,40 @@ import {
   HostAccessRefusedError,
 } from "./host-access/broker";
 import { hostAccessTools } from "./host-access/tools";
+import { githubCallbackRoutes } from "./identity/github-callback";
+import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
+import { slackCodeRedeemer } from "./identity/slack-redeem";
+import { createIdentityStore } from "./identity/store";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
 import { knowledgeServiceConfig } from "./knowledge/config";
+import { knowledgeRequest } from "./knowledge/client";
+import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
 } from "./knowledge/retrieval";
 import { knowledgeTools } from "./knowledge/tools";
 import { clearLearningRevisionFallback } from "./learning/runtime";
+import {
+  createLearningAutoAssign,
+  probeLearningContainer,
+  withLearningAutoAssign,
+} from "./learning/auto-assign";
+import {
+  cliLoginPresent,
+  ensureLearningContainer,
+  intelligenceApiOrigin,
+  keyIntelligence,
+  learningSetupInstructions,
+} from "./learning/ensure-container";
 import { createLearningSettingsStore } from "./learning/settings";
 import { createMarketplaceStore } from "./marketplace/store";
+import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
+import { createIntelligenceMemory } from "./memory/intelligence";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
 import { createSignInNotifier, createSignInResumer } from "./passwords/resume";
@@ -490,11 +533,73 @@ const port = config.port;
 const database = createDatabase(config.databaseUrl);
 // Every dispatch point asks this database whether its person paused the Bot. See agents/lifecycle.ts.
 configureBotLifecycle({ database });
-const learningSettings = createLearningSettingsStore(database, config.learning);
+const learningSettingsStore = createLearningSettingsStore(
+  database,
+  config.learning,
+);
+// Its own client, like the self-host banner's: the constructor opens nothing.
+const learningProbeIntelligence = createIntelligenceClient(
+  config.runtime.intelligence,
+);
+/*
+ * Who can create the `openbot` container here: never the runtime key. A service token the operator
+ * configured (local evaluation installs), or a CopilotKit CLI login on this machine, which is what a
+ * laptop running `bun run start` has. Neither, and the log and Admin say exactly what to run instead.
+ */
+const learningApiOrigin = (() => {
+  try {
+    return intelligenceApiOrigin(config.runtime.intelligence.apiUrl);
+  } catch {
+    return undefined;
+  }
+})();
+const learningCanCreate =
+  learningApiOrigin !== undefined &&
+  (config.learningSetup !== undefined || cliLoginPresent());
+const learningAutoAssign = createLearningAutoAssign({
+  enabled: config.learningAutoAssign,
+  store: learningSettingsStore,
+  probe: (containerId) =>
+    probeLearningContainer(learningProbeIntelligence, containerId),
+  ...(learningApiOrigin
+    ? { instructions: learningSetupInstructions(learningApiOrigin) }
+    : {}),
+  ...(learningCanCreate && learningApiOrigin
+    ? {
+        create: () =>
+          ensureLearningContainer({
+            directory: process.cwd(),
+            apiUrl: learningApiOrigin,
+            nonInteractive: true,
+            key: keyIntelligence(
+              learningApiOrigin,
+              config.runtime.intelligence.apiKey,
+              config.runtime.intelligence.gatewayWsUrl,
+            ),
+            cliLogin: cliLoginPresent(),
+            ...(config.learningSetup
+              ? {
+                  serviceToken: {
+                    token: config.learningSetup.serviceToken,
+                    projectId: config.learningSetup.projectId,
+                  },
+                }
+              : {}),
+          }),
+      }
+    : {}),
+  audit: createAuditStore(database),
+});
+const learningSettings = withLearningAutoAssign(
+  learningSettingsStore,
+  learningAutoAssign,
+);
+learningAutoAssign.start();
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
+const identityStore = createIdentityStore(database, credentialStore);
 const agentVault = {
   store: credentialStore,
   reader: credentialStore,
@@ -514,11 +619,23 @@ const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
 const threadIdentity = createThreadIdentity(
   config.deploymentId ?? tenantPackage.tenantId,
 );
-const channelStore = createChannelStore(
+const baseChannelStore = createChannelStore(
   database,
   agentProfileStore,
   threadIdentity,
 );
+/**
+ * A person spoke in one of their conversations. Bound once memory defaults exist (memory/defaults.ts):
+ * a conversation with one Bot switches on that Bot's research and memory sources for this person.
+ */
+let personSpoke: ((ownerUserId: string, channelId: string) => void) | undefined;
+const channelStore: ChannelStore = {
+  ...baseChannelStore,
+  async recordActivity(actor, channelId, activity, source) {
+    await baseChannelStore.recordActivity(actor, channelId, activity, source);
+    if (activity.agentId === null) personSpoke?.(actor.id, channelId);
+  },
+};
 const channelEvents = createChannelEventHub();
 /**
  * Which components each Bot may answer with.
@@ -551,14 +668,29 @@ const peopleStore = createPeopleStore(
   database,
   config.auth?.initialAdminEmails ?? [],
   /*
-   * Removing somebody retires the credentials they granted this deployment.
+   * Removing somebody retires what they connected: their plugin credentials and connections, and
+   * their linked outside accounts (which keep resolving to them, now refused; the tokens are revoked
+   * and every link needs reconnecting). Both halves run whichever fails, and the failure is rethrown
+   * after (see retireOwnedAccounts).
    *
-   * A closure rather than the method itself, because the plugin store is built further down: this
-   * has to exist before `auth` does, and that one needs the vault and the policy. Nothing calls this
-   * during module initialisation — it runs when an administrator removes somebody, over HTTP — so by
-   * then the binding is there.
+   * A closure, because `pluginStore` is built further down: this has to exist before `auth` does,
+   * and that one needs the vault and the policy. `pluginStore` is read only when the closure runs —
+   * an administrator or the directory removing somebody, never during module initialisation — so by
+   * then the binding is there. The linked-account half writes its audit rows through a store made
+   * on its own transaction, so it reads no later binding (`bootAuditStore` included).
    */
-  (userId, by) => pluginStore.retireConnectionsFor(userId, by),
+  (userId, by) =>
+    retireOwnedAccounts({
+      plugins: () => pluginStore.retireConnectionsFor(userId, by),
+      identities: () =>
+        retireIdentityLinks(
+          database,
+          credentialStore,
+          (executor) => createAuditStore(executor),
+          userId,
+          by,
+        ),
+    }),
 );
 const identityProviderStore = createIdentityProviderStore(database);
 /*
@@ -585,6 +717,7 @@ const computerProvider = config.computer
   ? withPolicyPushOnWake(createComputerProvider(config.computer), {
       policyForBot: (botId) => enterpriseControls()?.policyForBot(botId),
       ...(config.computer.token ? { token: config.computer.token } : {}),
+      ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
     })
   : undefined;
 
@@ -701,7 +834,7 @@ const approvalService = createApprovalService(
               id: request.id,
               kind: "approval",
               requestId: request.id,
-              text: `${botName} asks for approval to use ${action.toolRef}. Open your OpenBot approval inbox to review this action.`,
+              text: `${botName} asks for approval to use ${action.toolRef}. Open the Bot's page in OpenBot to review this action.`,
             },
           );
       }
@@ -1249,7 +1382,14 @@ const hostAccessBroker = createHostAccessBroker(Date.now, {
 // grant, the policy and the audit row are exactly where they were. Host-folder tools are also
 // server-dispatched: the selected Bot and the signed-in owner are bound here, then the desktop worker
 // receives only opaque grant ids and relative paths.
-const personalMemoryStore = createMemoryStore(database);
+// Memory lives in CopilotKit Intelligence when this deployment is entitled to it, and in OpenBot's own
+// tables when it is not; see memory/store.ts. Its own client, like the thread reader's: the
+// constructor opens nothing.
+const personalMemoryStore = createMemoryStore(database, {
+  intelligence: createIntelligenceMemory({
+    client: createIntelligenceClient(config.runtime.intelligence),
+  }),
+});
 const demonstrationStore = createDemonstrationStore(database);
 const demonstrationRecorder = createDemonstrationRecorder({
   store: demonstrationStore,
@@ -1287,8 +1427,32 @@ if (!knowledgeRuntime && knowledgeService) {
     "knowledge-retrieval-unconfigured",
   );
 }
-const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) =>
-  memoryIngestion.contextFor(ownerUserId, botId);
+/*
+ * Memory sources and background research, on by default for each person and Bot, and never switched
+ * back on once the person turns one down. See memory/defaults.ts.
+ */
+const memoryDefaults = createMemoryDefaults({
+  database,
+  ingestion: memoryIngestion,
+  sources: config.memoryDefaults.sources,
+  research: config.memoryDefaults.research,
+  channelBots: async (ownerUserId, channelId) =>
+    (await channelStore.get(await actorFor(ownerUserId), channelId))
+      ?.agentIds ?? null,
+  // The same rule research delivery uses, read when a person speaks (long after it is defined).
+  canDeliver: async (ownerUserId, channelId, agentId) =>
+    (await deliveryScopeFor(ownerUserId, channelId, agentId)) !== null,
+  mintThreadId: () => threadIdentity.mint(),
+  // Read when a Bot turn starts, long after `teamBots` below is defined.
+  publishedByAnother: (ownerUserId, agentId) =>
+    teamBots.publishedByAnother(ownerUserId, agentId),
+});
+personSpoke = memoryDefaults.personSpoke;
+const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) => {
+  // Apps connected since this Bot's last turn become its memory sources. Never waits.
+  memoryDefaults.botTurn(ownerUserId, botId);
+  return memoryIngestion.contextFor(ownerUserId, botId);
+};
 const memorySweep = repeatAfterEach(async () => {
   try {
     await memoryIngestion.syncDue();
@@ -1301,6 +1465,20 @@ const memorySweep = repeatAfterEach(async () => {
         timestamp: new Date().toISOString(),
       },
       "memory-sweep-error",
+    );
+  }
+  // Mirror to Intelligence what is out of step: the backfill on the first passes after a deployment
+  // becomes entitled, and afterwards whatever an outage left behind. A no-op without Intelligence.
+  try {
+    await personalMemoryStore.mirrorPending();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "memory-sweep-error",
+        error: error instanceof Error ? error.name : "UnknownError",
+        context: { operation: "mirrorPending" },
+        timestamp: new Date().toISOString(),
+      }),
     );
   }
 }, 60_000);
@@ -3081,6 +3259,7 @@ await installEnterpriseControls({
   auditStore: bootAuditStore,
   ...(computerProvider ? { provider: computerProvider } : {}),
   ...(config.computer?.token ? { computerToken: config.computer.token } : {}),
+  ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
   builtInModel: `${runtimeModel.provider}/${runtimeModel.defaultModel}`,
   people: peopleStore,
   initialAdminEmails: config.auth?.initialAdminEmails ?? [],
@@ -3228,17 +3407,19 @@ if (billing !== undefined && usageOutbox !== undefined) {
        * The provider-bound contract, as it stands for the adapters this deployment actually
        * invokes. The built-in instance path is the OpenAI-compatible chat model: it maps
        * maxOutputTokens to max_tokens, which the chat-completions contract enforces, so the
-       * output cap is proven. Its input side offers neither an exact pre-call token count nor
-       * a configurable provider-enforced ceiling, so a billed call is refused before the
-       * provider — fail-closed, the same rule the code-run path applies until its sandbox
-       * enforces the budget. When a provable input bound exists (a provider count-tokens
-       * contract this adapter demonstrably honours), declare it here as `counted`.
+       * output cap is proven. Its input side has no provider-enforced ceiling, so the bound
+       * is the deployment's own (ADR-0001): a conservative bytes-based count that sits above
+       * a typical tokenizer, and a fit that drops the oldest non-system messages until the
+       * count fits the configured ceiling — the provider cannot be SENT more than the
+       * reservation prices by our own measure, and a tokenizer that beats the calibration
+       * surfaces at settlement as usage_over_bound for reconciliation.
        */
       bounds: {
         input: {
-          enforced: "unsupported" as const,
-          reason:
-            "the OpenAI-compatible chat adapter offers no exact pre-call input token count and enforces no configurable input ceiling",
+          enforced: "counted" as const,
+          maximumTokens: modelPolicy.input.maximumTokens,
+          countInputTokens: countChatInputTokens,
+          fit: fitChatInputRequest(modelPolicy.input.maximumTokens),
         },
         output: {
           enforced: "provider_cap" as const,
@@ -3771,6 +3952,172 @@ const craftEffectiveConfig = sandboxUrl
       ),
     })
   : craftConfig;
+/*
+ * Craft's managed content (AGENTS.md app guidance + skill fileset + fingerprints), answered
+ * for the session's user — never the deployment-wide Bot id. Both live legs resolve below:
+ * the connectable-apps list (personal servers not yet connected) and the per-user craft MCP
+ * set (the personal servers that ARE connected, each entry stamped with the relay url), so
+ * mcp_config_hash fingerprints the resolved set. The one leg still absent is the
+ * company-search skill: OpenBot's knowledge domain has no path the craft sandbox can call
+ * (credentials stay out of agent-readable workspace files), so no such file ships and the
+ * AGENTS.md Company-knowledge section stays out until a backed implementation lands.
+ */
+/*
+ * The relay origin the per-user MCP set stamps into session opencode.json: the
+ * operator's explicit override first, then the deployment's public url (the
+ * same address deliveryProviders resolve against), then the loopback default —
+ * the sandbox's opencode dials this and the relay attaches credentials, so it
+ * must be an address that deployment's sandboxes can reach.
+ */
+const craftMcpRelayBaseUrl =
+  craftEffectiveConfig.mcpRelayBaseUrl ||
+  config.publicUrl ||
+  config.auth?.baseUrl ||
+  `http://localhost:${config.port}`;
+/*
+ * The craft company-search leg (D1): the knowledge domain over the same
+ * service-to-service credential the knowledge routes use. The sources section
+ * lists the deployment's knowledge bases (the KB domain is deployment-tenant);
+ * the search fans out per KB, merges, and projects onyx-cli's result contract.
+ * An unwired knowledge service holds the skill back entirely (null) — the
+ * AGENTS.md Company-knowledge section stays out with it.
+ */
+const craftKnowledgeBases = async (): Promise<
+  Array<{ id: string; name: string; description: string | null }> | null
+> => {
+  if (!knowledgeService) return null;
+  try {
+    const response = await knowledgeRequest(knowledgeService, "/kb");
+    const body = (await response.json()) as {
+      items?: Array<{
+        id: string;
+        name: string;
+        description?: string | null;
+      }>;
+    };
+    return (body.items ?? []).map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description ?? null,
+    }));
+  } catch {
+    return null;
+  }
+};
+const craftCompanySearchSourcesSection = async (): Promise<string | null> => {
+  const kbs = await craftKnowledgeBases();
+  return kbs === null ? null : buildAvailableSourcesSection(kbs);
+};
+const craftKbSearch: CraftKbSearch | null = knowledgeService
+  ? async ({ query, sourceTypes, days }) => {
+      const kbs = (await craftKnowledgeBases()) ?? [];
+      if (kbs.length === 0) return { status: "ok", results: [] };
+      const settled = await Promise.allSettled(
+        kbs.map((kb) =>
+          knowledgeRequest(
+            knowledgeService!,
+            `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                query,
+                top_k: 20,
+                score_threshold: 0,
+                hybrid: true,
+              }),
+            },
+          ).then(
+            (response) =>
+              response.json() as Promise<{
+                results: KnowledgeSearchResult[];
+              }>,
+          ),
+        ),
+      );
+      // A KB domain that answers nothing at all is "unavailable" (the relay's
+      // 503 shape); per-KB failures degrade to that KB contributing nothing.
+      const perKb = settled.flatMap((entry) =>
+        entry.status === "fulfilled" ? entry.value.results : [],
+      );
+      if (
+        perKb.length === 0 &&
+        settled.every((entry) => entry.status === "rejected")
+      ) {
+        return { status: "unavailable" };
+      }
+      return {
+        status: "ok",
+        results: projectKbSearchResults(perKb, { days, sourceTypes }),
+      };
+    }
+  : null;
+const craftManagedContentFor = createCraftManagedContentResolver({
+  connectableAppsFor: async (userId) => {
+    const [servers, held, brokered] = await Promise.all([
+      pluginStore.listServers(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return personalUnconnectedApps(
+      servers,
+      new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+    );
+  },
+  /*
+   * The builtin skills (onyx's $ONYX/skills/builtin): pptx and
+   * craft-documentation ship to everyone; a connector skill ships only when
+   * the user has connected the matching MCP server (onyx's
+   * connected-apps-only rule) — the personal connection set above is the same
+   * fact the connectable list inverts. company-search ships when the
+   * knowledge domain backs it, its sources section rendering the deployment's
+   * knowledge bases (onyx renders the user's connector sources; OpenBot's KB
+   * domain is deployment-tenant — the ruled D1 shape).
+   */
+  skillFilesFor: async (userId) => {
+    const [held, brokered, sourcesSection] = await Promise.all([
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+      craftCompanySearchSourcesSection(),
+    ]);
+    return builtinSkillFilesFor({
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+    });
+  },
+  /*
+   * The per-user craft MCP set (the contract's C3 ruling): personal-account
+   * servers the user HAS connected — the same connection fact the connectable
+   * list inverts. Each entry's url is the RELAY route, never the vendor
+   * endpoint: the credential attaches on the server side (mcp-relay.ts), so
+   * none can enter a workspace file. Unconnected servers are dropped entirely,
+   * onyx's unauthenticated-drop, because the relay would refuse their calls.
+   */
+  mcpServersFor: async (userId) => {
+    const [wireServers, held, brokered] = await Promise.all([
+      pluginStore.mcpWireServersFor(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return resolveCraftMcpServers({
+      servers: wireServers.map((server) => ({
+        id: server.id,
+        name: server.title,
+      })),
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      relayBaseUrl: craftMcpRelayBaseUrl,
+    });
+  },
+});
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
   ? ({ requireUser }) =>
       createCraftRoutes({
@@ -3797,9 +4144,41 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           userNameFor: async (userId) =>
             (await peopleStore.find(userId))?.name ?? null,
           generateName: craftGenerateName,
+          // The managed-content layer over the plugins domain: connectable apps are
+          // the enabled connector rows that act in the person's own account and that
+          // they have NOT connected yet (onyx's get_connectable_apps_for_user —
+          // shared/deployment-account apps answer for everybody and never appear).
+          managedContentFor: craftManagedContentFor,
+          // The relay's credential resolution: the plugins domain's own
+          // per-person connection handling (MCP-wire servers only), decrypted
+          // per forwarded call and never written anywhere the agent reads.
+          mcpConnectionFor: (userId, serverId) =>
+            pluginStore.mcpWireConnectionFor(userId, serverId),
+          kbSearch: craftKbSearch,
+          mcpRelayBaseUrl: craftMcpRelayBaseUrl,
         },
       })
   : undefined;
+
+/*
+ * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a
+ * request/response, so this half terminates in the boot file's upgrade dispatcher beside the
+ * computer-stream proxy — but it resolves through the SAME facts the HTTP webapp proxy uses
+ * (the deployment's sandbox Bot, its gateway connection, the session's reserved port), so the
+ * two surfaces can never route the same session to different upstreams.
+ */
+const craftWebappHmrDeps =
+  craftEffectiveConfig.enabled && craftEffectiveConfig.webappProxyEnabled
+    ? {
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+        sandboxConnectionFor: () =>
+          sandboxUrl && sandboxToken
+            ? { baseUrl: sandboxUrl, token: sandboxToken }
+            : null,
+      }
+    : undefined;
 
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
@@ -3912,6 +4291,24 @@ async function craftGenerateName(
     throw new Error("naming model returned no text");
   return content;
 }
+
+const identityGithubCallback =
+  config.githubApp && config.publicUrl
+    ? githubCallbackRoutes({
+        clientId: config.githubApp.clientId,
+        clientSecret: config.githubApp.clientSecret,
+        publicUrl: config.publicUrl,
+        appUrl: config.appUrl,
+        encryptionKey: config.keyEncryptionKey,
+        personIsActive: async (userId) => {
+          const person = await peopleStore.find(userId);
+          return person !== undefined && !person.revoked;
+        },
+        credentials: credentialStore,
+        identity: identityStore,
+        auditStore: bootAuditStore,
+      })
+    : undefined;
 
 const app = createApp(
   config,
@@ -4034,6 +4431,7 @@ const app = createApp(
   },
   {
     store: learningSettings,
+    autoAssign: learningAutoAssign,
     status: copilotRuntime.learning?.status,
     inspect: copilotRuntime.learning?.inspect,
   },
@@ -4068,6 +4466,7 @@ const app = createApp(
         scopeFor: deliveryScopeFor,
         slack: deliveryProviders.slack,
         twilio: deliveryProviders.sms,
+        identity: slackCodeRedeemer(identityStore, bootAuditStore),
       },
     },
     memory: { store: personalMemoryStore, ingestion: memoryIngestion },
@@ -4124,6 +4523,10 @@ const app = createApp(
   // The craft surface, after the workshop pair it sits beside. APPENDED LAST, same
   // positional rule; undefined when the deployment disabled craft, which mounts nothing.
   craftRoutes,
+
+
+  identityStore,
+  identityGithubCallback,
 );
 
 /**
@@ -4154,16 +4557,21 @@ type StreamData = {
 };
 
 /**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
+ * Bun takes exactly one WebSocket handler for the server, and three features need one: the app
+ * proxies the computer stream and the craft webapp's HMR socket, and it pushes channel activity
+ * through Hono's adapter. So this one dispatches on what the upgrade attached — an HMR socket
+ * carries `hmr`, a stream proxy socket carries `upstream` without it, a Hono socket carries
+ * neither — rather than any feature quietly taking the slot and breaking the others on connect.
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
+type SocketData = StreamData | WebappHmrSocketData | ChannelSocket["data"];
 
 const isProxiedStream = (data: SocketData): data is StreamData =>
-  typeof (data as StreamData).upstream === "string";
+  typeof (data as StreamData).upstream === "string" &&
+  (data as WebappHmrSocketData).hmr !== true;
+
+const isHmrSocket = (data: SocketData): data is WebappHmrSocketData =>
+  (data as WebappHmrSocketData).hmr === true;
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
 const asChannelSocket = (ws: { data: SocketData }) =>
@@ -4176,11 +4584,13 @@ serve<SocketData>({
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }
-    // The workshop's event streams outlive the default request timeout by design: their
-    // connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
-    // default — without this raise, every quiet stream is cut before its first keepalive.
+    // The workshop's and craft's event streams outlive the default request timeout by design:
+    // their connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
+    // default — without this raise, every quiet stream is cut before its first keepalive
+    // (craft's turn attach, parked on a connect_app ask, is exactly that quiet stream).
     if (
-      url.pathname.startsWith("/api/workshop/") &&
+      (url.pathname.startsWith("/api/workshop/") ||
+        url.pathname.startsWith("/api/craft/")) &&
       url.pathname.endsWith("/events")
     ) {
       server.timeout(request, 255);
@@ -4258,10 +4668,45 @@ serve<SocketData>({
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
     }
+    const hmrSessionId =
+      craftWebappHmrDeps !== undefined
+        ? webappHmrSessionIdFromPath(url.pathname)
+        : null;
+    if (
+      hmrSessionId !== null &&
+      craftWebappHmrDeps !== undefined &&
+      request.headers.get("upgrade")?.toLowerCase() === "websocket"
+    ) {
+      // The webapp proxy's own auth, applied by hand because middleware does not run on an
+      // upgrade (the stream branch above sets the precedent). Every refusal lands BEFORE the
+      // upgrade commits — onyx's `_check_webapp_access` → WebSocketException(1008), answered
+      // here as plain HTTP statuses while the request is still a request.
+      const actor = await resolveRequestActor(request).catch(() => null);
+      const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
+        sessionId: hmrSessionId,
+        actor,
+        query: url.search,
+      });
+      if (!decision.ok) {
+        return new Response(decision.error, { status: decision.status });
+      }
+      if (
+        server.upgrade(request, {
+          data: { upstream: decision.upstreamUrl, hmr: true as const },
+        })
+      ) {
+        return undefined as unknown as Response;
+      }
+      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
     return app.fetch(request, { server });
   },
   websocket: {
     open(ws) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.open(asChannelSocket(ws));
         return;
@@ -4342,6 +4787,13 @@ serve<SocketData>({
       inward.onerror = () => ws.close();
     },
     message(ws, raw) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.message(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+          raw,
+        );
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.message(asChannelSocket(ws), raw);
         return;
@@ -4349,6 +4801,10 @@ serve<SocketData>({
       if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
     },
     close(ws, code, reason) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.close(asChannelSocket(ws), code, reason);
         return;
@@ -4381,6 +4837,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // Craft's idle reaper (started by the craft route assembly, held at that module's scope).
+    stopCraftIdleReaper();
     void Promise.allSettled([
       channelActivityListener.stop(),
       policyListener.stop(),

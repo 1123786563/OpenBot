@@ -22,9 +22,9 @@
     "empty": "还没有网页应用，让 Agent 构建一个。"
   },
   "files": {
-    "loading": "读取工作区…",
+    "loading": "正在读取输出…",
     "error": "无法加载文件树。",
-    "empty": "工作区为空。"
+    "empty": "还没有输出文件。"
   },
   "artifacts": {
     "loading": "收集产物中…",
@@ -42,5 +42,105 @@
     "waiting": "等待你的审批",
     "allowOnce": "允许一次",
     "deny": "拒绝"
+  },
+  "subagent": {
+    "title": "子代理",
+    "back": "返回对话",
+    "view": "查看子代理",
+    "empty": "子代理还没有输出。",
+    "status": {
+      "running": "运行中",
+      "done": "已完成",
+      "failed": "已失败"
+    }
+  },
+  "attachments": {
+    "add": "添加附件",
+    "list": "附件",
+    "uploading": "上传中…",
+    "failed": "失败",
+    "retry": "重试上传",
+    "remove": "移除"
+  },
+  "sandbox": {
+    "loading": "正在寻找沙箱…",
+    "provisioning": "沙箱初始化中…",
+    "running": "沙箱运行中",
+    "sleeping": "沙箱已休眠",
+    "restoring": "正在恢复会话…",
+    "terminated": "沙箱已终止",
+    "failed": "沙箱启动失败"
+  },
+  "tasks": {
+    "nav": "定时任务",
+    "title": "定时任务",
+    "description": "让 Agent 按计划无人值守执行的提示词。时间均为 UTC。",
+    "new": "新建任务",
+    "newTitle": "新建定时任务",
+    "editTitle": "编辑定时任务",
+    "editorHint": "计划会编译为按 UTC 评估的 cron 表达式；服务端会拒绝无法调度的表达式。",
+    "loading": "加载定时任务中…",
+    "loadError": "无法加载定时任务。",
+    "empty": "还没有定时任务。新建一个让 Agent 按计划工作。",
+    "name": "名称",
+    "prompt": "提示词",
+    "schedule": "计划",
+    "mode": {
+      "interval": "间隔",
+      "daily_weekly": "每天 / 每周",
+      "advanced": "cron 表达式"
+    },
+    "every": "每",
+    "unitLabel": "单位",
+    "unit": {
+      "minutes": "分钟",
+      "hours": "小时",
+      "days": "天"
+    },
+    "timeOfDay": "时间（UTC）",
+    "weekdays": "星期",
+    "weekdaysHint": "全部不选即每天执行。",
+    "weekday": {
+      "sun": "周日",
+      "mon": "周一",
+      "tue": "周二",
+      "wed": "周三",
+      "thu": "周四",
+      "fri": "周五",
+      "sat": "周六"
+    },
+    "cron": "cron 表达式",
+    "cronHint": "五个字段，按 UTC 评估——例如 0 9 * * 1-5。",
+    "statusLabel": "状态",
+    "status": {
+      "active": "启用",
+      "paused": "暂停"
+    },
+    "runImmediately": "保存后立即运行一次",
+    "requiredError": "名称、提示词以及（cron 模式下的）表达式为必填项。",
+    "save": "保存",
+    "create": "创建",
+    "delete": "删除",
+    "deleteConfirm": "删除此任务？",
+    "runNow": "立即运行",
+    "runs": "运行历史",
+    "runsEmpty": "还没有运行记录。",
+    "runStatus": {
+      "queued": "排队中",
+      "running": "运行中",
+      "succeeded": "已成功",
+      "failed": "已失败",
+      "skipped": "已跳过",
+      "awaiting_approval": "等待审批"
+    },
+    "nextRun": "下次运行",
+    "nextRuns": "接下来的运行",
+    "edit": "编辑",
+    "openSession": "打开会话"
+  },
+  "banner": {
+    "queued": "定时任务「{{name}}」排队中",
+    "running": "定时任务「{{name}}」运行中",
+    "awaitingApproval": "定时任务「{{name}}」等待审批"
   }
 }
