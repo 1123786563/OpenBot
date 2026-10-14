@@ -13,11 +13,19 @@ content = json.loads((HERE / "ticket-issue-content-v2.json").read_text())
 proposal = json.loads((HERE / "ticket-proposal-v2.json").read_text())
 by_id = {t["id"]: t for t in content["tickets"]}
 
-def api(path):
-    r = subprocess.run(["gh", "api", path], capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"{path}: {r.stderr.strip()[:300]}")
-    return json.loads(r.stdout)
+def api(path, attempts=4):
+    """Retried: a transient TLS/secondary-limit failure must not become a verification result."""
+    last = ""
+    for i in range(attempts):
+        r = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+        if r.returncode == 0:
+            return json.loads(r.stdout)
+        last = r.stderr.strip()[:300]
+        if any(k in last for k in ("TLS handshake timeout", "timeout", "EOF", "429", "secondary rate limit", "connection reset")):
+            time.sleep(2 * (i + 1))
+            continue
+        break
+    raise RuntimeError(f"{path}: {last}")
 
 problems = []
 checked = {"issues": 0, "labels": 0, "subissues": 0, "blocked_by_edges": 0, "links": 0}
