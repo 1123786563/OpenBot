@@ -319,5 +319,27 @@
   }
  },
  "baseline_evidence": "docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md",
- "checkpoint_convention": "docs/tickets/opik-4/checkpoints/<TID>.md written by each implementer; coordinator folds into manifest.json after review"
+ "checkpoint_convention": "docs/tickets/opik-4/checkpoints/<TID>.md written by each implementer; coordinator folds into manifest.json after review",
+ "backup": {
+  "reason": "全部 10 条工作分支（5 实现 + 5 审阅）仅存在于本地 worktree，origin 上没有。5 份审阅报告是裁决依据，worktree 一旦被清理即永久丢失。",
+  "kind": "git bundle（完整历史，可离线还原全部 10 条分支）",
+  "path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-frontier-wave1.bundle",
+  "sha256": "cdd869af833b7d1dfabd0fa896f8c76ee0d4ea2a2bd31f9add872f7d333a36e9",
+  "size": "47M",
+  "verified": "git bundle verify -> 'The bundle records a complete history.'",
+  "branches": {
+   "1123786563/opik-t01-module-seam": "d235166c",
+   "1123786563/opik-t02-ui-i18n": "c288bd8c",
+   "1123786563/opik-t03-deployment": "a0a0b1ff",
+   "1123786563/opik-t05-redaction": "ee027309",
+   "1123786563/opik-t06-scope-seam": "8b231692",
+   "1123786563/opik-review-t01": "fdbce7e8",
+   "1123786563/opik-review-t02": "a1894f6d",
+   "1123786563/opik-review-t03": "1c1d7617",
+   "1123786563/opik-review-t05": "9a2d1ed1",
+   "1123786563/opik-review-t06": "e1917c2d"
+  },
+  "restore": "git clone /Users/wuyongjun/orca/workspaces/OpenBot/opik-frontier-wave1.bundle  或  git fetch <bundle> <branch>:<branch>",
+  "note": "未推送这些分支到 origin：用户只授权推送 1123786563/opik-integration，且并行的 bifrost/multitenancy 会话已在该仓库产生大量分支，不擅自增加远端噪音。是否推送由协调者决定。"
+ }
 }
