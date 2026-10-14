@@ -127,12 +127,13 @@ export function createBillingStore(
         );
       } catch (error) {
         // The duplicate signal is control flow thrown from inside the transaction (to roll back
-        // the staged projections), so the apply's own persistence wrapper catches it first. Unwrap
-        // that one layer; it is a business result, not a persistence failure.
+        // the staged projections), so the apply's own persistence wrapper catches it first and it
+        // always arrives wrapped — the wrapper grades every failure, so only the sentinel-cause
+        // spelling can match. Unwrapping that one layer is reading a business result, not a
+        // persistence failure.
         if (
-          error === duplicate ||
-          (error instanceof BillingPersistenceError &&
-            error.cause === duplicate)
+          error instanceof BillingPersistenceError &&
+          error.cause === duplicate
         ) {
           return "duplicate";
         }
@@ -224,6 +225,7 @@ export function createBillingStore(
             lagoUniqueKey: input.uniqueKey,
             webhookType: input.webhookType,
             objectId: input.objectId,
+            bodyHash: input.bodyHash ?? null,
           })
           .onConflictDoNothing({
             target: [
@@ -234,6 +236,16 @@ export function createBillingStore(
           .returning({ eventId: billingWebhookEvents.eventId }),
       );
       return rows.length > 0;
+    },
+    async countDeliveriesOfBody(bodyHash) {
+      const [row] = await withPersistenceError(
+        "webhook_lookup",
+        database
+          .select({ value: count() })
+          .from(billingWebhookEvents)
+          .where(eq(billingWebhookEvents.bodyHash, bodyHash)),
+      );
+      return row?.value ?? 0;
     },
     async snapshot() {
       const [customers] = await withPersistenceError(

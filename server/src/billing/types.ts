@@ -173,7 +173,8 @@ export type ReconcileFinding = {
     | "duplicate_paid_order"
     | "usage_target_pending"
     | "usage_target_blocked"
-    | "usage_findings_omitted";
+    | "usage_findings_omitted"
+    | "webhook_body_replay";
   /**
    * The row the finding is about: an order id, a customer key, a reservation id, or a usage
    * event id.
@@ -474,6 +475,8 @@ export type BillingWebhookProjection = {
     uniqueKey?: string;
     webhookType: string;
     objectId?: string;
+    /** sha256 of the raw body; the replay-evidence trail (audit A7). */
+    bodyHash?: string;
   };
 };
 
@@ -504,7 +507,11 @@ export type BillingStore = {
     uniqueKey?: string;
     webhookType: string;
     objectId?: string;
+    /** sha256 of the raw body; absent on rows written before it existed (audit A7). */
+    bodyHash?: string;
   }): Promise<boolean>;
+  /** How many distinct event ids carried this exact body; >1 is replay evidence (audit A7). */
+  countDeliveriesOfBody(bodyHash: string): Promise<number>;
   snapshot(): Promise<{
     customers: number;
     subscriptions: number;
@@ -524,6 +531,13 @@ export type VerifiedWebhook = {
   webhookType: string;
   objectId?: string;
   externalCustomerId?: string;
+  /**
+   * sha256 of the raw body, lowercase hex. The signature does not cover the delivery's identity
+   * header, so this is the evidence that ties "same content, different event id" together for
+   * reconciliation (audit A7). Not a dedupe key: identical bodies under distinct event ids are
+   * legitimate, if rare.
+   */
+  bodyHash: string;
 };
 
 export type WebhookVerifier = {

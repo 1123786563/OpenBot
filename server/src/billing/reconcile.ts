@@ -1,11 +1,11 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingSubscriptions } from "../db/schema/billing";
-import { creditGrants, creditLedger } from "../db/schema/credits";
 import {
   creditReservationAllocations,
   creditReservations,
 } from "../db/schema/credit-reservations";
+import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
@@ -82,9 +82,7 @@ export function createReconciler(
   const activationBacklogAgeMs = options?.activationBacklogAgeMs ?? 15 * 60_000;
   const allocationSampleLimit = 3;
   if (!Number.isSafeInteger(usageFindingLimit) || usageFindingLimit <= 0) {
-    throw new RangeError(
-      "Usage finding limit must be a positive safe integer",
-    );
+    throw new RangeError("Usage finding limit must be a positive safe integer");
   }
   if (
     !Number.isSafeInteger(activationBacklogAgeMs) ||
@@ -95,16 +93,11 @@ export function createReconciler(
     );
   }
 
-  function usageFailureCode(
-    code: string | null,
-  ): string {
+  function usageFailureCode(code: string | null): string {
     return code ?? "none";
   }
 
-  function usageAgeSeconds(
-    now: number,
-    updatedAt: Date,
-  ): number {
+  function usageAgeSeconds(now: number, updatedAt: Date): number {
     return Math.max(0, Math.floor((now - updatedAt.getTime()) / 1000));
   }
 
@@ -154,10 +147,7 @@ export function createReconciler(
         })
         .from(paymentEvents)
         .where(
-          and(
-            eq(paymentEvents.kind, "fact"),
-            eq(paymentEvents.state, "paid"),
-          ),
+          and(eq(paymentEvents.kind, "fact"), eq(paymentEvents.state, "paid")),
         );
       const factByOrder = new Map(
         paidFacts.map((fact) => [fact.orderId, fact]),
@@ -381,10 +371,7 @@ export function createReconciler(
       const appliedMap = new Map(
         appliedByCustomer.map((row) => [row.customer, BigInt(row.total)]),
       );
-      const customers = new Set([
-        ...usedMap.keys(),
-        ...appliedMap.keys(),
-      ]);
+      const customers = new Set([...usedMap.keys(), ...appliedMap.keys()]);
       for (const customer of customers) {
         const used = usedMap.get(customer) ?? 0n;
         const applied = appliedMap.get(customer) ?? 0n;
@@ -419,10 +406,7 @@ export function createReconciler(
         .from(creditReservations)
         .leftJoin(
           creditReservationAllocations,
-          eq(
-            creditReservationAllocations.reservationId,
-            creditReservations.id,
-          ),
+          eq(creditReservationAllocations.reservationId, creditReservations.id),
         )
         .where(eq(creditReservations.status, "reserved"))
         .orderBy(
@@ -467,8 +451,7 @@ export function createReconciler(
           reservation.allocationIds.length > allocationSampleLimit
             ? "yes"
             : "no";
-        const allocationMetadata =
-          `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
+        const allocationMetadata = `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
         if (reservation.expired) {
           /*
            * The hold is named by BOTH ids it can prove: its own reservation id, and — when the
@@ -493,10 +476,10 @@ export function createReconciler(
             code: "expired_reserved_reservation",
             subject: reservationId,
             detail:
-              `state=reserved expires_at=${reservation.expiresAt.toISOString()} expired_age_ms=${expiredAgeMs} `
-              + `idempotency_key=${reservation.idempotencyKey}`
-              + (usageEventId ? ` usage_event_id=${usageEventId}` : "")
-              + ` maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
+              `state=reserved expires_at=${reservation.expiresAt.toISOString()} expired_age_ms=${expiredAgeMs} ` +
+              `idempotency_key=${reservation.idempotencyKey}` +
+              (usageEventId ? ` usage_event_id=${usageEventId}` : "") +
+              ` maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
 
@@ -505,8 +488,7 @@ export function createReconciler(
             category: "credits",
             code: "reservation_allocation_imbalance",
             subject: reservationId,
-            detail:
-              `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} ${allocationMetadata} remediation=operator_recovery_required`,
+            detail: `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
       }
@@ -629,14 +611,16 @@ export function createReconciler(
       const omittedUsageTargets = {
         pending: {
           lago:
-            usageDeliveryTargets.pending.lago - emittedUsageTargets.pending.lago,
+            usageDeliveryTargets.pending.lago -
+            emittedUsageTargets.pending.lago,
           credits:
             usageDeliveryTargets.pending.credits -
             emittedUsageTargets.pending.credits,
         },
         blocked: {
           lago:
-            usageDeliveryTargets.blocked.lago - emittedUsageTargets.blocked.lago,
+            usageDeliveryTargets.blocked.lago -
+            emittedUsageTargets.blocked.lago,
           credits:
             usageDeliveryTargets.blocked.credits -
             emittedUsageTargets.blocked.credits,
@@ -649,6 +633,33 @@ export function createReconciler(
           code: "usage_findings_omitted",
           subject: "usage_outbox",
           detail: `omitted=${omittedUsageFindings} pending_lago=${omittedUsageTargets.pending.lago} pending_credits=${omittedUsageTargets.pending.credits} blocked_lago=${omittedUsageTargets.blocked.lago} blocked_credits=${omittedUsageTargets.blocked.credits}`,
+        });
+      }
+
+      /*
+       * ── Replay evidence (audit A7): the delivery's identity rides in an unsigned header, so
+       *    the body hash is what ties "same content, different event id" together. Read-only,
+       *    like every block here — it counts and reports; what to do about a replayed delivery
+       *    is an operator's decision.
+       */
+      const replayedBodies = await database.execute(sql<{
+        bodyHash: string;
+        deliveries: string;
+      }>`
+        SELECT body_hash AS "bodyHash", COUNT(*)::bigint AS deliveries
+        FROM billing_webhook_events
+        WHERE body_hash IS NOT NULL
+        GROUP BY body_hash
+        HAVING COUNT(*) > 1
+        ORDER BY COUNT(*) DESC
+        LIMIT ${usageFindingLimit}
+      `);
+      for (const row of replayedBodies) {
+        findings.push({
+          category: "payment",
+          code: "webhook_body_replay",
+          subject: row.bodyHash,
+          detail: `deliveries=${row.deliveries} distinct event ids carried this exact body — either the provider retried with fresh identity or somebody is replaying a captured delivery`,
         });
       }
 
