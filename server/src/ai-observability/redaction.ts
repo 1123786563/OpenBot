@@ -11,21 +11,35 @@
  * explicitly asserts it handled the content — `allowFreeText` is that assertion, and even it does
  * not license a credential: the deny patterns run first and always win.
  */
-import { type OmitReason, type SafeText } from "../../../shared/ai-observability";
+import type {
+  OmitReason,
+  SafeText,
+  SafeValue,
+} from "../../../shared/ai-observability";
 
 export const MAX_SAFE_TEXT_BYTES = 8_192;
 const MAX_SAFE_NAME_BYTES = 128;
 
 /** Deny patterns. Ordered so the most specific reason wins. */
 const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
-  { reason: "connection_string", pattern: /\b(?:postgresql|postgres|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?):\/\/\S+/i },
+  {
+    reason: "connection_string",
+    pattern:
+      /\b(?:postgresql|postgres|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?):\/\/\S+/i,
+  },
   { reason: "credential", pattern: /\bBearer\s+[A-Za-z0-9._\-]{16,}/i },
-  { reason: "credential", pattern: /\bsk-(?:live|test|proj)-[A-Za-z0-9._\-]{16,}/ },
+  {
+    reason: "credential",
+    pattern: /\bsk-(?:live|test|proj)-[A-Za-z0-9._\-]{16,}/,
+  },
   { reason: "credential", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { reason: "credential", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
   { reason: "credential", pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
   { reason: "credential", pattern: /\b-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-  { reason: "credential", pattern: /\b[A-Za-z0-9/+=]{40}\b(?=.*(?:secret|password|passwd|pwd))/i },
+  {
+    reason: "credential",
+    pattern: /\b[A-Za-z0-9/+=]{40}\b(?=.*(?:secret|password|passwd|pwd))/i,
+  },
   { reason: "account_identifier", pattern: /\bacct_[A-Za-z0-9]{12,}\b/ },
   { reason: "account_identifier", pattern: /\bcus_[A-Za-z0-9]{12,}\b/ },
   { reason: "internal_capability", pattern: /\bopenbot\.internal\.[\w./-]+/i },
@@ -59,7 +73,11 @@ function cutToBytes(input: string, budget: number): string {
 function project(input: string, budget: number): SafeText {
   const bytes = new TextEncoder().encode(input).length;
   if (bytes <= budget) return { state: "projected", text: input };
-  return { state: "truncated", text: cutToBytes(input, budget), originalBytes: bytes };
+  return {
+    state: "truncated",
+    text: cutToBytes(input, budget),
+    originalBytes: bytes,
+  };
 }
 
 /**
@@ -70,10 +88,12 @@ export function projectSafeText(
   input: string | null | undefined,
   opts: { allowFreeText?: boolean } = {},
 ): SafeText {
-  if (input === null || input === undefined) return { state: "projected", text: "" };
+  if (input === null || input === undefined)
+    return { state: "projected", text: "" };
   const denied = denyReason(input);
   if (denied) return { state: "omitted", reason: denied };
-  if (!opts.allowFreeText) return { state: "omitted", reason: "unhandled_free_text" };
+  if (!opts.allowFreeText)
+    return { state: "omitted", reason: "unhandled_free_text" };
   return project(input, MAX_SAFE_TEXT_BYTES);
 }
 
@@ -94,21 +114,153 @@ export function projectSafeUrl(input: string | null | undefined): SafeText {
   } catch {
     return { state: "omitted", reason: "unhandled_free_text" };
   }
-  if (url.username || url.password) return { state: "omitted", reason: "credential" };
+  if (url.username || url.password)
+    return { state: "omitted", reason: "credential" };
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     return { state: "omitted", reason: "unhandled_free_text" };
   }
   const isRawFile = /\/(?:files|attachments|download)\//i.test(url.pathname);
-  const isLoopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname);
-  if (isRawFile || isLoopback) return { state: "omitted", reason: "raw_attachment" };
-  return project(`${url.protocol}//${url.host}${url.pathname}`, MAX_SAFE_TEXT_BYTES);
+  const isLoopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(
+    url.hostname,
+  );
+  if (isRawFile || isLoopback)
+    return { state: "omitted", reason: "raw_attachment" };
+  return project(
+    `${url.protocol}//${url.host}${url.pathname}`,
+    MAX_SAFE_TEXT_BYTES,
+  );
 }
 
 /** Span, tool and model names: short, structured, and a favourite hiding place for capability names. */
 export function projectSafeName(input: string | null | undefined): SafeText {
-  if (input === null || input === undefined) return { state: "projected", text: "" };
+  if (input === null || input === undefined)
+    return { state: "projected", text: "" };
   const denied = denyReason(input);
   if (denied) return { state: "omitted", reason: denied };
-  if (!/^[\w.:/@ -]*$/u.test(input)) return { state: "omitted", reason: "unhandled_free_text" };
+  if (!/^[\w.:/@ -]*$/u.test(input))
+    return { state: "omitted", reason: "unhandled_free_text" };
   return project(input, MAX_SAFE_NAME_BYTES);
+}
+
+export const MAX_SAFE_RECORD_KEYS = 64;
+export const MAX_SAFE_RECORD_DEPTH = 4;
+
+/**
+ * Metadata an SDK captures automatically is the least reviewed content in the system, so its
+ * allowlist is deliberately tiny and contains no free-text field: a key named `input` or `content`
+ * would make the allowlist a doorway for exactly what the body projection refuses.
+ */
+export const DEFAULT_METADATA_ALLOWLIST: readonly string[] = [
+  "thread_id",
+  "bot_id",
+  "run_id",
+  "attempt_id",
+  "deployment_version",
+  "prompt_version",
+  "model",
+  "provider",
+  "environment",
+  "capability",
+  "duration_ms",
+  "tokens_input",
+  "tokens_output",
+];
+
+export type SafeRecord = Record<string, SafeValue>;
+
+function projectLeaf(value: unknown): SafeValue {
+  if (value === null || value === undefined)
+    return { state: "projected", value: null };
+  if (typeof value === "number" || typeof value === "boolean") {
+    return { state: "projected", value };
+  }
+  if (typeof value === "string") {
+    const denied = denyReason(value);
+    if (denied) return { state: "omitted", reason: denied };
+    const bytes = new TextEncoder().encode(value).length;
+    if (bytes > MAX_SAFE_TEXT_BYTES) {
+      return {
+        state: "truncated",
+        value: cutToBytes(value, MAX_SAFE_TEXT_BYTES),
+        originalBytes: bytes,
+      };
+    }
+    return { state: "projected", value };
+  }
+  // Functions, symbols, class instances: no reliable projection, so metrics only.
+  return { state: "omitted", reason: "unhandled_free_text" };
+}
+
+function projectDeep(value: unknown, depth: number): SafeValue {
+  if (depth > MAX_SAFE_RECORD_DEPTH)
+    return { state: "omitted", reason: "unhandled_free_text" };
+  if (Array.isArray(value)) {
+    return {
+      state: "projected",
+      value: value
+        .slice(0, MAX_SAFE_RECORD_KEYS)
+        .map((item) => projectDeep(item, depth + 1)),
+    };
+  }
+  if (value && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    const out: Record<string, SafeValue> = {};
+    for (const key of Object.keys(source).slice(0, MAX_SAFE_RECORD_KEYS)) {
+      out[key] = projectDeep(source[key], depth + 1);
+    }
+    return { state: "projected", value: out };
+  }
+  return projectLeaf(value);
+}
+
+/** Allowlist first: a key that is not listed is dropped outright, never rendered as `omitted`. */
+export function projectSafeRecord(
+  record: unknown,
+  allowlist: readonly string[],
+): SafeRecord {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return {};
+  const source = record as Record<string, unknown>;
+  const out: SafeRecord = {};
+  for (const key of allowlist.slice(0, MAX_SAFE_RECORD_KEYS)) {
+    if (!(key in source)) continue;
+    const value = source[key];
+    if (typeof value === "string") {
+      out[key] = projectLeaf(value);
+      continue;
+    }
+    out[key] = projectDeep(value, 1);
+  }
+  return out;
+}
+
+export function projectSafeMetadata(
+  metadata: unknown,
+  allowlist: readonly string[] = DEFAULT_METADATA_ALLOWLIST,
+): SafeRecord {
+  return projectSafeRecord(metadata, allowlist);
+}
+
+/**
+ * Exceptions. The stack trace never leaves the process: it is full of file paths, connection
+ * strings and occasionally the argument values that caused the failure. A non-Error answers with
+ * its class name, because "what kind of thing failed" is safe and its content is not.
+ */
+export function projectSafeException(error: unknown): SafeText {
+  if (error instanceof Error) {
+    // Use the constructor name, not error.name: a subclass that never assigns this.name still
+    // inherits "Error", and its type name is exactly the safe structural fact worth keeping.
+    const ctor = error.constructor?.name || error.name;
+    const name = ctor === "Error" ? "" : `${ctor}: `;
+    const message = `${name}${error.message}`;
+    const denied = denyReason(message);
+    if (denied) return { state: "omitted", reason: denied };
+    return project(message, MAX_SAFE_TEXT_BYTES);
+  }
+  if (error === null || error === undefined)
+    return { state: "projected", text: "null" };
+  const kind =
+    typeof error === "object"
+      ? ((error as object).constructor?.name ?? "Object")
+      : (error.constructor?.name ?? typeof error);
+  return { state: "projected", text: kind };
 }
