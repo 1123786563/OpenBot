@@ -1210,3 +1210,114 @@ describe("model usage origin", () => {
     }
   });
 });
+
+describe("an unknown usage outcome keeps the hold (audit A2)", () => {
+  type WrappedModel = {
+    doStream: (params: unknown) => Promise<{
+      stream: ReadableStream<Record<string, unknown>>;
+    }>;
+  };
+
+  /** A wrapped model whose upstream emits exactly these parts, then closes. */
+  function modelEmitting(parts: Record<string, unknown>[]) {
+    return meteredModelForTests({
+      modelId: "GLM-5.3",
+      async doStream() {
+        return {
+          stream: new ReadableStream<Record<string, unknown>>({
+            start(controller) {
+              for (const part of parts) controller.enqueue(part);
+              controller.close();
+            },
+          }),
+        };
+      },
+    }) as WrappedModel;
+  }
+
+  test("a stream that ends with no finish part reports usage_missing, not no_usage", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (input) => {
+          reasons.push(input.reason);
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        async doStream() {
+          return { stream: new ReadableStream({ start(c) { c.close(); } }) };
+        },
+      }) as WrappedModel;
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["usage_missing"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish part with no usage numbers reports usage_missing", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (i) => {
+          reasons.push(i.reason);
+        },
+      }));
+      const model = modelEmitting([
+        { type: "finish", usage: { inputTokens: {}, outputTokens: {} } },
+      ]);
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["usage_missing"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish part that reports only half its usage is unknown, not a half-billable fact", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (i) => {
+          reasons.push(i.reason);
+        },
+      }));
+      const model = modelEmitting([
+        { type: "finish", usage: { inputTokens: { total: 12 }, outputTokens: {} } },
+      ]);
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["usage_missing"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish part that reports zero tokens is a confirmed no-cost and stays no_usage", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (i) => {
+          reasons.push(i.reason);
+        },
+      }));
+      const model = modelEmitting([
+        {
+          type: "finish",
+          usage: { inputTokens: { total: 0 }, outputTokens: { total: 0 } },
+        },
+      ]);
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["no_usage"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+});

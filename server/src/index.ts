@@ -128,6 +128,10 @@ import {
   createLagoUsageTarget,
   createUsageDelivery,
 } from "./billing/usage-delivery";
+import {
+  createUsageEvidenceRecorder,
+  isConfirmedNoCost,
+} from "./billing/usage-evidence";
 import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import { createWebhookVerifier } from "./billing/webhook-signature";
@@ -3607,6 +3611,9 @@ const usageOutbox =
  */
 if (billing !== undefined && usageOutbox !== undefined) {
   const creditPolicy = billingSettings?.creditPolicy;
+  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
+    log.warn(message),
+  );
   setModelUsageGate(async (input) => {
     if (!creditPolicy?.configured) throw new CreditGateError();
     const modelId = input.modelId ?? runtimeModel.defaultModel;
@@ -3717,20 +3724,43 @@ if (billing !== undefined && usageOutbox !== undefined) {
         }
       },
       fail: async (failure) => {
-        try {
-          await billing.creditWriter.releaseReservation(
-            reservation.reservationId,
-            failure.reason,
-          );
-        } catch (error) {
-          logReservationReleaseFailure({
-            source: "llm",
-            eventId: input.eventId,
-            reservationId: reservation.reservationId,
-            reason: failure.reason,
-            error,
-          });
+        /*
+         * Release only on a CONFIRMED no-cost (audit A2 / CONTEXT.md Pending Settlement /
+         * ADR-0003): the provider refused before any token (`provider_error`), admission refused
+         * before the provider (`bound_refused`), or the provider reported zero usage (`no_usage`).
+         * Everything else is an unknown outcome — `usage_missing`, `stream_error`, `cancelled`:
+         * the provider may have produced billable work we never learned about. Those keep the
+         * hold (it expires on its own clock and reconciliation reports it) and leave a durable
+         * evidence row naming the event and the reason.
+         */
+        if (isConfirmedNoCost(failure.reason)) {
+          try {
+            await billing.creditWriter.releaseReservation(
+              reservation.reservationId,
+              failure.reason,
+            );
+          } catch (error) {
+            logReservationReleaseFailure({
+              source: "llm",
+              eventId: input.eventId,
+              reservationId: reservation.reservationId,
+              reason: failure.reason,
+              error,
+            });
+          }
+          return;
         }
+        await recordUnsettledUsage({
+          eventId: input.eventId,
+          source: "llm",
+          externalCustomerId: billing.externalCustomerKey,
+          model: modelId,
+          client: input.client,
+          occurredAt: input.occurredAt,
+          inputTokens: 0,
+          outputTokens: 0,
+          reason: failure.reason,
+        });
       },
     };
   });
