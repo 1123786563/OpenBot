@@ -137,6 +137,16 @@ function rowsOf(value: unknown): Row[] {
     ? (value.rows as Row[])
     : [];
 }
+function snapshotOf(row: Row): unknown {
+  if (typeof row.snapshot !== "string") return row.snapshot;
+  try {
+    return JSON.parse(row.snapshot) as unknown;
+  } catch (cause) {
+    // Stored-row corruption is a row-integrity failure like the field
+    // mismatches around it; the cause keeps the JSON.parse detail for triage.
+    throw Object.assign(new Error("EXPERT_VERSION_CORRUPT"), { cause });
+  }
+}
 function verify(
   tenantId: string,
   ref: string,
@@ -148,7 +158,7 @@ function verify(
     row.schema_version !== 1
   )
     fail("EXPERT_VERSION_CORRUPT");
-  const canonical = canonicalizeExpertDefinition(tenantId, row.snapshot);
+  const canonical = canonicalizeExpertDefinition(tenantId, snapshotOf(row));
   if (row.agent_id !== canonical.agentId || canonical.expertVersionRef !== ref)
     fail("EXPERT_VERSION_CORRUPT");
   return canonical;

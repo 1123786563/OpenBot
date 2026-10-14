@@ -5,6 +5,20 @@
  */
 export const MAXIMUM_RUN_OUTPUT_TOKENS = 8_000_000;
 
+/**
+ * A positive token count that fits the PostgreSQL int4 column every token
+ * limit shares (model_route_maximum_tokens et al.). One predicate so a future
+ * widening (say, to bigint) cannot miss a copy.
+ */
+export function isPositiveInt32TokenCount(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    value <= 2_147_483_647
+  );
+}
+
 export function runOutputCeilingFromInput(input: unknown): number {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("RUN_OUTPUT_CEILING_REQUIRED");
@@ -19,12 +33,8 @@ export function runOutputCeilingFromInput(input: unknown): number {
   }
   const maximumTokens = (forwardedProps as { maxOutputTokens?: unknown })
     .maxOutputTokens;
-  if (
-    !Number.isSafeInteger(maximumTokens) ||
-    (maximumTokens as number) <= 0 ||
-    (maximumTokens as number) > 2_147_483_647
-  ) {
+  if (!isPositiveInt32TokenCount(maximumTokens)) {
     throw new Error("RUN_OUTPUT_CEILING_REQUIRED");
   }
-  return Math.min(maximumTokens as number, MAXIMUM_RUN_OUTPUT_TOKENS);
+  return Math.min(maximumTokens, MAXIMUM_RUN_OUTPUT_TOKENS);
 }

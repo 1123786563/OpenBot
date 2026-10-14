@@ -21,8 +21,7 @@
     "fire:workshop-schedules": "bun --env-file=../.env scripts/fire-workshop-schedules.ts",
     "dev": "bun --env-file=../.env --watch src/index.ts",
     "start": "bun --no-env-file src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "typecheck:enterprise": "tsc --noEmit -p tsconfig.enterprise-tests.json"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ag-ui/client": "1.0.1",

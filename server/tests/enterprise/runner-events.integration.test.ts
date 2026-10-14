@@ -46,12 +46,18 @@ import {
   enterpriseTestDatabaseUrlFrom,
 } from "../support/enterprise-database";
 
-const hasRequiredDatabaseUrls = [
-  "ENTERPRISE_TEST_SETUP_DATABASE_URL",
-  "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
-  "ENTERPRISE_TEST_DATA_DATABASE_URL",
-  "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
-].every((key) => Boolean(process.env[key]?.trim()));
+const hasRequiredDatabaseUrls =
+  Boolean(
+    (
+      process.env.ENTERPRISE_TEST_SETUP_DATABASE_URL ??
+      process.env.TEST_DATABASE_URL
+    )?.trim(),
+  ) &&
+  [
+    "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
+    "ENTERPRISE_TEST_DATA_DATABASE_URL",
+    "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
+  ].every((key) => Boolean(process.env[key]?.trim()));
 
 const integrationTest = hasRequiredDatabaseUrls ? test : test.skip;
 
@@ -259,7 +265,7 @@ integrationTest(
         }),
         modelCapabilitySecret:
           "test-only-model-capability-secret-000000000000000000000000000000",
-        leaseMilliseconds: 10_000,
+        leaseMilliseconds: 1_000,
       });
       await expect(
         runs.start(
@@ -578,16 +584,42 @@ integrationTest(
           schemaVersion: 1,
           event: { type: "TEXT_MESSAGE_START", messageId: `${prefix}-event` },
         });
+        appendPromise.catch(() => undefined);
 
         const waitDeadline = Date.now() + 10_000;
         while (Date.now() < waitDeadline) {
-          const [waiting] = await tx.execute(sql`
-            select activity.pid
+          const waiters = (await setupDatabase.execute(sql`
+            select activity.pid::int as pid,
+              activity.application_name,
+              pg_blocking_pids(activity.pid)::int[] as blockers
             from pg_stat_activity as activity
-            where activity.application_name = ${appendApplicationName}
-              and activity.wait_event_type = 'Lock'
-              and ${holderPid} = any(pg_blocking_pids(activity.pid))
-          `);
+            where activity.wait_event_type = 'Lock'
+          `)) as unknown as Array<{
+            pid: number;
+            application_name: string;
+            blockers: number[] | null;
+          }>;
+          const waitersByPid = new Map(
+            waiters.map((waiter) => [waiter.pid, waiter]),
+          );
+          const blockedByHolder = (
+            pid: number,
+            seen = new Set<number>(),
+          ): boolean => {
+            if (seen.has(pid)) return false;
+            seen.add(pid);
+            for (const blocker of waitersByPid.get(pid)?.blockers ?? []) {
+              if (blocker === holderPid) return true;
+              if (waitersByPid.has(blocker) && blockedByHolder(blocker, seen))
+                return true;
+            }
+            return false;
+          };
+          const waiting = waiters.find(
+            (waiter) =>
+              waiter.application_name === appendApplicationName &&
+              blockedByHolder(waiter.pid),
+          );
           if (waiting) {
             appendWaitObserved = true;
             expect(Date.now()).toBeLessThan(lease.expiresAt.getTime());

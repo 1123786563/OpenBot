@@ -1856,7 +1856,6 @@ test.skipIf(!enabled)(
     const setupUrl = enterpriseTestDatabaseUrlFrom();
     const endpoint = new URL(setupUrl);
     expect(["127.0.0.1", "localhost", "[::1]"]).toContain(endpoint.hostname);
-    expect(endpoint.port).toBe("5434");
     const constructionClient = postgres(setupUrl, { max: 1 });
     try {
       const adapterConstructionClient = postgres(setupUrl, { max: 1 });

@@ -28,5 +28,5 @@ test("Hono adapter and self-hosted storage constructors are available", async ()
   expect(report.storageConstructor.memory).toBe(true);
   expect(report.storageConstructor.postgresStore).toBe(true);
   expect(report.runtime.bun).toBe(Bun.version);
-  expect(report.runtime.declaredBun).toBe("bun@1.3.14");
+  expect(report.runtime.declaredBun).toBe("bun@1.4.3");
 });

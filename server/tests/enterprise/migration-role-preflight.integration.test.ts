@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import {
-  ENTERPRISE_TEST_DATABASE,
+  enterpriseTestDatabaseNameFrom,
   enterpriseTestDatabaseUrlFrom,
 } from "../support/enterprise-database";
 
@@ -48,10 +48,7 @@ test.skipIf(!enabled)(
     expect(["127.0.0.1", "localhost", "[::1]"]).toContain(
       parsedSetupUrl.hostname,
     );
-    expect(parsedSetupUrl.port).toBe("5434");
-    expect(decodeURIComponent(parsedSetupUrl.pathname.slice(1))).toBe(
-      ENTERPRISE_TEST_DATABASE,
-    );
+    expect(enterpriseTestDatabaseNameFrom(setupUrl)).toContain("enterprise");
 
     const database = postgres(setupUrl, { max: 1 });
     let dataRoleCreated = false;

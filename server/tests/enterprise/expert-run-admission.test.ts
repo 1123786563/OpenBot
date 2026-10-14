@@ -276,7 +276,9 @@ class RecordingTransaction {
   }
 }
 
-async function admissionHarness(options: { routeRef?: string } = {}) {
+async function admissionHarness(
+  options: { routeRef?: string; routeMaximumTokens?: number } = {},
+) {
   const state: HarnessState = {
     expertRow: storedRow("tenant-a", definition()),
     intentRow: null,
@@ -304,7 +306,7 @@ async function admissionHarness(options: { routeRef?: string } = {}) {
     expertVersions: new ExpertVersionCatalog(data),
     modelRouteFor: async (): Promise<RunModelRoute> => ({
       routeRef,
-      maximumTokens: 4000,
+      maximumTokens: options.routeMaximumTokens ?? 4000,
     }),
     modelCapabilitySecret:
       "test-only-model-capability-secret-000000000000000000000000000000",
@@ -388,6 +390,41 @@ describe("trusted Expert Run admission", () => {
       persisted[0].values.modelRouteRef,
     );
     expect(persisted[0].values.modelRouteMaximumTokens).toBe(1500);
+
+    for (const bad of [0, NaN, 2_147_483_648]) {
+      const rejected = await admissionHarness({
+        routeMaximumTokens: bad,
+      });
+      await expect(
+        rejected.runs.start(scope, rejected.admit()),
+      ).rejects.toThrow("MODEL_ROUTE_UNAVAILABLE");
+    }
+    // A route cap below the caller ceiling clamps the persisted route limit
+    // while the budget reservation keeps the full caller ceiling — the
+    // service-level contract runs.integration pins end to end.
+    const tightened = await admissionHarness({
+      routeMaximumTokens: 100,
+    });
+    const tightenedRun = await tightened.runs.start(
+      scope,
+      tightened.admit(),
+    );
+    expect(tightenedRun).toBeDefined();
+    const tightenedTx = tightened.transactions[0];
+    expect(runInserts(tightenedTx)[0].values.modelRouteMaximumTokens).toBe(
+      100,
+    );
+    expect(budgetInserts(tightenedTx)[0].values.tokenLimit).toBe(1500);
+    // A cap exactly at the ceiling is the identity case production always
+    // produces.
+    const exact = await admissionHarness({
+      routeMaximumTokens: 1500,
+    });
+    const exactRun = await exact.runs.start(scope, exact.admit());
+    expect(exactRun).toBeDefined();
+    expect(
+      runInserts(exact.transactions[0])[0].values.modelRouteMaximumTokens,
+    ).toBe(1500);
     const reservation = budgetInserts(tx);
     expect(reservation).toHaveLength(1);
     expect(reservation[0].values.tokenLimit).toBe(1500);
