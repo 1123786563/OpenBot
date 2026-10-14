@@ -586,7 +586,7 @@ export function createApp(
    * wiring (store, gateway, manager, executor, the deployment's model catalog) is one boot
    * decision; the craft tree carries its own enabled gate (503 mid-flight) and needs only
    * `requireUser` (its sandbox routing is not Bot-scoped like the workshop's canUseBot).
-   * Absent (or the deployment's OPENBOT_CRAFT_ENABLED unset) mounts nothing.
+   * Absent (or OPENBOT_CRAFT_ENABLED explicitly disabled) mounts nothing.
    */
   craftRoutes?: CraftRoutesFactory,
   /** A person's own linked accounts. Absent answers 503 on /api/identity. */
