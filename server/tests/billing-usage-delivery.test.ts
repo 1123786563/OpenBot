@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { CreditReservationConflictError } from "../src/billing/credits-writer";
 import { startUsageDeliverySweeps } from "../src/billing/maintenance";
 import { createBillingService } from "../src/billing/service";
@@ -625,5 +625,108 @@ describe("startUsageDeliverySweeps", () => {
     handle.stop();
     expect(runs).toBeGreaterThan(1);
     expect(logs[0]).not.toContain("postgres");
+  });
+});
+
+describe("a sweep pass is single-instance (audit C3)", () => {
+  // The guard's dedicated connection is faked — mock.module replaces postgres for the
+  // already-imported sweeper — so the tests pin the lock protocol without a second database: a
+  // pass that cannot take the advisory lock is skipped, and the connection that holds it is
+  // ended (ending the connection IS the release of a session lock) after a successful pass AND
+  // after a throwing one. A leaked lock silently disables every later sweep on every replica,
+  // so the throwing half is the one that matters.
+  const guard = { held: true, events: [] as string[] };
+  mock.module("postgres", () => ({
+    default: () => {
+      const connection = (() =>
+        Promise.resolve([{ held: guard.held }])) as unknown as {
+        (
+          strings: TemplateStringsArray,
+          ...values: unknown[]
+        ): Promise<{ held: boolean }[]>;
+        end: (options?: unknown) => Promise<void>;
+      };
+      connection.end = async () => {
+        guard.events.push("end");
+      };
+      return connection;
+    },
+  }));
+
+  beforeEach(() => {
+    guard.held = true;
+    guard.events = [];
+  });
+  afterAll(() => {
+    // The module mock must not follow postgres into other test files.
+    mock.restore();
+  });
+
+  const lock = {
+    databaseUrl: "postgres://single-instance-guard-test",
+    key: 4_192_005,
+  };
+
+  test("a pass is skipped when the advisory lock is held elsewhere", async () => {
+    guard.held = false;
+    let passes = 0;
+    const sweeps = startUsageDeliverySweeps(
+      {
+        runBatch: async () => {
+          passes += 1;
+          return { examined: 0, delivered: 0, failed: 0 };
+        },
+      },
+      { firstRunMs: 0, intervalMs: 5, lock },
+    );
+    await Bun.sleep(20);
+    sweeps.stop();
+    expect(passes).toBe(0);
+  });
+
+  test("a successful pass runs and ends the connection that holds the lock", async () => {
+    let passes = 0;
+    const sweeps = startUsageDeliverySweeps(
+      {
+        runBatch: async () => {
+          passes += 1;
+          guard.events.push("ran");
+          return { examined: 0, delivered: 0, failed: 0 };
+        },
+      },
+      { firstRunMs: 0, intervalMs: 5, lock },
+    );
+    await Bun.sleep(20);
+    sweeps.stop();
+    expect(passes).toBeGreaterThanOrEqual(1);
+    // The pass that ran also released: its end follows its run (passes serialize, so nothing
+    // else can land between the two).
+    const firstRun = guard.events.indexOf("ran");
+    expect(firstRun).toBeGreaterThanOrEqual(0);
+    expect(guard.events[firstRun + 1]).toBe("end");
+  });
+
+  test("a throwing pass still ends the connection that holds the lock", async () => {
+    let attempts = 0;
+    const sweeps = startUsageDeliverySweeps(
+      {
+        runBatch: async () => {
+          attempts += 1;
+          guard.events.push("threw");
+          throw new Error("boom");
+        },
+      },
+      { firstRunMs: 0, intervalMs: 5, log: () => {}, lock },
+    );
+    await Bun.sleep(20);
+    sweeps.stop();
+    // The throw wedged neither the sweeper (it kept retrying) nor the lock: every throwing pass
+    // is followed by its release.
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    for (let i = 0; i < guard.events.length; i += 1) {
+      if (guard.events[i] === "threw") {
+        expect(guard.events[i + 1]).toBe("end");
+      }
+    }
   });
 });
