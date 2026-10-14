@@ -113,8 +113,14 @@ def verification(tid):
     # chase noise outside its owned_scope or falsely report failure.
     src = [f for f in files if re.search(r"\.(tsx?|json)$", f)]
     scope = " ".join(src) if src else "<changed files>"
-    cmds.append(f"bunx biome lint --error-on-warnings {scope}")
-    cmds.append(f"bunx biome format {scope}")
+    # Locked binary, not `bunx biome`: bunx can resolve a different version than the pinned
+    # 2.5.10 in package.json, and two frontier tickets produced gate claims that could not be
+    # reproduced (errata E13).
+    cmds.append(f"./node_modules/.bin/biome lint --error-on-warnings {scope}")
+    cmds.append(f"./node_modules/.bin/biome format {scope}")
+    cmds.append("# 门禁证据必须来自已提交状态：先 commit，再跑上面的 lint/format；"
+                "biome format --write 的结果若未提交则不算通过（errata E13，T06 就是这样误报的）。"
+                "checkpoint 里必须写明输出来自哪个 commit sha。")
     cmds.append("# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；"
                 "不得为让它们变绿而改 owned_scope 之外的文件。"
                 "见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md")

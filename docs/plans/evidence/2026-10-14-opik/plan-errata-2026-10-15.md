@@ -274,3 +274,74 @@ must not be charged to the implementer.
 path resolves just because it resolves for the coordinator. Also decide up front whether checkpoints
 are committed by the worker or collected by the coordinator — the frontier wave ended up with both,
 which is why two of four were missing from branch history.
+
+## E11 — T05 plan: the PEM private-key deny pattern is effectively dead (HIGH, security)
+
+**What I wrote** in the `DENY` table:
+```ts
+{ reason: "credential", pattern: /\b-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+```
+
+**Why it is wrong:** `\b` asserts a word/non-word transition. `-` is a non-word character, so
+`\b` immediately before `-----` can only match when a **word character precedes the header** —
+which never happens in real data. Measured against the pattern exactly as written:
+
+| Input form | Result |
+| --- | --- |
+| bare PEM (whole string) | **MISSED** |
+| PEM after a space | **MISSED** |
+| PEM after a colon | **MISSED** |
+| PEM inside JSON metadata | **MISSED** |
+| `abc-----BEGIN RSA PRIVATE KEY-----` (glued to a word char) | detected |
+
+Removing the `\b` anchor detects all five. So the plan shipped a redaction module whose stated
+coverage of private keys did not exist, in the one component whose entire purpose is keeping
+credentials out of the observability store, evaluation samples, Judge prompts and exports
+(parent Spec A4).
+
+This is the highest-severity defect found in the wave, and the plan's own test suite could not
+catch it — see E12.
+
+## E12 — T05 plan: Self-Review falsely claimed PEM and Slack canary coverage
+
+The plan's Self-Review asserted: "canary 清单覆盖 bearer / OpenAI 风格 / AWS access key + secret /
+GitHub token / **Slack token** / **PEM 私钥** / postgres+mysql+redis DSN / 账号标识 / 内部能力名 /
+reasoning 标签 / 带签名的私有文件 URL."
+
+The test's `CANARIES` dict contains **no PEM entry and no Slack entry**. The `DENY` table has
+patterns for both, so the claim looked plausible from the implementation side — but nothing ever
+exercised them, which is exactly why E11 survived to execution. T05's reviewer caught this as F3.
+
+**Rule:** a coverage claim in Self-Review must be checked against the test's actual input list, not
+against the implementation's pattern list. A deny pattern with no canary is an untested assertion.
+
+## E13 — Coordinator defect: verifying gates in the worker's worktree launders the error being caught
+
+T06's implementer reported `FMT_EXIT=0`. Its reviewer reported exit 1 on `contracts.ts:71`. Both
+were telling the truth about different things: the implementer ran `biome format --write`, which
+fixed the file **in its working tree**, and never committed the result. The delivered branch fails
+format; the dirty worktree passes.
+
+The coordinator's first check ran biome inside the implementer's worktree, reproduced "clean", and
+nearly recorded the reviewer as having made a false claim. `git status` in that worktree
+(` M server/src/ai-observability/contracts.ts`) is what exposed it.
+
+**Rule:** gate evidence is only valid from a clean checkout of the delivered commit, or after the
+worker has committed. Checkpoints must name the commit sha their output came from. Never verify a
+worker's claim by running commands in the worktree the worker left behind.
+
+## E14 — Reviewer defect: T01's only blocking finding does not reproduce
+
+Not a plan defect, but recorded here because the same discipline applies in both directions.
+T01's reviewer returned request-changes on one medium finding: `index.ts:4788` was "an 83-character
+over-width line the implementer added, the only new violation relative to baseline."
+
+Measured: line 4788 is **81** characters; `4788` does not appear anywhere in biome's format
+diagnostics; and base-versus-branch violation counts are identical for both files the implementer
+touched (`index.ts` 1 → 1, `app.ts` 1 → 1, zero new). The line biome actually flags in `index.ts`
+is 134, a pre-existing billing import that shifted position because the implementer added imports
+above it.
+
+**Rule:** a finding is not actionable until reproduced from the committed state. Adding imports
+shifts every line number below them, so "line N is a violation" must always be paired with "line N
+is inside this diff hunk".

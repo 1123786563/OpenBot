@@ -65,7 +65,14 @@
      "effort": null
     },
     "coordinates_message": "msg_567a732f4b90",
-    "briefing_addendum": "msg_a37b82069506"
+    "briefing_addendum": "msg_a37b82069506",
+    "terminal_state": "retained",
+    "worker_done": {
+     "outcome": "succeeded",
+     "handle_validated": true
+    },
+    "verdict": "request-changes",
+    "report_commit": "fdbce7e8"
    },
    "T02": {
     "task_id": "task_fa2d1ae12402",
@@ -81,7 +88,13 @@
      "effort": null
     },
     "coordinates_message": "msg_3170ed12cf2f",
-    "briefing_addendum": "msg_4ccf7ee3dbe9"
+    "briefing_addendum": "msg_4ccf7ee3dbe9",
+    "terminal_state": "retained",
+    "worker_done": {
+     "outcome": "succeeded",
+     "handle_validated": true
+    },
+    "verdict": "approve"
    },
    "T03": {
     "task_id": "task_78a502a23cd6",
@@ -113,7 +126,14 @@
      "effort": null
     },
     "coordinates_message": "msg_19f305e2573c",
-    "briefing_addendum": "msg_5d4031e28759"
+    "briefing_addendum": "msg_5d4031e28759",
+    "terminal_state": "retained",
+    "verdict": "request-changes",
+    "report_commit": "9a2d1ed1",
+    "worker_done": {
+     "outcome": "succeeded",
+     "handle_validated": true
+    }
    },
    "T06": {
     "task_id": "task_a4d82f0b5f83",
@@ -129,7 +149,14 @@
      "effort": null
     },
     "coordinates_message": "msg_6f26d05238f4",
-    "briefing_addendum": "msg_7939fc2eb363"
+    "briefing_addendum": "msg_7939fc2eb363",
+    "terminal_state": "retained",
+    "worker_done": {
+     "outcome": "succeeded",
+     "handle_validated": true
+    },
+    "verdict": "request-changes",
+    "report_commit": "e1917c2d"
    }
   },
   "final_review": {
