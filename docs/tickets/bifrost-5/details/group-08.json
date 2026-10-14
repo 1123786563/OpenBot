@@ -1,0 +1,295 @@
+{
+ "group": "08",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC07/AC15/AC17/AC19）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（Q12 结果未知保留预留、Q25 撤销不取消已发生责任、Q29 长期未知的人工处置）",
+  "docs/adr/0003-bifrost-openbot-credit-admission.md",
+  "CONTEXT.md（待结算、恢复项 RecoveryItem、证据化处置、补偿术语）"
+ ],
+ "anchors": {
+  "outbox": "server/src/billing/usage-outbox.ts（createUsageOutbox）、usage-delivery.ts、usage-delivery-error.ts",
+  "sweeps": "server/src/billing/maintenance.ts（startUsageDeliverySweeps：既有周期扫描模式）",
+  "reconcile": "server/src/billing/reconcile.ts（createReconciler、ExpectedPlanCredits）",
+  "admin-audit": "server/src/admin/routes.ts、server/src/audit.ts、server/src/audit-retention.ts",
+  "bifrost-jobs": "bifrost/framework/jobaccounting/（sweeper.go、types.go、batch.go、video.go）、bifrost/plugins/governance/main.go（ReportUsage、postHookWorker）",
+  "credit-protocol": "组 06 的 Reserve/Status/Settle/Release 与 unknown 状态、组 07 的 dispatch 承诺与 result outbox",
+  "test-harness": "server/tests/support/database.ts；跨进程重启用真实持久化 + 子进程/双 worker，不用 mock 证明"
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "08.1": {
+   "slug": "unknown-dispatch-recovery-scan",
+   "contracts": {
+    "consumes": ["07.4 的 dispatch 承诺记录", "06.8 的 unknown 预留状态"],
+    "produces": [
+     "RecoveryItem { attemptId, reservationId, payerRef, snapshotVersion, rateVersion, state, failureCount, lastReason, detectedAt }",
+     "扫描任务：识别“承诺已写入但供应商派发结果未知”的记录并生成 RecoveryItem",
+     "认领语义：多 worker 下同一 RecoveryItem 只被一个 worker 认领处理"
+    ]
+   },
+   "steps": [
+    "复用既有周期扫描模式实现恢复扫描，识别 dispatch 未知状态",
+    "为每条未知记录生成 RecoveryItem，固定 attempt/reservation/payer 与原价格版本",
+    "实现认领锁，避免多 worker 重复处理或重复派发",
+    "扫描本身不得释放预留、不得重新派发供应商请求",
+    "先写失败测试：杀进程后重启，扫描识别未知项且不重复派发、不重复扣费"
+   ],
+   "criteria": [
+    "进程在派发前/派发后被杀，重启后扫描都能识别对应未知项",
+    "扫描不触发第二次供应商派发，也不重复扣费",
+    "多 worker 并发扫描时同一 RecoveryItem 只被认领一次",
+    "RecoveryItem 固定原预留、付款账户与价格版本"
+   ],
+   "tests": ["跨进程重启恢复集成测试（真实持久化）", "双 worker 并发认领测试", "无重复派发/扣费断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/recovery-scan.integration.test.ts"],
+   "owned_scope": ["恢复扫描模块与 RecoveryItem 存储、迁移", "对应测试"],
+   "resume_hint": "扫描只做“发现 + 认领”，任何释放或重派发都属于后续 Ticket；接手先确认扫描没有副作用写入账务。"
+  },
+  "08.2": {
+   "slug": "persisted-result-unacked-replay",
+   "contracts": {
+    "consumes": ["08.1 的 RecoveryItem", "07.8 的 result outbox 记录"],
+    "produces": [
+     "针对“结果已持久化但未 ack”的恢复动作：重放投递到 Settle，不重新采集用量",
+     "已送达目标的记录不重复投递（以投递状态与幂等键判定）",
+     "重放结果与首次一致，台账只有一笔"
+    ]
+   },
+   "steps": [
+    "按 RecoveryItem 状态分支处理“结果已持久化未 ack”，直接重放既有结果",
+    "使用与首次相同的幂等键，确保 Settle 端收敛为同一笔",
+    "重放失败保留 RecoveryItem 并累加失败计数",
+    "先写失败测试：结果已存但 ack 丢失 → 重放后台账只有一笔结算"
+   ],
+   "criteria": [
+    "结果已持久化但未 ack 的记录被重放，且不重新采集用量",
+    "重放后台账只有一笔结算，金额与原始结果一致",
+    "已确认送达的记录不会被重复投递",
+    "重放失败不丢失 RecoveryItem"
+   ],
+   "tests": ["ack 丢失重放集成测试", "重复投递抑制断言", "失败保留断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/recovery-unacked-replay.integration.test.ts"],
+   "owned_scope": ["恢复处理分支（已持久化未 ack）", "对应测试"],
+   "resume_hint": "重放必须复用原幂等键；若实现里重新生成键，会造成重复扣费，接手先检查键来源。"
+  },
+  "08.3": {
+   "slug": "settled-but-ack-lost-convergence",
+   "contracts": {
+    "consumes": ["08.2 的重放路径", "06.9 的 Settle 幂等"],
+    "produces": [
+     "针对“台账已结算但 ack 丢失”的恢复动作：查询结算结果并补记 ack，不产生第二笔账",
+     "收敛证据：恢复后台账笔数与金额与首次结算完全一致",
+     "该分支可被 08.4 的重试计数观测"
+    ]
+   },
+   "steps": [
+    "识别台账已存在对应结算但 outbox 未确认的情形",
+    "以只读方式核对结算结果，然后补记 ack 并关闭 RecoveryItem",
+    "确认不会因补记 ack 触发第二次 Settle",
+    "先写失败测试：注入“结算成功但 ack 丢失”，恢复后仍只有一笔账"
+   ],
+   "criteria": [
+    "台账已结算但 ack 丢失时，恢复后仍只有一笔结算",
+    "恢复动作不触发第二次 Settle",
+    "RecoveryItem 在补记 ack 后关闭并可审计",
+    "金额与首次结算完全一致"
+   ],
+   "tests": ["ack 丢失收敛集成测试", "无第二次 Settle 断言（spy 计数）", "审计记录断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/recovery-ack-lost.integration.test.ts"],
+   "owned_scope": ["恢复处理分支（已结算未 ack）", "对应测试"],
+   "resume_hint": "这一分支只补 ack、不补账；接手先断言 Settle 调用次数为 0。"
+  },
+  "08.4": {
+   "slug": "background-retry-and-failure-count",
+   "contracts": {
+    "consumes": ["08.1 的 RecoveryItem"],
+    "produces": [
+     "后台重试策略：按可配置间隔重试结算/查询，记录 failureCount 与最近原因",
+     "重试期间预留始终保持占用，重试不改变账务状态",
+     "超过阈值后标记为需人工处置，交由 08.6 告警"
+    ]
+   },
+   "steps": [
+    "实现带退避的重试调度，复用既有 sweeps 模式",
+    "每次失败累加计数并记录脱敏原因",
+    "确认重试期间 unknown 预留持续占用可用积分",
+    "先写失败测试：连续失败后计数递增、预留仍占用、超阈值进入人工队列"
+   ],
+   "criteria": [
+    "重试按退避策略执行，failureCount 与最近原因可查询",
+    "重试期间预留持续占用可用积分",
+    "超过阈值后进入人工处置队列",
+    "重试不产生重复结算或重复派发"
+   ],
+   "tests": ["退避与计数测试（可控时钟）", "占用不变断言", "阈值触发人工队列测试"],
+   "verification": ["bun test server/tests/recovery-retry.test.ts"],
+   "owned_scope": ["重试调度与计数字段", "对应测试"],
+   "resume_hint": "重试间隔与阈值必须可配置；接手检查是否存在“重试即释放预留”的隐含逻辑，有则移除。"
+  },
+  "08.5": {
+   "slug": "provider-terminal-state-query",
+   "contracts": {
+    "consumes": ["08.4 的重试调度", "供应商任务/请求状态查询能力（Bifrost jobaccounting 与 provider 接口）"],
+    "produces": [
+     "终态查询动作：向供应商确认真实结果（完成/失败/不存在），并把结论写回 RecoveryItem",
+     "查不到日志或供应商无该记录时保持 unknown，不自动释放",
+     "查询证据（时间、来源、原始结论摘要）可被管理员核查"
+    ]
+   },
+   "steps": [
+    "为支持的调用类型实现终态查询（文本请求、异步任务、实时单元）",
+    "把查询结论分类为 settled-evidence / no-charge-evidence / still-unknown",
+    "still-unknown 时保持预留并累加失败计数",
+    "先写失败测试：供应商无记录时保持 unknown；有明确未派发证据时才允许进入释放路径"
+   ],
+   "criteria": [
+    "供应商返回明确结果时，结论被写回并可作为处置证据",
+    "查不到日志或供应商无记录时保持 unknown，不释放预留",
+    "只有具备明确未计费证据时才进入释放路径（实际释放由 08.9 执行）",
+    "查询证据可被管理员只读核查"
+   ],
+   "tests": ["三类查询结论测试（fake provider）", "无记录保持 unknown 断言", "证据记录完整性断言"],
+   "verification": ["bun test server/tests/recovery-provider-query.test.ts", "cd bifrost/framework/jobaccounting && go test ./..."],
+   "owned_scope": ["终态查询模块（OpenBot 与 Bifrost 侧接线）", "证据存储", "对应测试"],
+   "resume_hint": "“查不到”不等于“没发生”；接手先跑无记录用例，确认结果是保持 unknown 而不是释放。"
+  },
+  "08.6": {
+   "slug": "persistent-anomaly-alerting",
+   "contracts": {
+    "consumes": ["08.4 的 failureCount", "08.5 的 still-unknown 结论", "现有告警/通知接线"],
+    "produces": [
+     "告警规则：同一 RecoveryItem 超过重试阈值或停留超过时限即告警",
+     "告警内容含归属账户、金额上限、停留时长与最近原因（脱敏）",
+     "告警去重与升级策略，避免重复轰炸"
+    ]
+   },
+   "steps": [
+    "定义告警阈值与停留时限（可配置），触发时产生告警事件",
+    "告警内容脱敏，不含凭据与他人账户明细",
+    "实现去重与升级（首次告警、重复告警、长期未处置升级）",
+    "先写失败测试：超阈值触发一次告警；重复触发去重；长期未处置升级"
+   ],
+   "criteria": [
+    "超过重试阈值或停留时限的未知项触发告警",
+    "告警内容脱敏且包含处置所需信息",
+    "重复告警被去重，长期未处置会升级",
+    "告警不改变预留状态"
+   ],
+   "tests": ["阈值触发与去重测试（可控时钟）", "升级策略测试", "脱敏断言"],
+   "verification": ["bun test server/tests/recovery-alerting.test.ts"],
+   "owned_scope": ["告警规则与事件模块", "对应测试"],
+   "resume_hint": "告警只是通知，不得顺带释放或结算；接手检查告警处理函数没有账务副作用。"
+  },
+  "08.7": {
+   "slug": "user-pending-settlement-ui",
+   "contracts": {
+    "consumes": ["06.12 的待结算视图", "08.1 的 RecoveryItem 状态与原因"],
+    "produces": [
+     "用户界面：展示待结算额度、停留原因（可理解的用户语言）与预计处理方式",
+     "只展示本人账户数据，不暴露内部错误细节或他人信息",
+     "待结算不影响已可用额度的展示准确性"
+    ]
+   },
+   "steps": [
+    "把 RecoveryItem 的原因码映射为用户可理解的文案",
+    "在余额页与消费明细中展示待结算项与原因",
+    "确认展示不泄露内部堆栈、供应商细节或他人账户",
+    "先写失败的界面测试：有待结算项时展示原因；无待结算时不显示该区块"
+   ],
+   "criteria": [
+    "用户看到待结算额度与可理解的原因",
+    "展示不泄露内部错误细节或他人账户数据",
+    "待结算与可用余额分别展示，数值与后端一致",
+    "无待结算项时界面不显示误导性区块"
+   ],
+   "tests": ["界面渲染测试（有/无待结算两种状态）", "脱敏断言", "数值一致性断言"],
+   "verification": ["bun test app/tests/pending-settlement-ui.test.tsx", "bun run --filter app typecheck"],
+   "owned_scope": ["用户余额与明细页面的待结算区块", "对应 app/tests 测试"],
+   "resume_hint": "原因码到文案的映射要与 08.5/08.6 的码表一致；接手先核对码表，避免出现“未知错误”这类无信息文案。"
+  },
+  "08.8": {
+   "slug": "admin-settlement-review-view",
+   "contracts": {
+    "consumes": ["08.1 的 RecoveryItem", "08.5 的查询证据", "现有管理员路由与权限判定"],
+    "produces": [
+     "管理员只读核查视图：列出异常结算项、归属账户、金额上限、停留时长、失败次数与证据",
+     "严格只读：该视图不提供任何改变账务的动作",
+     "非管理员不可访问，访问写入审计"
+    ]
+   },
+   "steps": [
+    "新增管理员只读路由与页面，按状态与停留时长排序",
+    "展示 08.5 采集的证据摘要与查询历史",
+    "确认该视图无任何写操作入口",
+    "先写失败测试：非管理员访问被拒绝；页面不含写操作"
+   ],
+   "criteria": [
+    "管理员可以看到全部异常结算项及其证据",
+    "视图严格只读，不提供改变账务的动作",
+    "非管理员访问被拒绝并记录审计",
+    "证据摘要不含凭据明文"
+   ],
+   "tests": ["权限与审计测试", "只读断言（无写路由）", "证据脱敏断言"],
+   "verification": ["bun test server/tests/admin-settlement-review.test.ts"],
+   "owned_scope": ["管理员核查路由与页面", "对应测试"],
+   "resume_hint": "把“核查”和“处置”分开是本组的关键设计；若页面里出现结算按钮，移到 08.9 的独立授权动作。"
+  },
+  "08.9": {
+   "slug": "evidence-based-settle-or-release",
+   "contracts": {
+    "consumes": ["08.8 的核查视图", "06.9 的 Settle", "06.11 的 Release 证据要求"],
+    "produces": [
+     "人工处置命令：{ recoveryItemId, action: settle|release, evidence, expectedVersion, operatorId, idempotencyKey }",
+     "并发与版本保护：expectedVersion 不匹配时拒绝，防止重复处置",
+     "无费用证据不得释放；结算必须引用具体证据；全部动作写入审计"
+    ]
+   },
+   "steps": [
+    "实现独立授权的处置动作，要求携带证据与预期版本",
+    "settle 走 Settle 幂等语义，release 只在具备未计费证据时允许",
+    "版本不匹配或重复处置返回冲突，不产生第二次效果",
+    "先写失败测试：无证据释放被拒绝；版本冲突被拒绝；非管理员被拒绝；重复处置幂等"
+   ],
+   "criteria": [
+    "缺少费用证据时释放被拒绝",
+    "结算动作必须引用具体证据且金额与证据一致",
+    "expectedVersion 不匹配或重复处置被拒绝，不产生第二次账务效果",
+    "非管理员无法处置，全部处置写入审计"
+   ],
+   "tests": ["四类拒绝测试", "处置幂等测试", "审计与证据链断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/settlement-resolution.integration.test.ts"],
+   "owned_scope": ["处置命令服务与路由", "审计接线", "对应测试"],
+   "resume_hint": "处置命令必须与核查视图分离并单独授权；接手先确认权限判定不是复用只读视图的守卫。"
+  },
+  "08.10": {
+   "slug": "platform-loss-compensation-and-liability",
+   "contracts": {
+    "consumes": ["08.9 的处置动作与审计", "02.x 的账户模型", "现有用户停用/删除流程"],
+    "produces": [
+     "补偿动作：平台承担损失时作为独立、有审计的补偿操作，与“确认无费用”严格区分",
+     "债务保留语义：用户停用或删除后，已发生消费记录与待结算责任保留至处理完成",
+     "组 08 缝合点：中断 → 扫描 → 重试 → 查询 → 告警 → 人工处置 → 补偿，端到端可演示"
+    ]
+   },
+   "steps": [
+    "新增独立补偿动作，记录理由、金额、操作者与证据，不复用释放语义",
+    "确认停用/删除用户时不级联删除账务与待结算责任，且付款账户不被替换",
+    "补偿后用户视图与台账一致，可追溯",
+    "先写失败测试：补偿与释放分别产生不同审计类型；停用用户后债务仍可恢复处理"
+   ],
+   "criteria": [
+    "平台损失补偿是独立审计操作，不能被记录为“确认无费用”",
+    "用户停用或删除后，消费记录与待结算责任保留",
+    "恢复处理不改变原付款账户，不级联删除账务",
+    "补偿后台账与用户视图一致且可追溯"
+   ],
+   "tests": ["补偿与释放审计区分测试", "停用/删除后债务保留集成测试", "payer 不变断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/compensation-liability.integration.test.ts"],
+   "owned_scope": ["补偿动作与审计类型", "停用/删除流程的账务保留约束", "对应测试"],
+   "resume_hint": "把未知结果改成“没有费用”是本组最严重的错误；接手检查补偿与释放是两条独立路径且审计类型不同。"
+  }
+ }
+}

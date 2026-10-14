@@ -1,4 +1,11 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
@@ -140,7 +147,8 @@ export async function restoreArchive(
     // The containment rule, restated: a member that escapes the target is dropped, not
     // written wherever it points — archives from this module never carry one, but the
     // refusal costs three lines and the assumption costs an incident.
-    if (file.path.startsWith("/") || file.path.split("/").includes("..")) continue;
+    if (file.path.startsWith("/") || file.path.split("/").includes(".."))
+      continue;
     const target = join(botWorkspace, file.path);
     await mkdir(join(target, ".."), { recursive: true });
     await writeFile(target, file.bytes);
@@ -230,7 +238,10 @@ function untarBytes(archive: Uint8Array): TarMember[] {
     const header = view.subarray(at, at + HEADER);
     if (header.every((byte) => byte === 0)) break; // the end blocks
     const path = header.toString("utf8", 0, 100).replace(/\0.*$/, "");
-    const sizeField = header.toString("ascii", 124, 136).replace(/\0.*$/, "").trim();
+    const sizeField = header
+      .toString("ascii", 124, 136)
+      .replace(/\0.*$/, "")
+      .trim();
     const size = parseInt(sizeField, 8);
     if (!Number.isFinite(size)) break;
     at += HEADER;

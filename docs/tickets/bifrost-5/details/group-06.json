@@ -1,0 +1,351 @@
+{
+ "group": "06",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC04/AC05/AC07/AC12/AC15）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（Q5 严格防超支、Q9/Q14 固定兑换比例与尾差、Q12 结果未知保留预留、Q24 Grant 中途过期）",
+  "docs/adr/0003-bifrost-openbot-credit-admission.md（Bot 直连 Bifrost，供应商调用前向 OpenBot 原子预留）",
+  "docs/adr/0001-conservative-input-bound.md（经验估算不得充当成本上限证明）",
+  "CONTEXT.md（预留 Reservation、待结算、尾差 remainder、付款账户 PayerRef 术语）"
+ ],
+ "anchors": {
+  "credit-writer": "server/src/billing/credits-writer.ts（reserveCredits{externalCustomerId,idempotencyKey,maximumCents,expiresAt}、settleReservation{reservationId,actual:CreditAmount,title,...}、releaseReservation、availableBalance、CreditReservationConflictError、CreditReservationState='reserved'|'settled'|'released'、尾差随账户携带）",
+  "credits": "server/src/billing/credits.ts（CREDIT_SCALE=100、createCredits、deriveGrantStatus、CreditConsumptionWindow）",
+  "credit-schema": "server/src/db/schema/credits.ts（creditGrants、creditLedger）",
+  "payer": "组 02 交付的 PayerRef / payerKey / PayerBinding",
+  "price": "组 03 交付的 PriceSnapshot / snapshotVersion / PriceStatus 与 01.4 的 RateVersion",
+  "grants-authz": "组 04 交付的 AccessGrant",
+  "input-bound": "server/src/billing/input-bound.ts（countChatInputTokens / fitChatInputRequest / CONSERVATIVE_*：经验估算，只能用于拒绝，不能作为价格或上限证明）",
+  "test-harness": "server/tests/support/database.ts（TEST_DATABASE_URL 必需，缺则抛错）、server/tests/billing-credits-writer.integration.test.ts（并发与幂等的既有测试模式）"
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "06.1": {
+   "slug": "reserve-service-authentication",
+   "contracts": {
+    "consumes": ["01.2 的网关凭据/服务身份模式", "02.3/02.4 的 PayerRef 解析"],
+    "produces": [
+     "受信计费服务身份：只有网关（Bifrost 准入扩展）可调用 Reserve/Status/Settle/Release",
+     "认证失败与非法调用方的拒绝语义，且拒绝不泄露账户数据",
+     "调用方身份与请求绑定，写入审计以便追责"
+    ]
+   },
+   "steps": [
+    "为计费协议接口定义独立的服务身份认证（区别于 Bot 服务认证与用户会话）",
+    "拒绝任何非受信调用方，包括已认证 Bot 直接调用 Reserve",
+    "认证信息与请求一起持久化到审计，便于恢复与排查",
+    "先写失败测试：未认证、错误凭据、Bot 凭据、用户会话四种调用方都被拒绝"
+   ],
+   "criteria": [
+    "只有受信网关服务身份可以调用计费协议接口",
+    "已认证 Bot 或用户会话直接调用 Reserve 被拒绝",
+    "拒绝响应不泄露任何账户余额或 Grant 数据",
+    "每次调用（含失败）都有审计记录"
+   ],
+   "tests": ["四类调用方拒绝测试", "受信调用成功测试", "审计记录断言"],
+   "verification": ["bun test server/tests/credit-service-auth.test.ts"],
+   "owned_scope": ["计费协议认证模块", "对应测试"],
+   "resume_hint": "不要复用 Bot 服务凭据作为计费服务身份：两者权限不同，混用会让 Bot 能自行预留额度。"
+  },
+  "06.2": {
+   "slug": "reserve-in-transaction-revalidation",
+   "contracts": {
+    "consumes": ["06.1 的受信身份", "04.5 的 AccessGrant", "03.2/03.3 的 PriceSnapshot 与 PriceStatus", "03.6 的新鲜度门禁", "02.x 的 PayerBinding"],
+    "produces": [
+     "Reserve 请求契约：{ attemptId(受信生成), grantId, payerRef, modelRef, snapshotVersion, rateVersion, boundEvidence, maximumCredits }",
+     "事务内重验：授权有效、模型开放、价格 known、目录新鲜、上限证据可强制；任一不满足即拒绝",
+     "拒绝响应带 reasonCode，不产生任何写入"
+    ]
+   },
+   "steps": [
+    "在同一数据库事务内重验授权、开放范围、价格状态、新鲜度与上限证据，然后才写入预留",
+    "缺 boundEvidence（可强制上限证明）时拒绝，明确不接受经验 token 估算作为证明",
+    "价格 unknown 或目录过期时拒绝并给出原因",
+    "拒绝路径不写库、不产生部分状态",
+    "先写失败测试：授权撤销、模型未开放、价格 unknown、目录过期、缺上限证据五类拒绝"
+   ],
+   "criteria": [
+    "授权失效时预留被拒绝",
+    "价格 unknown 或模型未开放时预留被拒绝",
+    "目录过期时预留被拒绝，原因指向新鲜度而非模型不存在",
+    "缺可强制上限证据时拒绝，且经验估算不被当作证据"
+   ],
+   "tests": ["五类拒绝路径测试", "拒绝不写库断言", "重验发生在事务内的断言（并发注入）"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/reserve-revalidation.integration.test.ts"],
+   "owned_scope": ["Reserve 服务与重验逻辑", "对应测试"],
+   "resume_hint": "重验必须在写入预留的同一事务内，否则并发撤销会漏过；接手用“撤销与预留并发”的用例验证。"
+  },
+  "06.3": {
+   "slug": "atomic-reservation-under-concurrency",
+   "contracts": {
+    "consumes": ["06.2 的重验结果", "CreditWriter.reserveCredits 的原子语义与 availableBalance"],
+    "produces": [
+     "跨 Bot 共享的原子预留：同一账户的所有 Key 竞争同一份可用额度",
+     "预留成功返回 reservationId 与锁定的 snapshotVersion/rateVersion；失败返回可用额度与 reasonCode",
+     "并发正确性以专用 PostgreSQL 测试库证明，不以 mock 证明"
+    ]
+   },
+   "steps": [
+    "以 PayerRef 解析出的账户键调用 reserveCredits，保持账户级行锁语义",
+    "确保同一账户下不同 Key 的预留互相竞争，不各自持有独立额度",
+    "失败时返回可用额度与原因，不写入任何预留",
+    "先写失败测试：余额 10、两个上限 8 的并发请求只有一个成功，可用余额为 2"
+   ],
+   "criteria": [
+    "余额 10 时两个上限 8 的并发请求只产生一个预留与一次供应商派发",
+    "两个不同 Bot 的 Key 竞争同一账户额度，不各自获得一份",
+    "失败请求不写入预留，且返回当时的可用额度",
+    "并发结论由真实数据库测试证明"
+   ],
+   "tests": ["多连接并发预留集成测试（余额 10 / 两个 8）", "跨 Key 竞争测试", "失败请求无写入断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/reserve-concurrency.integration.test.ts"],
+   "owned_scope": ["Reserve 服务的预留写入路径", "并发集成测试"],
+   "resume_hint": "现有 reserveCredits 已具备账户级原子性；缺口通常在“按 Key 而非按账户”预留，接手先断言两个 Key 共享同一账户键。"
+  },
+  "06.4": {
+   "slug": "payer-tampering-conflict-semantics",
+   "contracts": {
+    "consumes": ["06.2 的请求契约", "02.5 的 PayerBinding 不切换语义"],
+    "produces": [
+     "冲突语义：请求中的 payer 与授权解析出的 payer 不一致时拒绝，返回明确冲突码",
+     "Bot 自报账户（任意 externalCustomerId）一律拒绝",
+     "冲突事件写入审计，供 22.2 核查旁路尝试"
+    ]
+   },
+   "steps": [
+    "在 Reserve 入口比对请求 payer 与服务端解析结果，不一致即拒绝",
+    "移除任何接受调用方指定账户键的参数或兼容路径",
+    "把冲突与拒绝写入审计，便于发现旁路尝试",
+    "先写失败测试：伪造个人→公司、伪造他人账户、裸 externalCustomerId 三类拒绝"
+   ],
+   "criteria": [
+    "请求 payer 与服务端解析不一致时被拒绝并返回冲突码",
+    "调用方无法通过任何参数指定账户键",
+    "公司账户不能被个人授权请求使用，反之亦然",
+    "冲突事件有审计记录"
+   ],
+   "tests": ["三类篡改拒绝测试", "参数不存在性断言（接口签名检查）", "审计断言"],
+   "verification": ["bun test server/tests/reserve-payer-tampering.test.ts"],
+   "owned_scope": ["Reserve 入口校验", "审计接线", "对应测试"],
+   "resume_hint": "若历史接口仍接受 externalCustomerId，保留兼容会留下旁路；直接收敛为服务端解析并补拒绝测试。"
+  },
+  "06.5": {
+   "slug": "bound-rounding-and-version-locking",
+   "contracts": {
+    "consumes": ["06.3 的预留结果", "03.2 的 PriceSnapshot", "01.4 的 RateVersion", "credits.ts 的 CREDIT_SCALE 整数纪律"],
+    "produces": [
+     "上限换算规则：以完整计费维度计算成本上限，按足额方向取整（不向下），结果为 CREDIT_SCALE 整数",
+     "锁定记录：预留持久化 snapshotVersion 与 rateVersion，结算必须使用同一组合",
+     "换算函数为纯函数，便于逐维度测试"
+    ]
+   },
+   "steps": [
+    "实现按维度计算上限并换算为积分的纯函数，明确取整方向为足额（向上）",
+    "把 snapshotVersion 与 rateVersion 写入预留记录，结算路径必须读取该组合",
+    "拒绝任何在结算时读取最新价格/比例的实现",
+    "先写失败测试：多维价格的上限换算、取整方向、版本锁定"
+   ],
+   "criteria": [
+    "上限按足额方向取整，不会低估本次请求可能的最大成本",
+    "换算覆盖全部计费维度，不只 input/output",
+    "预留记录锁定 snapshotVersion 与 rateVersion",
+    "结算使用锁定版本，即使此后价格或比例已变更"
+   ],
+   "tests": ["多维上限换算单元测试", "取整方向断言", "版本锁定与结算一致性集成测试"],
+   "verification": ["bun test server/tests/reserve-bound-rounding.test.ts", "TEST_DATABASE_URL=... bun test server/tests/reserve-version-locking.integration.test.ts"],
+   "owned_scope": ["上限换算与版本锁定模块", "对应测试"],
+   "resume_hint": "取整方向错误会导致系统性超支；接手先断言“上限 ≥ 实际可能成本”的方向性测试。"
+  },
+  "06.6": {
+   "slug": "per-account-fractional-remainder",
+   "contracts": {
+    "consumes": ["06.5 的换算结果", "CreditWriter 现有的账户级尾差携带语义"],
+    "produces": [
+     "每账户尾差累计：微小费用的小数部分按账户累积，不逐次向上取整",
+     "尾差占用可用额度的语义与现有 availableBalance 一致（欠一个单位时可用额度扣减一个单位）",
+     "尾差记录可按账户查询，供用户明细与对账使用"
+    ]
+   },
+   "steps": [
+    "确认尾差按 PayerRef 账户维度携带，而不是按 Key 或按部署",
+    "验证十次 0.001 积分费用累计为 0.01，而不是每次收取最小展示单位",
+    "确认尾差不因账户切换或 Key 轮换而丢失或重复",
+    "先写失败测试：多次微小费用累计断言；两个账户尾差互不影响"
+   ],
+   "criteria": [
+    "十次各 0.001 积分的费用累计为 0.01 积分，不逐次向上取整",
+    "尾差按账户携带，两个账户互不影响",
+    "Key 轮换或续期不丢失、不重复尾差",
+    "尾差占用可用额度的语义与 availableBalance 一致"
+   ],
+   "tests": ["微小费用累计集成测试", "双账户尾差隔离测试", "轮换后尾差保持测试"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/credit-remainder.integration.test.ts"],
+   "owned_scope": ["尾差相关的账户维度接线", "对应测试"],
+   "resume_hint": "现有实现已有账户级尾差；本 Ticket 的重点是把“账户”从部署级键换成 PayerRef，并补双账户隔离测试。"
+  },
+  "06.7": {
+   "slug": "reservation-status-and-recovery-by-id",
+   "contracts": {
+    "consumes": ["06.3 的 reservationId 与幂等键"],
+    "produces": [
+     "Status 查询契约：按 attemptId 或 reservationId 返回预留状态（reserved/settled/released/unknown）与锁定版本",
+     "响应丢失恢复：用同一 attemptId/idempotencyKey 重放返回原预留，不创建第二份 hold",
+     "终态预留的重放冲突语义（沿用 CreditReservationConflictError）"
+    ]
+   },
+   "steps": [
+    "实现 Status 查询，支持按受信 attemptId 与 reservationId 两种方式",
+    "确认重放同一幂等键返回原预留；对已结算或已释放的预留重放返回冲突",
+    "状态查询为只读，不改变任何预留状态",
+    "先写失败测试：响应丢失后重放恢复；终态重放冲突；查询只读"
+   ],
+   "criteria": [
+    "预留响应丢失后可用同一 attemptId 恢复，不创建第二份 hold",
+    "对已结算或已释放的预留重放返回冲突而不是新预留",
+    "Status 查询不改变任何状态",
+    "查询不泄露他人账户的预留"
+   ],
+   "tests": ["重放恢复集成测试", "终态冲突测试", "只读断言与越权查询拒绝"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/reservation-status.integration.test.ts"],
+   "owned_scope": ["Status 查询服务与路由", "对应测试"],
+   "resume_hint": "现有 reserveCredits 的幂等语义已覆盖大部分需求；缺口是“按 attemptId 查询”的入口与越权保护。"
+  },
+  "06.8": {
+   "slug": "unknown-result-holds-never-reclaimed",
+   "contracts": {
+    "consumes": ["06.7 的状态模型", "现有 CreditReservationState 与 expiresAt 语义"],
+    "produces": [
+     "新增 unknown（待结算）状态：结果未确认的预留进入该状态，持续占用可用积分",
+     "明确禁止按 expiresAt 回收 unknown 预留；过期字段只用于限制新请求",
+     "unknown 预留只能由 08.x 的恢复流程或管理员证据化处置改变状态"
+    ]
+   },
+   "steps": [
+    "扩展预留状态机加入 unknown，并保证 availableBalance 把它计入占用",
+    "移除或改造任何按到期时间自动释放预留的后台逻辑，使其跳过 unknown",
+    "记录进入 unknown 的原因与时间，供 08.x 恢复使用",
+    "先写失败测试：时钟推进超过 expiresAt 后 unknown 预留仍占用额度"
+   ],
+   "criteria": [
+    "结果未知的预留进入 unknown 状态并持续占用可用积分",
+    "时钟推进超过 expiresAt 不会释放 unknown 预留",
+    "unknown 预留不能被普通 Release 或超时任务改变状态",
+    "availableBalance 正确反映 unknown 占用"
+   ],
+   "tests": ["时钟推进后占用不变集成测试", "超时任务跳过 unknown 测试", "availableBalance 断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/unknown-hold-no-reclaim.integration.test.ts"],
+   "owned_scope": ["预留状态机与迁移", "超时/维护任务的排除逻辑", "对应测试"],
+   "resume_hint": "这是 Q12/AC15 的核心拒绝路径，也是现有实现最可能违背的一点（过期预留可被重新使用）；接手先跑时钟推进用例。"
+  },
+  "06.9": {
+   "slug": "settle-idempotency",
+   "contracts": {
+    "consumes": ["06.5 的锁定版本", "CreditWriter.settleReservation 的 CreditAmount 精确有理数与幂等语义"],
+    "produces": [
+     "Settle 请求契约：{ reservationId 或 attemptId, actualUsage, evidence, settledBy, idempotencyKey }",
+     "幂等语义：重放同一结算消息返回首次结果，不重复扣费",
+     "结算金额以精确有理数表达，经锁定 snapshotVersion/rateVersion 换算"
+    ]
+   },
+   "steps": [
+    "实现 Settle 入口，按锁定版本换算实际用量为精确积分金额",
+    "复用 settleReservation 的幂等与冲突语义，重放返回首次结果",
+    "结算写入台账并释放未使用额度，全过程在事务内完成",
+    "先写失败测试：同一消息重放不重复扣费；不同金额重放冲突"
+   ],
+   "criteria": [
+    "重放同一结算消息只扣费一次，返回首次结果",
+    "结算金额按锁定版本换算，不使用最新价格或比例",
+    "未使用的预留额度在结算时释放",
+    "结算写入台账且金额精确，无浮点误差"
+   ],
+   "tests": ["重放幂等集成测试", "版本锁定换算测试", "台账金额精确性断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/settle-idempotency.integration.test.ts"],
+   "owned_scope": ["Settle 服务与路由", "对应测试"],
+   "resume_hint": "不要在 Settle 里重新读取最新价格；锁定版本来自预留记录，这是 AC12 与 Q9 的硬要求。"
+  },
+  "06.10": {
+   "slug": "settle-conflicts-and-grant-expiry",
+   "contracts": {
+    "consumes": ["06.9 的 Settle 契约", "credits.ts 的 Grant 状态派生（deriveGrantStatus）"],
+    "produces": [
+     "冲突语义：不同 payer、不同金额或对已释放预留的结算请求返回冲突，不静默覆盖",
+     "Grant 中途过期语义：准入时有效的 Grant 承担本次结算；未使用部分释放后若已过期则不再可用",
+     "过期后新请求不能使用该笔过期积分"
+    ]
+   },
+   "steps": [
+    "实现冲突检测：payer 不一致、金额不一致、预留已终态三类分别返回明确冲突码",
+    "实现 Grant 过期与结算的交互：结算从准入时锁定的 Grant 扣减，即使该 Grant 在请求期间过期",
+    "释放的未使用部分若已过期则标记过期，不回到可用余额",
+    "先写失败测试：11:59 准入、12:01 结算的场景；三类冲突"
+   ],
+   "criteria": [
+    "不同 payer 或不同金额的重复结算请求返回冲突",
+    "对已释放预留的结算请求被拒绝",
+    "Grant 在请求期间过期时，已准入工作仍按该 Grant 结算",
+    "释放后已过期的额度不再可用，且过期后的新请求不能使用它"
+   ],
+   "tests": ["三类冲突测试", "Grant 中途过期结算集成测试（可控时钟）", "过期额度不可用断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/settle-conflict-grant-expiry.integration.test.ts"],
+   "owned_scope": ["Settle 冲突检测与过期交互逻辑", "对应测试"],
+   "resume_hint": "Q24 的语义容易实现成“过期即拒绝结算”，这会丢失已发生的费用；正确做法是已准入部分照常结算，未使用部分过期。"
+  },
+  "06.11": {
+   "slug": "release-only-with-no-charge-proof",
+   "contracts": {
+    "consumes": ["06.9 的 Settle 契约", "06.8 的 unknown 状态", "CreditWriter.releaseReservation"],
+    "produces": [
+     "Release 契约：{ reservationId, reason, noChargeEvidence }；缺证据时拒绝释放",
+     "unknown 状态的预留不能被 Release 释放（只能走 08.x 处置）",
+     "释放后已过期 Grant 的额度不复活"
+    ]
+   },
+   "steps": [
+    "实现 Release 入口，要求携带可核验的“未产生费用”依据（如供应商明确未派发的证据）",
+    "拒绝释放 unknown 预留，返回明确原因",
+    "确认释放后过期额度不回到可用余额",
+    "先写失败测试：无证据释放被拒绝；unknown 释放被拒绝；过期额度不复活"
+   ],
+   "criteria": [
+    "缺少未计费证据时 Release 被拒绝",
+    "unknown 状态的预留无法通过 Release 释放",
+    "释放后已过期的 Grant 额度不再可用",
+    "Release 幂等：重复释放不产生额外效果"
+   ],
+   "tests": ["三类拒绝测试", "释放幂等测试", "过期额度不复活集成测试"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/release-semantics.integration.test.ts"],
+   "owned_scope": ["Release 服务与路由", "对应测试"],
+   "resume_hint": "“客户端断开”不是未计费证据；接手检查是否存在把断连当作释放理由的路径，若有必须移除。"
+  },
+  "06.12": {
+   "slug": "reservation-views-for-users",
+   "contracts": {
+    "consumes": ["06.9/06.10/06.11 的结算与释放结果", "02.6/02.7 的个人积分读取与页面"],
+    "produces": [
+     "用户视图字段：可用余额、待结算（reserved + unknown）、已消费、已过期，以及每笔预留的状态与原因",
+     "02.6 的待结算占位字段被真实数据替换，契约字段名保持不变",
+     "消费明细按 Bot 与模型归因，供 07.12 与 09.x 复用"
+    ]
+   },
+   "steps": [
+    "扩展只读接口返回待结算与逐笔预留状态，替换 02.6 的占位字段",
+    "在用户页面展示待结算额度与原因，区分 reserved 与 unknown",
+    "消费明细加入 Bot 与模型归因字段",
+    "先写失败测试：预留后待结算增加、结算后转为已消费、释放后回到可用"
+   ],
+   "criteria": [
+    "预留成功后用户看到待结算额度增加、可用余额减少",
+    "结算成功后待结算转为已消费，金额与台账一致",
+    "释放成功后额度回到可用（未过期时）",
+    "消费明细可按 Bot 与模型归因，且不泄露他人账户数据"
+   ],
+   "tests": ["预留→结算→释放三阶段视图集成测试", "界面展示测试", "越权不可见断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/credit-views.integration.test.ts", "bun test app/tests/personal-credits-ui.test.tsx"],
+   "owned_scope": ["只读接口扩展与页面字段", "消费明细归因", "对应测试"],
+   "resume_hint": "组 06 的缝合点：完成后应能演示“预留占用 → 结算扣费 → 待结算清零”的完整用户可见流程；若三阶段任一不可见，视为未完成。"
+  }
+ }
+}
