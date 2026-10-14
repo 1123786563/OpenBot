@@ -3647,7 +3647,10 @@ if (billing !== undefined && usageOutbox !== undefined) {
        * a typical tokenizer, and a fit that drops the oldest non-system messages until the
        * count fits the configured ceiling — the provider cannot be SENT more than the
        * reservation prices by our own measure, and a tokenizer that beats the calibration
-       * surfaces at settlement as usage_over_bound for reconciliation.
+       * surfaces at settlement as usage_over_bound: the stream fails, the hold is retained,
+       * and billing/usage-evidence.ts keeps the provider's real token counts as a durable
+       * outbox row both delivery targets leave in terminal evidence.
+       * （G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
        */
       bounds: {
         input: {
@@ -3694,6 +3697,22 @@ if (billing !== undefined && usageOutbox !== undefined) {
             },
             "billing-usage-charge-refused",
           );
+          // Audit A3: the tokens are real work this deployment will not price — a durable
+          // evidence row (no reservation facts, hold retained) instead of numbers that die
+          // with the stream error. The settlement-failure exit in copilot.ts may record the
+          // same event again with zero tokens; the outbox keeps these real facts and logs the
+          // second write as superseded.
+          await recordUnsettledUsage({
+            eventId: input.eventId,
+            source: "llm",
+            externalCustomerId: billing.externalCustomerKey,
+            model: modelId,
+            client: input.client,
+            occurredAt: input.occurredAt,
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            reason: code,
+          });
           throw new ModelUsageSettlementError(code);
         }
         try {
@@ -3723,6 +3742,19 @@ if (billing !== undefined && usageOutbox !== undefined) {
           throw new ModelUsageSettlementError(failureCode);
         }
       },
+      recordUnsettled: async (unsettled) => {
+        await recordUnsettledUsage({
+          eventId: unsettled.eventId,
+          source: "llm",
+          externalCustomerId: billing.externalCustomerKey,
+          model: modelId,
+          client: input.client,
+          occurredAt: unsettled.occurredAt,
+          inputTokens: unsettled.inputTokens,
+          outputTokens: unsettled.outputTokens,
+          reason: unsettled.reason,
+        });
+      },
       fail: async (failure) => {
         /*
          * Release only on a CONFIRMED no-cost (audit A2 / CONTEXT.md Pending Settlement /
@@ -3731,7 +3763,8 @@ if (billing !== undefined && usageOutbox !== undefined) {
          * Everything else is an unknown outcome — `usage_missing`, `stream_error`, `cancelled`:
          * the provider may have produced billable work we never learned about. Those keep the
          * hold (it expires on its own clock and reconciliation reports it) and leave a durable
-         * evidence row naming the event and the reason.
+         * evidence row naming the event, the reason, and whatever token counts the stream had
+         * learned by the time it failed.
          */
         if (isConfirmedNoCost(failure.reason)) {
           try {
@@ -3757,8 +3790,8 @@ if (billing !== undefined && usageOutbox !== undefined) {
           model: modelId,
           client: input.client,
           occurredAt: input.occurredAt,
-          inputTokens: 0,
-          outputTokens: 0,
+          inputTokens: failure.inputTokens ?? 0,
+          outputTokens: failure.outputTokens ?? 0,
           reason: failure.reason,
         });
       },

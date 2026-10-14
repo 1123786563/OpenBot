@@ -53,6 +53,17 @@ describe("probe f: the meter's outbox write (static contract, index.ts)", () => 
   });
 });
 
+describe("probe f: the over-bound path's durable evidence (audit A3, index.ts)", () => {
+  test("the gate wires recordUnsettled and the evidence rows keep the tokens they learned", () => {
+    // The lifecycle member copilot.ts's settlement-failure exit calls is wired to the evidence
+    // recorder; the unknown-outcome row carries the reported half (not hardcoded zeros), and
+    // the pricing refusal records the real usage before it rethrows.
+    expect(SOURCE).toMatch(/recordUnsettled: async \(unsettled\) => \{/);
+    expect(SOURCE).toMatch(/inputTokens: failure\.inputTokens \?\? 0/);
+    expect(SOURCE).toMatch(/inputTokens: usage\.inputTokens \?\? 0/);
+  });
+});
+
 describe("probe f: the event id grammar the stream uses (behavioral)", () => {
   test("UUID-shaped ids remain distinct across two calls", () => {
     const ids = [

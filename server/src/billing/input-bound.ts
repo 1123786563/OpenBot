@@ -13,7 +13,11 @@ const log = getLogger("server");
  * tokenizer-free — with calibration constants chosen to sit ABOVE a typical tokenizer's
  * answer (the conservative direction), and the fitter drops the oldest non-system messages
  * until the count fits. A tokenizer that beats the calibration shows up at settlement as
- * `usage_over_bound` — a held reservation for reconciliation, never a silent charge.
+ * `usage_over_bound`: the stream fails, the hold is RETAINED, and one durable outbox row
+ * (billing/usage-evidence.ts) keeps the provider's real token counts with both delivery
+ * targets in a terminal-evidence state. That row — not the log line — is what reconciliation
+ * and an operator read.
+ * （G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
  */
 
 export const CONSERVATIVE_BYTES_PER_TOKEN_FLOOR = 2;
