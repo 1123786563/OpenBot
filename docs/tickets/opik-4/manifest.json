@@ -24,7 +24,8 @@
     "T01(#7) 与 T02(#8) 是 prefactor，按 to-tickets「Make the change easy, then make the easy change」先行，其验证以结构性回归为主而非端到端业务行为：T01 的可观察面是未认证/无归属请求在进入业务逻辑前被拒绝、且模块未启用时现有接口与 tracing 零变化；T02 的可观察面是八类可用性状态的双语文案与命名空间隔离。",
     "T02(#8) 的验收标准第 3 条提到「直接输入路由时仍执行权限校验」，但对应路由要到 T12(#18) 才存在，因此该条在 T02 阶段只能验证路由约定本身，不能端到端验证；实施 T02 时不得把该条记为通过，应留到 T12(#18) 验证。",
     "T37(#43) 依赖全部 36 张，是协调与验收性质，不引入新功能；其 blocked_by 边在 GitHub 上为 36 条。",
-    "T02(#8) owned files = 10，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON stub，另 2 个是 i18n 注册文件，总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
+    "T02(#8) owned files = 11，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON、2 个是 i18n 注册文件、1 个是 parity 测试。总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
+    "owned_scope 在 writing-plans 阶段按真实代码结构校正过三处：T01(#7) 补 server/src/app.ts（挂载点实际在 createApp 的 app.route，不在 index.ts）；T02(#8) 补 parity 测试文件；T03(#9) 补 docker-compose.yml 的可选栈清单注释与 server/tests/opik-deployment.test.ts（无 Docker 也能跑的静态约束测试）。",
     "T11(#17) 增加 T01(#7) 为前置：原草案里 T01 没有任何后继，属于孤儿 prefactor，路由 seam 可能被跳过或与需要它的 Ticket 并行；补边后 T01 成为全部路由类 Ticket 的祖先。",
     "T02(#8) 由单一 ai-observability 命名空间改为 -runs/-datasets/-evaluations/-admin 四个子命名空间：图分析发现 6 个前端 Ticket 共享同两个 locale JSON，其中 10 对在依赖图上不可比较，并行派发必然冲突；拆分后四条前端链文件不相交。"
   ],
@@ -79,6 +80,7 @@
   "tickets": [
     {
       "id": "T01",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md",
       "group": "00",
       "group_slug": "prefactor-seams",
       "group_title": "Prefactor 与 seam",
@@ -96,7 +98,7 @@
       "handoff": {
         "consumes": "",
         "produces": "路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式",
-        "owned_scope": "server/src/ai-observability/routes/index.ts, server/src/ai-observability/context.ts, server/src/index.ts, server/tests/opik-module-skeleton.test.ts",
+        "owned_scope": "server/src/ai-observability/routes/index.ts, server/src/ai-observability/context.ts, server/src/app.ts, server/src/index.ts, server/tests/opik-module-skeleton.test.ts",
         "verification": [
           "bun test server/tests/opik-module-skeleton.test.ts",
           "cd server && bun run typecheck",
@@ -108,6 +110,7 @@
     },
     {
       "id": "T02",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md",
       "group": "00",
       "group_slug": "prefactor-seams",
       "group_title": "Prefactor 与 seam",
@@ -125,8 +128,9 @@
       "handoff": {
         "consumes": "",
         "produces": "四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定",
-        "owned_scope": "app/src/locales/en/ai-observability-runs.json, app/src/locales/en/ai-observability-datasets.json, app/src/locales/en/ai-observability-evaluations.json, app/src/locales/en/ai-observability-admin.json, app/src/locales/zh-CN/ai-observability-runs.json, app/src/locales/zh-CN/ai-observability-datasets.json, app/src/locales/zh-CN/ai-observability-evaluations.json, app/src/locales/zh-CN/ai-observability-admin.json, app/src/lib/i18n/index.ts, app/src/lib/i18n/i18next.d.ts",
+        "owned_scope": "app/src/locales/en/ai-observability-runs.json, app/src/locales/en/ai-observability-datasets.json, app/src/locales/en/ai-observability-evaluations.json, app/src/locales/en/ai-observability-admin.json, app/src/locales/zh-CN/ai-observability-runs.json, app/src/locales/zh-CN/ai-observability-datasets.json, app/src/locales/zh-CN/ai-observability-evaluations.json, app/src/locales/zh-CN/ai-observability-admin.json, app/src/lib/i18n/index.ts, app/src/lib/i18n/i18next.d.ts, app/src/lib/i18n/ai-observability.test.ts",
         "verification": [
+          "bun test app/src/lib/i18n/ai-observability.test.ts",
           "cd app && bun run typecheck",
           "cd app && bun run build",
           "bunx biome lint --error-on-warnings . && bunx biome format ."
@@ -137,6 +141,7 @@
     },
     {
       "id": "T03",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -153,10 +158,12 @@
       "status": "published-ready-for-agent",
       "handoff": {
         "consumes": "",
-        "produces": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤",
-        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docs/opik.md, .env.example",
+        "produces": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
+        "owned_scope": "docker/compose/opik.yml, docker/opik/versions.json, docs/opik.md, .env.example, docker-compose.yml, server/tests/opik-deployment.test.ts",
         "verification": [
+          "bun test server/tests/opik-deployment.test.ts",
           "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
+          "cd server && bun run typecheck",
           "bunx biome lint --error-on-warnings . && bunx biome format ."
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
@@ -165,6 +172,7 @@
     },
     {
       "id": "T04",
+      "plan_file": "",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -186,7 +194,7 @@
       "what": "对真实实例跑通 OTLP 写入、查询、项目、数据集、实验与删除，产出后续所有 HTTP 序列化唯一依据的 manifest；缺环境或跳过实测不得报告成功。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤",
+        "consumes": "T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
         "produces": "`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限）",
         "owned_scope": "server/scripts/opik-contract.ts, server/tests/opik-contract.test.ts, server/package.json, bun.lock",
         "verification": [
@@ -201,6 +209,7 @@
     },
     {
       "id": "T05",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -230,6 +239,7 @@
     },
     {
       "id": "T06",
+      "plan_file": "docs/superpowers/plans/2026-10-15-opik-t06-trusted-scope-seam.md",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -260,6 +270,7 @@
     },
     {
       "id": "T07",
+      "plan_file": "",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -297,6 +308,7 @@
     },
     {
       "id": "T08",
+      "plan_file": "",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -337,6 +349,7 @@
     },
     {
       "id": "T09",
+      "plan_file": "",
       "group": "01",
       "group_slug": "opik-foundation",
       "group_title": "Opik 部署、契约与安全地基",
@@ -371,6 +384,7 @@
     },
     {
       "id": "T10",
+      "plan_file": "",
       "group": "02",
       "group_slug": "safe-run-records",
       "group_title": "安全运行记录",
@@ -407,6 +421,7 @@
     },
     {
       "id": "T11",
+      "plan_file": "",
       "group": "02",
       "group_slug": "safe-run-records",
       "group_title": "安全运行记录",
@@ -448,6 +463,7 @@
     },
     {
       "id": "T12",
+      "plan_file": "",
       "group": "02",
       "group_slug": "safe-run-records",
       "group_title": "安全运行记录",
@@ -487,6 +503,7 @@
     },
     {
       "id": "T13",
+      "plan_file": "",
       "group": "02",
       "group_slug": "safe-run-records",
       "group_title": "安全运行记录",
@@ -525,6 +542,7 @@
     },
     {
       "id": "T14",
+      "plan_file": "",
       "group": "03",
       "group_slug": "detailed-steps",
       "group_title": "详细运行步骤",
@@ -563,6 +581,7 @@
     },
     {
       "id": "T15",
+      "plan_file": "",
       "group": "03",
       "group_slug": "detailed-steps",
       "group_title": "详细运行步骤",
@@ -598,6 +617,7 @@
     },
     {
       "id": "T16",
+      "plan_file": "",
       "group": "03",
       "group_slug": "detailed-steps",
       "group_title": "详细运行步骤",
@@ -633,6 +653,7 @@
     },
     {
       "id": "T17",
+      "plan_file": "",
       "group": "03",
       "group_slug": "detailed-steps",
       "group_title": "详细运行步骤",
@@ -668,6 +689,7 @@
     },
     {
       "id": "T18",
+      "plan_file": "",
       "group": "03",
       "group_slug": "detailed-steps",
       "group_title": "详细运行步骤",
@@ -708,6 +730,7 @@
     },
     {
       "id": "T19",
+      "plan_file": "",
       "group": "04",
       "group_slug": "versioned-datasets",
       "group_title": "版本化评测集",
@@ -748,6 +771,7 @@
     },
     {
       "id": "T20",
+      "plan_file": "",
       "group": "04",
       "group_slug": "versioned-datasets",
       "group_title": "版本化评测集",
@@ -785,6 +809,7 @@
     },
     {
       "id": "T21",
+      "plan_file": "",
       "group": "04",
       "group_slug": "versioned-datasets",
       "group_title": "版本化评测集",
@@ -823,6 +848,7 @@
     },
     {
       "id": "T22",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -858,6 +884,7 @@
     },
     {
       "id": "T23",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -896,6 +923,7 @@
     },
     {
       "id": "T24",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -931,6 +959,7 @@
     },
     {
       "id": "T25",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -964,6 +993,7 @@
     },
     {
       "id": "T26",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -998,6 +1028,7 @@
     },
     {
       "id": "T27",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -1035,6 +1066,7 @@
     },
     {
       "id": "T28",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -1070,6 +1102,7 @@
     },
     {
       "id": "T29",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -1103,6 +1136,7 @@
     },
     {
       "id": "T30",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -1141,6 +1175,7 @@
     },
     {
       "id": "T31",
+      "plan_file": "",
       "group": "05",
       "group_slug": "evaluation-and-scoring",
       "group_title": "隔离评测、评分与对比",
@@ -1177,6 +1212,7 @@
     },
     {
       "id": "T32",
+      "plan_file": "",
       "group": "06",
       "group_slug": "operations-lifecycle",
       "group_title": "运维、导出与生命周期",
@@ -1213,6 +1249,7 @@
     },
     {
       "id": "T33",
+      "plan_file": "",
       "group": "06",
       "group_slug": "operations-lifecycle",
       "group_title": "运维、导出与生命周期",
@@ -1251,6 +1288,7 @@
     },
     {
       "id": "T34",
+      "plan_file": "",
       "group": "06",
       "group_slug": "operations-lifecycle",
       "group_title": "运维、导出与生命周期",
@@ -1289,6 +1327,7 @@
     },
     {
       "id": "T35",
+      "plan_file": "",
       "group": "06",
       "group_slug": "operations-lifecycle",
       "group_title": "运维、导出与生命周期",
@@ -1329,6 +1368,7 @@
     },
     {
       "id": "T36",
+      "plan_file": "",
       "group": "06",
       "group_slug": "operations-lifecycle",
       "group_title": "运维、导出与生命周期",
@@ -1370,6 +1410,7 @@
     },
     {
       "id": "T37",
+      "plan_file": "",
       "group": "06",
       "group_slug": "operations-lifecycle",
       "group_title": "运维、导出与生命周期",
@@ -1460,7 +1501,7 @@
       "what": "对真实自托管 Opik 跑通采集、查询、评测、ID 映射与删除的全范围验收，汇总 13 条 A 条目的证据；完成独立 Spec/代码质量 review 与全范围 OCR，无有效 critical/high/medium findings。",
       "status": "published-ready-for-agent",
       "handoff": {
-        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
+        "consumes": "T01(#7) 的交付契约：路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式 | T02(#8) 的交付契约：四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定 | T03(#9) 的交付契约：`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名 | T04(#10) 的交付契约：`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限） | T05(#11) 的交付契约：`projectSafe()` 接口 + 内容策略版本号 | T06(#12) 的交付契约：`ObservationScope` 解析接口 + 两个测试 scope 的构造方式 | T07(#13) 的交付契约：表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证） | T08(#14) 的交付契约：`OpikPort` 接口 + fixture 注入方式 | T09(#15) 的交付契约：就绪/健康查询接口 + 有界异步导出入口约定 | T10(#16) 的交付契约：run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口 | T11(#17) 的交付契约：只读查询 REST 契约（请求/响应/错误语义/游标） | T12(#18) 的交付契约：列表组件与查询 hook 契约 | T13(#19) 的交付契约：详情页组件契约（步骤树在 T18 扩展同一组件） | T14(#20) 的交付契约：模型 span 记录接口 + usage 缺失语义 | T15(#21) 的交付契约：步骤类型枚举与「提议/执行/回执缺失」判定 | T16(#22) 的交付契约：LangGraph 侧 tracing 接入方式与版本约束 | T17(#23) 的交付契约：传播环境变量约定 + ID 映射表位置 | T18(#24) 的交付契约：步骤树组件与只读步骤查询契约 | T19(#25) 的交付契约：数据集版本读取 API + 冻结字段清单 | T20(#26) 的交付契约：案例审查/保存 REST 契约 + 脱敏语义限制说明 | T21(#27) 的交付契约：数据集页面组件与查询 hook 契约 | T22(#28) 的交付契约：实验记录结构 + 幂等键约定 | T23(#29) 的交付契约：隔离执行入口 + 工具白名单/拒绝策略 | T24(#30) 的交付契约：任务状态机 + 取消/lease 语义 | T25(#31) 的交付契约：评测侧计费准入接口 + 预算不足时的调用前拒绝语义 | T26(#32) 的交付契约：`Scorer` 接口 + 规则版本化约定 | T27(#33) 的交付契约：Judge 准入清单 + 理由安全投影 | T28(#34) 的交付契约：结果查询 REST 契约 + 失败分类枚举 | T29(#35) 的交付契约：对比 REST 契约 + 兼容性判定规则 | T30(#36) 的交付契约：实验页面组件契约 | T31(#37) 的交付契约：对比页面组件契约 | T32(#38) 的交付契约：控制面访问规则 + 内部生产者凭据发放方式 | T33(#39) 的交付契约：管理汇总 REST 契约 + 故障分类枚举 | T34(#40) 的交付契约：导出任务与下载鉴权契约 | T35(#41) 的交付契约：清理状态机 + 删除证据格式 | T36(#42) 的交付契约：管理页面组件契约",
         "produces": "验收证据索引",
         "owned_scope": "server/scripts/opik-acceptance.ts, tests/e2e/opik-observability.e2e.ts, docs/plans/evidence/2026-10-14-opik/final/",
         "verification": [
@@ -1479,7 +1520,7 @@
     "result": "PASS",
     "problems": [],
     "native_subissues_on_parent": 37,
-    "native_blocked_by_edges": 88,
+    "native_blocked_by_edges": 89,
     "labels_ready_for_agent": 37,
     "parent_body_unmodified": true
   }
