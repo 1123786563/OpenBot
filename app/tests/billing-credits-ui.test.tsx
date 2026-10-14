@@ -9,8 +9,8 @@ import {
 } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { cloneElement, createContext, useContext } from "react";
 import type * as React from "react";
+import { cloneElement, createContext, useContext } from "react";
 import type { PlanCatalogEntry } from "@/lib/billing/credits";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
@@ -58,11 +58,7 @@ mock.module("@/components/ui/dialog", () => {
     render?: React.ReactElement<Record<string, unknown>>;
   }) =>
     render
-      ? cloneElement(
-          render,
-          { "aria-haspopup": "dialog" },
-          children,
-        )
+      ? cloneElement(render, { "aria-haspopup": "dialog" }, children)
       : (children ?? null);
   DialogTriggerMock.displayName = "DialogTriggerMock";
   const isTrigger = (child: React.ReactNode) =>
@@ -147,7 +143,11 @@ mock.module("@/components/ui/dialog", () => {
   };
 });
 
+const { ConsumptionTable } = await import(
+  "@/components/billing/consumption-table"
+);
 const { PlanCard } = await import("@/components/billing/plan-card");
+const { WelcomeBanner } = await import("@/components/billing/welcome-banner");
 const { UpgradeDialog } = await import("@/components/billing/upgrade-dialog");
 
 /*
@@ -405,7 +405,7 @@ test("UpgradeDialog gates the pay button behind the agreement, and the tick rele
   // the agreement, so the button starts disabled for the cycle alone and stays disabled after
   // the tick until the fetch lands (then the tick alone gates it).
   const pay = view.getByRole("button", {
-    name: "同意协议",
+    name: "同意协议并支付",
   }) as HTMLButtonElement;
   expect(pay.disabled).toBe(true);
 
@@ -431,7 +431,7 @@ test("UpgradeDialog with an empty catalog opens with nothing to sell", async () 
   expect(view.queryByText("高级版")).toBeNull();
   // With no cycle to select, the agreement alone does not release the pay button.
   const pay = view.getByRole("button", {
-    name: "同意协议",
+    name: "同意协议并支付",
   }) as HTMLButtonElement;
   fireEvent.click(view.container.querySelector('input[type="checkbox"]')!);
   expect(pay.disabled).toBe(true);
@@ -448,4 +448,401 @@ test("the page's purchase entry: a catalog-backed button is enabled, an absent c
     Object.keys(catalog).length > 0;
   expect(hasCatalog(CATALOG)).toBe(true);
   expect(hasCatalog({})).toBe(false);
+});
+
+/* ---------------------------------------------------------------------------
+ * Browser-test findings fixed under TDD: the empty consumption window that
+ * swallowed the range switcher, the dead welcome claim, the uncancellable
+ * pending order, the untranslated pending-purchase refusal, the silent wait
+ * for the payment choosers, and the pay button whose copy read like a
+ * terms checkbox. Each block names the finding it pins.
+ * ------------------------------------------------------------------------- */
+
+test("ConsumptionTable keeps the range switcher up when the window has no rows", () => {
+  // The bug: an empty window (今天 after local midnight, a fresh deployment's
+  // first week) unmounted the whole table INCLUDING the switcher, and the only
+  // way back to a window with data was editing the URL by hand.
+  const onRangeChange = mock(() => {});
+  const view = render(
+    <ConsumptionTable
+      entries={[]}
+      pagination={{
+        totalCount: 0,
+        totalPages: 1,
+        currentPage: 1,
+        nextPage: null,
+      }}
+      range="today"
+      onRangeChange={onRangeChange}
+      onPage={() => {}}
+      statusTemplate="第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条"
+    />,
+  );
+  // The empty sentence, in the component itself rather than only in the page.
+  expect(view.getByText(/该时间范围内还没有积分消耗记录/)).toBeTruthy();
+  // The switcher survives: all three windows stay reachable.
+  expect(view.getByRole("button", { name: "今天" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "7天" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "30天" })).toBeTruthy();
+  // An empty window has no table to show and no pager worth showing.
+  expect(view.queryByRole("table")).toBeNull();
+  expect(view.queryByText(/第 \d+ \/ \d+ 页/)).toBeNull();
+  // The surviving switcher still switches.
+  fireEvent.click(view.getByRole("button", { name: "30天" }));
+  expect(onRangeChange).toHaveBeenCalledWith("30d");
+});
+
+test("WelcomeBanner without a claim write is disabled and says the claim is not open yet", () => {
+  // The bug: the banner begged the reader to claim ("快点击领取吧！") and the
+  // button did nothing at all — no request, no feedback. Until the claim
+  // write exists the button must not look actionable.
+  const view = render(<WelcomeBanner claimed={false} />);
+  const claim = view.getByRole("button", { name: "领取" }) as HTMLButtonElement;
+  expect(claim.disabled).toBe(true);
+  expect(view.getByText("领取功能即将开放")).toBeTruthy();
+});
+
+test("WelcomeBanner with a claim write stays clickable", () => {
+  // The other face of the same contract: once the write exists the banner
+  // must not have locked itself.
+  const onClaim = mock(() => {});
+  const view = render(<WelcomeBanner claimed={false} onClaim={onClaim} />);
+  const claim = view.getByRole("button", { name: "领取" }) as HTMLButtonElement;
+  expect(claim.disabled).toBe(false);
+  fireEvent.click(claim);
+  expect(onClaim).toHaveBeenCalledTimes(1);
+});
+
+/*
+ * A plain-setTimeout poll. RTL's waitFor rides MutationObserver paths that do not observe the
+ * dialog's fetch-then-setState updates under happy-dom (verified: the DOM updates within
+ * ~800ms while waitFor's own clock never fires); this file's later async assertions poll the
+ * DOM on the real timer bun runs instead.
+ */
+async function until(cond: () => boolean, ms = 4000, label = "condition") {
+  for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+    if (cond()) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  expect(cond(), `${label} not met within ${ms}ms`).toBe(true);
+}
+
+/*
+ * The three dialog tests below drive the real checkout lane with a fetch stub
+ * (the file's catalog stub only covers GET /purchases/catalog), so each
+ * installs its own and restores afterwards the way installCatalogStub does.
+ */
+function installPurchaseStub(handlers: {
+  create?: { status: number; body: unknown };
+  cancel?: { status: number; body: unknown };
+  current?: { status: number; body: unknown };
+}) {
+  realFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.includes("/api/billing/purchases/catalog")) {
+        return new Response(
+          JSON.stringify({
+            plans: [],
+            canPurchase: true,
+            activePlanCode: null,
+            providers: ["alipay"],
+            cycles: ["monthly", "recurring_monthly"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (handlers.create && url.endsWith("/api/billing/purchases")) {
+        const h = handlers.create;
+        return new Response(JSON.stringify(h.body), {
+          status: h.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (
+        handlers.current &&
+        url.endsWith("/api/billing/purchases/current")
+      ) {
+        const h = handlers.current;
+        return new Response(JSON.stringify(h.body), {
+          status: h.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (handlers.cancel && url.includes("/cancel")) {
+        const h = handlers.cancel;
+        return new Response(JSON.stringify(h.body), {
+          status: h.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("nope", { status: 404 });
+    },
+    { preconnect: () => undefined },
+  );
+}
+
+const ORDER_VIEW = {
+  orderId: "po-0123456789abcdef",
+  planCode: "standard",
+  provider: "alipay",
+  amountCents: 4900,
+  currency: "CNY",
+  status: "pending",
+  activationState: "pending",
+  checkout: { kind: "qrcode", payload: "https://qr.example/abc" },
+  expiresAt: "2026-10-10T12:15:00.000Z",
+  periodEnd: null,
+  createdAt: "2026-10-10T12:00:00.000Z",
+} as const;
+
+async function openToAPayableDialog(view: ReturnType<typeof render>) {
+  // The choosers arrive with the fetched purchase catalog; the agreement is ours to tick.
+  await waitFor(() => {
+    expect(view.getByText("连续包月")).toBeTruthy();
+  });
+  fireEvent.click(view.container.querySelector('input[type="checkbox"]')!);
+}
+
+test("UpgradeDialog lets the reader cancel their pending order, and cancelling releases the pay lane", async () => {
+  let cancelled = false;
+  installPurchaseStub({
+    create: { status: 200, body: { order: ORDER_VIEW } },
+    cancel: {
+      status: 200,
+      body: { order: { ...ORDER_VIEW, status: "canceled", checkout: null } },
+    },
+  });
+  // The cancel handler must observe the call, not just serve it.
+  const innerFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (...args: Parameters<typeof fetch>) => {
+      const url = String(args[0]);
+      if (url.includes("/cancel")) cancelled = true;
+      return innerFetch(...args);
+    },
+    { preconnect: () => undefined },
+  );
+
+  const view = render(
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
+  );
+  await openToAPayableDialog(view);
+  fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
+  // The order lands: the status line says pending and the cancel entry appears.
+  await until(
+    () => view.queryByText("订单待支付") !== null,
+    4000,
+    "order pending line",
+  );
+  const cancelEntry = view.getByRole("button", { name: "取消订单" });
+  fireEvent.click(cancelEntry);
+  await until(
+    () => view.queryByText("订单待支付") === null,
+    4000,
+    "order cleared",
+  );
+  expect(cancelled).toBe(true);
+  expect(view.queryByRole("button", { name: "取消订单" })).toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("UpgradeDialog says the pending-purchase refusal in the reader's language", async () => {
+  installPurchaseStub({
+    create: {
+      status: 409,
+      body: {
+        error: "Another purchase is already pending for this deployment.",
+        pendingPlanCode: "standard",
+      },
+    },
+  });
+  const view = render(
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
+  );
+  await openToAPayableDialog(view);
+  fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
+  await waitFor(() => {
+    expect(
+      view.getByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买"),
+    ).toBeTruthy();
+  });
+  // The raw English sentence is not what a zh-CN reader should see.
+  expect(view.queryByText(/Another purchase is already pending/)).toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("UpgradeDialog says it is loading the payment options before the choosers arrive", async () => {
+  // A catalog answer that sits on the wire: the choosers cannot render yet,
+  // and the silence used to look like a broken dialog.
+  let release: (r: Response) => void = () => {};
+  const gate = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  realFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => gate, {
+    preconnect: () => undefined,
+  });
+  // The suite's shared client may already hold a fresh catalog entry; the
+  // loading phase only exists while the fetch is actually in flight.
+  queryClient.removeQueries({ queryKey: ["billing", "purchases", "catalog"] });
+
+  const view = render(
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
+  );
+  await until(
+    () => view.queryByText("正在加载支付方式…") !== null,
+    4000,
+    "loading line",
+  );
+  release(
+    new Response(
+      JSON.stringify({
+        plans: [],
+        canPurchase: true,
+        activePlanCode: null,
+        providers: ["alipay"],
+        cycles: ["monthly", "recurring_monthly"],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ),
+  );
+  await until(
+    () => view.queryByText("正在加载支付方式…") === null,
+    4000,
+    "loading gone",
+  );
+  expect(view.getByText("连续包月")).toBeTruthy();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("the pay button stays inert while a cancel is in flight, and a cancel while paying is refused", async () => {
+  // The field race: cancel and checkout lanes could run at once, crossing setOrder writes —
+  // a late cancel callback erased a freshly created order and left the dialog 409-locked
+  // with no cancel entry. Both lanes must be mutually exclusive.
+  let releaseCancel: (r: Response) => void = () => {};
+  const cancelGate = new Promise<Response>((resolve) => {
+    releaseCancel = resolve;
+  });
+  installPurchaseStub({ create: { status: 200, body: { order: ORDER_VIEW } } });
+  const innerFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (...args: Parameters<typeof fetch>) => {
+      if (String(args[0]).includes("/cancel")) return cancelGate;
+      return innerFetch(...args);
+    },
+    { preconnect: () => undefined },
+  );
+
+  const view = render(
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
+  );
+  await openToAPayableDialog(view);
+  const pay = view.getByRole("button", { name: "同意协议并支付" }) as HTMLButtonElement;
+  fireEvent.click(pay);
+  await until(() => view.queryByText("订单待支付") !== null, 4000, "order pending");
+
+  // Cancel is clicked and hangs on the wire: the pay button must disable for the whole flight.
+  fireEvent.click(view.getByRole("button", { name: "取消订单" }));
+  await until(() => pay.disabled, 4000, "pay disabled during cancel");
+  // A click through a disabled button must not reach the create lane — fireEvent on a
+  // disabled button fires no handler; the guard inside startCheckout covers the rest.
+  releaseCancel(
+    new Response(
+      JSON.stringify({ order: { ...ORDER_VIEW, status: "canceled", checkout: null } }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ),
+  );
+  await until(() => !pay.disabled, 4000, "pay re-enabled after cancel lands");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("a pending-purchase 409 on a remounted dialog restores the blocking order so the cancel entry exists", async () => {
+  // The remount hole: the dialog's local order is gone after a refresh, the server still
+  // holds a pending order, and the localized refusal says "cancel it" — but no cancel
+  // button renders. The refusal path must pull the current order back into view.
+  installPurchaseStub({
+    create: {
+      status: 409,
+      body: {
+        error: "Another purchase is already pending for this deployment.",
+        pendingPlanCode: "standard",
+      },
+    },
+    current: { status: 200, body: { order: ORDER_VIEW } },
+  });
+  const view = render(
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
+  );
+  await openToAPayableDialog(view);
+  fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
+  await until(
+    () => view.queryByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买") !== null,
+    4000,
+    "localized refusal",
+  );
+  // The blocking order came back with its cancel entry — the escape the message names.
+  await until(() => view.queryByText("订单待支付") !== null, 4000, "order restored");
+  expect(view.getByRole("button", { name: "取消订单" })).toBeTruthy();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("a failed cancel says the failure in the reader's language", async () => {
+  // The settled refusal arrives in English ("That purchase is already settled."); the
+  // same dialog localizes the checkout refusals, so a cancel refusal must not regress
+  // to the server's raw sentence.
+  installPurchaseStub({
+    create: { status: 200, body: { order: ORDER_VIEW } },
+    cancel: { status: 409, body: { error: "That purchase is already settled." } },
+  });
+  const view = render(
+    withProvider(
+      <UpgradeDialog open onOpenChange={() => {}} catalog={CATALOG} />,
+    ),
+  );
+  await openToAPayableDialog(view);
+  fireEvent.click(view.getByRole("button", { name: "同意协议并支付" }));
+  await until(() => view.queryByText("订单待支付") !== null, 4000, "order pending");
+  fireEvent.click(view.getByRole("button", { name: "取消订单" }));
+  await until(
+    () => view.queryByText(/取消订单失败/) !== null,
+    4000,
+    "localized cancel failure",
+  );
+  expect(view.queryByText(/already settled/)).toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("ConsumptionTable keeps the pager for a page walked off the end", () => {
+  // A shared ?page=99 link has no rows on it, but the window DOES: the empty sentence
+  // would claim otherwise and unmount the pager built to walk the reader back.
+  const view = render(
+    <ConsumptionTable
+      entries={[]}
+      pagination={{ totalCount: 5, totalPages: 1, currentPage: 99, nextPage: null }}
+      range="7d"
+      onRangeChange={() => {}}
+      onPage={() => {}}
+      statusTemplate="第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条"
+    />,
+  );
+  expect(view.queryByText(/还没有积分消耗记录/)).toBeNull();
+  expect(view.getByText(/共 5 条/)).toBeTruthy();
+  expect(view.getByRole("table")).toBeTruthy();
 });

@@ -38,10 +38,24 @@ export function WelcomeBanner({
                 : "",
             })}
           </span>
-        ) : (
+        ) : onClaim ? (
           <Button size="sm" onClick={onClaim}>
             {t("welcomeBanner.claim")}
           </Button>
+        ) : (
+          /*
+           * No claim write wired: the banner still tells the reader the offer exists, but the
+           * button cannot beg to be clicked and then do nothing (the field finding) — it is
+           * disabled and the sentence beside it says the claim is not open yet.
+           */
+          <span className="flex items-center gap-2">
+            <Button size="sm" disabled>
+              {t("welcomeBanner.claim")}
+            </Button>
+            <span className="text-muted-foreground text-xs">
+              {t("welcomeBanner.claimUnavailable")}
+            </span>
+          </span>
         )}
       </div>
     </div>
