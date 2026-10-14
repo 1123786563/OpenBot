@@ -168,3 +168,50 @@ Every defect above was found by an executor, not by the plan author's Self-Revie
 E2 did not paper over it: each reproduced the failure on a clean base checkout and reported it as
 pre-existing with evidence. That is the behaviour the task specs asked for, and it is why the
 baseline file now records measured-on-branch numbers rather than measured-on-main ones.
+
+## E9 — T03 plan: obtaining digests by `docker pull` hangs under an unstable registry
+
+**What I wrote** (plan Task 1 Step 2): pull every image, then read
+`docker image inspect --format '{{index .RepoDigests 0}}'`.
+
+**Why it is wrong in practice:** it downloads every layer (~5 GB for this stack) and issues an
+unbounded, un-timed network command per image. Observed on the live T03 dispatch: two
+`docker pull -q redis:7.2.4-alpine3.19` processes hung for 25 and 11 minutes — the second one a
+duplicate of the first — while `clickhouse` never landed. Root cause measured from the coordinator
+side:
+
+```
+docker buildx imagetools inspect clickhouse/clickhouse-server:26.3.16.16-alpine
+-> ERROR: failed to authorize: failed to fetch anonymous token:
+   Get "https://auth.docker.io/token?...": net/http: TLS handshake timeout
+```
+
+Docker Hub anonymous token auth was intermittently failing. The ghcr.io Opik images and most
+Docker Hub images had already landed, so this was tag-specific flakiness, not a total outage —
+which is exactly the condition under which an unbounded pull stalls instead of failing.
+
+**Correct method** (verified working from the coordinator side in seconds, downloading nothing):
+
+```bash
+docker buildx imagetools inspect <ref> --format '{{.Manifest.Digest}}'
+# or: docker manifest inspect <ref>   (returns the index; read the digest field)
+```
+
+This returns the registry manifest digest, which is precisely what pinning needs — the same value
+`image@sha256:...` resolves. A re-run of this plan should use it instead of pull-then-inspect, and
+should bound every registry command with `timeout`, resolve each ref once, and never issue a
+duplicate pull.
+
+**Digests obtained while diagnosing** (handed to the worker as a cross-check only, with an explicit
+instruction to re-derive them rather than trust a coordinator-supplied value, because this ticket
+forbids fabricated upstream evidence):
+
+| Image | Digest |
+| --- | --- |
+| `redis:7.2.4-alpine3.19` | `sha256:c8bb255c3559b3e458766db810aa7b3c7af1235b204cfdb304e79ff388fe1a5a` |
+| `clickhouse/clickhouse-server:26.3.16.16-alpine` | `sha256:b45ab149f0d331b944b4aa2ccdd47d0242238fd39e68ec524ad63338e4b9d8f8` (retrieved once; an immediate retry hit the TLS timeout, so it must be re-confirmed) |
+
+**Detection lesson:** `observation.status: live` was true throughout, and heartbeats had stopped
+advancing. The guide is explicit that PTY liveness can hold a stuck agent, so the useful signals
+were the transcript's last-turn recency plus host-side `ps` — not the liveness verdict. A worker
+blocked inside an un-timed tool call looks alive and makes no progress.
