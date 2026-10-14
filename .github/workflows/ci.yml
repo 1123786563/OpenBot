@@ -62,8 +62,10 @@ jobs:
           # are exempt by design.
           if [ "$(jq -r '.graph.goMod.sha256' runtime-go/dependency-review.json)" != "$actual_mod" ] ||
              [ "$(jq -r '.graph.goSum.sha256' runtime-go/dependency-review.json)" != "$actual_sum" ] ||
-             [ "$(jq -r '.vulnerabilityScan.scannedGoSumSha256' runtime-go/dependency-review.json)" != "$actual_sum" ]; then
-            echo "::error::runtime-go/go.mod or go.sum moved but dependency-review.json still carries stale digests. Re-measure the graph facts and re-run govulncheck, then update the record (including vulnerabilityScan.scannedGoSumSha256)."
+             [ "$(jq -r '.vulnerabilityScan.scannedGoSumSha256' runtime-go/dependency-review.json)" != "$actual_sum" ] ||
+             [ "$(jq -r '.graph.goMod.lines' runtime-go/dependency-review.json)" != "$(wc -l < runtime-go/go.mod | tr -d ' ')" ] ||
+             [ "$(jq -r '.graph.goSum.lines' runtime-go/dependency-review.json)" != "$(wc -l < runtime-go/go.sum | tr -d ' ')" ]; then
+            echo "::error::runtime-go/go.mod or go.sum moved but dependency-review.json still carries stale digests or line counts. Re-measure the graph facts and re-run govulncheck, then update the record (including vulnerabilityScan.scannedGoSumSha256)."
             exit 1
           fi
 
