@@ -24,7 +24,7 @@ export type BillingInvoice = {
   periodStart: string | null;
   periodEnd: string | null;
   amountCents: number;
-  currency: "CNY";
+  currency: string;
   status: InvoiceStatus;
   method: "alipay" | "wechat";
   issuedAt: string;

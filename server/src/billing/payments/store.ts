@@ -42,7 +42,7 @@ function rowOf(order: typeof paymentOrders.$inferSelect): PaymentOrderRecord {
     planCode: order.planCode,
     provider: order.provider,
     amountCents: order.amountCents,
-    currency: "CNY",
+    currency: order.currency,
     status: order.status,
     activationState: order.activationState,
     channelTransactionId: order.channelTransactionId,
@@ -85,7 +85,7 @@ function lockedRowOf(row: PaymentOrderLockedRow): PaymentOrderRecord {
     planCode: row.planCode,
     provider: row.provider,
     amountCents: row.amountCents,
-    currency: "CNY",
+    currency: row.currency,
     status: row.status,
     activationState: row.activationState,
     channelTransactionId: row.channelTransactionId,
@@ -194,10 +194,7 @@ function isPaymentEventIdConflict(error: unknown): boolean {
   return isUniqueViolationOn(error, "payment_events_pkey");
 }
 
-function isUniqueViolationOn(
-  error: unknown,
-  constraint: string,
-): boolean {
+function isUniqueViolationOn(error: unknown, constraint: string): boolean {
   const visited = new Set<object>();
   while (error && typeof error === "object" && !visited.has(error)) {
     visited.add(error);
@@ -660,7 +657,8 @@ export function createPaymentStore(database: Database): PaymentStore {
               ),
             )
             .returning();
-          if (claimed) return { outcome: "owner" as const, order: rowOf(claimed) };
+          if (claimed)
+            return { outcome: "owner" as const, order: rowOf(claimed) };
         }
         const [fresh] = await tx
           .select()

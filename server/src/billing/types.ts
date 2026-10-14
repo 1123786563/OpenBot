@@ -322,7 +322,7 @@ export type BillingInvoice = {
   periodStart: string | null;
   periodEnd: string | null;
   amountCents: number;
-  currency: "CNY";
+  currency: string;
   status: "pending" | "paid" | "blocked" | "canceled" | "expired";
   method: "alipay" | "wechat";
   /** When the bill was raised: the order's creation. */

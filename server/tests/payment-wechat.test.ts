@@ -1,9 +1,9 @@
+import { describe, expect, test } from "bun:test";
+import { createCipheriv, createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createCipheriv, createSign } from "node:crypto";
-import { describe, expect, test } from "bun:test";
-import { createWechatProvider } from "../src/billing/payments/wechat";
 import type { WechatConfig } from "../src/billing/payments/wechat";
+import { createWechatProvider } from "../src/billing/payments/wechat";
 
 /*
  * WeChat Pay v3 against captured fetches and self-made vectors: the platform certificate role is
@@ -11,12 +11,19 @@ import type { WechatConfig } from "../src/billing/payments/wechat";
  * RSA check and a real AES-256-GCM decryption. No socket opens.
  */
 const fixtureDir = join(import.meta.dir, "fixtures");
-const merchantKey = readFileSync(join(fixtureDir, "payment-test-key.pem"), "utf8");
-const platformCert = readFileSync(join(fixtureDir, "payment-test-certificate.pem"), "utf8");
-const { rsaSign, certificateSerial } = require("../src/billing/payments/crypto") as {
-  rsaSign: (key: string, canonical: string) => string;
-  certificateSerial: (pem: string) => string;
-};
+const merchantKey = readFileSync(
+  join(fixtureDir, "payment-test-key.pem"),
+  "utf8",
+);
+const platformCert = readFileSync(
+  join(fixtureDir, "payment-test-certificate.pem"),
+  "utf8",
+);
+const { rsaSign, certificateSerial } =
+  require("../src/billing/payments/crypto") as {
+    rsaSign: (key: string, canonical: string) => string;
+    certificateSerial: (pem: string) => string;
+  };
 
 const apiv3Key = "0123456789abcdef0123456789abcdef"; // 32 bytes, test-only
 const PLATFORM_SERIAL = certificateSerial(platformCert);
@@ -69,7 +76,9 @@ function callback(
   cipher.setAAD(Buffer.from(aad, "utf8"));
   const plain = JSON.stringify(resource);
   const body = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  const ciphertext = Buffer.concat([body, cipher.getAuthTag()]).toString("base64");
+  const ciphertext = Buffer.concat([body, cipher.getAuthTag()]).toString(
+    "base64",
+  );
 
   const raw = JSON.stringify({
     id: "evt-1",
@@ -105,7 +114,10 @@ function providerWith(
   return createWechatProvider({
     ...config,
     fetch: (async (url: URL | string, init?: RequestInit) =>
-      handler(url instanceof URL ? url : new URL(String(url)), init ?? {})) as typeof fetch,
+      handler(
+        url instanceof URL ? url : new URL(String(url)),
+        init ?? {},
+      )) as typeof fetch,
   });
 }
 
@@ -120,9 +132,12 @@ describe("request side (captured fetch)", () => {
         ),
         body: String(init.body),
       };
-      return new Response(JSON.stringify({ code_url: "weixin://wxpay/bazook" }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ code_url: "weixin://wxpay/bazook" }),
+        {
+          status: 200,
+        },
+      );
     });
     const session = await provider.createSession({
       outTradeNo: "po-abc",
@@ -130,9 +145,12 @@ describe("request side (captured fetch)", () => {
       amountCents: 8800,
       currency: "CNY",
       notifyUrl: "https://openbot.example/api/payments/callbacks/wechat",
-      expiresAt: new Date((NOW * 1000) + 15 * 60_000),
+      expiresAt: new Date(NOW * 1000 + 15 * 60_000),
     });
-    expect(session.checkout).toEqual({ kind: "qrcode", payload: "weixin://wxpay/bazook" });
+    expect(session.checkout).toEqual({
+      kind: "qrcode",
+      payload: "weixin://wxpay/bazook",
+    });
     expect(captured?.url.toString()).toBe(
       "https://api.mch.weixin.qq.com/v3/pay/transactions/native",
     );
@@ -144,7 +162,9 @@ describe("request side (captured fetch)", () => {
       notify_url: "https://openbot.example/api/payments/callbacks/wechat",
     });
     expect(body.amount).toEqual({ total: 8800, currency: "CNY" });
-    expect(body.time_expire).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/);
+    expect(body.time_expire).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$/,
+    );
 
     // The Authorization header re-derives: same canonical, same signature.
     const authorization = captured?.authorization ?? "";
@@ -162,16 +182,17 @@ describe("request side (captured fetch)", () => {
   });
 
   test("query maps trade_state SUCCESS to a paid fact with integer cents", async () => {
-    const provider = providerWith(() =>
-      new Response(
-        JSON.stringify({
-          out_trade_no: "po-abc",
-          transaction_id: "4200001234202610100000000000",
-          trade_state: "SUCCESS",
-          amount: { total: 8800, currency: "CNY" },
-        }),
-        { status: 200 },
-      ),
+    const provider = providerWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            out_trade_no: "po-abc",
+            transaction_id: "4200001234202610100000000000",
+            trade_state: "SUCCESS",
+            amount: { total: 8800, currency: "CNY" },
+          }),
+          { status: 200 },
+        ),
     );
     const fact = await provider.queryPayment("po-abc");
     expect(fact).toMatchObject({
@@ -183,20 +204,59 @@ describe("request side (captured fetch)", () => {
     });
   });
 
+  test("a query stating a foreign amount currency carries it; one naming none stays silent", async () => {
+    // The wire's own word kept verbatim (audit A5): a resource that says USD keeps USD for the
+    // settlement gate to refuse, and a resource naming no currency states none — the adapter no
+    // longer filters the field down to CNY.
+    const foreign = providerWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            out_trade_no: "po-abc",
+            transaction_id: "4200001234202610100000000000",
+            trade_state: "SUCCESS",
+            amount: { total: 8800, currency: "USD" },
+          }),
+          { status: 200 },
+        ),
+    );
+    expect((await foreign.queryPayment("po-abc")).currency).toBe("USD");
+    const silent = providerWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            out_trade_no: "po-abc",
+            transaction_id: "4200001234202610100000000000",
+            trade_state: "SUCCESS",
+            amount: { total: 8800 },
+          }),
+          { status: 200 },
+        ),
+    );
+    expect((await silent.queryPayment("po-abc")).currency).toBeUndefined();
+  });
+
   test("query maps NOTPAY to pending and CLOSED to closed", async () => {
     const provider = providerWith((url) => {
       if (String(url).includes("po-open")) {
-        return new Response(JSON.stringify({ trade_state: "NOTPAY" }), { status: 200 });
+        return new Response(JSON.stringify({ trade_state: "NOTPAY" }), {
+          status: 200,
+        });
       }
-      return new Response(JSON.stringify({ trade_state: "CLOSED" }), { status: 200 });
+      return new Response(JSON.stringify({ trade_state: "CLOSED" }), {
+        status: 200,
+      });
     });
     expect((await provider.queryPayment("po-open")).state).toBe("pending");
     expect((await provider.queryPayment("po-shut")).state).toBe("closed");
   });
 
   test("an unknown trade_state stays pending — never an invented payment", async () => {
-    const provider = providerWith(() =>
-      new Response(JSON.stringify({ trade_state: "SOMETHING_NEW" }), { status: 200 }),
+    const provider = providerWith(
+      () =>
+        new Response(JSON.stringify({ trade_state: "SOMETHING_NEW" }), {
+          status: 200,
+        }),
     );
     expect((await provider.queryPayment("po-x")).state).toBe("pending");
   });
@@ -209,8 +269,11 @@ describe("request side (captured fetch)", () => {
       outTradeNo: "po-abc",
       state: "closed",
     });
-    const withBody = providerWith(() =>
-      new Response(JSON.stringify({ code: "ORDER_NOT_EXIST" }), { status: 404 }),
+    const withBody = providerWith(
+      () =>
+        new Response(JSON.stringify({ code: "ORDER_NOT_EXIST" }), {
+          status: 404,
+        }),
     );
     expect(await withBody.queryPayment("po-abc")).toEqual({
       outTradeNo: "po-abc",
@@ -219,13 +282,21 @@ describe("request side (captured fetch)", () => {
   });
 
   test("a 429/5xx gateway answers unreachable (retryable)", async () => {
-    const provider = providerWith(() => new Response("slow down", { status: 429 }));
-    await expect(provider.queryPayment("po-abc")).rejects.toThrow(/unreachable/);
+    const provider = providerWith(
+      () => new Response("slow down", { status: 429 }),
+    );
+    await expect(provider.queryPayment("po-abc")).rejects.toThrow(
+      /unreachable/,
+    );
   });
 
   test("a non-JSON 2xx answers invalid_response", async () => {
-    const provider = providerWith(() => new Response("<html>bad gateway</html>", { status: 200 }));
-    await expect(provider.queryPayment("po-abc")).rejects.toThrow(/invalid_response/);
+    const provider = providerWith(
+      () => new Response("<html>bad gateway</html>", { status: 200 }),
+    );
+    await expect(provider.queryPayment("po-abc")).rejects.toThrow(
+      /invalid_response/,
+    );
   });
 });
 
@@ -269,12 +340,16 @@ describe("callback verification (four headers + GCM)", () => {
   });
 
   test("a future timestamp outside the skew window is refused too", async () => {
-    const result = await verified(settledResource, { timestamp: String(NOW + 3600) });
+    const result = await verified(settledResource, {
+      timestamp: String(NOW + 3600),
+    });
     expect(result.ok).toBe(false);
   });
 
   test("an unknown platform serial is refused, even with a valid signature from another key", async () => {
-    const result = await verified(settledResource, { serial: "unknown-serial" });
+    const result = await verified(settledResource, {
+      serial: "unknown-serial",
+    });
     expect(result.ok).toBe(false);
   });
 
@@ -301,7 +376,9 @@ describe("callback verification (four headers + GCM)", () => {
   test("a tampered body breaks the signature", async () => {
     const { headers, body } = callback(settledResource);
     const tampered = body.replace("SUCCESS", "SUCCESS ");
-    expect((await provider.verifyNotification(headers, tampered)).ok).toBe(false);
+    expect((await provider.verifyNotification(headers, tampered)).ok).toBe(
+      false,
+    );
   });
 
   test("a wrong APIv3 key fails decryption", async () => {
@@ -326,7 +403,10 @@ describe("callback verification (four headers + GCM)", () => {
   });
 
   test("a resource for another appid is refused after correct verification", async () => {
-    const result = await verified({ ...settledResource, appid: "wx9999999999999999" });
+    const result = await verified({
+      ...settledResource,
+      appid: "wx9999999999999999",
+    });
     expect(result.ok).toBe(false);
   });
 
