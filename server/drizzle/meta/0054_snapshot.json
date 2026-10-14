@@ -9495,8 +9495,8 @@
         }
       },
       "foreignKeys": {
-        "billing_subscriptions_external_customer_id_billing_customers_external_id_fk": {
-          "name": "billing_subscriptions_external_customer_id_billing_customers_external_id_fk",
+        "billing_subscriptions_ext_customer_id_fk": {
+          "name": "billing_subscriptions_ext_customer_id_fk",
           "tableFrom": "billing_subscriptions",
           "tableTo": "billing_customers",
           "columnsFrom": [

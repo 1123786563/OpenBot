@@ -836,7 +836,7 @@ describe("the migration journal stays generated and drop-free", () => {
      * 假设会被合法合入打破，因此不再断言位置；原意完整保留：两个迁移都必须登记在
      * journal 中，且都不得 DROP 任何表或列。
      */
-    const runsTags = ["0059_outgoing_lilandra", "0060_enterprise_runs_rls"];
+    const runsTags = ["0060_rapid_zarda", "0061_absent_phil_sheldon"];
     const runsEntries = entries.filter((entry) => runsTags.includes(entry.tag));
     expect(runsEntries.map((entry) => entry.tag)).toEqual(runsTags);
     for (const entry of runsEntries) {

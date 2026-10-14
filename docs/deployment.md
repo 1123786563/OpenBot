@@ -27,8 +27,10 @@ the container and is deliberately not published: it holds real logins and its on
 process beside it.
 
 **PostgreSQL, if you ask for it.** `EMBEDDED_POSTGRES=on` starts one inside the container, creates
-the database and the `vector` extension the first time, and runs the migrations on every start. It
-listens on loopback only and is never published, so there is no password to manage.
+the database and the `vector` extension the first time, then the migration service atomically
+bootstraps the four `NOLOGIN` enterprise capability roles before applying migrations. This is an
+explicit local-image setting; external production migrations remain preflight-only. It listens on
+loopback only and is never published, so there is no password to manage.
 
 Give it a volume at `/var/lib/postgresql` — the parent, not the data directory itself. Without one,
 a redeploy takes the audit trail with it, and the audit trail is the product.
@@ -158,6 +160,21 @@ process and no deploy pipeline, so the alternative would be a runbook.
 With an external database, they are a release step, not a start step. Two replicas starting together
 would race, and a failed migration should stop a deploy rather than leave a half-migrated database
 serving traffic.
+
+Before the first migration on a database, provision the four DBA-managed enterprise capability
+roles in a direct PostgreSQL superuser session. Set `ENTERPRISE_SETUP_DATABASE_URL` to the target
+database's superuser connection string, then run this once from the repository root:
+
+```sh
+psql --dbname "$ENTERPRISE_SETUP_DATABASE_URL" --single-transaction --set=ON_ERROR_STOP=1 --file=server/ops/enterprise/roles.sql
+```
+
+The role bootstrap reads `pg_authid.rolpassword`, so a non-superuser `BYPASSRLS` or `CREATEROLE`
+account is insufficient. The transaction and stop-on-error option ensure a failed check does not
+leave a partial role setup. This script creates only `NOLOGIN` capability roles; provisioning
+application LOGIN roles and their credentials remains a separate DBA operation. `scripts/migrate.ts`
+checks that all four capability roles exist and have safe attributes before it applies any migration.
+Run the normal release migration command below only after that preflight is satisfied.
 
 ```sh
 docker run --rm --env-file .env --entrypoint sh openbot \

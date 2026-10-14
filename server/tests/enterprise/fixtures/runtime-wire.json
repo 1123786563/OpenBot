@@ -1,0 +1,515 @@
+{
+  "fixture_version": 1,
+  "source": {
+    "copilotkit_version": "1.77.0",
+    "copilotkit_integrity": "sha512-dhzVC+rRcjRWHaMwWlspIlfNX8gNBaDBLsevWkOuDYL880WGa1pSaOB8bC+vx8c1tVceY8iUOrlRXOGBDkIWNA==",
+    "ag_ui_version": "1.0.1",
+    "ag_ui_protocol_version": "1.0",
+    "ag_ui_integrity": "sha512-Q6pxgI7gcey/0pHfM37S7GNrsYqTrrjjFLpi1dckHNGX2l9VTL0CjnyNc44lwPfHIzFmmEvQfbrAeEPINGGg/Q==",
+    "ag_ui_client_version": "1.0.1",
+    "ag_ui_client_integrity": "sha512-AxJ1+fnsRrhWBg+dXItoyXNqUhI/tOXk0/TxXrsuvdjtyTx216Hu+3q5DgQnTDbluP95fCW4buoCKQsKpHmmCw==",
+    "copilotkit_core_version": "1.77.0",
+    "copilotkit_core_integrity": "sha512-p+GHbrVPgPLNgGVMAj5IfDIkzjzX0YemASXDbX8bWj+3+XFQuiqCpxu0kq6Zh0U/Tb7Be+0Kps130aw48ks2Ig==",
+    "copilotkit_core_package_json_sha256": "5bacb770153cd75f1f002fe7725719dfe855d5a268f5cef72327212880ae01cb"
+  },
+  "samples": [
+    {
+      "operation": "info",
+      "request": {
+        "method": "GET",
+        "path": "/api/copilotkit/info"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "version": "1.77.0",
+          "agents": {
+            "default": {
+              "name": "default"
+            }
+          },
+          "threadEndpoints": {
+            "list": true,
+            "inspect": true,
+            "mutations": false,
+            "realtimeMetadata": false
+          }
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@copilotkit/core@1.77.0",
+        "file": "dist/index.mjs",
+        "callsite": "AgentRegistry.fetchRuntimeInfo"
+      }
+    },
+    {
+      "operation": "run",
+      "request": {
+        "method": "POST",
+        "path": "/api/copilotkit/agent/default/run",
+        "body": {
+          "threadId": "thread-golden-1",
+          "runId": "run-golden-1",
+          "protocolVersion": "1.0",
+          "state": {},
+          "messages": [
+            {
+              "id": "message-golden-1",
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Summarize this file"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": {
+          "events": [
+            {
+              "type": "RUN_STARTED",
+              "threadId": "thread-golden-1",
+              "runId": "run-golden-1",
+              "protocolVersion": "1.0"
+            },
+            {
+              "type": "TOOL_CALL_START",
+              "toolCallId": "tool-call-golden-1",
+              "toolCallName": "send_message"
+            },
+            {
+              "type": "TOOL_CALL_END",
+              "toolCallId": "tool-call-golden-1"
+            },
+            {
+              "type": "RUN_FINISHED",
+              "threadId": "thread-golden-1",
+              "runId": "run-golden-1",
+              "outcome": {
+                "type": "interrupt",
+                "interrupts": [
+                  {
+                    "id": "approval-golden-1",
+                    "reason": "approval",
+                    "toolCallId": "tool-call-golden-1"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@ag-ui/client@1.0.1",
+        "file": "dist/index.mjs",
+        "callsite": "HttpAgent.requestInit/runAgent"
+      }
+    },
+    {
+      "operation": "connect",
+      "request": {
+        "method": "POST",
+        "path": "/api/copilotkit/agent/default/connect",
+        "body": {
+          "threadId": "thread-golden-1",
+          "runId": "run-golden-1",
+          "protocolVersion": "1.0",
+          "state": {},
+          "messages": [],
+          "tools": [],
+          "context": []
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": {
+          "events": [
+            {
+              "type": "TEXT_MESSAGE_CONTENT",
+              "messageId": "assistant-golden-1",
+              "delta": " replayed"
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@copilotkit/core@1.77.0",
+        "file": "dist/index.mjs",
+        "callsite": "ProxiedCopilotRuntimeAgent.#connectViaHttp"
+      }
+    },
+    {
+      "operation": "stop",
+      "request": {
+        "method": "POST",
+        "path": "/api/copilotkit/agent/default/stop/thread-golden-1",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "runId": "run-golden-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "stopped": true,
+          "interrupt": {
+            "type": "RUN_ERROR",
+            "message": "Run stopped by user",
+            "code": "STOPPED"
+          }
+        },
+        "client_behavior": "ignored_by_locked_client"
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@copilotkit/core@1.77.0",
+        "file": "dist/index.mjs",
+        "callsite": "ProxiedCopilotRuntimeAgent.abortRun"
+      }
+    },
+    {
+      "operation": "threads_list",
+      "request": {
+        "method": "GET",
+        "path": "/api/copilotkit/threads?agentId=default&limit=20"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "threads": [
+            {
+              "id": "thread-golden-1",
+              "organizationId": "org-golden-1",
+              "agentId": "default",
+              "createdById": "user-golden-1",
+              "name": "Support",
+              "archived": false,
+              "createdAt": "2026-10-09T00:00:00.000Z",
+              "updatedAt": "2026-10-09T00:00:00.000Z"
+            }
+          ],
+          "nextCursor": "cursor-golden-2"
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@copilotkit/core@1.77.0",
+        "file": "dist/index.mjs",
+        "callsite": "createThreadFetchObservable"
+      }
+    }
+  ],
+  "ui_contract": {
+    "activity_event_types": ["activity-snapshot", "activity-delta", "custom"],
+    "attachment_part_types": ["file", "image", "document"],
+    "tool_request_shapes": ["tool_call", "tool_call_result", "approval_request"]
+  },
+  "platform_samples": [
+    {
+      "operation": "threads_create",
+      "request": {
+        "method": "POST",
+        "path": "/api/enterprise/v1/conversations",
+        "body": {
+          "title": "Support"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "conversation_id": "conversation-golden-1",
+          "thread_id": "thread-golden-1",
+          "storage_backend": "platform"
+        }
+      },
+      "provenance": {
+        "kind": "planned_platform_contract",
+        "source": "approved migration plan Task 3"
+      }
+    },
+    {
+      "operation": "threads_delete",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/enterprise/v1/conversations/conversation-golden-1"
+      },
+      "response": {
+        "status": 204,
+        "body": null
+      },
+      "provenance": {
+        "kind": "planned_platform_contract",
+        "source": "approved migration plan Task 3"
+      }
+    }
+  ],
+  "interactions": {
+    "tool_result": {
+      "event": {
+        "type": "TOOL_CALL_RESULT",
+        "messageId": "tool-message-golden-1",
+        "toolCallId": "tool-call-golden-1",
+        "content": "{\"ok\":true}",
+        "role": "tool"
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@ag-ui/core@1.0.1",
+        "file": "dist/schemas.d.ts",
+        "callsite": "ToolCallResultEventSchema"
+      }
+    },
+    "approval_wait": {
+      "event": {
+        "type": "RUN_FINISHED",
+        "threadId": "thread-golden-1",
+        "runId": "run-golden-1",
+        "outcome": {
+          "type": "interrupt",
+          "interrupts": [
+            {
+              "id": "approval-golden-1",
+              "reason": "approval",
+              "message": "Approve sending this message?",
+              "toolCallId": "tool-call-golden-1"
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@ag-ui/core@1.0.1",
+        "file": "dist/schemas.d.ts",
+        "callsite": "RunFinishedInterruptOutcomeSchema"
+      }
+    },
+    "approval_resume": {
+      "request": {
+        "method": "POST",
+        "path": "/api/copilotkit/agent/default/run",
+        "body": {
+          "threadId": "thread-golden-1",
+          "runId": "run-resume-1",
+          "protocolVersion": "1.0",
+          "state": {},
+          "messages": [
+            {
+              "id": "message-golden-1",
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Summarize this file"
+                }
+              ]
+            },
+            {
+              "id": "tool-call-golden-1",
+              "role": "assistant",
+              "toolCalls": [
+                {
+                  "id": "tool-call-golden-1",
+                  "type": "function",
+                  "function": {
+                    "name": "send_message",
+                    "arguments": ""
+                  }
+                }
+              ]
+            }
+          ],
+          "tools": [],
+          "context": [],
+          "forwardedProps": {},
+          "resume": [
+            {
+              "interruptId": "approval-golden-1",
+              "status": "resolved",
+              "payload": {
+                "approved": true
+              }
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@ag-ui/client@1.0.1",
+        "file": "dist/index.js",
+        "callsite": "HttpAgent.runAgent/requestInit"
+      }
+    },
+    "resume_events": [
+      {
+        "type": "RUN_STARTED",
+        "threadId": "thread-golden-1",
+        "runId": "run-resume-1",
+        "protocolVersion": "1.0"
+      },
+      {
+        "type": "TOOL_CALL_RESULT",
+        "messageId": "tool-message-golden-1",
+        "toolCallId": "tool-call-golden-1",
+        "content": "{\"ok\":true}",
+        "role": "tool"
+      },
+      {
+        "type": "RUN_FINISHED",
+        "threadId": "thread-golden-1",
+        "runId": "run-golden-2",
+        "outcome": {
+          "type": "success"
+        }
+      }
+    ],
+    "reconnect": {
+      "request": {
+        "method": "POST",
+        "path": "/api/copilotkit/agent/default/connect",
+        "body": {
+          "threadId": "thread-golden-1",
+          "runId": "run-golden-1",
+          "lastSeenEventId": "event-golden-2"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "joinToken": "join-token-golden-1",
+          "threadId": "thread-golden-1",
+          "runId": null,
+          "realtime": {
+            "clientUrl": "ws://127.0.0.1/socket",
+            "topic": "thread:thread-golden-1"
+          }
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@copilotkit/core@1.77.0",
+        "file": "dist/index.mjs",
+        "callsite": "IntelligenceAgent.requestJoinCredentials$"
+      },
+      "channel_join": {
+        "stream_mode": "connect",
+        "last_seen_event_id": "event-golden-2"
+      },
+      "replayed_events": [
+        {
+          "type": "TEXT_MESSAGE_START",
+          "messageId": "assistant-golden-1"
+        },
+        {
+          "type": "TEXT_MESSAGE_CONTENT",
+          "messageId": "assistant-golden-1",
+          "delta": " replayed",
+          "metadata": {
+            "cpki_event_id": "event-golden-3"
+          }
+        },
+        {
+          "type": "TEXT_MESSAGE_END",
+          "messageId": "assistant-golden-1"
+        }
+      ]
+    },
+    "history_replay": {
+      "request": {
+        "method": "POST",
+        "path": "/api/copilotkit/agent/default/connect",
+        "body": {
+          "threadId": "thread-golden-1",
+          "runId": "run-golden-1",
+          "protocolVersion": "1.0",
+          "state": {},
+          "messages": [],
+          "tools": [],
+          "context": []
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "body": {
+          "events": [
+            {
+              "type": "TEXT_MESSAGE_CONTENT",
+              "messageId": "assistant-golden-1",
+              "delta": " replayed"
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "kind": "locked_package_callsite",
+        "package": "@copilotkit/core@1.77.0",
+        "file": "dist/index.mjs",
+        "callsite": "ProxiedCopilotRuntimeAgent.#connectViaHttp"
+      }
+    }
+  },
+  "sse_response": {
+    "content_type": "text/event-stream",
+    "events": [
+      {
+        "type": "RUN_STARTED",
+        "threadId": "thread-golden-1",
+        "runId": "run-golden-1",
+        "protocolVersion": "1.0"
+      },
+      {
+        "type": "TOOL_CALL_START",
+        "toolCallId": "tool-call-golden-1",
+        "toolCallName": "send_message"
+      },
+      {
+        "type": "TOOL_CALL_END",
+        "toolCallId": "tool-call-golden-1"
+      },
+      {
+        "type": "RUN_FINISHED",
+        "threadId": "thread-golden-1",
+        "runId": "run-golden-1",
+        "outcome": {
+          "type": "interrupt",
+          "interrupts": [
+            {
+              "id": "approval-golden-1",
+              "reason": "approval",
+              "toolCallId": "tool-call-golden-1"
+            }
+          ]
+        }
+      }
+    ],
+    "provenance": {
+      "kind": "locked_package_callsite",
+      "package": "@ag-ui/client@1.0.1",
+      "file": "dist/index.mjs",
+      "callsite": "parseSSEStream/HttpAgent.runAgent"
+    }
+  }
+}
