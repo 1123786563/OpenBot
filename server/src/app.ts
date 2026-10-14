@@ -103,6 +103,7 @@ import type { DemonstrationStore } from "./demonstrations/store";
 import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
+import { withRunnerRequestContext } from "./enterprise/runs/request-context";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
@@ -470,6 +471,7 @@ export function createApp(
       };
     };
     groups?: GroupConversations;
+    enterpriseConversations?: Hono;
     teamBots?: TeamBots;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
@@ -697,6 +699,13 @@ export function createApp(
         : { enabled: false, paid: false },
     }),
   );
+
+  if (coworker?.enterpriseConversations) {
+    app.route(
+      "/api/enterprise/conversations",
+      coworker.enterpriseConversations,
+    );
+  }
   /*
    * Registering an identity provider is an administrator's decision, not a signed-in one.
    *
@@ -1557,6 +1566,12 @@ export function createApp(
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
   // its own routing under /api/copilotkit cannot shadow an OpenBot route declared above.
   if (copilotHandler) {
+    app.use("/api/copilotkit", async (context, next) =>
+      withRunnerRequestContext(context.req.raw, next),
+    );
+    app.use("/api/copilotkit/*", async (context, next) =>
+      withRunnerRequestContext(context.req.raw, next),
+    );
     // Mounted at the ROOT with the handler carrying its own basePath. Mounting it at
     // "/api/copilotkit" as well double-prefixes it: Hono strips the prefix before the handler sees
     // the path, so every route lands at /api/copilotkit/api/copilotkit/* and /info 404s. The browser

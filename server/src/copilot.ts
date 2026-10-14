@@ -1,19 +1,33 @@
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import { createOpenAI } from "@ai-sdk/openai";
-import type { BuiltInAgentConfiguration } from "@copilotkit/runtime/v2";
-import { randomUUID } from "node:crypto";
+import type {
+  AgentRunnerConnectRequest,
+  AgentRunnerIsRunningRequest,
+  AgentRunnerRunRequest,
+  AgentRunnerStopRequest,
+  AgentsConfig,
+  BuiltInAgentConfiguration,
+} from "@copilotkit/runtime/v2";
 import {
+  AgentRunner,
   BuiltInAgent,
   CopilotKitIntelligence,
   CopilotRuntime,
+  CopilotSseRuntime,
 } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import type { Observable } from "rxjs";
-import { defer, finalize, from, fromEvent, switchMap, takeUntil } from "rxjs";
+import {
+  defer,
+  finalize,
+  from,
+  fromEvent,
+  switchMap,
+  takeUntil,
+  throwError,
+} from "rxjs";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
-import { getLogger } from "../../shared/logger";
 import {
   type ActorAgentResolver,
   CoworkerUnavailableError,
@@ -42,9 +56,13 @@ import { HeadlessToolsMiddleware } from "./computer/headless-tools";
 import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
-import { observeIntelligenceAuthentication } from "./intelligence-client";
-import { KnowledgeRetrievalMiddleware } from "./knowledge/middleware";
+import type { GovernedModelRequest } from "./enterprise/runs/governed-execution";
 import type { LoadKnowledgeForBot } from "./knowledge/retrieval";
+import {
+  currentRunnerRequest,
+  withRunnerRequestContext,
+} from "./enterprise/runs/request-context";
+import { observeIntelligenceAuthentication } from "./intelligence-client";
 import { RemoteLearnedSkillsMiddleware } from "./learning/remote";
 import {
   type AcquireLearnedSkills,
@@ -67,22 +85,55 @@ import {
 import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance, parametersFor } from "./plugins/tools";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
-import { currentUsageOrigin, type UsageOrigin } from "./usage-origin";
+import { type UsageOrigin } from "./usage-origin";
 
-const log = getLogger("server");
+export { currentRunnerRequest, withRunnerRequestContext };
+
+export function createRequestBoundAgentRunner(
+  runnerForRequest: (request: Request) => AgentRunner,
+): AgentRunner {
+  return new (class extends AgentRunner {
+    override run(request: AgentRunnerRunRequest) {
+      try {
+        return runnerForRequest(currentRunnerRequest()).run(request);
+      } catch (error) {
+        return throwError(() => error);
+      }
+    }
+
+    override connect(request: AgentRunnerConnectRequest) {
+      try {
+        return runnerForRequest(currentRunnerRequest()).connect(request);
+      } catch (error) {
+        return throwError(() => error);
+      }
+    }
+
+    override async isRunning(request: AgentRunnerIsRunningRequest) {
+      return runnerForRequest(currentRunnerRequest()).isRunning(request);
+    }
+
+    override async stop(request: AgentRunnerStopRequest) {
+      return runnerForRequest(currentRunnerRequest()).stop(request);
+    }
+  })();
+}
+
+export function createCopilotSseRuntime(
+  agents: AgentsConfig,
+  runner: AgentRunner,
+) {
+  return new CopilotSseRuntime({ agents, runner });
+}
 
 /**
- * The CopilotKit runtime, always in Intelligence mode.
+ * The CopilotKit runtime: Intelligence mode, or SSE mode once the durable enterprise Runner is
+ * composed.
  *
- * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots are
- * reached over AG-UI as `HttpAgent` instances, so anything that speaks the protocol remains a Bot
- * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
- * server.
- *
- * There is no SSE branch. Intelligence is a requirement of the product, not a tier: it owns
- * durable threads, memory and learning, and a deployment without it silently forgets every
- * conversation. config.ts refuses to boot without the full contract, so by the time this runs the
- * settings are present and this file has one mode.
+ * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots
+ * (remote_ag_ui / remote_mastra) currently fail closed: until the durable Runner can verify a
+ * third-party endpoint against a per-run budget, they resolve to UnavailableAgent
+ * (REMOTE_RUN_BUDGET_UNVERIFIED) instead of being dialled over AG-UI.
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -90,11 +141,13 @@ export type IdentifyUser = (
   request: Request,
 ) => Promise<{ id: string; name: string }>;
 
-type RegisteredBuiltInAgent = {
+export type RegisteredBuiltInAgent = {
   id: string;
   name: string;
   type: "built_in";
   systemPrompt: string;
+  /** Trusted source classification carried from the actor-scoped runtime row. */
+  expertSource?: "tenant_package" | "user_profile" | "team_bot";
 };
 
 type RegisteredRemoteAgentFacts = {
@@ -348,585 +401,6 @@ export function standingInstructionsGuidance(
   ].join("\n\n");
 }
 
-/**
- * The model a built-in Bot runs on, as the runtime's agent config takes it.
- *
- * `OPENAI_BASE_URL` is documented as an endpoint speaking `/v1/chat/completions`, but the runtime's
- * own `openai/...` string resolution calls the Responses API on whatever base it was given, which
- * such endpoints do not implement — a gateway deployment fails every run with a 404 from
- * `/responses`. So a named base URL gets the chat-completions model instance built here (pinned to
- * the SDK version the runtime itself ships, so there is never a second AI SDK in the process);
- * official OpenAI, which has the Responses API, and Anthropic keep the runtime's string form.
- */
-function runtimeModel(model: RuntimeModel, apiKey: string | null) {
-  if (model.provider !== "openai")
-    return `${model.provider}/${model.defaultModel}`;
-  const baseURL = process.env.OPENAI_BASE_URL?.trim();
-  if (!baseURL) return `openai/${model.defaultModel}`;
-  return createOpenAI({
-    apiKey: apiKey ?? undefined,
-    baseURL,
-  }).chat(model.defaultModel);
-}
-
-/**
- * Where every built-in Bot's token consumption lands, once this deployment has billing.
- *
- * A module-level setter rather than an import: the billing seam is optional — a deployment without
- * a provider mounts none of it — and `copilot.ts` must not grow a dependency on a module that is
- * often absent. `index.ts` wires the billing service's meter in at assembly; the default drops
- * usage on the floor, which is exactly right for a deployment that meters nowhere.
- */
-let usageMeter:
-  | ((usage: ModelUsageReport) => void | Promise<void>)
-  | undefined;
-
-export function setModelUsageMeter(
-  meter: ((usage: ModelUsageReport) => void | Promise<void>) | undefined,
-) {
-  usageMeter = meter;
-}
-
-export type ModelUsageFailureReason =
-  | "provider_error"
-  | "stream_error"
-  | "no_usage"
-  | "cancelled"
-  | "bound_refused";
-
-/** One billed call's finished usage, the shape the meter and the lifecycle finish share. */
-export type ModelUsageReport = {
-  eventId: string;
-  occurredAt: Date;
-  inputTokens: number | undefined;
-  outputTokens: number | undefined;
-};
-
-/**
- * How the input side of one billed call is provably bounded BEFORE the provider is called.
- *
- * A reservation is not a provider limit: admission needs a proof that billable input cannot
- * exceed the configured maximum. `counted` is a conservative pre-call count of the effective
- * provider request — with an optional `fit` that self-enforces the ceiling by shrinking the
- * request before it is priced and sent (ADR-0001); a provider-side exact count, where one
- * exists, remains the ideal. `unsupported` names the capability this deployment cannot prove,
- * and a call that carries it is refused rather than approximated.
- */
-export type ModelUsageInputBound =
-  | {
-      enforced: "counted";
-      maximumTokens: bigint;
-      countInputTokens: (params: unknown) => number | Promise<number>;
-      /**
-       * The self-enforcing side of a conservative bound: given the params admission is about
-       * to price, return the request this call should actually send — truncated to the
-       * bound's own ceiling when the original would be refused. Absent when the bound cannot
-       * self-enforce; admission then refuses an over-limit request outright.
-       */
-      fit?: (params: unknown) => unknown;
-    }
-  | { enforced: "unsupported"; reason: string };
-
-/** The output side: the cap this wrapper writes into the call and the provider enforces. */
-export type ModelUsageOutputBound =
-  | { enforced: "provider_cap"; maximumTokens: bigint }
-  | { enforced: "unsupported"; reason: string };
-
-/**
- * The provider-bound contract every admitted billed call must satisfy. The gate supplies the
- * exact limits enforced on `inner.doStream` or the call is refused before it; the same limits
- * price the finished usage (see `calculateExactModelUsageCharge`).
- */
-export type ModelUsageProviderBounds = {
-  input: ModelUsageInputBound;
-  output: ModelUsageOutputBound;
-};
-
-export type ModelUsageGateLifecycle = {
-  bounds?: ModelUsageProviderBounds;
-  finish?: (usage: ModelUsageReport) => Promise<void> | void;
-  fail?: (input: {
-    eventId: string;
-    occurredAt: Date;
-    reason: ModelUsageFailureReason;
-  }) => Promise<void> | void;
-};
-
-export type ModelUsageRefusalCode =
-  | "model_bounds_missing"
-  | "input_bound_unsupported"
-  | "input_over_limit"
-  | "output_bound_unsupported";
-
-/**
- * A billed call refused before the provider saw anything, because its configured reservation
- * bounds cannot be proven on the actual provider request. Distinct from `CreditGateError`
- * (the person's balance is fine; this deployment's model wiring is the limit). Release is
- * ATTEMPTED before throwing; if the release itself fails, the hold stays visible for
- * operator reconciliation rather than being silently dropped.
- */
-export class ModelUsageRefusalError extends Error {
-  override name = "ModelUsageRefusalError";
-  constructor(readonly code: ModelUsageRefusalCode) {
-    super(
-      code === "input_over_limit"
-        ? `Model call refused (${code}): the request exceeds this deployment's configured input token limit for this model. Shorten the request and try again.`
-        : `Model call refused (${code}): this deployment cannot prove the configured billing bounds on the provider request. Ask an administrator to configure a provable bound for this model.`,
-    );
-  }
-}
-
-/**
- * A billed stream that completed at the provider but cannot be settled honestly: malformed
- * usage, usage above the advertised bound, or a usage fact that failed to persist. The
- * reservation is NOT released — the hold stays visible for operator reconciliation.
- */
-export class ModelUsageSettlementError extends Error {
-  override name = "ModelUsageSettlementError";
-  constructor(readonly code: string) {
-    super(`Model usage settlement failed (${code}).`);
-  }
-}
-
-type ModelUsageGateInput = {
-  eventId: string;
-  occurredAt: Date;
-  modelId: string | null;
-  /**
-   * The surface the call came from (the usage-origin vocabulary), read here at doStream time,
-   * the one point where the request context still exists, so the gate's outbox write can
-   * attribute the usage fact to its real caller instead of a hardcoded "web".
-   */
-  client: UsageOrigin;
-};
-
-/**
- * The pre-call credit gate, the meter's sibling: where the meter reports what a call COST after
- * it finished, the gate refuses the call BEFORE the first token when the deployment's credit
- * balance is gone. Same injection shape as the meter for the same reason — `copilot.ts` must
- * not depend on a billing module a deployment may not have; `index.ts` wires the gate at
- * assembly and the default (absent) lets every call through.
- *
- * Async on purpose (the gate reads the ledger), and a gate that THROWS is a gate that refuses
- * (fail-closed): a person with credits whose gate errored is told to retry rather than
- * silently given free tokens.
- */
-let modelUsageGate:
-  | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle>)
-  | undefined;
-
-export function setModelUsageGate(
-  gate:
-    | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle>)
-    | undefined,
-) {
-  modelUsageGate = gate;
-}
-
-/**
- * A gate refusal as the stream spells it: a sentinel-code error the runtime's error handling
- * renders to the person. `credits_exhausted` is the one word the billing seam owns for this —
- * the surface (402 semantics) is the caller's to grade.
- */
-export class CreditGateError extends Error {
-  override name = "CreditGateError";
-  readonly code = "credits_exhausted";
-  constructor() {
-    super(
-      "This deployment has no credits left. Ask an administrator to grant credits or upgrade the plan.",
-    );
-  }
-}
-
-/**
- * A model this billed deployment cannot meter in its current form: the runtime resolves
- * string-form models itself, where the admission wrapper — and with it any provable bound —
- * cannot reach. Deliberately NOT `CreditGateError`: the balance is not the problem, the
- * deployment's model wiring is, and telling an administrator to buy credits would be the
- * wrong instruction.
- */
-export class UnmeterableModelError extends Error {
-  override name = "UnmeterableModelError";
-  readonly code = "model_unmeterable";
-  constructor() {
-    super(
-      "This model cannot be metered in its current form. Ask an administrator to configure a gateway base URL (OPENAI_BASE_URL) or a plan model so billing admission can prove its bounds.",
-    );
-  }
-}
-
-/**
- * A model instance carrying the billing admission and settlement, hand-rolled to the same
- * shape AI SDK's own `wrapLanguageModel` produces: `doStream` delegates to the wrapped model
- * after the gate's bounds are proven (refusing before the provider otherwise), and the
- * result's ReadableStream is re-emitted from a hand-written pull loop so settlement is
- * DECISIVE — the finish chunk is forwarded only after the lifecycle's `finish` (the durable
- * usage fact) commits, and a failure path releases or retains the reservation by contract.
- * Every other property (provider, modelId, supportedUrls) passes through untouched.
- * Structural on purpose — the middleware types live in `@ai-sdk/provider`, which this workspace
- * does not depend on directly; the runtime carries them transitively, and pinning that into
- * `package.json` to record two field names is not the trade.
- */
-function meteredModel<T>(model: T): T {
-  const inner = model as {
-    doStream: (params: unknown) => Promise<{
-      stream: ReadableStream<Record<string, unknown>>;
-      [key: string]: unknown;
-    }>;
-    [key: string]: unknown;
-  };
-  return {
-    ...inner,
-    async doStream(params: unknown) {
-      const eventId = randomUUID();
-      const occurredAt = new Date();
-      let lifecycle: ModelUsageGateLifecycle | undefined;
-      /*
-       * The credit gate, BEFORE the first token: this is the one point every built-in Bot's
-       * model call passes through (the same reason the meter lives here), and "before the
-       * call" is the only place a refusal saves the cost. The gate itself is index.ts's — it
-       * reads the credit ledger with a short TTL cache so a burst of calls costs one read, and
-       * refuses (throws CreditGateError) when the live balance is zero. A gate that THROWS for
-       * another reason is also refused: fail-closed — an unreadable balance is not a free pass.
-       */
-      if (modelUsageGate) {
-        try {
-          lifecycle = await modelUsageGate({
-            eventId,
-            occurredAt,
-            modelId:
-              typeof inner.modelId === "string" ? inner.modelId : null,
-            client: currentUsageOrigin(),
-          });
-        } catch (error) {
-          if (error instanceof CreditGateError) throw error;
-          // The gate's own failure reason stays out of the person-facing sentinel; the
-          // name alone is logged (a message could carry connection details from a store).
-          log.error(
-            {
-              type: "billing-model-gate-failed",
-              eventId,
-              name: (error as Error | null | undefined)?.name,
-            },
-            "billing-model-gate-failed",
-          );
-          throw new CreditGateError();
-        }
-      }
-      /*
-       * The bound contract: admission reserved credits, but a reservation is not a provider
-       * limit. Before the provider is called at all, the lifecycle must prove HOW the
-       * configured input and output maxima are enforced on this invocation — and every
-       * refusal here releases the reservation admission just created, because no chargeable
-       * work has happened yet.
-       */
-      const providerBounds = lifecycle?.bounds;
-      const refuse = async (code: ModelUsageRefusalCode): Promise<never> => {
-        log.error(
-          { type: "billing-model-admission-refused", eventId, code },
-          "billing-model-admission-refused",
-        );
-        try {
-          await lifecycle?.fail?.({
-            eventId,
-            occurredAt,
-            reason: "bound_refused",
-          });
-        } catch {
-          // Admission cleanup is contained: the refusal is the product failure.
-        }
-        throw new ModelUsageRefusalError(code);
-      };
-      let request = params;
-      if (modelUsageGate) {
-        if (!providerBounds) return refuse("model_bounds_missing");
-        if (providerBounds.input.enforced === "unsupported")
-          return refuse("input_bound_unsupported");
-        if (providerBounds.output.enforced === "unsupported")
-          return refuse("output_bound_unsupported");
-        let counted: number;
-        try {
-          if (
-            providerBounds.input.enforced === "counted" &&
-            providerBounds.input.fit
-          ) {
-            request = providerBounds.input.fit(params);
-          }
-          counted = await providerBounds.input.countInputTokens(request);
-        } catch (error) {
-          // A count that THREW is a failed probe (dependency outage), not a missing
-          // capability; the name alone is logged so the two stay distinguishable.
-          log.error(
-            {
-              type: "billing-model-input-count-failed",
-              eventId,
-              name: (error as Error | null | undefined)?.name,
-            },
-            "billing-model-input-count-failed",
-          );
-          return refuse("input_bound_unsupported");
-        }
-        if (!Number.isSafeInteger(counted) || counted < 0)
-          return refuse("input_bound_unsupported");
-        if (BigInt(counted) > providerBounds.input.maximumTokens)
-          return refuse("input_over_limit");
-        /*
-         * The cap comparison stays in the bigint domain: the settlement boundary later
-         * compares the reported usage against the same bigint maximum, and a Number()
-         * conversion of an out-of-safe-range ceiling could round — admitting an output the
-         * settlement then rejects, or writing the provider a cap that is not the configured
-         * one. A maximum that cannot survive the Number() write below unchanged is refused
-         * outright. The caller's own request is honoured only when it is a whole, positive,
-         * in-bound number — anything else (including 0, which providers reject or ignore)
-         * gets the configured cap rather than a passthrough the provider contract never
-         * promised.
-         */
-        const cap = providerBounds.output.maximumTokens;
-        if (cap > BigInt(Number.MAX_SAFE_INTEGER)) {
-          return refuse("output_bound_unsupported");
-        }
-        const requested = (
-          params as { maxOutputTokens?: unknown }
-        ).maxOutputTokens;
-        const effective =
-          typeof requested === "number" &&
-          Number.isSafeInteger(requested) &&
-          requested > 0 &&
-          BigInt(requested) <= cap
-            ? BigInt(requested)
-            : cap;
-        request = {
-          ...(request as Record<string, unknown>),
-          maxOutputTokens: Number(effective),
-        };
-      }
-      let result: Awaited<ReturnType<typeof inner.doStream>>;
-      try {
-        result = await inner.doStream(request);
-      } catch (error) {
-        try {
-          await lifecycle?.fail?.({
-            eventId,
-            occurredAt,
-            reason: "provider_error",
-          });
-        } catch {
-          // Admission cleanup is contained: the provider failure is the product failure.
-        }
-        throw error;
-      }
-
-      const reader = result.stream.getReader();
-      let settled = false;
-      const settleFinish = async (usage: {
-        inputTokens: number;
-        outputTokens: number;
-      }) => {
-        if (settled) return;
-        settled = true;
-        /*
-         * The decisive boundary: `finish` resolves only after the immutable usage fact has
-         * committed (or an identical event already exists). A rejection is NOT contained
-         * here — it propagates to the pull below, which errors the stream instead of
-         * reporting a successful answer whose usage was never durably recorded.
-         */
-        await lifecycle?.finish?.({
-          eventId,
-          occurredAt,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-        });
-        try {
-          await usageMeter?.({
-            eventId,
-            occurredAt,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-          });
-        } catch {
-          // A meter that throws (or rejects) must not take the run's last chunk down with it.
-        }
-      };
-      const settleFail = async (reason: ModelUsageFailureReason) => {
-        if (settled) return;
-        settled = true;
-        try {
-          await lifecycle?.fail?.({
-            eventId,
-            occurredAt,
-            reason,
-          });
-        } catch {
-          // Release failures stay contained: the hold's own expiry is the backstop.
-        }
-      };
-
-      const stream = new ReadableStream<Record<string, unknown>>({
-        async pull(controller) {
-          let chunk: Awaited<ReturnType<typeof reader.read>>;
-          try {
-            chunk = await reader.read();
-          } catch (error) {
-            await settleFail("stream_error");
-            reader.releaseLock();
-            controller.error(error);
-            return;
-          }
-
-          if (chunk.done) {
-            await settleFail("no_usage");
-            reader.releaseLock();
-            controller.close();
-            return;
-          }
-
-          const part = chunk.value;
-          /**
-           * The one settlement-failure exit: mark settled, log by eventId, tear the
-           * upstream down, error the stream. Cancel — not just `releaseLock` — so the
-           * provider's HTTP body is torn down instead of holding its connection open.
-           */
-          const failSettlement = (
-            logType: string,
-            error: Error,
-            detail?: Record<string, unknown>,
-          ) => {
-            settled = true;
-            log.error({ type: logType, eventId, ...detail }, logType);
-            reader.cancel("settlement_failed").catch(() => {
-              // The upstream is already gone; nothing to recover.
-            });
-            controller.error(error);
-          };
-          if (part?.type === "finish" && !settled) {
-            const usage = part.usage as
-              | {
-                  inputTokens?: { total?: number };
-                  outputTokens?: { total?: number };
-                }
-              | undefined;
-            const inputTokens = usage?.inputTokens?.total;
-            const outputTokens = usage?.outputTokens?.total;
-            const validInput =
-              inputTokens === undefined ||
-              (Number.isSafeInteger(inputTokens) && inputTokens >= 0);
-            const validOutput =
-              outputTokens === undefined ||
-              (Number.isSafeInteger(outputTokens) && outputTokens >= 0);
-
-            /*
-             * Malformed or over-bound usage is a DISTINCT settlement failure: no charge is
-             * invented, no successful finish is emitted, and — unlike the cleanup paths
-             * below — the reservation is NOT released. The provider already produced the
-             * work; the hold stays visible for operator reconciliation.
-             */
-            const billedInput = inputTokens ?? 0;
-            const billedOutput = outputTokens ?? 0;
-            if (!validInput || !validOutput) {
-              failSettlement(
-                "billing-model-usage-invalid",
-                new ModelUsageSettlementError("usage_invalid"),
-              );
-              return;
-            }
-            const inputBound = providerBounds?.input;
-            const outputBound = providerBounds?.output;
-            const overBound =
-              (inputBound?.enforced === "counted" &&
-                BigInt(billedInput) > inputBound.maximumTokens) ||
-              (outputBound?.enforced === "provider_cap" &&
-                BigInt(billedOutput) > outputBound.maximumTokens);
-            if (overBound) {
-              failSettlement(
-                "billing-model-usage-over-bound",
-                new ModelUsageSettlementError("usage_over_bound"),
-                { inputTokens: billedInput, outputTokens: billedOutput },
-              );
-              return;
-            }
-
-            if (billedInput > 0 || billedOutput > 0) {
-              try {
-                await settleFinish({
-                  inputTokens: billedInput,
-                  outputTokens: billedOutput,
-                });
-              } catch (error) {
-                // A stable code when the rejection carries one. Only the settlement error
-                // itself crosses into the person-visible stream: a gate implementation's
-                // raw failure (a store error message can carry connection details) is
-                // wrapped into the credential-free shape right here at the boundary.
-                const code =
-                  typeof (error as { code?: unknown })?.code === "string"
-                    ? (error as { code: string }).code
-                    : undefined;
-                failSettlement(
-                  "billing-model-finish-failed",
-                  error instanceof ModelUsageSettlementError
-                    ? error
-                    : new ModelUsageSettlementError(
-                        code ?? "usage_persistence_failed",
-                      ),
-                  code ? { code } : undefined,
-                );
-                return;
-              }
-            } else {
-              await settleFail("no_usage");
-            }
-          }
-
-          try {
-            controller.enqueue(part);
-          } catch {
-            // Enqueue throws for any closed/errored state (consumer cancellation included);
-            // keep the dropped chunk diagnosable rather than silently discarded.
-            log.debug(
-              { type: "billing-model-chunk-dropped", eventId },
-              "billing-model-chunk-dropped",
-            );
-          }
-        },
-        async cancel(reason) {
-          // Claim the settled flag BEFORE tearing the upstream down: a pull still in
-          // flight would otherwise win the race and record this cancellation as no_usage.
-          await settleFail("cancelled");
-          try {
-            await reader.cancel(reason);
-          } finally {
-            reader.releaseLock();
-          }
-        },
-      });
-
-      return { ...result, stream };
-    },
-  } as T;
-}
-
-export const meteredModelForTests = meteredModel;
-
-/**
- * Wrap the model instance in the usage meter when one is wired and the model is an instance (the
- * string form is resolved by the runtime itself, where this file cannot reach).
- */
-function withUsageMeter<T>(model: T): T {
-  // The gate rides the same wrapper as the meter: a deployment with neither wired (no billing)
-  // gets the model untouched, and a deployment with only the meter still meters — the two are
-  // independent injections on purpose.
-  if (usageMeter === undefined && modelUsageGate === undefined) return model;
-  const candidate = model as
-    | (Record<string, unknown> & { doStream?: unknown })
-    | string;
-  if (
-    typeof candidate === "string" ||
-    typeof candidate.doStream !== "function"
-  ) {
-    return model;
-  }
-  return meteredModel(model);
-}
-
 export function builtInAgentConfiguration(
   agent: RegisteredBuiltInAgent,
   model: RuntimeModel,
@@ -963,8 +437,19 @@ export function builtInAgentConfiguration(
   standingInstructions?: string | null,
   planModel?: PlanModel,
   learnedSkills?: LearnedSkillInvocation,
+  /**
+   * The server-only governed model collaborator, present only inside a
+   * governed admission.
+   *
+   * When present, the Bot's model is the gateway adapter this run was admitted
+   * against: no provider SDK, no provider api key, and no field a client could
+   * override — `overridableProperties` is deliberately absent so nothing in
+   * the wire input can select the route, the credential, or the run identity.
+   */
+  governedModel?: GovernedModelRequest,
+  loadKnowledge?: LoadKnowledgeForBot,
 ): BuiltInAgentConfiguration {
-  if (!apiKey && !planModel) {
+  if (!apiKey && !planModel && !governedModel) {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
@@ -987,24 +472,52 @@ export function builtInAgentConfiguration(
     })) ?? []),
   ];
 
-  const resolvedModel = planModel ?? runtimeModel(model, apiKey);
-  if (
-    modelUsageGate !== undefined &&
-    typeof resolvedModel === "string"
-  ) {
+  if (governedModel) {
+    governedModel.markConsumed();
     return {
-      type: "custom",
-      // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
-      factory: async function* () {
-        // Fail-closed: string-form models are resolved inside the runtime, where the
-        // admission wrapper — and any provable bound — cannot reach them.
-        throw new UnmeterableModelError();
-      },
+      model: governedModel.model,
+      prompt: [
+        agent.systemPrompt,
+        ...(standing ? [standing] : []),
+        PROVENANCE_GUIDANCE,
+        UNTRUSTED_GUIDANCE,
+        ...(grantedToolGuidance(tools, connectedVendors)
+          ? [grantedToolGuidance(tools, connectedVendors)]
+          : []),
+        ...(computerGuidance ? [computerGuidance] : []),
+        ...(learnedSkills?.catalog ? [learnedSkills.catalog] : []),
+      ].join("\n\n"),
+      // The admitted run ceiling, set by the server. The adapter narrows every
+      // step's request to what remains of it.
+      maxOutputTokens: governedModel.maxOutputTokens,
+      /*
+       * A retry would mint a fresh capability against the same run ceiling,
+       * and a 402 budget refusal is terminal by contract, so the SDK's
+       * retry loop is off for governed calls entirely.
+       */
+      maxRetries: 0,
+      ...(allTools.length > 0
+        ? {
+            tools: allTools.map((tool) => ({
+              ...tool,
+              execute: (args: unknown, execution?: { toolCallId?: string }) =>
+                executeNativeApprovalTool(
+                  tool.name,
+                  args,
+                  execution?.toolCallId,
+                  tools.find((granted) => granted.name === tool.name)
+                    ?.initiator,
+                  () => tool.execute(args),
+                ),
+            })),
+            maxSteps: TOOL_STEPS,
+          }
+        : {}),
     };
   }
 
   return {
-    model: withUsageMeter(resolvedModel),
+    model: planModel ?? `${model.provider}/${model.defaultModel}`,
     /*
      * The package's role, then the person's own standing instructions, then what this Bot actually
      * holds, then the computer.
@@ -1130,14 +643,10 @@ export async function buildAgents(
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
-  /**
-   * How a run gets knowledge-base reference material injected. Appended after
-   * `loadPersonalMemory`, for the positional reason every collaborator above gives: these are
-   * positional, so inserting one anywhere else silently shifts every existing call site's
-   * arguments by one. Absent means no retrieval middleware is mounted, which is what every
-   * deployment without KB_RETRIEVAL_KB_IDS wants.
-   */
+  /** Appended after `loadPersonalMemory`, for the positional reason it gives. */
   loadKnowledge?: LoadKnowledgeForBot,
+  /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
+  governedModel?: GovernedModelRequest,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -1146,10 +655,11 @@ export async function buildAgents(
     // Vendor guidance is best-effort: losing it must not prevent a run or change its grants.
     // Report once per build here, including failures from the production plugin-store loader.
     // Never log the thrown value: database errors can contain connection details or row contents.
-    log.error(
-      { operation: "loadVendors", agentCount: agents.length },
-      "connected_vendor_lookup_failed",
-    );
+    console.error({
+      error: "connected_vendor_lookup_failed",
+      context: { operation: "loadVendors", agentCount: agents.length },
+      timestamp: new Date().toISOString(),
+    });
   }
   /*
    * Read once per build and only when somebody will be told it, like the vendors above and the model
@@ -1166,10 +676,11 @@ export async function buildAgents(
       instructions = (await loadInstructions?.()) ?? null;
     } catch {
       // Never log the thrown value: database errors can expose instructions or credentials.
-      log.error(
-        { operation: "loadInstructions", agentCount: agents.length },
-        "standing_instruction_read_failed",
-      );
+      console.error({
+        error: "standing_instruction_read_failed",
+        context: { operation: "loadInstructions", agentCount: agents.length },
+        timestamp: new Date().toISOString(),
+      });
     }
   }
   return Object.fromEntries(
@@ -1192,13 +703,10 @@ export async function buildAgents(
           loadAttachment,
           markAttachmentsSent,
           acquireLearnedSkills,
+          governedModel,
         );
-        if (loadPersonalMemory)
+        if (loadPersonalMemory && !(built instanceof UnavailableAgent))
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
-        // Same mounting point and shape as personal memory above: the two run-side
-        // enrichments share one wiring so a remote Bot's behaviour stays uniform.
-        if (loadKnowledge)
-          built.use(new KnowledgeRetrievalMiddleware(agent.id, loadKnowledge));
         return [agent.id, built];
       }),
     ),
@@ -1458,9 +966,19 @@ async function buildAgent(
   /** How this run records that those files were sent. See {@link buildAgents}. */
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
+  /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
+  governedModel?: GovernedModelRequest,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
+  }
+  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
+    return new UnavailableAgent({
+      id: agent.id,
+      name: agent.name,
+      type: "unavailable",
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
   }
 
   const granted = await loadTools(agent.id);
@@ -1479,10 +997,11 @@ async function buildAgent(
       skills = await selection.loadSkills(agent.id);
     } catch {
       // Never log the thrown value: database errors can contain connection details or row contents.
-      log.error(
-        { operation: "loadSkills", agentId: agent.id },
-        "tool_selection_skill_read_failed",
-      );
+      console.error({
+        error: "tool_selection_skill_read_failed",
+        context: { operation: "loadSkills", agentId: agent.id },
+        timestamp: new Date().toISOString(),
+      });
     }
   }
   const narrowing =
@@ -1493,8 +1012,9 @@ async function buildAgent(
       : undefined;
 
   const diagnoseRecordFailure = (chosen: Selection<GrantedTool>) => {
-    log.error(
-      {
+    console.error({
+      error: "tool_selection_record_failed",
+      context: {
         operation: "record",
         agentId: agent.id,
         reason: chosen.reason,
@@ -1502,8 +1022,8 @@ async function buildAgent(
         offered: chosen.offered.length,
         skills: chosen.skills,
       },
-      "tool_selection_record_failed",
-    );
+      timestamp: new Date().toISOString(),
+    });
   };
 
   /** Pass one and pass two, for one run. Shared by both agent kinds; each applies it differently. */
@@ -1528,39 +1048,6 @@ async function buildAgent(
     });
     return chosen.offered;
   };
-
-  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
-    /*
-     * The remote path narrows inside its own middleware rather than by being wrapped.
-     *
-     * `.use()` middleware is applied by `runAgent`, not by `run`, so an outer agent delegating to
-     * `remote.run(input)` skips it: the endpoint would get a run with no standing role, no holdings
-     * message, no tools and no signed assertion, and every one of those failures is silent.
-     *
-     * Coordination tools are resolved for this exact run by the same loader built-in Bots use.
-     * Their executable half stays in the signed deployment callback, where current grants, source
-     * ownership and handoff lease ownership are checked again.
-     *
-     * AND THE PERSON'S STANDING INSTRUCTIONS ARE NOT SENT HERE EITHER. `standingInstructions` is
-     * built-in only, deliberately: a remote Bot composes its own prompt at somebody else's endpoint,
-     * so this deployment would be sending one person's prose to a server it does not run, with no
-     * way to know whether it is read or how it ranks against the role. See
-     * `standingInstructionsGuidance`.
-     */
-    return remoteAgentWithStandingRole(
-      agent,
-      await remoteTransport(agent, stallGuard, agentFetch, initiator),
-      granted,
-      signRun,
-      connectedVendors,
-      narrowing ? offeredFor : undefined,
-      loadAttachment,
-      markAttachmentsSent,
-      acquireLearnedSkills,
-      handoff,
-      initiator,
-    );
-  }
 
   /*
    * A built-in Bot takes its tools in its configuration, so narrowing means building it again once
@@ -1592,6 +1079,7 @@ async function buildAgent(
             )
           : undefined,
         learnedSkills,
+        governedModel,
       ),
       loadAttachment,
       markAttachmentsSent,
@@ -2483,6 +1971,15 @@ export async function resolveRuntimeAgents(
   loadPersonalMemory?: LoadPersonalMemory,
   /** Appended after `loadPersonalMemory`, for the positional reason it gives. */
   loadKnowledge?: LoadKnowledgeForBot,
+  /**
+   * The server-only governed model collaborator, present only inside a
+   * governed admission.
+   *
+   * Its presence also suppresses the provider api-key read entirely: a
+   * governed Bot dials the model gateway with a capability, never a provider
+   * SDK key, so resolving one would be a credential read nothing consumes.
+   */
+  governedModel?: GovernedModelRequest,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -2498,9 +1995,10 @@ export async function resolveRuntimeAgents(
   // what that means, exactly as it would have from a roster that did not contain it.
   if (registered.length === 0) return {};
 
-  const apiKey = registered.some((agent) => agent.type === "built_in")
-    ? await resolveModelApiKey()
-    : null;
+  const apiKey =
+    !governedModel && registered.some((agent) => agent.type === "built_in")
+      ? await resolveModelApiKey()
+      : null;
   return buildAgents(
     registered,
     model,
@@ -2520,6 +2018,7 @@ export async function resolveRuntimeAgents(
     acquireLearnedSkills,
     loadPersonalMemory,
     loadKnowledge,
+    governedModel,
   );
 }
 
@@ -2649,48 +2148,6 @@ class IntelligenceKnowingANewThread extends CopilotKitIntelligence {
  */
 const THREAD_LOCK_TTL_SECONDS = 120;
 
-/**
- * One retry for the Intelligence platform's reads on a connection-level failure.
- *
- * The platform is an ocean away from many deployments, and one reset socket on a thread read kills
- * the whole run: the runtime's client makes a single attempt and the run handler surfaces the error
- * as "Failed to initialize thread", which a person experiences as a message that never gets a
- * reply. A GET can always be replayed, so the platform's host gets exactly one retry, and only for
- * a connection that died — a clean HTTP answer, any status, is the platform's decision and stands.
- * Everything else keeps the single-shot fetch it had: writes are not ours to make safe to replay,
- * and other hosts are none of this deployment's business.
- */
-export function retryIntelligenceReads(apiUrl: string) {
-  const host = apiUrl.replace(/\/+$/, "");
-  const single = globalThis.fetch;
-  const retrying: typeof fetch = Object.assign(
-    (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
-      const method = (
-        init?.method ?? (input instanceof Request ? input.method : "GET")
-      ).toUpperCase();
-      if (method !== "GET" || !url.startsWith(host)) return single(input, init);
-      // The retry goes to `single`, not to this wrapper, so it cannot recurse into a second retry.
-      return single(input, init).catch((error: unknown) => {
-        const cause = (error as { cause?: unknown })?.cause ?? error;
-        const message = String(
-          (cause as { message?: unknown })?.message ?? cause ?? error,
-        );
-        if (!/ECONNRESET|EPIPE|socket connection was closed/i.test(message))
-          throw error;
-        return single(input, init);
-      });
-    },
-    { preconnect: single.preconnect },
-  );
-  globalThis.fetch = retrying;
-}
-
 export function mountCopilotRuntime(
   config: DeploymentConfig,
   resolver: ActorAgentResolver,
@@ -2700,12 +2157,18 @@ export function mountCopilotRuntime(
     basePath?: string;
     onRunBusy?: (input: { threadId: string; busy: boolean }) => void;
     learningSettings?: LearningSettingsStore;
+    /**
+     * The durable enterprise Runner, present only when the verified Directory/Data capabilities
+     * composed at boot. Present, the browser mount speaks CopilotKit SSE with OpenBot's own
+     * admission; absent, the Intelligence runtime stays mounted as today.
+     */
+    enterpriseRunner?: {
+      runnerForRequest: (request: Request) => AgentRunner;
+    };
   } = {},
 ) {
   const { intelligence } = config.runtime;
   const { basePath = "/api/copilotkit", onRunBusy, learningSettings } = options;
-  // Installed once, at the one place the platform's client is wired into this deployment.
-  retryIntelligenceReads(intelligence.apiUrl);
 
   /**
    * The same Bot a person's run would get, built without a request.
@@ -2775,16 +2238,19 @@ export function mountCopilotRuntime(
       })
     : undefined;
 
-  const runtime = new CopilotRuntime({
-    // `mode` is inferred from the presence of `intelligence`; passing it is a type error.
-    //
+  /*
+   * Which transport the browser mount speaks is decided by what the deployment composed, not by a
+   * mode flag: the durable enterprise Runner is handed in only when the verified Directory/Data
+   * capabilities exist at boot, and without them this stays the Intelligence runtime that headless
+   * consumers already use. An SSE runtime without the durable Runner would answer every admission
+   * question with nobody's authority, so a missing capability keeps today's mode instead of
+   * inventing a permissive in-between.
+   */
+  const commonRuntimeOptions = {
     // identifyUser is NOT optional in practice. Threads and memory are scoped to the user it
     // returns, so omitting it puts every person in the deployment in the same thread space and one
     // person's conversations become another's.
     identifyUser,
-    // The subclass, not the base: a thread nobody has run yet reads as empty rather than as a 500.
-    // See IntelligenceKnowingANewThread.
-    intelligence: intelligenceClient,
     licenseToken: intelligence.licenseToken,
     // Carried on the events the runtime already sends, so OpenBot's traffic is separable from any
     // other deployment's. Adds no events of its own.
@@ -2815,7 +2281,24 @@ export function mountCopilotRuntime(
     // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
     // one resolver decides both whose threads these are and whose coworkers exist.
     agents: createRequestAgents(identifyActor, resolver) as never,
-  });
+  };
+
+  const runtime = options.enterpriseRunner
+    ? // SSE, with admission and lifecycle answered by OpenBot's own durable Runner. The Hono
+      // middleware in app.ts captures the live request; the factory binds scope, thread and lease
+      // to that request alone, so no client field or cross-request state can choose authority.
+      new CopilotSseRuntime({
+        ...commonRuntimeOptions,
+        runner: createRequestBoundAgentRunner(
+          options.enterpriseRunner.runnerForRequest,
+        ),
+      })
+    : // The subclass, not the base: a thread nobody has run yet reads as empty rather than as a
+      // 500. See IntelligenceKnowingANewThread.
+      new CopilotRuntime({
+        ...commonRuntimeOptions,
+        intelligence: intelligenceClient,
+      });
 
   return {
     handler: createCopilotHonoHandler({ runtime, basePath }),
@@ -2937,4 +2420,74 @@ export function mountCopilotRuntime(
       return read.messages;
     },
   };
+}
+
+export type ModelUsageFailureReason =
+  | "provider_error"
+  | "stream_error"
+  | "no_usage"
+  | "cancelled"
+  | "bound_refused";
+
+export type ModelUsageReport = {
+  eventId: string;
+  occurredAt: Date;
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+};
+
+export type ModelUsageInputBound =
+  | { enforced: "counted"; maximumTokens: bigint; countInputTokens: (params: unknown) => number | Promise<number> }
+  | { enforced: "provider_cap"; maximumTokens: bigint };
+
+export type ModelUsageOutputBound =
+  | { enforced: "provider_cap"; maximumTokens: bigint }
+  | { enforced: "unsupported"; reason: string };
+
+export type ModelUsageProviderBounds = {
+  input: ModelUsageInputBound;
+  output: ModelUsageOutputBound;
+};
+
+export type ModelUsageGateLifecycle = {
+  bounds?: ModelUsageProviderBounds;
+  finish?: (usage: ModelUsageReport) => Promise<void> | void;
+  fail?: (input: { eventId: string; occurredAt: Date; reason: ModelUsageFailureReason }) => Promise<void> | void;
+};
+
+
+export class ModelUsageSettlementError extends Error {
+  override name = "ModelUsageSettlementError";
+  constructor(readonly code: string) {
+    super(`Model usage settlement failed (${code}).`);
+  }
+}
+
+type ModelUsageGateInput = {
+  eventId: string;
+  occurredAt: Date;
+  modelId: string | null;
+  client: UsageOrigin;
+};
+
+let modelUsageGate:
+  | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle>)
+  | undefined;
+
+export function setModelUsageGate(
+  gate:
+    | ((input: ModelUsageGateInput) => Promise<ModelUsageGateLifecycle>)
+    | undefined,
+) {
+  modelUsageGate = gate;
+}
+
+export class CreditGateError extends Error {
+  override name = "CreditGateError";
+  readonly code = "credits_exhausted";
+  constructor() {
+    super(
+      "This deployment has no credits left. Ask an administrator to grant credits or upgrade the plan.",
+    );
+  }
 }

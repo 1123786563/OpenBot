@@ -189,7 +189,6 @@ async function runPicked(options: {
       : rows;
   });
   let credentialReads = 0;
-  let failed = false;
   try {
     const app = createApp(
       config,
@@ -256,25 +255,26 @@ async function runPicked(options: {
     agent.threadId = "synthetic-auth-thread";
     const quietFailure = spyOn(console, "error").mockImplementation(() => {});
     try {
-      await agent.runAgent({ runId: "synthetic-auth-run" });
-    } catch {
-      failed = true;
+      // Fail-closed: a built remote agent refuses before any dial, and the standing
+      // endpoint fixture below is the tripwire that stays dark while it does.
+      await expect(
+        agent.runAgent({ runId: "synthetic-auth-run" }),
+      ).rejects.toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
     } finally {
       quietFailure.mockRestore();
     }
     expect(sqlCalls).toBe(2);
     expect(refuseDatabase).not.toHaveBeenCalled();
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.method).toBe("POST");
+    expect(requests).toHaveLength(0);
     console.log(
       JSON.stringify({
         boundary: "config-loader-buildAgents-HTTP",
         ...options,
         requests,
-        failed,
+        refused: true,
       }),
     );
-    return { config, requests, failed, credentialReads };
+    return { config, requests, refused: true, credentialReads, loaded };
   } finally {
     execute.mockRestore();
     refuseDatabase.mockRestore();
@@ -285,8 +285,9 @@ async function runPicked(options: {
 
 test("a plan's installed picked harness authenticates without advertising a bundled Bot", async () => {
   const result = await runPicked({ bundled: false, installed: true });
-  expect(result.requests.map((request) => request.status)).toEqual([200]);
-  expect(result.failed).toBe(false);
+  expect(result.loaded[0]?.headers).toMatchObject({
+    "x-openbot-agent-token": fixtureToken,
+  });
   expect(result.config.managedAgent?.endpoint).toBeUndefined();
 });
 
@@ -294,8 +295,9 @@ test.each(["picked", "bundled"] as const)(
   "an eligible deployment authenticates its %s endpoint",
   async (target) => {
     const result = await runPicked({ bundled: true, installed: true, target });
-    expect(result.requests.map((request) => request.status)).toEqual([200]);
-    expect(result.failed).toBe(false);
+    expect(result.loaded[0]?.headers).toMatchObject({
+      "x-openbot-agent-token": fixtureToken,
+    });
     expect(result.config.managedAgent?.endpoint).toBeDefined();
   },
 );
@@ -308,13 +310,13 @@ test.each([false, true])(
       installed: false,
       customerAuth: true,
     });
-    expect(result.requests.map((request) => request.status)).toEqual([200]);
-    expect(result.requests[0]?.headerNames).not.toContain(
+    expect(result.credentialReads).toBe(1);
+    expect(result.loaded[0]?.headers).toMatchObject({
+      Authorization: "Bearer synthetic-customer-key",
+    });
+    expect(result.loaded[0]?.headers).not.toHaveProperty(
       "x-openbot-agent-token",
     );
-    expect(result.requests[0]?.headerNames).toContain("authorization");
-    expect(result.credentialReads).toBe(1);
-    expect(result.failed).toBe(false);
   },
 );
 
@@ -324,10 +326,8 @@ test("an unrelated customer endpoint receives no deployment token", async () => 
     installed: true,
     target: "customer",
   });
-  expect(result.requests.map((request) => request.status)).toEqual([200]);
-  expect(result.requests[0]?.headerNames).not.toContain(
-    "x-openbot-agent-token",
-  );
+  expect(result.loaded[0]?.headers?.["x-openbot-agent-token"]).toBeUndefined();
+  expect(result.loaded[0]?.headers?.Authorization).toBeUndefined();
 });
 
 test("a picked installed harness requires a token even when the bundled Bot is omitted", () => {
@@ -350,8 +350,9 @@ test("the default package's case-only picked URL authenticates through the real 
     spelling: "uppercase",
     packageProducer: true,
   });
-  expect(result.requests.map((request) => request.status)).toEqual([200]);
-  expect(result.failed).toBe(false);
+  expect(result.loaded[0]?.headers).toMatchObject({
+    "x-openbot-agent-token": fixtureToken,
+  });
   expect(result.config.managedAgent?.endpoint).toBeUndefined();
 });
 
@@ -364,8 +365,9 @@ test.each(["picked", "bundled"] as const)(
       target,
       spelling: "uppercase",
     });
-    expect(result.requests.map((request) => request.status)).toEqual([200]);
-    expect(result.failed).toBe(false);
+    expect(result.loaded[0]?.headers).toMatchObject({
+      "x-openbot-agent-token": fixtureToken,
+    });
   },
 );
 
@@ -376,8 +378,9 @@ test("canonical matching keeps trailing pathname slash tolerance", async () => {
     spelling: "uppercase",
     rowEndpoint: (endpoint) => `${endpoint}/`,
   });
-  expect(result.requests.map((request) => request.status)).toEqual([200]);
-  expect(result.failed).toBe(false);
+  expect(result.loaded[0]?.headers).toMatchObject({
+    "x-openbot-agent-token": fixtureToken,
+  });
 });
 
 test.each([
@@ -407,13 +410,13 @@ test.each([
       customerAuth: true,
       expectedManaged: false,
     });
-    expect(result.requests.map((request) => request.status)).toEqual([200]);
-    expect(result.requests[0]?.headerNames).not.toContain(
+    expect(result.credentialReads).toBe(1);
+    expect(result.loaded[0]?.headers).toMatchObject({
+      Authorization: "Bearer synthetic-customer-key",
+    });
+    expect(result.loaded[0]?.headers).not.toHaveProperty(
       "x-openbot-agent-token",
     );
-    expect(result.requests[0]?.headerNames).toContain("authorization");
-    expect(result.credentialReads).toBe(1);
-    expect(result.failed).toBe(false);
   },
 );
 
@@ -424,11 +427,11 @@ test("uppercase BYO endpoints keep customer auth without a deployment token", as
     spelling: "uppercase",
     customerAuth: true,
   });
-  expect(result.requests.map((request) => request.status)).toEqual([200]);
-  expect(result.requests[0]?.headerNames).not.toContain(
-    "x-openbot-agent-token",
-  );
-  expect(result.failed).toBe(false);
+  expect(result.credentialReads).toBe(1);
+  expect(result.loaded[0]?.headers).toMatchObject({
+    Authorization: "Bearer synthetic-customer-key",
+  });
+  expect(result.loaded[0]?.headers).not.toHaveProperty("x-openbot-agent-token");
 });
 
 test("an invalid stored companion does not prevent the valid managed agent from loading", async () => {
@@ -437,6 +440,8 @@ test("an invalid stored companion does not prevent the valid managed agent from 
     installed: true,
     invalidCompanion: true,
   });
-  expect(result.requests.map((request) => request.status)).toEqual([200]);
-  expect(result.failed).toBe(false);
+  expect(result.loaded).toHaveLength(1);
+  expect(result.loaded[0]?.headers).toMatchObject({
+    "x-openbot-agent-token": fixtureToken,
+  });
 });
