@@ -211,7 +211,35 @@ forbids fabricated upstream evidence):
 | `redis:7.2.4-alpine3.19` | `sha256:c8bb255c3559b3e458766db810aa7b3c7af1235b204cfdb304e79ff388fe1a5a` |
 | `clickhouse/clickhouse-server:26.3.16.16-alpine` | `sha256:b45ab149f0d331b944b4aa2ccdd47d0242238fd39e68ec524ad63338e4b9d8f8` (retrieved once; an immediate retry hit the TLS timeout, so it must be re-confirmed) |
 
-**Detection lesson:** `observation.status: live` was true throughout, and heartbeats had stopped
-advancing. The guide is explicit that PTY liveness can hold a stuck agent, so the useful signals
-were the transcript's last-turn recency plus host-side `ps` — not the liveness verdict. A worker
-blocked inside an un-timed tool call looks alive and makes no progress.
+**Correction — the "stuck worker" diagnosis in this entry was wrong.**
+
+The registry flakiness, the two hung `docker pull` processes and the value of
+`imagetools inspect` are all real and verified. The inference drawn from them was not: I reported
+T03 as blocked inside an un-timed tool call and unable to reach a checkpoint. Re-measured properly,
+T03 had 67 assistant turns with the last six spaced 0–4 seconds apart, the most recent 2 seconds
+before observation. It was never blocked. It completed Task 1, committed, and produced a
+`versions.json` whose redis and clickhouse digests **match the values I derived independently**,
+with zero floating tags, zero missing digests, and `compatibility.status` correctly left
+`unverified` for #10.
+
+Two measurement errors produced the false alarm, and both are worth recording because they will
+recur:
+
+1. **Heartbeat recency is not activity.** Heartbeats are emitted on a fixed cadence from the
+   preamble, so a stale `lastHeartbeatAt` says nothing about progress. The guide already states a
+   heartbeat proves liveness rather than completion; the converse trap is treating its absence as
+   stall.
+2. **A paged transcript tail can look sparse and is not the real tail.** Reading with a small
+   `--limit` and following `nextCursor` returned a sample whose apparent cadence was ~2 minutes per
+   turn. The true cadence was seconds. Any stall claim must be made against a fully paged tail with
+   the current time beside it.
+
+The orphaned `docker pull` processes were real but harmless: the worker had already moved past
+them. Host-side `ps` shows resource waste, not agent state, and must not be read as evidence about
+the agent.
+
+**Reaffirmed by this episode:** the recovery reference's table is the authority — `ready` or active
+means *keep waiting*, and stall requires positive proof (`exited` liveness, the worker's own
+observation of process exit, or a transcript whose final turn sent no `worker_done`). An unchanged
+`worker-read` tail is absence, not proof. Had I acted on the false diagnosis I would have stopped a
+healthy worker; the reference is what stopped me, not my own judgement.
