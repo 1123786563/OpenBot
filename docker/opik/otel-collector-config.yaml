@@ -1,0 +1,77 @@
+# Adapted from comet-ml/opik deployment/docker-compose/otel-collector-config.yaml at 2.2.100
+# (upstream commit c8231ef8cdabb6fc5223c8dece17959e8af461ce): the jaeger receiver, the
+# otlp/jaeger exporter and the jaeger dependency are removed because this stack has no
+# jaeger service — docker/compose/observability.yml already provides Tempo and Grafana.
+# Everything else is upstream verbatim. Host ports are remapped in docker/compose/opik.yml
+# (5418/5417, not 4318/4317) so they cannot collide with the Tempo stack's published pair.
+
+# To limit exposure to denial of service attacks, change the host in endpoints below from 0.0.0.0 to a specific network interface.
+# See https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/security-best-practices.md#safeguards-against-denial-of-service-attacks
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Receiver for syslog messages (UDP)
+  syslog:
+    udp:
+      listen_address: "0.0.0.0:5140"
+    protocol: rfc3164
+    operators:
+      - type: regex_parser
+        regex: '^<[0-9]+>.*nginx: (?P<message_content>.*)$'
+      - type: move
+        from: attributes.message_content
+        to: attributes.message
+
+  # Collect own metrics
+  prometheus:
+    config:
+      scrape_configs:
+      - job_name: 'otel-collector'
+        scrape_interval: 10s
+        static_configs:
+        - targets: ['0.0.0.0:8888']
+
+  zipkin:
+    endpoint: 0.0.0.0:9411
+
+processors:
+  batch:
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+
+  pipelines:
+
+    traces:
+      receivers: [otlp, zipkin]
+      processors: [batch]
+      exporters: [debug]
+
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [batch]
+      exporters: [debug]
+
+    logs:
+      receivers: [otlp, syslog]
+      processors: [batch]
+      exporters: [debug]
+
+  extensions: [health_check, pprof, zpages]
