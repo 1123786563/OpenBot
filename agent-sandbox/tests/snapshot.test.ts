@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,30 +36,49 @@ afterAll(async () => {
 
 describe("workspace snapshots (S4)", () => {
   test("the round trip: snapshot → mutate → restore → the tree is the archived one", async () => {
-    const archive = await createSnapshot({ botWorkspace: workspace, botId: "snap-bot" });
+    const archive = await createSnapshot({
+      botWorkspace: workspace,
+      botId: "snap-bot",
+    });
     expect(archive.length).toBeGreaterThan(100); // A real gzip, not an empty stream.
 
     // The workspace drifts after the snapshot (a turn ran, files changed).
     await rm(join(workspace, "only.txt"));
-    await writeFile(join(workspace, "new.txt"), "written after the snapshot", "utf8");
+    await writeFile(
+      join(workspace, "new.txt"),
+      "written after the snapshot",
+      "utf8",
+    );
 
     const restored = await restoreArchive(archive, workspace);
     expect(restored).toEqual({ ok: true });
     // The restored tree is the ARCHIVED one: only.txt back, new.txt gone (replace, not merge).
-    expect(await readFile(join(workspace, "only.txt"), "utf8")).toBe("only in the original");
-    expect(await readFile(join(workspace, "sub", "deep.txt"), "utf8")).toBe("deep");
-    const newFile = await readFile(join(workspace, "new.txt"), "utf8").catch(() => null);
+    expect(await readFile(join(workspace, "only.txt"), "utf8")).toBe(
+      "only in the original",
+    );
+    expect(await readFile(join(workspace, "sub", "deep.txt"), "utf8")).toBe(
+      "deep",
+    );
+    const newFile = await readFile(join(workspace, "new.txt"), "utf8").catch(
+      () => null,
+    );
     expect(newFile).toBeNull();
     // And the sentinel rides at the root, naming its bot.
-    expect((await readFile(join(workspace, SNAPSHOT_SENTINEL), "utf8")).startsWith("snap-bot")).toBe(
-      true,
-    );
+    expect(
+      (await readFile(join(workspace, SNAPSHOT_SENTINEL), "utf8")).startsWith(
+        "snap-bot",
+      ),
+    ).toBe(true);
   });
 
   test("the sentinel check refuses a foreign archive", async () => {
     const foreignDir = await mkdtemp(join(tmpdir(), "snap-foreign-"));
     try {
-      await writeFile(join(foreignDir, "innocent.txt"), "not a snapshot", "utf8");
+      await writeFile(
+        join(foreignDir, "innocent.txt"),
+        "not a snapshot",
+        "utf8",
+      );
       // An archive this module never wrote: a valid EMPTY tar (the two zero blocks) that
       // gzip holds — structurally an archive, and carrying no sentinel, because nothing
       // does. (createSnapshot always plants one, so a real snapshot cannot play the
@@ -102,9 +129,17 @@ describe("snapshot prune: derived trees stay out of the archive", () => {
     // The manifests a restore regenerates the derived trees FROM — these must survive.
     await writeFile(join(web, "package.json"), '{"name":"web"}', "utf8");
     await writeFile(join(web, "bun.lock"), "lockfile", "utf8");
-    await writeFile(join(web, "app", "page.tsx"), "export default () => null", "utf8");
+    await writeFile(
+      join(web, "app", "page.tsx"),
+      "export default () => null",
+      "utf8",
+    );
     // Derived content, at depth, in every pruned tree.
-    await writeFile(join(web, "node_modules", "next", "dist", "index.js"), "module", "utf8");
+    await writeFile(
+      join(web, "node_modules", "next", "dist", "index.js"),
+      "module",
+      "utf8",
+    );
     await writeFile(join(web, ".next", "cache", "blob"), "cache", "utf8");
     await writeFile(join(web, ".venv", "lib", "python.so"), "venv", "utf8");
     await writeFile(join(web, "__pycache__", "mod.pyc"), "pyc", "utf8");
@@ -114,7 +149,10 @@ describe("snapshot prune: derived trees stay out of the archive", () => {
   }
 
   /** The restored tree's relative paths, sorted. */
-  async function restoredPaths(archive: Uint8Array, out: string): Promise<string[]> {
+  async function restoredPaths(
+    archive: Uint8Array,
+    out: string,
+  ): Promise<string[]> {
     await rm(out, { recursive: true, force: true });
     await mkdir(out, { recursive: true });
     expect(await restoreArchive(archive, out)).toEqual({ ok: true });
@@ -123,7 +161,13 @@ describe("snapshot prune: derived trees stay out of the archive", () => {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) await walk(full);
-        else paths.push(full.slice(out.length + 1).split("\\").join("/"));
+        else
+          paths.push(
+            full
+              .slice(out.length + 1)
+              .split("\\")
+              .join("/"),
+          );
       }
     };
     await walk(out);
@@ -166,7 +210,10 @@ describe("snapshot prune: derived trees stay out of the archive", () => {
       // pattern will not do — `(i * k) % 251` has period 251 and gzip eats it.
       const noise = new Uint8Array(4 * 1024 * 1024);
       crypto.getRandomValues(noise);
-      await writeFile(join(dir, "cs-1", "outputs", "web", "node_modules", "big.bin"), noise);
+      await writeFile(
+        join(dir, "cs-1", "outputs", "web", "node_modules", "big.bin"),
+        noise,
+      );
 
       const archive = await createSnapshot({ botWorkspace: dir, botId: "b" });
       expect(archive.length).toBeLessThan(64 * 1024);
@@ -211,7 +258,9 @@ describe("snapshot prune: derived trees stay out of the archive", () => {
         maxInputBytes: 32 * 1024,
       });
       expect(archive.length).toBeGreaterThan(0);
-      expect((await stat(join(dir, SNAPSHOT_SENTINEL))).size).toBeGreaterThan(0);
+      expect((await stat(join(dir, SNAPSHOT_SENTINEL))).size).toBeGreaterThan(
+        0,
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
