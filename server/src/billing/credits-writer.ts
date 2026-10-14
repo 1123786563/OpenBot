@@ -9,11 +9,9 @@ import {
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger as ledger } from "../db/schema/credits";
 import {
-  type GrantCapacity,
   carriedRemainder,
   liveGrants,
   readCapacity,
-  type Reader,
   type Tx,
 } from "./capacity";
 import type { CreditGrantSource } from "./types";

@@ -22,11 +22,13 @@ export function CreditGrantList({
   grants,
   grantCount,
   remaining,
+  held,
   onViewAll,
 }: {
   grants: readonly CreditGrantEntry[];
   grantCount: number;
   remaining: number;
+  held: number;
   onViewAll?: () => void;
 }) {
   const { t } = useTranslation("settings");
@@ -82,6 +84,7 @@ export function CreditGrantList({
           {t("creditsPage.rewardsSummary", {
             count: grantCount,
             remaining: credits(remaining),
+            held: credits(held),
           })}
         </span>
         {onViewAll ? (

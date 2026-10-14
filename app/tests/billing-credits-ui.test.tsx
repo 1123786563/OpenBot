@@ -11,7 +11,10 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { cloneElement, createContext, useContext } from "react";
-import type { PlanCatalogEntry } from "@/lib/billing/credits";
+import type {
+  CreditGrantEntry,
+  PlanCatalogEntry,
+} from "@/lib/billing/credits";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -147,6 +150,9 @@ const { ConsumptionTable } = await import(
   "@/components/billing/consumption-table"
 );
 const { PlanCard } = await import("@/components/billing/plan-card");
+const { CreditGrantList } = await import(
+  "@/components/billing/credit-grant-list"
+);
 const { WelcomeBanner } = await import("@/components/billing/welcome-banner");
 const { UpgradeDialog } = await import("@/components/billing/upgrade-dialog");
 
@@ -511,6 +517,36 @@ test("WelcomeBanner with a claim write stays clickable", () => {
   expect(claim.disabled).toBe(false);
   fireEvent.click(claim);
   expect(onClaim).toHaveBeenCalledTimes(1);
+});
+
+test("CreditGrantList renders the held figure in the rewards summary, with no raw placeholder", async () => {
+  // Review round 1 (Important 1): the shared rewardsSummary copy gained a {{held}}
+  // interpolation and this component's call site was the one left behind, so any reader
+  // WITH reward grants saw the broken sentence — a bare {{held}} or a number-less
+  // "（进行中调用占用 ）". Pinned against both locales the page ships.
+  const grant: CreditGrantEntry = {
+    id: "cg-a",
+    source: "promo",
+    reason: "活动奖励",
+    total: 50,
+    used: 5,
+    remaining: 45,
+    grantedAt: "2026-10-01T00:00:00.000Z",
+    expiresAt: "2026-10-31T00:00:00.000Z",
+    status: "active",
+    expiringSoon: false,
+  };
+  const zh = render(
+    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+  );
+  expect(zh.container.textContent).toContain("（进行中调用占用 21）");
+  expect(zh.container.textContent).not.toContain("{{");
+  await i18n.changeLanguage("en");
+  const en = render(
+    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+  );
+  expect(en.container.textContent).toContain("21 held by in-progress calls");
+  expect(en.container.textContent).not.toContain("{{");
 });
 
 /*
