@@ -13,7 +13,9 @@ describe("docker/opik/versions.json", () => {
     for (const [name, image] of Object.entries(versions.opik.images)) {
       for (const floating of FLOATING) {
         expect(image.tag.toLowerCase(), `${name} tag`).not.toBe(floating);
-        expect(image.tag.toLowerCase(), `${name} tag contains`).not.toContain(`:${floating}`);
+        expect(image.tag.toLowerCase(), `${name} tag contains`).not.toContain(
+          `:${floating}`,
+        );
       }
       expect(image.digest, `${name} digest`).toMatch(/^sha256:[0-9a-f]{64}$/);
     }
@@ -46,7 +48,9 @@ describe("docker/compose/opik.yml", () => {
   test("every published port is loopback-only", () => {
     for (const mapping of publishedPorts(compose)) {
       const host = mapping.split(":")[0];
-      expect(["127.0.0.1", "[::1]"], `${mapping} must bind loopback`).toContain(host);
+      expect(["127.0.0.1", "[::1]"], `${mapping} must bind loopback`).toContain(
+        host,
+      );
     }
   });
 
@@ -55,9 +59,13 @@ describe("docker/compose/opik.yml", () => {
       const image = /^\s*image:\s*(\S+)/.exec(line)?.[1];
       if (!image) continue;
       for (const floating of FLOATING) {
-        expect(image, `${image} must not float`).not.toMatch(new RegExp(`:${floating}\\s*$`));
+        expect(image, `${image} must not float`).not.toMatch(
+          new RegExp(`:${floating}\\s*$`),
+        );
       }
-      expect(image, `${image} must not default to latest`).not.toContain(":-latest}");
+      expect(image, `${image} must not default to latest`).not.toContain(
+        ":-latest}",
+      );
     }
   });
 
@@ -65,7 +73,10 @@ describe("docker/compose/opik.yml", () => {
     // docker/compose/observability.yml already publishes 4318/4317 on loopback for Tempo.
     const hosts = publishedPorts(compose).map((m) => m.split(":")[1]);
     for (const taken of ["4317", "4318", "3200", "3102", "3003"]) {
-      expect(hosts, `host port ${taken} belongs to the LGTM stack`).not.toContain(taken);
+      expect(
+        hosts,
+        `host port ${taken} belongs to the LGTM stack`,
+      ).not.toContain(taken);
     }
   });
 
@@ -80,7 +91,65 @@ describe("docker/compose/opik.yml", () => {
 
   test("the default OPIK_VERSION matches the pinned versions.json", () => {
     const fallback = /\$\{OPIK_VERSION:-([^}]+)\}/.exec(compose)?.[1];
-    expect(fallback, "compose must not default to a floating tag").toBeDefined();
+    expect(
+      fallback,
+      "compose must not default to a floating tag",
+    ).toBeDefined();
     expect(fallback).toBe(versions.opik.version);
+  });
+});
+
+const envExample = readFileSync(join(repoRoot, ".env.example"), "utf8");
+const opikDocs = readFileSync(join(repoRoot, "docs/opik.md"), "utf8");
+const rootCompose = readFileSync(join(repoRoot, "docker-compose.yml"), "utf8");
+
+/** The exact variable names T09 (#15) will read from config.ts. */
+const CONTRACT_VARS = [
+  "OPIK_ENABLED",
+  "OPIK_BASE_URL",
+  "OPIK_API_KEY",
+  "OPIK_WORKSPACE_NAME",
+  "OPIK_PORT",
+  "OPIK_OTLP_HTTP_PORT",
+  "OPIK_OTLP_GRPC_PORT",
+];
+
+describe("configuration surface", () => {
+  test("every contract variable is documented in .env.example", () => {
+    for (const name of CONTRACT_VARS) {
+      expect(envExample, `${name} must appear in .env.example`).toContain(name);
+    }
+  });
+
+  test("the integration is off by default: every OPIK_ line in .env.example is commented out", () => {
+    const lines = envExample
+      .split("\n")
+      .filter((l) => /^\s*[^#\s].*OPIK_/.test(l));
+    expect(lines, `uncommented OPIK_ defaults: ${lines.join(", ")}`).toEqual(
+      [],
+    );
+  });
+
+  test("no secret value is written into .env.example or the docs", () => {
+    for (const text of [envExample, opikDocs, compose]) {
+      expect(text).not.toMatch(/OPIK_API_KEY\s*=\s*["']?[A-Za-z0-9]{16,}/);
+      expect(text).not.toMatch(
+        /OPIK_(MYSQL|CLICKHOUSE)_\w*PASSWORD\s*=\s*["']?[^\s"'$]{6,}/,
+      );
+    }
+  });
+
+  test("docs/opik.md gives the run command, the health check and the port rationale", () => {
+    expect(opikDocs).toContain(
+      "docker compose --project-directory . -f docker/compose/opik.yml up -d",
+    );
+    expect(opikDocs).toContain("health-check");
+    expect(opikDocs).toContain("4318");
+    expect(opikDocs).toContain("5418");
+    expect(opikDocs).toContain("versions.json");
+  });
+
+  test("the optional stack is listed where the other optional stacks are listed", () => {
+    expect(rootCompose).toContain("opik.yml");
   });
 });
