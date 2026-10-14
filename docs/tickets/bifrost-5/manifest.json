@@ -4705,7 +4705,8 @@
    "issue_db_id": 5853182585,
    "sub_issue_linked": true,
    "_linked": {
-    "dep_07.4": true
+    "dep_07.4": true,
+    "dep_06.9": true
    }
   },
   {
@@ -4771,7 +4772,11 @@
    "issue_number": 272,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/272",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXOB_mA",
-   "issue_db_id": 5853183896
+   "issue_db_id": 5853183896,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.8": true
+   }
   },
   {
    "id": "07.10",
@@ -4837,7 +4842,11 @@
    "issue_number": 273,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/273",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXOCEUw",
-   "issue_db_id": 5853185107
+   "issue_db_id": 5853185107,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.8": true
+   }
   },
   {
    "id": "07.11",
@@ -4906,7 +4915,11 @@
    "issue_number": 274,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/274",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXOCJsQ",
-   "issue_db_id": 5853186481
+   "issue_db_id": 5853186481,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.10": true
+   }
   },
   {
    "id": "07.12",
@@ -4986,7 +4999,16 @@
    "issue_number": 275,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/275",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXOCPYA",
-   "issue_db_id": 5853187936
+   "issue_db_id": 5853187936,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.3": true,
+    "dep_07.5": true,
+    "dep_07.7": true,
+    "dep_07.9": true,
+    "dep_07.11": true,
+    "dep_05.4": true
+   }
   },
   {
    "id": "08.1",
