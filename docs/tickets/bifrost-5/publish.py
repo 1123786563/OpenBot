@@ -283,7 +283,7 @@ def phase_relations(m, args):
         # native blocked_by
         for d in t["depends_on"]:
             dt = next(x for x in m["tickets"] if x["id"] == d)
-            if not dt.get("issue_node_id"):
+            if not dt.get("issue_number") and not dt.get("issue_db_id"):
                 continue
             key = f"dep_{d}"
             if t.get("_linked", {}).get(key):

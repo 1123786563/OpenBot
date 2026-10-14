@@ -3641,7 +3641,10 @@
    "issue_url": "https://github.com/1123786563/OpenBot/issues/256",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXN_qKQ",
    "issue_db_id": 5853145641,
-   "sub_issue_linked": true
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_06.3": true
+   }
   },
   {
    "id": "06.6",
@@ -3777,7 +3780,10 @@
    "issue_url": "https://github.com/1123786563/OpenBot/issues/258",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXOAEKA",
    "issue_db_id": 5853152296,
-   "sub_issue_linked": true
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_06.3": true
+   }
   },
   {
    "id": "06.8",
