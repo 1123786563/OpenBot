@@ -1,0 +1,29 @@
+{
+ "spec_sub_issues": 100,
+ "spec_sub_issues_are_all_epics": false,
+ "epic_sub_issue_counts": {
+  "A 基础/前置": 0,
+  "B 成员与作用域": 0,
+  "C 资源授权策略": 0,
+  "D 运行配置": 0,
+  "E Bot": 0,
+  "F 会话": 0,
+  "G 身份与凭据": 0,
+  "H 插件与审批": 0,
+  "I 知识与记忆": 0,
+  "J 任务与执行": 0,
+  "K 执行隔离": 0,
+  "L Craft/Workshop": 0,
+  "M OpenMuse 个人域": 0,
+  "N 账务": 0,
+  "O 治理": 0,
+  "P Web 客户端": 0,
+  "Q 桌面": 2,
+  "R Canonical 移动端": 5,
+  "S 观测": 4,
+  "T 迁移与收尾": 32
+ },
+ "tickets_linked": 43,
+ "tickets_failed": 100,
+ "tickets_total": 143
+}
