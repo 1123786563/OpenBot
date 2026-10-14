@@ -245,6 +245,36 @@ manifest = {
         "T29(#35) 与 T31(#37) 不等 T27(#33)，Judge 作为后续版本化评分定义参与对比而非前置。",
         "T16(#22) 只等 T14(#20)，不等 T15(#21)，使 LangGraph 接入可与工具/检索步骤并行。",
     ],
+    "carried_forward_constraints": [
+        {
+            "id": "C1",
+            "origin": "T03 (#9) review finding F4",
+            "applies_to": ["T32", "T37"],
+            "constraint": "docker/compose/opik.yml 的 python-backend 保留上游的 `privileged: true`（其 DinD 代码执行器所需）。T03 保留它是正确的（计划要求以上游为蓝本），但这意味着可选栈里有一个容器在宿主上以 privileged 运行。T32(#38 控制面保护) 与 T37(#43 真实实例验收) 必须显式判定：OpenBot 的使用场景是否真的需要该容器；若不需要则必须禁用，若需要则必须在威胁模型与运维文档中记明该攻击面及其边界。",
+            "why_recorded": "两张 Ticket 的验收标准目前都未提及 privileged 容器；不记录就会在实施时丢失。",
+        },
+        {
+            "id": "C2",
+            "origin": "T06 (#12) review finding F2 + plan E7",
+            "applies_to": ["T11"],
+            "constraint": "T06 的 CURSOR_KEY 含 process.pid 与 Date.now()，进程重启会使既有游标失效（有意的安全失败）。T11(#17 创建者只读查询接口) 必须把『游标失效』表达为可解释错误，绝不静默回到第一页——否则会掩盖撤权/移交后的访问边界。",
+            "why_recorded": "跨 Ticket 的隐式义务，T06 的 checkpoint 未显式写明，其审阅者记为 F2。",
+        },
+        {
+            "id": "C3",
+            "origin": "coordinator errata E13 / S1",
+            "applies_to": ["ALL"],
+            "constraint": "门禁证据必须取自已提交的 commit，不得在 worker 留下的脏工作树里跑。checkpoint 必须写明每条输出来自哪个 sha。`biome format --write` 的结果若未提交，不算通过。",
+            "why_recorded": "T06 正是这样误报门禁的；协调者第一次复核也被脏工作树骗过。",
+        },
+        {
+            "id": "C4",
+            "origin": "coordinator errata E15 / S4",
+            "applies_to": ["ALL"],
+            "constraint": "对解析结果做断言的守卫测试，必须先断言解析结果非空。任何解析器回归都会把守卫静默变成空洞通过。交付前应做一次变异测试：破坏产物、确认测试变红。",
+            "why_recorded": "T03 的两条端口守卫对交付物零匹配仍报绿；T05 有一条 DENY 模式从未被任何 canary 触及（E12）。同一失效模式。",
+        },
+    ],
     "contention_analysis": {
         "method": "对每个被 >1 张 Ticket 拥有的文件，检查其全部拥有者两两是否在依赖图上可比较（一方是另一方的祖先）。不可比较即代表可被并行派发并冲突。",
         "files_owned_by_multiple_tickets": 19,
