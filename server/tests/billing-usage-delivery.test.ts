@@ -8,6 +8,7 @@ import {
   createLagoUsageTarget,
   createUsageDelivery,
   MAX_DELIVERY_ATTEMPTS,
+  MIN_BLOCK_AGE_MS,
   UsageDeliveryError,
 } from "../src/billing/usage-delivery";
 import type {
@@ -40,8 +41,8 @@ function makeRecord(eventId: string): UsageOutboxRecord {
     creditsLastErrorCode: null,
     lagoAttempts: 0,
     creditsAttempts: 0,
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
+    createdAt: new Date(),
+    updatedAt: new Date(),
   } as UsageOutboxRecord;
 }
 
@@ -340,7 +341,14 @@ describe("a permanent delivery failure ends in a terminal state (audit C1)", () 
   });
 
   test("a transient failure stays pending until the attempt ceiling, then blocks", async () => {
-    const { outbox, rows } = memoryOutbox([makeRecord("ev-3")]);
+    // Restated for the age gate: makeRecord's default createdAt is "now" (a young row, which the
+    // ceiling alone may no longer block), so this case pins the old-row half explicitly.
+    const { outbox, rows } = memoryOutbox([
+      {
+        ...makeRecord("ev-3"),
+        createdAt: new Date(Date.now() - MIN_BLOCK_AGE_MS - 60_000),
+      },
+    ]);
     const delivery = createUsageDelivery({
       outbox,
       sendToLago: async () => {
@@ -355,6 +363,45 @@ describe("a permanent delivery failure ends in a terminal state (audit C1)", () 
     await delivery.runBatch(10);
     expect(rows.get("ev-3")?.lagoStatus).toBe("blocked");
     expect(rows.get("ev-3")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
+  });
+
+  test("a young row exhausted by a short outage stays pending with its attempts recorded (review r1)", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-5")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("unreachable");
+      },
+      chargeCredits: async () => {},
+    });
+    for (let pass = 0; pass < MAX_DELIVERY_ATTEMPTS; pass += 1) {
+      await delivery.runBatch(10);
+      expect(rows.get("ev-5")?.lagoStatus).toBe("pending");
+    }
+    expect(rows.get("ev-5")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
+  });
+
+  test("an exhausted row older than the block age blocks (review r1)", async () => {
+    const { outbox, rows } = memoryOutbox([
+      {
+        ...makeRecord("ev-6"),
+        createdAt: new Date(Date.now() - MIN_BLOCK_AGE_MS - 60_000),
+      },
+    ]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("unreachable");
+      },
+      chargeCredits: async () => {},
+    });
+    for (let pass = 0; pass < MAX_DELIVERY_ATTEMPTS - 1; pass += 1) {
+      await delivery.runBatch(10);
+      expect(rows.get("ev-6")?.lagoStatus).toBe("pending");
+    }
+    await delivery.runBatch(10);
+    expect(rows.get("ev-6")?.lagoStatus).toBe("blocked");
+    expect(rows.get("ev-6")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
   });
 
   test("a delivered target never counts attempts", async () => {
