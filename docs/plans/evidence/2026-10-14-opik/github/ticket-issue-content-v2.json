@@ -1,0 +1,713 @@
+{
+ "parent": {
+  "number": 4,
+  "url": "https://github.com/1123786563/OpenBot/issues/4"
+ },
+ "tickets": [
+  {
+   "id": "T01",
+   "n": 1,
+   "slug": "observability-module-seam",
+   "title": "观测后端模块骨架与路由注册 seam",
+   "issue_title": "[Opik T01] 观测后端模块骨架与路由注册 seam",
+   "blocked_by": [],
+   "covers": [
+    "A5"
+   ],
+   "handoff": "路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/01-observability-module-seam.md"
+  },
+  {
+   "id": "T02",
+   "n": 2,
+   "slug": "observability-ui-i18n-seam",
+   "title": "观测 UI 独立 i18n 子命名空间与路由约定",
+   "issue_title": "[Opik T02] 观测 UI 独立 i18n 子命名空间与路由约定",
+   "blocked_by": [],
+   "covers": [
+    "A5"
+   ],
+   "handoff": "四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/02-observability-ui-i18n-seam.md"
+  },
+  {
+   "id": "T03",
+   "n": 3,
+   "slug": "opik-optional-deployment",
+   "title": "Opik 可选部署与版本锁定清单",
+   "issue_title": "[Opik T03] Opik 可选部署与版本锁定清单",
+   "blocked_by": [],
+   "covers": [
+    "A1"
+   ],
+   "handoff": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/03-opik-optional-deployment.md"
+  },
+  {
+   "id": "T04",
+   "n": 4,
+   "slug": "opik-contract-manifest",
+   "title": "上游契约冒烟与 VerifiedOpikContract manifest",
+   "issue_title": "[Opik T04] 上游契约冒烟与 VerifiedOpikContract manifest",
+   "blocked_by": [
+    "T03"
+   ],
+   "covers": [
+    "A1",
+    "A11",
+    "A13"
+   ],
+   "handoff": "`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限）",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/04-opik-contract-manifest.md"
+  },
+  {
+   "id": "T05",
+   "n": 5,
+   "slug": "redaction-projection",
+   "title": "采集侧脱敏投影与安全内容策略",
+   "issue_title": "[Opik T05] 采集侧脱敏投影与安全内容策略",
+   "blocked_by": [],
+   "covers": [
+    "A4"
+   ],
+   "handoff": "`projectSafe()` 接口 + 内容策略版本号",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/05-redaction-projection.md"
+  },
+  {
+   "id": "T06",
+   "n": 6,
+   "slug": "trusted-scope-seam",
+   "title": "可信 scope seam 与企业预留拒绝",
+   "issue_title": "[Opik T06] 可信 scope seam 与企业预留拒绝",
+   "blocked_by": [],
+   "covers": [
+    "A12",
+    "A5"
+   ],
+   "handoff": "`ObservationScope` 解析接口 + 两个测试 scope 的构造方式",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/06-trusted-scope-seam.md"
+  },
+  {
+   "id": "T07",
+   "n": 7,
+   "slug": "ownership-storage-bindings",
+   "title": "观测归属存储 schema 与可信绑定",
+   "issue_title": "[Opik T07] 观测归属存储 schema 与可信绑定",
+   "blocked_by": [
+    "T06"
+   ],
+   "covers": [
+    "A1",
+    "A5",
+    "A11",
+    "A12"
+   ],
+   "handoff": "表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/07-ownership-storage-bindings.md"
+  },
+  {
+   "id": "T08",
+   "n": 8,
+   "slug": "opik-port-adapter",
+   "title": "Opik HTTP 适配器与 port 抽象",
+   "issue_title": "[Opik T08] Opik HTTP 适配器与 port 抽象",
+   "blocked_by": [
+    "T04",
+    "T05",
+    "T07"
+   ],
+   "covers": [
+    "A1",
+    "A4",
+    "A10",
+    "A13"
+   ],
+   "handoff": "`OpikPort` 接口 + fixture 注入方式",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/08-opik-port-adapter.md"
+  },
+  {
+   "id": "T09",
+   "n": 9,
+   "slug": "config-and-health",
+   "title": "配置开关与健康状态（禁用零影响）",
+   "issue_title": "[Opik T09] 配置开关与健康状态（禁用零影响）",
+   "blocked_by": [
+    "T08"
+   ],
+   "covers": [
+    "A1",
+    "A10"
+   ],
+   "handoff": "就绪/健康查询接口 + 有界异步导出入口约定",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/09-config-and-health.md"
+  },
+  {
+   "id": "T10",
+   "n": 10,
+   "slug": "run-termination-and-basic",
+   "title": "run 终结语义与 basic 远程路径能力标记",
+   "issue_title": "[Opik T10] run 终结语义与 basic 远程路径能力标记",
+   "blocked_by": [
+    "T09"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A5",
+    "A10"
+   ],
+   "handoff": "run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/10-run-termination-and-basic.md"
+  },
+  {
+   "id": "T11",
+   "n": 11,
+   "slug": "creator-read-api",
+   "title": "创建者只读查询接口",
+   "issue_title": "[Opik T11] 创建者只读查询接口",
+   "blocked_by": [
+    "T01",
+    "T07",
+    "T10"
+   ],
+   "covers": [
+    "A2",
+    "A5",
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "handoff": "只读查询 REST 契约（请求/响应/错误语义/游标）",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/11-creator-read-api.md"
+  },
+  {
+   "id": "T12",
+   "n": 12,
+   "slug": "run-list-page",
+   "title": "运行列表页",
+   "issue_title": "[Opik T12] 创建者运行列表页",
+   "blocked_by": [
+    "T02",
+    "T11"
+   ],
+   "covers": [
+    "A2",
+    "A5",
+    "A6",
+    "A10"
+   ],
+   "handoff": "列表组件与查询 hook 契约",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/12-run-list-page.md"
+  },
+  {
+   "id": "T13",
+   "n": 13,
+   "slug": "run-detail-page",
+   "title": "运行详情页与可用性状态",
+   "issue_title": "[Opik T13] 创建者运行详情页与可用性状态",
+   "blocked_by": [
+    "T12"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6"
+   ],
+   "handoff": "详情页组件契约（步骤树在 T18 扩展同一组件）",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/13-run-detail-page.md"
+  },
+  {
+   "id": "T14",
+   "n": 14,
+   "slug": "builtin-model-spans",
+   "title": "内置执行的模型调用记录",
+   "issue_title": "[Opik T14] 内置执行的模型调用记录",
+   "blocked_by": [
+    "T05",
+    "T10"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4",
+    "A8"
+   ],
+   "handoff": "模型 span 记录接口 + usage 缺失语义",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/14-builtin-model-spans.md"
+  },
+  {
+   "id": "T15",
+   "n": 15,
+   "slug": "tool-and-retrieval-steps",
+   "title": "工具提议 vs 真实执行与检索步骤",
+   "issue_title": "[Opik T15] 工具提议 vs 真实执行与检索步骤",
+   "blocked_by": [
+    "T14"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4"
+   ],
+   "handoff": "步骤类型枚举与「提议/执行/回执缺失」判定",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/15-tool-and-retrieval-steps.md"
+  },
+  {
+   "id": "T16",
+   "n": 16,
+   "slug": "langgraph-callbacks",
+   "title": "LangGraph callback 接入同一受治理 OTel 路径",
+   "issue_title": "[Opik T16] LangGraph callback 接入同一受治理 OTel 路径",
+   "blocked_by": [
+    "T14"
+   ],
+   "covers": [
+    "A2",
+    "A4",
+    "A13"
+   ],
+   "handoff": "LangGraph 侧 tracing 接入方式与版本约束",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/16-langgraph-callbacks.md"
+  },
+  {
+   "id": "T17",
+   "n": 17,
+   "slug": "context-propagation-id-mapping",
+   "title": "跨服务与动态进程上下文传播与 ID 映射",
+   "issue_title": "[Opik T17] 跨服务与动态进程上下文传播与 ID 映射",
+   "blocked_by": [
+    "T16"
+   ],
+   "covers": [
+    "A2",
+    "A13"
+   ],
+   "handoff": "传播环境变量约定 + ID 映射表位置",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/17-context-propagation-id-mapping.md"
+  },
+  {
+   "id": "T18",
+   "n": 18,
+   "slug": "step-tree-ui",
+   "title": "详情页步骤树",
+   "issue_title": "[Opik T18] 运行详情页步骤树",
+   "blocked_by": [
+    "T13",
+    "T15",
+    "T17"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A5"
+   ],
+   "handoff": "步骤树组件与只读步骤查询契约",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/18-step-tree-ui.md"
+  },
+  {
+   "id": "T19",
+   "n": 19,
+   "slug": "dataset-immutable-versions",
+   "title": "数据集 schema 与不可变版本冻结",
+   "issue_title": "[Opik T19] 数据集 schema 与不可变版本冻结",
+   "blocked_by": [
+    "T07",
+    "T11"
+   ],
+   "covers": [
+    "A4",
+    "A7",
+    "A11",
+    "A12"
+   ],
+   "handoff": "数据集版本读取 API + 冻结字段清单",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/19-dataset-immutable-versions.md"
+  },
+  {
+   "id": "T20",
+   "n": 20,
+   "slug": "case-review-and-save",
+   "title": "案例审查与保存接口",
+   "issue_title": "[Opik T20] 案例审查与保存接口",
+   "blocked_by": [
+    "T05",
+    "T19"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6"
+   ],
+   "handoff": "案例审查/保存 REST 契约 + 脱敏语义限制说明",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/20-case-review-and-save.md"
+  },
+  {
+   "id": "T21",
+   "n": 21,
+   "slug": "dataset-pages",
+   "title": "数据集页面（审查 / 保存 / 版本）",
+   "issue_title": "[Opik T21] 数据集页面（审查 / 保存 / 版本）",
+   "blocked_by": [
+    "T02",
+    "T20"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A7"
+   ],
+   "handoff": "数据集页面组件与查询 hook 契约",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/21-dataset-pages.md"
+  },
+  {
+   "id": "T22",
+   "n": 22,
+   "slug": "experiment-freeze-submit",
+   "title": "实验 schema 与冻结配置幂等提交",
+   "issue_title": "[Opik T22] 实验 schema 与冻结配置幂等提交",
+   "blocked_by": [
+    "T19"
+   ],
+   "covers": [
+    "A7",
+    "A9"
+   ],
+   "handoff": "实验记录结构 + 幂等键约定",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/22-experiment-freeze-submit.md"
+  },
+  {
+   "id": "T23",
+   "n": 23,
+   "slug": "isolated-evaluation-execution",
+   "title": "隔离执行与生产写工具拒绝",
+   "issue_title": "[Opik T23] 隔离执行与生产写工具拒绝",
+   "blocked_by": [
+    "T10",
+    "T14",
+    "T22"
+   ],
+   "covers": [
+    "A8",
+    "A10"
+   ],
+   "handoff": "隔离执行入口 + 工具白名单/拒绝策略",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/23-isolated-evaluation-execution.md"
+  },
+  {
+   "id": "T24",
+   "n": 24,
+   "slug": "evaluation-job-orchestration",
+   "title": "持久任务编排：有界并发、每样本重授权、取消与 lease",
+   "issue_title": "[Opik T24] 持久任务编排：有界并发、每样本重授权、取消与 lease",
+   "blocked_by": [
+    "T23"
+   ],
+   "covers": [
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "handoff": "任务状态机 + 取消/lease 语义",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/24-evaluation-job-orchestration.md"
+  },
+  {
+   "id": "T25",
+   "n": 25,
+   "slug": "evaluation-billing-admission",
+   "title": "评测调用的计费准入与结算接线",
+   "issue_title": "[Opik T25] 评测调用的计费准入与结算接线",
+   "blocked_by": [
+    "T24"
+   ],
+   "covers": [
+    "A8"
+   ],
+   "handoff": "评测侧计费准入接口 + 预算不足时的调用前拒绝语义",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/25-evaluation-billing-admission.md"
+  },
+  {
+   "id": "T26",
+   "n": 26,
+   "slug": "rule-scorers",
+   "title": "规则评分器",
+   "issue_title": "[Opik T26] 规则评分器",
+   "blocked_by": [
+    "T22"
+   ],
+   "covers": [
+    "A7",
+    "A9"
+   ],
+   "handoff": "`Scorer` 接口 + 规则版本化约定",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/26-rule-scorers.md"
+  },
+  {
+   "id": "T27",
+   "n": 27,
+   "slug": "controlled-model-judge",
+   "title": "受控模型 Judge 评分",
+   "issue_title": "[Opik T27] 受控模型 Judge 评分",
+   "blocked_by": [
+    "T25",
+    "T26"
+   ],
+   "covers": [
+    "A4",
+    "A7",
+    "A8"
+   ],
+   "handoff": "Judge 准入清单 + 理由安全投影",
+   "acceptance_count": 6,
+   "draft_file": "ticket-drafts-v2/27-controlled-model-judge.md"
+  },
+  {
+   "id": "T28",
+   "n": 28,
+   "slug": "result-api-failure-classes",
+   "title": "实验结果查询接口与失败分类",
+   "issue_title": "[Opik T28] 实验结果查询接口与失败分类",
+   "blocked_by": [
+    "T26"
+   ],
+   "covers": [
+    "A5",
+    "A7",
+    "A9"
+   ],
+   "handoff": "结果查询 REST 契约 + 失败分类枚举",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/28-result-api-failure-classes.md"
+  },
+  {
+   "id": "T29",
+   "n": 29,
+   "slug": "comparison-api",
+   "title": "实验对比接口与兼容性判定",
+   "issue_title": "[Opik T29] 实验对比接口与兼容性判定",
+   "blocked_by": [
+    "T28"
+   ],
+   "covers": [
+    "A9"
+   ],
+   "handoff": "对比 REST 契约 + 兼容性判定规则",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/29-comparison-api.md"
+  },
+  {
+   "id": "T30",
+   "n": 30,
+   "slug": "experiment-pages",
+   "title": "实验页面（提交 / 逐样本结果 / 取消）",
+   "issue_title": "[Opik T30] 实验页面（提交 / 逐样本结果 / 取消）",
+   "blocked_by": [
+    "T21",
+    "T28"
+   ],
+   "covers": [
+    "A5",
+    "A7",
+    "A8"
+   ],
+   "handoff": "实验页面组件契约",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/30-experiment-pages.md"
+  },
+  {
+   "id": "T31",
+   "n": 31,
+   "slug": "comparison-page",
+   "title": "对比页面",
+   "issue_title": "[Opik T31] 实验对比页面",
+   "blocked_by": [
+    "T29",
+    "T30"
+   ],
+   "covers": [
+    "A9"
+   ],
+   "handoff": "对比页面组件契约",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/31-comparison-page.md"
+  },
+  {
+   "id": "T32",
+   "n": 32,
+   "slug": "control-plane-protection",
+   "title": "采集入口认证与控制台/私有 API 保护",
+   "issue_title": "[Opik T32] 采集入口认证与控制台/私有 API 保护",
+   "blocked_by": [
+    "T09"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A13"
+   ],
+   "handoff": "控制面访问规则 + 内部生产者凭据发放方式",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/32-control-plane-protection.md"
+  },
+  {
+   "id": "T33",
+   "n": 33,
+   "slug": "admin-summary-and-ingest-faults",
+   "title": "管理员范围汇总与采集故障排查",
+   "issue_title": "[Opik T33] 管理员范围汇总与采集故障排查",
+   "blocked_by": [
+    "T11",
+    "T32"
+   ],
+   "covers": [
+    "A5",
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "handoff": "管理汇总 REST 契约 + 故障分类枚举",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/33-admin-summary-and-ingest-faults.md"
+  },
+  {
+   "id": "T34",
+   "n": 34,
+   "slug": "bounded-exports-revocation",
+   "title": "有界异步导出与下载即时撤权",
+   "issue_title": "[Opik T34] 有界异步导出与下载即时撤权",
+   "blocked_by": [
+    "T05",
+    "T11"
+   ],
+   "covers": [
+    "A4",
+    "A6",
+    "A10",
+    "A11"
+   ],
+   "handoff": "导出任务与下载鉴权契约",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/34-bounded-exports-revocation.md"
+  },
+  {
+   "id": "T35",
+   "n": 35,
+   "slug": "retention-and-real-deletion",
+   "title": "保留期与真实删除验证",
+   "issue_title": "[Opik T35] 保留期与真实删除验证",
+   "blocked_by": [
+    "T19",
+    "T22",
+    "T34"
+   ],
+   "covers": [
+    "A6",
+    "A11",
+    "A12"
+   ],
+   "handoff": "清理状态机 + 删除证据格式",
+   "acceptance_count": 6,
+   "draft_file": "ticket-drafts-v2/35-retention-and-real-deletion.md"
+  },
+  {
+   "id": "T36",
+   "n": 36,
+   "slug": "admin-and-export-pages",
+   "title": "管理员汇总页面与创建者导出状态页",
+   "issue_title": "[Opik T36] 管理员汇总页面与创建者导出状态页",
+   "blocked_by": [
+    "T13",
+    "T33",
+    "T34"
+   ],
+   "covers": [
+    "A5",
+    "A6",
+    "A10",
+    "A11"
+   ],
+   "handoff": "管理页面组件契约",
+   "acceptance_count": 4,
+   "draft_file": "ticket-drafts-v2/36-admin-and-export-pages.md"
+  },
+  {
+   "id": "T37",
+   "n": 37,
+   "slug": "end-to-end-acceptance",
+   "title": "端到端验收与真实实例证据闭环",
+   "issue_title": "[Opik T37] 端到端验收与真实实例证据闭环",
+   "blocked_by": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15",
+    "T16",
+    "T17",
+    "T18",
+    "T19",
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T24",
+    "T25",
+    "T26",
+    "T27",
+    "T28",
+    "T29",
+    "T30",
+    "T31",
+    "T32",
+    "T33",
+    "T34",
+    "T35",
+    "T36"
+   ],
+   "covers": [
+    "A1",
+    "A13"
+   ],
+   "handoff": "验收证据索引",
+   "acceptance_count": 5,
+   "draft_file": "ticket-drafts-v2/37-end-to-end-acceptance.md"
+  }
+ ]
+}

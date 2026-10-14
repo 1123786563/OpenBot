@@ -1,0 +1,23 @@
+{
+ "published_at": "2026-10-14T16:08:07Z",
+ "read_at": "2026-10-14T16:19:50.223585+00:00",
+ "repository": "1123786563/OpenBot",
+ "issue_number": 4,
+ "issue_id": 5851232987,
+ "url": "https://github.com/1123786563/OpenBot/issues/4",
+ "body_sha256": "0d359c029783b1b3cec40a445d0e81ec025a0b92ebd91087493be12eedba1d96",
+ "labels": [
+  "enhancement",
+  "ready-for-agent"
+ ],
+ "enabled_issues": true,
+ "created_label": "ready-for-agent",
+ "child_publication_status": "waiting_for_breakdown_approval",
+ "ticket_count": 10,
+ "stories_covered": 38,
+ "acceptance_covered": 13,
+ "native_subissue_read": "success",
+ "native_dependency_read": "success",
+ "superseded_by": "publication-v2.json",
+ "superseded_reason": "v1 的 10 个粗粒度 Ticket 经用户要求重切为 37 个单 agent 上下文粒度的 Ticket，已于 2026-10-15 发布为 GitHub #7–#43。v1 草案保留为历史，未发布。"
+}

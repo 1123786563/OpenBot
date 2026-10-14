@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-10-14T15:50:18.560556+00:00",
+  "spec_sha256": "6ed5e9ce9ae427acc904ed31a0e402d50d6b10c15f932bd0d64230e93bb56c97",
+  "plan_sha256": "db1f96a002561a90a6355ff2d082b63f12606eea912cccd9f6dfa53a3fd0aa3c",
+  "dag_sha256": "48faf4c24081dd21a37c50f6f700cc550ab15408c4f9a5a1233df993a8188b77",
+  "ledger_sha256": "4d781d64d07eeb6f8a953a4eee6951f2483ff42ab68b7580a8a8cabdb5bd63e5",
+  "task_count": 13,
+  "acceptance_count": 13,
+  "checks": {
+    "spec_coverage": "A1..A13 and all Spec sections mapped",
+    "ids_and_dependencies": "13 unique nodes; refs exist; no self loops or cycles; textual dependencies match JSON",
+    "roles": "9 backend implementers, 3 frontend implementers; final coordinator/readonly validators",
+    "shared_files": "serial ownership and generated/standalone locks/migrations documented",
+    "interfaces": "explicit producers/consumers, safety types and DTO definitions",
+    "review_focus": "five failure classes each mapped to tests",
+    "copy_integrity": "approved Spec hash matches copied artifact",
+    "baseline": "42 pass, 0 fail; targeted only",
+    "scope": "tracked production diff empty; only docs added; no implementation dispatched"
+  },
+  "execution_authorized": false,
+  "code_review_status": "not_started",
+  "ocr_status": "not_started",
+  "git_status": "?? docs/plans/2026-10-14-opik-integration-dag.json\n?? docs/plans/2026-10-14-opik-integration-ledger.md\n?? docs/plans/2026-10-14-opik-integration-plan.md\n?? docs/plans/evidence/\n?? docs/specs/2026-10-14-opik-integration-design.md\n"
+}

@@ -1,0 +1,13 @@
+{
+ "parent_verified": true,
+ "parent_body_unmodified_after_publication": true,
+ "draft_count": 10,
+ "acceptance_coverage": 13,
+ "story_coverage": 38,
+ "native_children_published": 0,
+ "cycles": [],
+ "tracked_code_diff": [],
+ "awaiting": "to-tickets breakdown approval",
+ "superseded_by": "draft-verification-v2.json",
+ "superseded_reason": "v1 的 10 个粗粒度 Ticket 经用户要求重切为 37 个单 agent 上下文粒度的 Ticket，已于 2026-10-15 发布为 GitHub #7–#43。v1 草案保留为历史，未发布。"
+}

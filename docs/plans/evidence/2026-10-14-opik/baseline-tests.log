@@ -1,0 +1,86 @@
+bun test v1.4.2 (50a8a8387)
+
+agent-langgraph/tests/stream.test.ts:
+(pass) a run that produces nothing a person can see > an empty reply ends on the fallback line, not a silent RUN_FINISHED [0.37ms]
+(pass) a run that produces nothing a person can see > a reply that is only a reasoning summary counts as empty [0.06ms]
+(pass) a run that does produce something is left alone > streamed prose is forwarded and no fallback is added [0.04ms]
+(pass) a run that does produce something is left alone > responses-API content blocks are forwarded as text [0.04ms]
+(pass) a run that does produce something is left alone > a tool the surface owns is reported with no result and no fallback [0.04ms]
+(pass) a run that does produce something is left alone > a tool this deployment ran is reported with its result and no fallback [0.04ms]
+(pass) message boundaries across a multi-turn run > prose after a tool result opens a new message id [0.05ms]
+(pass) a failure mid-stream > an open message is closed and the run ends on RUN_ERROR [0.20ms]
+(pass) a failure mid-stream > a failure opening the stream is reported as RUN_ERROR [0.05ms]
+
+server/tests/run-built-agent-cancellation.test.ts:
+(pass) Stop during selector blocks a late resolve and completes once [5.72ms]
+(pass) Stop during selector blocks a late reject and completes once [1.74ms]
+(pass) Stop during handoff blocks a late resolve and completes once [1.15ms]
+(pass) Stop during handoff blocks a late reject and completes once [1.08ms]
+{"proof":"production-selector-HTTP-stop","selectorRequests":1,"finalRequests":0,"serverRequestAbortedBeforeRelease":true,"selectionRecords":0,"completions":1}
+(pass) Stop cancels the production selector HTTP connection before a late reply can start the final model [3.42ms]
+AI SDK Warning: System messages in the prompt or messages fields can be a security risk because they may enable prompt injection attacks. Use the system option instead when possible. Set allowSystemInMessages to true to suppress this warning, or false to throw an error.
+{"proof":"post-build-model-HTTP-stop","selectorRequests":0,"finalRequests":1,"serverRequestAbortedBeforeRelease":true,"innerAborts":1}
+(pass) Stop after the build still aborts the inner agent and its model HTTP connection [15.85ms]
+AI SDK Warning: System messages in the prompt or messages fields can be a security risk because they may enable prompt injection attacks. Use the system option instead when possible. Set allowSystemInMessages to true to suppress this warning, or false to throw an error.
+AI SDK Warning: System messages in the prompt or messages fields can be a security risk because they may enable prompt injection attacks. Use the system option instead when possible. Set allowSystemInMessages to true to suppress this warning, or false to throw an error.
+(pass) an aborted pending run does not cancel its clone or the next run on the same wrapper [32.82ms]
+{"proof":"production-wrapped-remote-http-stop","direct":{"closedBeforeStop":false,"closedAfterStop":true,"requests":1},"wrapped":{"closedBeforeStop":false,"closedAfterStop":true,"requests":1}}
+(pass) Stop aborts a production wrapped remote AG-UI HTTP stream [229.69ms]
+
+server/tests/trace.test.ts:
+(pass) shared/trace > an inbound traceparent becomes the active trace id [8.52ms]
+(pass) shared/trace > injectTraceHeaders emits a traceparent of the active trace [2.87ms]
+(pass) shared/trace > no inbound headers starts a fresh 32-hex trace [2.32ms]
+(pass) shared/trace > ended spans flush to the collector as OTLP bytes [2.26ms]
+(pass) shared/trace > OPENBOT_TRACES=off keeps the provider unregistered [1.23ms]
+(pass) shared/trace > no endpoint still records spans and never contacts a collector [201.94ms]
+(pass) shared/trace > OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is used verbatim, full path included [2.75ms]
+(pass) shared/trace withTraceFetch > a traced request runs its handler inside the inbound trace [0.31ms]
+(pass) shared/trace withTraceFetch > a headerless request self-roots a fresh 32-hex trace [0.10ms]
+(pass) shared/trace withTraceFetch > a thrown handler records ERROR and the error still propagates [2.14ms]
+
+server/tests/agent-profile-policy.test.ts:
+(pass) agent profile permissions > allows every actor to access and run an active public profile [0.04ms]
+(pass) agent profile permissions > limits active private profile access and runs to its creator and admins [0.01ms]
+(pass) agent profile permissions > allows only the creator and admins to manage active user profiles [0.02ms]
+(pass) agent profile permissions > allows all actors to access and run a system public profile but nobody to manage it [0.01ms]
+(pass) agent profile permissions > denies every permission for deleted profiles [0.02ms]
+(pass) agent profile permissions > exports canRunAgent as the canAccessAgent alias
+
+server/tests/trace-outbound.test.ts:
+(pass) outbound traceparent injection > an agent POST inside an active span carries that span's trace [2.00ms]
+(pass) outbound traceparent injection > a computer call inside an active span carries that span's trace [1.40ms]
+(pass) outbound traceparent injection > a supervisor call inside an active span carries that span's trace [1.30ms]
+(pass) outbound traceparent injection > without an active span, an agent POST carries no traceparent [1.01ms]
+
+server/tests/trace-middleware.test.ts:
+(pass) trace middleware > an inbound traceparent flows into the handler and the access log line [2.11ms]
+(pass) trace middleware > a headerless request logs a fresh 32-hex trace id [0.24ms]
+46 |   app.use("*", tracking.requestId);
+47 |   app.use("*", createTraceMiddleware());
+48 |   app.use("/api/*", tracking.accessLog);
+49 |   app.get("/api/work", (c) => c.json({ traceId: currentTraceId() }));
+50 |   app.get("/api/boom", () => {
+51 |     throw new Error("boom");
+                   ^
+error: boom
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/server/tests/trace-middleware.test.ts:51:15)
+      at dispatch (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/node_modules/.bun/hono@4.13.4/node_modules/hono/dist/compose.js:22:23)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/server/src/telemetry/request-tracking.ts:58:13)
+      at dispatch (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/node_modules/.bun/hono@4.13.4/node_modules/hono/dist/compose.js:22:23)
+      at run (node:async_hooks:144:29)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/server/src/telemetry/trace-middleware.ts:29:21)
+      at dispatch (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/node_modules/.bun/hono@4.13.4/node_modules/hono/dist/compose.js:22:23)
+      at run (node:async_hooks:144:29)
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/server/src/telemetry/request-tracking.ts:49:26)
+      at dispatch (/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/node_modules/.bun/hono@4.13.4/node_modules/hono/dist/compose.js:22:23)
+
+(pass) trace middleware > a throwing handler still leaves an access log line with its trace id [0.32ms]
+(pass) trace middleware > each request runs in its own trace, not a shared one [0.38ms]
+{"level":40,"time":1791990863358,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+(pass) the main deployment app > continues an inbound traceparent on a plain route [165.27ms]
+
+ 42 pass
+ 0 fail
+ 161 expect() calls
+Ran 42 tests across 6 files. [1469.00ms]

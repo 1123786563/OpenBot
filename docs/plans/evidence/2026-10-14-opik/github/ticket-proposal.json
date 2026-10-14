@@ -1,0 +1,438 @@
+{
+ "recorded_at": "2026-10-14T16:19:50.223585+00:00",
+ "repository": "1123786563/OpenBot",
+ "parent_issue": {
+  "number": 4,
+  "id": 5851232987,
+  "url": "https://github.com/1123786563/OpenBot/issues/4",
+  "body_sha256": "0d359c029783b1b3cec40a445d0e81ec025a0b92ebd91087493be12eedba1d96"
+ },
+ "stage": "spec_published; ticket_breakdown_awaiting_approval",
+ "tickets": [
+  {
+   "id": 1,
+   "slug": "self-hosted-connection",
+   "title": "管理员验证 Opik 自托管连接与采集健康",
+   "blocked_by": [],
+   "delivers": "管理员在 OpenBot 中确认自托管 Opik 的连接与合成采集结果，并准确区分未启用和故障；包含可选部署、兼容锁定、受保护入口及最小可信范围装配。",
+   "acceptance": [
+    "可选部署启动真实自托管实例，锁定实际验证的服务和 SDK 版本；关闭集成时现有执行及 tracing 行为成立。",
+    "管理员页面及受控接口显示连接与验证状态；普通用户不能读取连接配置、管理诊断或凭据。",
+    "合成安全数据进入真实 Opik 并可查询，证明父子关系、thread 关联、ID 映射和删除契约；缺环境或跳过实测不能显示验证成功。",
+    "采集入口要求内部生产者认证，控制台及私有 API 受保护；canary、账号信息、能力凭证与原始附件不进入采集或诊断。",
+    "装配工作台授权与定位接入位置；未知企业 scope 拒绝而不回退，不创建租户表或将 workspace 当作授权。"
+   ],
+   "covers": [
+    "A1",
+    "A4",
+    "A10",
+    "A12",
+    "A13"
+   ],
+   "stories": [
+    1,
+    2,
+    3,
+    16,
+    31,
+    35,
+    36
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/01-self-hosted-connection.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 2,
+   "slug": "safe-run-records",
+   "title": "创建者查看受授权的安全运行记录",
+   "blocked_by": [
+    1
+   ],
+   "delivers": "创建者完成工作台对话后，在自己的 Bot 页面查看运行列表和安全详情；覆盖可信归属、真实流生命周期、脱敏、分页与权限变化，远程路径明确显示基础能力。",
+   "acceptance": [
+    "内置和经过 OpenBot 的远程 AG-UI 执行建立可信 Bot/thread/run/attempt 关联，列表与详情展示实际状态、耗时、安全内容和版本。",
+    "HTTP 首帧不结束 run；成功、错误、重试、确认取消、断连和未知结局正确区分，每个 attempt 唯一终结，工具提议不冒充执行。",
+    "实际 provider usage 缺失显示 unavailable；basic/unavailable 明确，不能声称不可观察的远程内部调用不存在。",
+    "仅当前有管理权的创建者及范围内管理员可查看；public 聊天权、伪造归属、猜测 ID 或跨 scope 游标不能扩大访问。",
+    "移交或撤权后历史详情、分页和缓存不可继续读取；两个测试 scope 的相同资源 ID 隔离，未知企业 scope 拒绝。",
+    "导出前治理覆盖正文、metadata、异常及 URL；无法可靠处理的自由文本仅指标，原文附件、能力凭证及账号标识不可读取。",
+    "Opik 慢响应、离线、队列饱和或绑定故障不改变正常 Agent 结果，页面如实展示同步/缺失/故障。",
+    "英文/中文、键盘与窄屏完成筛选和详情查看，恶意正文只作为文本渲染。"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "stories": [
+    4,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    32,
+    35,
+    36,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/02-safe-run-records.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 3,
+   "slug": "detailed-runtime-steps",
+   "title": "定位内置与 LangGraph 的模型、工具和检索步骤",
+   "blocked_by": [
+    2
+   ],
+   "delivers": "创建者在既有运行详情中定位内置执行与默认 LangGraph 的模型调用、可信工具执行和检索步骤，并关联跨服务过程。",
+   "acceptance": [
+    "两条默认路径各通过真实 Opik 冒烟，模型、工具、检索及跨服务父子关系正确后才标 detailed。",
+    "步骤树与安全详情可定位具体操作；Opik 和 OTel ID 使用显式关联而不假定相等。",
+    "工具提议、真实 execute 和缺少回执分开，未知浏览器执行不显示成功。",
+    "不重复调用 provider、不改变已有 metered finish/Settlement 顺序、不重复计算 usage；拒绝或结算失败不是成功 span。",
+    "框架 callback 进入同一受治理 OTel 路径，不另开未处理的自动上传；输入输出、检索片段、错误和日志无秘密 canary。",
+    "其他远程路径保持 basic 和原协议；宿主、容器和支持的动态进程传播真实通过。"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4",
+    "A8",
+    "A13"
+   ],
+   "stories": [
+    5,
+    8,
+    9,
+    10,
+    11,
+    12,
+    30
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/03-detailed-runtime-steps.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 4,
+   "slug": "versioned-datasets",
+   "title": "从安全案例保存不可变评测集版本",
+   "blocked_by": [
+    2
+   ],
+   "delivers": "创建者从可用脱敏运行或审查后的合成案例建立评测集，在页面检查输入、参考结果与工具 fixture 后保存并查看冻结版本。",
+   "acceptance": [
+    "候选来自有权访问的安全运行；只有指标的记录不能被自动伪造为文本样本，需提供审查后的合成或脱敏案例。",
+    "页面及接口支持案例审查和保存，说明脱敏语义限制，拒绝原始附件和任意生产工具。",
+    "版本冻结安全输入、参考、fixture、hash、策略版本、来源与上游定位；候选及后续修改不改变已保存版本。",
+    "上游与本地引用部分成功可恢复或清理，pending/syncing 不冒充成功。",
+    "当前 scope/Bot 授权覆盖版本详情，跨 Bot 复用需显式授权复制；猜测版本 ID 或撤权不能读取。",
+    "保存案例采用 30 天保留引用，未保存候选随源追踪生命周期；物理清理由生命周期 Ticket 完成。",
+    "真实 Opik 证明独立快照及固定 hash，页面覆盖双语、空/故障/同步和审查提示。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A11",
+    "A12"
+   ],
+   "stories": [
+    17,
+    18,
+    19,
+    20,
+    11,
+    13,
+    14,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/04-versioned-datasets.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 5,
+   "slug": "isolated-rule-evaluations",
+   "title": "运行隔离评测并查看规则评分",
+   "blocked_by": [
+    4
+   ],
+   "delivers": "创建者选择冻结数据集及 Bot 配置提交独立评测，查看逐样本规则评分、运行结果、失败和取消，并关联安全执行记录。",
+   "acceptance": [
+    "提交冻结数据集、Bot 配置、Prompt、模型参数、fixture 和评分器版本，幂等重试不产生第二个实验。",
+    "隔离 thread 和测试工具复用公共执行路径，不写生产会话、memory、learning 或业务数据，未知生产写工具被拒绝。",
+    "被测调用遵守适用 Credit Gate、Admission、Reservation/Settlement；缺失 usage 不当 0，计费台账保持权威。",
+    "规则评分覆盖输出格式、必需字段及工具名称/参数，结果和规则版本可追溯到安全运行。",
+    "持久任务有界并发，每个样本前重新授权；取消停止新调度，结果未知或 lease 恢复不自动重复调用/扣费。",
+    "执行失败、评分失败、取消、待协调和同步故障分别展示；缺失评分不伪造为 0，仅重试幂等结果写入。",
+    "实验和结果符合 scope/Bot 权限，双 worker 及撤权测试成立；不依赖模型 Judge 或详细步骤 Ticket 才能执行。",
+    "真实 Opik 可查询合成实验，用户在双语、可访问页面提交、查看和取消。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A9",
+    "A10",
+    "A12"
+   ],
+   "stories": [
+    20,
+    21,
+    22,
+    24,
+    25,
+    26,
+    27,
+    30,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/05-isolated-rule-evaluations.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 6,
+   "slug": "controlled-model-judge",
+   "title": "使用受预算控制的模型 Judge 评分",
+   "blocked_by": [
+    5
+   ],
+   "delivers": "创建者在既有评测流程选择批准的模型评分器，查看基于参考答案或业务 rubric 的评分和理由，Judge 遵守部署预算及访问范围。",
+   "acceptance": [
+    "仅允许显式批准的模型入口、凭证、rubric/scorer 版本，不接受任意 provider 地址或自动使用 Opik 默认模型。",
+    "Judge 遵守适用 Credit Gate、Admission、Reservation/Settlement；预算不足或不受控时调用前拒绝，规则评测仍可用。",
+    "只有已审查的安全样本/参考/context 送给 Judge，SDK 自动追踪和理由经过安全投影，canary 不进入上游或页面。",
+    "逐样本显示分数、理由、版本、usage 与评分失败，Judge 故障不混入成功平均分。",
+    "撤权、取消和外部未知结果沿用任务规则，不增加自动重跑或跨范围读取。",
+    "受控假 provider 及真实实验验证门控、调用次数、账本与页面；SDK 返回 score 不能代替预算证据。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "A10",
+    "A12"
+   ],
+   "stories": [
+    23,
+    24,
+    25,
+    26,
+    27,
+    11,
+    12,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/06-controlled-model-judge.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 7,
+   "slug": "experiment-comparison",
+   "title": "比较版本并定位退化样本",
+   "blocked_by": [
+    5
+   ],
+   "delivers": "创建者比较两次实验的配置、有效样本、分数及退化案例，并回到相关安全执行详情。",
+   "acceptance": [
+    "两次实验均通过当前 scope/Bot 授权，猜测 ID 或撤权不能跨范围读取。",
+    "冻结样本集合、hash 与评分定义决定可比性；不兼容时解释差异而不宣称质量赢家。",
+    "展示完成率、有效评分数、执行/评分失败、逐项 delta、耗时和实际 usage，缺失值不当 0 或静默剔除。",
+    "退化样本链接到安全案例与执行记录，unknown/basic/metrics-only 保持明确，不捏造解释。",
+    "规则实验即可验证完整对比，Judge 后续作为版本化评分定义参与而非本 Ticket 前置。",
+    "双语、键盘/窄屏及机器可读安全结果成立；真实 Opik 的两种配置与失败案例通过。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A9",
+    "A12"
+   ],
+   "stories": [
+    28,
+    29,
+    30,
+    27,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/07-experiment-comparison.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 8,
+   "slug": "admin-observation-overview",
+   "title": "管理员按管理范围汇总并排查采集故障",
+   "blocked_by": [
+    5
+   ],
+   "delivers": "管理员在后台汇总 Bot 运行和评测，筛选故障、丢弃和未绑定记录，区分业务失败、采集不可用及尚未具备的能力。",
+   "acceptance": [
+    "先限定授权 scope 再汇总运行、实验和状态，相同 ID 或受限管理角色不能跨范围。",
+    "按 Bot/时间筛选，显示 pending、失败、丢弃、最近采集和未绑定状态；缺失 usage 或 basic 内部缺失不算 0 或健康。",
+    "Opik 故障保留真实同步/缺失状态且正常 Agent 继续执行，汇总不进入运行关键路径。",
+    "整实例控制台仅允许相应平台资格；创建者及范围受限管理员不能通过私有 API 绕过。",
+    "双语、键盘/窄屏和直接路由越权验证成立；无需先完成 Judge 或对比 Ticket。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "stories": [
+    15,
+    16,
+    31,
+    32,
+    35,
+    36,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/08-admin-observation-overview.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 9,
+   "slug": "safe-exports",
+   "title": "导出安全运行与评测报告并即时撤销下载资格",
+   "blocked_by": [
+    5
+   ],
+   "delivers": "有权用户从 OpenBot 请求运行/实验的机器可读导出，查看导出状态，并在每次下载时重新校验当前权限。",
+   "acceptance": [
+    "导出仅使用授权安全 DTO，不含原文附件、凭证、未处理正文、可执行 HTML 或私有原文 URL。",
+    "任务、文件和分页引用绑定 scope/Bot，客户端不能指定上游项目或用 export ID 跨范围读取。",
+    "页面区分 queued/running/ready/failed/revoked，仅 ready 且当前有权才可下载，移交/撤权后旧链接失效。",
+    "下载通过受控接口，不生成绕过业务授权的长期公开链接；失败或取消不显示 ready。",
+    "文件记录到期和清理引用，配合生命周期 Ticket 删除；双语、无障碍及跨范围、恶意数据、撤权测试成立。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A11",
+    "A12"
+   ],
+   "stories": [
+    33,
+    11,
+    12,
+    13,
+    14,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/09-safe-exports.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  },
+  {
+   "id": 10,
+   "slug": "retention-and-deletion",
+   "title": "按保留期和删除请求清理真实 Opik 数据",
+   "blocked_by": [
+    9
+   ],
+   "delivers": "管理员落实 7 天追踪和 30 天评测保留策略，创建者删除有权管理的评测集；页面显示真实清理状态，数据最终从上游及导出存储移除。",
+   "acceptance": [
+    "默认 trace 7 天、数据集/实验 30 天，可运维调整；到期立即撤销访问，源追踪删除只保留显式保存的已审查案例。",
+    "删除 Bot、数据集或范围时停止相关任务，失效缓存及下载，按可信定位清理 trace/span、样本、实验和导出。",
+    "上游失败保留定位及 pending/failed 以重试，仅验证实际查不到后报告完成，隐藏条目不等于删除。",
+    "清理不能跨项目或范围影响其他 Bot；未知归属需受控处理，不能猜测。",
+    "实际存储、文件及备份保留策略有证据和操作说明，覆盖不完整不能通过。",
+    "有权用户通过受控操作和状态页确认删除；真实 Opik/专属存储证明清理效果与故障恢复。"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6",
+    "A10",
+    "A11",
+    "A12"
+   ],
+   "stories": [
+    34,
+    14,
+    25,
+    26,
+    33,
+    35,
+    36,
+    37,
+    38
+   ],
+   "draft_file": "docs/plans/evidence/2026-10-14-opik/github/ticket-drafts/10-retention-and-deletion.md",
+   "status": "draft_awaiting_breakdown_approval",
+   "github_issue": null
+  }
+ ],
+ "topological_order": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10
+ ],
+ "frontier": [
+  1
+ ],
+ "dependency_basis": {
+  "1->2": "Business ingest/read needs verified connection, contracts and authorization wiring.",
+  "2->3": "Detailed steps extend safe run binding and detail views.",
+  "2->4": "Candidate review consumes safe run access and current scope permissions.",
+  "4->5": "Execution requires frozen dataset and fixture versions.",
+  "5->6": "Judge extends the existing controlled experiment lifecycle and score state.",
+  "5->7": "Comparison needs completed experiment/score records, but not Judge.",
+  "5->8": "Overview includes experimental states in addition to runs.",
+  "5->9": "Run and evaluation exports consume existing authorized results.",
+  "9->10": "Full cleanup must cover actual export storage/tasks; experiment/run prerequisites are transitive."
+ },
+ "validation": {
+  "unique_ids": true,
+  "valid_refs": true,
+  "cycles": [],
+  "uncovered_acceptance": [],
+  "uncovered_user_stories": [],
+  "vertical_slices": true,
+  "redundant_blocking_edges": []
+ },
+ "publication_policy": "Wait for breakdown approval, then publish one ready-for-agent issue per vertical slice in dependency order. Attach native sub-issue containment and separate blocked-by edges. Preserve parent body/state. Reconcile the file-level task plan with approved business-ticket interfaces before implementing.",
+ "superseded_by": "ticket-proposal-v2.json",
+ "superseded_reason": "v1 的 10 个粗粒度 Ticket 经用户要求重切为 37 个单 agent 上下文粒度的 Ticket，已于 2026-10-15 发布为 GitHub #7–#43。v1 草案保留为历史，未发布。"
+}

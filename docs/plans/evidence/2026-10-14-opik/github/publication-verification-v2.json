@@ -1,0 +1,25 @@
+{
+ "verified_at": "2026-10-14T17:37:15Z",
+ "repository": "1123786563/OpenBot",
+ "parent_issue": 4,
+ "parent_body_sha256": "0d359c029783b1b3cec40a445d0e81ec025a0b92ebd91087493be12eedba1d96",
+ "parent_body_unmodified": true,
+ "issues_expected": 37,
+ "issues_found": 37,
+ "labels_ready_for_agent": 37,
+ "native_subissues_on_parent": 37,
+ "parent_sub_issues_summary": {
+  "total": 37,
+  "completed": 0,
+  "percent_completed": 0
+ },
+ "pagination": "all list reads use per_page=100 (GitHub default 30 truncated the first run)",
+ "native_blocked_by_edges": 89,
+ "bodies_fully_resolved": 37,
+ "issue_number_range": [
+  7,
+  43
+ ],
+ "problems": [],
+ "ok": true
+}

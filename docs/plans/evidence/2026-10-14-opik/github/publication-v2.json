@@ -1,0 +1,398 @@
+{
+ "repository": "1123786563/OpenBot",
+ "parent_issue": 4,
+ "label": "ready-for-agent",
+ "issues": {
+  "T01": {
+   "number": 7,
+   "id": 5852010564,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6YRA",
+   "url": "https://github.com/1123786563/OpenBot/issues/7",
+   "title": "[Opik T01] 观测后端模块骨架与路由注册 seam"
+  },
+  "T02": {
+   "number": 8,
+   "id": 5852011192,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6auA",
+   "url": "https://github.com/1123786563/OpenBot/issues/8",
+   "title": "[Opik T02] 观测 UI 独立 i18n 子命名空间与路由约定"
+  },
+  "T03": {
+   "number": 9,
+   "id": 5852012197,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6epQ",
+   "url": "https://github.com/1123786563/OpenBot/issues/9",
+   "title": "[Opik T03] Opik 可选部署与版本锁定清单"
+  },
+  "T04": {
+   "number": 10,
+   "id": 5852012964,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6hpA",
+   "url": "https://github.com/1123786563/OpenBot/issues/10",
+   "title": "[Opik T04] 上游契约冒烟与 VerifiedOpikContract manifest"
+  },
+  "T05": {
+   "number": 11,
+   "id": 5852013606,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6kJg",
+   "url": "https://github.com/1123786563/OpenBot/issues/11",
+   "title": "[Opik T05] 采集侧脱敏投影与安全内容策略"
+  },
+  "T06": {
+   "number": 12,
+   "id": 5852014270,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6mvg",
+   "url": "https://github.com/1123786563/OpenBot/issues/12",
+   "title": "[Opik T06] 可信 scope seam 与企业预留拒绝"
+  },
+  "T07": {
+   "number": 13,
+   "id": 5852014976,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6pgA",
+   "url": "https://github.com/1123786563/OpenBot/issues/13",
+   "title": "[Opik T07] 观测归属存储 schema 与可信绑定"
+  },
+  "T08": {
+   "number": 14,
+   "id": 5852015580,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6r3A",
+   "url": "https://github.com/1123786563/OpenBot/issues/14",
+   "title": "[Opik T08] Opik HTTP 适配器与 port 抽象"
+  },
+  "T09": {
+   "number": 15,
+   "id": 5852016252,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6ufA",
+   "url": "https://github.com/1123786563/OpenBot/issues/15",
+   "title": "[Opik T09] 配置开关与健康状态（禁用零影响）"
+  },
+  "T10": {
+   "number": 16,
+   "id": 5852016865,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6w4Q",
+   "url": "https://github.com/1123786563/OpenBot/issues/16",
+   "title": "[Opik T10] run 终结语义与 basic 远程路径能力标记"
+  },
+  "T11": {
+   "number": 17,
+   "id": 5852017399,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM6y9w",
+   "url": "https://github.com/1123786563/OpenBot/issues/17",
+   "title": "[Opik T11] 创建者只读查询接口"
+  },
+  "T12": {
+   "number": 18,
+   "id": 5852017996,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM61TA",
+   "url": "https://github.com/1123786563/OpenBot/issues/18",
+   "title": "[Opik T12] 创建者运行列表页"
+  },
+  "T13": {
+   "number": 19,
+   "id": 5852018595,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM63ow",
+   "url": "https://github.com/1123786563/OpenBot/issues/19",
+   "title": "[Opik T13] 创建者运行详情页与可用性状态"
+  },
+  "T14": {
+   "number": 20,
+   "id": 5852019273,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM66SQ",
+   "url": "https://github.com/1123786563/OpenBot/issues/20",
+   "title": "[Opik T14] 内置执行的模型调用记录"
+  },
+  "T15": {
+   "number": 21,
+   "id": 5852019970,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM69Ag",
+   "url": "https://github.com/1123786563/OpenBot/issues/21",
+   "title": "[Opik T15] 工具提议 vs 真实执行与检索步骤"
+  },
+  "T16": {
+   "number": 22,
+   "id": 5852020743,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7ABw",
+   "url": "https://github.com/1123786563/OpenBot/issues/22",
+   "title": "[Opik T16] LangGraph callback 接入同一受治理 OTel 路径"
+  },
+  "T17": {
+   "number": 23,
+   "id": 5852021309,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7CPQ",
+   "url": "https://github.com/1123786563/OpenBot/issues/23",
+   "title": "[Opik T17] 跨服务与动态进程上下文传播与 ID 映射"
+  },
+  "T18": {
+   "number": 24,
+   "id": 5852021818,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7EOg",
+   "url": "https://github.com/1123786563/OpenBot/issues/24",
+   "title": "[Opik T18] 运行详情页步骤树"
+  },
+  "T19": {
+   "number": 25,
+   "id": 5852022587,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7HOw",
+   "url": "https://github.com/1123786563/OpenBot/issues/25",
+   "title": "[Opik T19] 数据集 schema 与不可变版本冻结"
+  },
+  "T20": {
+   "number": 26,
+   "id": 5852023086,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7JLg",
+   "url": "https://github.com/1123786563/OpenBot/issues/26",
+   "title": "[Opik T20] 案例审查与保存接口"
+  },
+  "T21": {
+   "number": 27,
+   "id": 5852023619,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7LQw",
+   "url": "https://github.com/1123786563/OpenBot/issues/27",
+   "title": "[Opik T21] 数据集页面（审查 / 保存 / 版本）"
+  },
+  "T22": {
+   "number": 28,
+   "id": 5852024147,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7NUw",
+   "url": "https://github.com/1123786563/OpenBot/issues/28",
+   "title": "[Opik T22] 实验 schema 与冻结配置幂等提交"
+  },
+  "T23": {
+   "number": 29,
+   "id": 5852024661,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7PVQ",
+   "url": "https://github.com/1123786563/OpenBot/issues/29",
+   "title": "[Opik T23] 隔离执行与生产写工具拒绝"
+  },
+  "T24": {
+   "number": 30,
+   "id": 5852025128,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7RKA",
+   "url": "https://github.com/1123786563/OpenBot/issues/30",
+   "title": "[Opik T24] 持久任务编排：有界并发、每样本重授权、取消与 lease"
+  },
+  "T25": {
+   "number": 31,
+   "id": 5852025577,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7S6Q",
+   "url": "https://github.com/1123786563/OpenBot/issues/31",
+   "title": "[Opik T25] 评测调用的计费准入与结算接线"
+  },
+  "T26": {
+   "number": 32,
+   "id": 5852026030,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7Urg",
+   "url": "https://github.com/1123786563/OpenBot/issues/32",
+   "title": "[Opik T26] 规则评分器"
+  },
+  "T27": {
+   "number": 33,
+   "id": 5852026541,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7WrQ",
+   "url": "https://github.com/1123786563/OpenBot/issues/33",
+   "title": "[Opik T27] 受控模型 Judge 评分"
+  },
+  "T28": {
+   "number": 34,
+   "id": 5852027031,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7Ylw",
+   "url": "https://github.com/1123786563/OpenBot/issues/34",
+   "title": "[Opik T28] 实验结果查询接口与失败分类"
+  },
+  "T29": {
+   "number": 35,
+   "id": 5852027487,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7aXw",
+   "url": "https://github.com/1123786563/OpenBot/issues/35",
+   "title": "[Opik T29] 实验对比接口与兼容性判定"
+  },
+  "T30": {
+   "number": 36,
+   "id": 5852027994,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7cWg",
+   "url": "https://github.com/1123786563/OpenBot/issues/36",
+   "title": "[Opik T30] 实验页面（提交 / 逐样本结果 / 取消）"
+  },
+  "T31": {
+   "number": 37,
+   "id": 5852028771,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7fYw",
+   "url": "https://github.com/1123786563/OpenBot/issues/37",
+   "title": "[Opik T31] 实验对比页面"
+  },
+  "T32": {
+   "number": 38,
+   "id": 5852029243,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7hOw",
+   "url": "https://github.com/1123786563/OpenBot/issues/38",
+   "title": "[Opik T32] 采集入口认证与控制台/私有 API 保护"
+  },
+  "T33": {
+   "number": 39,
+   "id": 5852029820,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7jfA",
+   "url": "https://github.com/1123786563/OpenBot/issues/39",
+   "title": "[Opik T33] 管理员范围汇总与采集故障排查"
+  },
+  "T34": {
+   "number": 40,
+   "id": 5852030254,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7lLg",
+   "url": "https://github.com/1123786563/OpenBot/issues/40",
+   "title": "[Opik T34] 有界异步导出与下载即时撤权"
+  },
+  "T35": {
+   "number": 41,
+   "id": 5852030820,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7nZA",
+   "url": "https://github.com/1123786563/OpenBot/issues/41",
+   "title": "[Opik T35] 保留期与真实删除验证"
+  },
+  "T36": {
+   "number": 42,
+   "id": 5852031423,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7pvw",
+   "url": "https://github.com/1123786563/OpenBot/issues/42",
+   "title": "[Opik T36] 管理员汇总页面与创建者导出状态页"
+  },
+  "T37": {
+   "number": 43,
+   "id": 5852032247,
+   "node_id": "I_kwDOVCA0Ss8AAAABXM7s9w",
+   "url": "https://github.com/1123786563/OpenBot/issues/43",
+   "title": "[Opik T37] 端到端验收与真实实例证据闭环"
+  }
+ },
+ "subissues": [
+  "T01",
+  "T02",
+  "T03",
+  "T04",
+  "T05",
+  "T06",
+  "T07",
+  "T08",
+  "T09",
+  "T10",
+  "T11",
+  "T12",
+  "T13",
+  "T14",
+  "T15",
+  "T16",
+  "T17",
+  "T18",
+  "T19",
+  "T20",
+  "T21",
+  "T22",
+  "T23",
+  "T24",
+  "T25",
+  "T26",
+  "T27",
+  "T28",
+  "T29",
+  "T30",
+  "T31",
+  "T32",
+  "T33",
+  "T34",
+  "T35",
+  "T36",
+  "T37"
+ ],
+ "blocked_by": [
+  "T04<-T03",
+  "T07<-T06",
+  "T08<-T04",
+  "T08<-T05",
+  "T08<-T07",
+  "T09<-T08",
+  "T10<-T09",
+  "T11<-T07",
+  "T11<-T10",
+  "T12<-T02",
+  "T12<-T11",
+  "T13<-T12",
+  "T14<-T05",
+  "T14<-T10",
+  "T15<-T14",
+  "T16<-T14",
+  "T17<-T16",
+  "T18<-T13",
+  "T18<-T15",
+  "T18<-T17",
+  "T19<-T07",
+  "T19<-T11",
+  "T20<-T05",
+  "T20<-T19",
+  "T21<-T02",
+  "T21<-T20",
+  "T22<-T19",
+  "T23<-T10",
+  "T23<-T14",
+  "T23<-T22",
+  "T24<-T23",
+  "T25<-T24",
+  "T26<-T22",
+  "T27<-T25",
+  "T27<-T26",
+  "T28<-T26",
+  "T29<-T28",
+  "T30<-T21",
+  "T30<-T28",
+  "T31<-T29",
+  "T31<-T30",
+  "T32<-T09",
+  "T33<-T11",
+  "T33<-T32",
+  "T34<-T05",
+  "T34<-T11",
+  "T35<-T19",
+  "T35<-T22",
+  "T35<-T34",
+  "T36<-T13",
+  "T36<-T33",
+  "T36<-T34",
+  "T37<-T01",
+  "T37<-T02",
+  "T37<-T03",
+  "T37<-T04",
+  "T37<-T05",
+  "T37<-T06",
+  "T37<-T07",
+  "T37<-T08",
+  "T37<-T09",
+  "T37<-T10",
+  "T37<-T11",
+  "T37<-T12",
+  "T37<-T13",
+  "T37<-T14",
+  "T37<-T15",
+  "T37<-T16",
+  "T37<-T17",
+  "T37<-T18",
+  "T37<-T19",
+  "T37<-T20",
+  "T37<-T21",
+  "T37<-T22",
+  "T37<-T23",
+  "T37<-T24",
+  "T37<-T25",
+  "T37<-T27",
+  "T37<-T28",
+  "T37<-T29",
+  "T37<-T30",
+  "T37<-T31",
+  "T37<-T32",
+  "T37<-T33",
+  "T37<-T34",
+  "T37<-T35",
+  "T37<-T36",
+  "T37<-T26"
+ ],
+ "errors": [],
+ "note": "T37<-T26 first attempt hit a transient 422; retried with issue_id and verified blocked_by=36 on #43.",
+ "post_approval_corrections": "post-approval-corrections.json (#8 title/body, #18 body, #17 body + native blocked_by #7)"
+}

@@ -1,0 +1,17 @@
+{
+ "corrected_at": "2026-10-14T17:35:22Z",
+ "reason": [
+  "T01 was an orphan prefactor (no dependents)",
+  "6 frontend tickets shared two locale JSON files with 10 pairwise-unordered owner pairs"
+ ],
+ "changes": [
+  "#8 T02 title+body patched (four sub-namespaces)",
+  "#18 T12 body patched (shared frontend types moved in from T02)",
+  "#17 T11 body patched (added #7 to Blocked by)",
+  "#17 native blocked_by -> #7 added",
+  "re-fetched #8/#17/#18 bodies from GitHub",
+  "#17 blocked_by = [7, 13, 16] (expected [7, 13, 16]) -> OK",
+  "parent #4 sub_issues_summary = {'total': 37, 'completed': 0, 'percent_completed': 0}",
+  "#8 title = [Opik T02] 观测 UI 独立 i18n 子命名空间与路由约定"
+ ]
+}

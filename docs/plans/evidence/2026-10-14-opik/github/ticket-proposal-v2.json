@@ -1,0 +1,1190 @@
+{
+ "recorded_at": "2026-10-14T16:50:53.719799+00:00",
+ "repository": "1123786563/OpenBot",
+ "supersedes": "ticket-proposal.json (v1, 10 coarse tickets)",
+ "parent_issue": {
+  "number": 4,
+  "id": 5851232987,
+  "url": "https://github.com/1123786563/OpenBot/issues/4",
+  "body_sha256": "0d359c029783b1b3cec40a445d0e81ec025a0b92ebd91087493be12eedba1d96"
+ },
+ "stage": "spec_published; tickets_published_with_native_relationships",
+ "granularity_rule": "single code-agent context; one owner role; <=8 owned files; explicit handoff artifact; independently verifiable",
+ "ticket_count": 37,
+ "acceptance_covered": 13,
+ "cycles": [],
+ "topological_order": [
+  "T01",
+  "T02",
+  "T03",
+  "T05",
+  "T06",
+  "T04",
+  "T07",
+  "T08",
+  "T09",
+  "T10",
+  "T32",
+  "T11",
+  "T14",
+  "T12",
+  "T19",
+  "T33",
+  "T34",
+  "T15",
+  "T16",
+  "T13",
+  "T20",
+  "T22",
+  "T17",
+  "T36",
+  "T21",
+  "T23",
+  "T26",
+  "T35",
+  "T18",
+  "T24",
+  "T28",
+  "T25",
+  "T29",
+  "T30",
+  "T27",
+  "T31",
+  "T37"
+ ],
+ "publish_order": [
+  "T01",
+  "T02",
+  "T03",
+  "T04",
+  "T05",
+  "T06",
+  "T07",
+  "T08",
+  "T09",
+  "T10",
+  "T11",
+  "T12",
+  "T13",
+  "T14",
+  "T15",
+  "T16",
+  "T17",
+  "T18",
+  "T19",
+  "T20",
+  "T21",
+  "T22",
+  "T23",
+  "T24",
+  "T25",
+  "T26",
+  "T27",
+  "T28",
+  "T29",
+  "T30",
+  "T31",
+  "T32",
+  "T33",
+  "T34",
+  "T35",
+  "T36",
+  "T37"
+ ],
+ "tickets": [
+  {
+   "id": "T01",
+   "title": "观测后端模块骨架与路由注册 seam",
+   "blocked_by": [],
+   "covers": [
+    "A5"
+   ],
+   "owned": "`server/src/ai-observability/routes/index.ts`、`server/src/ai-observability/context.ts`、`server/src/index.ts`、`server/tests/opik-module-skeleton.test.ts`",
+   "handoff": "路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式",
+   "delivers": "建立 `server/src/ai-observability/` 目录约定与单一 `registerAiObservabilityRoutes()`，使后续每个 Ticket 只新增自己的 route module 文件，不再编辑 `server/src/index.ts`。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 7,
+    "id": 5852010564,
+    "url": "https://github.com/1123786563/OpenBot/issues/7"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T01] 观测后端模块骨架与路由注册 seam",
+   "blocked_by_issues": [],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T02",
+   "title": "观测 UI 独立 i18n 子命名空间与路由约定",
+   "blocked_by": [],
+   "covers": [
+    "A5"
+   ],
+   "owned": "`app/src/locales/en/ai-observability-runs.json`、`app/src/locales/en/ai-observability-datasets.json`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/en/ai-observability-admin.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-datasets.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-admin.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`",
+   "handoff": "四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定",
+   "delivers": "新增 `ai-observability-runs` / `-datasets` / `-evaluations` / `-admin` 四个双子语命名空间与 `bots.$agentId.runs` / `.evaluations` 路由约定，使四条前端链（运行、评测集、实验、管理）各自独占文案文件，既不争用 `agents.json`、`errors.json`，也不彼此争用。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 8,
+    "id": 5852011192,
+    "url": "https://github.com/1123786563/OpenBot/issues/8"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T02] 观测 UI 独立 i18n 子命名空间与路由约定",
+   "blocked_by_issues": [],
+   "size": "~10 files / 单 agent（均为极小 JSON stub 与注册行，见 manifest 的 documented_deviations）"
+  },
+  {
+   "id": "T03",
+   "title": "Opik 可选部署与版本锁定清单",
+   "blocked_by": [],
+   "covers": [
+    "A1"
+   ],
+   "owned": "`docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`",
+   "handoff": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤",
+   "delivers": "平台运维可用可选 compose 启动真实自托管 Opik，服务与 SDK 版本被锁定为实际验证过的值；关闭集成时现有执行与 tracing 行为不变。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 9,
+    "id": 5852012197,
+    "url": "https://github.com/1123786563/OpenBot/issues/9"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T03] Opik 可选部署与版本锁定清单",
+   "blocked_by_issues": [],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T04",
+   "title": "上游契约冒烟与 VerifiedOpikContract manifest",
+   "blocked_by": [
+    "T03"
+   ],
+   "covers": [
+    "A1",
+    "A11",
+    "A13"
+   ],
+   "owned": "`server/scripts/opik-contract.ts`、`server/tests/opik-contract.test.ts`、`server/package.json`、`bun.lock`",
+   "handoff": "`VerifiedOpikContract` manifest（tag/digest、SDK 精确版本、请求响应 fixture、ID 映射、删除证据、正文上限）",
+   "delivers": "对真实实例跑通 OTLP 写入、查询、项目、数据集、实验与删除，产出后续所有 HTTP 序列化唯一依据的 manifest；缺环境或跳过实测不得报告成功。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 10,
+    "id": 5852012964,
+    "url": "https://github.com/1123786563/OpenBot/issues/10"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T04] 上游契约冒烟与 VerifiedOpikContract manifest",
+   "blocked_by_issues": [
+    9
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T05",
+   "title": "采集侧脱敏投影与安全内容策略",
+   "blocked_by": [],
+   "covers": [
+    "A4"
+   ],
+   "owned": "`server/src/ai-observability/redaction.ts`、`shared/ai-observability.ts`、`server/tests/opik-redaction.test.ts`",
+   "handoff": "`projectSafe()` 接口 + 内容策略版本号",
+   "delivers": "任何写入或导出前的语义字段白名单投影；凭据、内部能力、连接串、账号标识、reasoning、原始附件被排除；无法可靠处理的自由文本降级为仅指标。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 11,
+    "id": 5852013606,
+    "url": "https://github.com/1123786563/OpenBot/issues/11"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T05] 采集侧脱敏投影与安全内容策略",
+   "blocked_by_issues": [],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T06",
+   "title": "可信 scope seam 与企业预留拒绝",
+   "blocked_by": [],
+   "covers": [
+    "A12",
+    "A5"
+   ],
+   "owned": "`server/src/ai-observability/scope.ts`、`server/src/ai-observability/contracts.ts`、`server/tests/opik-scope.test.ts`",
+   "handoff": "`ObservationScope` 解析接口 + 两个测试 scope 的构造方式",
+   "delivers": "授权范围、存储定位与评测资格集中在可替换 seam；当前只实现工作台适配器；未知企业 scope 拒绝且不回退，不创建租户表、不把 workspace 当授权。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 12,
+    "id": 5852014270,
+    "url": "https://github.com/1123786563/OpenBot/issues/12"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T06] 可信 scope seam 与企业预留拒绝",
+   "blocked_by_issues": [],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T07",
+   "title": "观测归属存储 schema 与可信绑定",
+   "blocked_by": [
+    "T06"
+   ],
+   "covers": [
+    "A1",
+    "A5",
+    "A11",
+    "A12"
+   ],
+   "owned": "`server/drizzle/00NN_opik_observability.sql` + snapshot/journal、`server/src/db/schema/ai-observability.ts`、`server/src/ai-observability/bindings.ts`、`server/tests/opik-bindings.integration.test.ts`、`server/scripts/opik-test-env.ts`",
+   "handoff": "表结构 + `bindings.ts` 的绑定/解析 API（专用 PostgreSQL 验证）",
+   "delivers": "OpenBot 保留权威归属、存储定位、非敏感版本引用与持久任务状态；绑定可幂等恢复；Opik metadata 不能改变业务归属。",
+   "estimated_files": 6,
+   "github_issue": {
+    "number": 13,
+    "id": 5852014976,
+    "url": "https://github.com/1123786563/OpenBot/issues/13"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T07] 观测归属存储 schema 与可信绑定",
+   "blocked_by_issues": [
+    12
+   ],
+   "size": "~6 files / 单 agent"
+  },
+  {
+   "id": "T08",
+   "title": "Opik HTTP 适配器与 port 抽象",
+   "blocked_by": [
+    "T04",
+    "T05",
+    "T07"
+   ],
+   "covers": [
+    "A1",
+    "A4",
+    "A10",
+    "A13"
+   ],
+   "owned": "`server/src/ai-observability/opik-port.ts`、`server/src/ai-observability/opik-http.ts`、`server/tests/support/opik-fixtures.ts`、`server/tests/opik-http.test.ts`",
+   "handoff": "`OpikPort` 接口 + fixture 注入方式",
+   "delivers": "全部上游调用经单一 port；序列化只由 T04 manifest 驱动；对抗性故障（超时、5xx、部分成功、归属漂移）可注入且不伪装成功。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 14,
+    "id": 5852015580,
+    "url": "https://github.com/1123786563/OpenBot/issues/14"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T08] Opik HTTP 适配器与 port 抽象",
+   "blocked_by_issues": [
+    10,
+    11,
+    13
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T09",
+   "title": "配置开关与健康状态（禁用零影响）",
+   "blocked_by": [
+    "T08"
+   ],
+   "covers": [
+    "A1",
+    "A10"
+   ],
+   "owned": "`server/src/ai-observability/config.ts`、`server/src/ai-observability/health.ts`、`server/src/config.ts`、`shared/ai-trace.ts`、`server/tests/opik-health.test.ts`",
+   "handoff": "就绪/健康查询接口 + 有界异步导出入口约定",
+   "delivers": "集成关闭时现有执行与 tracing 完全不变；启用但故障时给出可解释状态；Opik 慢响应、离线或队列饱和不改变正常 Agent 结果。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 15,
+    "id": 5852016252,
+    "url": "https://github.com/1123786563/OpenBot/issues/15"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T09] 配置开关与健康状态（禁用零影响）",
+   "blocked_by_issues": [
+    14
+   ],
+   "size": "~5 files / 单 agent"
+  },
+  {
+   "id": "T10",
+   "title": "run 终结语义与 basic 远程路径能力标记",
+   "blocked_by": [
+    "T09"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A5",
+    "A10"
+   ],
+   "owned": "`server/src/ai-observability/run-agent.ts`、`server/src/agents/endpoint.ts`、`server/src/agents/agent-resolver.ts`、`server/src/agents/runtime-agents.ts`、`server/src/copilot.ts`、`server/tests/opik-run-agent.test.ts`",
+   "handoff": "run/attempt 终结状态机 + capability（detailed/basic/unavailable）判定入口",
+   "delivers": "HTTP 首帧不结束 run；成功、错误、重试、确认取消、断连与未知结局正确区分，每个 attempt 唯一终结；工具提议不冒充执行；经过 OpenBot 的远程 AG-UI 只记录实际观察到的事件并明确标记 basic。",
+   "estimated_files": 6,
+   "github_issue": {
+    "number": 16,
+    "id": 5852016865,
+    "url": "https://github.com/1123786563/OpenBot/issues/16"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T10] run 终结语义与 basic 远程路径能力标记",
+   "blocked_by_issues": [
+    15
+   ],
+   "size": "~6 files / 单 agent（`copilot.ts` 争用点，与 T14 串行）"
+  },
+  {
+   "id": "T11",
+   "title": "创建者只读查询接口",
+   "blocked_by": [
+    "T01",
+    "T07",
+    "T10"
+   ],
+   "covers": [
+    "A2",
+    "A5",
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "owned": "`server/src/ai-observability/reader.ts`、`server/src/ai-observability/routes/reader-routes.ts`、`server/tests/opik-reader.test.ts`、`server/tests/opik-routes.test.ts`",
+   "handoff": "只读查询 REST 契约（请求/响应/错误语义/游标）",
+   "delivers": "创建者按当前管理权查询自己 Bot 的运行列表与安全详情；public 聊天权、伪造归属、猜测 ID、跨 scope 游标不能扩大访问；移交或撤权后历史、分页与缓存立即不可读。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 17,
+    "id": 5852017399,
+    "url": "https://github.com/1123786563/OpenBot/issues/17"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T11] 创建者只读查询接口",
+   "blocked_by_issues": [
+    7,
+    13,
+    16
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T12",
+   "title": "运行列表页",
+   "blocked_by": [
+    "T02",
+    "T11"
+   ],
+   "covers": [
+    "A2",
+    "A5",
+    "A6",
+    "A10"
+   ],
+   "owned": "`app/src/routes/_authed/_app/bots.$agentId.runs.tsx`、`app/src/components/ai-observability/run-list.tsx`、`app/src/components/ai-observability/availability.tsx`、`app/src/lib/ai-observability/types.ts`、`app/src/lib/ai-observability/queries.ts`、`app/src/components/ai-observability/run-views.test.tsx`、`app/src/locales/en/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-runs.json`",
+   "handoff": "列表组件与查询 hook 契约",
+   "delivers": "创建者在 Bot 页面筛选并查看运行列表，看到真实状态、耗时与能力标记；覆盖空、禁用、无权限、同步中与上游不可用状态；键盘与窄屏可用。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 18,
+    "id": 5852017996,
+    "url": "https://github.com/1123786563/OpenBot/issues/18"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T12] 创建者运行列表页",
+   "blocked_by_issues": [
+    8,
+    17
+   ],
+   "size": "~5 files / 单 agent"
+  },
+  {
+   "id": "T13",
+   "title": "运行详情页与可用性状态",
+   "blocked_by": [
+    "T12"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6"
+   ],
+   "owned": "`app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx`、`app/src/components/ai-observability/run-detail.tsx`、`app/src/components/bot-profile/manage.tsx`、`app/src/locales/en/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/components/ai-observability/run-views.test.tsx`",
+   "handoff": "详情页组件契约（步骤树在 T18 扩展同一组件）",
+   "delivers": "创建者查看单次运行的安全详情：实际状态与耗时、脱敏内容、版本引用、provider usage 或明确的 unavailable；恶意正文只作为文本渲染。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 19,
+    "id": 5852018595,
+    "url": "https://github.com/1123786563/OpenBot/issues/19"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T13] 创建者运行详情页与可用性状态",
+   "blocked_by_issues": [
+    18
+   ],
+   "size": "~5 files / 单 agent"
+  },
+  {
+   "id": "T14",
+   "title": "内置执行的模型调用记录",
+   "blocked_by": [
+    "T05",
+    "T10"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4",
+    "A8"
+   ],
+   "owned": "`server/src/ai-observability/model.ts`、`server/src/copilot.ts`、`server/tests/opik-model.test.ts`",
+   "handoff": "模型 span 记录接口 + usage 缺失语义",
+   "delivers": "内置路径的模型调用带实际 usage 或明确 unavailable；不重复调用 provider、不改变已有 metered finish 与 Settlement 顺序、不重复计算 usage；拒绝或结算失败不是成功 span。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 20,
+    "id": 5852019273,
+    "url": "https://github.com/1123786563/OpenBot/issues/20"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T14] 内置执行的模型调用记录",
+   "blocked_by_issues": [
+    11,
+    16
+   ],
+   "size": "~3 files / 单 agent（`copilot.ts` 争用点，在 T10 之后）"
+  },
+  {
+   "id": "T15",
+   "title": "工具提议 vs 真实执行与检索步骤",
+   "blocked_by": [
+    "T14"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A4"
+   ],
+   "owned": "`server/src/ai-observability/retrieval.ts`、`server/src/ai-observability/steps.ts`、`server/src/knowledge/middleware.ts`、`server/tests/opik-step.test.ts`",
+   "handoff": "步骤类型枚举与「提议/执行/回执缺失」判定",
+   "delivers": "工具提议、真实 execute 与缺少回执三者分开；未知浏览器执行不显示成功；检索步骤与片段可定位且无秘密 canary。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 21,
+    "id": 5852019970,
+    "url": "https://github.com/1123786563/OpenBot/issues/21"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T15] 工具提议 vs 真实执行与检索步骤",
+   "blocked_by_issues": [
+    20
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T16",
+   "title": "LangGraph callback 接入同一受治理 OTel 路径",
+   "blocked_by": [
+    "T14"
+   ],
+   "covers": [
+    "A2",
+    "A4",
+    "A13"
+   ],
+   "owned": "`agent-langgraph/src/index.ts`、`agent-langgraph/package.json`、`agent-langgraph/bun.lock`、`agent-langgraph/tests/opik-tracing.test.ts`、`server/src/ai-observability/langgraph.ts`",
+   "handoff": "LangGraph 侧 tracing 接入方式与版本约束",
+   "delivers": "默认 LangGraph 路径的框架 callback 进入同一受治理路径，不另开未处理的自动上传；输入输出、错误与日志无 canary。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 22,
+    "id": 5852020743,
+    "url": "https://github.com/1123786563/OpenBot/issues/22"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T16] LangGraph callback 接入同一受治理 OTel 路径",
+   "blocked_by_issues": [
+    20
+   ],
+   "size": "~5 files / 单 agent（独立 Go/TS 模块边界内，可与 T15 并行）"
+  },
+  {
+   "id": "T17",
+   "title": "跨服务与动态进程上下文传播与 ID 映射",
+   "blocked_by": [
+    "T16"
+   ],
+   "covers": [
+    "A2",
+    "A13"
+   ],
+   "owned": "`supervisor/src/environment.ts`、`supervisor/tests/environment.test.ts`、`shared/ai-trace.ts`、`server/tests/opik-propagation.test.ts`",
+   "handoff": "传播环境变量约定 + ID 映射表位置",
+   "delivers": "宿主、容器与支持动态创建的进程真实传播 W3C 上下文；OTel 与 Opik 标识使用显式映射而不假定相等；父子关系在真实实例可验证。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 23,
+    "id": 5852021309,
+    "url": "https://github.com/1123786563/OpenBot/issues/23"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T17] 跨服务与动态进程上下文传播与 ID 映射",
+   "blocked_by_issues": [
+    22
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T18",
+   "title": "详情页步骤树",
+   "blocked_by": [
+    "T13",
+    "T15",
+    "T17"
+   ],
+   "covers": [
+    "A2",
+    "A3",
+    "A5"
+   ],
+   "owned": "`app/src/components/ai-observability/step-tree.tsx`、`app/src/components/ai-observability/run-detail.tsx`、`app/src/lib/ai-observability/steps.ts`、`app/src/locales/en/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/components/ai-observability/run-views.test.tsx`",
+   "handoff": "步骤树组件与只读步骤查询契约",
+   "delivers": "创建者在既有详情页展开可信步骤树，定位具体模型、工具与检索操作，并关联跨服务过程；basic 路径不显示不存在的内部步骤。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 24,
+    "id": 5852021818,
+    "url": "https://github.com/1123786563/OpenBot/issues/24"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T18] 运行详情页步骤树",
+   "blocked_by_issues": [
+    19,
+    21,
+    23
+   ],
+   "size": "~5 files / 单 agent"
+  },
+  {
+   "id": "T19",
+   "title": "数据集 schema 与不可变版本冻结",
+   "blocked_by": [
+    "T07",
+    "T11"
+   ],
+   "covers": [
+    "A4",
+    "A7",
+    "A11",
+    "A12"
+   ],
+   "owned": "`server/drizzle/00NN_opik_datasets.sql` + snapshot/journal、`server/src/db/schema/ai-observability.ts`、`server/src/ai-observability/evaluation/contracts.ts`、`server/src/ai-observability/evaluation/datasets.ts`、`server/tests/opik-datasets.test.ts`、`server/tests/opik-datasets.integration.test.ts`",
+   "handoff": "数据集版本读取 API + 冻结字段清单",
+   "delivers": "版本冻结安全输入、参考结果、工具 fixture、hash、策略版本、来源与上游定位；候选与后续修改不改变已保存版本；上游与本地引用部分成功可恢复或清理，pending/syncing 不冒充成功。",
+   "estimated_files": 6,
+   "github_issue": {
+    "number": 25,
+    "id": 5852022587,
+    "url": "https://github.com/1123786563/OpenBot/issues/25"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T19] 数据集 schema 与不可变版本冻结",
+   "blocked_by_issues": [
+    13,
+    17
+   ],
+   "size": "~6 files / 单 agent"
+  },
+  {
+   "id": "T20",
+   "title": "案例审查与保存接口",
+   "blocked_by": [
+    "T05",
+    "T19"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A6"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/cases.ts`、`server/src/ai-observability/routes/dataset-routes.ts`、`server/tests/opik-dataset-cases.test.ts`",
+   "handoff": "案例审查/保存 REST 契约 + 脱敏语义限制说明",
+   "delivers": "候选只来自有权访问的安全运行；仅指标的记录不能被自动伪造为文本样本，必须提供审查后的合成或脱敏案例；拒绝原始附件与任意生产工具；跨 Bot 复用需显式授权复制。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 26,
+    "id": 5852023086,
+    "url": "https://github.com/1123786563/OpenBot/issues/26"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T20] 案例审查与保存接口",
+   "blocked_by_issues": [
+    11,
+    25
+   ],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T21",
+   "title": "数据集页面（审查 / 保存 / 版本）",
+   "blocked_by": [
+    "T02",
+    "T20"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A7"
+   ],
+   "owned": "`app/src/components/ai-observability/dataset-editor.tsx`、`app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx`、`app/src/lib/ai-observability/evaluations.ts`、`app/src/locales/en/ai-observability-datasets.json`、`app/src/locales/zh-CN/ai-observability-datasets.json`、`app/src/components/ai-observability/evaluation-views.test.tsx`",
+   "handoff": "数据集页面组件与查询 hook 契约",
+   "delivers": "创建者在页面检查候选输入、参考结果与工具 fixture，看到脱敏语义提示后保存，并查看冻结版本历史；覆盖空、故障、同步中与审查提示。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 27,
+    "id": 5852023619,
+    "url": "https://github.com/1123786563/OpenBot/issues/27"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T21] 数据集页面（审查 / 保存 / 版本）",
+   "blocked_by_issues": [
+    8,
+    26
+   ],
+   "size": "~5 files / 单 agent"
+  },
+  {
+   "id": "T22",
+   "title": "实验 schema 与冻结配置幂等提交",
+   "blocked_by": [
+    "T19"
+   ],
+   "covers": [
+    "A7",
+    "A9"
+   ],
+   "owned": "`server/drizzle/00NN_opik_evaluations.sql` + snapshot/journal、`server/src/ai-observability/evaluation/contracts.ts`、`server/src/ai-observability/evaluation/experiments.ts`、`server/tests/opik-experiments.test.ts`",
+   "handoff": "实验记录结构 + 幂等键约定",
+   "delivers": "提交冻结数据集、Bot 配置、Prompt、模型参数、fixture 与评分器版本；幂等重试不产生第二个实验。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 28,
+    "id": 5852024147,
+    "url": "https://github.com/1123786563/OpenBot/issues/28"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T22] 实验 schema 与冻结配置幂等提交",
+   "blocked_by_issues": [
+    25
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T23",
+   "title": "隔离执行与生产写工具拒绝",
+   "blocked_by": [
+    "T10",
+    "T14",
+    "T22"
+   ],
+   "covers": [
+    "A8",
+    "A10"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/execution.ts`、`server/src/copilot.ts`、`server/tests/opik-evaluation-execution.test.ts`",
+   "handoff": "隔离执行入口 + 工具白名单/拒绝策略",
+   "delivers": "隔离 thread 与测试工具复用公共执行路径，不写生产会话、memory、learning 或业务数据；未知生产写工具被拒绝。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 29,
+    "id": 5852024661,
+    "url": "https://github.com/1123786563/OpenBot/issues/29"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T23] 隔离执行与生产写工具拒绝",
+   "blocked_by_issues": [
+    16,
+    20,
+    28
+   ],
+   "size": "~3 files / 单 agent（`copilot.ts` 争用点，在 T14 之后）"
+  },
+  {
+   "id": "T24",
+   "title": "持久任务编排：有界并发、每样本重授权、取消与 lease",
+   "blocked_by": [
+    "T23"
+   ],
+   "covers": [
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/jobs.ts`、`server/src/ai-observability/evaluation/worker.ts`、`server/src/index.ts`、`server/tests/opik-evaluation-jobs.test.ts`",
+   "handoff": "任务状态机 + 取消/lease 语义",
+   "delivers": "复用现有 WorkQueue 的有界并发持久任务；每个样本执行前重新授权；取消停止新调度；结果未知或 lease 恢复不自动重复调用或扣费。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 30,
+    "id": 5852025128,
+    "url": "https://github.com/1123786563/OpenBot/issues/30"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T24] 持久任务编排：有界并发、每样本重授权、取消与 lease",
+   "blocked_by_issues": [
+    29
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T25",
+   "title": "评测调用的计费准入与结算接线",
+   "blocked_by": [
+    "T24"
+   ],
+   "covers": [
+    "A8"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/billing.ts`、`server/tests/opik-evaluation-billing.test.ts`",
+   "handoff": "评测侧计费准入接口 + 预算不足时的调用前拒绝语义",
+   "delivers": "被测调用遵守适用 Credit Gate、Admission、Reservation/Settlement；缺失 usage 不当 0；计费台账保持权威。",
+   "estimated_files": 2,
+   "github_issue": {
+    "number": 31,
+    "id": 5852025577,
+    "url": "https://github.com/1123786563/OpenBot/issues/31"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T25] 评测调用的计费准入与结算接线",
+   "blocked_by_issues": [
+    30
+   ],
+   "size": "~2 files / 单 agent"
+  },
+  {
+   "id": "T26",
+   "title": "规则评分器",
+   "blocked_by": [
+    "T22"
+   ],
+   "covers": [
+    "A7",
+    "A9"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/scorers.ts`、`server/tests/opik-scorers-rules.test.ts`",
+   "handoff": "`Scorer` 接口 + 规则版本化约定",
+   "delivers": "确定性检查输出格式、必需字段与工具名称/参数；结果与规则版本可追溯到安全运行；缺失评分不伪造为 0。",
+   "estimated_files": 2,
+   "github_issue": {
+    "number": 32,
+    "id": 5852026030,
+    "url": "https://github.com/1123786563/OpenBot/issues/32"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T26] 规则评分器",
+   "blocked_by_issues": [
+    28
+   ],
+   "size": "~2 files / 单 agent"
+  },
+  {
+   "id": "T27",
+   "title": "受控模型 Judge 评分",
+   "blocked_by": [
+    "T25",
+    "T26"
+   ],
+   "covers": [
+    "A4",
+    "A7",
+    "A8"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/judge.ts`、`server/tests/opik-scorers-judge.test.ts`",
+   "handoff": "Judge 准入清单 + 理由安全投影",
+   "delivers": "仅允许显式批准的模型入口、凭证与 rubric/scorer 版本；不接受任意 provider 地址，不自动使用 Opik 默认模型；预算不足或不受控时调用前拒绝而规则评测仍可用；只有已审查安全样本送给 Judge，理由经安全投影。",
+   "estimated_files": 2,
+   "github_issue": {
+    "number": 33,
+    "id": 5852026541,
+    "url": "https://github.com/1123786563/OpenBot/issues/33"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T27] 受控模型 Judge 评分",
+   "blocked_by_issues": [
+    31,
+    32
+   ],
+   "size": "~2 files / 单 agent"
+  },
+  {
+   "id": "T28",
+   "title": "实验结果查询接口与失败分类",
+   "blocked_by": [
+    "T26"
+   ],
+   "covers": [
+    "A5",
+    "A7",
+    "A9"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/results.ts`、`server/src/ai-observability/routes/evaluation-routes.ts`、`server/tests/opik-evaluation-results.test.ts`",
+   "handoff": "结果查询 REST 契约 + 失败分类枚举",
+   "delivers": "逐样本分数、理由、版本、usage 与结果查询；执行失败、评分失败、取消、待协调与同步故障分别展示，平均分不掩盖缺失或失败样本。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 34,
+    "id": 5852027031,
+    "url": "https://github.com/1123786563/OpenBot/issues/34"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T28] 实验结果查询接口与失败分类",
+   "blocked_by_issues": [
+    32
+   ],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T29",
+   "title": "实验对比接口与兼容性判定",
+   "blocked_by": [
+    "T28"
+   ],
+   "covers": [
+    "A9"
+   ],
+   "owned": "`server/src/ai-observability/evaluation/comparison.ts`、`server/tests/opik-comparison.test.ts`",
+   "handoff": "对比 REST 契约 + 兼容性判定规则",
+   "delivers": "仅对冻结样本集与评分定义兼容的实验给出结论，否则明确解释不兼容；输出有效样本数、逐案例分数、耗时、实际 usage、退化案例与回链安全运行。",
+   "estimated_files": 2,
+   "github_issue": {
+    "number": 35,
+    "id": 5852027487,
+    "url": "https://github.com/1123786563/OpenBot/issues/35"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T29] 实验对比接口与兼容性判定",
+   "blocked_by_issues": [
+    34
+   ],
+   "size": "~2 files / 单 agent"
+  },
+  {
+   "id": "T30",
+   "title": "实验页面（提交 / 逐样本结果 / 取消）",
+   "blocked_by": [
+    "T21",
+    "T28"
+   ],
+   "covers": [
+    "A5",
+    "A7",
+    "A8"
+   ],
+   "owned": "`app/src/components/ai-observability/experiment-list.tsx`、`app/src/components/ai-observability/experiment-detail.tsx`、`app/src/lib/ai-observability/evaluations.ts`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/components/ai-observability/evaluation-views.test.tsx`",
+   "handoff": "实验页面组件契约",
+   "delivers": "创建者在双语可访问页面提交实验、查看逐样本分数与理由、区分失败类型并取消；Judge 故障不混入成功平均分。",
+   "estimated_files": 5,
+   "github_issue": {
+    "number": 36,
+    "id": 5852027994,
+    "url": "https://github.com/1123786563/OpenBot/issues/36"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T30] 实验页面（提交 / 逐样本结果 / 取消）",
+   "blocked_by_issues": [
+    27,
+    34
+   ],
+   "size": "~5 files / 单 agent"
+  },
+  {
+   "id": "T31",
+   "title": "对比页面",
+   "blocked_by": [
+    "T29",
+    "T30"
+   ],
+   "covers": [
+    "A9"
+   ],
+   "owned": "`app/src/components/ai-observability/experiment-comparison.tsx`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/components/ai-observability/evaluation-views.test.tsx`",
+   "handoff": "对比页面组件契约",
+   "delivers": "创建者比较两次实验的配置差异、有效样本与退化案例，并从退化案例回到相关安全执行详情；不兼容时不声称质量赢家。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 37,
+    "id": 5852028771,
+    "url": "https://github.com/1123786563/OpenBot/issues/37"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T31] 实验对比页面",
+   "blocked_by_issues": [
+    35,
+    36
+   ],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T32",
+   "title": "采集入口认证与控制台/私有 API 保护",
+   "blocked_by": [
+    "T09"
+   ],
+   "covers": [
+    "A4",
+    "A5",
+    "A13"
+   ],
+   "owned": "`server/src/ai-observability/console-auth.ts`、`docker/compose/opik.yml`、`docker/opik/collector.yaml`、`server/tests/opik-console-auth.test.ts`",
+   "handoff": "控制面访问规则 + 内部生产者凭据发放方式",
+   "delivers": "采集入口要求内部生产者认证；整个 Opik 控制面（含私有 API）受保护，私有 API 不能绕过应用角色检查；使用现有身份系统而非第二套 Opik 用户库；普通用户不能读取连接配置、管理诊断或凭据。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 38,
+    "id": 5852029243,
+    "url": "https://github.com/1123786563/OpenBot/issues/38"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T32] 采集入口认证与控制台/私有 API 保护",
+   "blocked_by_issues": [
+    15
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T33",
+   "title": "管理员范围汇总与采集故障排查",
+   "blocked_by": [
+    "T11",
+    "T32"
+   ],
+   "covers": [
+    "A5",
+    "A6",
+    "A10",
+    "A12"
+   ],
+   "owned": "`server/src/ai-observability/admin-routes.ts`、`server/src/ai-observability/admin-summary.ts`、`server/tests/opik-admin-routes.test.ts`",
+   "handoff": "管理汇总 REST 契约 + 故障分类枚举",
+   "delivers": "管理员按授权范围汇总 Bot 运行与评测；筛选故障、丢弃、延迟与未绑定记录；区分业务失败、采集不可用与尚未具备的能力；控制台访问遵守管理员范围。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 39,
+    "id": 5852029820,
+    "url": "https://github.com/1123786563/OpenBot/issues/39"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T33] 管理员范围汇总与采集故障排查",
+   "blocked_by_issues": [
+    17,
+    38
+   ],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T34",
+   "title": "有界异步导出与下载即时撤权",
+   "blocked_by": [
+    "T05",
+    "T11"
+   ],
+   "covers": [
+    "A4",
+    "A6",
+    "A10",
+    "A11"
+   ],
+   "owned": "`server/src/ai-observability/exports.ts`、`server/src/ai-observability/routes/export-routes.ts`、`server/tests/opik-exports.test.ts`",
+   "handoff": "导出任务与下载鉴权契约",
+   "delivers": "有权用户请求运行/实验的机器可读导出并查看状态；导出不能改变正常 Agent 结果；无法建立可信绑定时不导出该 run 的业务内容；每次下载重新校验当前权限，移交或撤权后旧链接立即失效。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 40,
+    "id": 5852030254,
+    "url": "https://github.com/1123786563/OpenBot/issues/40"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T34] 有界异步导出与下载即时撤权",
+   "blocked_by_issues": [
+    11,
+    17
+   ],
+   "size": "~3 files / 单 agent"
+  },
+  {
+   "id": "T35",
+   "title": "保留期与真实删除验证",
+   "blocked_by": [
+    "T19",
+    "T22",
+    "T34"
+   ],
+   "covers": [
+    "A6",
+    "A11",
+    "A12"
+   ],
+   "owned": "`server/src/ai-observability/lifecycle.ts`、`server/tests/opik-lifecycle.test.ts`、`server/tests/opik-lifecycle.integration.test.ts`、`docs/opik.md`",
+   "handoff": "清理状态机 + 删除证据格式",
+   "delivers": "默认 7 天 trace、30 天数据集/实验且可运维调整；到期先撤销可见性、停止受影响任务、失效缓存与下载，再按可信定位清理上游与导出；上游失败保留定位与 pending/failed，仅验证实际查不到后才报告完成；不跨项目或范围影响其他 Bot。",
+   "estimated_files": 4,
+   "github_issue": {
+    "number": 41,
+    "id": 5852030820,
+    "url": "https://github.com/1123786563/OpenBot/issues/41"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T35] 保留期与真实删除验证",
+   "blocked_by_issues": [
+    25,
+    28,
+    40
+   ],
+   "size": "~4 files / 单 agent"
+  },
+  {
+   "id": "T36",
+   "title": "管理员汇总页面与创建者导出状态页",
+   "blocked_by": [
+    "T13",
+    "T33",
+    "T34"
+   ],
+   "covers": [
+    "A5",
+    "A6",
+    "A10",
+    "A11"
+   ],
+   "owned": "`app/src/routes/_authed/admin/ai-observability.tsx`、`app/src/components/ai-observability/admin-overview.tsx`、`app/src/components/ai-observability/export-status.tsx`、`app/src/lib/ai-observability/admin.ts`、`app/src/components/admin/admin-sidebar.tsx`、`app/src/components/ai-observability/admin-views.test.tsx`、`app/src/locales/en/ai-observability-admin.json`、`app/src/locales/zh-CN/ai-observability-admin.json`",
+   "handoff": "管理页面组件契约",
+   "delivers": "管理员在后台查看范围内汇总、健康与故障排查；创建者查看导出状态与下载；权限变化即时反映在页面上。",
+   "estimated_files": 7,
+   "github_issue": {
+    "number": 42,
+    "id": 5852031423,
+    "url": "https://github.com/1123786563/OpenBot/issues/42"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T36] 管理员汇总页面与创建者导出状态页",
+   "blocked_by_issues": [
+    19,
+    39,
+    40
+   ],
+   "size": "~7 files / 单 agent"
+  },
+  {
+   "id": "T37",
+   "title": "端到端验收与真实实例证据闭环",
+   "blocked_by": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15",
+    "T16",
+    "T17",
+    "T18",
+    "T19",
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T24",
+    "T25",
+    "T26",
+    "T27",
+    "T28",
+    "T29",
+    "T30",
+    "T31",
+    "T32",
+    "T33",
+    "T34",
+    "T35",
+    "T36"
+   ],
+   "covers": [
+    "A1",
+    "A13"
+   ],
+   "owned": "`server/scripts/opik-acceptance.ts`、`tests/e2e/opik-observability.e2e.ts`、`docs/plans/evidence/2026-10-14-opik/final/`",
+   "handoff": "验收证据索引",
+   "delivers": "对真实自托管 Opik 跑通采集、查询、评测、ID 映射与删除的全范围验收，汇总 13 条 A 条目的证据；完成独立 Spec/代码质量 review 与全范围 OCR，无有效 critical/high/medium findings。",
+   "estimated_files": 3,
+   "github_issue": {
+    "number": 43,
+    "id": 5852032247,
+    "url": "https://github.com/1123786563/OpenBot/issues/43"
+   },
+   "status": "published_ready_for_agent",
+   "issue_title": "[Opik T37] 端到端验收与真实实例证据闭环",
+   "blocked_by_issues": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42
+   ],
+   "size": "~3 files / 单 agent（协调性质，不含新功能）"
+  }
+ ],
+ "published_at": "2026-10-14T17:14:25Z",
+ "issue_number_range": [
+  7,
+  43
+ ],
+ "native_subissues": 37,
+ "native_blocked_by_edges": 88,
+ "verification": "publication-verification-v2.json (PASS, 0 problems)",
+ "ticket_orphans_no_dependents": []
+}

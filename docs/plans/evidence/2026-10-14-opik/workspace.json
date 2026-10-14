@@ -1,0 +1,21 @@
+{
+  "recorded_at": "2026-10-14T15:13:33.682233+00:00",
+  "source_workspace": "/Users/wuyongjun/trea/OpenBot",
+  "workspace": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration",
+  "worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration",
+  "branch": "1123786563/opik-integration",
+  "base": "7bfc18f28152a3fb2a3fa014ae33a61025246f1b",
+  "spec": "docs/specs/2026-10-14-opik-integration-design.md",
+  "spec_sha256": "6ed5e9ce9ae427acc904ed31a0e402d50d6b10c15f932bd0d64230e93bb56c97",
+  "copied_context_sha256": "c02c34b9a02b3a64379d97a69c6883129b5c7acbee81900802d186edb8169aa8",
+  "context_note": "Source CONTEXT snapshot is evidence only; worktree root CONTEXT remains the BASE version. Bifrost design is in progress, not an execution dependency.",
+  "parent_status": "M CONTEXT.md\n M tests/e2e/bot-chat.e2e.ts\n?? docs/adr/0002-per-user-bot-model-access.md\n?? docs/specs/2026-10-14-bifrost-integration-design.md\n?? docs/specs/2026-10-14-opik-integration-design.md",
+  "workspace_status_before_plan": "?? docs/plans/evidence/\n?? docs/specs/2026-10-14-opik-integration-design.md",
+  "parent_baseline_file_hashes": {
+    "CONTEXT.md": "c02c34b9a02b3a64379d97a69c6883129b5c7acbee81900802d186edb8169aa8",
+    "tests/e2e/bot-chat.e2e.ts": "7d557a23c75e332d70c23e9fa132e4a9de54c58f51f472e4feee8c008dae6cb0",
+    "docs/specs/2026-10-14-bifrost-integration-design.md": "d202325e0bdb3633f6f5a3d5a0c1d6fce291259d2ebdd5c663c341d2b14d36bc"
+  },
+  "commit_policy": "uncommitted checkpoints; no local commit/push/merge authorization",
+  "stage": "plan-authoring; implementation not started"
+}
