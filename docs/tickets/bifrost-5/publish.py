@@ -142,16 +142,23 @@ def phase_create(m, args):
             url = out.strip().splitlines()[-1]
             number = int(url.rstrip("/").split("/")[-1])
             t["issue_number"], t["issue_url"] = number, url
-            node = ""
+            node, dbid = "", None
             ok2, out2, _ = gh(["issue", "view", str(number), "--repo", REPO, "--json", "id"], dry=False)
             if ok2:
                 try:
                     node = json.loads(out2)["id"]
                 except Exception:
                     node = ""
+            ok3, out3, _ = gh(["api", f"repos/{REPO}/issues/{number}", "--jq", ".id"], dry=False)
+            if ok3:
+                try:
+                    dbid = int(out3.strip())
+                except Exception:
+                    dbid = None
             t["issue_node_id"] = node
+            t["issue_db_id"] = dbid
             save(m)
-            log({"action": "create", "ticket": tid, "ok": True, "note": f"#{number} {url}"})
+            log({"action": "create", "ticket": tid, "ok": True, "note": f"#{number} dbid={dbid} {url}"})
         elif args.dry_run:
             log({"action": "create", "ticket": tid, "ok": "dry", "note": title(t)})
         else:
@@ -191,23 +198,65 @@ def phase_bodies(m, args):
     return m
 
 
-def parent_node_id(m):
-    ok, out, err = gh(["issue", "view", str(PARENT_NUMBER), "--repo", REPO, "--json", "id"])
+def parent_db_id(m):
+    ok, out, err = gh(["api", f"repos/{REPO}/issues/{PARENT_NUMBER}", "--jq", ".id"])
     if not ok:
         log({"action": "parent-lookup", "ok": False, "note": err[:200]})
         return None
     try:
-        return json.loads(out)["id"]
+        return int(out.strip())
     except Exception:
         return None
 
 
+DEP_SHAPE = {"mode": None}  # cached: 'issue_id' | 'issue_number' | None(unsupported)
+
+
+def ensure_db_id(t):
+    if t.get("issue_db_id"):
+        return t["issue_db_id"]
+    ok, out, _ = gh(["api", f"repos/{REPO}/issues/{t['issue_number']}", "--jq", ".id"])
+    if ok:
+        try:
+            t["issue_db_id"] = int(out.strip())
+        except Exception:
+            t["issue_db_id"] = None
+    return t.get("issue_db_id")
+
+
+def set_blocked_by(number, dep_ticket):
+    """Try the supported request shape once, then reuse it."""
+    if DEP_SHAPE["mode"] is None:
+        ok, out, err = gh(["api", "-X", "GET", f"repos/{REPO}/issues/{number}/dependencies/blocked_by"])
+        if not ok:
+            DEP_SHAPE["mode"] = "unsupported"
+            log({"action": "native-probe", "ok": False, "note": err[:200]})
+            return False, "unsupported"
+        log({"action": "native-probe", "ok": True, "note": "GET supported"})
+    dep_num = dep_ticket.get("issue_number")
+    dep_db = ensure_db_id(dep_ticket)
+    attempts = []
+    if DEP_SHAPE["mode"] in (None, "issue_id") and dep_db:
+        attempts.append(("issue_id", ["-F", f"issue_id={dep_db}"]))
+    if DEP_SHAPE["mode"] in (None, "issue_number") and dep_num:
+        attempts.append(("issue_number", ["-F", f"issue_number={dep_num}"]))
+    if DEP_SHAPE["mode"] == "unsupported":
+        return False, "unsupported"
+    last = ""
+    for mode, field in attempts:
+        ok, out, err = gh(["api", "-X", "POST", f"repos/{REPO}/issues/{number}/dependencies/blocked_by"] + field)
+        if ok:
+            DEP_SHAPE["mode"] = mode
+            return True, mode
+        last = err[:200]
+    return False, last
+
+
 def phase_relations(m, args):
-    pid = None if args.dry_run else parent_node_id(m)
+    pid = None if args.dry_run else parent_db_id(m)
     if not args.dry_run and not pid:
-        print("relations: cannot resolve parent node id; aborting phase")
+        print("relations: cannot resolve parent database id; aborting phase")
         return m
-    native = None
     linked = deps = 0
     groups = select_groups(m, args.groups)
     for t in m["tickets"]:
@@ -218,41 +267,37 @@ def phase_relations(m, args):
             continue
         if t["group"] not in groups:
             continue
-        # sub-issue link to parent
+        # sub-issue link to parent (REST expects the integer database id)
         if not t.get("sub_issue_linked"):
+            dbid = ensure_db_id(t)
             ok, out, err = gh(["api", "-X", "POST", f"repos/{REPO}/issues/{PARENT_NUMBER}/sub_issues",
-                               "-f", f"sub_issue_id={t.get('issue_node_id','')}"], dry=args.dry_run)
+                               "-F", f"sub_issue_id={dbid}"], dry=args.dry_run)
             if ok or args.dry_run:
                 t["sub_issue_linked"] = True
                 linked += 1
             else:
-                log({"action": "sub-issue", "ticket": t["id"], "ok": False, "note": err[:200]})
+                log({"action": "sub-issue", "ticket": t["id"], "ok": False, "note": err[:220]})
             if not args.dry_run:
                 save(m)
             time.sleep(0.5)
         # native blocked_by
         for d in t["depends_on"]:
             dt = next(x for x in m["tickets"] if x["id"] == d)
-            if not dt.get("issue_node_id"):
+            if not dt.get("issue_number") and not dt.get("issue_db_id"):
                 continue
             key = f"dep_{d}"
             if t.get("_linked", {}).get(key):
                 continue
-            if native is None and not args.dry_run:
-                probe_ok, _, probe_err = gh(["api", "-X", "GET", f"repos/{REPO}/issues/{n}/dependencies/blocked_by"])
-                native = probe_ok
-                log({"action": "native-probe", "ok": native, "note": "" if native else probe_err[:200]})
-            ok, out, err = gh(["api", "-X", "POST", f"repos/{REPO}/issues/{n}/dependencies/blocked_by",
-                               "-f", f"issue_id={dt['issue_node_id']}"], dry=args.dry_run)
-            if ok or args.dry_run:
+            ok, info = (True, "dry") if args.dry_run else set_blocked_by(n, dt)
+            if ok:
                 t.setdefault("_linked", {})[key] = True
                 deps += 1
             else:
-                log({"action": "blocked_by", "ticket": t["id"], "ok": False, "note": f"{d}: {err[:160]}"})
+                log({"action": "blocked_by", "ticket": t["id"], "ok": False, "note": f"{d}: {info}"})
             if not args.dry_run:
                 save(m)
             time.sleep(0.4)
-    print(f"relations: sub-issues linked {linked}, blocked_by edges set {deps}, native={native}")
+    print(f"relations: sub-issues linked {linked}, blocked_by edges set {deps}, native={DEP_SHAPE['mode']}")
     return m
 
 
