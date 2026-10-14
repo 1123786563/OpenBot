@@ -283,6 +283,17 @@ describe("OpenBot database schema", () => {
         hasDefault: false,
         primary: false,
       },
+      /*
+       * The OpenMuse provisioning key (I02): one private template Bot per
+       * owner per key, enforced by a unique index. Nullable, so every
+       * pre-existing profile row stays outside the template world.
+       */
+      {
+        name: "template_key",
+        notNull: false,
+        hasDefault: false,
+        primary: false,
+      },
       {
         name: "deleted_at",
         notNull: false,
@@ -408,6 +419,8 @@ describe("OpenBot database schema", () => {
         ),
         unique: index.config.unique,
         method: index.config.method,
+        // Partial or whole: what the migration's WHERE clause must match.
+        partial: index.config.where !== undefined,
       })),
     ).toEqual([
       {
@@ -415,6 +428,19 @@ describe("OpenBot database schema", () => {
         columns: ["visibility", "deleted_at"],
         unique: false,
         method: "btree",
+        partial: false,
+      },
+      /*
+       * The I02 provisioning arbiter: one template Bot per owner per key —
+       * among live rows only, so a soft-deleted Bot's tombstone never blocks
+       * re-provisioning (0096).
+       */
+      {
+        name: "agent_profiles_owner_template_live_uq",
+        columns: ["owner_user_id", "template_key"],
+        unique: true,
+        method: "btree",
+        partial: true,
       },
     ]);
   });
@@ -437,6 +463,26 @@ describe("OpenBot database schema", () => {
     );
     expect(migration).toContain(
       `ALTER TABLE "agent_profiles" ADD COLUMN "callback_token_issued_at" timestamp with time zone;`,
+    );
+  });
+
+  /*
+   * 0076 shipped the template unique index whole, so a soft-deleted Bot's
+   * tombstone row held the (owner, key) pair forever and re-provisioning hit
+   * the tombstone with a permanent failure. 0096 drops it and recreates the
+   * arbiter as partial — live rows only, under a name that says so — beside
+   * the store-side revive, belt and braces.
+   */
+  test("recreates the template unique index as partial in its own migration", async () => {
+    const migration = await readFile(
+      new URL("../drizzle/0107_owner_template_partial_uq.sql", import.meta.url),
+      "utf8",
+    );
+    expect(migration).toContain(
+      `DROP INDEX IF EXISTS "agent_profiles_owner_template_uq";`,
+    );
+    expect(migration).toContain(
+      `CREATE UNIQUE INDEX "agent_profiles_owner_template_live_uq" ON "agent_profiles" USING btree ("owner_user_id","template_key") WHERE "agent_profiles"."deleted_at" IS NULL;`,
     );
   });
 

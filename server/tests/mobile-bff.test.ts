@@ -1,10 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { AgentProfile } from "../src/agents/profile-types";
 import type { AgentProfileStore } from "../src/agents/profile-store";
+import type { AgentProfile } from "../src/agents/profile-types";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import type { AgentChannel, ChannelStore } from "../src/channels/routes";
+import {
+  OpenMuseConnectionRefusedError,
+  OpenMuseOwnerDisabledError,
+} from "../src/openmuse-connectors/google-oauth";
+import {
+  OpenMuseFileQuotaError,
+  OpenMuseOwnerDisabledError as FilesOwnerDisabledError,
+} from "../src/openmuse-files/store";
+import { OpenMuseMailVendorError } from "../src/openmuse-mail/client";
 import { createMobileBffActivity } from "../src/mobile-bff/activity";
 import { createMobileBffRoutes } from "../src/mobile-bff/routes";
 import { createMobileBffWorkspace } from "../src/mobile-bff/workspace";
@@ -73,15 +82,21 @@ const channelStore: ChannelStore = {
   async direct(_actor, agentId) {
     return channel({ agentIds: [agentId] });
   },
-  async list() {
-    return {
-      channels: [channel({ lastMessageAt: new Date("2026-10-11T00:00:00Z") })],
-      nextCursor: null,
-    };
+  async list(_actor, query) {
+    return query?.archived
+      ? { channels: [], nextCursor: null }
+      : {
+          channels: [
+            channel({ lastMessageAt: new Date("2026-10-11T00:00:00Z") }),
+          ],
+          nextCursor: null,
+        };
   },
 } as unknown as ChannelStore;
 
-function appFor(overrides: Partial<Parameters<typeof createMobileBffRoutes>[0]> = {}) {
+function appFor(
+  overrides: Partial<Parameters<typeof createMobileBffRoutes>[0]> = {},
+) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.route(
     "/",
@@ -136,6 +151,119 @@ describe("GET /workspace", () => {
     expect(body.agents).toEqual([]);
     expect(body.channels).toEqual([]);
   });
+
+  test("carries archivedAt and lists the archived partition after the active one", async () => {
+    // Both partitions are read for the caller's own actor: the archived page
+    // is as much this person's roster as the active one, never anybody else's.
+    const actors: unknown[] = [];
+    const store = {
+      async list(receivedActor: unknown, query?: { archived?: boolean }) {
+        actors.push([receivedActor, query?.archived ?? false]);
+        return query?.archived
+          ? {
+              channels: [
+                channel({
+                  id: "channel-arch",
+                  archivedAt: new Date("2026-10-12T00:00:00Z"),
+                }),
+              ],
+              nextCursor: null,
+            }
+          : { channels: [channel()], nextCursor: null };
+      },
+    } as unknown as ChannelStore;
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createMobileBffRoutes({
+        requireUser,
+        workspace: createMobileBffWorkspace({ channelStore: store }),
+      }),
+    );
+
+    const response = await app.request("/workspace");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.channels).toEqual([
+      {
+        id: "channel-1",
+        name: "Knowledge",
+        agentIds: ["bot-1"],
+        threadId: "thread-1",
+        lastMessageAt: null,
+        archivedAt: null,
+      },
+      {
+        id: "channel-arch",
+        name: "Knowledge",
+        agentIds: ["bot-1"],
+        threadId: "thread-1",
+        lastMessageAt: null,
+        archivedAt: "2026-10-12T00:00:00.000Z",
+      },
+    ]);
+    expect(actors).toEqual([
+      [actor, false],
+      [actor, true],
+    ]);
+  });
+
+  test("follows the archived partition's cursor instead of dropping it", async () => {
+    // Past the first 100 archived conversations the store answers a page
+    // plus nextCursor: the cold start must walk the pages, or the filing
+    // cabinet's tail is permanently unreachable from this endpoint.
+    const archivedQueries: Array<{ cursor?: string }> = [];
+    const store = {
+      async list(
+        _actor: unknown,
+        query?: { archived?: boolean; cursor?: string },
+      ) {
+        if (!query?.archived) {
+          return { channels: [channel()], nextCursor: null };
+        }
+        if (query.cursor !== undefined)
+          archivedQueries.push({ cursor: query.cursor });
+        return query.cursor === "page-2"
+          ? {
+              channels: [
+                channel({
+                  id: "channel-arch-2",
+                  archivedAt: new Date("2026-10-13T00:00:00Z"),
+                }),
+              ],
+              nextCursor: null,
+            }
+          : {
+              channels: [
+                channel({
+                  id: "channel-arch-1",
+                  archivedAt: new Date("2026-10-12T00:00:00Z"),
+                }),
+              ],
+              nextCursor: "page-2",
+            };
+      },
+    } as unknown as ChannelStore;
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createMobileBffRoutes({
+        requireUser,
+        workspace: createMobileBffWorkspace({ channelStore: store }),
+      }),
+    );
+
+    const response = await app.request("/workspace");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.channels.map((c: { id: string }) => c.id)).toEqual([
+      "channel-1",
+      "channel-arch-1",
+      "channel-arch-2",
+    ]);
+    // The second page was fetched with the first page's cursor.
+    expect(archivedQueries).toEqual([{ cursor: "page-2" }]);
+  });
 });
 
 describe("POST /conversations", () => {
@@ -184,13 +312,17 @@ describe("GET /activity", () => {
             rules: [],
             questions: [],
           }),
-        } as unknown as Parameters<typeof createMobileBffActivity>[0]["approvals"],
+        } as unknown as Parameters<
+          typeof createMobileBffActivity
+        >[0]["approvals"],
         routines: {
           listFor: async () => [
             { id: "r-1", enabled: true },
             { id: "r-2", enabled: false },
           ],
-        } as unknown as Parameters<typeof createMobileBffActivity>[0]["routines"],
+        } as unknown as Parameters<
+          typeof createMobileBffActivity
+        >[0]["routines"],
       }),
     });
     const response = await app.request("/activity");
@@ -204,5 +336,128 @@ describe("GET /activity", () => {
   test("is absent when the deployment has neither half", async () => {
     const response = await appFor().request("/activity");
     expect(response.status).toBe(404);
+  });
+});
+
+/**
+ * Round 3: `route()` merges a sub-app's handlers, not its application-level `onError` — the
+ * files sub-app's deliberate error-to-status contract (409 connection_required, 403 owner
+ * disabled, 502 vendor) died at this mount and everything landed in this file's 503.
+ */
+describe("sub-app error contracts through the BFF mount", () => {
+  function bffWithThrowingRoute(makeError: () => Error) {
+    const files = new Hono<{ Variables: AppVariables }>();
+    files.get("/boom", () => {
+      throw makeError();
+    });
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createMobileBffRoutes({
+        requireUser,
+        workspace: createMobileBffWorkspace({}),
+        openMuseFiles: files,
+      }),
+    );
+    return app;
+  }
+
+  test("a refused connection still answers 409 with code connection_required", async () => {
+    const app = bffWithThrowingRoute(
+      () => new OpenMuseConnectionRefusedError("Connect Gmail first."),
+    );
+    const response = await app.request("/openmuse-files/boom");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Connect Gmail first.",
+      code: "connection_required",
+    });
+  });
+
+  test("a disabled owner still answers 403", async () => {
+    const app = bffWithThrowingRoute(
+      () => new OpenMuseOwnerDisabledError("user-1"),
+    );
+    const response = await app.request("/openmuse-files/boom");
+    expect(response.status).toBe(403);
+  });
+
+  test("the files store's own disabled-owner class — a different class with the same name — still answers 403", async () => {
+    // The mounted sub-apps throw their OWN OpenMuseOwnerDisabledError, not the connectors'
+    // one the BFF imports: an instanceof against either class alone is a dead branch for the
+    // other, so the mount matches the name.
+    const app = bffWithThrowingRoute(() => new FilesOwnerDisabledError());
+    const response = await app.request("/openmuse-files/boom");
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "This owner's files are unavailable.",
+    });
+  });
+
+  test("a vendor failure still answers 502", async () => {
+    const app = bffWithThrowingRoute(
+      () => new OpenMuseMailVendorError("Gmail exploded."),
+    );
+    const response = await app.request("/openmuse-files/boom");
+    expect(response.status).toBe(502);
+  });
+
+  test("a files quota refusal still answers 413 with its stable code, not the mount's 503", async () => {
+    const app = bffWithThrowingRoute(() => new OpenMuseFileQuotaError(1024));
+    const response = await app.request("/openmuse-files/boom");
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({
+      error:
+        "That upload would pass this owner's 1024-byte Files quota. Delete some files first.",
+      code: "openmuse_file_quota_exceeded",
+    });
+  });
+});
+
+describe("the archived partition's cap (round 3)", () => {
+  test("past the five-page cap the leftover cursor is handed back, not dropped", async () => {
+    // Every page answers another cursor: the walk stops at the cap with a
+    // sixth page still unread, and the response must say where it starts.
+    const store = {
+      async list(
+        _actor: unknown,
+        query?: { archived?: boolean; cursor?: string },
+      ) {
+        if (!query?.archived) {
+          return { channels: [channel()], nextCursor: null };
+        }
+        const page = query.cursor ? Number(query.cursor.slice(5)) : 1;
+        return {
+          channels: [
+            channel({
+              id: `channel-arch-${page}`,
+              archivedAt: new Date("2026-10-12T00:00:00Z"),
+            }),
+          ],
+          nextCursor: `page-${page + 1}`,
+        };
+      },
+    } as unknown as ChannelStore;
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createMobileBffRoutes({
+        requireUser,
+        workspace: createMobileBffWorkspace({ channelStore: store }),
+      }),
+    );
+
+    const response = await app.request("/workspace");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.channels).toHaveLength(6); // active + five archived pages
+    expect(body.archivedNextCursor).toBe("page-6");
+  });
+
+  test("a fully walked partition reports no leftover cursor", async () => {
+    const app = appFor();
+    const response = await app.request("/workspace");
+    expect(response.status).toBe(200);
+    expect((await response.json()).archivedNextCursor).toBe(null);
   });
 });

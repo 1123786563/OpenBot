@@ -86,9 +86,29 @@ const APP_DIR_REL = "outputs/web";
 const DEFAULT_ACTION_LOG_LINES = 10;
 const DEFAULT_LOGS_LINES = 30;
 const MAX_LOG_LINES = 200;
-const START_TIMEOUT_MS = 150_000;
+const DEFAULT_START_TIMEOUT_MS = 150_000;
 const MAX_OUTPUT_BYTES = 8 * 1024;
 const PROBE_TIMEOUT_MS = 2000;
+/** The cap's kill escalation: SIGTERM first, SIGKILL for whatever ignored it. */
+const KILL_ESCALATION_MS = 1_000;
+/** How long stdout may still be draining after the script exits before we answer. */
+const OUTPUT_DRAIN_MS = 500;
+
+/**
+ * The wait window for one script run. Deployments on a slow registry can widen
+ * it; it stays well under the turn's inactivity watchdog
+ * (OPENBOT_CRAFT_SANDBOX_APPROVAL_WAIT_TIMEOUT_SECONDS + its margin, 200s by
+ * default) on purpose — a tool that answers late but answers beats a turn the
+ * watchdog cancels, because a cancelled turn leaves the agent no observation to
+ * recover from.
+ */
+function startTimeoutMs(): number {
+  const raw = process.env.OPENBOT_WEBAPP_START_TIMEOUT_MS;
+  const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_START_TIMEOUT_MS;
+}
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -200,16 +220,50 @@ async function buildObservation(
   return { state, port, text: lines.join("\n") };
 }
 
+/** Why a script run ended before the script did, if it did. */
+type StopReason = "timeout" | "abort" | null;
+
+type ScriptRun = {
+  exitCode: number;
+  output: string;
+  /** Non-null when this side gave up waiting and killed the run. */
+  stopped: StopReason;
+};
+
+/**
+ * One run of the session's bootstrap script, and the cleanup that owes it.
+ *
+ * TWO PROCESS-HANDLING RULES, both learned from a dead preview:
+ *
+ * 1. Resolve on `exit`, not on stdio EOF. `close` waits for the stdout pipe to
+ *    end, and any grandchild that inherited it — an orphaned `bun install`, a
+ *    scaffold's own background job — holds that pipe open indefinitely. Waiting
+ *    for EOF made the tool outrun its own 150s cap and get cancelled by the
+ *    turn's 200s inactivity watchdog instead (live: a `webapp start` silent
+ *    from 15:03:10 to 15:07:12, then cancelled, leaving a scaffold with a
+ *    half-installed node_modules, no nextjs.pid and no nextjs.log). A bounded
+ *    drain after `exit` keeps the normal case's output whole without ever
+ *    handing the pipe a veto.
+ *
+ * 2. Kill the whole process group. `detached` makes the script a group leader,
+ *    so the cap's SIGTERM reaches the script's subshell AND the `bun install`
+ *    inside it. Killing only the direct child orphaned that install: it kept
+ *    writing node_modules and kept holding `.webapp.lock`, so every retry
+ *    blocked on the lock behind a half-finished install. The session's dev
+ *    server is deliberately NOT in this group — start-webapp.sh spawns it with
+ *    setsid — because a slow first boot must not be killed by the cap that
+ *    fired while waiting for it.
+ */
 function runScript(
   dir: string,
   scriptPath: string,
   abort: AbortSignal,
-): Promise<{ exitCode: number; output: string }> {
+): Promise<ScriptRun> {
   return new Promise((resolve) => {
     const quotedPath = `'${scriptPath.replace(/'/g, `'\\''`)}'`;
     const child = spawn("bash", ["-c", `bash ${quotedPath} 2>&1`], {
       cwd: dir,
-      signal: abort,
+      detached: true,
     });
 
     let output = "";
@@ -217,17 +271,72 @@ function runScript(
       output += chunk.toString("utf8");
     });
 
-    const timeoutId = setTimeout(() => child.kill(), START_TIMEOUT_MS);
-    const finish = (exitCode: number) => {
-      clearTimeout(timeoutId);
+    let settled = false;
+    let stopped: StopReason = null;
+    let exitCode: number | null = null;
+    let drainTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const killTree = (signal: NodeJS.Signals) => {
+      const pid = child.pid;
+      if (typeof pid !== "number") return;
+      try {
+        // Negative pid: the group, not just its leader.
+        process.kill(-pid, signal);
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {}
+      }
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(capTimer);
+      if (drainTimer !== null) clearTimeout(drainTimer);
+      abort.removeEventListener("abort", onAbort);
       if (output.length > MAX_OUTPUT_BYTES) {
         output = output.slice(-MAX_OUTPUT_BYTES);
       }
-      resolve({ exitCode, output });
+      resolve({ exitCode: exitCode ?? 1, output, stopped });
     };
 
-    child.on("close", (code) => finish(code ?? 1));
-    child.on("error", () => finish(1));
+    /** Give up waiting and take the tree with us; `finish` follows the exit. */
+    const stop = (reason: Exclude<StopReason, null>) => {
+      if (settled || stopped !== null) return;
+      stopped = reason;
+      killTree("SIGTERM");
+      const escalate = setTimeout(
+        () => killTree("SIGKILL"),
+        KILL_ESCALATION_MS,
+      );
+      escalate.unref?.();
+      // Backstop for a tree that dies without ever closing its stdio.
+      const giveUp = setTimeout(finish, KILL_ESCALATION_MS + OUTPUT_DRAIN_MS);
+      giveUp.unref?.();
+    };
+
+    const capTimer = setTimeout(() => stop("timeout"), startTimeoutMs());
+    capTimer.unref?.();
+
+    const onAbort = () => stop("abort");
+    abort.addEventListener("abort", onAbort, { once: true });
+    if (abort.aborted) onAbort();
+
+    child.on("exit", (code) => {
+      exitCode = code ?? 1;
+      // Bounded drain: `close` normally lands milliseconds later and carries
+      // the last of the output with it.
+      drainTimer = setTimeout(finish, OUTPUT_DRAIN_MS);
+      drainTimer.unref?.();
+    });
+    child.on("close", () => {
+      if (exitCode !== null) finish();
+    });
+    child.on("error", () => {
+      exitCode = 1;
+      finish();
+    });
   });
 }
 
@@ -330,7 +439,7 @@ export default async () => {
             }
           }
 
-          const { exitCode, output } = await runScript(
+          const { exitCode, output, stopped } = await runScript(
             dir,
             scriptPath,
             context.abort,
@@ -350,6 +459,24 @@ export default async () => {
             headline = output.includes("already running")
               ? "webapp was already running"
               : "webapp started successfully";
+          } else if (stopped !== null) {
+            // This side gave up waiting and killed the run. Its own class: the
+            // script printed no error, so "fix the error above" would send the
+            // agent hunting for something that does not exist.
+            errorKind =
+              stopped === "timeout" ? "start_timeout" : "start_cancelled";
+            headline =
+              stopped === "timeout"
+                ? "webapp start timed out: the dev server did not come up " +
+                  `within ${Math.round(startTimeoutMs() / 1000)}s, so the wait ` +
+                  "was ended and the run was stopped (nothing was left " +
+                  "running). This is usually a slow dependency install, not a " +
+                  "broken app. Call webapp start again - it resumes the " +
+                  "install and reuses a server that is already up. If it times " +
+                  "out again, call webapp logs to see where it stalls."
+                : "webapp start was cancelled before the dev server came up, " +
+                  "and the run was stopped (nothing was left running). Call " +
+                  "webapp start again to begin it once more.";
           } else if (
             output.includes("EADDRINUSE") ||
             output.includes("address already in use")

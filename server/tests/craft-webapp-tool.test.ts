@@ -78,6 +78,43 @@ async function startListener(): Promise<number> {
   return devServer.port;
 }
 
+/** One request an echoing upstream actually received. */
+type EchoedRequest = { method: string; path: string; body: string };
+
+/**
+ * A loopback listener that answers with what it was handed — the witness for the
+ * preview's interactivity half. A GET-only route made every mutation a 404 from
+ * Hono that never reached the app, so what the upstream RECEIVES is the fact
+ * worth pinning, not what the route returns.
+ */
+async function startEchoListener(): Promise<{
+  port: number;
+  received: EchoedRequest[];
+}> {
+  const received: EchoedRequest[] = [];
+  devServer = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      received.push({
+        method: request.method,
+        path: url.pathname + url.search,
+        body:
+          request.method === "GET" ||
+          request.method === "HEAD" ||
+          request.method === "OPTIONS"
+            ? ""
+            : await request.text(),
+      });
+      return new Response(JSON.stringify({ saw: received.at(-1) }), {
+        status: request.method === "POST" ? 201 : 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  return { port: devServer.port, received };
+}
+
 /** A process that stays alive so nextjs.pid points at a live pid. */
 function spawnLivePid(): number {
   livePidChild = Bun.spawn(["sleep", "60"]);
@@ -91,11 +128,13 @@ function spawnExtraPid(): number {
 
 /**
  * PATH shims so the generated start-webapp.sh runs on darwin: a no-op
- * `flock`, a `bun` that serves the requested port instead of running a dev
- * script, and a `readlink` standing in for Linux /proc/$pid/cwd — the pid's
- * "cwd" is read from `$CRAFT_WEBAPP_TEST_PROC_CWD/$pid`; no mapping = a cwd
- * the guard does not recognize. Test-only: the shipped script bytes are
- * untouched (the real sandbox is Linux, where /proc exists).
+ * `flock`, a pass-through `setsid` (util-linux, Linux-only — the real sandbox
+ * has it and the pid it reports is the server's own), a `bun` that serves the
+ * requested port instead of running a dev script, and a `readlink` standing in
+ * for Linux /proc/$pid/cwd — the pid's "cwd" is read from
+ * `$CRAFT_WEBAPP_TEST_PROC_CWD/$pid`; no mapping = a cwd the guard does not
+ * recognize. Test-only: the shipped script bytes are untouched (the real
+ * sandbox is Linux, where /proc exists).
  */
 function makeScriptShims(port: number): {
   shimDir: string;
@@ -107,6 +146,11 @@ function makeScriptShims(port: number): {
   writeFileSync(
     join(shimDir, "flock"),
     "#!/bin/bash\n# test shim: no-op flock\nexit 0\n",
+  );
+  writeFileSync(
+    join(shimDir, "setsid"),
+    "#!/bin/bash\n# test shim: util-linux setsid, absent on darwin. The real one\n" +
+      '# execs (same pid) for a non-leader, which is what the pid file records.\nexec "$@"\n',
   );
   writeFileSync(
     join(shimDir, "bun"),
@@ -132,6 +176,7 @@ function makeScriptShims(port: number): {
     ].join("\n"),
   );
   chmodSync(join(shimDir, "flock"), 0o755);
+  chmodSync(join(shimDir, "setsid"), 0o755);
   chmodSync(join(shimDir, "bun"), 0o755);
   chmodSync(join(shimDir, "readlink"), 0o755);
   return { shimDir, procCwdDir };
@@ -516,6 +561,66 @@ describe("webapp tool behaviors (F5 B–E)", () => {
       "webapp start failed. fix the error shown above, then call webapp start again.",
     );
   }, 10000);
+
+  // ── the dead-preview root cause: a start that outruns its own cap ──────────
+  // Live evidence (session cs-3707b9d485c72a85aa4a4877): the `webapp start`
+  // call went silent at 15:03:10 and was cancelled at 15:07:12 — 242s, past
+  // both the plugin's 150s cap and the turn's 200s inactivity watchdog. The
+  // workspace it left behind was a scaffold with a half-installed node_modules
+  // (no .bin/next), no nextjs.pid and no nextjs.log: the cap never fired, and
+  // the kill that eventually landed reached only the plugin's direct child.
+  test("a script that leaves a grandchild holding stdout still resolves on exit — the cap cannot be outrun", async () => {
+    const port = await startListener();
+    const dir = makeSessionDir({
+      // `( sleep 30 ) &` inherits the script's stdout, so the pipe stays open
+      // ~30s after the script itself exits. Resolving on stdio EOF (the old
+      // `close` arm) hangs the tool past its own cap and into the turn's
+      // inactivity watchdog, which then cancels the whole turn; resolving on
+      // process exit does not.
+      "start-webapp.sh": `#!/bin/bash\nPORT=${port}\n( sleep 30 ) &\necho "web app dev server running on port ${port} - app dir: outputs/web, logs: nextjs.log. It hot-reloads on file changes and never needs 'bun run dev' run by hand."\nexit 0\n`,
+      "nextjs.pid": `${spawnLivePid()}\n`,
+      "outputs/web/package.json": '{"name":"web"}\n',
+    });
+    const startedAt = Date.now();
+    const { result } = await executeWebapp(dir, { action: "start" });
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
+    expect(result).toContain("webapp started successfully");
+    expect(result).toContain("state: running");
+  }, 20_000);
+
+  test("a start that outruns the cap is killed whole — no orphan survives — and answers start_timeout", async () => {
+    const port = await startListener();
+    const dir = makeSessionDir({
+      // Stands in for a slow `bun install`: it outlives the cap, and it is a
+      // child of the script (same process group), which is exactly the shape
+      // the old single-child kill orphaned mid-install.
+      "start-webapp.sh": `#!/bin/bash\nPORT=${port}\nsleep 60 &\necho $! > "$PWD/orphan.pid"\nsleep 60\n`,
+      "outputs/web/package.json": '{"name":"web"}\n',
+    });
+    process.env.OPENBOT_WEBAPP_START_TIMEOUT_MS = "700";
+    try {
+      const startedAt = Date.now();
+      const { result } = await executeWebapp(dir, { action: "start" });
+      expect(Date.now() - startedAt).toBeLessThan(15_000);
+      // A cap expiry is its own class: "fix the error above" is a dead end
+      // when the error is only that the install was slow.
+      expect(result).toContain("error_kind: start_timeout");
+      expect(result).toContain("webapp start again");
+
+      const orphan = Number.parseInt(
+        readFileSync(join(dir, "orphan.pid"), "utf8").trim(),
+        10,
+      );
+      expect(Number.isFinite(orphan)).toBe(true);
+      // Wait out the SIGTERM→SIGKILL escalation, then prove the whole group
+      // died: an orphaned install would keep holding .webapp.lock and keep
+      // writing into node_modules, poisoning every retry.
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      expect(() => process.kill(orphan, 0)).toThrow();
+    } finally {
+      delete process.env.OPENBOT_WEBAPP_START_TIMEOUT_MS;
+    }
+  }, 30_000);
 
   test("restart kills a live pid only when its identity verifies — otherwise the kill is skipped and start reconciles", async () => {
     const port = await startListener();
@@ -903,6 +1008,17 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
     expect(script).toContain("9>&-");
   });
 
+  test("the dev server leaves the script's process group so a capped start's cleanup cannot reach it", () => {
+    // The plugin runs the script as its own process group and kills that group
+    // when its wait window expires. The dev server is a session-scoped daemon,
+    // not a turn-scoped child, so it must be spawned out of the group —
+    // otherwise a slow first boot is killed at the cap, every retry is killed
+    // at the cap, and the preview never comes up. setsid keeps $! as the real
+    // server pid (it execs rather than forks for a non-leader), so the pid file
+    // and the cwd identity guard still name the server.
+    expect(script).toContain("setsid nohup bun run dev");
+  });
+
   test("starts the dev server on the reserved port, nohup + background", () => {
     expect(script).toContain("nohup bun run dev");
     expect(script).toMatch(/PORT="\$PORT"|PORT=\$PORT/);
@@ -1161,6 +1277,79 @@ describe("webapp preview route (reserved-port attach)", () => {
     expect(body.ready).toBe(false);
   });
 
+  test("webapp-info: a scaffold whose dev server is down answers status stopped, never running", async () => {
+    // The preview's own gate. `status: "running"` beside `ready: false` is the
+    // contradiction that let the iframe render the proxy's 503: no reader could
+    // tell "an app exists" from "an app is serving".
+    const { app } = proxyHarness({
+      session: sessionRow({ nextjsPort: 3017 }),
+      files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+    });
+    const response = await app.request("/sessions/cs-pv/webapp-info");
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.has_webapp).toBe(true);
+    expect(body.ready).toBe(false);
+    expect(body.status).toBe("stopped");
+  });
+
+  test("webapp-info: a serving scaffold answers status running", async () => {
+    const port = await startListener();
+    const { app } = proxyHarness({
+      session: sessionRow({ nextjsPort: port }),
+      files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+    });
+    const response = await app.request("/sessions/cs-pv/webapp-info");
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.status).toBe("running");
+    expect(body.ready).toBe(true);
+  });
+
+  test("the down-server 503 answers a readable HTML page to a browser, never raw JSON", async () => {
+    // The reported symptom verbatim: an iframe pointed at the proxy rendered
+    // {"error":"The web app is not running. …"} as a page. A browser asking for
+    // HTML gets HTML; the JSON shape stays for programmatic callers.
+    const { app } = proxyHarness({
+      session: sessionRow({ nextjsPort: 3017 }),
+      files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+    });
+    const response = await app.request("/sessions/cs-pv/webapp", {
+      headers: {
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    const body = await response.text();
+    expect(body).toContain("not running");
+    expect(body.trimStart().startsWith("{")).toBe(false);
+  });
+
+  test("the down-server 503 stays JSON for a caller that does not accept HTML", async () => {
+    const { app } = proxyHarness({
+      session: sessionRow({ nextjsPort: 3017 }),
+      files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+    });
+    const response = await app.request("/sessions/cs-pv/webapp", {
+      headers: { accept: "application/json" },
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.error).toContain("not running");
+  });
+
+  test("the no-support 503 also answers HTML to a browser", async () => {
+    const { app } = proxyHarness({
+      session: sessionRow({ nextjsPort: null }),
+      files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+    });
+    const response = await app.request("/sessions/cs-pv/webapp", {
+      headers: { accept: "text/html" },
+    });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("content-type")).toContain("text/html");
+  });
+
   test("preview proxies to the session's reserved port when the dev server answers", async () => {
     const port = await startListener();
     const { app } = proxyHarness({
@@ -1195,6 +1384,84 @@ describe("webapp preview route (reserved-port attach)", () => {
     const { app } = proxyHarness({ session: undefined });
     const response = await app.request("/sessions/cs-pv/webapp/");
     expect(response.status).toBe(404);
+  });
+
+  // ── the preview is an app you can drive, not a picture of one ────────────────
+  //
+  // The route registered GET only, so POST/PUT/PATCH/DELETE/OPTIONS answered 404
+  // from Hono and never reached the dev server (measured live against the route).
+  // That is every Server Action, every API-route mutation, every POST form and
+  // every preflighted fetch — the whole of "operate and test it".
+  describe("the preview forwards every method", () => {
+    const cases = [
+      { method: "POST", body: '{"title":"ship it"}' },
+      { method: "PUT", body: '{"title":"renamed"}' },
+      { method: "PATCH", body: '{"done":true}' },
+      { method: "DELETE", body: "" },
+      { method: "OPTIONS", body: "" },
+    ] as const;
+
+    for (const { method, body } of cases) {
+      test(`${method} reaches the dev server with its body intact`, async () => {
+        const { port, received } = await startEchoListener();
+        const { app } = proxyHarness({
+          session: sessionRow({ nextjsPort: port }),
+          files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+        });
+        const response = await app.request(
+          "/sessions/cs-pv/webapp/api/tasks?x=1",
+          {
+            method,
+            body: body === "" ? undefined : body,
+            headers: { "content-type": "application/json" },
+          },
+        );
+        expect(response.status).toBeLessThan(400);
+        // Filter to the mutation: the ready probe ahead of it is a GET on "/"
+        // against the same listener, and counting it would make the assertion
+        // about the probe rather than about the forwarded request.
+        //
+        // The path is this harness's own mount (root), so it lacks the
+        // `/api/craft` prefix the deployed app mounts these routes under — the
+        // prefix rides `context.req.path` either way, which is the point: the
+        // scaffold's basePath equals whatever mount the browser asked for.
+        const forwarded = received.filter((request) =>
+          request.path.startsWith("/sessions/cs-pv/webapp/api/tasks"),
+        );
+        expect(forwarded.length).toBe(1);
+        expect(forwarded[0]?.method).toBe(method);
+        // Query included — a mutation aimed at the wrong path is a silent no-op.
+        expect(forwarded[0]?.path).toBe("/sessions/cs-pv/webapp/api/tasks?x=1");
+        expect(forwarded[0]?.body).toBe(body);
+      });
+    }
+
+    test("a POST to a session whose dev server is down still answers the honest 503", async () => {
+      const { app } = proxyHarness({
+        session: sessionRow({ nextjsPort: 3017 }),
+        files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+      });
+      const response = await app.request("/sessions/cs-pv/webapp/api/tasks", {
+        method: "POST",
+        body: "{}",
+        headers: { accept: "application/json" },
+      });
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toContain("not running");
+    });
+
+    test("ownership still gates a mutation: another user's session is a 404", async () => {
+      const { port, received } = await startEchoListener();
+      const { app } = proxyHarness({ session: undefined });
+      void port;
+      const response = await app.request("/sessions/cs-pv/webapp/api/tasks", {
+        method: "POST",
+        body: "{}",
+      });
+      expect(response.status).toBe(404);
+      expect(received.length).toBe(0);
+    });
   });
 });
 

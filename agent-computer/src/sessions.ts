@@ -35,6 +35,15 @@ export type BotSession = {
   /** This Bot's snapshot generation. Ordered within this run, and meaningless across two. */
   snapshotId: number;
   /**
+   * When somebody last drove this computer (a Bot's action, a person's gesture), for GET
+   * /control to answer as the idleness signal the server's idle sweep reads.
+   *
+   * Per-process on purpose, like the map it lives in: it is this container's own view of
+   * being used, and a restart dropping it only means the sweep falls back to the start
+   * times it always had — a fresh computer has nothing newer to say anyway.
+   */
+  lastActivityAt?: Date;
+  /**
    * Which run of this Bot's browser this is, for the server to order snapshots across.
    *
    * Per Bot rather than per process: they share this container and nothing else, so a run naming the
@@ -185,7 +194,8 @@ export function createSessions(options: SessionsOptions) {
       // it straight after, in its own route.
       existing.control.interrupt(
         "The browser was stopped or replaced; request help again to continue.",
-        { keepPage: true },
+        "interrupted",
+        true,
       );
       existing.livePage = undefined;
       existing.browserContext = undefined;

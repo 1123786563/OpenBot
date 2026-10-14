@@ -346,12 +346,19 @@ export type SecretResult = {
   url: string;
 };
 
-/** What a person did with their mouse or keyboard. Coordinates are viewport pixels. */
-export type HumanInput =
+/**
+ * What a person did with their mouse or keyboard. Coordinates are viewport pixels.
+ *
+ * `seq` is the gesture's place in the sender's stream, when the sender numbers them: the lease
+ * admits a number only ahead of the last one it delivered, so a replayed or reordered gesture
+ * answers 409 instead of landing twice.
+ */
+export type HumanInput = (
   | { kind: "click"; x: number; y: number }
   | { kind: "type"; text: string }
   | { kind: "key"; key: string }
-  | { kind: "scroll"; deltaY?: number };
+  | { kind: "scroll"; deltaY?: number }
+) & { seq?: number };
 
 /**
  * What a person's input reports back.

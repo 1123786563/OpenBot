@@ -18,6 +18,33 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # The frontend lives in the apps/openmuse submodule (apps/openmuse-mobile was deleted), but no
+  # checkout in this file asks for it — so CI has been asserting nothing about the pin. A gitlink
+  # pointing at a commit the remote no longer has (rewritten history, a force push, a repo gone
+  # private) merges green and only fails for the first person who runs `git submodule update --init`
+  # locally. The design spec (docs/superpowers/specs/2026-10-12-openmuse-frontend-openbot-backend-
+  # design.md) asks CI to at least initialize the submodule; this is that guard's cheapest form:
+  # init exactly what the tree pins, then prove what got checked out is what the tree names.
+  submodule:
+    name: submodule pin fetchable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Fails outright when the pinned gitlink commit is not fetchable from the submodule's remote —
+      # that is the dangling-pin refusal this job exists to give CI.
+      - name: Initialize the pinned submodule
+        run: git submodule update --init apps/openmuse
+      - name: The checked-out commit is the one the tree pins
+        run: |
+          pinned="$(git ls-tree HEAD apps/openmuse | awk '{print $3}')"
+          checked="$(git -C apps/openmuse rev-parse HEAD)"
+          if [ "$pinned" != "$checked" ]; then
+            echo "::error::apps/openmuse checked out $checked but the tree pins $pinned."
+            exit 1
+          fi
+
   # Formatting, linting, typing and tests are independent checks, so each reports its own result.
   static:
     name: format, lint, types
@@ -757,7 +784,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: always()
-    needs: [static, deployables, mobile, computer-browser, chart, test, startup, python-harness, build, migrations, image, component-dockerfiles]
+    needs: [static, deployables, mobile, computer-browser, chart, test, startup, python-harness, build, migrations, image, component-dockerfiles, submodule]
     steps:
       - name: Require every check
         env:

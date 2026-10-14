@@ -1,0 +1,1 @@
+ALTER TABLE "openmuse_tasks" ADD COLUMN "cancellation_requested" boolean DEFAULT false NOT NULL;

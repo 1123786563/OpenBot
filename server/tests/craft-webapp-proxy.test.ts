@@ -49,6 +49,7 @@ describe("proxyWebappRequest", () => {
       upstreamBaseUrl: "http://127.0.0.1:3010",
       path: "index.html",
       query: "",
+      method: "GET",
       requestHeaders: new Headers({
         host: "example.com",
         connection: "keep-alive",
@@ -85,10 +86,86 @@ describe("proxyWebappRequest", () => {
       upstreamBaseUrl: "http://127.0.0.1:3010",
       path: "",
       query: "",
+      method: "GET",
       requestHeaders: new Headers(),
       fetchImpl,
     });
     expect(result.status).toBe(502);
+  });
+
+  // ── the interactivity half: a preview that cannot POST cannot be tested ──────
+  //
+  // The route only ever registered GET, and this helper hardcoded `method: "GET"`
+  // and never carried a body. Measured against the live route: POST/PUT/PATCH/
+  // DELETE/OPTIONS all answered 404 from Hono — the request never reached the
+  // app. That silently kills every Next.js Server Action (POST), every API route
+  // mutation, every `<form method="POST">` and every preflighted fetch, i.e.
+  // exactly the apps craft is asked to build. The preview was a picture, not a
+  // running app.
+  test("carries the caller's method and body to the upstream, not a hardcoded GET", async () => {
+    const seen: {
+      method: string | null;
+      body: string | null;
+      type: string | null;
+    } = {
+      method: null,
+      body: null,
+      type: null,
+    };
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      seen.method = init.method ?? null;
+      seen.body =
+        init.body === undefined || init.body === null
+          ? null
+          : String(init.body);
+      seen.type = new Headers(init.headers as HeadersInit).get("content-type");
+      return new Response('{"ok":true}', {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await proxyWebappRequest({
+      upstreamBaseUrl: "http://127.0.0.1:3010",
+      path: "api/tasks",
+      query: "",
+      method: "POST",
+      body: '{"title":"ship it"}',
+      requestHeaders: new Headers({ "content-type": "application/json" }),
+      fetchImpl,
+    });
+
+    expect(seen.method).toBe("POST");
+    expect(seen.body).toBe('{"title":"ship it"}');
+    // The app's own content type survives — a Server Action's text/plain and an
+    // API route's application/json are not interchangeable to the receiver.
+    expect(seen.type).toBe("application/json");
+    expect(result.status).toBe(201);
+  });
+
+  test("a bodyless method forwards no body, and the status passes through", async () => {
+    const seen: { method: string | null; body: unknown } = {
+      method: null,
+      body: "unset",
+    };
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      seen.method = init.method ?? null;
+      seen.body = init.body;
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+
+    const result = await proxyWebappRequest({
+      upstreamBaseUrl: "http://127.0.0.1:3010",
+      path: "api/tasks/1",
+      query: "",
+      method: "DELETE",
+      requestHeaders: new Headers(),
+      fetchImpl,
+    });
+
+    expect(seen.method).toBe("DELETE");
+    expect(seen.body === undefined || seen.body === null).toBe(true);
+    expect(result.status).toBe(204);
   });
 });
 
