@@ -1305,3 +1305,131 @@ describe("reconciliation pages its table walks (audit C3)", () => {
     expect(report.checked.scanned.pageSize).toBe(500);
   });
 });
+
+/*
+ * The keyset walks themselves (final review, Important 1): the case above proves the AGGREGATE
+ * side read its last page, but nothing exercised the four paged walks past a page boundary —
+ * and paging is this plan's riskiest change. Two seeds, each larger than RECONCILE_PAGE_SIZE
+ * (500). The whole-table counters are asserted as before/after deltas, the way the F2 case
+ * above asserts its whole-table counts: the pass reads every neighbour's rows too.
+ */
+describe("the paged walks cross page boundaries (audit C3, final review)", () => {
+  // Seeded server-side in one round trip each (generate_series, the precision suite's way): a
+  // client-side row-by-row loop would turn a paging test into a load test. These cases also
+  // walk the precision suite's millions of residue rows, so they carry the same slow-case
+  // timeout those do.
+  const SLOW = 240_000;
+
+  test(
+    "1200 agreeing paid orders are all walked across three pages, with zero paid_without_fact",
+    async () => {
+      const ROWS = 1200; // > 2 × RECONCILE_PAGE_SIZE: the paidOrders walk must cross three pages
+      const before = await reconciler.reconcile();
+      await database.execute(sql`
+        INSERT INTO payment_orders
+          (id, plan_code, provider, amount_cents, currency, status, activation_state,
+           channel_transaction_id, checkout_payload, expires_at, paid_at, version)
+        SELECT
+          ${prefix} || '-pg-' || g::text, 'pro', 'alipay', 8800, 'CNY', 'paid', 'pending',
+          ${prefix} || '-pg-tx-' || g::text, null, now() + interval '15 minutes', now(), 2
+        FROM generate_series(1, ${ROWS}) g
+      `);
+      // Each order's matching paid fact: the three-way agreement holds row for row, so the
+      // only finding a dropped page on either walk could produce here is paid_without_fact.
+      await database.execute(sql`
+        INSERT INTO payment_events
+          (id, order_id, kind, code, state, channel_transaction_id, amount_cents)
+        SELECT
+          ${prefix} || '-pg-' || g::text || '-fact', ${prefix} || '-pg-' || g::text,
+          'fact', 'paid', 'paid', ${prefix} || '-pg-tx-' || g::text, 8800
+        FROM generate_series(1, ${ROWS}) g
+      `);
+
+      const report = await reconciler.reconcile();
+
+      expect(report.checked.scanned.pageSize).toBe(500);
+      // The paidOrders walk crossed three pages and kept every row this test added…
+      expect(
+        report.checked.scanned.paidOrders - before.checked.scanned.paidOrders,
+      ).toBe(ROWS);
+      // …and the paidFacts walk kept pace — the two counters move together only if neither
+      // loop dropped a page.
+      expect(
+        report.checked.scanned.paidFacts - before.checked.scanned.paidFacts,
+      ).toBe(ROWS);
+      expect(
+        report.findings.filter(
+          (finding) =>
+            finding.code === "paid_without_fact" &&
+            finding.subject.startsWith(`${prefix}-pg-`),
+        ),
+      ).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a reservation split across a page boundary keeps its tail allocations",
+    async () => {
+      const customer = `${prefix}-pgsplit`;
+      const ALLOCATIONS = 600; // > RECONCILE_PAGE_SIZE: the walk must split this reservation
+      const reservationId = `${customer}-r1`;
+      const before = await reconciler.reconcile();
+      await database
+        .insert(billingCustomers)
+        .values({ externalId: customer, name: null })
+        .onConflictDoNothing({ target: billingCustomers.externalId });
+      // One grant per allocation — the (reservationId, grantId) unique index forbids two
+      // allocations of one reservation on the same grant, so a 600-allocation hold needs 600
+      // grants, which is also the realistic shape: a hold drawing on many small grants.
+      await database.execute(sql`
+        INSERT INTO credit_grants
+          (id, external_customer_id, source, total, used, expires_at, status, idempotency_key)
+        SELECT
+          ${customer} || '-g-' || g::text, ${customer}, 'promo', 1, 0,
+          now() + interval '1 day', 'active', ${customer} || '-gk-' || g::text
+        FROM generate_series(1, ${ALLOCATIONS}) g
+      `);
+      await database.execute(sql`
+        INSERT INTO credit_reservations
+          (id, external_customer_id, idempotency_key, maximum, status, expires_at)
+        VALUES
+          (${reservationId}, ${customer}, ${customer} || '-rk1', ${ALLOCATIONS},
+           'reserved', now() + interval '1 hour')
+      `);
+      // 600 allocations of 1 unit each: the sum is exactly the reservation's maximum, so any
+      // reservation_allocation_imbalance finding naming this reservation is fabricated by the
+      // walk — the false finding a reservation-id-only cursor would produce, because the page
+      // that ends mid-reservation would never read this hold's tail.
+      await database.execute(sql`
+        INSERT INTO credit_reservation_allocations
+          (id, reservation_id, grant_id, amount)
+        SELECT
+          ${customer} || '-a-' || g::text, ${reservationId}, ${customer} || '-g-' || g::text, 1
+        FROM generate_series(1, ${ALLOCATIONS}) g
+      `);
+
+      const report = await reconciler.reconcile();
+      expect(report.checked.scanned.pageSize).toBe(500);
+      // The reservation's allocations are all counted: the join walked every one of this
+      // hold's 600 rows (at least — the whole table's reserved rows are in this counter).
+      expect(report.checked.scanned.reservedRows).toBeGreaterThanOrEqual(
+        ALLOCATIONS,
+      );
+      expect(
+        report.checked.scanned.reservedRows -
+          before.checked.scanned.reservedRows,
+      ).toBe(ALLOCATIONS);
+      // The compound (reservationId, allocationId) cursor's whole job: no fabricated
+      // imbalance for a healthy hold the walk happened to split across a page boundary.
+      expect(
+        report.findings.find(
+          (item) =>
+            item.code === "reservation_allocation_imbalance" &&
+            item.subject === reservationId,
+        ),
+      ).toBeUndefined();
+    },
+    SLOW,
+  );
+});

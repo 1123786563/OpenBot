@@ -1049,6 +1049,56 @@ describe("the model usage bound contract (pre-call admission)", () => {
     }
   });
 
+  test("a refusing finish is not re-recorded as unsettled evidence", async () => {
+    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const phases: Array<{ phase: string; reason?: string }> = [];
+    const unsettled: Array<{ inputTokens: number; outputTokens: number; reason: string }> = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        // The finish path's owner (index.ts) writes the evidence row carrying the REAL token
+        // counts before it rethrows, so a second record from the failure path could only be a
+        // 0/0 duplicate the outbox rejects with a usage_evidence_superseded warn (final review,
+        // Minor 1). The failure path stays silent; the hold stays held for reconciliation.
+        finish: async () => {
+          phases.push({ phase: "finish" });
+          throw new ModelUsageSettlementError("usage_pricing_refused");
+        },
+        fail: async (failure) => {
+          phases.push({ phase: "fail", reason: failure.reason });
+        },
+        recordUnsettled: async (input) => {
+          unsettled.push({
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+            reason: input.reason,
+          });
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      let failure: unknown;
+      try {
+        for await (const _part of result.stream) {
+        }
+      } catch (error) {
+        failure = error;
+      }
+      // The stream still errors with the settlement error the finish threw.
+      expect(calls).toHaveLength(1);
+      expect(failure).toMatchObject({
+        name: "ModelUsageSettlementError",
+        code: "usage_pricing_refused",
+      });
+      // The finish ran and threw, and the reservation is still not released: no fail call,
+      // so nothing can hand the hold back.
+      expect(phases).toEqual([{ phase: "finish" }]);
+      expect(unsettled).toEqual([]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
   test("a retried finish for the identical event succeeds once", async () => {
     const { model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
     const phases: string[] = [];

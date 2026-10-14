@@ -786,6 +786,15 @@ function meteredModel<T>(model: T): T {
 
       const reader = result.stream.getReader();
       let settled = false;
+      /*
+       * Set the moment `settleFinish` hands the usage to the lifecycle's finish. That path's
+       * owner has the REAL token counts and records its evidence before it rethrows, so a
+       * second record from the failure path below could only be less accurate — a 0/0
+       * duplicate the outbox's immutable-facts check rejects with a warn, or, when the outbox
+       * write itself is what failed, a 0/0 row contradicting a real-but-unwritten fact the
+       * `billing-usage-outbox-write-failed` log already names (final review, Minor 1).
+       */
+      let finishAttempted = false;
       const settleFinish = async (usage: {
         inputTokens: number;
         outputTokens: number;
@@ -798,6 +807,7 @@ function meteredModel<T>(model: T): T {
          * here — it propagates to the pull below, which errors the stream instead of
          * reporting a successful answer whose usage was never durably recorded.
          */
+        finishAttempted = true;
         await lifecycle?.finish?.({
           eventId,
           occurredAt,
@@ -876,16 +886,25 @@ function meteredModel<T>(model: T): T {
             const tokens = detail as
               | { inputTokens?: number; outputTokens?: number }
               | undefined;
-            try {
-              await lifecycle?.recordUnsettled?.({
-                eventId,
-                occurredAt,
-                inputTokens: tokens?.inputTokens ?? 0,
-                outputTokens: tokens?.outputTokens ?? 0,
-                reason: error.code,
-              });
-            } catch {
-              // The settlement error stays the product failure; evidence is best-effort.
+            /*
+             * Evidence before the tear-down (audit A3) — but not when the gate's own finish
+             * was attempted: that path already recorded (or already failed to record) the
+             * real tokens, so a second write here is the 0/0 duplicate `finishAttempted`
+             * exists to skip. The over-bound and malformed-usage paths below never set the
+             * flag, so their real tokens still leave as evidence.
+             */
+            if (!finishAttempted) {
+              try {
+                await lifecycle?.recordUnsettled?.({
+                  eventId,
+                  occurredAt,
+                  inputTokens: tokens?.inputTokens ?? 0,
+                  outputTokens: tokens?.outputTokens ?? 0,
+                  reason: error.code,
+                });
+              } catch {
+                // The settlement error stays the product failure; evidence is best-effort.
+              }
             }
             reader.cancel("settlement_failed").catch(() => {
               // The upstream is already gone; nothing to recover.
