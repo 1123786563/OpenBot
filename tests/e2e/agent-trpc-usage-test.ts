@@ -96,6 +96,29 @@ async function assertReachable(url: string) {
   if (response === null) throw new Error(`服务不可达：${url}`);
 }
 
+/** 两种登录入口：直接跳 Casdoor，或停在应用 /sign 页（需要点一次 provider 按钮）。 */
+async function enterCasdoorLogin(page: Page) {
+  await page.waitForURL(
+    (url) => url.origin === CASDOOR_URL || url.pathname === "/sign",
+    { timeout: SHORT_TIMEOUT_MS },
+  );
+  if (new URL(page.url()).pathname === "/sign") {
+    // 单 provider 时页面会自动进入（auto-enter）；多 provider 或曾被弹回时需要手点。
+    const providerButton = page
+      .getByRole("button", { name: /Continue with|使用.+继续/ })
+      .first();
+    try {
+      await providerButton.waitFor({ state: "visible", timeout: 4000 });
+      await providerButton.click({ timeout: 4000 });
+    } catch {
+      // auto-enter 已在跳转中，继续等 Casdoor 即可
+    }
+    await page.waitForURL((url) => url.origin === CASDOOR_URL, {
+      timeout: SHORT_TIMEOUT_MS,
+    });
+  }
+}
+
 async function casdoorLogin(page: Page) {
   const username = page
     .locator(
@@ -206,24 +229,68 @@ async function main() {
 
   try {
     await step("登录（Casdoor admin）", async () => {
-      await page.goto(`${APP_URL}/`);
-      await page.waitForURL((url) => url.origin === CASDOOR_URL, {
-        timeout: SHORT_TIMEOUT_MS,
-      });
-      await casdoorLogin(page);
-      await page
-        .locator('a:has-text("Bots"), [href*="/bots"]')
-        .first()
-        .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
-      return "会话建立";
+      try {
+        await page.goto(`${APP_URL}/`);
+        await enterCasdoorLogin(page);
+        await casdoorLogin(page);
+        // 新库首次登录会进 /onboarding（3 次 Continue）；走完它才能看到 Bots 导航。
+        if (page.url().includes("/onboarding")) {
+          for (let i = 0; i < 4; i++) {
+            const cont = page
+              .locator(
+                'button:has-text("Continue"), button:has-text("Get started"), button:has-text("Start"), button:has-text("Skip")',
+              )
+              .first();
+            if (!(await cont.count())) break;
+            await cont.click().catch(() => {});
+            await page.waitForTimeout(1500);
+            if (!page.url().includes("/onboarding")) break;
+          }
+        }
+        await page
+          .locator('a:has-text("Bots"), [href*="/bots"]')
+          .first()
+          .waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
+        return "会话建立";
+      } catch (error) {
+        // 失败现场：URL 与截图，而不是只有一句 waitForURL 超时
+        console.log(
+          `    [login-diag] url=${page.url().slice(0, 100)} title=${await page.title().catch(() => "?")}`,
+        );
+        await shot(page, "login-failed").catch(() => {});
+        throw error;
+      }
     });
 
-    await step("使用① Bots 列表能看到 agent-trpc", async () => {
+    await step("使用① Bots 列表能看到 agent-trpc（不存在则注册）", async () => {
+      // 幂等：库重建/首次运行时注册不在，就地补上（与 browser-test 同一注册合同）。
+      const roster = await context.request.get(`${APP_URL}/api/agents`);
+      const agents = (
+        (await roster.json()) as { agents: Array<{ id: string; name: string }> }
+      ).agents;
+      agentId = agents.find((a) => a.name === "agent-trpc")?.id;
+      if (!agentId) {
+        const created = await context.request.post(`${APP_URL}/api/agents`, {
+          data: {
+            name: "agent-trpc",
+            title: "Go Bot (trpc-agent-go)",
+            roleDescription:
+              "A workbench Bot assembled on the trpc-agent-go framework, answering through the GLM model.",
+            visibility: "private",
+            endpoint: "http://localhost:4204/ag-ui",
+            auth: { header: "x-openbot-agent-token", value: MANAGED_AGENT_TOKEN },
+          },
+        });
+        if (created.status() !== 201) {
+          throw new Error(`注册失败 ${created.status()}：${(await created.text()).slice(0, 200)}`);
+        }
+        agentId = ((await created.json()) as { agent: { id: string } }).agent.id;
+      }
       await page.goto(`${APP_URL}/bots`);
       const row = page.getByText("agent-trpc", { exact: false }).first();
       await row.waitFor({ state: "visible", timeout: SHORT_TIMEOUT_MS });
       await shot(page, "01-bots-list");
-      return "列表可见";
+      return `列表可见（${agentId ? "已注册" : ""}）`;
     });
 
     await step("使用② 会话页第一条消息，观察到流式回复", async () => {

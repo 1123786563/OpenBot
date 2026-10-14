@@ -78,6 +78,25 @@ async function gotoRetry(page: Page, url: string, attempts = 3) {
 }
 
 async function casdoorLogin(page: Page) {
+  // 应用可能直接跳 Casdoor，也可能停在自己的 /sign 页；两条路都接住。
+  await page.waitForURL(
+    (url) => url.origin === CASDOOR_URL || url.pathname === "/sign",
+    { timeout: SHORT_TIMEOUT_MS },
+  );
+  if (new URL(page.url()).pathname === "/sign") {
+    const providerButton = page
+      .getByRole("button", { name: /Continue with|使用.+继续/ })
+      .first();
+    try {
+      await providerButton.waitFor({ state: "visible", timeout: 4000 });
+      await providerButton.click({ timeout: 4000 });
+    } catch {
+      // auto-enter 已在跳转中
+    }
+    await page.waitForURL((url) => url.origin === CASDOOR_URL, {
+      timeout: SHORT_TIMEOUT_MS,
+    });
+  }
   const username = page
     .locator(
       'input[placeholder*="Email or phone"], input[placeholder*="username" i], #input-login-username, input[name="username"]',
