@@ -63,8 +63,25 @@ async function withPersistenceError<T>(
   try {
     return await query;
   } catch (error) {
-    if (!isRetryableDatabaseError(error)) throw error;
-    throw new BillingPersistenceError(operation);
+    if (error instanceof BillingPersistenceError) {
+      // An inner store call has already graded its own failure. Re-wrapping would misname the
+      // operation (an inner customer_upsert would leave as webhook_apply) and could demote a
+      // grade that says retryable — the transaction boundary passes errors through unchanged.
+      throw error;
+    }
+    // Every persistence failure becomes the typed sentinel, graded by retryability. The caller's
+    // HTTP answer is 5xx either way: a non-retryable constraint violation is our data problem,
+    // not the provider's delivery problem, and answering it 400 would stop the retry that a manual
+    // fix later makes worthwhile (audit A8). A synchronous throw from query CONSTRUCTION never
+    // reaches here — it happens while the argument is evaluated, before this try — and stays the
+    // programming error it is.
+    throw new BillingPersistenceError(
+      operation,
+      isRetryableDatabaseError(error),
+      {
+        cause: error,
+      },
+    );
   }
 }
 
@@ -109,7 +126,16 @@ export function createBillingStore(
           }),
         );
       } catch (error) {
-        if (error === duplicate) return "duplicate";
+        // The duplicate signal is control flow thrown from inside the transaction (to roll back
+        // the staged projections), so the apply's own persistence wrapper catches it first. Unwrap
+        // that one layer; it is a business result, not a persistence failure.
+        if (
+          error === duplicate ||
+          (error instanceof BillingPersistenceError &&
+            error.cause === duplicate)
+        ) {
+          return "duplicate";
+        }
         throw error;
       }
     },
