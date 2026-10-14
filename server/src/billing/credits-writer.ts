@@ -70,6 +70,8 @@ export type CreditReservationState = "reserved" | "settled" | "released";
 
 /** A reservation call that conflicts with the reservation's recorded identity or terminal state. */
 export class CreditReservationConflictError extends Error {
+  /** Stable, snake_case, matched by the delivery worker's non-retryable set (audit C1). */
+  readonly code = "reservation_conflict";
   constructor(message: string) {
     super(message);
     this.name = "CreditReservationConflictError";

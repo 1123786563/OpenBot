@@ -42,6 +42,9 @@ export const usageOutbox = pgTable(
       .default("pending"),
     lagoLastErrorCode: text("lago_last_error_code"),
     creditsLastErrorCode: text("credits_last_error_code"),
+    /** Delivery attempts per target, so a permanent failure has somewhere to end (audit C1). */
+    lagoAttempts: integer("lago_attempts").notNull().default(0),
+    creditsAttempts: integer("credits_attempts").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -75,6 +78,11 @@ export const usageOutbox = pgTable(
     check(
       "usage_outbox_credits_status_check",
       sql`${table.creditsStatus} IN ('pending', 'delivered', 'blocked')`,
+    ),
+    check("usage_outbox_lago_attempts_check", sql`${table.lagoAttempts} >= 0`),
+    check(
+      "usage_outbox_credits_attempts_check",
+      sql`${table.creditsAttempts} >= 0`,
     ),
     uniqueIndex("usage_outbox_transaction_id_unique_idx").on(
       table.transactionId,

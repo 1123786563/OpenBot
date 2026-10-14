@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CreditReservationConflictError } from "../src/billing/credits-writer";
 import { startUsageDeliverySweeps } from "../src/billing/maintenance";
 import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
@@ -6,6 +7,7 @@ import {
   createCreditUsageTarget,
   createLagoUsageTarget,
   createUsageDelivery,
+  MAX_DELIVERY_ATTEMPTS,
   UsageDeliveryError,
 } from "../src/billing/usage-delivery";
 import type {
@@ -36,13 +38,15 @@ function makeRecord(eventId: string): UsageOutboxRecord {
     creditsStatus: "pending",
     lagoLastErrorCode: null,
     creditsLastErrorCode: null,
+    lagoAttempts: 0,
+    creditsAttempts: 0,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   } as UsageOutboxRecord;
 }
 
-function memoryOutbox(ids: string[]) {
-  const rows = new Map(ids.map((id) => [id, makeRecord(id)]));
+function memoryOutbox(initial: UsageOutboxRecord[]) {
+  const rows = new Map(initial.map((row) => [row.eventId, row]));
   const failures: string[] = [];
   const blocks: string[] = [];
   const outbox: UsageOutbox = {
@@ -67,6 +71,13 @@ function memoryOutbox(ids: string[]) {
     },
     async recordDeliveryFailure(id, target, code) {
       failures.push(`${id}:${target}:${code}`);
+      const row = rows.get(id);
+      if (!row) return { attempts: 0 };
+      if (target === "lago") row.lagoAttempts += 1;
+      else row.creditsAttempts += 1;
+      return {
+        attempts: target === "lago" ? row.lagoAttempts : row.creditsAttempts,
+      };
     },
     async blockDelivery(id, target, code) {
       blocks.push(`${id}:${target}:${code}`);
@@ -105,7 +116,9 @@ describe("createUsageDelivery", () => {
       },
       async markLagoDelivered() {},
       async markCreditsDelivered() {},
-      async recordDeliveryFailure() {},
+      async recordDeliveryFailure() {
+        return { attempts: 0 };
+      },
       async blockDelivery() {},
     };
     const delivery = createUsageDelivery({
@@ -127,7 +140,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("retries only the failed target and never repeats delivered effects", async () => {
-    const { outbox, failures, rows } = memoryOutbox(["e1"]);
+    const { outbox, failures, rows } = memoryOutbox([makeRecord("e1")]);
     let lagoCalls = 0;
     let creditCalls = 0;
     let creditsFail = true;
@@ -169,7 +182,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("the inverse failure retries only Lago", async () => {
-    const { outbox } = memoryOutbox(["e1"]);
+    const { outbox } = memoryOutbox([makeRecord("e1")]);
     let lagoCalls = 0;
     let creditCalls = 0;
     let lagoFails = true;
@@ -191,7 +204,10 @@ describe("createUsageDelivery", () => {
   });
 
   test("a failing target does not stop the sibling or later records, and logs only stable fields", async () => {
-    const { outbox, failures, rows } = memoryOutbox(["e1", "e2"]);
+    const { outbox, failures, rows } = memoryOutbox([
+      makeRecord("e1"),
+      makeRecord("e2"),
+    ]);
     const logs: string[] = [];
     const delivery = createUsageDelivery({
       outbox,
@@ -218,7 +234,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("does not swallow outbox bookkeeping errors", async () => {
-    const { outbox } = memoryOutbox(["e1"]);
+    const { outbox } = memoryOutbox([makeRecord("e1")]);
     outbox.markLagoDelivered = async () => {
       throw new Error("db down");
     };
@@ -232,7 +248,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("a failed failure-recording is propagated", async () => {
-    const { outbox } = memoryOutbox(["e1"]);
+    const { outbox } = memoryOutbox([makeRecord("e1")]);
     outbox.recordDeliveryFailure = async () => {
       throw new Error("db down");
     };
@@ -248,7 +264,9 @@ describe("createUsageDelivery", () => {
   });
 
   test("legacy rows missing reservations converge to a blocked credit target without replaying", async () => {
-    const { outbox, rows, failures, blocks } = memoryOutbox(["legacy"]);
+    const { outbox, rows, failures, blocks } = memoryOutbox([
+      makeRecord("legacy"),
+    ]);
     const logs: string[] = [];
     let lagoCalls = 0;
     let creditCalls = 0;
@@ -285,6 +303,70 @@ describe("createUsageDelivery", () => {
     });
     expect([lagoCalls, creditCalls]).toEqual([1, 1]);
     expect(logs).toHaveLength(1);
+  });
+});
+
+describe("a permanent delivery failure ends in a terminal state (audit C1)", () => {
+  test("a provider refusal blocks on the first attempt", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-1")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("provider_refused");
+      },
+      chargeCredits: async () => {},
+    });
+    await delivery.runBatch(10);
+    expect(rows.get("ev-1")?.lagoStatus).toBe("blocked");
+    expect(rows.get("ev-1")?.lagoLastErrorCode).toBe("provider_refused");
+  });
+
+  test("a reservation conflict blocks the credits target instead of retrying forever", async () => {
+    const { outbox, rows } = memoryOutbox([
+      {
+        ...makeRecord("ev-2"),
+        reservationId: "cr-1",
+      },
+    ]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {},
+      chargeCredits: async () => {
+        throw new CreditReservationConflictError("already released");
+      },
+    });
+    await delivery.runBatch(10);
+    expect(rows.get("ev-2")?.creditsStatus).toBe("blocked");
+  });
+
+  test("a transient failure stays pending until the attempt ceiling, then blocks", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-3")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("unreachable");
+      },
+      chargeCredits: async () => {},
+    });
+    for (let pass = 0; pass < MAX_DELIVERY_ATTEMPTS - 1; pass += 1) {
+      await delivery.runBatch(10);
+      expect(rows.get("ev-3")?.lagoStatus).toBe("pending");
+    }
+    await delivery.runBatch(10);
+    expect(rows.get("ev-3")?.lagoStatus).toBe("blocked");
+    expect(rows.get("ev-3")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
+  });
+
+  test("a delivered target never counts attempts", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-4")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {},
+      chargeCredits: async () => {},
+    });
+    await delivery.runBatch(10);
+    expect(rows.get("ev-4")?.lagoStatus).toBe("delivered");
+    expect(rows.get("ev-4")?.lagoAttempts).toBe(0);
   });
 });
 

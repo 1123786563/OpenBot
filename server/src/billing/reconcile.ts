@@ -551,13 +551,15 @@ export function createReconciler(
               target: "lago" | "credits";
               status: "pending" | "blocked";
               lastErrorCode: string | null;
+              attempts: number;
             }>`
               SELECT
                 usage_targets.event_id AS "eventId",
                 usage_targets.updated_at AS "updatedAt",
                 usage_targets.target AS "target",
                 usage_targets.status AS "status",
-                usage_targets.last_error_code AS "lastErrorCode"
+                usage_targets.last_error_code AS "lastErrorCode",
+                usage_targets.attempts AS "attempts"
               FROM (
                 SELECT
                   event_id,
@@ -565,6 +567,7 @@ export function createReconciler(
                   'lago'::text AS target,
                   lago_status::text AS status,
                   lago_last_error_code AS last_error_code,
+                  lago_attempts AS attempts,
                   1 AS target_rank
                 FROM usage_outbox
                 WHERE lago_status IN ('pending', 'blocked')
@@ -577,6 +580,7 @@ export function createReconciler(
                   'credits'::text AS target,
                   credits_status::text AS status,
                   credits_last_error_code AS last_error_code,
+                  credits_attempts AS attempts,
                   2 AS target_rank
                 FROM usage_outbox
                 WHERE credits_status IN ('pending', 'blocked')
@@ -605,7 +609,7 @@ export function createReconciler(
               ? "usage_target_pending"
               : "usage_target_blocked",
           subject: row.eventId,
-          detail: `target=${target} state=${status} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
+          detail: `target=${target} state=${status} attempts=${row.attempts} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
         });
       }
       const omittedUsageTargets = {
