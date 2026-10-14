@@ -428,10 +428,17 @@ export function createBillingService(deps: {
         });
         // Best-effort replay evidence (audit A7): the count runs after the inbox insert, so it
         // includes this delivery, and a failed count is swallowed — evidence must never fail a
-        // delivery the projection already accepted.
+        // delivery the projection already accepted. Swallowed, not silent: the fallback leaves
+        // replay detection dark for THIS delivery, so the catch says so. The inbox row still
+        // stands, and a later replay of the same body re-counts it.
         const priorDeliveries = await store
           .countDeliveriesOfBody(delivery.bodyHash)
-          .catch(() => 1);
+          .catch((error: unknown) => {
+            (deps.log ?? console.warn)(
+              `billing: webhook_body_replay_count_failed event=${delivery.eventId} name=${error instanceof Error ? error.name : "unknown"}`,
+            );
+            return 1;
+          });
         if (priorDeliveries > 1) {
           (deps.log ?? console.warn)(
             `billing: webhook_body_replay event=${delivery.eventId} deliveries=${priorDeliveries}`,
