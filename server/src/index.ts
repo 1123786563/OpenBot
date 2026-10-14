@@ -4102,10 +4102,18 @@ const codeRunStore = createCodeRunStore(database);
 const codeRunUsageReporter = billing && usageOutbox
   ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
       try {
-        await reportCodeRunUsage(usageOutbox, {
-          ...input,
-          externalCustomerId: billing.externalCustomerKey,
-        });
+        await reportCodeRunUsage(
+          usageOutbox,
+          {
+            ...input,
+            externalCustomerId: billing.externalCustomerKey,
+            // True only when the hard-cap policy actually prices code runs; the gateway refuses
+            // billed runs until the sandbox can enforce a budget, so this stays false today and
+            // the guard inside reportCodeRunUsage is what makes flipping it safe.
+            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
+          },
+          (message) => log.warn(message),
+        );
       } catch (error) {
         logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
       }
