@@ -17,6 +17,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { CraftApprovalSignals } from "./approval-signals";
+import type { CraftConnectAppSignals } from "./connect-app";
 import type { CraftConfig } from "./config";
 import { isBuildPacket } from "./events/packets";
 import { isKeepalive, isPromptResponse, isSandboxError } from "./events/types";
@@ -56,6 +57,8 @@ export type TurnRoutesDeps = {
   botIdFor: (sessionId: string) => Promise<string | null>;
   /** Approval announce/wake signals; the stream merges announces into SSE when gating is on. */
   approvalSignals?: CraftApprovalSignals | null;
+  /** The connect-app handshake's KV — its announce drain feeds the attach stream. */
+  connectAppSignals?: CraftConnectAppSignals | null;
 };
 
 export function createTurnRoutes(
@@ -186,6 +189,14 @@ export function createTurnRoutes(
                 deps.approvalSignals && config.approvalGatedTools.length > 0
                   ? () => deps.approvalSignals!.drainAnnouncements(sessionId)
                   : null,
+              // connect_app asks are in the permissions template (not a gated-
+              // tools config), so the drain is wired whenever the KV is.
+              connectAppAnnounceDrain: deps.connectAppSignals
+                ? () =>
+                    (deps.connectAppSignals as CraftConnectAppSignals).drainAnnouncements(
+                      sessionId,
+                    )
+                : null,
             });
             for await (const event of events) {
               if (!live) return;

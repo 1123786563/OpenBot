@@ -8,11 +8,16 @@ are listed at the end.
 
 ## Observability stack
 
-**One command starts the local stack: `docker compose --profile observability up -d`.** It brings
-up eight containers — the LGTM five (Loki, Tempo, Prometheus, Alloy, Grafana) plus GlitchTip with
-its own postgres and redis — behind the same profile arrangement as `lago`: a plain
-`docker compose up -d` never starts any of them, because a deployment that has configured no
-telemetry has no need of them. Every port below is published on loopback only, and the `*_PORT`
+**One command starts the local stack:**
+
+```sh
+docker compose --project-directory . -f docker/compose/observability.yml up -d
+```
+
+It brings up eight containers — the LGTM five (Loki, Tempo, Prometheus, Alloy, Grafana) plus
+GlitchTip with its own postgres and redis — split into a file of its own, the same way `lago` is.
+A plain `docker compose up -d` never starts any of them, because a deployment that has configured
+no telemetry has no need of them. Every port below is published on loopback only, and the `*_PORT`
 variables in `.env` — the commented samples in `.env.example` name them — override the defaults:
 
 | Service | URL | What it is |
@@ -35,7 +40,8 @@ themselves are the same JSON shapes the Logging section defines.
 its compactor has retention enabled, which is the switch the period alone is inert without — and
 Tempo's `block_retention` and Prometheus's `--storage.tsdb.retention.time=7d` hold the same line.
 
-**Stopping is safe; wiping is a fresh install.** `docker compose --profile observability down`
+**Stopping is safe; wiping is a fresh install.**
+`docker compose --project-directory . -f docker/compose/observability.yml down`
 stops the stack and keeps its data: Grafana's account and dashboards, the Loki indices, the Tempo
 blocks and the GlitchTip projects all live in named volumes and survive, and a later `up -d`
 continues where the stack left off. Add `-v` and those volumes are deleted — the Grafana account
@@ -49,7 +55,7 @@ change to recreate (same image, same names) and the old configuration keeps runn
 touching a config file, name the service:
 
 ```sh
-docker compose --profile observability up -d --force-recreate loki   # or tempo, prometheus, …
+docker compose --project-directory . -f docker/compose/observability.yml up -d --force-recreate loki   # or tempo, prometheus, …
 ```
 
 ## Logging
@@ -171,10 +177,11 @@ line in Explore links straight to the same trace.
 
 ## Crash reporting
 
-**GlitchTip is the sink, the profile is the switch.** The same `docker compose --profile
-observability up -d` that brings up the LGTM stack brings up GlitchTip (plus its own postgres and
-redis) at `http://127.0.0.1:8001` — a Sentry-protocol server the client SDKs point DSNs at.
-It is in the same profile because it is the same story: a deployment that sends no telemetry has
+**GlitchTip is the sink, the same file is the switch.** The same
+`docker compose --project-directory . -f docker/compose/observability.yml up -d` that brings up
+the LGTM stack brings up GlitchTip (plus its own postgres and redis) at
+`http://127.0.0.1:8001` — a Sentry-protocol server the client SDKs point DSNs at.
+It lives in the same file because it is the same story: a deployment that sends no telemetry has
 no need of it, and a plain `docker compose up -d` never starts it. It is pinned to
 `glitchtip/glitchtip:6.2.6`, the release the protocol test below was verified against; unlike the
 LGTM five it owns its data (`glitchtip-db` volume) and wipes it on upgrade, which is why it runs
@@ -203,7 +210,7 @@ first user by default), create organization `openbot`, create a project per clie
 (the password arrives through Django's standard `DJANGO_SUPERUSER_*` env contract):
 
 ```sh
-docker compose --profile observability exec -T \
+docker compose --project-directory . -f docker/compose/observability.yml exec -T \
   -e DJANGO_SUPERUSER_EMAIL=admin@openbot.local \
   -e DJANGO_SUPERUSER_PASSWORD=<generated> \
   glitchtip python manage.py createsuperuser --noinput
@@ -219,7 +226,7 @@ GlitchTip; the commented samples in `.env.example` name them.
 
 A DSN looks like `http://<key>@127.0.0.1:8001/<project-id>` — HTTP because the stack is
 loopback-only, which is also why it is not a production secret in local development: the port is
-published on loopback only, like every other port in docker-compose.yml.
+published on loopback only, like every other port in these files.
 
 ### Protocol test event
 

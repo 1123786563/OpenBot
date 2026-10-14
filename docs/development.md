@@ -36,6 +36,9 @@ Start the stack:
 bash scripts/start.sh
 ```
 
+The optional stacks — kb, casdoor/open-connector, lago, observability — live in separate files
+under `docker/compose/`; [compose.md](compose.md) has the map, the ports and the invocations.
+
 ## Running services
 
 Use `bash scripts/start.sh` for the full local stack. It starts Docker services, applies migrations, starts the API server, the app, and the routine worker, and verifies health routes.
@@ -154,6 +157,27 @@ a broken deployment when nothing is broken. Take the cookie from a browser alrea
 deployment under test, from DevTools under Application, Cookies. It is a credential with that
 person's reach: it belongs in the environment of the run, not in a file or a pull request comment.
 Asked for without it, the run stops before the first test and names the variable.
+
+`bun run test:ui` is the browser-level suite, driven by the [e2e](https://github.com/tester-army/e2e)
+framework, and needs a deployment that is up, the same way `test:smoke` does:
+
+```sh
+bash scripts/start.sh
+bun run test:ui
+```
+
+It drives a real Chromium against `localhost:3010` the way a person does: sign in through Casdoor,
+manage Bot sessions and lifecycle, and exercise the admin, channels, plugins, routines and billing
+surfaces. The agent steps that judge the screen run on the `OPENAI_API_KEY` in `.env`, and
+`E2E_MODEL` picks a different model.
+`bun run test:ui:headed` runs it with a visible browser.
+
+Every run writes `.e2e/report.json` and, per test, a `trace.md` under `.e2e/results/` with the step
+list, screen diffs, console errors and a screenshot at the point of failure; `.e2e/` is gitignored.
+The suite runs one test at a time (`workers: 1`), because every test drives the same deployment and
+its default Bot allows a single run at a time. The framework sends anonymous usage telemetry by
+default; opt out with
+`E2E_TELEMETRY_DISABLED=1`.
 
 `bun run test:live-screen` is separate for a related reason and needs no deployment, only this
 directory's own dependencies:

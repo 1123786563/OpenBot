@@ -1,0 +1,61 @@
+<!-- Ported from onyx skills/builtin/hubspot/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     hubspot_api.py REST wrapper, its egress-auth paragraph, and its command
+     examples are replaced by the user's connected HubSpot MCP server tools.
+     Domain guidance (object model, properties, owners, error discipline) is
+     onyx verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: hubspot
+description: Read and manage HubSpot CRM contacts, companies, and deals on the connected user's behalf via the HubSpot MCP server.
+---
+
+# HubSpot
+
+Call the HubSpot CRM as the connected user through the HubSpot MCP server
+connected to this session. **You are already authenticated** — the session's
+MCP relay attaches the user's HubSpot credential on every call, so never ask
+for or handle credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Objects are `contacts`, `companies`, or `deals`. Read tools (list, get,
+search, owners) run freely; creating and updating are the only writes. Read
+tools that paginate should be capped with a result limit to keep your context
+small.
+
+### List objects
+
+List an object type, optionally restricted to specific properties.
+
+### Fetch one object by id
+
+### Search (free text)
+
+### Owners
+
+### Create an object (write)
+
+New objects take internal property names and values (e.g.
+`email=jane@acme.co`, `firstname=Jane`).
+
+### Update an object (write)
+
+## Output
+
+Tool results are JSON. List tools return the items and whether more existed
+past the limit; failures return the HTTP status and message — surface the
+error rather than retrying blindly.
+
+## Notes
+
+- Properties default to a useful subset per object; request others by their
+  HubSpot internal property names (a comma-separated list, e.g.
+  `dealname,amount`).
+- Property keys are HubSpot internal property names (e.g. `email`,
+  `firstname`, `dealname`, `amount`).
+- If the server exposes a generic CRM-endpoint tool, pass user input as the
+  JSON body, not by string-formatting into the path.

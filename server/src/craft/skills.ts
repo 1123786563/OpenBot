@@ -5,11 +5,12 @@
  *
  * onyx computes these fingerprints during the skills/MCP push and stores them on the *sandbox*
  * row; a live session whose recorded hashes differ from the sandbox's predates the managed
- * content and must reload (rewrite config + dispose). OpenBot ships no managed-content push
- * yet (skills map to the plugins/marketplace surface; the craft MCP set is empty), so this
- * module carries the *semantics* — the two fingerprints and the predicate — while the session
- * row's `skills_hash` / `mcp_config_hash` columns are where a runtime records what it has
- * already picked up.
+ * content and must reload (rewrite config + dispose). OpenBot resolves the same fingerprints
+ * per user in managed-content.ts (the plugins domain supplies the app list; the skill fileset
+ * and craft MCP set are adapter seams), and the session row's `skills_hash` /
+ * `mcp_config_hash` columns are where a runtime records what it has already picked up — a
+ * wiring with no managed-content sources still gets live hashes (of empty content), and one
+ * with no resolver at all answers the stable null pair.
  */
 
 import { createHash } from "node:crypto";

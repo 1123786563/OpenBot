@@ -27,6 +27,13 @@ COPY agent-sandbox/src ./src
 # Sessions' files and the generated opencode config live on volumes, not in the image.
 # The workspace/config dirs are chowned to UID 1000 because the container drops to it at runtime.
 RUN mkdir -p /workspace /config && chown -R 1000:1000 /workspace /config
+# BUN_INSTALL=/usr/local (above) is a build-time posture, but bun's installer reads it at
+# runtime too: `bun install` inside a session derives its cache/tempdir from it, and
+# /usr/local is root-owned — every install answered AccessDenied (craft's webapp scaffold
+# died on its first bun install). Pin the cache under the runtime user's home, owned by it,
+# unless the deployment overrides.
+ENV BUN_INSTALL_CACHE_DIR=/home/bun/.bun/install-cache
+RUN mkdir -p /home/bun/.bun/install-cache && chown -R 1000:1000 /home/bun/.bun
 ENV SANDBOX_WORKSPACE_DIR=/workspace SANDBOX_CONFIG_DIR=/config
 # The proxy listens on SANDBOX_PORT (env.ts), not PORT — the variable has to name the one src reads.
 ENV SANDBOX_PORT=4300

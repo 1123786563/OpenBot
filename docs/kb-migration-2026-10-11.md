@@ -1,6 +1,8 @@
 # kb-mastra → server 迁移与 docker-compose 拆分
 
 > 2026-10-11 执行。kb-mastra 独立包迁入 server 工作区；单一 docker-compose.yml 按服务组拆分为 5 个文件。
+>
+> 2026-10-14 更新：四个拆分文件已从仓库根移动到 `docker/compose/`（kb.yml / services.yml / lago.yml / observability.yml），启动命令统一带 `--project-directory .`。本文中的命令为当时记录，当前命令与索引以 [compose.md](compose.md) 为准。
 
 ## 一、迁移后形态
 

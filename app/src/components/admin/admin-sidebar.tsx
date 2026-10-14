@@ -1,6 +1,8 @@
 import {
   IconArrowLeft,
+  IconBook2,
   IconBuildingBank,
+  IconChecks,
   IconCode,
   IconDeviceDesktop,
   IconFileText,
@@ -9,6 +11,7 @@ import {
   IconListDetails,
   IconPuzzle,
   IconShieldCheck,
+  IconShoppingBag,
   IconUsers,
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
@@ -51,6 +54,11 @@ const GROUPS = [
         linkOptions: { to: "/admin/boundaries" },
       },
       {
+        title: "sidebar.approvals",
+        icon: IconChecks,
+        linkOptions: { to: "/admin/approvals" },
+      },
+      {
         title: "sidebar.computers",
         icon: IconDeviceDesktop,
         linkOptions: { to: "/admin/computers" },
@@ -69,6 +77,16 @@ const GROUPS = [
         title: "sidebar.skills",
         icon: IconFileText,
         linkOptions: { to: "/admin/skills" },
+      },
+      {
+        title: "sidebar.market",
+        icon: IconShoppingBag,
+        linkOptions: { to: "/admin/market" },
+      },
+      {
+        title: "sidebar.knowledge",
+        icon: IconBook2,
+        linkOptions: { to: "/admin/knowledge" },
       },
       {
         title: "sidebar.learning",

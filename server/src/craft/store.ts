@@ -49,6 +49,14 @@ export type CraftStore = {
     sessionId: string,
     userId: string,
   ): Promise<CraftSessionRow | undefined>;
+  /**
+   * The row by id alone, no owner check, no activity bump — for callers that
+   * authenticate by something OTHER than a user session and then take the
+   * owner from the row (the MCP relay's session-tag attribution: the tag is
+   * validated against the row; ownership checks belong to the requireUser
+   * surfaces, not here).
+   */
+  findSessionById(sessionId: string): Promise<CraftSessionRow | undefined>;
   /** Sessions for the sidebar: user's INTERACTIVE rows, newest first. */
   listUserSessions(
     userId: string,
@@ -96,6 +104,13 @@ export type CraftStore = {
     skillsHash?: string | null;
     mcpConfigHash?: string | null;
   }): Promise<boolean>;
+  /**
+   * The repair path's claim: failed → initializing, guarded the same way the
+   * finalize CAS is (one row state, `.returning()`-length verdict) — exactly
+   * one concurrent repair owns the rebuild, and the provisioning envelope's
+   * finalize CAS can then match. False when the row is no longer `failed`.
+   */
+  resetFailedSessionForRepair(sessionId: string): Promise<boolean>;
   /** Write a freshly resolved opencode_session_id back (stale-404 remint). */
   persistOpencodeSessionId(
     sessionId: string,
@@ -167,6 +182,15 @@ export function createCraftStore(db: Database): CraftStore {
             eq(craftSessions.userId, userId),
           ),
         )
+        .limit(1);
+      return rows[0];
+    },
+
+    async findSessionById(sessionId) {
+      const rows = await db
+        .select()
+        .from(craftSessions)
+        .where(eq(craftSessions.id, sessionId))
         .limit(1);
       return rows[0];
     },
@@ -287,6 +311,23 @@ export function createCraftStore(db: Database): CraftStore {
         .returning({ id: craftSessions.id });
       // False when the session already left initializing (a concurrent repair
       // finished first) — the caller's runtime state must not be recorded.
+      return rows.length === 1;
+    },
+
+    async resetFailedSessionForRepair(sessionId) {
+      const rows = await db
+        .update(craftSessions)
+        .set({ status: "initializing" })
+        .where(
+          and(
+            eq(craftSessions.id, sessionId),
+            eq(craftSessions.status, "failed"),
+          ),
+        )
+        .returning({ id: craftSessions.id });
+      // False when the row is no longer failed — another repair already
+      // claimed the rebuild (or the row moved on); this attempt must not
+      // provision over it.
       return rows.length === 1;
     },
 

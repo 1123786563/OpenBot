@@ -5,7 +5,11 @@ import type { AppVariables } from "../auth/guards";
 import { PluginRefusedError } from "../plugins/store";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
-import { MemoryNotFoundError, MemoryRefusedError } from "./types";
+import {
+  MemoryNotFoundError,
+  MemoryRefusedError,
+  MemoryUnavailableError,
+} from "./types";
 const log = getLogger("server");
 
 export function createMemoryRoutes(
@@ -25,6 +29,8 @@ export function createMemoryRoutes(
       error instanceof PluginRefusedError
     )
       return context.json({ error: error.message }, 400);
+    if (error instanceof MemoryUnavailableError)
+      return context.json({ error: error.message }, 503);
     log.error(
       {
         type: "memory-route-error",

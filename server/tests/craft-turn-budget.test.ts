@@ -14,11 +14,11 @@ import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import pluginFactory from "../src/craft/templates/turn-budget.plugin";
 import {
   clearTurnDeadline,
-  SESSION_TURN_BUDGET_PLUGIN_SPEC,
   stampTurnDeadline,
   turnBudgetPluginSource,
   turnBudgetStampJson,
 } from "../src/craft/turn-budget";
+import { SESSION_TURN_BUDGET_PLUGIN_SPEC } from "../src/craft/session-plugins";
 import { createTurnExecutor } from "../src/craft/turn-executor";
 import type { InteractiveTurn, TurnStateStore } from "../src/craft/turn-state";
 

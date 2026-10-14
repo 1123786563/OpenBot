@@ -1,138 +1,260 @@
+import {
+  IconBulb,
+  IconChevronRight,
+  IconClock,
+  IconPlus,
+  IconRadar,
+} from "@tabler/icons-react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import type { TFunction } from "i18next";
+import { Fragment, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  PageEmpty,
+  PageRows,
+  PageSection,
+} from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
 import { channelListQueryOptions } from "@/lib/channels/queries";
-import { useDateTime } from "@/lib/i18n/datetime";
 import {
-  createProactiveSetting,
+  changeProactiveSettingMutationOptions,
+  createProactiveSettingMutationOptions,
   type ProactiveSetting,
-  proactiveKeys,
   proactiveSettingsQueryOptions,
   proactiveSuggestionsQueryOptions,
-  removeProactiveSetting,
-  resolveSuggestion,
-  runProactiveNow,
-  updateProactiveSetting,
+  resolveSuggestionMutationOptions,
 } from "@/lib/proactive";
 import { queryClient } from "@/query-client";
 
-const field = "grid gap-1 text-sm";
-const select = "h-9 rounded-md border bg-background px-3 text-sm";
 const intervals = [
-  { minutes: 60, label: "proactive.interval.hour" },
-  { minutes: 240, label: "proactive.interval.fourHours" },
-  { minutes: 720, label: "proactive.interval.twiceADay" },
-  { minutes: 1440, label: "proactive.interval.daily" },
-] as const satisfies readonly { minutes: number; label: string }[];
-async function refresh() {
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: proactiveKeys.settings }),
-    queryClient.invalidateQueries({ queryKey: proactiveKeys.suggestions }),
-  ]);
-}
-
+  { minutes: 60, key: "proactive.interval.hour" },
+  { minutes: 240, key: "proactive.interval.fourHours" },
+  { minutes: 720, key: "proactive.interval.twiceADay" },
+  { minutes: 1440, key: "proactive.interval.daily" },
+] as const;
+/** The label map, so a closed trigger says "Every 4 hours" rather than 240. */
+const intervalItems = (t: TFunction<"agents">) =>
+  intervals.map((interval) => ({
+    value: interval.minutes,
+    label: t(interval.key),
+  }));
+const intervalLabel = (t: TFunction<"agents">, minutes: number) => {
+  const interval = intervals.find((item) => item.minutes === minutes);
+  return interval ? t(interval.key) : t("proactive.everyMinutes", { minutes });
+};
 /** Next steps a Bot proposed from background research: start one as a task, or dismiss it. */
-export function SuggestionsInbox() {
+export function SuggestionsInbox({
+  agentId,
+}: {
+  /** Only this Bot's suggestions, and nothing at all when it has none. */
+  agentId?: string;
+} = {}) {
   const { t } = useTranslation("agents");
-  const dateTime = useDateTime();
   const suggestions = useQuery(proactiveSuggestionsQueryOptions());
+  const shown = (suggestions.data ?? []).filter(
+    (suggestion) => agentId === undefined || suggestion.agentId === agentId,
+  );
   const bots = useQuery(agentListQueryOptions());
-  const act = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "start" | "dismiss" }) =>
-      resolveSuggestion(id, action),
-    onSuccess: refresh,
-  });
+  const act = useMutation(resolveSuggestionMutationOptions(queryClient));
   const botName = (id: string) =>
     bots.data?.find((bot) => bot.id === id)?.name ?? t("proactive.yourBot");
+  if (agentId !== undefined && shown.length === 0) return null;
   return (
-    <section className="grid gap-3">
-      <h2 className="font-semibold">{t("proactive.suggestedTitle")}</h2>
-      {suggestions.isPending ? (
-        <p>{t("proactive.loading")}</p>
-      ) : suggestions.error ? (
-        <p role="alert" className="mt-2 text-destructive text-sm">
+    <PageSection title={t("proactive.suggestedTitle")}>
+      {suggestions.isPending ? null : suggestions.error ? (
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {suggestions.error.message}
         </p>
-      ) : suggestions.data?.length ? (
-        suggestions.data.map((suggestion) => (
-          <article
-            key={suggestion.id}
-            className="grid gap-2 rounded-lg border p-4"
-          >
-            <div className="flex flex-wrap justify-between gap-2">
-              <strong>{suggestion.title}</strong>
-              <span className="text-xs text-muted-foreground">
-                {botName(suggestion.agentId)} ·{" "}
-                {dateTime.formatDateTime(suggestion.createdAt)}
-              </span>
-            </div>
-            <p className="text-sm whitespace-pre-wrap">{suggestion.detail}</p>
-            {(suggestion.sourceApp || suggestion.sourceLink) && (
-              <p className="text-xs text-muted-foreground">
-                {t("proactive.from", {
-                  source: suggestion.sourceApp ?? t("proactive.aConnectedApp"),
-                })}
-                {suggestion.sourceLink && (
-                  <>
-                    {" · "}
-                    <a
-                      className="text-sm underline-offset-4 hover:underline"
-                      href={suggestion.sourceLink}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {t("proactive.openRecord")}
-                    </a>
-                  </>
-                )}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                disabled={act.isPending}
-                onClick={() =>
-                  act.mutate({ id: suggestion.id, action: "start" })
-                }
-              >
-                {t("proactive.startAsTask")}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={act.isPending}
-                onClick={() =>
-                  act.mutate({ id: suggestion.id, action: "dismiss" })
-                }
-              >
-                {t("proactive.dismiss")}
-              </Button>
-            </div>
-          </article>
-        ))
+      ) : shown.length ? (
+        <PageRows>
+          {shown.map((suggestion, index) => (
+            <Fragment key={suggestion.id}>
+              {index > 0 ? <Separator /> : null}
+              <Item size="sm">
+                <ItemMedia variant="icon">
+                  <IconBulb />
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle className="line-clamp-none">
+                    {suggestion.title}
+                  </ItemTitle>
+                  {suggestion.detail ? (
+                    <ItemDescription className="line-clamp-none whitespace-pre-wrap text-foreground">
+                      {suggestion.detail}
+                    </ItemDescription>
+                  ) : null}
+                  <ItemDescription className="line-clamp-none">
+                    {botName(suggestion.agentId)} ·{" "}
+                    {new Date(suggestion.createdAt).toLocaleString()}
+                    {suggestion.sourceApp || suggestion.sourceLink ? (
+                      <>
+                        {" · "}
+                        {t("proactive.from", {
+                          source:
+                            suggestion.sourceApp ??
+                            t("proactive.aConnectedApp"),
+                        })}
+                        {suggestion.sourceLink && (
+                          <>
+                            {" · "}
+                            <a
+                              href={suggestion.sourceLink}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {t("proactive.openRecord")}
+                            </a>
+                          </>
+                        )}
+                      </>
+                    ) : null}
+                  </ItemDescription>
+                  {/* A set, so it wraps onto its own line rather than crowding the title. */}
+                  <ItemFooter>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        disabled={act.isPending}
+                        onClick={() =>
+                          act.mutate({ id: suggestion.id, action: "start" })
+                        }
+                      >
+                        {t("proactive.startAsTask")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={act.isPending}
+                        onClick={() =>
+                          act.mutate({ id: suggestion.id, action: "dismiss" })
+                        }
+                      >
+                        {t("proactive.dismiss")}
+                      </Button>
+                    </div>
+                  </ItemFooter>
+                </ItemContent>
+              </Item>
+            </Fragment>
+          ))}
+        </PageRows>
       ) : (
-        <p className="text-muted-foreground">{t("proactive.none")}</p>
+        <PageEmpty>{t("proactive.none")}</PageEmpty>
       )}
       {act.error && (
-        <p role="alert" className="mt-2 text-destructive text-sm">
+        <p role="alert" className="mt-4 text-destructive text-sm">
           {act.error.message}
         </p>
       )}
-    </section>
+    </PageSection>
   );
 }
 
-/** Opt a Bot in to read-only background research of the apps it can already read. */
-export function ProactiveResearchSettings() {
+/**
+ * Opt a Bot in to read-only background research of the apps it can already read.
+ *
+ * Each opt-in is a row stating its current answer; it opens a dialog to change how often, run it,
+ * turn it off or remove it. Opting in is a dialog behind the section's action.
+ */
+export function ProactiveResearchSettings({
+  agentId: fixedBot,
+}: {
+  /** Only this Bot's research, and a new one is this Bot's without asking. */
+  agentId?: string;
+} = {}) {
   const { t } = useTranslation("agents");
   const settings = useQuery(proactiveSettingsQueryOptions());
   const bots = useQuery(agentListQueryOptions());
+  const [adding, setAdding] = useState(false);
+  const shown = (settings.data ?? []).filter(
+    (setting) => fixedBot === undefined || setting.agentId === fixedBot,
+  );
+  return (
+    <PageSection
+      action={
+        <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
+          <IconPlus />
+          {t("proactive.researchAction")}
+        </Button>
+      }
+      description={t("proactive.intro")}
+      title={t("proactive.title")}
+    >
+      {settings.isPending ? null : settings.error ? (
+        <p role="alert" className="mt-4 text-destructive text-sm">
+          {settings.error.message}
+        </p>
+      ) : shown.length === 0 ? (
+        <PageEmpty>{t("proactive.offMessage")}</PageEmpty>
+      ) : (
+        <PageRows>
+          {shown.map((setting, index) => (
+            <Fragment key={setting.id}>
+              {index > 0 ? <Separator /> : null}
+              <SettingRow
+                setting={setting}
+                botName={
+                  bots.data?.find((bot) => bot.id === setting.agentId)?.name ??
+                  setting.agentId
+                }
+              />
+            </Fragment>
+          ))}
+        </PageRows>
+      )}
+      {adding ? (
+        <TurnOnResearchDialog
+          fixedBot={fixedBot}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
+    </PageSection>
+  );
+}
+
+/** Which Bot, where its suggestions go, how often, and what to look for. */
+function TurnOnResearchDialog({
+  fixedBot,
+  onClose,
+}: {
+  fixedBot?: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("agents");
+  const bots = useQuery(agentListQueryOptions());
   const channels = useInfiniteQuery(channelListQueryOptions());
-  const [agentId, setAgentId] = useState("");
+  const [pickedBot, setAgentId] = useState("");
+  const agentId = fixedBot ?? pickedBot;
   const [channelId, setChannelId] = useState("");
   const [focus, setFocus] = useState("");
   const [intervalMinutes, setIntervalMinutes] = useState(240);
@@ -140,119 +262,165 @@ export function ProactiveResearchSettings() {
   const eligibleChannels = (channels.data ?? []).filter(
     (channel) => channel.active && channel.agentIds.includes(agentId),
   );
-  const add = useMutation({
-    mutationFn: createProactiveSetting,
-    onSuccess: async () => {
-      setFocus("");
-      await refresh();
-    },
-  });
+  const add = useMutation(createProactiveSettingMutationOptions(queryClient));
   return (
-    <section className="grid gap-3">
-      <h2 className="font-semibold">{t("proactive.title")}</h2>
-      <p className="text-sm text-muted-foreground">{t("proactive.intro")}</p>
-      <form
-        className="grid gap-3 rounded-lg border p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          add.mutate({ agentId, channelId, focus, intervalMinutes });
-        }}
-      >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className={field}>
-            {t("proactive.botLabel")}
-            <select
-              required
-              className={select}
-              value={agentId}
-              onChange={(event) => {
-                setAgentId(event.target.value);
-                setChannelId("");
-              }}
-            >
-              <option value="">{t("proactive.chooseBot")}</option>
-              {bots.data?.map((bot) => (
-                <option key={bot.id} value={bot.id}>
-                  {bot.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={field}>
-            {t("proactive.deliverTo")}
-            <select
-              required
-              className={select}
-              value={channelId}
-              onChange={(event) => setChannelId(event.target.value)}
-            >
-              <option value="">{t("proactive.chooseChannel")}</option>
-              {eligibleChannels.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {conversationLabel(channel)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={field}>
-            {t("proactive.howOften")}
-            <select
-              className={select}
-              value={intervalMinutes}
-              onChange={(event) =>
-                setIntervalMinutes(Number(event.target.value))
-              }
-            >
-              {intervals.map((interval) => (
-                <option key={interval.minutes} value={interval.minutes}>
-                  {t(interval.label)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label className={field} htmlFor={`${id}-focus`}>
-          {t("proactive.focusLabel")}
-          <Input
-            id={`${id}-focus`}
-            maxLength={1000}
-            value={focus}
-            onChange={(event) => setFocus(event.target.value)}
-            placeholder={t("proactive.focusPlaceholder")}
-          />
-        </label>
-        <Button
-          type="submit"
-          className="justify-self-start"
-          disabled={add.isPending || !agentId || !channelId}
-        >
-          {t("proactive.turnOnResearch")}
-        </Button>
-        {add.error && (
-          <p role="alert" className="mt-2 text-destructive text-sm">
-            {add.error.message}
-          </p>
-        )}
-      </form>
-      {settings.error && (
-        <p role="alert" className="mt-2 text-destructive text-sm">
-          {settings.error.message}
-        </p>
-      )}
-      {settings.data?.map((setting) => (
-        <SettingRow
-          key={setting.id}
-          setting={setting}
-          botName={
-            bots.data?.find((bot) => bot.id === setting.agentId)?.name ??
-            setting.agentId
-          }
-        />
-      ))}
-    </section>
+    <Dialog onOpenChange={(next) => !next && onClose()} open>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("proactive.turnOnResearch")}</DialogTitle>
+          <DialogDescription>
+            {t("proactive.dialogDescription")}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="mt-4 overflow-y-auto">
+          {/* The submit button is in the footer and reaches this form by id, so DialogBody stays a
+              direct child of DialogContent and keeps scrolling. */}
+          <form
+            id={id}
+            onSubmit={(event) => {
+              event.preventDefault();
+              add.mutate(
+                { agentId, channelId, focus, intervalMinutes },
+                { onSuccess: onClose },
+              );
+            }}
+          >
+            <FieldGroup>
+              {fixedBot === undefined ? (
+                <Field>
+                  <FieldLabel htmlFor={`${id}-bot`}>
+                    {t("proactive.botLabel")}
+                  </FieldLabel>
+                  <Select
+                    items={bots.data?.map((bot) => ({
+                      value: bot.id,
+                      label: bot.name,
+                    }))}
+                    onValueChange={(value) => {
+                      setAgentId(value ?? "");
+                      setChannelId("");
+                    }}
+                    required
+                    value={agentId || null}
+                  >
+                    <SelectTrigger className="w-full" id={`${id}-bot`}>
+                      <SelectValue placeholder={t("proactive.chooseBot")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bots.data?.map((bot) => (
+                        <SelectItem key={bot.id} value={bot.id}>
+                          {bot.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
+              <Field>
+                <FieldLabel htmlFor={`${id}-channel`}>
+                  {t("proactive.deliverTo")}
+                </FieldLabel>
+                <Select
+                  items={eligibleChannels.map((channel) => ({
+                    value: channel.id,
+                    label: conversationLabel(channel),
+                  }))}
+                  onValueChange={(value) => setChannelId(value ?? "")}
+                  required
+                  value={channelId || null}
+                >
+                  <SelectTrigger className="w-full" id={`${id}-channel`}>
+                    <SelectValue placeholder={t("proactive.chooseChannel")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleChannels.map((channel) => (
+                      <SelectItem key={channel.id} value={channel.id}>
+                        {conversationLabel(channel)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${id}-interval`}>
+                  {t("proactive.howOften")}
+                </FieldLabel>
+                <Select
+                  items={intervalItems(t)}
+                  onValueChange={(value) => {
+                    if (value !== null) setIntervalMinutes(value);
+                  }}
+                  value={intervalMinutes}
+                >
+                  <SelectTrigger className="w-full" id={`${id}-interval`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {intervals.map((interval) => (
+                      <SelectItem
+                        key={interval.minutes}
+                        value={interval.minutes}
+                      >
+                        {t(interval.key)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`${id}-focus`}>
+                  {t("proactive.focusLabel")}
+                </FieldLabel>
+                <Input
+                  id={`${id}-focus`}
+                  maxLength={1000}
+                  value={focus}
+                  onChange={(event) => setFocus(event.target.value)}
+                  placeholder={t("proactive.focusPlaceholder")}
+                />
+              </Field>
+            </FieldGroup>
+          </form>
+          {add.error && (
+            <p role="alert" className="text-destructive text-sm">
+              {add.error.message}
+            </p>
+          )}
+        </DialogBody>
+        <DialogFooter className="mt-4">
+          <Button onClick={onClose} size="sm" variant="outline">
+            {t("proactive.cancel")}
+          </Button>
+          <Button
+            disabled={add.isPending || !agentId || !channelId}
+            form={id}
+            size="sm"
+            type="submit"
+          >
+            {t("proactive.turnOnResearch")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
+/** Whether it is on, and when it runs next. Stated rather than captured, so it follows the query. */
+function researchStatus(setting: ProactiveSetting, t: TFunction<"agents">) {
+  return !setting.enabled
+    ? t("proactive.off")
+    : setting.lastStatus === "running"
+      ? t("proactive.researchingNow")
+      : t("proactive.next", {
+          date: new Date(setting.nextRunAt).toLocaleString(),
+        });
+}
+
+/**
+ * One Bot's research: a summary of its current answer and a chevron, opening a dialog that changes
+ * it. The dialog is the row's sibling, not its child, so a click inside it does not bubble back to
+ * the row and reopen it.
+ */
 function SettingRow({
   setting,
   botName,
@@ -261,103 +429,152 @@ function SettingRow({
   botName: string;
 }) {
   const { t } = useTranslation("agents");
-  const dateTime = useDateTime();
-  const change = useMutation({
-    mutationFn: (
-      action:
-        | { kind: "toggle" }
-        | { kind: "run" }
-        | { kind: "remove" }
-        | { kind: "interval"; minutes: number },
-    ) =>
-      action.kind === "run"
-        ? runProactiveNow(setting.id)
-        : action.kind === "remove"
-          ? removeProactiveSetting(setting.id)
-          : updateProactiveSetting(
-              setting.id,
-              action.kind === "toggle"
-                ? { enabled: !setting.enabled }
-                : { intervalMinutes: action.minutes },
-            ),
-    onSuccess: refresh,
-  });
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const change = useMutation(
+    changeProactiveSettingMutationOptions(queryClient),
+  );
+  const summary = [
+    setting.focus,
+    intervalLabel(t, setting.intervalMinutes),
+    researchStatus(setting, t),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <article className="grid gap-2 rounded-lg border p-4">
-      <div className="flex flex-wrap justify-between gap-2">
-        <strong>{botName}</strong>
-        <span className="text-sm text-muted-foreground">
-          {!setting.enabled
-            ? t("proactive.off")
-            : setting.lastStatus === "running"
-              ? t("proactive.researchingNow")
-              : t("proactive.next", {
-                  date: dateTime.formatDateTime(setting.nextRunAt),
-                })}
-        </span>
-      </div>
-      {setting.focus && <p className="text-sm">{setting.focus}</p>}
-      {setting.lastRunAt && (
-        <p className="text-xs text-muted-foreground">
-          {t("proactive.lastRan", {
-            date: dateTime.formatDateTime(setting.lastRunAt),
-          })}
-          {setting.lastStatus === "succeeded" ? "" : ` (${setting.lastStatus})`}
-        </p>
-      )}
-      {setting.lastError && (
-        <p role="alert" className="mt-2 text-destructive text-sm">
-          {setting.lastError}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label={t("proactive.howOften")}
-          className={select}
-          value={setting.intervalMinutes}
-          onChange={(event) =>
-            change.mutate({
-              kind: "interval",
-              minutes: Number(event.target.value),
-            })
-          }
-        >
-          {intervals.map((interval) => (
-            <option key={interval.minutes} value={interval.minutes}>
-              {t(interval.label)}
-            </option>
-          ))}
-        </select>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!setting.enabled || change.isPending}
-          onClick={() => change.mutate({ kind: "run" })}
-        >
-          {t("proactive.runNow")}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={change.isPending}
-          onClick={() => change.mutate({ kind: "toggle" })}
-        >
-          {setting.enabled ? t("proactive.turnOff") : t("proactive.turnOn")}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={change.isPending}
-          onClick={() => change.mutate({ kind: "remove" })}
-        >
-          {t("proactive.remove")}
-        </Button>
-      </div>
-      {change.error && (
-        <p role="alert" className="mt-2 text-destructive text-sm">
-          {change.error.message}
-        </p>
-      )}
-    </article>
+    <>
+      <Item
+        render={
+          <button
+            onClick={() => {
+              // Opening starts clean: the last change's failure is not this visit's.
+              change.reset();
+              setOpen(true);
+            }}
+            type="button"
+          />
+        }
+        size="sm"
+      >
+        <ItemMedia variant="icon">
+          <IconRadar />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle>{botName}</ItemTitle>
+          <ItemDescription>{summary}</ItemDescription>
+          {setting.lastError ? (
+            <ItemDescription className="text-destructive">
+              {setting.lastError}
+            </ItemDescription>
+          ) : null}
+        </ItemContent>
+        <ItemActions>
+          <IconChevronRight className="size-4 text-muted-foreground" />
+        </ItemActions>
+      </Item>
+      <Dialog onOpenChange={setOpen} open={open}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("proactive.title")}</DialogTitle>
+            <DialogDescription>
+              {setting.focus ? `${botName} · ${setting.focus}` : botName}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="mt-4">
+            <Item size="sm" variant="muted">
+              <ItemMedia variant="icon">
+                <IconClock />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{researchStatus(setting, t)}</ItemTitle>
+                {setting.lastRunAt && (
+                  <ItemDescription>
+                    {t("proactive.lastRan", {
+                      date: new Date(setting.lastRunAt).toLocaleString(),
+                    })}
+                    {setting.lastStatus === "succeeded"
+                      ? ""
+                      : ` (${setting.lastStatus})`}
+                  </ItemDescription>
+                )}
+              </ItemContent>
+            </Item>
+            {setting.lastError && (
+              <p role="alert" className="text-destructive text-sm">
+                {setting.lastError}
+              </p>
+            )}
+            <Field>
+              <FieldLabel htmlFor={`${id}-interval`}>
+                {t("proactive.howOften")}
+              </FieldLabel>
+              {/* Writes on pick: one value, no draft worth holding. */}
+              <Select
+                disabled={change.isPending}
+                items={intervalItems(t)}
+                onValueChange={(minutes) => {
+                  if (minutes !== null && minutes !== setting.intervalMinutes)
+                    change.mutate({
+                      setting,
+                      change: { kind: "interval", minutes },
+                    });
+                }}
+                value={setting.intervalMinutes}
+              >
+                <SelectTrigger className="w-full" id={`${id}-interval`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {intervals.map((interval) => (
+                    <SelectItem key={interval.minutes} value={interval.minutes}>
+                      {t(interval.key)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            {change.error && (
+              <p role="alert" className="text-destructive text-sm">
+                {change.error.message}
+              </p>
+            )}
+          </DialogBody>
+          <DialogFooter className="mt-4">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={change.isPending}
+              onClick={() =>
+                change.mutate(
+                  { setting, change: { kind: "remove" } },
+                  { onSuccess: () => setOpen(false) },
+                )
+              }
+            >
+              {t("proactive.remove")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={change.isPending}
+              onClick={() =>
+                change.mutate({ setting, change: { kind: "toggle" } })
+              }
+            >
+              {setting.enabled ? t("proactive.turnOff") : t("proactive.turnOn")}
+            </Button>
+            <Button
+              size="sm"
+              disabled={!setting.enabled || change.isPending}
+              onClick={() =>
+                change.mutate({ setting, change: { kind: "run" } })
+              }
+            >
+              {t("proactive.runNow")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

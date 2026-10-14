@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
+import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,10 +15,13 @@ import {
 import type { PlanCatalogCycle, PlanCatalogEntry } from "@/lib/billing/credits";
 import { credits } from "@/lib/billing/format";
 import {
+  cancelPurchase,
   createPurchase,
+  currentPurchaseQueryOptions,
   type PurchaseCycle,
   type PurchaseOrderView,
   type PurchaseProvider,
+  PurchaseRequestError,
   purchaseCatalogQueryOptions,
   purchaseOrderQueryOptions,
 } from "@/lib/billing/payments";
@@ -80,10 +83,14 @@ export function UpgradeDialog({
     providers: PurchaseProvider[];
     cycles: PurchaseCycle[];
   } | null>(null);
+  /* The read is in flight: the choosers cannot render yet, and that silence used to read as a
+   * broken dialog (the pay button sat disabled with nothing saying why). One line says it. */
+  const [catalogPending, setCatalogPending] = useState(false);
   const [provider, setProvider] = useState<PurchaseProvider | null>(null);
   const [cycle, setCycle] = useState<PurchaseCycle | null>(null);
   useEffect(() => {
     if (!open || purchaseCatalog) return;
+    setCatalogPending(true);
     void queryClient
       .fetchQuery(purchaseCatalogQueryOptions)
       .then((catalogAnswer) => {
@@ -98,7 +105,8 @@ export function UpgradeDialog({
       .catch(() => {
         /* A failed catalog read leaves the choosers empty and the pay button disabled — the
          * reader sees nothing to click rather than a choice the server would refuse. */
-      });
+      })
+      .finally(() => setCatalogPending(false));
   }, [open, purchaseCatalog, queryClient]);
 
   const plan = catalog[selected];
@@ -110,8 +118,8 @@ export function UpgradeDialog({
   const cycleEntry =
     plan && cycle
       ? plan.pricing.find((c) => c.code === cycle)
-      : plan?.pricing.find((c) => c.code === "recurring_monthly") ??
-        plan?.pricing.find((c) => c.code === "monthly");
+      : (plan?.pricing.find((c) => c.code === "recurring_monthly") ??
+        plan?.pricing.find((c) => c.code === "monthly"));
 
   /*
    * The checkout state: once an order exists the QR block shows the channel's real code and this
@@ -121,6 +129,7 @@ export function UpgradeDialog({
   const [order, setOrder] = useState<PurchaseOrderView | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   // The QR drawn locally: the payload rendered to a data URL the <img> can show.
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -146,7 +155,10 @@ export function UpgradeDialog({
   }, [order?.checkout?.kind, order?.checkout]);
 
   const startCheckout = async () => {
-    if (!provider || !cycle) return;
+    // One lane at a time: a cancel in flight and a checkout in flight can cross setOrder
+    // writes (a late cancel callback erased a freshly created order and left the dialog
+    // 409-locked with no cancel entry), so each lane refuses the other.
+    if (canceling || !provider || !cycle) return;
     setPayError(null);
     setPaying(true);
     try {
@@ -158,9 +170,72 @@ export function UpgradeDialog({
       });
       setOrder(created);
     } catch (error) {
-      setPayError((error as Error).message);
+      /*
+       * The two 409s a reader can actually meet are said in the reader's language, not the
+       * server's English: a pending order blocks every new purchase deployment-wide, and an
+       * active subscription blocks a repeat. Both travel their plan code on the typed error,
+       * which is what they are matched on — never the message string.
+       */
+      if (
+        error instanceof PurchaseRequestError &&
+        error.status === 409 &&
+        error.pendingPlanCode !== null
+      ) {
+        setPayError(t("upgradeDialog.errors.pendingPurchase"));
+        /*
+         * A REMOUNTED dialog holds no local order, so the refusal's own escape — "cancel it"
+         * — would point at a button that does not render. The server's current-order read is
+         * exactly this recovery path (the query already exists for the page): pull the blocking
+         * pending order back into view so the cancel entry the message names exists.
+         */
+        if (!orderRef.current) {
+          void queryClient
+            .fetchQuery(currentPurchaseQueryOptions)
+            .then(({ order: current }) => {
+              if (current?.status === "pending") setOrder(current);
+            })
+            .catch(() => {
+              /* The refusal sentence still stands on its own; this is only the escape hatch. */
+            });
+        }
+      } else if (
+        error instanceof PurchaseRequestError &&
+        error.status === 409 &&
+        error.activePlanCode !== null
+      ) {
+        setPayError(t("upgradeDialog.alreadySubscribed"));
+      } else {
+        setPayError((error as Error).message);
+      }
     } finally {
       setPaying(false);
+    }
+  };
+
+  /*
+   * The reader's own way out of a pending order: cancel it here rather than wait out the TTL
+   * (the field finding — a pending order 409-blocked every new purchase and the dialog offered
+   * no cancel, so an abandoned checkout locked buying for the order's whole lifetime). A cancel
+   * clears the order, which stops the poll and re-arms the checkout lane; cancelling an
+   * already-cancelled order is the server's own no-op success.
+   */
+  const cancelOrder = async () => {
+    if (order?.status !== "pending" || canceling || paying) return;
+    setCanceling(true);
+    try {
+      await cancelPurchase(order.orderId);
+      setOrder(null);
+      setPayError(null);
+    } catch (error) {
+      /* The server's own refusal (an order that settled between click and landing) is English;
+       * this dialog says its refusals in the reader's language, and a cancel refusal is one. */
+      setPayError(
+        error instanceof PurchaseRequestError
+          ? t("upgradeDialog.errors.cancelFailed")
+          : (error as Error).message,
+      );
+    } finally {
+      setCanceling(false);
     }
   };
 
@@ -182,6 +257,12 @@ export function UpgradeDialog({
       void queryClient
         .fetchQuery(purchaseOrderQueryOptions(current.orderId))
         .then(({ order: fresh }) => {
+          /*
+           * Liveness guard: a cancel (or any later transition) may have cleared or replaced
+           * the order while this poll was on the wire. Applying its answer anyway resurrected
+           * a cancelled order into the cleared dialog, so a stale poll is dropped, not applied.
+           */
+          if (orderRef.current?.orderId !== current.orderId) return;
           if (
             fresh.status !== current.status ||
             fresh.activationState !== current.activationState
@@ -238,6 +319,17 @@ export function UpgradeDialog({
               </button>
             ))}
           </div>
+
+          {/*
+           * The purchase catalog is on the wire: the choosers cannot render yet, and the
+           * silence used to look like a broken dialog (the pay button disabled, nothing saying
+           * why). One line says it, and it leaves when the choosers land.
+           */}
+          {catalogPending && !purchaseCatalog ? (
+            <p className="text-muted-foreground animate-pulse text-xs">
+              {t("upgradeDialog.loadingOptions")}
+            </p>
+          ) : null}
 
           {/* The billing cycles the SERVER offers (not the display catalog's wider set): v1
               shows the monthly spellings; yearly is absent until the provider can activate it. */}
@@ -366,6 +458,21 @@ export function UpgradeDialog({
                       : null}
                   </p>
                 ) : null}
+                {/* The way out of an abandoned checkout: cancel here, not by waiting out the
+                    order's TTL — a pending order otherwise 409-blocks every new purchase. */}
+                {order?.status === "pending" ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={canceling}
+                    onClick={() => void cancelOrder()}
+                  >
+                    {canceling
+                      ? t("upgradeDialog.canceling")
+                      : t("upgradeDialog.cancelOrder")}
+                  </Button>
+                ) : null}
                 {purchaseBlocked ? (
                   <p className="text-muted-foreground text-xs" role="note">
                     {t("upgradeDialog.alreadySubscribed")}
@@ -402,6 +509,7 @@ export function UpgradeDialog({
               !provider ||
               !cycle ||
               paying ||
+              canceling ||
               purchaseBlocked
             }
             onClick={() => void startCheckout()}

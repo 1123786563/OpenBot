@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
@@ -8,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useDateTime } from "@/lib/i18n/datetime";
 import {
+  createLearningContainer,
+  learningAutomaticQueryOptions,
   learningDeliveryQueryOptions,
   learningKeys,
   learningOverviewQueryOptions,
@@ -15,6 +18,7 @@ import {
   saveLearningSettings,
 } from "@/lib/learning/queries";
 import type {
+  LearningAutoAssignState,
   LearningSettings,
   LearningTarget,
 } from "../../../../../shared/learning";
@@ -23,6 +27,31 @@ export const Route = createFileRoute("/_authed/admin/learning")({
   component: LearningPage,
 });
 const selectClass = "w-full rounded-md border bg-background px-3 py-2 text-sm";
+
+/** What automatic assignment found, in words, or nothing when there is nothing to say. */
+function automaticMessage(
+  automatic: LearningAutoAssignState | null | undefined,
+  settings: LearningSettings,
+  t: TFunction<"admin">,
+): string | undefined {
+  if (!automatic) return undefined;
+  if (
+    automatic.state === "assigned" &&
+    settings.defaultTarget?.containerId === automatic.containerId
+  )
+    return t("learning.automatic.assigned", {
+      container: automatic.containerId,
+    });
+  if (automatic.state === "absent")
+    return t("learning.automatic.absent", {
+      container: automatic.containerId,
+    });
+  if (automatic.state === "not_entitled")
+    return t("learning.automatic.notEntitled");
+  if (automatic.state === "unavailable")
+    return t("learning.automatic.unavailable");
+  return undefined;
+}
 
 function TargetFields({
   target,
@@ -76,11 +105,65 @@ function TargetFields({
   );
 }
 
+/**
+ * The missing container, and how it gets made: a button when this deployment holds a credential that
+ * can create it, and always the exact steps for an operator, since the runtime key cannot.
+ */
+function ContainerSetup({
+  automatic,
+}: {
+  automatic: Extract<LearningAutoAssignState, { state: "absent" }>;
+}) {
+  const { t } = useTranslation("admin");
+  const queryClient = useQueryClient();
+  const create = useMutation({
+    mutationFn: createLearningContainer,
+    onSuccess: async (next) => {
+      queryClient.setQueryData(learningKeys.automatic, next);
+      await queryClient.invalidateQueries({ queryKey: learningKeys.all });
+    },
+  });
+  return (
+    <div className="grid gap-2 rounded-md border p-3 text-sm">
+      {automatic.canCreate && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            disabled={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            {create.isPending
+              ? t("learning.setup.creating")
+              : t("learning.setup.create", {
+                  container: automatic.containerId,
+                })}
+          </Button>
+          <span className="text-muted-foreground">
+            {t("learning.setup.usesCredential")}
+          </span>
+        </div>
+      )}
+      {(create.error || automatic.createError) && (
+        <p role="alert" className="text-destructive">
+          {create.error?.message ?? automatic.createError}
+        </p>
+      )}
+      {automatic.instructions && (
+        <p>
+          <span className="font-medium">{t("learning.setup.toCreateIt")}</span>{" "}
+          {automatic.instructions}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function LearningPage() {
   const { t } = useTranslation("admin");
   const { formatDateTime } = useDateTime();
   const queryClient = useQueryClient();
   const settingsQuery = useQuery(learningSettingsQueryOptions());
+  const automatic = useQuery(learningAutomaticQueryOptions());
   const agents = useQuery(agentListQueryOptions());
   const hiddenAgents = useQuery(agentListQueryOptions(true));
   const roster = [...(agents.data ?? []), ...(hiddenAgents.data ?? [])];
@@ -92,6 +175,11 @@ export function LearningPage() {
   );
   const delivery = useQuery(learningDeliveryQueryOptions(selected));
   const settings = draft ?? settingsQuery.data;
+  // About what is saved, so it steps aside while an edit is in progress.
+  const automaticNote =
+    settingsQuery.data && !draft
+      ? automaticMessage(automatic.data, settingsQuery.data, t)
+      : undefined;
   const save = useMutation({
     mutationFn: saveLearningSettings,
     onSuccess: async (next) => {
@@ -158,6 +246,14 @@ export function LearningPage() {
                 change({ ...settings, defaultTarget })
               }
             />
+            {automaticNote && (
+              <p role="status" className="text-sm">
+                {automaticNote}
+              </p>
+            )}
+            {!draft && automatic.data?.state === "absent" && (
+              <ContainerSetup automatic={automatic.data} />
+            )}
             <p className="text-muted-foreground text-sm">
               {t("learning.participation.idHint")}
             </p>

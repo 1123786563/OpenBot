@@ -247,6 +247,8 @@ export function createSandboxGateway(
         // The gateway's write creates parent directories; mkdir is a no-op kept
         // for the workspace API's shape.
         mkdir: async () => undefined,
+        listFiles: (path) => fileApi.listFiles(path),
+        readFile: (path) => fileApi.readFile(path),
       };
     },
 

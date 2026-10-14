@@ -108,7 +108,10 @@ function buildApp(store: CraftStore, turnState: TurnStateStore, executor: TurnEx
     turnState,
     executor,
     botIdFor: async () => "bot-1",
-    fence: { requestInterrupt: async () => undefined } as unknown as InterruptFence,
+    fence: {
+      requestInterrupt: async () => undefined,
+      clearInterrupt: async () => undefined,
+    } as unknown as InterruptFence,
   });
 }
 

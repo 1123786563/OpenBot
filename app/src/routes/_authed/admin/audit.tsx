@@ -1,4 +1,4 @@
-import { IconRefresh } from "@tabler/icons-react";
+import { IconDownload, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -8,7 +8,6 @@ import {
   PageSection,
   PageShell,
 } from "@/components/layout/page-shell";
-import { TableSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import {
@@ -17,8 +16,9 @@ import {
   outcomeOf,
   REFUSED_EVENT_TYPES,
 } from "@/lib/audit/outcome";
-import { auditEventsQueryOptions } from "@/lib/audit/queries";
+import { auditEventsQueryOptions, auditExportUrl } from "@/lib/audit/queries";
 import { silenceOf } from "@/lib/audit/silence";
+import { client } from "@/lib/client";
 import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
@@ -72,10 +72,49 @@ const FILTERS = [
 
 function AuditPage() {
   const { t } = useTranslation("admin");
+  const { formatNumber } = useDateTime();
   const [search, setSearch] = useState<string>(FILTERS[0].search);
   const events = useQuery(auditEventsQueryOptions(search));
   const rows = (events.data?.events ?? []) as AuditEvent[];
   const nameFor = useBotNames();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportCapped, setExportCapped] = useState<number | null>(null);
+
+  /*
+   * The same filtered query as the table, downloaded as a file. The server walks every
+   * matching page up to its cap, so this stays a single request no matter how many pages
+   * the filter matches; the filename carries the day it was pulled.
+   */
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    setExportCapped(null);
+    try {
+      const response = await client(auditExportUrl(search), {
+        fallback: t("audit.exportFailed"),
+      });
+      // A file that stopped early must say so, or it reads as the whole trail.
+      const capped = Number(response.headers.get("x-audit-export-truncated"));
+      if (Number.isInteger(capped) && capped > 0) setExportCapped(capped);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `audit-events-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : t("audit.exportFailed"),
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     /*
@@ -86,10 +125,21 @@ function AuditPage() {
      */
     <PageShell
       action={
-        <Button onClick={() => events.refetch()} size="sm" variant="ghost">
-          <IconRefresh />
-          {t("audit.refresh")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={exporting}
+            onClick={exportCsv}
+            size="sm"
+            variant="outline"
+          >
+            <IconDownload />
+            {exporting ? t("audit.exporting") : t("audit.exportCsv")}
+          </Button>
+          <Button onClick={() => events.refetch()} size="sm" variant="ghost">
+            <IconRefresh />
+            {t("audit.refresh")}
+          </Button>
+        </div>
       }
       description={t("audit.description")}
       title={t("audit.title")}
@@ -111,9 +161,17 @@ function AuditPage() {
           ))}
         </div>
 
-        {events.isPending ? (
-          <TableSkeleton />
-        ) : events.isError ? (
+        {exportError ? (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            {exportError}
+          </p>
+        ) : null}
+        {exportCapped ? (
+          <p className="mt-4 text-muted-foreground text-sm" role="status">
+            {t("audit.exportCapped", { count: formatNumber(exportCapped) })}
+          </p>
+        ) : null}
+        {events.isPending ? null : events.isError ? (
           <p className="mt-4 text-destructive text-sm" role="alert">
             {t("audit.loadError")}
           </p>

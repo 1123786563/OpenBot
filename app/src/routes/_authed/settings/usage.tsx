@@ -155,7 +155,9 @@ function RouteComponent() {
     >
       <div className="mt-8">
         {/* The welcome offer is a one-time grant the deployment remembers; its claim is the write
-            phase three adds, so until then the button is present but does nothing. */}
+            phase three adds. Until that write exists the banner renders its claim DISABLED with a
+            plain "not open yet" — a button that begged to be clicked and then did nothing was
+            worse than no button. */}
         <WelcomeBanner claimed={false} />
       </div>
 
@@ -258,9 +260,9 @@ function RouteComponent() {
             message={(consumption.error as Error).message}
             onRetry={() => void consumption.refetch()}
           />
-        ) : consumption.data.entries.length === 0 ? (
-          <PageEmpty>{t("creditsPage.emptyConsumption")}</PageEmpty>
         ) : (
+          /* An empty window is the table's own case to state — the switcher must survive it
+           * (the field bug: an empty window unmounted the switcher and trapped the reader). */
           <ConsumptionTable
             entries={consumption.data.entries}
             pagination={consumption.data.pagination}

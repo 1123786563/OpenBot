@@ -1,11 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   MessageContent,
   MessageHeader,
@@ -13,11 +10,8 @@ import {
 } from "@/components/ui/message";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
-  addGroupMemberMutationOptions,
   type GroupMessage,
-  type GroupPerson,
   groupQueryOptions,
-  removeGroupMemberMutationOptions,
   sendGroupMessageMutationOptions,
 } from "@/lib/groups";
 import { markdownComponents } from "@/lib/markdown";
@@ -35,7 +29,6 @@ import { TeamBotConsentCard } from "./team-bot-consent";
  * `@Name` in the composer addresses one Bot; otherwise every Bot answers, one after another.
  */
 export function GroupChat({ channelId }: { channelId: string }) {
-  const { t } = useTranslation("channels");
   const queryClient = useQueryClient();
   const group = useQuery(groupQueryOptions(channelId));
   const me = useQuery(currentUserQueryOptions()).data;
@@ -67,12 +60,11 @@ export function GroupChat({ channelId }: { channelId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 py-6">
           {messages.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {t("group.empty", {
-                names: bots.map((bot) => bot.name).join(t("group.and")),
-              })}
+              Say something to {bots.map((bot) => bot.name).join(" and ")}.
+              Every Bot answers in turn; start with @Name to ask just one.
             </p>
           ) : null}
           {messages.map((message) => (
@@ -81,14 +73,14 @@ export function GroupChat({ channelId }: { channelId: string }) {
               message={message}
               name={
                 message.agentId
-                  ? (names.get(message.agentId) ?? t("group.botGone"))
+                  ? (names.get(message.agentId) ?? "A Bot no longer here")
                   : message.ownerUserId === me?.id
-                    ? t("group.you")
-                    : t("group.teammate")
+                    ? "You"
+                    : "A teammate"
               }
               answeredBy={
                 message.answeredBy
-                  ? (names.get(message.answeredBy) ?? t("group.anotherBot"))
+                  ? (names.get(message.answeredBy) ?? "another Bot")
                   : undefined
               }
               mine={message.ownerUserId === me?.id}
@@ -97,21 +89,18 @@ export function GroupChat({ channelId }: { channelId: string }) {
           <div ref={endRef} />
         </div>
       </div>
-      <div className="mx-auto w-full max-w-3xl px-4 pb-4">
+      {/* The same column and the same compact composer as a conversation with one Bot. */}
+      <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
         {send.error ? (
           <p className="pb-2 text-sm text-destructive" role="alert">
             {send.error.message}
           </p>
         ) : null}
-        <People
-          channelId={channelId}
-          me={me?.id}
-          people={group.data?.people ?? []}
-        />
-        <AddPerson channelId={channelId} />
         <Composer
           agents={toAgentOptions(bots)}
+          className="mt-auto w-full"
           commands={[]}
+          compact
           disabled={bots.length === 0}
           pending={send.isPending || working}
           autoFocus
@@ -141,7 +130,6 @@ function GroupLine({
   answeredBy?: string;
   mine: boolean;
 }) {
-  const { t } = useTranslation("channels");
   if (message.agentId === null)
     return (
       <MessageRow align={mine ? "end" : "start"}>
@@ -167,7 +155,7 @@ function GroupLine({
       <MessageContent>
         <MessageHeader className="text-xs font-medium text-muted-foreground">
           {name}
-          {answeredBy ? t("group.answerFrom", { name: answeredBy }) : null}
+          {answeredBy ? ` · answer from ${answeredBy}` : null}
         </MessageHeader>
         {(message.status === "running" || message.status === "queued") &&
         !message.text ? (
@@ -175,13 +163,17 @@ function GroupLine({
             className="tool-line-running text-sm text-muted-foreground"
             role="status"
           >
-            {t("group.thinking")}
+            Thinking
           </p>
         ) : message.status === "waiting" ? (
           <p className="text-sm text-muted-foreground">
-            {message.reason ?? t("group.waiting")}{" "}
-            <Link className="underline" to="/approvals">
-              {t("group.openApprovals")}
+            {message.reason ?? "Waiting for your response."}{" "}
+            <Link
+              className="underline"
+              params={{ agentId: message.agentId }}
+              to="/bots/$agentId"
+            >
+              Open {name}
             </Link>
           </p>
         ) : message.consent ? (
@@ -194,14 +186,13 @@ function GroupLine({
             />
           ) : (
             <p className="text-sm text-muted-foreground">
-              {t("group.consentAsked", {
-                server: message.consent.serverId,
-              })}
+              Asked a teammate for permission to use their own{" "}
+              {message.consent.serverId} account.
             </p>
           )
         ) : message.status === "failed" ? (
           <p className="text-sm text-destructive" role="alert">
-            {message.text || t("group.answerFailed")}
+            {message.text || "This Bot could not answer."}
           </p>
         ) : (
           <Bubble
@@ -219,109 +210,5 @@ function GroupLine({
         )}
       </MessageContent>
     </MessageRow>
-  );
-}
-
-/** Invite another person who has signed in here. They see this whole conversation. */
-function AddPerson({ channelId }: { channelId: string }) {
-  const { t } = useTranslation("channels");
-  const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const add = useMutation(addGroupMemberMutationOptions(channelId));
-  if (!open)
-    return (
-      <div className="flex justify-end pb-2">
-        <Button onClick={() => setOpen(true)} size="sm" variant="ghost">
-          {t("group.addPerson")}
-        </Button>
-      </div>
-    );
-  return (
-    <form
-      className="flex items-center gap-2 pb-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        add.mutate(email, {
-          onSuccess: () => {
-            setEmail("");
-            setOpen(false);
-          },
-        });
-      }}
-    >
-      <Input
-        aria-label={t("group.emailAria")}
-        onChange={(event) => setEmail(event.target.value)}
-        placeholder={t("group.emailPlaceholder")}
-        type="email"
-        value={email}
-      />
-      <Button disabled={!email.trim() || add.isPending} size="sm" type="submit">
-        {t("group.add")}
-      </Button>
-      {add.error ? (
-        <span className="text-sm text-destructive" role="alert">
-          {add.error.message}
-        </span>
-      ) : null}
-    </form>
-  );
-}
-
-/** Who is in the group. The creator can take people out; anyone else can leave. */
-function People({
-  channelId,
-  me,
-  people,
-}: {
-  channelId: string;
-  me: string | undefined;
-  people: GroupPerson[];
-}) {
-  const { t } = useTranslation("channels");
-  const queryClient = useQueryClient();
-  const remove = useMutation(
-    removeGroupMemberMutationOptions(queryClient, channelId),
-  );
-  const iCreated = people.some(
-    (person) => person.creator && person.userId === me,
-  );
-  if (people.length < 2) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 pb-2 text-xs text-muted-foreground">
-      <span>{t("group.people")}</span>
-      {people.map((person) => {
-        const self = person.userId === me;
-        const removable = self ? !person.creator : iCreated;
-        return (
-          <span
-            className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5"
-            key={person.userId}
-          >
-            {self ? t("group.you") : (person.name ?? person.email)}
-            {removable ? (
-              <button
-                aria-label={
-                  self
-                    ? t("group.leaveAria")
-                    : t("group.removePersonAria", { email: person.email })
-                }
-                className="hover:text-foreground"
-                disabled={remove.isPending}
-                onClick={() => remove.mutate(person.userId)}
-                type="button"
-              >
-                {self ? t("group.leave") : "×"}
-              </button>
-            ) : null}
-          </span>
-        );
-      })}
-      {remove.error ? (
-        <span className="mt-2 text-destructive text-sm" role="alert">
-          {remove.error.message}
-        </span>
-      ) : null}
-    </div>
   );
 }

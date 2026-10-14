@@ -10,14 +10,15 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
  * QA batch-2 probe (h), the FOURTH-delivery semantics against real PostgreSQL — UPDATED for
- * batch 3's B3 fix (authorized in the batch-3 brief):
+ * 99ab5899's durable-evidence contract:
  *
- *   The amount gate's unreadable branch now carries a blocked→silence guard ahead of the
- *   strike recording. A fourth (and every further) no-amount delivery on a BLOCKED order is
- *   still ACKED (the channel must be quieted), but writes NOTHING: the strike count stays at
- *   three and the dead order accumulates no tail. The batch-2 version of this probe pinned
- *   the OLD accumulation (four deliveries → four rows) as B3; the fix replaces it with the
- *   bounded shape pinned here.
+ *   Every no-amount delivery records its amount_unreadable evidence row BEFORE any verdict,
+ *   and every verdict is a refusal: `amount-mismatch` while the order is still pending (the
+ *   third strike blocks it — P2-3's endgame), `blocked` once it is. No delivery is acked
+ *   successful, because none ever commits a durable paid fact; the 409 at the route is a
+ *   terminal answer the channel can stop on. The batch-2 version of this probe pinned the
+ *   OLD accumulate-then-silence shape (four deliveries → acked, three rows); the durable-
+ *   evidence contract replaces it with the shape pinned here.
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const store = createPaymentStore(database);
@@ -64,7 +65,11 @@ function serviceFor(provider: PaymentProvider) {
       async getPlan() {
         return { found: true, interval: "monthly", currency: "CNY" };
       },
-      async ensureSubscription() {},
+      async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
     },
     externalCustomerKey: "qa-deployment",
     activePlanCode: async () => null,
@@ -87,8 +92,8 @@ async function strikesOn(orderId: string) {
   return rows.length;
 }
 
-describe("probe h-fourth: what the real store answers after the endgame (B3 fixed)", () => {
-  test("strikes 1-2 pend, strike 3 blocks; FOURTH+ deliveries ack silently, zero new rows", async () => {
+describe("probe h-fourth: what the real store answers after the endgame", () => {
+  test("strikes 1-2 refuse and accumulate, strike 3 blocks; FOURTH+ refusals keep recording evidence", async () => {
     const { order } = await store.insertOrder({
       planCode,
       provider: "alipay",
@@ -102,23 +107,38 @@ describe("probe h-fourth: what the real store answers after the endgame (B3 fixe
     const deliver = () =>
       serviceFor(silentDelivery(order.id)).handleCallback("alipay", new Headers(), "x");
 
-    // Strikes 1 and 2: pending, accumulating.
-    expect(await deliver()).toEqual({ kind: "success" });
-    expect(await deliver()).toEqual({ kind: "success" });
+    // Strikes 1 and 2: the order stays pending, each refusal accumulates its row.
+    expect(await deliver()).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
+    });
+    expect(await deliver()).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
+    });
     expect((await store.readOrder(order.id))?.status).toBe("pending");
     expect(await strikesOn(order.id)).toBe(2);
 
     // Strike 3: the endgame — blocked, third strike row recorded.
-    expect(await deliver()).toEqual({ kind: "success" });
+    expect(await deliver()).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "amount-mismatch" },
+    });
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     expect(await strikesOn(order.id)).toBe(3);
 
-    // FOURTH and FIFTH deliveries: still ACKED (the channel is quieted — a refusal here
-    // would make the channel retry forever), but the blocked→silence guard means NOTHING
-    // lands: no fourth strike row, no tail on the dead order.
-    expect(await deliver()).toEqual({ kind: "success" });
-    expect(await deliver()).toEqual({ kind: "success" });
-    expect(await strikesOn(order.id)).toBe(3);
+    // FOURTH and FIFTH deliveries: refused with the durable blocked verdict, and every
+    // refusal keeps recording its evidence row (a blocked status does not erase evidence).
+    // No success ack is possible: no durable paid fact was ever committed.
+    expect(await deliver()).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
+    });
+    expect(await deliver()).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "blocked" },
+    });
+    expect(await strikesOn(order.id)).toBe(5);
 
     // The money state never moved past blocked, and no fact was ever recorded.
     const final = await store.readOrder(order.id);

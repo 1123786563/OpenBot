@@ -1,7 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createBillingStore } from "../src/billing/store";
+import { BillingPersistenceError } from "../src/billing/types";
 import { createDatabase } from "../src/db/client";
 import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -22,7 +24,9 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`${prefix}%`}`,
   );
-  await database.execute(sql`DELETE FROM billing_webhook_events WHERE provider = 'test'`);
+  await database.execute(
+    sql`DELETE FROM billing_webhook_events WHERE provider = 'test' AND event_id LIKE ${`${prefix}%`}`,
+  );
   await database.$client.close();
 });
 
@@ -93,7 +97,7 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
 
   // And the foreign key the floor exists for is real: a subscription for a customer with no row
   // is refused by the database, not absorbed.
-  let refused = false;
+  let failure: unknown;
   try {
     await store.upsertSubscription({
       externalCustomerId: `${prefix}-no-such-customer`,
@@ -101,10 +105,16 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
       planCode: "pro",
       status: "active",
     });
-  } catch {
-    refused = true;
+  } catch (error) {
+    failure = error;
   }
-  expect(refused).toBe(true);
+  expect(failure).toBeInstanceOf(DrizzleQueryError);
+  expect((failure as DrizzleQueryError).cause).toBeInstanceOf(
+    Bun.SQL.PostgresError,
+  );
+  expect((failure as DrizzleQueryError).cause).toMatchObject({
+    errno: "23503",
+  });
 });
 
 test("deleting a customer cascades to its subscriptions", async () => {
@@ -141,6 +151,222 @@ test("the webhook inbox deduplicates on provider + event_id", async () => {
   expect(await store.hasWebhookEvent("test", `${prefix}-event`)).toBe(true);
   expect(await store.hasWebhookEvent("test", `${prefix}-missing`)).toBe(false);
   expect(await store.hasWebhookEvent("other", `${prefix}-event`)).toBe(false);
+});
+
+test("a final inbox failure rolls back staged customer and subscription projections", async () => {
+  const externalId = `${prefix}-atomic`;
+  const subscription = {
+    externalCustomerId: externalId,
+    externalSubscriptionId: `${prefix}-atomic-sub`,
+    planCode: "pro",
+    status: "active" as const,
+  };
+  const event = {
+    provider: "test",
+    eventId: `${prefix}-atomic-event`,
+    // Force PostgreSQL's NOT NULL constraint at the final inbox write, not an earlier projection.
+    webhookType: null as unknown as string,
+  };
+  let failure: unknown;
+  try {
+    await database.transaction(async (transaction) => {
+      const local = createBillingStore(transaction);
+      try {
+        await local.applyWebhookProjection({
+          customer: { externalId, name: "Authoritative Name" },
+          subscriptions: [subscription],
+          event,
+        });
+      } catch (error) {
+        failure = error;
+      }
+      // The nested operation must roll back to its savepoint, leaving the parent usable.
+      expect(await local.readSubscriptions(externalId)).toEqual([]);
+      expect(await local.hasWebhookEvent(event.provider, event.eventId)).toBe(
+        false,
+      );
+    });
+  } catch (error) {
+    failure = error;
+  }
+  expect(failure).toBeInstanceOf(DrizzleQueryError);
+  expect((failure as DrizzleQueryError).cause).toBeInstanceOf(
+    Bun.SQL.PostgresError,
+  );
+  expect((failure as DrizzleQueryError).cause).toMatchObject({
+    errno: "23502",
+  });
+  expect(await store.hasWebhookEvent(event.provider, event.eventId)).toBe(
+    false,
+  );
+  expect(await store.readSubscriptions(externalId)).toEqual([]);
+  const customers = await database
+    .select()
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, externalId));
+  expect(customers).toEqual([]);
+  const input = {
+    customer: { externalId, name: "Authoritative Name" },
+    subscriptions: [subscription],
+    event: { ...event, webhookType: "subscription.created" },
+  };
+  expect(await store.applyWebhookProjection(input)).toBe("processed");
+  expect(await store.applyWebhookProjection(input)).toBe("duplicate");
+  expect(await store.readSubscriptions(externalId)).toEqual([
+    { ...subscription, updatedAt: expect.any(Date) },
+  ]);
+  expect(await store.hasWebhookEvent(event.provider, event.eventId)).toBe(true);
+});
+
+test("an atomic webhook rolls back existing projection updates on inbox failure", async () => {
+  const externalId = `${prefix}-atomic-existing`;
+  const subscription = {
+    externalCustomerId: externalId,
+    externalSubscriptionId: `${prefix}-atomic-existing-sub`,
+    planCode: "pro",
+    status: "active" as const,
+  };
+  await store.upsertCustomer({ externalId, name: "Original Name" });
+  await store.upsertSubscription(subscription);
+  const before = await store.readSubscriptions(externalId);
+  const input = {
+    customer: { externalId, name: "New Name" },
+    subscriptions: [
+      { ...subscription, status: "terminated" as const },
+      { ...subscription, externalSubscriptionId: `${prefix}-atomic-new-sub` },
+    ],
+    event: {
+      provider: "test",
+      eventId: `${prefix}-atomic-existing-event`,
+      webhookType: null as unknown as string,
+    },
+  };
+  await expect(store.applyWebhookProjection(input)).rejects.toBeInstanceOf(
+    DrizzleQueryError,
+  );
+  expect(await store.readSubscriptions(externalId)).toEqual(before);
+  const rows = await database
+    .select({ name: billingCustomers.name })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, externalId));
+  expect(rows).toEqual([{ name: "Original Name" }]);
+  expect(await store.hasWebhookEvent("test", input.event.eventId)).toBe(false);
+  expect(
+    await store.applyWebhookProjection({
+      ...input,
+      customer: { externalId },
+      event: { ...input.event, webhookType: "subscription.terminated" },
+    }),
+  ).toBe("processed");
+  const refreshed = await database
+    .select({ name: billingCustomers.name })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, externalId));
+  expect(refreshed).toEqual([{ name: "Original Name" }]);
+  expect(await store.readSubscriptions(externalId)).toHaveLength(2);
+});
+
+test("concurrent duplicate deliveries retain only the durable winner's projection", async () => {
+  const event = {
+    provider: "test",
+    eventId: `${prefix}-atomic-race`,
+    uniqueKey: `${prefix}-atomic-unique`,
+    webhookType: "subscription.created",
+    objectId: `${prefix}-atomic-object`,
+  };
+  const externalId = `${prefix}-atomic-race-customer`;
+  const deliveries = ["First Name", "Second Name"].map((name, index) => ({
+    customer: { externalId, name },
+    subscriptions: [
+      {
+        externalCustomerId: externalId,
+        externalSubscriptionId: `${prefix}-atomic-race-sub-${index}`,
+        planCode: "pro",
+        status: "active" as const,
+      },
+    ],
+    event,
+  }));
+  const results = await Promise.all(
+    deliveries.map((input) => store.applyWebhookProjection(input)),
+  );
+  expect([...results].sort()).toEqual(["duplicate", "processed"]);
+  const winner = deliveries[results.indexOf("processed")]!;
+  expect(await store.readSubscriptions(externalId)).toEqual([
+    { ...winner.subscriptions[0], updatedAt: expect.any(Date) },
+  ]);
+  const customers = await database
+    .select({ name: billingCustomers.name })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, externalId));
+  expect(customers).toEqual([{ name: winner.customer.name }]);
+  expect(await store.applyWebhookProjection(deliveries[0]!)).toBe("duplicate");
+  expect(await store.readSubscriptions(externalId)).toHaveLength(1);
+});
+
+test("an event without local projections commits and deduplicates atomically", async () => {
+  const event = {
+    provider: "test",
+    eventId: `${prefix}-atomic-invoice`,
+    webhookType: "invoice.created",
+  };
+  expect(await store.applyWebhookProjection({ event })).toBe("processed");
+  expect(await store.applyWebhookProjection({ event })).toBe("duplicate");
+  expect(await store.hasWebhookEvent("test", event.eventId)).toBe(true);
+});
+
+test("a real transaction-scoped lock timeout is retryable and leaves the delivery replayable", async () => {
+  const externalId = `${prefix}-lock-timeout`;
+  await store.upsertCustomer({ externalId, name: "Original Name" });
+  const input = {
+    customer: { externalId, name: "Refreshed Name" },
+    subscriptions: [
+      {
+        externalCustomerId: externalId,
+        externalSubscriptionId: `${prefix}-lock-sub`,
+        planCode: "pro",
+        status: "active" as const,
+      },
+    ],
+    event: {
+      provider: "test",
+      eventId: `${prefix}-lock-event`,
+      webhookType: "subscription.created",
+    },
+  };
+  let failure: unknown;
+  await database.transaction(async (holder) => {
+    await holder.execute(
+      sql`SELECT external_id FROM billing_customers WHERE external_id = ${externalId} FOR UPDATE`,
+    );
+    await database.transaction(async (contender) => {
+      await contender.execute(sql`SET LOCAL lock_timeout = '50ms'`);
+      try {
+        await createBillingStore(contender).applyWebhookProjection(input);
+      } catch (error) {
+        failure = error;
+      }
+      expect(
+        await createBillingStore(contender).readSubscriptions(externalId),
+      ).toEqual([]);
+    });
+  });
+  expect(failure).toBeInstanceOf(BillingPersistenceError);
+  expect(failure).toMatchObject({
+    operation: "customer_upsert",
+    retryable: true,
+  });
+  expect(await store.hasWebhookEvent("test", input.event.eventId)).toBe(false);
+  expect(await store.readSubscriptions(externalId)).toEqual([]);
+  const customers = await database
+    .select({ name: billingCustomers.name })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.externalId, externalId));
+  expect(customers).toEqual([{ name: "Original Name" }]);
+  expect(await store.applyWebhookProjection(input)).toBe("processed");
+  expect(await store.applyWebhookProjection(input)).toBe("duplicate");
+  expect(await store.hasWebhookEvent("test", input.event.eventId)).toBe(true);
+  expect(await store.readSubscriptions(externalId)).toHaveLength(1);
 });
 
 test("snapshot counts customers, subscriptions and the latest sync", async () => {

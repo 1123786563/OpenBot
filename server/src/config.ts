@@ -24,6 +24,7 @@ import {
   transcriptionConfig,
 } from "./dictation/config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
+import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
 const log = getLogger("server");
 
@@ -98,6 +99,11 @@ export type AuthProviderId = "google" | "microsoft" | "okta" | "casdoor";
 
 /** An OAuth client, as every provider here needs one. */
 export type OAuthClient = { clientId: string; clientSecret: string };
+
+export type GithubAppConfig = {
+  clientId: string;
+  clientSecret: string;
+};
 
 export type AuthConfig = {
   baseUrl: string;
@@ -190,6 +196,30 @@ export type HandoffCaps = {
 export type DeploymentConfig = {
   /** Optional environment default. A saved Admin setting takes precedence. */
   learning?: LearningTarget;
+  /**
+   * Whether OpenBot assigns the Intelligence project's `openbot` Learning container as the default
+   * when nobody has chosen one (learning/auto-assign.ts). On unless OPENBOT_LEARNING_AUTO_ASSIGN is
+   * "false" or "0", and off whenever CPK_INTELLIGENCE_LEARNING_CONTAINER_ID names a container. It
+   * never overrides a saved Admin setting. It creates the container only with a credential that can
+   * (see `learningSetup`), never with the runtime key.
+   */
+  learningAutoAssign: boolean;
+  /**
+   * A credential that can create Learning containers, for a deployment whose operator supplied one.
+   *
+   * The runtime key cannot: Intelligence creates containers for a person's session, a CopilotKit CLI
+   * login, or, on a CopilotKit local evaluation install only, a service token. The server holds
+   * neither of the first two, so this is the service token, sent as `x-copilotkit-ei-service-token`
+   * to `/api/learning/projects/:projectId/containers` with the project it belongs to. Both or
+   * neither: a token without its project is refused at startup.
+   */
+  learningSetup?: { serviceToken: string; projectId: string };
+  /**
+   * Memory sources and background research OpenBot switches on for each person (memory/defaults.ts).
+   * Both on unless OPENBOT_MEMORY_SOURCE_DEFAULTS or OPENBOT_PROACTIVE_DEFAULTS is "false" or "0".
+   * Switching either off stops new defaults and leaves every existing row as it is.
+   */
+  memoryDefaults: { sources: boolean; research: boolean };
   /** Audio configuration is independent of agent model providers. */
   transcription?: TranscriptionConfig;
   voice?: VoiceConfig;
@@ -241,6 +271,8 @@ export type DeploymentConfig = {
    * where a key that was revoked last week would have surfaced regardless.
    */
   composioApiKey: string | undefined;
+  /** GitHub App user sign-in, so people can link their GitHub account. Both or neither of GITHUB_APP_CLIENT_ID / GITHUB_APP_CLIENT_SECRET. */
+  githubApp?: GithubAppConfig;
   /**
    * Where this deployment's OpenConnector container listens. Set by the deployer, never by a request.
    *
@@ -273,6 +305,11 @@ export type DeploymentConfig = {
    * deployment running without authentication — and there is nothing to connect there anyway.
    */
   publicUrl: string | undefined;
+  /**
+   * The key Bots' browsers sign their requests with, and the address its public half is published
+   * under. Undefined when Web Bot Auth is off; see `web-bot-auth.ts` for when that is.
+   */
+  webBotAuth?: WebBotAuth;
   /**
    * Where the browser app is served from, with no trailing slash.
    *
@@ -722,6 +759,23 @@ function oauthClient(
   if (Boolean(clientId) !== Boolean(clientSecret)) {
     throw new Error(
       `${provider}_OAUTH_CLIENT_ID and ${provider}_OAUTH_CLIENT_SECRET must be set together`,
+    );
+  }
+
+  return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+}
+
+function githubAppConfig(
+  environment: Environment,
+): GithubAppConfig | undefined {
+  const clientId = optional(environment, "GITHUB_APP_CLIENT_ID");
+  const clientSecret = optional(environment, "GITHUB_APP_CLIENT_SECRET");
+
+  // Both or neither. One alone is a half-configured sign-in that fails at the first attempt rather
+  // than at start-up, which is the worst moment to discover it.
+  if (Boolean(clientId) !== Boolean(clientSecret)) {
+    throw new Error(
+      "GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET must be set together",
     );
   }
 
@@ -1235,6 +1289,55 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
  * That is refused here, at boot, with the sentence that names the fix — the same reasoning as every
  * other partial configuration in this file: the mistake belongs where somebody is looking.
  */
+export type BillingCreditRate = {
+  numerator: bigint;
+  denominator: bigint;
+};
+
+export type BillingCreditPolicyIssue = {
+  key: string;
+  reason:
+    | "missing"
+    | "invalid_json"
+    | "invalid_shape"
+    | "negative"
+    | "zero_denominator"
+    | "out_of_range";
+};
+
+export type BillingModelCreditClassConfig = {
+  rate: BillingCreditRate;
+  maximumTokens: bigint;
+  maximumCostUnits: bigint;
+};
+
+export type BillingModelCreditPolicyEntry = {
+  input: BillingModelCreditClassConfig;
+  output: BillingModelCreditClassConfig;
+  maximumReservationUnits: bigint;
+};
+
+export type BillingCodeRunCreditPolicyConfig = {
+  rate: BillingCreditRate;
+  maximumTokens: bigint;
+  maximumReservationUnits: bigint;
+};
+
+export type BillingCreditPolicyConfig =
+  | {
+      configured: false;
+      mode: "hard_cap";
+      issues: readonly BillingCreditPolicyIssue[];
+    }
+  | {
+      configured: true;
+      mode: "hard_cap";
+      models: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
+      codeRun: BillingCodeRunCreditPolicyConfig;
+    };
+
+const MAX_STORED_CREDIT_UNITS = 2_147_483_647n;
+
 export type LagoBillingConfig = {
   /** The provider origin, for example `https://api.getlago.com`. No path, no query, no fragment. */
   apiUrl: string;
@@ -1259,6 +1362,13 @@ export type LagoBillingConfig = {
   planQuotas: ReadonlyMap<string, readonly BillingQuotaEntry[]>;
   /** Plan code → the catalog entry the upgrade dialog shows (name, credits, cycles, pricing). */
   planCatalog: ReadonlyMap<string, PlanCatalogEntry>;
+  /**
+   * The hard-cap credit policy block for metered work.
+   *
+   * Never defaulted. A deployment that has not supplied approved rates and token ceilings keeps the
+   * billing provider configured while metered work remains later-refusable on `configured: false`.
+   */
+  creditPolicy: BillingCreditPolicyConfig;
   /** One request's ceiling, when the default 10s is not what this deployment wants. */
   requestTimeoutMs?: number;
 };
@@ -1325,6 +1435,7 @@ function billingConfig(
   const planEntitlements = billingPlanEntitlements(environment);
   const planQuotas = billingPlanQuotas(environment);
   const planCatalog = billingPlanCatalog(environment);
+  const creditPolicy = billingCreditPolicyConfig(environment);
   const allowPrivateHosts = billingPrivateHostsAllowed(environment);
 
   const timeoutRaw = optional(environment, "LAGO_REQUEST_TIMEOUT_MS");
@@ -1348,8 +1459,304 @@ function billingConfig(
     planEntitlements,
     planQuotas,
     planCatalog,
+    creditPolicy,
     ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   };
+}
+
+function billingCreditPolicyConfig(
+  environment: Environment,
+): BillingCreditPolicyConfig {
+  const issues: BillingCreditPolicyIssue[] = [];
+  const modelRates = jsonObjectEnvironment(
+    environment,
+    "BILLING_MODEL_CREDIT_RATES",
+    issues,
+  );
+  const modelMaximums = jsonObjectEnvironment(
+    environment,
+    "BILLING_MODEL_MAX_RESERVATION_TOKENS",
+    issues,
+  );
+  const codeRunRate = jsonValueEnvironment(
+    environment,
+    "BILLING_CODE_RUN_CREDIT_RATE",
+    issues,
+  );
+  const codeRunMaximumTokens = exactWholeNumber(
+    optional(environment, "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS"),
+    "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+    issues,
+  );
+
+  const models = new Map<string, BillingModelCreditPolicyEntry>();
+  if (modelRates !== undefined || modelMaximums !== undefined) {
+    const modelIds = new Set<string>([
+      ...Object.keys(modelRates ?? {}),
+      ...Object.keys(modelMaximums ?? {}),
+    ]);
+    for (const modelId of modelIds) {
+      const rateRecord = modelRates?.[modelId];
+      const maximumRecord = modelMaximums?.[modelId];
+      if (rateRecord === undefined) {
+        issues.push({
+          key: `BILLING_MODEL_CREDIT_RATES.${modelId}`,
+          reason: "missing",
+        });
+        continue;
+      }
+      if (maximumRecord === undefined) {
+        issues.push({
+          key: `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+          reason: "missing",
+        });
+        continue;
+      }
+      const parsedRateRecord = objectRecord(
+        rateRecord,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}`,
+        issues,
+      );
+      const parsedMaximumRecord = objectRecord(
+        maximumRecord,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+        issues,
+      );
+      if (parsedRateRecord === undefined || parsedMaximumRecord === undefined) {
+        continue;
+      }
+      const inputRate = exactRate(
+        parsedRateRecord.input,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}.input`,
+        issues,
+      );
+      const outputRate = exactRate(
+        parsedRateRecord.output,
+        `BILLING_MODEL_CREDIT_RATES.${modelId}.output`,
+        issues,
+      );
+      const inputMaximumTokens = exactWholeNumber(
+        parsedMaximumRecord.input,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}.input`,
+        issues,
+      );
+      const outputMaximumTokens = exactWholeNumber(
+        parsedMaximumRecord.output,
+        `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}.output`,
+        issues,
+      );
+      if (
+        inputRate === undefined ||
+        outputRate === undefined ||
+        inputMaximumTokens === undefined ||
+        outputMaximumTokens === undefined
+      ) {
+        continue;
+      }
+      const inputMaximumCostUnits = ceilingProduct(
+        inputMaximumTokens,
+        inputRate,
+      );
+      const outputMaximumCostUnits = ceilingProduct(
+        outputMaximumTokens,
+        outputRate,
+      );
+      const maximumReservationUnits =
+        inputMaximumCostUnits + outputMaximumCostUnits;
+      if (
+        maximumReservationUnits === 0n ||
+        maximumReservationUnits > MAX_STORED_CREDIT_UNITS
+      ) {
+        issues.push({
+          key: `BILLING_MODEL_MAX_RESERVATION_TOKENS.${modelId}`,
+          reason: "out_of_range",
+        });
+        continue;
+      }
+      models.set(modelId, {
+        input: {
+          rate: inputRate,
+          maximumTokens: inputMaximumTokens,
+          maximumCostUnits: inputMaximumCostUnits,
+        },
+        output: {
+          rate: outputRate,
+          maximumTokens: outputMaximumTokens,
+          maximumCostUnits: outputMaximumCostUnits,
+        },
+        maximumReservationUnits,
+      });
+    }
+  }
+  if (
+    issues.length === 0 &&
+    modelRates !== undefined &&
+    modelMaximums !== undefined &&
+    models.size === 0
+  ) {
+    issues.push({ key: "BILLING_MODEL_CREDIT_RATES", reason: "missing" });
+  }
+
+  const parsedCodeRunRate =
+    codeRunRate === undefined
+      ? undefined
+      : exactRate(codeRunRate, "BILLING_CODE_RUN_CREDIT_RATE", issues);
+  const codeRunMaximumReservationUnits =
+    parsedCodeRunRate === undefined || codeRunMaximumTokens === undefined
+      ? undefined
+      : ceilingProduct(codeRunMaximumTokens, parsedCodeRunRate);
+  if (
+    codeRunMaximumReservationUnits !== undefined &&
+    codeRunMaximumReservationUnits > MAX_STORED_CREDIT_UNITS
+  ) {
+    issues.push({
+      key: "BILLING_CODE_RUN_MAX_RESERVATION_TOKENS",
+      reason: "out_of_range",
+    });
+  }
+  if (
+    issues.length > 0 ||
+    parsedCodeRunRate === undefined ||
+    codeRunMaximumTokens === undefined ||
+    codeRunMaximumReservationUnits === undefined
+  ) {
+    return {
+      configured: false,
+      mode: "hard_cap",
+      issues,
+    };
+  }
+
+  return {
+    configured: true,
+    mode: "hard_cap",
+    models,
+    codeRun: {
+      rate: parsedCodeRunRate,
+      maximumTokens: codeRunMaximumTokens,
+      maximumReservationUnits: codeRunMaximumReservationUnits,
+    },
+  };
+}
+
+function jsonValueEnvironment(
+  environment: Environment,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): unknown {
+  const raw = optional(environment, key);
+  if (raw === undefined) {
+    issues.push({ key, reason: "missing" });
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    issues.push({ key, reason: "invalid_json" });
+    return undefined;
+  }
+}
+
+function jsonObjectEnvironment(
+  environment: Environment,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): Record<string, unknown> | undefined {
+  const parsed = jsonValueEnvironment(environment, key, issues);
+  if (parsed === undefined) return undefined;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    issues.push({ key, reason: "invalid_shape" });
+    return undefined;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function objectRecord(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    issues.push({ key, reason: "invalid_shape" });
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function exactRate(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): BillingCreditRate | undefined {
+  if (value === undefined) {
+    issues.push({ key, reason: "missing" });
+    return undefined;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    issues.push({ key, reason: "invalid_shape" });
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const numerator = exactWholeNumber(
+    record.numerator,
+    `${key}.numerator`,
+    issues,
+  );
+  const denominator = exactWholeNumber(
+    record.denominator,
+    `${key}.denominator`,
+    issues,
+  );
+  if (denominator === 0n) {
+    issues.push({ key: `${key}.denominator`, reason: "zero_denominator" });
+    return undefined;
+  }
+  if (numerator === undefined || denominator === undefined) {
+    return undefined;
+  }
+  return { numerator, denominator };
+}
+
+function exactWholeNumber(
+  value: unknown,
+  key: string,
+  issues: BillingCreditPolicyIssue[],
+): bigint | undefined {
+  if (value === undefined) {
+    issues.push({ key, reason: "missing" });
+    return undefined;
+  }
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || !Number.isSafeInteger(value)) {
+      issues.push({ key, reason: "out_of_range" });
+      return undefined;
+    }
+    if (value < 0) {
+      issues.push({ key, reason: "negative" });
+      return undefined;
+    }
+    return BigInt(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^-?\d+$/.test(trimmed)) {
+      issues.push({ key, reason: "out_of_range" });
+      return undefined;
+    }
+    const parsed = BigInt(trimmed);
+    if (parsed < 0n) {
+      issues.push({ key, reason: "negative" });
+      return undefined;
+    }
+    return parsed;
+  }
+  issues.push({ key, reason: "out_of_range" });
+  return undefined;
+}
+
+function ceilingProduct(value: bigint, rate: BillingCreditRate): bigint {
+  if (value === 0n || rate.numerator === 0n) return 0n;
+  return (value * rate.numerator + rate.denominator - 1n) / rate.denominator;
 }
 
 /**
@@ -2293,17 +2700,35 @@ export function loadConfig(
     ? organizationAuthority(organizationAuthValue)
     : undefined;
   const managedAgent = managedAgentConfig(environment);
+  const githubApp = githubAppConfig(environment);
+  const publicUrl = (
+    optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
+  )?.replace(/\/+$/, "");
+  // GitHub sends people back to this address after they approve. Without it linking is silently
+  // switched off, so say so at start-up instead.
+  if (githubApp && !publicUrl) {
+    throw new Error(
+      "GITHUB_APP_CLIENT_ID needs OPENBOT_PUBLIC_URL (or BETTER_AUTH_URL) so GitHub can send people back to this server.",
+    );
+  }
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
   // Read once so the payments block can refuse a channel configured without its projection.
   const billing = billingConfig(environment);
+  const deploymentKey = keyEncryptionKey(environment);
+  const webBotAuth = webBotAuthFromEnv(environment, {
+    publicUrl,
+    keyEncryptionKey: deploymentKey,
+  });
 
   return {
     port: serverPort(environment),
     transcription: transcriptionConfig(environment),
     voice: voiceConfig(environment),
     databaseUrl: required(environment, "DATABASE_URL"),
-    keyEncryptionKey: keyEncryptionKey(environment),
+    keyEncryptionKey: deploymentKey,
+    ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
+    ...(githubApp ? { githubApp } : {}),
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
     composioApiKey: optional(environment, "COMPOSIO_API_KEY"),
@@ -2314,9 +2739,7 @@ export function loadConfig(
       environment,
       "OPENCONNECTOR_RUNTIME_TOKEN",
     ),
-    publicUrl: (
-      optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
-    )?.replace(/\/+$/, ""),
+    publicUrl,
     appUrl: (
       optional(environment, "OPENBOT_APP_URL") ??
       commaSeparated(environment, "TRUSTED_ORIGINS")[0] ??
@@ -2327,6 +2750,12 @@ export function loadConfig(
       optional(environment, "TENANT_PACKAGE_DIR") ?? "../examples/fintech",
     runtime: runtimeCapabilities(environment),
     learning: learningDefault(environment),
+    learningAutoAssign: learningAutoAssignEnabled(environment),
+    ...learningSetupCredential(environment),
+    memoryDefaults: {
+      sources: switchedOn(environment, "OPENBOT_MEMORY_SOURCE_DEFAULTS"),
+      research: switchedOn(environment, "OPENBOT_PROACTIVE_DEFAULTS"),
+    },
     agentStallTimeoutMs: agentStallTimeoutMs(environment),
     auditRetentionDays: auditRetentionDays(environment),
     oauth: { google },
@@ -2355,6 +2784,41 @@ export function loadConfig(
       : {}),
     ...(workerSharedSecret ? { workerSharedSecret } : {}),
   };
+}
+
+/**
+ * Same rule as generated interfaces: on unless explicitly "false" or "0". A container named in the
+ * environment is a choice, so there is nothing to assign.
+ */
+function learningAutoAssignEnabled(environment: Environment): boolean {
+  if (optional(environment, "CPK_INTELLIGENCE_LEARNING_CONTAINER_ID"))
+    return false;
+  const value = optional(environment, "OPENBOT_LEARNING_AUTO_ASSIGN");
+  return value !== "false" && value !== "0";
+}
+
+/** On unless the variable is "false" or "0", the rule every default-on switch here follows. */
+function switchedOn(environment: Environment, name: string): boolean {
+  const value = optional(environment, name);
+  return value !== "false" && value !== "0";
+}
+
+/** The service token and its project, both or neither. See `DeploymentConfig.learningSetup`. */
+function learningSetupCredential(environment: Environment): {
+  learningSetup?: { serviceToken: string; projectId: string };
+} {
+  const serviceToken = optional(environment, "INTELLIGENCE_SERVICE_TOKEN");
+  const projectId = optional(environment, "INTELLIGENCE_PROJECT_ID");
+  if (!serviceToken && !projectId) return {};
+  if (!serviceToken || !projectId)
+    throw new Error(
+      "INTELLIGENCE_SERVICE_TOKEN and INTELLIGENCE_PROJECT_ID go together: the token creates the openbot Learning container in that project. Set both, or neither.",
+    );
+  if (!/^[1-9][0-9]{0,15}$/.test(projectId))
+    throw new Error(
+      "INTELLIGENCE_PROJECT_ID must be the Intelligence project's numeric ID.",
+    );
+  return { learningSetup: { serviceToken, projectId } };
 }
 
 /** Optional container default; the enabled preference alone does not collect or deliver. */

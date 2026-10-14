@@ -67,6 +67,15 @@ function patchGlobalFetchForLocalhost(): void {
      * Bun 1.4.2 长驻进程的 fetch 被环境代理劫持 localhost，且逐请求
      * proxy:"" 对带 body 的 POST 不生效——node:http 从不读代理变量，
      * 是唯一稳定通道。方法/头/体语义保持：Request 实例先展开再直连。
+     *
+     * 直连必须仍是完整 fetch 语义（craft 的回环 agent-sandbox 网关是首个
+     * 长流消费方，见 remediation-verification.md F-A）：
+     * - content-length 按【字节】计：字符串 .length 是 UTF-16 码元数，
+     *   多字体会少报——服务端按声明读体（文件被静默截断），剩余字节滞留
+     *   keep-alive 连接，下一个请求配到滞留垃圾的 400 响应。
+     * - 响应在【头到达】即结算、body 以流透传：缓冲到 end 的实现对
+     *   SSE/长流（/events）永远不结算，事件零到达。
+     * - init.signal 必须接线：否则任何挂起请求都无超时可依。
      */
     const url = new URL(raw);
     const method =
@@ -85,11 +94,17 @@ function patchGlobalFetchForLocalhost(): void {
     }
     const rawBody =
       init?.body ?? (input instanceof Request ? await input.text() : undefined);
-    const body =
-      rawBody === undefined || typeof rawBody === "string"
-        ? rawBody
-        : Buffer.from(await new Response(rawBody as BodyInit).arrayBuffer());
-    const { request } = await import("node:http");
+    let body: Buffer | undefined;
+    if (rawBody !== undefined) {
+      body =
+        typeof rawBody === "string"
+          ? Buffer.from(rawBody, "utf8")
+          : Buffer.from(await new Response(rawBody as BodyInit).arrayBuffer());
+    }
+    const [{ request }, { Readable }] = await Promise.all([
+      import("node:http"),
+      import("node:stream"),
+    ]);
     return new Promise<Response>((resolve, reject) => {
       const req = request(
         {
@@ -100,35 +115,63 @@ function patchGlobalFetchForLocalhost(): void {
           headers: {
             ...headers,
             ...(body !== undefined
-              ? {
-                  "content-length": String(
-                    typeof body === "string" ? body.length : body.byteLength,
-                  ),
-                }
+              ? { "content-length": String(body.byteLength) }
               : {}),
           },
         },
         (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () => {
-            const buffer = Buffer.concat(chunks);
-            const status = res.statusCode ?? 0;
-            const response = new Response(
-              status === 204 || status === 304 ? null : buffer,
+          const status = res.statusCode ?? 0;
+          // 传输层分帧头不属于 Response 元数据；残留会让 Response 构造异常
+          // 或误导消费者，剥掉（原生 fetch 的 Response 从不携带它们）。
+          const responseHeaders: Record<string, string> = {};
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value === undefined) continue;
+            if (
+              key === "transfer-encoding" ||
+              key === "connection" ||
+              key === "keep-alive"
+            )
+              continue;
+            responseHeaders[key] = Array.isArray(value)
+              ? value.join(", ")
+              : value;
+          }
+          if (status === 204 || status === 304) {
+            res.resume(); // 无体响应：读完（空）才能把 socket 还回池。
+            resolve(new Response(null, { status, headers: responseHeaders }));
+            return;
+          }
+          resolve(
+            new Response(
+              Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>,
               {
                 status,
-                headers: res.headers as Record<string, string>,
+                headers: responseHeaders,
               },
-            );
-            resolve(response);
-          });
-          res.on("error", reject);
+            ),
+          );
         },
       );
       req.on("error", reject);
-      if (body !== undefined) req.write(body);
-      req.end();
+      const signal = init?.signal;
+      if (signal) {
+        const onAbort = () => {
+          req.destroy(
+            signal.reason instanceof Error
+              ? signal.reason
+              : new Error("The loopback fetch was aborted.", {
+                  cause: signal.reason,
+                }),
+          );
+        };
+        if (signal.aborted) onAbort();
+        else {
+          signal.addEventListener("abort", onAbort, { once: true });
+          req.on("close", () => signal.removeEventListener("abort", onAbort));
+        }
+      }
+      if (body !== undefined) req.end(body);
+      else req.end();
     });
   }) as typeof fetch;
 }

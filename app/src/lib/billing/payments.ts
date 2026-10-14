@@ -147,19 +147,28 @@ export const purchaseOrderQueryOptions = (orderId: string) =>
   });
 
 /**
- * Why creating a purchase was refused. The status is what the server graded the refusal with and
- * `activePlanCode` is present only on the one-subscription refusal — the case the page treats as
- * "your catalog answer is now stale", invalidating it so the notice and the buy buttons agree.
+ * Why creating a purchase was refused. The status is what the server graded the refusal with;
+ * `activePlanCode` rides the one-subscription refusal and `pendingPlanCode` the one-pending-order
+ * one — the two 409s a reader can actually meet. The page treats them as "your catalog answer is
+ * now stale" and as "say it in the reader's language" respectively, which is why both codes
+ * travel on the error rather than in its message.
  */
 export class PurchaseRequestError extends Error {
   readonly status: number;
   readonly activePlanCode: string | null;
+  readonly pendingPlanCode: string | null;
 
-  constructor(status: number, activePlanCode: string | null, message: string) {
+  constructor(
+    status: number,
+    activePlanCode: string | null,
+    pendingPlanCode: string | null,
+    message: string,
+  ) {
     super(message);
     this.name = "PurchaseRequestError";
     this.status = status;
     this.activePlanCode = activePlanCode;
+    this.pendingPlanCode = pendingPlanCode;
   }
 }
 
@@ -175,10 +184,12 @@ export async function createPurchase(
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
       activePlanCode?: string;
+      pendingPlanCode?: string;
     };
     throw new PurchaseRequestError(
       response.status,
       body.activePlanCode ?? null,
+      body.pendingPlanCode ?? null,
       body.error ?? "That purchase could not be started.",
     );
   }
@@ -199,6 +210,7 @@ export async function cancelPurchase(
     };
     throw new PurchaseRequestError(
       response.status,
+      null,
       null,
       body.error ?? "That purchase could not be cancelled.",
     );

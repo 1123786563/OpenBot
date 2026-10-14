@@ -475,7 +475,7 @@ describe("OpenBot database schema", () => {
    */
   test("recreates the template unique index as partial in its own migration", async () => {
     const migration = await readFile(
-      new URL("../drizzle/0096_owner_template_partial_uq.sql", import.meta.url),
+      new URL("../drizzle/0107_owner_template_partial_uq.sql", import.meta.url),
       "utf8",
     );
     expect(migration).toContain(

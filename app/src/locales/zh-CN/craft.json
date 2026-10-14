@@ -19,12 +19,14 @@
   "preview": {
     "title": "网页应用预览",
     "loading": "正在检查网页应用…",
-    "empty": "还没有网页应用，让 Agent 构建一个。"
+    "emptyTitle": "等待第一个网页应用",
+    "emptyHint": "Agent 构建的网页应用会实时渲染在这里。",
+    "emptyTabs": "工作区文件在「文件」，可下载内容在「产物」。"
   },
   "files": {
-    "loading": "读取工作区…",
+    "loading": "正在读取输出…",
     "error": "无法加载文件树。",
-    "empty": "工作区为空。"
+    "empty": "还没有输出文件。"
   },
   "artifacts": {
     "loading": "收集产物中…",
@@ -34,9 +36,18 @@
   },
   "chat": {
     "loading": "加载对话中…",
-    "empty": "让 Agent 构建点什么。",
+    "emptyTitle": "想让 Agent 建点什么？",
+    "emptyHint": "描述你想要的东西，Agent 会在自己的沙箱里构建，产出网页应用、文件和产物。",
+    "suggest": {
+      "landing": "做个落地页",
+      "tool": "写个小工具",
+      "report": "分析数据出报告"
+    },
     "usage": "已使用 {{tokens}} tokens",
     "compacted": "上下文已压缩。"
+  },
+  "composer": {
+    "placeholder": "想让 Agent 构建什么？"
   },
   "approvals": {
     "waiting": "等待你的审批",

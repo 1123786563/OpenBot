@@ -33,11 +33,13 @@ import type { ApprovalService } from "./approvals/service";
 import {
   type AuditEventType,
   type AuditInitiator,
+  auditEventsToCsv,
   AuditQueryError,
   type AuditReader,
   type AuditStore,
   auditQueryFromUrl,
   DEPLOYMENT_INITIATOR,
+  readAuditExportRows,
   recordAuditEvent,
 } from "./audit";
 import { createDevRequireUser } from "./auth/dev-actor";
@@ -109,6 +111,8 @@ import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
+import { identityRoutes } from "./identity/routes";
+import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
 import { knowledgeServiceConfig } from "./knowledge/config";
 import { createKnowledgeRoutes } from "./knowledge/routes";
@@ -181,6 +185,7 @@ import type { SelfHostBanner } from "./self-host-banner";
 import { createTeamBotRoutes } from "./team-bots/routes";
 import type { TeamBots } from "./team-bots/team-bots";
 import { createRequestTracking } from "./telemetry/request-tracking";
+import { withUsageOrigin } from "./usage-origin";
 import { createTraceMiddleware } from "./telemetry/trace-middleware";
 import type { PackageStatusReader } from "./tenant-package";
 import {
@@ -195,6 +200,10 @@ import { createVoiceRoutes } from "./voice/routes";
 import type { VoiceSessionServices } from "./voice/session-routes";
 import type { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import type { WorkshopRoutesFactory } from "./workshop/routes";
+import {
+  DIRECTORY_PATH as WEB_BOT_AUTH_DIRECTORY_PATH,
+  directoryResponse as webBotAuthDirectory,
+} from "./web-bot-auth";
 
 const log = getLogger("server");
 
@@ -645,7 +654,7 @@ export function createApp(
    * wiring (store, gateway, manager, executor, the deployment's model catalog) is one boot
    * decision; the craft tree carries its own enabled gate (503 mid-flight) and needs only
    * `requireUser` (its sandbox routing is not Bot-scoped like the workshop's canUseBot).
-   * Absent (or the deployment's OPENBOT_CRAFT_ENABLED unset) mounts nothing.
+   * Absent (or OPENBOT_CRAFT_ENABLED explicitly disabled) mounts nothing.
    */
   craftRoutes?: CraftRoutesFactory,
   /**
@@ -720,6 +729,10 @@ export function createApp(
     activity?: Hono<{ Variables: AppVariables }>;
     opsSignals?: Hono<{ Variables: AppVariables }>;
   },
+  /** A person's own linked accounts. Absent answers 503 on /api/identity. */
+  identity?: IdentityStore,
+  /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
+  identityGithubCallback?: Hono<{ Variables: AppVariables }>,
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -795,6 +808,14 @@ export function createApp(
       return context.json({ status: "unavailable", database: "down" }, 503);
     }
   });
+  // The public key Bots' browsers sign their requests with, where Cloudflare and any other verifier
+  // look for it. Public by design, and absent when Web Bot Auth is off. See web-bot-auth.ts.
+  const webBotAuth = config.webBotAuth;
+  if (webBotAuth) {
+    app.get(WEB_BOT_AUTH_DIRECTORY_PATH, (context) =>
+      webBotAuthDirectory(context.req.raw, webBotAuth),
+    );
+  }
   // Projected, never the raw runtime. config.runtime carries the Intelligence contract, including
   // INTELLIGENCE_API_KEY and the licence token, and this endpoint is reachable by anyone. Returning
   // the object wholesale would serve deployment secrets to the browser. Add fields here explicitly.
@@ -960,6 +981,17 @@ export function createApp(
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
+  /*
+   * The usage-origin floor (2026-10-13 audit, F6): a signed-in person's request context says
+   * `web`, so the usage facts its model calls and code runs record carry the caller they
+   * really came from. Registered after the gate so only requests that got this far are named.
+   * Hono composes handlers in registration order, so this covers exactly the usage-bearing
+   * API surfaces mounted BELOW this point (the CopilotKit runtime, the workshop, the channels
+   * — all of them); the earlier-mounted /api/capabilities, /api/auth/*, desktop-connection and
+   * provider-proxy surfaces never pass through here, record no usage today, and any future
+   * usage-bearing surface must mount below this line or name its own origin.
+   */
+  app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   if (openMuseTemplateRevisions) {
     /*
@@ -1071,6 +1103,41 @@ export function createApp(
     userPreferencesRoutes(requireUser, userPreferences),
   );
 
+  /*
+   * The session must match the sealed state's person, otherwise a link started by one person could
+   * attach another person's GitHub account (login CSRF), so the callback requires the same session
+   * as the rest of /api/identity; a missing session answers 401 rather than a redirect. Mounted
+   * before the identity router so that router never sees a GET to this path; other methods fall
+   * through to it and get its own 401/404.
+   */
+  if (identityGithubCallback) {
+    app.use("/api/identity/github/callback", requireUser);
+    app.route("/api/identity/github/callback", identityGithubCallback);
+  }
+  /*
+   * A person's own linked accounts at outside providers (Slack, GitHub). Theirs alone: there is no
+   * administrator view and no linking on somebody else's behalf. A provider is offered only when
+   * its return path is wired: Slack needs the identity redeemer for the codes it issues, and GitHub
+   * needs the callback mounted above, otherwise people would be sent away and back to nothing.
+   */
+  app.route(
+    "/api/identity",
+    identityRoutes(requireUser, identity, auditStore, {
+      slackLinking: Boolean(
+        coworker?.delivery?.webhooks.slack &&
+          coworker.delivery.webhooks.identity,
+      ),
+      github:
+        identityGithubCallback && config.githubApp && config.publicUrl
+          ? {
+              clientId: config.githubApp.clientId,
+              publicUrl: config.publicUrl,
+              encryptionKey: config.keyEncryptionKey,
+            }
+          : undefined,
+    }),
+  );
+
   app.get("/api/settings/instructions", requireUser, async (context) => {
     if (!userInstructions) {
       return context.json(
@@ -1172,9 +1239,54 @@ export function createApp(
     }
 
     try {
-      return context.json(
-        await auditReader.list(auditQueryFromUrl(new URL(context.req.url))),
-      );
+      const url = new URL(context.req.url);
+      const format = url.searchParams.get("format");
+      if (
+        format !== null &&
+        format !== "" &&
+        format !== "json" &&
+        format !== "csv"
+      ) {
+        return context.json(
+          { error: 'Query parameter "format" must be "json" or "csv".' },
+          400,
+        );
+      }
+      /*
+       * The export answers the same filtered query as the list — `eventType`,
+       * `actorUserId`, `initiatorKind`, `targetType`, `targetId`, `from`, `to` — so the
+       * downloaded file and the table agree. Paging (`cursor`, `limit`) belongs to the
+       * JSON list and is ignored here; the export walks every matching page up to the
+       * cap in `readAuditExportRows` and names the file after the day it was pulled.
+       */
+      if (format === "csv") {
+        const query = auditQueryFromUrl(url);
+        const { events, truncated } = await readAuditExportRows(
+          auditReader,
+          query,
+        );
+        if (auditStore) {
+          const { cursor: _cursor, limit: _limit, ...filters } = query;
+          await recordAuditEvent(auditStore, {
+            eventType: "audit.exported",
+            targetType: "audit_trail",
+            actorUserId: context.var.actor.id,
+            payload: { format: "csv", rows: events.length, truncated, filters },
+          });
+        }
+        const day = new Date().toISOString().slice(0, 10);
+        context.header("Content-Type", "text/csv; charset=utf-8");
+        context.header(
+          "Content-Disposition",
+          `attachment; filename="audit-events-${day}.csv"`,
+        );
+        // The row count it stopped at, so the page can say how much the file holds.
+        if (truncated) {
+          context.header("X-Audit-Export-Truncated", String(events.length));
+        }
+        return context.body(auditEventsToCsv(events));
+      }
+      return context.json(await auditReader.list(auditQueryFromUrl(url)));
     } catch (error) {
       if (error instanceof AuditQueryError) {
         return context.json({ error: error.message }, 400);
@@ -1622,7 +1734,13 @@ export function createApp(
        * the fatigue rule owns it. `run()` never throws by contract; this swallow only guards against
        * that contract being wrong without turning a bug there into an unhandled rejection here.
        */
-      void routineRunner.run(routineRunId).catch(() => {});
+      // The worker's bearer dispatch is an API surface, not a person's session. This route is
+      // deliberately not under /api/* (see the comment above it), so no session `web` floor
+      // applies here — naming `api` is what puts the turns this fans out on their usage facts
+      // at all.
+      void withUsageOrigin("api", () => routineRunner.run(routineRunId)).catch(
+        () => {},
+      );
       return context.json({ accepted: true }, 202);
     });
   }

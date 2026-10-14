@@ -1,0 +1,289 @@
+
+─── server/src/craft/connect-app-plugin.ts:21-32 ───
+[maintainability · low] 本文件与 webapp-plugin.ts（以及 turn-budget.ts 的 118-146 行）是同一模式的第三份逐字拷贝：模块级
+cachedPluginSource 缓存 + readFile(import.meta.url 模板) + writeXPlugin(拼 sessionDirectory 路径)。三份代码除模板
+URL、RELPATH 常量和函数名外完全相同，后续改动（例如给读取加并发去重或错误处理）需要同步改三处。建议提取一个工厂，如 createWorkspacePluginWriter({
+relpath, templateUrl }) 返回 { source, write }，三个插件投递模块各自一行实例化，session-plugins.ts 已经是共享常量的落点，工厂可放同一层。
+
+- let cachedPluginSource: string | null = null;
+- 
+- /** The plugin's source, read once (the static asset every session workspace materializes). */
+- export async function connectAppPluginSource(): Promise<string> {
+-   if (cachedPluginSource === null) {
+-     cachedPluginSource = await readFile(
+-       new URL("./templates/connect-app.plugin.ts", import.meta.url),
+-       "utf8",
+-     );
++ // session-plugins.ts（或新的 plugin-delivery.ts）
++ export function createWorkspacePluginWriter(input: {
++   relpath: string;
++   templateUrl: string;
++ }) {
++   let cached: string | null = null;
++   return {
++     async source(): Promise<string> {
++       if (cached === null) {
++         cached = await readFile(new URL(input.templateUrl, import.meta.url), "utf8");
+-   }
++       }
+-   return cachedPluginSource;
++       return cached;
++     },
++     async write(
++       api: { writeFile(path: string, content: string): Promise<void> },
++       sessionId: string,
++       config: CraftConfig,
++     ): Promise<void> {
++       await api.writeFile(
++         `${sessionDirectory(sessionId, config.sessionDirectoryMode)}/${input.relpath}`,
++         await this.source(),
++       );
++     },
++   };
+  }
++ 
++ // connect-app-plugin.ts 只剩一行：
++ export const writeConnectAppPlugin = connectAppPluginWriter.write;
+
+
+─── server/src/craft/connect-app-routes.ts:65-69 ───
+[bug · medium] 决策路径 loadPending → answerPermission → clearPending 非原子：对同一 requestId 的并发重复
+POST（双击/双端）会各自读到非空 pending 并向沙箱重复作答，且两个请求都会走到 audit 写入、各产生一条审计行。这与文件头 "one approval attempt, one
+answer to opencode, ever" 的幂等声明不符——重复作答的实际效果取决于 opencode 对已答复权限的二次 POST 行为（可能 404 使后到方误报 502）。建议把
+loadPending 升级为原子的 take（Redis 侧用 GET+DEL Lua，如 `local v = redis.call('get', KEYS[1]) if v then
+redis.call('del', KEYS[1]) end return v`；in-process 版本同步实现天然原子），使并发第二个请求必然落入 no-op 分支，幂等成为结构性保证。
+
+      // Branch 1: expired / already answered / unknown → 200 no-op, silent.
+-     const pending = await deps.signals.loadPending(requestId).catch(() => null);
++     // Atomic take (GET+DEL on the signal store) so concurrent replays of the
++     // same requestId cannot both reach the sandbox or both write audit rows:
++     // only one caller wins the pending record, the rest land in this no-op.
++     const pending = await deps.signals.takePending(requestId).catch(() => null);
+      if (pending === null) {
+        return context.json({ ok: true });
+      }
+
+
+─── server/src/craft/connect-app-routes.ts:66-66 ───
+[maintainability · low] `.catch(() => null)` 把 KV 基础设施故障静默折叠进 "missing" 分支并返回 200
+ok：用户会看到裁决成功，但沙箱权限实际仍挂起（直到 turn 循环超时才 deny）。同文件的 clearPending 与 audit 失败路径都有
+logger.warn，唯独此处完全静默，可观测性不一致。建议 catch 中至少记录 warn，便于区分 "请求已过期/已处理" 与 "KV 故障"。
+
+-     const pending = await deps.signals.loadPending(requestId).catch(() => null);
++     const pending = await deps.signals.loadPending(requestId).catch(
++       (error: unknown) => {
++         logger.warn(
++           { err: error instanceof Error ? error.message : String(error) },
++           "[craft] connect_app pending load failed; treating as missing",
++         );
++         return null;
++       },
++     );
+
+
+─── server/src/craft/connect-app.ts:236-243 ───
+[style · low] 此处是两层嵌套的三元表达式，违反编码规范（禁止嵌套三元）且可读性差；另外字符串分支走 `Number.parseInt` 的宽松解析（"42abc" →
+42），与数值分支的 `Number.isInteger` 严格校验不一致。建议改为 if/else 链或提取具名辅助函数，字符串分支用 `/^\d+$/` 做严格十进制整数校验后再
+parseInt，与数值分支语义对齐。
+
+-   const parsed =
+-     typeof raw === "number"
+-       ? Number.isInteger(raw)
+-         ? raw
+-         : Number.NaN
+-       : typeof raw === "string" && raw.trim() !== ""
+-         ? Number.parseInt(raw, 10)
+-         : Number.NaN;
++   let parsed = Number.NaN;
++   if (typeof raw === "number" && Number.isInteger(raw)) {
++     parsed = raw;
++   } else if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
++     parsed = Number.parseInt(raw, 10);
++   }
++   if (!Number.isFinite(parsed)) return null;
+
+
+─── server/src/craft/connect-app.ts:75-76 ───
+[maintainability · low] CraftConnectAppSignals 的 readonly mode: "redis" | "memory"
+字段在本仓库没有任何读取方：生产代码中无人读取，测试（craft-connect-app.test.ts）也未断言它。对比同类先例 workshop 的 TurnLock.mode /
+EventFanout.mode，它们至少被 workshop-locks.test / workshop-bus.test 读取用于诊断；这里属于声明后从未被引用的死 API
+面。建议要么删除该字段，要么补一条选择 store 的诊断/测试断言使其兑现声明意图。
+
+
+
+─── server/src/craft/session-ready.ts:157-168 ───
+[maintainability · medium] 轻路径将 AGENTS.md、opencode.json、三个插件与 bootstrap 脚本的写入整段内联,与 heavy 路径委托的
+setupSessionWorkspace 构成两份并行实现,且写入顺序相反:workspace.ts 中 setupSessionWorkspace 的顺序是 插件 → bootstrap 脚本 →
+opencode.json,并明确注释 bootstrap 必须写在 opencode.json 之前(so the workspace never carries a config
+referencing an absent tool target);此处却先写 opencode.json
+再写插件/bootstrap,若后续任一写入失败,工作区会留下一个引用了尚不存在插件/工具目标的 config。注释声称 "same bytes, one builder, one
+ordering",实际两者顺序并不一致,两处一旦演化不同步,修复会话与全新会话的工作区将出现难以排查的差异。建议轻路径直接复用
+setupSessionWorkspace(幂等重写,输入完全一致),消除重复并统一顺序契约。另外此处 mcpServers: managedContent.mcpServers
+缺少其他三处(reconcile、regenerateSessionConfig、workspace.ts)统一使用的 ?? [] 兜底,易随类型演化产生漂移。
+
+-         await fileApi.writeFile(
+-           `${directory}/opencode.json`,
+-           opencodeConfigJson(
+-             buildProviderOpencodeConfig(llmConfig, {
+-               disabledTools: input.config.opencodeDisabledTools,
+-               gatedTools: input.config.approvalGatedTools,
+-               plugins: SESSION_PLUGINS,
+-               mcpServers: managedContent.mcpServers,
++         await setupSessionWorkspace(
++           {
++             writeFile: (path, content) => fileApi.writeFile(path, content),
++             mkdir: async () => undefined,
++           },
++           {
+-               sessionId: session.id,
++             sessionId: session.id,
+-             }),
+-           ),
++             config: input.config,
++             llmConfig,
++             userName: input.userName,
++             organizationInstructions: input.organizationInstructions,
++             agentsTemplate: await agentsTemplate(),
++             webappPort: session.nextjsPort,
++             managedContent: {
++               connectableAppsSection: managedContent.connectableAppsSection,
++               companySearchSkillAvailable:
++                 companySearchSkillAvailable(managedContent),
++               mcpServers: managedContent.mcpServers,
++             },
++           },
+          );
+
+
+─── server/src/craft/session-ready.ts:107-109 ───
+[performance · medium] managedContentResolver 在 fileApi 空值检查之前执行:当该 bot 没有配置沙箱(fileApi ===
+null)时,仍会先发起一次可能涉及插件域/数据库的外部解析调用,随后才在第 205 行抛出 "No sandbox configured"。这不仅浪费一次注定无效的外部调用,且若 resolver
+失败,传播出去的是解析错误而非 "无沙箱" 这一真正根因,掩盖了失败原因。建议将 fileApi 的空值检查提前到 resolver 调用之前。
+
++     if (!fileApi) {
++       throw new Error(`No sandbox configured for bot ${botId}`);
++     }
+      const managedContent = input.managedContentResolver
+        ? await input.managedContentResolver(session)
+        : null;
+
+
+─── server/src/craft/session-ready.ts:186-186 ───
+[style · low] 使用宽松不等号 !=,违反评审清单 "禁止 ==/!=,使用 ===/!==" 的规定。CraftSessionRow.nextjsPort 来自 drizzle 的可空
+integer 列,类型为 number | null(不含 undefined),严格的 !== null 判空即可表达同等语义。
+
+-         if (session.nextjsPort != null) {
++         if (session.nextjsPort !== null) {
+
+
+─── server/src/craft/session-ready.ts:130-130 ───
+[maintainability · low] 同一 "skills 是否成功落盘" 的概念在同一函数内使用了两个名字:轻路径为 hydrated,重路径为
+skillsHydrated。命名不一致影响可读性与后续维护(检索、重构均易遗漏),建议统一为 skillsHydrated。
+
+-       const hydrated = await pushManagedContent();
++       const skillsHydrated = await pushManagedContent();
+
+
+─── server/src/craft/session-ready.ts:157-168 ───
+[bug · medium] 轻路径重写了 opencode.json(携带新解析的 MCP 集)并随后把 mcpConfigHash ack 到会话行上,但没有 dispose 该目录下可能仍存活的
+opencode 实例。opencode 实例在创建时缓存目录配置(见本文件头部注释与 manager.regenerateSessionConfig 的契约 "Write the session's
+opencode.json + AGENTS.md into the workspace and dispose any running
+instance"),reconcileSessionLlmConfig 甚至在文件匹配时也无条件 phase-1 dispose。轻路径的触发场景恰是"工作区已存在但受管内容晚于它"(同 id
+修复、pre-managed-content 会话):若此前一次配置尝试已 mint 过实例(如 finalize CAS 前崩溃),旧实例会继续以缓存的老 config 服务,而下方的 ack
+把行标成"已同步",使 sessionRuntimeStale 永远为 false、后续 reconcile/reload 均不再触发 dispose——陈旧配置被永久固化且自我抑制修复。建议在重写
+opencode.json 后补一次尽力而为的 dispose,与 manager 的既有契约对齐。
+
+          await fileApi.writeFile(
+            `${directory}/opencode.json`,
+            opencodeConfigJson(
+              buildProviderOpencodeConfig(llmConfig, {
+                disabledTools: input.config.opencodeDisabledTools,
+                gatedTools: input.config.approvalGatedTools,
+                plugins: SESSION_PLUGINS,
+                mcpServers: managedContent.mcpServers,
+                sessionId: session.id,
+              }),
+            ),
+          );
++         // 配置重写后必须 dispose:实例在创建时缓存目录配置,否则仍存活的旧实例
++         // 会继续用老 config 服务,而下面的 ack 会让之后的 reconcile/reload 不再
++         // 修正它(与 manager.regenerateSessionConfig 的 dispose 契约一致)。
++         const client = gateway.serveClientFor({ botId, directory });
++         await client?.disposeInstance({ directory }).catch(() => undefined);
+
+
+─── server/src/craft/opencode-config.ts:122-124 ───
+[maintainability · medium] 业务类别字符串 "connect_app" 在此硬编码,而 serve-client.ts 的事件分支判断用的是 connect-app.ts
+导出的 CONNECT_APP_PERMISSION 常量。两处一旦漂移:配置仍以 "connect_app" 触发 ask,但 info.permission ===
+CONNECT_APP_PERMISSION 匹配失败,该 ask 会落入"未知类别 → answer once"的自动放行兜底——connect-card 握手被静默绕过,插件直接返回
+"External app is connected",跳过了本应需要用户裁决的交互。建议从 "./connect-app" 导入常量并用计算键写死来源(无循环依赖:connect-app.ts 仅
+type-import redis)。
+
++ import { CONNECT_APP_PERMISSION } from "./connect-app";
++ 
+    // The connect-app tool: a no-op tool the agent calls to request connecting
+    // an external app it isn't set up for (onyx opencode_config.py:87-89).
+-   connect_app: "ask",
++   [CONNECT_APP_PERMISSION]: "ask",
+
+
+─── server/src/craft/opencode/serve-client.ts:1649-1659 ───
+[bug · medium] pendingConnectApp 条目只有超时兜底这一条删除路径,与带外决策端点(connect-app-routes.ts 成功后
+clearPending)之间没有任何对账机制:用户经决策端点 connect/decline 后,条目仍滞留至截止时间,届时循环会向该已裁决的 permissionId 再发一次
+allow:false——answerPermission 虽然吞错不会中断循环,但这是用户已选 connect 之后追加的相悖 reject
+第二应答,也违背了决策端点注释声明的"一次询问、一次应答"结构幂等;反向地,循环超时拒绝时因不持有 requestId 而无法清理 KV pending 记录,用户点击仍可见的卡片会一直 502
+重试到 TTL。建议在 map 值中带上 requestId,超时触发前先 loadPending 判断是否已被带外裁决(clearPending 返回 null 即跳过拒绝),并在超时拒绝后
+clearPending 让迟到决策走 200 no-op 分支。
+
++     // Map<string, { requestId: string; deadline: number }>(stashAndAnnounce 返回的 requestId 一并存入)
+-       if (pendingConnectApp.size > 0) {
++     if (pendingConnectApp.size > 0) {
+-         const now = Date.now();
++       const now = Date.now();
+-         for (const [permissionId, deadline] of pendingConnectApp) {
+-           if (deadline > now) continue;
++       for (const [permissionId, entry] of pendingConnectApp) {
++         if (entry.deadline > now) continue;
+-           pendingConnectApp.delete(permissionId);
++         pendingConnectApp.delete(permissionId);
++         // 带外裁决成功会 clearPending:记录缺失 = 该询问已被应答,跳过冗余拒绝。
++         const pending =
++           connectApp === null
++             ? null
++             : await connectApp.signals.loadPending(entry.requestId);
++         if (pending === null) continue;
++         // 超时拒绝后清掉 KV pending,让迟到的卡片决策命中 200 no-op 而非 502 重试。
++         await connectApp.signals
++           .clearPending(entry.requestId)
++           .catch(() => undefined);
+-           await this.answerPermission(options.opencodeSessionId, permissionId, {
++         await this.answerPermission(options.opencodeSessionId, permissionId, {
+-             allow: false,
++           allow: false,
+-             directory,
++           directory,
+-           });
++         });
+-         }
++       }
+-       }
++     }
+
+
+─── server/src/craft/opencode/serve-client.ts:1794-1802 ───
+[maintainability · low] stashAndAnnounce 的写入顺序是先 stashPending 后 announceRequest:announce 失败进入此 catch
+时,已写入的 pending 记录成为无主记录,且 requestId 随异常丢弃、本调用侧无法清理,只能等 30 分钟 TTL 过期(记录为 uuid4 键、不含凭证,影响有限)。建议在
+stashAndAnnounce 内部对 announce 失败做 clearPending 回滚,避免每次失败都留下一段孤儿 KV。
+
+                } catch (error) {
+                  getLogger("server").warn(
+                    {
+                      err: error instanceof Error ? error.message : String(error),
+                    },
+                    "opencode-serve: connect_app announce failed; denying",
+                  );
+                  await deny("announce failed");
++                 // stashAndAnnounce 内部应对 announce 失败 clearPending 回滚,
++                 // 否则此处留下待 TTL 过期的无主 pending 记录。
+                }
+

@@ -59,7 +59,7 @@
 </div>
 
 <div class="layer collect">
-  <h2>采集层 <span class="tag">Grafana Alloy（observability profile）</span></h2>
+  <h2>采集层 <span class="tag">Grafana Alloy（observability 栈，docker/compose/observability.yml）</span></h2>
   <div class="row">
     <div class="box"><b>loki.source.docker</b><span>docker.sock 只读发现全部容器 stdout（label：<code>source=docker</code> + 容器名）</span></div>
     <div class="box"><b>loki.source.file</b><span>bind-mount <code>.logs/ → /hostlogs</code> tail 宿主机进程日志（label：<code>job=host-process</code>）；位置持久化 named volume</span></div>
@@ -70,7 +70,7 @@
 <div class="arrow-band"><div class="arrow"><span class="glyph">↓</span>push</div><div class="arrow green"><span class="glyph">↓</span>span 导出（BatchSpanProcessor）</div></div>
 
 <div class="layer store">
-  <h2>存储层 <span class="tag">均 7 天留存，自托管于 compose observability profile</span></h2>
+  <h2>存储层 <span class="tag">均 7 天留存，自托管于 docker/compose/observability.yml</span></h2>
   <div class="row">
     <div class="box"><b>Loki :3102</b><span>日志（tsdb v13，compactor 留存生效）；按 label/字段全文检索</span></div>
     <div class="box"><b>Tempo :3200 / OTLP :4318</b><span>链路；宿主进程指 <code>127.0.0.1:4318</code>，容器指 <code>tempo:4318</code></span></div>

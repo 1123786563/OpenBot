@@ -67,7 +67,11 @@ function serviceFor(provider: PaymentProvider, planCode: string) {
       async getPlan() {
         return { found: true, interval: "monthly", currency: "CNY" };
       },
-      async ensureSubscription() {},
+      async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
     },
     externalCustomerKey: `${prefix}-deployment`,
     activePlanCode: async () => null,
@@ -123,7 +127,11 @@ describe("probe g: failed activation revival through the real sweep query", () =
         async getPlan() {
           return { found: false }; // the refusing verdict
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
       },
       externalCustomerKey: `${prefix}-deployment`,
       activePlanCode: async () => null,
@@ -163,7 +171,11 @@ describe("probe g: failed activation revival through the real sweep query", () =
         async getPlan() {
           return { found: false };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
       },
       externalCustomerKey: `${prefix}-deployment`,
       activePlanCode: async () => null,
@@ -199,12 +211,12 @@ describe("probe h: the amount_unreadable endgame against the real partial index"
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
     expect((await anomaliesOn(order.id, "amount_unreadable")).length).toBe(3);
 
-    // The fourth no-amount delivery on a blocked order: batch 3's blocked→silence guard
-    // (the B3 fix) means the delivery is ACKED but writes NOTHING — the strike count stays
-    // at three (the bounded shape, pinned in full in qa-batch2-unreadable-fourth), and the
-    // endgame is not reversible by more deliveries.
+    // The fourth no-amount delivery on a blocked order: 99ab5899's durable-evidence contract
+    // means every refusal keeps recording its row (a blocked status does not erase evidence;
+    // the shape is pinned in full in qa-batch2-unreadable-fourth), and the endgame is not
+    // reversible by more deliveries — the order stays blocked.
     await silent().handleCallback("alipay", new Headers(), "x");
-    expect((await anomaliesOn(order.id, "amount_unreadable")).length).toBe(3);
+    expect((await anomaliesOn(order.id, "amount_unreadable")).length).toBe(4);
     expect((await store.readOrder(order.id))?.status).toBe("blocked");
   });
 });
@@ -242,7 +254,11 @@ describe("probe i: the purchase guard's uncached projection read", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
       },
       externalCustomerKey: deploymentKey,
       // The cached read lags: it still answers "no active plan".
@@ -284,7 +300,11 @@ describe("probe i: the purchase guard's uncached projection read", () => {
         async getPlan() {
           return { found: true, interval: "monthly", currency: "CNY" };
         },
-        async ensureSubscription() {},
+        async ensureSubscription() {
+        // The 7aff8dc5 contract: the facade always answers a period object (null fields mean
+        // "provider stated no exact period", not "no answer at all").
+        return { currentPeriodStart: null, currentPeriodEnd: null };
+      },
       },
       externalCustomerKey: deploymentKey,
       activePlanCode: async () => null,
