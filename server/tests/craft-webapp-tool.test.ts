@@ -1420,15 +1420,19 @@ describe("webapp preview route (reserved-port attach)", () => {
         // Filter to the mutation: the ready probe ahead of it is a GET on "/"
         // against the same listener, and counting it would make the assertion
         // about the probe rather than about the forwarded request.
+        //
+        // The path is this harness's own mount (root), so it lacks the
+        // `/api/craft` prefix the deployed app mounts these routes under — the
+        // prefix rides `context.req.path` either way, which is the point: the
+        // scaffold's basePath equals whatever mount the browser asked for.
         const forwarded = received.filter((request) =>
-          request.path.startsWith("/api/craft/sessions/cs-pv/webapp/api/tasks"),
+          request.path.startsWith("/sessions/cs-pv/webapp/api/tasks"),
         );
         expect(forwarded.length).toBe(1);
         expect(forwarded[0]?.method).toBe(method);
-        // The full mount path rides through (the scaffold's basePath equals it),
-        // query included — a mutation aimed at the wrong path is a silent no-op.
+        // Query included — a mutation aimed at the wrong path is a silent no-op.
         expect(forwarded[0]?.path).toBe(
-          "/api/craft/sessions/cs-pv/webapp/api/tasks?x=1",
+          "/sessions/cs-pv/webapp/api/tasks?x=1",
         );
         expect(forwarded[0]?.body).toBe(body);
       });
