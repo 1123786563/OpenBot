@@ -34,6 +34,8 @@ export default defineConfig({
     "./src/db/schema/delivery.ts",
     "./src/db/schema/enterprise-tenancy.ts",
     "./src/db/schema/enterprise-conversations.ts",
+    "./src/db/schema/enterprise-expert-versions.ts",
+    "./src/db/schema/enterprise-model-routes.ts",
     "./src/db/schema/enterprise-runs.ts",
     "./src/db/schema/mastra-tenant-storage.ts",
     "./src/db/schema/mastra-message-intents.ts",

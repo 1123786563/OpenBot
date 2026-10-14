@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   cp,
   mkdir,
@@ -13,13 +14,424 @@ import { join } from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import {
+  createMigrationLockTimeoutError,
+  errorChainContains,
+  isConnectionFailure,
+  migrateWithValidationBoundary,
+  sqlStateFromError,
+} from "../../scripts/migration-runner";
 import { enterpriseTestDatabaseUrlFrom } from "../support/enterprise-database";
+
+type CleanupFailure = { step: string; error: unknown };
+
+async function releaseTerminationBarrier(options: {
+  unlock: () => Promise<boolean>;
+  markReleased: () => void;
+}) {
+  if (!(await options.unlock())) {
+    throw new Error("advisory unlock returned false");
+  }
+  options.markReleased();
+}
+
+async function withDeadline<T>(
+  step: string,
+  operation: () => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${step} exceeded ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function runTerminationCleanup(options: {
+  unlock: () => Promise<boolean>;
+  settlements: Promise<unknown>[];
+  closePools: Array<() => Promise<unknown>>;
+  closeControl: () => Promise<unknown>;
+  timeoutMs: number;
+}): Promise<CleanupFailure[]> {
+  const failures: CleanupFailure[] = [];
+  const attempt = async (step: string, operation: () => Promise<unknown>) => {
+    try {
+      await withDeadline(step, operation, options.timeoutMs);
+      return true;
+    } catch (error) {
+      failures.push({ step, error });
+      return false;
+    }
+  };
+  const closeRunnerPools = async () => {
+    for (const [index, closePool] of options.closePools.entries()) {
+      await attempt(`runner pool ${index + 1} close`, closePool);
+    }
+  };
+
+  const unlocked = await attempt("barrier unlock", async () => {
+    if (!(await options.unlock())) throw new Error("advisory unlock returned false");
+  });
+  if (!unlocked) await closeRunnerPools();
+
+  for (const [index, settlement] of options.settlements.entries()) {
+    await attempt(`runner ${index + 1} settlement`, () => settlement);
+  }
+  if (unlocked) await closeRunnerPools();
+  await attempt("control connection close", options.closeControl);
+  return failures;
+}
+
+async function runBodyWithCleanup<T>(
+  body: () => Promise<T>,
+  cleanup: () => Promise<CleanupFailure[]>,
+): Promise<T> {
+  let bodyFailed = false;
+  let bodyError: unknown;
+  let result: T;
+  try {
+    result = await body();
+  } catch (error) {
+    bodyFailed = true;
+    bodyError = error;
+  }
+
+  let cleanupFailures: CleanupFailure[];
+  try {
+    cleanupFailures = await cleanup();
+  } catch (error) {
+    cleanupFailures = [{ step: "cleanup orchestration", error }];
+  }
+
+  if (bodyFailed) {
+    if (bodyError instanceof Error && cleanupFailures.length > 0) {
+      try {
+        Object.defineProperty(bodyError, "cleanupFailures", {
+          configurable: true,
+          value: cleanupFailures,
+        });
+      } catch {
+        console.error("Secondary cleanup failures:", cleanupFailures);
+      }
+    }
+    throw bodyError;
+  }
+  if (cleanupFailures.length > 0) {
+    const error = new AggregateError(
+      cleanupFailures.map(({ error: failure }) => failure),
+      `Test cleanup failed: ${cleanupFailures.map(({ step }) => step).join(", ")}`,
+    );
+    Object.defineProperty(error, "cleanupFailures", { value: cleanupFailures });
+    throw error;
+  }
+  return result!;
+}
+
+test("termination cleanup treats a false advisory unlock as failure", async () => {
+  const events: string[] = [];
+  let releaseSettlement!: () => void;
+  const settlement = new Promise<void>((resolve) => {
+    releaseSettlement = resolve;
+  }).then(() => {
+    events.push("settlement");
+  });
+  const failures = await runTerminationCleanup({
+    unlock: async () => false,
+    settlements: [settlement, Promise.resolve()],
+    closePools: [
+      async () => void events.push("close A"),
+      async () => {
+        events.push("close B");
+        releaseSettlement();
+      },
+    ],
+    closeControl: async () => {},
+    timeoutMs: 25,
+  });
+
+  expect(events).toEqual(["close A", "close B", "settlement"]);
+  expect(failures.map(({ step }) => step)).not.toContain("runner 1 settlement");
+  expect(failures.map(({ step }) => step)).toContain("barrier unlock");
+});
+
+test("migration lock timeout options validate before reserving a connection", async () => {
+  for (const lockTimeoutMs of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    let reserveCalls = 0;
+    const client = {
+      reserve: async () => {
+        reserveCalls += 1;
+        throw new Error("reserve must not run for invalid options");
+      },
+    } as unknown as ReturnType<typeof postgres>;
+    await expect(
+      migrateWithValidationBoundary(client, "unused", { lockTimeoutMs }),
+    ).rejects.toThrow("positive safe integer");
+    expect(reserveCalls).toBe(0);
+  }
+});
+
+test("connection loss recognizes PostgreSQL connection and shutdown SQLSTATEs", () => {
+  for (const code of ["08006", "08003", "57P01", "57P02", "57P03"])
+    expect(isConnectionFailure({ code })).toBe(true);
+  expect(isConnectionFailure({ code: "55P03" })).toBe(false);
+  expect(isConnectionFailure({ code: "23505" })).toBe(false);
+});
+
+test("SQLSTATE extraction and cause containment handle nested and cyclic errors", () => {
+  const databaseError = { code: "55P03" };
+  const wrapped = { cause: { cause: databaseError } };
+  expect(sqlStateFromError(wrapped)).toBe("55P03");
+  expect(errorChainContains(wrapped, databaseError)).toBe(true);
+  expect(sqlStateFromError({ code: "23505" })).toBe("23505");
+  expect(
+    sqlStateFromError(
+      { code: "ERR_QUERY", cause: { code: "23505", cause: databaseError } },
+      "55P03",
+    ),
+  ).toBe("55P03");
+  expect(sqlStateFromError({ code: 55_503 })).toBeUndefined();
+  expect(errorChainContains(wrapped, new Error("not in the chain"))).toBe(false);
+
+  const first: { cause?: unknown } = {};
+  const second: { cause?: unknown } = { cause: first };
+  first.cause = second;
+  expect(sqlStateFromError(first)).toBeUndefined();
+  expect(isConnectionFailure(first)).toBe(false);
+  expect(errorChainContains(first, new Error("unreachable"))).toBe(false);
+
+  const malformed = Object.defineProperty({}, "cause", {
+    get() {
+      throw new Error("malformed cause getter");
+    },
+  });
+  expect(sqlStateFromError(malformed)).toBeUndefined();
+  expect(errorChainContains(malformed, new Error("unreachable"))).toBe(false);
+});
+
+test("wrapped lock timeout keeps the Drizzle error and nested driver cause", () => {
+  const driverError = Object.assign(new Error("could not obtain lock"), {
+    code: "55P03",
+  });
+  const drizzleError = new Error("Drizzle query failed", {
+    cause: driverError,
+  });
+  const timeoutError = createMigrationLockTimeoutError(drizzleError, 180);
+
+  expect(timeoutError).toBeInstanceOf(Error);
+  expect(timeoutError?.message).toContain("180ms");
+  expect(timeoutError?.cause).toBe(drizzleError);
+  expect(sqlStateFromError(timeoutError?.cause, "55P03")).toBe("55P03");
+  expect(errorChainContains(timeoutError, driverError)).toBe(true);
+  expect(
+    createMigrationLockTimeoutError(
+      Object.assign(new Error("duplicate"), { code: "23505" }),
+      180,
+    ),
+  ).toBeUndefined();
+});
+
+test("normal barrier release checks false and cleanup retry owns held state", async () => {
+  let held = true;
+  let attempts = 0;
+  const events: string[] = [];
+  const unlock = async () => {
+    attempts += 1;
+    return attempts === 2;
+  };
+
+  const result = runBodyWithCleanup(
+    async () => {
+      await releaseTerminationBarrier({
+        unlock,
+        markReleased: () => {
+          held = false;
+        },
+      });
+    },
+    async () => {
+      events.push(held ? "held for cleanup" : "already released");
+      const failures = await runTerminationCleanup({
+        unlock: async () => {
+          await releaseTerminationBarrier({
+            unlock,
+            markReleased: () => {
+              held = false;
+            },
+          });
+          events.push("cleanup released");
+          return true;
+        },
+        settlements: [],
+        closePools: [],
+        closeControl: async () => {},
+        timeoutMs: 25,
+      });
+      return failures;
+    },
+  );
+
+  await expect(result).rejects.toThrow("advisory unlock returned false");
+  expect(attempts).toBe(2);
+  expect(held).toBe(false);
+  expect(events).toEqual(["held for cleanup", "cleanup released"]);
+});
+
+test("failed cleanup retry keeps the barrier held and reports the failure", async () => {
+  for (const retry of [
+    async () => false,
+    async () => {
+      throw new Error("retry rejected");
+    },
+  ]) {
+    let held = true;
+    const bodyError = new Error("advisory unlock returned false");
+    const bodyResult = runBodyWithCleanup(
+      async () => {
+        await releaseTerminationBarrier({
+          unlock: async () => false,
+          markReleased: () => {
+            held = false;
+          },
+        });
+      },
+      async () =>
+        runTerminationCleanup({
+          unlock: async () => {
+            await releaseTerminationBarrier({
+              unlock: retry,
+              markReleased: () => {
+                held = false;
+              },
+            });
+            return true;
+          },
+          settlements: [],
+          closePools: [],
+          closeControl: async () => {},
+          timeoutMs: 25,
+        }),
+    );
+
+    await expect(bodyResult).rejects.toMatchObject({
+      message: bodyError.message,
+      cleanupFailures: [
+        { step: "barrier unlock" },
+      ],
+    });
+    expect(held).toBe(true);
+  }
+});
+
+test("termination cleanup handles a rejected unlock and still closes both pools", async () => {
+  const closedPools: string[] = [];
+  const failures = await runTerminationCleanup({
+    unlock: async () => {
+      throw new Error("unlock failed");
+    },
+    settlements: [Promise.resolve(), Promise.resolve()],
+    closePools: [
+      async () => void closedPools.push("A"),
+      async () => void closedPools.push("B"),
+    ],
+    closeControl: async () => {},
+    timeoutMs: 25,
+  });
+
+  expect(closedPools).toEqual(["A", "B"]);
+  expect(failures.map(({ step }) => step)).toContain("barrier unlock");
+});
+
+test("termination cleanup bounds stalled settlement and closes runner pools", async () => {
+  const closedPools: string[] = [];
+  const failures = await runTerminationCleanup({
+    unlock: async () => true,
+    settlements: [new Promise<void>(() => {})],
+    closePools: [
+      async () => void closedPools.push("A"),
+      async () => void closedPools.push("B"),
+    ],
+    closeControl: async () => {},
+    timeoutMs: 25,
+  });
+
+  expect(closedPools).toEqual(["A", "B"]);
+  expect(failures.map(({ step }) => step)).toContain("runner 1 settlement");
+});
+
+test("termination cleanup attempts independent pool closes after one close fails", async () => {
+  const closedPools: string[] = [];
+  const failures = await runTerminationCleanup({
+    unlock: async () => false,
+    settlements: [],
+    closePools: [
+      async () => {
+        closedPools.push("A");
+        throw new Error("A close failed");
+      },
+      async () => void closedPools.push("B"),
+    ],
+    closeControl: async () => {},
+    timeoutMs: 25,
+  });
+
+  expect(closedPools).toEqual(["A", "B"]);
+  expect(failures.map(({ step }) => step)).toContain("runner pool 1 close");
+});
+
+test("body failure remains primary when cleanup also fails", async () => {
+  const bodyError = new Error("body assertion failed");
+  const cleanupError = new Error("cleanup failed");
+
+  const result = runBodyWithCleanup(
+    async () => {
+      throw bodyError;
+    },
+    async () => [{ step: "cleanup", error: cleanupError }],
+  );
+
+  await expect(result).rejects.toBe(bodyError);
+  expect((bodyError as Error & { cleanupFailures?: unknown[] }).cleanupFailures)
+    .toEqual([{ step: "cleanup", error: cleanupError }]);
+});
+
+test("cleanup failure fails a successful test body", async () => {
+  const cleanupError = new Error("cleanup failed");
+
+  await expect(
+    runBodyWithCleanup(
+      async () => "body passed",
+      async () => [{ step: "cleanup", error: cleanupError }],
+    ),
+  ).rejects.toMatchObject({ errors: [cleanupError] });
+});
 
 const enabled = process.env.ENTERPRISE_TEST_R2_MIGRATION_MODE === "fresh";
 const serverRoot = join(import.meta.dir, "../..");
 const migrationsRoot = join(serverRoot, "drizzle");
 const fixtureNames: string[] = [];
 const temporaryMigrationDirectories: string[] = [];
+
+async function expectFixtureJournalMatchesCopiedMigrations(directory: string) {
+  const files = await readdir(directory);
+  const copiedIndexes = files
+    .filter((name) => /^\d{4}_.*\.sql$/.test(name))
+    .map((name) => Number(name.slice(0, 4)))
+    .sort((left, right) => left - right);
+  const journal = JSON.parse(
+    await readFile(join(directory, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number }> };
+  expect(journal.entries.map((entry) => entry.idx)).toEqual(copiedIndexes);
+}
 
 function fixtureUrl(baseUrl: string, databaseName: string) {
   const url = new URL(baseUrl);
@@ -66,6 +478,9 @@ async function migrationFolderThrough62() {
     join(temporaryMigrationDirectory, "meta/_journal.json"),
     JSON.stringify(journal),
   );
+  await expectFixtureJournalMatchesCopiedMigrations(
+    temporaryMigrationDirectory,
+  );
   return temporaryMigrationDirectory;
 }
 
@@ -84,19 +499,44 @@ async function migrationFolderThrough64WithoutIntentLocks() {
     await readFile(join(migrationsRoot, "meta/_journal.json"), "utf8"),
   ) as { entries: Array<{ idx: number }> };
   journal.entries = journal.entries.filter((entry) => entry.idx <= 64);
+  const copiedIndexes = (await readdir(directory))
+    .filter((name) => /^\d{4}_.*\.sql$/.test(name))
+    .map((name) => Number(name.slice(0, 4)))
+    .sort((left, right) => left - right);
+  if (
+    JSON.stringify(journal.entries.map((entry) => entry.idx)) !==
+    JSON.stringify(copiedIndexes)
+  )
+    throw new Error(
+      "Through-64 fixture journal does not match copied migrations.",
+    );
   await mkdir(join(directory, "meta"), { recursive: true });
   await writeFile(
     join(directory, "meta/_journal.json"),
     JSON.stringify(journal),
   );
+  await expectFixtureJournalMatchesCopiedMigrations(directory);
   const migrationPath = join(directory, "0063_restore_schema_invariants.sql");
   const migrationSql = await readFile(migrationPath, "utf8");
+  const legacyTargets = [
+    "DO $migration$",
+    "UPDATE mastra_message_intents\nSET attachment_ids = (attachment_ids #>> '{}')::jsonb\nWHERE jsonb_typeof(attachment_ids) = 'string';",
+    'ALTER TABLE "mastra_message_intents" ADD CONSTRAINT "mastra_message_intents_attachment_ids_array_check"',
+    'ALTER TABLE "enterprise_model_budget_reservations" DROP CONSTRAINT "enterprise_budget_reservation_tokens_check"',
+    'ALTER TABLE "enterprise_runs" ALTER COLUMN "model_route_maximum_tokens" DROP DEFAULT',
+    'ALTER TABLE "enterprise_model_budget_reservations" ADD CONSTRAINT "enterprise_budget_reservation_tokens_check"',
+    'ALTER TABLE "enterprise_runs" ADD CONSTRAINT "enterprise_runs_model_route_maximum_tokens_check"',
+  ];
+  for (const target of legacyTargets) {
+    const first = migrationSql.indexOf(target);
+    if (first < 0 || migrationSql.indexOf(target, first + target.length) >= 0)
+      throw new Error(
+        `Expected exactly one 0063 legacy fixture target: ${target}`,
+      );
+  }
   await writeFile(
     migrationPath,
-    migrationSql.replaceAll(
-      "\tLOCK TABLE mastra_message_intents IN SHARE ROW EXCLUSIVE MODE;\n\tLOCK TABLE mastra_message_intent_attachments IN SHARE ROW EXCLUSIVE MODE;\n",
-      "",
-    ),
+    'ALTER TABLE "enterprise_model_budget_reservations" DROP CONSTRAINT "enterprise_budget_reservation_tokens_check";\n',
   );
   return directory;
 }
@@ -129,8 +569,23 @@ async function expectInvariantLocksBeforePreflightCounts() {
     expect(reservationCount).toBeGreaterThan(runCount);
     expect(intentLock).toBeGreaterThan(reservationCount);
     expect(attachmentLock).toBeGreaterThan(intentLock);
-    expect(intentScan).toBeGreaterThan(attachmentLock);
-    expect(backfill).toBeGreaterThan(intentScan);
+    if (migrationName.startsWith("0063")) {
+      expect(intentScan).toBeGreaterThan(attachmentLock);
+      expect(backfill).toBeGreaterThan(intentScan);
+    } else {
+      expect(intentScan).toBe(-1);
+      expect((sql.match(/--> statement-breakpoint/g) ?? []).length).toBe(4);
+      expect(
+        (sql.match(/(?:FROM|JOIN) mastra_message_intent_attachments/g) ?? [])
+          .length,
+      ).toBe(2);
+      expect(sql).not.toMatch(
+        /SELECT count\(\*\) INTO (?:encoded_count|holder_count|matching_holder_count)/,
+      );
+      expect((sql.match(/NOT VALID/g) ?? []).length).toBe(3);
+      expect(sql).not.toContain("FOR intent IN");
+      expect(backfill).toBeGreaterThan(attachmentLock);
+    }
   }
 }
 
@@ -154,6 +609,7 @@ async function migrationFolderWithWindowBarrier(advisoryKey: number) {
     join(directory, "meta/_journal.json"),
     JSON.stringify(journal),
   );
+  await expectFixtureJournalMatchesCopiedMigrations(directory);
   const migrationPath = join(directory, "0063_restore_schema_invariants.sql");
   const migrationSql = await readFile(migrationPath, "utf8");
   const postflight =
@@ -186,6 +642,28 @@ test("0063 window fixture journal matches its copied migration files", async () 
   expect(journal.entries.map((entry) => entry.idx)).toEqual(copiedIndexes);
 });
 
+test.skipIf(!enabled)(
+  "Postgres.js reserved runtime shape requires the migration adapter",
+  async () => {
+    const client = postgres(enterpriseTestDatabaseUrlFrom(), { max: 1 });
+    try {
+      const reserved = await client.reserve();
+      try {
+        expect((reserved as unknown as { options?: unknown }).options).toBe(
+          undefined,
+        );
+        expect((reserved as unknown as { begin?: unknown }).begin).toBe(
+          undefined,
+        );
+      } finally {
+        reserved.release();
+      }
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  },
+);
+
 async function migrationFolderWithForwardWindowBarrier(advisoryKey: number) {
   const directory = await mkdtemp(join(tmpdir(), "openbot-r2-forward-window-"));
   temporaryMigrationDirectories.push(directory);
@@ -198,17 +676,22 @@ async function migrationFolderWithForwardWindowBarrier(advisoryKey: number) {
     }
   }
   await mkdir(join(directory, "meta"), { recursive: true });
-  await cp(
-    join(migrationsRoot, "meta/_journal.json"),
+  const journal = JSON.parse(
+    await readFile(join(migrationsRoot, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number }> };
+  journal.entries = journal.entries.filter((entry) => entry.idx <= 65);
+  await writeFile(
     join(directory, "meta/_journal.json"),
+    JSON.stringify(journal),
   );
+  await expectFixtureJournalMatchesCopiedMigrations(directory);
   const migrationPath = join(
     directory,
     "0065_restore_schema_invariant_guards.sql",
   );
   const migrationSql = await readFile(migrationPath, "utf8");
   const postflight =
-    "END\n$migration$;--> statement-breakpoint\n\nUPDATE mastra_message_intents";
+    "END\n$migration$;--> statement-breakpoint\n\nDROP FUNCTION pg_temp.try_parse_legacy_attachment_ids(text);";
   if (!migrationSql.includes(postflight))
     throw new Error(
       "Could not locate the 0065 post-preflight migration barrier point.",
@@ -217,9 +700,33 @@ async function migrationFolderWithForwardWindowBarrier(advisoryKey: number) {
     migrationPath,
     migrationSql.replace(
       postflight,
-      `END\n$migration$;--> statement-breakpoint\n\nSELECT pg_advisory_lock(${advisoryKey});--> statement-breakpoint\nSELECT pg_advisory_unlock(${advisoryKey});--> statement-breakpoint\n\nUPDATE mastra_message_intents`,
+      `END\n$migration$;--> statement-breakpoint\n\nSELECT pg_advisory_lock(${advisoryKey});--> statement-breakpoint\nSELECT pg_advisory_unlock(${advisoryKey});--> statement-breakpoint\n\nDROP FUNCTION pg_temp.try_parse_legacy_attachment_ids(text);`,
     ),
   );
+  return directory;
+}
+
+async function migrationFolderThrough65() {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-r2-through-65-"));
+  temporaryMigrationDirectories.push(directory);
+  const entries = await readdir(migrationsRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && /^\d{4}_.*\.sql$/.test(entry.name)) {
+      const index = Number(entry.name.slice(0, 4));
+      if (index <= 65)
+        await cp(join(migrationsRoot, entry.name), join(directory, entry.name));
+    }
+  }
+  await mkdir(join(directory, "meta"), { recursive: true });
+  const journal = JSON.parse(
+    await readFile(join(migrationsRoot, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number }> };
+  journal.entries = journal.entries.filter((entry) => entry.idx <= 65);
+  await writeFile(
+    join(directory, "meta/_journal.json"),
+    JSON.stringify(journal),
+  );
+  await expectFixtureJournalMatchesCopiedMigrations(directory);
   return directory;
 }
 
@@ -230,6 +737,147 @@ async function migrateDatabase(databaseUrl: string, folder: string) {
   } finally {
     await client.end({ timeout: 5 });
   }
+}
+
+async function migrationFolderWithValidationBarrier(advisoryKey: number) {
+  const directory = await mkdtemp(
+    join(tmpdir(), "openbot-r2-validation-barrier-"),
+  );
+  temporaryMigrationDirectories.push(directory);
+  const entries = await readdir(migrationsRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && /^\d{4}_.*\.sql$/.test(entry.name))
+      await cp(join(migrationsRoot, entry.name), join(directory, entry.name));
+  }
+  await mkdir(join(directory, "meta"), { recursive: true });
+  await cp(
+    join(migrationsRoot, "meta/_journal.json"),
+    join(directory, "meta/_journal.json"),
+  );
+  const path = join(
+    directory,
+    "0066_validate_enterprise_schema_invariant_guards.sql",
+  );
+  const source = await readFile(path, "utf8");
+  const firstValidation =
+    'ALTER TABLE "mastra_message_intents"\n\tVALIDATE CONSTRAINT';
+  if (!source.includes(firstValidation))
+    throw new Error("Could not locate the first 0066 validation statement.");
+  await writeFile(
+    path,
+    source.replace(
+      firstValidation,
+      `SELECT pg_advisory_lock(${advisoryKey}, 66);--> statement-breakpoint\nSELECT pg_advisory_unlock(${advisoryKey}, 66);--> statement-breakpoint\n\n${firstValidation}`,
+    ),
+  );
+  return directory;
+}
+
+async function migrationFolderWithLifetimeBarriers(
+  prefixBarrierKey: number,
+  validationBarrierKey: number,
+) {
+  const directory = await mkdtemp(
+    join(tmpdir(), "openbot-r2-lifetime-barriers-"),
+  );
+  temporaryMigrationDirectories.push(directory);
+  const entries = await readdir(migrationsRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && /^\d{4}_.*\.sql$/.test(entry.name))
+      await cp(join(migrationsRoot, entry.name), join(directory, entry.name));
+  }
+  await mkdir(join(directory, "meta"), { recursive: true });
+  await cp(
+    join(migrationsRoot, "meta/_journal.json"),
+    join(directory, "meta/_journal.json"),
+  );
+
+  const prefixPath = join(directory, "0065_restore_schema_invariant_guards.sql");
+  const prefixSource = await readFile(prefixPath, "utf8");
+  const finalPrefixTarget = prefixSource.trimEnd();
+  await writeFile(
+    prefixPath,
+    `${finalPrefixTarget}--> statement-breakpoint\nSELECT pg_advisory_lock(${prefixBarrierKey}, 65);--> statement-breakpoint\nSELECT pg_advisory_unlock(${prefixBarrierKey}, 65);--> statement-breakpoint\n`,
+  );
+
+  const validationPath = join(
+    directory,
+    "0066_validate_enterprise_schema_invariant_guards.sql",
+  );
+  const validationSource = await readFile(validationPath, "utf8");
+  const firstValidation =
+    'ALTER TABLE "mastra_message_intents"\n\tVALIDATE CONSTRAINT';
+  if (!validationSource.includes(firstValidation))
+    throw new Error("Could not locate the first 0066 validation statement.");
+  await writeFile(
+    validationPath,
+    validationSource.replace(
+      firstValidation,
+      `SELECT pg_advisory_lock(${validationBarrierKey}, 66);--> statement-breakpoint\nSELECT pg_advisory_unlock(${validationBarrierKey}, 66);--> statement-breakpoint\n\n${firstValidation}`,
+    ),
+  );
+  return directory;
+}
+
+async function migrationFolderFailingAt66() {
+  const directory = await migrationFolderWithValidationBarrier(20261011);
+  const path = join(
+    directory,
+    "0066_validate_enterprise_schema_invariant_guards.sql",
+  );
+  const source = await readFile(path, "utf8");
+  await writeFile(path, `${source}\nSELECT 1 / 0;\n`);
+  return directory;
+}
+
+async function migrationBoundaryHashes(folder: string) {
+  const journal = JSON.parse(
+    await readFile(join(folder, "meta/_journal.json"), "utf8"),
+  ) as { entries: Array<{ idx: number; tag: string }> };
+  const hashes: string[] = [];
+  for (const entry of journal.entries.filter(
+    (item) => item.idx === 65 || item.idx === 66,
+  )) {
+    const text = await readFile(join(folder, `${entry.tag}.sql`), "utf8");
+    hashes.push(createHash("sha256").update(text).digest("hex"));
+  }
+  return hashes;
+}
+
+async function migrationJournalBoundary(databaseUrl: string, hashes: string[]) {
+  const client = postgres(databaseUrl, { max: 1 });
+  try {
+    const rows = await client<{ hash: string }[]>`
+      SELECT hash FROM drizzle.__drizzle_migrations
+      WHERE hash = ANY(${hashes}) ORDER BY created_at
+    `;
+    return rows.map((row) => row.hash);
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+}
+
+async function validationConstraintState(databaseUrl: string) {
+  const client = postgres(databaseUrl, { max: 1 });
+  try {
+    const [row] = await client<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM pg_constraint
+      WHERE conname IN (
+        'mastra_message_intents_attachment_ids_array_check',
+        'enterprise_budget_reservation_tokens_check',
+        'enterprise_runs_model_route_maximum_tokens_check'
+      ) AND convalidated
+    `;
+    return row?.count ?? 0;
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+}
+
+async function temporaryRunnerDirectories() {
+  return (await readdir(tmpdir()))
+    .filter((name) => name.startsWith("openbot-migration-prefix-"))
+    .sort();
 }
 
 async function bootstrapCapabilityRoles(databaseUrl: string) {
@@ -352,7 +1000,7 @@ async function migrationState(databaseUrl: string) {
 async function runMigration(databaseUrl: string, folder = migrationsRoot) {
   const client = postgres(databaseUrl, { max: 1, onnotice: () => {} });
   try {
-    await migrate(drizzle(client), { migrationsFolder: folder });
+    await migrateWithValidationBoundary(client, folder);
     return { failed: false, message: "" };
   } catch (error) {
     const details: string[] = [];
@@ -369,6 +1017,47 @@ async function runMigration(databaseUrl: string, folder = migrationsRoot) {
   }
 }
 
+function failReservedTransactionStatement(
+  client: ReturnType<typeof postgres>,
+  statement: "COMMIT" | "ROLLBACK",
+) {
+  const reserve = client.reserve.bind(client);
+  const injected = new Error(`injected ${statement} failure`);
+  Object.defineProperty(client, "reserve", {
+    value: async () => {
+      const reserved = await reserve();
+      const unsafe = reserved.unsafe.bind(reserved);
+      reserved.unsafe = ((query, parameters, options) => {
+        if (query.trim().toUpperCase() === statement) throw injected;
+        return unsafe(query, parameters, options);
+      }) as typeof reserved.unsafe;
+      return reserved;
+    },
+  });
+  return injected;
+}
+
+async function waitForAdvisoryWaiter(
+  control: ReturnType<typeof postgres>,
+  keyClass: number,
+  keyObject: number,
+  excludePid?: number,
+) {
+  return waitForActivity(async () => {
+    const [activity] = await control<{ pid: number }[]>`
+      SELECT activity.pid FROM pg_stat_activity activity
+      JOIN pg_locks lock ON lock.pid = activity.pid
+      WHERE activity.datname = current_database()
+        AND activity.pid <> pg_backend_pid()
+        AND (${excludePid ?? 0} = 0 OR activity.pid <> ${excludePid ?? 0})
+        AND lock.locktype = 'advisory' AND NOT lock.granted
+        AND lock.classid::bigint = ${keyClass}
+        AND lock.objid::bigint = ${keyObject} AND lock.objsubid = 2
+    `;
+    return activity;
+  }, `advisory lock waiter (${keyClass}, ${keyObject})`);
+}
+
 async function waitForActivity(
   predicate: () => Promise<{ pid: number } | undefined>,
   description: string,
@@ -380,6 +1069,33 @@ async function waitForActivity(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`Timed out waiting for PostgreSQL activity: ${description}`);
+}
+
+async function migrationFolderWithLockTimeoutProbe(tableName: string) {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-lock-timeout-"));
+  temporaryMigrationDirectories.push(directory);
+  await mkdir(join(directory, "meta"), { recursive: true });
+  await writeFile(
+    join(directory, "meta/_journal.json"),
+    JSON.stringify({
+      version: "7",
+      dialect: "postgresql",
+      entries: [
+        {
+          idx: 0,
+          version: "7",
+          when: Date.now(),
+          tag: "0000_lock_timeout_probe",
+          breakpoints: true,
+        },
+      ],
+    }),
+  );
+  await writeFile(
+    join(directory, "0000_lock_timeout_probe.sql"),
+    `CREATE TABLE public.${tableName} AS SELECT current_setting('lock_timeout') AS value;`,
+  );
+  return directory;
 }
 
 async function intentAttachmentValue(
@@ -461,6 +1177,24 @@ async function seedValidRunAndReservation(databaseUrl: string, prefix: string) {
   }
 }
 
+async function blockedRunAndReservationWriterActivities(
+  control: ReturnType<typeof postgres>,
+  migrationPid: number,
+) {
+  return control<{ pid: number; query: string }[]>`
+    SELECT pid, query
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND pid <> pg_backend_pid()
+      AND pid <> ${migrationPid}
+      AND wait_event_type = 'Lock'
+      AND (
+        query ILIKE '%UPDATE enterprise_runs%'
+        OR query ILIKE '%UPDATE enterprise_model_budget_reservations%'
+      )
+  `;
+}
+
 async function startInvalidRunAndReservationWriters(
   databaseUrl: string,
   control: ReturnType<typeof postgres>,
@@ -510,35 +1244,19 @@ async function startInvalidRunAndReservationWriters(
 
   try {
     const writerActivities = await waitForActivity(async () => {
-      const activities = await control<{ pid: number; query: string }[]>`
-        SELECT pid, query
-        FROM pg_stat_activity
-        WHERE datname = current_database()
-          AND pid <> pg_backend_pid()
-          AND pid <> ${migrationPid}
-          AND wait_event_type = 'Lock'
-          AND (
-            query ILIKE '%UPDATE enterprise_runs%'
-            OR query ILIKE '%UPDATE enterprise_model_budget_reservations%'
-          )
-      `;
+      const activities = await blockedRunAndReservationWriterActivities(
+        control,
+        migrationPid,
+      );
       return activities.length === 2 ? activities[0] : undefined;
     }, "Run and reservation writers blocked by migration locks");
     expect(writerActivities.pid).not.toBe(migrationPid);
     expect(runSettled).toBe(false);
     expect(reservationSettled).toBe(false);
-    const blockedWriters = await control<{ pid: number; query: string }[]>`
-      SELECT pid, query
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND pid <> pg_backend_pid()
-        AND pid <> ${migrationPid}
-        AND wait_event_type = 'Lock'
-        AND (
-          query ILIKE '%UPDATE enterprise_runs%'
-          OR query ILIKE '%UPDATE enterprise_model_budget_reservations%'
-        )
-    `;
+    const blockedWriters = await blockedRunAndReservationWriterActivities(
+      control,
+      migrationPid,
+    );
     expect(blockedWriters).toHaveLength(2);
     return {
       async expectRejected() {
@@ -564,11 +1282,10 @@ async function startInvalidRunAndReservationWriters(
     };
   } catch (error) {
     await Promise.all([
-      runPromise,
-      reservationPromise,
       runWriter.end({ timeout: 5 }),
       reservationWriter.end({ timeout: 5 }),
     ]);
+    await Promise.all([runPromise, reservationPromise]);
     throw error;
   }
 }
@@ -721,13 +1438,13 @@ async function exerciseMigrationWriterWindow(
       await control`SELECT pg_advisory_unlock(${barrierKey})`.catch(() => {});
     }
     await Promise.all([
-      migrationPromise?.then(() => undefined),
-      writerPromise?.then(() => undefined),
-    ]);
-    await Promise.all([
       control.end({ timeout: 5 }),
       writer.end({ timeout: 5 }),
       invariantWriters?.close(),
+    ]);
+    await Promise.all([
+      migrationPromise?.then(() => undefined),
+      writerPromise?.then(() => undefined),
     ]);
   }
 }
@@ -897,16 +1614,241 @@ async function exerciseForwardMigrationWriterWindow(databaseUrl: string) {
       await control`SELECT pg_advisory_unlock(${barrierKey})`.catch(() => {});
     }
     await Promise.all([
-      migrationPromise?.then(() => undefined),
-      writerPromise?.then(() => undefined),
-    ]);
-    await Promise.all([
       control.end({ timeout: 5 }),
       writer.end({ timeout: 5 }),
       invariantWriters?.close(),
     ]);
+    await Promise.all([
+      migrationPromise?.then(() => undefined),
+      writerPromise?.then(() => undefined),
+    ]);
   }
 }
+
+test.skipIf(!enabled)(
+  "lock timeout SET and RESET failures preserve errors and reservation safety",
+  async () => {
+    const setupUrl = enterpriseTestDatabaseUrlFrom();
+    const setup = postgres(setupUrl, { max: 1 });
+    const fixtureName = await createDatabaseFrom(setup);
+    await setup.end({ timeout: 5 });
+    const databaseUrl = fixtureUrl(setupUrl, fixtureName);
+    const folder = await migrationFolderWithLockTimeoutProbe(
+      `lock_timeout_fault_${crypto.randomUUID().replaceAll("-", "")}`,
+    );
+
+    const setClient = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    const setFailure = new Error("injected lock_timeout SET failure");
+    const setReserve = setClient.reserve.bind(setClient);
+    Object.defineProperty(setClient, "reserve", {
+      value: async () => {
+        const reserved = await setReserve();
+        const unsafe = reserved.unsafe.bind(reserved);
+        reserved.unsafe = ((query, parameters, queryOptions) => {
+          if (String(query).includes("set_config('lock_timeout'"))
+            throw setFailure;
+          return unsafe(query, parameters, queryOptions);
+        }) as typeof reserved.unsafe;
+        return reserved;
+      },
+    });
+    try {
+      const setError = await migrateWithValidationBoundary(setClient, folder).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(errorChainContains(setError, setFailure)).toBe(true);
+      const [reused] = await setClient<{ value: number }[]>`SELECT 1 AS value`;
+      expect(reused?.value).toBe(1);
+    } finally {
+      await setClient.end({ timeout: 5 });
+    }
+
+    const resetClient = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    const resetFailure = new Error("injected lock_timeout RESET failure");
+    const resetReserve = resetClient.reserve.bind(resetClient);
+    Object.defineProperty(resetClient, "reserve", {
+      value: async () => {
+        const reserved = await resetReserve();
+        const unsafe = reserved.unsafe.bind(reserved);
+        reserved.unsafe = ((query, parameters, queryOptions) => {
+          if (String(query).trim().toUpperCase() === "RESET LOCK_TIMEOUT")
+            throw resetFailure;
+          return unsafe(query, parameters, queryOptions);
+        }) as typeof reserved.unsafe;
+        return reserved;
+      },
+    });
+    const probe = postgres(databaseUrl, { max: 1 });
+    try {
+      const resetError = await migrateWithValidationBoundary(
+        resetClient,
+        folder,
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(errorChainContains(resetError, resetFailure)).toBe(true);
+      await expect(resetClient`SELECT 1`).rejects.toThrow();
+      const [lock] = await probe<{ acquired: boolean }[]>`
+        SELECT pg_try_advisory_lock(1330795348, 1296641874) AS acquired
+      `;
+      expect(lock?.acquired).toBe(true);
+      await probe`SELECT pg_advisory_unlock(1330795348, 1296641874)`;
+    } finally {
+      await Promise.all([
+        resetClient.end({ timeout: 5 }).catch(() => {}),
+        probe.end({ timeout: 5 }),
+      ]);
+    }
+  },
+  20_000,
+);
+
+test.skipIf(!enabled)(
+  "omitted migration lock timeout binds 30000ms on the reserved session",
+  async () => {
+    const setupUrl = enterpriseTestDatabaseUrlFrom();
+    const setup = postgres(setupUrl, { max: 1 });
+    const fixtureName = await createDatabaseFrom(setup);
+    await setup.end({ timeout: 5 });
+    const runner = postgres(fixtureUrl(setupUrl, fixtureName), {
+      max: 1,
+      onnotice: () => {},
+    });
+    let observedValue: unknown;
+    const injectedTimeout = Object.assign(new Error("injected lock timeout"), {
+      code: "55P03",
+    });
+    const reserve = runner.reserve.bind(runner);
+    Object.defineProperty(runner, "reserve", {
+      value: async () => {
+        const reserved = await reserve();
+        const unsafe = reserved.unsafe.bind(reserved);
+        reserved.unsafe = ((query, parameters, queryOptions) => {
+          const text = typeof query === "string" ? query : String(query);
+          if (text.includes("set_config('lock_timeout'")) {
+            observedValue = Array.isArray(parameters)
+              ? parameters[0]
+              : parameters;
+          }
+          if (text.includes("pg_advisory_lock"))
+            return Promise.reject(injectedTimeout) as ReturnType<
+              typeof reserved.unsafe
+            >;
+          return unsafe(query, parameters, queryOptions);
+        }) as typeof reserved.unsafe;
+        return reserved;
+      },
+    });
+    const probe = postgres(fixtureUrl(setupUrl, fixtureName), { max: 1 });
+    try {
+      const failure = await migrateWithValidationBoundary(
+        runner,
+        migrationsRoot,
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain("30000ms");
+      expect((failure as Error).cause).toBeInstanceOf(Error);
+      expect(sqlStateFromError(failure, "55P03")).toBe("55P03");
+      expect(errorChainContains(failure, injectedTimeout)).toBe(true);
+      expect(observedValue).toBe("30000ms");
+      await expect(runner`SELECT 1`).rejects.toThrow();
+      const [migration] = await probe<{ exists: string | null }[]>`
+        SELECT to_regclass('drizzle.__drizzle_migrations') AS exists
+      `;
+      expect(migration?.exists).toBeNull();
+    } finally {
+      await Promise.all([
+        runner.end({ timeout: 5 }).catch(() => {}),
+        probe.end({ timeout: 5 }),
+      ]);
+    }
+  },
+  15_000,
+);
+
+test.skipIf(!enabled)(
+  "migration advisory lock timeout is bounded and reset before migration SQL",
+  async () => {
+    const setupUrl = enterpriseTestDatabaseUrlFrom();
+    const setup = postgres(setupUrl, { max: 1 });
+    const fixtureName = await createDatabaseFrom(setup);
+    const databaseUrl = fixtureUrl(setupUrl, fixtureName);
+    const tableName = `lock_timeout_probe_${crypto.randomUUID().replaceAll("-", "")}`;
+    const folder = await migrationFolderWithLockTimeoutProbe(tableName);
+    const keyClass = 1330795348;
+    const keyObject = 1296641874;
+    const control = postgres(databaseUrl, { max: 1 });
+    const runner = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    let held = false;
+    try {
+      await control`SELECT pg_advisory_lock(${keyClass}, ${keyObject})`;
+      held = true;
+      const timed = migrateWithValidationBoundary(runner, folder, {
+        lockTimeoutMs: 180,
+      });
+      const failure = await timed.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain("180ms");
+      expect((failure as Error).cause).toBeInstanceOf(Error);
+      expect(sqlStateFromError(failure, "55P03")).toBe("55P03");
+      expect(
+        errorChainContains(failure, (failure as Error).cause),
+      ).toBe(true);
+      await expect(runner`SELECT 1`).rejects.toThrow();
+      const [migration] = await control<{ exists: string | null }[]>`
+        SELECT to_regclass(${`public.${tableName}`}) AS exists
+      `;
+      expect(migration?.exists).toBeNull();
+    } finally {
+      if (held)
+        await control`SELECT pg_advisory_unlock(${keyClass}, ${keyObject})`.catch(
+          () => {},
+        );
+      await Promise.all([
+        runner.end({ timeout: 5 }).catch(() => {}),
+        control.end({ timeout: 5 }),
+        setup.end({ timeout: 5 }),
+      ]);
+    }
+
+    const earlyControl = postgres(databaseUrl, { max: 1 });
+    const earlyRunner = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    let earlyHeld = false;
+    try {
+      await earlyControl`SELECT pg_advisory_lock(${keyClass}, ${keyObject})`;
+      earlyHeld = true;
+      const migration = migrateWithValidationBoundary(earlyRunner, folder, {
+        lockTimeoutMs: 2_000,
+      });
+      await waitForAdvisoryWaiter(earlyControl, keyClass, keyObject);
+      await earlyControl`SELECT pg_advisory_unlock(${keyClass}, ${keyObject})`;
+      earlyHeld = false;
+      await migration;
+      const [observed] = await earlyControl.unsafe<{ value: string }[]>(
+        `SELECT value FROM public.${tableName}`,
+      );
+      expect(observed?.value).toBe("0");
+    } finally {
+      if (earlyHeld)
+        await earlyControl`SELECT pg_advisory_unlock(${keyClass}, ${keyObject})`.catch(
+          () => {},
+        );
+      await Promise.all([
+        earlyRunner.end({ timeout: 5 }).catch(() => {}),
+        earlyControl.end({ timeout: 5 }),
+      ]);
+    }
+  },
+  30_000,
+);
 
 test.skipIf(!enabled)(
   "0063 blocks unresolved legacy values atomically and upgrades validated intents",
@@ -915,6 +1857,71 @@ test.skipIf(!enabled)(
     const endpoint = new URL(setupUrl);
     expect(["127.0.0.1", "localhost", "[::1]"]).toContain(endpoint.hostname);
     expect(endpoint.port).toBe("5434");
+    const constructionClient = postgres(setupUrl, { max: 1 });
+    try {
+      const adapterConstructionClient = postgres(setupUrl, { max: 1 });
+      await runBodyWithCleanup(
+        async () => {
+          const adapterConstructionFailure = new Error(
+            "injected reserved adapter construction failure",
+          );
+          Object.defineProperty(adapterConstructionClient, "options", {
+            configurable: true,
+            get() {
+              throw adapterConstructionFailure;
+            },
+          });
+          await expect(
+            migrateWithValidationBoundary(
+              adapterConstructionClient,
+              migrationsRoot,
+            ),
+          ).rejects.toThrow(adapterConstructionFailure.message);
+          const adapterReuse = await withDeadline(
+            "adapter construction pool reuse",
+            async () => {
+              const rows = await adapterConstructionClient<{ value: number }[]>`
+                SELECT 1 AS value
+              `;
+              return rows[0]?.value;
+            },
+            2_000,
+          );
+          expect(adapterReuse).toBe(1);
+        },
+        async () => {
+          try {
+            await withDeadline(
+              "adapter construction client close",
+              () => adapterConstructionClient.end({ timeout: 5 }),
+              5_500,
+            );
+            return [];
+          } catch (error) {
+            return [{ step: "adapter construction client close", error }];
+          }
+        },
+      );
+
+      const reserveForConstructionFailure =
+        constructionClient.reserve.bind(constructionClient);
+      Object.defineProperty(constructionClient, "reserve", {
+        value: async () => {
+          const reserved = await reserveForConstructionFailure();
+          Object.freeze(constructionClient.options.parsers);
+          return reserved;
+        },
+      });
+      await expect(
+        migrateWithValidationBoundary(constructionClient, migrationsRoot),
+      ).rejects.toThrow();
+      const [reused] = await constructionClient<{ value: number }[]>`
+        SELECT 1 AS value
+      `;
+      expect(reused?.value).toBe(1);
+    } finally {
+      await constructionClient.end({ timeout: 5 });
+    }
     const setup = postgres(setupUrl, { max: 1 });
     let template: string | undefined;
     try {
@@ -940,7 +1947,17 @@ test.skipIf(!enabled)(
           expected: "malformed_intent_json_count=1",
         },
         {
-          kind: "non-array",
+          kind: "native-object",
+          encoded: JSON.stringify({ nope: true }),
+          expected: "non_array_intent_count=1",
+        },
+        {
+          kind: "native-scalar",
+          encoded: JSON.stringify(17),
+          expected: "non_array_intent_count=1",
+        },
+        {
+          kind: "encoded-non-array",
           encoded: JSON.stringify(JSON.stringify({ nope: true })),
           expected: "non_array_intent_count=1",
         },
@@ -977,7 +1994,9 @@ test.skipIf(!enabled)(
           blocked.encoded,
         );
         let repairable: Awaited<ReturnType<typeof seedLegacyValue>> | undefined;
-        let repairableBefore: Awaited<ReturnType<typeof intentAttachmentValue>>;
+        let repairableBefore:
+          | Awaited<ReturnType<typeof intentAttachmentValue>>
+          | undefined;
         if (blocked.kind === "non-uuid") {
           const validIds = [
             "55555555-5555-4555-8555-555555555555",
@@ -1016,15 +2035,15 @@ test.skipIf(!enabled)(
                 AND thread_id = ${original.thread}
                 AND client_message_key = ${original.clientKey}
             `;
-            expect(source?.attachment_ids).toBe(JSON.parse(blocked.encoded));
-            expect(source?.raw).toBe(
-              JSON.stringify(JSON.parse(blocked.encoded)),
+            expect(source?.attachment_ids).toEqual(JSON.parse(blocked.encoded));
+            expect(JSON.parse(source?.raw ?? "null")).toEqual(
+              JSON.parse(blocked.encoded),
             );
           } finally {
             await client.end({ timeout: 5 });
           }
         }
-        if (repairable) {
+        if (repairable && repairableBefore) {
           const repairedCandidateAfter = await intentAttachmentValue(
             databaseUrl,
             repairable.tenant,
@@ -1197,11 +2216,704 @@ test.skipIf(!enabled)(
       await exerciseMigrationWriterWindow(setup, setupUrl, template);
       await expectInvariantLocksBeforePreflightCounts();
 
+      const legacyTemplate = await createDatabaseFrom(setup, template);
+      const legacyTemplateUrl = fixtureUrl(setupUrl, legacyTemplate);
+      const legacyFolder = await migrationFolderThrough64WithoutIntentLocks();
+      await migrateDatabase(legacyTemplateUrl, legacyFolder);
+      const through65Folder = await migrationFolderThrough65();
+
+      // A 0065 commit can return an expired pool connection before the full-folder
+      // 0066 migrate call. Keep an independent witness for both boundaries.
+      const lifetimeName = await createDatabaseFrom(setup, legacyTemplate);
+      const lifetimeUrl = fixtureUrl(setupUrl, lifetimeName);
+      const lifetimeFolder = await migrationFolderWithLifetimeBarriers(
+        20261012,
+        20261013,
+      );
+      const lifetimeControl = postgres(lifetimeUrl, { max: 1 });
+      const lifetimeWriter = postgres(lifetimeUrl, { max: 1 });
+      const lifetimeRun = await seedValidRunAndReservation(
+        lifetimeUrl,
+        "r5-3-f1-b-lifetime",
+      );
+      const lifetimeRunnerA = postgres(lifetimeUrl, {
+        max: 1,
+        max_lifetime: 1,
+        onnotice: () => {},
+      });
+      const lifetimeRunnerB = postgres(lifetimeUrl, {
+        max: 1,
+        onnotice: () => {},
+      });
+      let prefixBarrierHeld = false;
+      let validationBarrierHeld = false;
+      let lifetimeA: Promise<unknown> | undefined;
+      let lifetimeB: Promise<unknown> | undefined;
+      let lifetimeObservations:
+        | {
+            samePid: boolean;
+            runnerLockHeldByA: boolean;
+            runnerBStillWaiting: boolean;
+          }
+        | undefined;
+      let lifetimeJournal: string[] | undefined;
+      let lifetimeHashes: string[] | undefined;
+      try {
+        const [warmPid] = await lifetimeRunnerA<{ pid: number }[]>`
+          SELECT pg_backend_pid() AS pid
+        `;
+        expect(warmPid?.pid).toBeDefined();
+        await lifetimeControl`SELECT pg_advisory_lock(20261012, 65)`;
+        prefixBarrierHeld = true;
+        await lifetimeControl`SELECT pg_advisory_lock(20261013, 66)`;
+        validationBarrierHeld = true;
+        lifetimeA = migrateWithValidationBoundary(
+          lifetimeRunnerA,
+          lifetimeFolder,
+        );
+        const prefixWait = await waitForAdvisoryWaiter(
+          lifetimeControl,
+          20261012,
+          65,
+        );
+        const [prefixPid] = await lifetimeControl<{ pid: number }[]>`
+          SELECT pid FROM pg_stat_activity WHERE pid = ${prefixWait.pid}
+            AND wait_event_type = 'Lock' AND wait_event = 'advisory'
+        `;
+        expect(prefixPid?.pid).toBe(prefixWait.pid);
+
+        lifetimeB = migrateWithValidationBoundary(
+          lifetimeRunnerB,
+          lifetimeFolder,
+        );
+        const runnerBWait = await waitForAdvisoryWaiter(
+          lifetimeControl,
+          1330795348,
+          1296641874,
+          prefixWait.pid,
+        );
+        expect(runnerBWait.pid).not.toBe(prefixWait.pid);
+        await lifetimeControl`SELECT pg_sleep(1.5)`;
+        await lifetimeControl`SELECT pg_advisory_unlock(20261012, 65)`;
+        prefixBarrierHeld = false;
+
+        const validationWait = await waitForAdvisoryWaiter(
+          lifetimeControl,
+          20261013,
+          66,
+        );
+        const samePid = validationWait.pid === prefixWait.pid;
+        const [runnerLockHeld] = await lifetimeControl<{ pid: number }[]>`
+          SELECT pid FROM pg_locks
+          WHERE locktype = 'advisory' AND granted
+            AND classid::bigint = 1330795348
+            AND objid::bigint = 1296641874 AND objsubid = 2
+            AND pid = ${prefixWait.pid}
+        `;
+        const [runnerBStillWaiting] = await lifetimeControl<{ pid: number }[]>`
+          SELECT pid FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted
+            AND classid::bigint = 1330795348
+            AND objid::bigint = 1296641874 AND objsubid = 2
+            AND pid = ${runnerBWait.pid}
+        `;
+        lifetimeObservations = {
+          samePid,
+          runnerLockHeldByA: runnerLockHeld?.pid === prefixWait.pid,
+          runnerBStillWaiting: runnerBStillWaiting?.pid === runnerBWait.pid,
+        };
+
+        const [beforeWrite] = await lifetimeControl<{ lease_expires_at: Date }[]>`
+          SELECT lease_expires_at FROM enterprise_runs WHERE id = ${lifetimeRun.runId}
+        `;
+        await lifetimeWriter.begin(async (transaction) => {
+          await transaction`SET LOCAL lock_timeout = '1s'`;
+          await transaction`
+            UPDATE enterprise_runs
+            SET lease_expires_at = lease_expires_at + interval '1 second'
+            WHERE id = ${lifetimeRun.runId}
+          `;
+        });
+        const [afterWrite] = await lifetimeControl<{ lease_expires_at: Date }[]>`
+          SELECT lease_expires_at FROM enterprise_runs WHERE id = ${lifetimeRun.runId}
+        `;
+        expect(afterWrite?.lease_expires_at).not.toEqual(
+          beforeWrite?.lease_expires_at,
+        );
+
+        await lifetimeControl`SELECT pg_advisory_unlock(20261013, 66)`;
+        validationBarrierHeld = false;
+        await Promise.all([lifetimeA, lifetimeB]);
+        lifetimeHashes = await migrationBoundaryHashes(lifetimeFolder);
+        lifetimeJournal = await migrationJournalBoundary(
+          lifetimeUrl,
+          lifetimeHashes,
+        );
+        expect(await validationConstraintState(lifetimeUrl)).toBe(3);
+      } finally {
+        if (prefixBarrierHeld)
+          await lifetimeControl`SELECT pg_advisory_unlock(20261012, 65)`.catch(
+            () => {},
+          );
+        if (validationBarrierHeld)
+          await lifetimeControl`SELECT pg_advisory_unlock(20261013, 66)`.catch(
+            () => {},
+          );
+        await Promise.all([
+          lifetimeControl.end({ timeout: 5 }),
+          lifetimeWriter.end({ timeout: 5 }),
+          lifetimeRunnerA.end({ timeout: 5 }),
+          lifetimeRunnerB.end({ timeout: 5 }),
+        ]);
+        await Promise.all(
+          [lifetimeA, lifetimeB].map((promise) =>
+            promise?.then(() => undefined, () => undefined),
+          ),
+        );
+      }
+
+      // Exercise the production helper from a through-64 database.  The test-only
+      // barrier pauses 0066 after the helper has committed the 0065 prefix.
+      const boundaryName = await createDatabaseFrom(setup, legacyTemplate);
+      const boundaryUrl = fixtureUrl(setupUrl, boundaryName);
+      const boundaryRun = await seedValidRunAndReservation(
+        boundaryUrl,
+        "r5-3-f1-b",
+      );
+      const validationBarrier =
+        await migrationFolderWithValidationBarrier(20261011);
+      const migrationLockControl = postgres(boundaryUrl, { max: 1 });
+      const validationWriter = postgres(boundaryUrl, { max: 1 });
+      const [runBeforeValidation] = await migrationLockControl<
+        { lease_expires_at: Date }[]
+      >`
+        SELECT lease_expires_at FROM enterprise_runs WHERE id = ${boundaryRun.runId}
+      `;
+      let barrierHeld = false;
+      let runnerA: ReturnType<typeof runMigration> | undefined;
+      let runnerB: ReturnType<typeof runMigration> | undefined;
+      const prefixDirectoriesBefore = await temporaryRunnerDirectories();
+      try {
+        await migrationLockControl`SELECT pg_advisory_lock(20261011, 66)`;
+        barrierHeld = true;
+        runnerA = runMigration(boundaryUrl, validationBarrier);
+        const blockedAtValidation = await waitForActivity(async () => {
+          const [activity] = await migrationLockControl<{ pid: number }[]>`
+            SELECT activity.pid FROM pg_stat_activity activity
+            JOIN pg_locks lock ON lock.pid = activity.pid
+            WHERE activity.datname = current_database()
+              AND activity.pid <> pg_backend_pid()
+              AND lock.locktype = 'advisory' AND NOT lock.granted
+              AND lock.classid::bigint = 20261011
+              AND lock.objid::bigint = 66 AND lock.objsubid = 2
+          `;
+          return activity;
+        }, "runner A paused immediately before the first 0066 validation");
+
+        runnerB = runMigration(boundaryUrl, validationBarrier);
+        const runnerBWait = await waitForActivity(async () => {
+          const [activity] = await migrationLockControl<{ pid: number }[]>`
+            SELECT activity.pid FROM pg_stat_activity activity
+            JOIN pg_locks lock ON lock.pid = activity.pid
+            WHERE activity.datname = current_database()
+              AND activity.pid <> pg_backend_pid()
+              AND activity.pid <> ${blockedAtValidation.pid}
+              AND lock.locktype = 'advisory' AND NOT lock.granted
+              AND lock.classid::bigint = 1330795348
+              AND lock.objid::bigint = 1296641874 AND lock.objsubid = 2
+          `;
+          return activity;
+        }, "runner B waiting on the migration-wide advisory lock");
+        expect(runnerBWait.pid).not.toBe(blockedAtValidation.pid);
+
+        await validationWriter.begin(async (transaction) => {
+          await transaction`SET LOCAL lock_timeout = '1s'`;
+          await transaction`
+            UPDATE enterprise_runs
+            SET lease_expires_at = lease_expires_at + interval '1 second'
+            WHERE id = ${boundaryRun.runId}
+          `;
+        });
+        const [writtenBeforeRelease] = await migrationLockControl<
+          { lease_expires_at: string }[]
+        >`
+          SELECT lease_expires_at FROM enterprise_runs WHERE id = ${boundaryRun.runId}
+        `;
+        expect(writtenBeforeRelease?.lease_expires_at).toBeDefined();
+        expect(writtenBeforeRelease?.lease_expires_at).not.toEqual(
+          runBeforeValidation?.lease_expires_at,
+        );
+        // The successful transaction above completed while 0066 still held at the barrier.
+        const [activityStillBlocked] = await migrationLockControl<
+          { pid: number }[]
+        >`
+          SELECT pid FROM pg_stat_activity WHERE pid = ${blockedAtValidation.pid}
+            AND wait_event_type = 'Lock' AND wait_event = 'advisory'
+        `;
+        expect(activityStillBlocked?.pid).toBe(blockedAtValidation.pid);
+
+        await migrationLockControl`SELECT pg_advisory_unlock(20261011, 66)`;
+        barrierHeld = false;
+        expect(await runnerA).toEqual({ failed: false, message: "" });
+        expect(await runnerB).toEqual({ failed: false, message: "" });
+        const expectedHashes = await migrationBoundaryHashes(validationBarrier);
+        expect(
+          await migrationJournalBoundary(boundaryUrl, expectedHashes),
+        ).toEqual(expectedHashes);
+        expect(await validationConstraintState(boundaryUrl)).toBe(3);
+        expect(await temporaryRunnerDirectories()).toEqual(
+          prefixDirectoriesBefore,
+        );
+      } finally {
+        if (barrierHeld)
+          await migrationLockControl`SELECT pg_advisory_unlock(20261011, 66)`.catch(
+            () => {},
+          );
+        await Promise.all([
+          migrationLockControl.end({ timeout: 5 }),
+          validationWriter.end({ timeout: 5 }),
+        ]);
+        await Promise.all(
+          [runnerA, runnerB].map((promise) => promise?.then(() => undefined)),
+        );
+      }
+
+      // Terminating A while its 0066 transaction waits must dispose A's pool.
+      // Keep the shared barrier locked until A has rejected and its journal
+      // boundary is observed, then let the already-waiting B finish 0066.
+      const terminatedName = await createDatabaseFrom(setup, legacyTemplate);
+      const terminatedUrl = fixtureUrl(setupUrl, terminatedName);
+      const terminationBarrier = 20261014;
+      const terminationFolder =
+        await migrationFolderWithValidationBarrier(terminationBarrier);
+      const terminationControl = postgres(terminatedUrl, { max: 1 });
+      const terminationRunnerA = postgres(terminatedUrl, {
+        max: 1,
+        onnotice: () => {},
+      });
+      const terminationRunnerB = postgres(terminatedUrl, {
+        max: 1,
+        onnotice: () => {},
+      });
+      let terminationBarrierHeld = false;
+      let terminationA:
+        | Promise<{ status: "fulfilled" } | { status: "rejected"; error: unknown }>
+        | undefined;
+      let terminationB:
+        | Promise<{ status: "fulfilled" } | { status: "rejected"; error: unknown }>
+        | undefined;
+      await runBodyWithCleanup(
+        async () => {
+        const [controlPid] = await terminationControl<{ pid: number }[]>`
+          SELECT pg_backend_pid() AS pid
+        `;
+        await terminationControl`SELECT pg_advisory_lock(${terminationBarrier}, 66)`;
+        terminationBarrierHeld = true;
+        terminationA = migrateWithValidationBoundary(
+          terminationRunnerA,
+          terminationFolder,
+        ).then(
+          () => ({ status: "fulfilled" as const }),
+          (error: unknown) => ({ status: "rejected" as const, error }),
+        );
+        const aAtBarrier = await waitForActivity(async () => {
+          const [activity] = await terminationControl<{ pid: number }[]>`
+            SELECT pid FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND pid <> ${controlPid?.pid}
+              AND wait_event_type = 'Lock' AND wait_event = 'advisory'
+              AND query ILIKE ${`%pg_advisory_lock(${terminationBarrier}, 66)%`}
+          `;
+          return activity;
+        }, "runner A paused inside 0066");
+
+        terminationB = migrateWithValidationBoundary(
+          terminationRunnerB,
+          terminationFolder,
+        ).then(
+          () => ({ status: "fulfilled" as const }),
+          (error: unknown) => ({ status: "rejected" as const, error }),
+        );
+        const bWaitingForRunner = await waitForAdvisoryWaiter(
+          terminationControl,
+          1330795348,
+          1296641874,
+          aAtBarrier.pid,
+        );
+        expect(bWaitingForRunner.pid).not.toBe(aAtBarrier.pid);
+
+        const [termination] = await terminationControl<{ terminated: boolean }[]>`
+          SELECT pg_terminate_backend(${aAtBarrier.pid}) AS terminated
+        `;
+        expect(termination?.terminated).toBe(true);
+        await waitForActivity(async () => {
+          const [activity] = await terminationControl<{ pid: number }[]>`
+            SELECT pid FROM pg_stat_activity WHERE pid = ${aAtBarrier.pid}
+          `;
+          return activity ? undefined : { pid: aAtBarrier.pid };
+        }, "runner A backend termination");
+        const aOutcome = await Promise.race([
+          terminationA,
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("runner A did not reject after termination")),
+              5_000,
+            ),
+          ),
+        ]);
+        expect(aOutcome.status).toBe("rejected");
+        if (aOutcome.status === "rejected") {
+          expect(aOutcome.error).not.toBeInstanceOf(AggregateError);
+          expect(isConnectionFailure(aOutcome.error)).toBe(true);
+        }
+        const aPoolResult = await Promise.race([
+          terminationRunnerA`SELECT 1`.then(
+            () => "resolved" as const,
+            () => "rejected" as const,
+          ),
+          new Promise<"timeout">((resolve) =>
+            setTimeout(() => resolve("timeout"), 3_000),
+          ),
+        ]);
+        expect(aPoolResult).toBe("rejected");
+
+        const bAtBarrier = await waitForActivity(async () => {
+          const [activity] = await terminationControl<{ pid: number }[]>`
+            SELECT pid FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND pid <> ${controlPid?.pid}
+              AND wait_event_type = 'Lock' AND wait_event = 'advisory'
+              AND query ILIKE ${`%pg_advisory_lock(${terminationBarrier}, 66)%`}
+          `;
+          return activity;
+        }, "runner B entered 0066 after runner A stopped");
+        expect(bAtBarrier.pid).toBe(bWaitingForRunner.pid);
+        const terminationHashes = await migrationBoundaryHashes(terminationFolder);
+        const [journalBeforeRelease] = await terminationControl<
+          { count: number }[]
+        >`
+          SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
+          WHERE hash = ${terminationHashes[1]}
+        `;
+        expect(journalBeforeRelease?.count).toBe(0);
+
+        await releaseTerminationBarrier({
+          unlock: async () => {
+            const [result] = await terminationControl<{ released: boolean }[]>`
+              SELECT pg_advisory_unlock(${terminationBarrier}, 66) AS released
+            `;
+            return result?.released === true;
+          },
+          markReleased: () => {
+            terminationBarrierHeld = false;
+          },
+        });
+        const bOutcome = await Promise.race([
+          terminationB,
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("runner B did not finish after barrier release")),
+              15_000,
+            ),
+          ),
+        ]);
+        expect(bOutcome.status).toBe("fulfilled");
+        const [journalAfterRelease] = await terminationControl<
+          { count: number }[]
+        >`
+          SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
+          WHERE hash = ${terminationHashes[1]}
+        `;
+        expect(journalAfterRelease?.count).toBe(1);
+        },
+        () =>
+          runTerminationCleanup({
+            unlock: async () => {
+              if (!terminationBarrierHeld) return true;
+              await releaseTerminationBarrier({
+                unlock: async () => {
+                  const [result] = await terminationControl<
+                    { released: boolean }[]
+                  >`
+                    SELECT pg_advisory_unlock(${terminationBarrier}, 66) AS released
+                  `;
+                  return result?.released === true;
+                },
+                markReleased: () => {
+                  terminationBarrierHeld = false;
+                },
+              });
+              return true;
+            },
+            settlements: [
+              terminationA ?? Promise.resolve(),
+              terminationB ?? Promise.resolve(),
+            ],
+            closePools: [
+              () => terminationRunnerA.end({ timeout: 5 }),
+              () => terminationRunnerB.end({ timeout: 5 }),
+            ],
+            closeControl: () => terminationControl.end({ timeout: 5 }),
+            timeoutMs: 5_500,
+          }),
+      );
+
+      // A failing 0066 cannot roll back the already committed 0065 prefix, and a
+      // subsequent run with the source migrations retries and validates it.
+      const retryName = await createDatabaseFrom(setup, legacyTemplate);
+      const retryUrl = fixtureUrl(setupUrl, retryName);
+      const failingFolder = await migrationFolderFailingAt66();
+      const retryPrefixBefore = await temporaryRunnerDirectories();
+      const retryBaseClient = postgres(retryUrl, {
+        max: 1,
+        onnotice: () => {},
+      });
+      const cleanupProbe = postgres(retryUrl, { max: 1 });
+      try {
+        await expect(
+          migrateWithValidationBoundary(retryBaseClient, failingFolder),
+        ).rejects.toThrow();
+        const failedHashes = await migrationBoundaryHashes(failingFolder);
+        expect(await migrationJournalBoundary(retryUrl, failedHashes)).toEqual([
+          failedHashes[0],
+        ]);
+        const boundedPoolQuery = await Promise.race([
+          retryBaseClient`SELECT 1 AS reusable`.then((rows) => rows[0]?.reusable),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("original max:1 pool was not reusable")),
+              3_000,
+            ),
+          ),
+        ]);
+        expect(boundedPoolQuery).toBe(1);
+        const [lockAcquired] = await cleanupProbe<{ acquired: boolean }[]>`
+          SELECT pg_try_advisory_lock(1330795348, 1296641874) AS acquired
+        `;
+        expect(lockAcquired?.acquired).toBe(true);
+        const [lockReleased] = await cleanupProbe<{ released: boolean }[]>`
+          SELECT pg_advisory_unlock(1330795348, 1296641874) AS released
+        `;
+        expect(lockReleased?.released).toBe(true);
+        expect(await temporaryRunnerDirectories()).toEqual(retryPrefixBefore);
+        await migrateWithValidationBoundary(retryBaseClient, migrationsRoot);
+        expect(await validationConstraintState(retryUrl)).toBe(3);
+      } finally {
+        await Promise.all([
+          cleanupProbe.end({ timeout: 5 }),
+          retryBaseClient.end({ timeout: 5 }),
+        ]);
+      }
+
+      const commitFailureName = await createDatabaseFrom(setup, legacyTemplate);
+      const commitFailureUrl = fixtureUrl(setupUrl, commitFailureName);
+      const commitFailureClient = postgres(commitFailureUrl, { max: 1 });
+      const commitFailure = failReservedTransactionStatement(
+        commitFailureClient,
+        "COMMIT",
+      );
+      await expect(
+        migrateWithValidationBoundary(commitFailureClient, through65Folder),
+      ).rejects.toThrow(commitFailure.message);
+      await expect(
+        Promise.race([
+          commitFailureClient`SELECT 1`,
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("uncertain commit pool was not disposed")),
+              3_000,
+            ),
+          ),
+        ]),
+      ).rejects.toThrow();
+      expect(
+        await migrationJournalBoundary(
+          commitFailureUrl,
+          await migrationBoundaryHashes(through65Folder),
+        ),
+      ).toEqual([]);
+
+      const rollbackFailureName = await createDatabaseFrom(
+        setup,
+        legacyTemplate,
+      );
+      const rollbackFailureUrl = fixtureUrl(setupUrl, rollbackFailureName);
+      const rollbackFailureClient = postgres(rollbackFailureUrl, { max: 1 });
+      const rollbackFailure = failReservedTransactionStatement(
+        rollbackFailureClient,
+        "ROLLBACK",
+      );
+      const rollbackError = await migrateWithValidationBoundary(
+        rollbackFailureClient,
+        failingFolder,
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(rollbackError).toBeInstanceOf(AggregateError);
+      const rollbackMessages = (rollbackError as AggregateError).errors.map(
+        (error) => (error as Error).message,
+      );
+      expect(rollbackMessages.join("\n")).toContain(rollbackFailure.message);
+      expect(rollbackMessages.join("\n")).toContain("Failed query");
+      const rollbackProbe = postgres(rollbackFailureUrl, { max: 1 });
+      try {
+        expect(
+          await migrationJournalBoundary(
+            rollbackFailureUrl,
+            await migrationBoundaryHashes(failingFolder),
+          ),
+        ).toEqual([(await migrationBoundaryHashes(failingFolder))[0]]);
+        const [lockAcquired] = await rollbackProbe<{ acquired: boolean }[]>`
+          SELECT pg_try_advisory_lock(1330795348, 1296641874) AS acquired
+        `;
+        expect(lockAcquired?.acquired).toBe(true);
+        await rollbackProbe`SELECT pg_advisory_unlock(1330795348, 1296641874)`;
+      } finally {
+        await rollbackProbe.end({ timeout: 5 });
+      }
+
+      expect(lifetimeObservations?.samePid).toBe(true);
+      expect(lifetimeObservations?.runnerLockHeldByA).toBe(true);
+      expect(lifetimeObservations?.runnerBStillWaiting).toBe(true);
+      expect(lifetimeJournal).toEqual(lifetimeHashes);
+
+      // A directory with neither side of the 0065/0066 boundary uses ordinary
+      // single-pass migration behavior and cleans its temporary prefix on success.
+      const ordinaryName = await createDatabaseFrom(setup, template);
+      const ordinaryUrl = fixtureUrl(setupUrl, ordinaryName);
+      const ordinaryPrefixBefore = await temporaryRunnerDirectories();
+      expect(await runMigration(ordinaryUrl, legacyFolder)).toEqual({
+        failed: false,
+        message: "",
+      });
+      const ordinaryClient = postgres(ordinaryUrl, { max: 1 });
+      try {
+        const [ordinaryJournal] = await ordinaryClient<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
+        `;
+        expect(ordinaryJournal?.count).toBe(65);
+      } finally {
+        await ordinaryClient.end({ timeout: 5 });
+      }
+      expect(await temporaryRunnerDirectories()).toEqual(ordinaryPrefixBefore);
+
+      const legacyBlockedCases = [
+        {
+          kind: "zero-run",
+          encoded: undefined,
+          expected: "invalid_run_ceiling_count=1",
+        },
+        {
+          kind: "over-limit-reservation",
+          encoded: undefined,
+          expected: "invalid_reservation_count=1",
+        },
+        {
+          kind: "malformed-json",
+          encoded: JSON.stringify("not-json"),
+          expected: "malformed_intent_json_count=1",
+        },
+        {
+          kind: "native-object",
+          encoded: JSON.stringify({ nope: true }),
+          expected: "non_array_intent_count=1",
+        },
+        {
+          kind: "native-scalar",
+          encoded: JSON.stringify(17),
+          expected: "non_array_intent_count=1",
+        },
+        {
+          kind: "encoded-non-array",
+          encoded: JSON.stringify(JSON.stringify({ nope: true })),
+          expected: "non_array_intent_count=1",
+        },
+        {
+          kind: "duplicate",
+          encoded: JSON.stringify(
+            JSON.stringify([
+              "11111111-1111-4111-8111-111111111111",
+              "11111111-1111-4111-8111-111111111111",
+            ]),
+          ),
+          expected: "invalid_uuid_or_duplicate_intent_count=1",
+        },
+        {
+          kind: "non-uuid",
+          encoded: JSON.stringify(JSON.stringify(["not-a-uuid"])),
+          expected: "invalid_uuid_or_duplicate_intent_count=1",
+        },
+        {
+          kind: "holder-mismatch",
+          encoded: JSON.stringify(
+            JSON.stringify(["22222222-2222-4222-8222-222222222222"]),
+          ),
+          expected: "holder_mismatch_intent_count=1",
+        },
+      ];
+      for (const blocked of legacyBlockedCases) {
+        const databaseName = await createDatabaseFrom(setup, legacyTemplate);
+        const databaseUrl = fixtureUrl(setupUrl, databaseName);
+        const seeded = await seedLegacyValue(
+          databaseUrl,
+          blocked.kind,
+          blocked.encoded,
+        );
+        const before = await migrationState(databaseUrl);
+        const result = await runMigration(databaseUrl, through65Folder);
+        expect(result.failed).toBe(true);
+        expect(result.message).toContain("0065 preflight blocked:");
+        expect(result.message).toContain(blocked.expected);
+        expect(await migrationState(databaseUrl)).toEqual(before);
+        if (blocked.encoded && seeded) {
+          const unchanged = await intentAttachmentValue(
+            databaseUrl,
+            seeded.tenant,
+            seeded.thread,
+            seeded.clientKey,
+          );
+          expect(unchanged?.attachment_ids).toEqual(
+            JSON.parse(blocked.encoded),
+          );
+        }
+      }
+
+      const nativeArrayName = await createDatabaseFrom(setup, legacyTemplate);
+      const nativeArrayUrl = fixtureUrl(setupUrl, nativeArrayName);
+      const nativeArrayValue = ["not-a-uuid", "not-a-uuid"];
+      const nativeArrayIntent = await seedLegacyValue(
+        nativeArrayUrl,
+        "native-array-with-invalid-members",
+        JSON.stringify(nativeArrayValue),
+      );
+      const nativeArrayResult = await runMigration(
+        nativeArrayUrl,
+        through65Folder,
+      );
+      expect(nativeArrayResult.failed).toBe(false);
+      const nativeArrayClient = postgres(nativeArrayUrl, { max: 1 });
+      try {
+        const [preserved] = await nativeArrayClient<
+          { attachment_ids: unknown }[]
+        >`
+          SELECT attachment_ids FROM mastra_message_intents
+          WHERE tenant_id = ${nativeArrayIntent?.tenant}
+        `;
+        expect(preserved?.attachment_ids).toEqual(nativeArrayValue);
+      } finally {
+        await nativeArrayClient.end({ timeout: 5 });
+      }
+
       const recordedName = await createDatabaseFrom(setup, template);
       const recordedUrl = fixtureUrl(setupUrl, recordedName);
-      await migrateDatabase(
+      await migrateDatabase(recordedUrl, legacyFolder);
+      const forwardIds = ["33333333-3333-4333-8333-333333333333"];
+      const forwardIntent = await seedLegacyValue(
         recordedUrl,
-        await migrationFolderThrough64WithoutIntentLocks(),
+        "valid-encoded-array",
+        JSON.stringify(JSON.stringify(forwardIds)),
+        forwardIds,
       );
       await exerciseForwardMigrationWriterWindow(recordedUrl);
       const forwardClient = postgres(recordedUrl, { max: 1 });
@@ -1211,8 +2923,11 @@ test.skipIf(!enabled)(
           FROM drizzle.__drizzle_migrations
         `;
         expect(journal?.applied).toHaveLength(66);
-        const [constraints] = await forwardClient<{ names: string[] }[]>`
-          SELECT array_agg(conname ORDER BY conname) AS names
+        const [constraints] = await forwardClient<
+          { names: string[]; validated: boolean[] }[]
+        >`
+          SELECT array_agg(conname ORDER BY conname) AS names,
+            array_agg(convalidated ORDER BY conname) AS validated
           FROM pg_constraint
           WHERE conname IN (
             'mastra_message_intents_attachment_ids_array_check',
@@ -1225,8 +2940,44 @@ test.skipIf(!enabled)(
           "enterprise_runs_model_route_maximum_tokens_check",
           "mastra_message_intents_attachment_ids_array_check",
         ]);
+        expect(constraints?.validated).toEqual([false, false, false]);
+        const [converted] = await forwardClient<{ attachment_ids: string[] }[]>`
+          SELECT attachment_ids FROM mastra_message_intents
+          WHERE tenant_id = ${forwardIntent?.tenant}
+        `;
+        expect(converted?.attachment_ids).toEqual(forwardIds);
+        await expectConstraintFailure(
+          forwardClient`UPDATE enterprise_runs SET model_route_maximum_tokens = 0`,
+          "enterprise_runs_model_route_maximum_tokens_check",
+        );
+        await expectConstraintFailure(
+          forwardClient`UPDATE enterprise_model_budget_reservations SET confirmed_tokens = token_limit + 1`,
+          "enterprise_budget_reservation_tokens_check",
+        );
+        await expectConstraintFailure(
+          forwardClient`INSERT INTO mastra_message_intents (
+            tenant_id, thread_id, client_message_key, message_id, digest,
+            reserved_seq, actor_id, principal_id, backend_version, attachment_ids
+          ) VALUES ('x','x','x','x','x',1,'x','x',1,'"not-an-array"'::jsonb)`,
+          "mastra_message_intents_attachment_ids_array_check",
+        );
       } finally {
         await forwardClient.end({ timeout: 5 });
+      }
+      await migrateDatabase(recordedUrl, migrationsRoot);
+      const validationClient = postgres(recordedUrl, { max: 1 });
+      try {
+        const [validation] = await validationClient<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM pg_constraint
+          WHERE conname IN (
+            'mastra_message_intents_attachment_ids_array_check',
+            'enterprise_budget_reservation_tokens_check',
+            'enterprise_runs_model_route_maximum_tokens_check'
+          ) AND convalidated
+        `;
+        expect(validation?.count).toBe(3);
+      } finally {
+        await validationClient.end({ timeout: 5 });
       }
     } finally {
       await setup.end({ timeout: 5 });

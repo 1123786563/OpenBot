@@ -151,6 +151,7 @@ import {
 import {
   createCredentialAdminService,
   createCredentialStore,
+  decryptCredentialForUse,
   resolveModelApiKey,
 } from "./credentials";
 import { createDatabase } from "./db/client";
@@ -173,6 +174,17 @@ import { DeliveryRefusedError } from "./delivery/types";
 import { createDemonstrationRecorder } from "./demonstrations/recording";
 import { createDemonstrationStore } from "./demonstrations/store";
 import {
+  createConversationRoutes,
+  createUnavailableConversationRoutes,
+} from "./enterprise/conversations/routes";
+import { createConversationService } from "./enterprise/conversations/service";
+import { createProductionRunnerComposition } from "./enterprise/runs/runner";
+import {
+  verifyDataDatabase,
+  verifyDirectoryDatabase,
+} from "./enterprise/tenancy/connections";
+import { createScopeResolver } from "./enterprise/tenancy/store";
+import {
   createHostAccessBroker,
   HostAccessRefusedError,
 } from "./host-access/broker";
@@ -183,6 +195,12 @@ import {
 } from "./intelligence-client";
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
+import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
+import {
+  RegistryTenantStorageLookup,
+  type TenantCredentialStore,
+} from "./mastra/provisioning";
+import { createTenantMastraStorage } from "./mastra/tenant-storage";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
@@ -344,6 +362,108 @@ await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
+/**
+ * The verified enterprise capabilities, shared by everything enterprise: conversation routes at
+ * boot, and the durable browser Runner below. Null, never a permissive stand-in, when either
+ * database is unconfigured or fails its capability check — the conversation routes answer
+ * unavailable and the browser mount stays on the Intelligence runtime it already had.
+ */
+const enterpriseCapabilities = await (async () => {
+  const directoryUrl = config.enterpriseDirectoryDatabaseUrl;
+  const dataUrl = config.enterpriseDataDatabaseUrl;
+  const tenantRuntimeUrl = config.tenantStorageRuntimeDatabaseUrl;
+  if (!directoryUrl || !dataUrl || !tenantRuntimeUrl) return null;
+  try {
+    const directoryDatabase = createDatabase(directoryUrl);
+    const dataDatabase = createDatabase(dataUrl);
+    const [directory, data] = await Promise.all([
+      verifyDirectoryDatabase(directoryDatabase),
+      verifyDataDatabase(dataDatabase),
+    ]).catch(async (error) => {
+      // One side failing must not leak the other's fresh pool for the
+      // process lifetime (OCR R10).
+      await Promise.allSettled([
+        directoryDatabase.$client.close(),
+        dataDatabase.$client.close(),
+      ]);
+      throw error;
+    });
+    const registry = new PostgresTenantStorageRegistry({
+      query: async (text, values) => ({
+        rows: await database.$client.unsafe(text, values),
+      }),
+    });
+    const credentials: TenantCredentialStore = {
+      put: async () => {
+        throw new Error("TENANT_CREDENTIAL_WRITE_FORBIDDEN");
+      },
+      get: async (reference) => {
+        try {
+          return await decryptCredentialForUse(
+            config.keyEncryptionKey,
+            credentialStore,
+            reference,
+          );
+        } catch (error) {
+          // Only a genuinely missing/revoked credential is "absent";
+          // decryption or store failures must leave a trace, or a
+          // misconfigured key is indistinguishable from an unprovisioned
+          // tenant (OCR R10).
+          const name = error instanceof Error ? error.name : "";
+          if (name !== "CredentialUnusableError")
+            console.error({
+              error: "TENANT_CREDENTIAL_DECRYPT_FAILED",
+              context: { credentialRef: reference },
+              cause: error instanceof Error ? error.message : String(error),
+            });
+          return undefined;
+        }
+      },
+      delete: async () => {
+        throw new Error("TENANT_CREDENTIAL_DELETE_FORBIDDEN");
+      },
+    };
+    const mastraStorage = createTenantMastraStorage(
+      new RegistryTenantStorageLookup({
+        registry,
+        credentials,
+        runtimeConnectionString: tenantRuntimeUrl,
+      }),
+    );
+    const scopes = createScopeResolver(directory, {
+      data,
+      authenticate: async (request) => {
+        const actor = await resolveRequestActor(request).catch((error) => {
+          // Session-infrastructure faults are not "unauthenticated": leave
+          // a trace so auth-store outages are diagnosable (OCR R10).
+          console.error({
+            error: "ENTERPRISE_SESSION_RESOLUTION_FAILED",
+            cause: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        });
+        return actor ? { actorId: actor.id, entrypoint: "web" } : null;
+      },
+      selectTenant: (request) => request.headers.get("x-openbot-tenant-id"),
+      selectWorkspace: (request) =>
+        request.headers.get("x-openbot-workspace-id"),
+    });
+    return {
+      data,
+      scopes,
+      conversations: createConversationService({ data, mastraStorage }),
+    };
+  } catch (error) {
+    console.error("Enterprise conversation service unavailable", error);
+    return null;
+  }
+})();
+const enterpriseConversationRoutes = enterpriseCapabilities
+  ? createConversationRoutes(
+      enterpriseCapabilities.conversations,
+      enterpriseCapabilities.scopes,
+    )
+  : createUnavailableConversationRoutes();
 const agentVault = {
   store: credentialStore,
   reader: credentialStore,
@@ -1743,6 +1863,40 @@ const actorAgentResolver = createActorAgentResolver({
   loadPersonalMemoryForActor,
 });
 
+/**
+ * The browser mount's durable Runner, composed only from the boot-verified enterprise
+ * capabilities. Admission reuses the same ScopeResolver and ConversationService the conversation
+ * routes use, the same actor-authorized Bot the runtime selects, and the same effective
+ * tenant-package/deployment model selection every other model consumer uses — issued per request
+ * with immutable Expert and agent-bound route refs, never read from client fields. The
+ * keyEncryptionKey stands in as the route/capability HMAC secret until the governed ModelGateway
+ * slice names a dedicated one; both are deployment-owned secrets and never leave this process.
+ */
+const enterpriseRunner = enterpriseCapabilities
+  ? createProductionRunnerComposition({
+      data: enterpriseCapabilities.data,
+      scopeResolver: enterpriseCapabilities.scopes,
+      conversations: enterpriseCapabilities.conversations,
+      identifyActor,
+      resolver: actorAgentResolver,
+      modelSelection: () => ({
+        route: {
+          model: runtimeModel,
+          credentialSecretRef: tenantPackage.model.credentialSecretRef,
+        },
+        nativeBaseUrl:
+          runtimeModel.provider === "anthropic"
+            ? process.env.ANTHROPIC_BASE_URL
+            : process.env.OPENAI_BASE_URL,
+      }),
+      modelCapabilitySecret: config.keyEncryptionKey,
+      // The governed gateway dial resolves the admitted route's api key
+      // through the same encrypted credential store every other surface uses.
+      credentialEncryptionKey: config.keyEncryptionKey,
+      credentialReader: credentialStore,
+    })
+  : undefined;
+
 const copilotRuntime = mountCopilotRuntime(
   config,
   actorAgentResolver,
@@ -1753,6 +1907,7 @@ const copilotRuntime = mountCopilotRuntime(
       void channelStore.signalBusy(input.threadId, input.busy).catch(() => {});
     },
     learningSettings,
+    ...(enterpriseRunner ? { enterpriseRunner } : {}),
   },
 );
 
@@ -3035,6 +3190,7 @@ const app = createApp(
     },
     groups: groupConversations,
     teamBots,
+    enterpriseConversations: enterpriseConversationRoutes,
     lifecycle: {
       lifecycle: createBotLifecycleStore(database),
       reset: createBotReset({

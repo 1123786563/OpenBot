@@ -10,13 +10,110 @@ import {
   enterpriseRunOutbox,
   enterpriseRuns,
 } from "../../db/schema/enterprise-runs";
-import type { PlatformScope, RunDTO, StartRunInput } from "../contracts";
+import { mastraMessageIntents } from "../../db/schema/mastra-message-intents";
+import type {
+  PlatformScope,
+  RunDTO,
+  RunFailureCode,
+  RunnerRequestLease,
+  StartRunInput,
+} from "../contracts";
 import { createConversationStore } from "../conversations/store";
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
 
 type Transaction = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
 type RunRow = typeof enterpriseRuns.$inferSelect;
+
+/** The complete fixed taxonomy of admitted leased Run failure codes. */
+const RUN_FAILURE_CODES = [
+  "MODEL_EXECUTION_UNAVAILABLE",
+  "MODEL_EXECUTION_FAILED",
+  "MODEL_SETTLEMENT_FAILED",
+  "MODEL_BUDGET_EXCEEDED",
+] as const satisfies readonly RunFailureCode[];
+
+/**
+ * Runtime membership check for the fixed failure taxonomy. Every leased
+ * failure transition — service validator and store guard — admits only these
+ * literals; arbitrary strings are rejected before any write.
+ */
+export function isAdmittedRunFailureCode(
+  errorCode: unknown,
+): errorCode is RunFailureCode {
+  return (
+    typeof errorCode === "string" &&
+    (RUN_FAILURE_CODES as readonly string[]).includes(errorCode)
+  );
+}
+
+export function isCurrentRunLeaseSnapshot(
+  lease: RunnerRequestLease,
+  ownerToken: string | null,
+  ownerExpiresAt: Date | null,
+  now = new Date(),
+): boolean {
+  return (
+    ownerToken === lease.ownerToken &&
+    ownerExpiresAt instanceof Date &&
+    ownerExpiresAt.getTime() === lease.expiresAt.getTime() &&
+    ownerExpiresAt > now
+  );
+}
+
+export function runFailureRunLeaseFence(
+  scope: PlatformScope,
+  lease: RunnerRequestLease,
+  errorCode: RunFailureCode,
+) {
+  return sql`exists (
+    select 1 from ${enterpriseRuns}
+    where ${enterpriseRuns.tenantId} = ${scope.tenantId}
+      and ${enterpriseRuns.workspaceId} = ${scope.workspaceId}
+      and ${enterpriseRuns.principalId} = ${scope.principalId}
+      and ${enterpriseRuns.id} = ${lease.runId}
+      and ${enterpriseRuns.attemptGeneration} = ${lease.generation}
+      and ${enterpriseRuns.status} = ${"failed"}
+      and ${enterpriseRuns.errorCode} = ${errorCode}
+      and ${enterpriseRuns.leaseExpiresAt} > clock_timestamp()
+  )`;
+}
+
+export function runSuccessRunLeaseFence(
+  scope: PlatformScope,
+  lease: RunnerRequestLease,
+) {
+  return sql`exists (
+    select 1 from ${enterpriseRuns}
+    where ${enterpriseRuns.tenantId} = ${scope.tenantId}
+      and ${enterpriseRuns.workspaceId} = ${scope.workspaceId}
+      and ${enterpriseRuns.principalId} = ${scope.principalId}
+      and ${enterpriseRuns.id} = ${lease.runId}
+      and ${enterpriseRuns.attemptGeneration} = ${lease.generation}
+      and ${enterpriseRuns.status} = ${"succeeded"}
+      and ${enterpriseRuns.errorCode} is null
+      and ${enterpriseRuns.leaseExpiresAt} > clock_timestamp()
+  )`;
+}
+
+// Kept exported for the runner-scope admission tests; production renewal
+// paths fence through the transactional predicates instead.
+export function isRunnerRequestLeaseCurrent(
+  current: RunnerRequestLease,
+  expected: Pick<
+    RunnerRequestLease,
+    "runId" | "attemptId" | "generation" | "ownerToken"
+  >,
+  now = new Date(),
+): boolean {
+  return (
+    current.runId === expected.runId &&
+    current.attemptId === expected.attemptId &&
+    current.generation === expected.generation &&
+    current.ownerToken === expected.ownerToken &&
+    current.expiresAt > now
+  );
+}
 
 export async function hasActiveAttemptLease(
   tx: Transaction,
@@ -63,6 +160,53 @@ export class RunDomainError extends Error {
   }
 }
 
+/**
+ * The hard ceiling on how long a single run may stay alive through lease
+ * renewals; matches the upper bound accepted for leaseMilliseconds.
+ */
+const MAXIMUM_RUN_DURATION_MILLISECONDS = 900_000;
+
+export function validateMastraRunIntent(
+  intent:
+    | {
+        tenantId: string;
+        threadId: string;
+        clientMessageKey: string;
+        digest: string;
+        actorId: string;
+        principalId: string;
+        backendVersion: number;
+        attachmentIds: readonly string[];
+        state: string;
+      }
+    | undefined,
+  expected: {
+    tenantId: string;
+    threadId: string;
+    clientMessageKey: string;
+    digest: string;
+    actorId: string;
+    principalId: string;
+    backendVersion: number;
+    attachmentIds: readonly string[];
+  },
+): void {
+  if (
+    intent?.state !== "finalized" ||
+    intent.tenantId !== expected.tenantId ||
+    intent.threadId !== expected.threadId ||
+    intent.clientMessageKey !== expected.clientMessageKey ||
+    intent.digest !== expected.digest ||
+    intent.actorId !== expected.actorId ||
+    intent.principalId !== expected.principalId ||
+    intent.backendVersion !== expected.backendVersion ||
+    JSON.stringify(intent.attachmentIds) !==
+      JSON.stringify(expected.attachmentIds)
+  ) {
+    throw new RunDomainError("RUN_INPUT_NOT_FINALIZED", 409);
+  }
+}
+
 export function toRunDTO(row: RunRow): RunDTO {
   return {
     run_id: row.id,
@@ -75,6 +219,58 @@ export function toRunDTO(row: RunRow): RunDTO {
       : { finished_at: null }),
     ...(row.errorCode ? { error_code: row.errorCode } : {}),
   };
+}
+
+type ActiveRunLookupRow = {
+  run: RunRow;
+  attemptId: string;
+  attemptGeneration: number;
+  attemptStatus: string;
+  attemptLeaseExpiresAt: Date;
+};
+
+const activeRunStatuses = new Set([
+  "queued",
+  "running",
+  "waiting_approval",
+  "suspended",
+]);
+
+export function resolveActiveRunLookup(
+  scope: PlatformScope,
+  threadId: string,
+  rows: readonly ActiveRunLookupRow[],
+  now = new Date(),
+): { run: RunDTO; attemptId: string; generation: number } | null {
+  const eligible = rows.filter(
+    ({
+      run,
+      attemptId,
+      attemptGeneration,
+      attemptStatus,
+      attemptLeaseExpiresAt,
+    }) =>
+      run.tenantId === scope.tenantId &&
+      run.workspaceId === scope.workspaceId &&
+      run.principalId === scope.principalId &&
+      run.threadId === threadId &&
+      activeRunStatuses.has(run.status) &&
+      run.leaseExpiresAt > now &&
+      Boolean(attemptId) &&
+      attemptStatus === "active" &&
+      attemptGeneration === run.attemptGeneration &&
+      attemptLeaseExpiresAt > now,
+  );
+  if (eligible.length > 1)
+    throw new RunDomainError("RUN_ACTIVE_AMBIGUOUS", 409);
+  const [match] = eligible;
+  return match
+    ? {
+        run: toRunDTO(match.run),
+        attemptId: match.attemptId,
+        generation: match.attemptGeneration,
+      }
+    : null;
 }
 
 export async function createRunInTransaction(
@@ -96,7 +292,10 @@ export async function createRunInTransaction(
     sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["enterprise-run-start", scope.tenantId, input.threadId])}, 0))`,
   );
   const [conversation] = await tx
-    .select({ storageBackend: enterpriseConversations.storageBackend })
+    .select({
+      storageBackend: enterpriseConversations.storageBackend,
+      backendVersion: enterpriseConversations.backendVersion,
+    })
     .from(enterpriseConversations)
     .where(
       and(
@@ -107,41 +306,72 @@ export async function createRunInTransaction(
       ),
     )
     .limit(1);
-  if (conversation?.storageBackend !== "platform") {
+  if (
+    !conversation ||
+    !["platform", "mastra"].includes(conversation.storageBackend)
+  ) {
     throw new RunDomainError(
       "CONVERSATION_FORBIDDEN",
       404,
       "Conversation was not found.",
     );
   }
-  const [message] = await tx
-    .select({
-      id: enterpriseMessages.id,
-      attachments: enterpriseMessages.attachments,
-    })
-    .from(enterpriseMessages)
-    .where(
-      and(
-        eq(enterpriseMessages.tenantId, scope.tenantId),
-        eq(enterpriseMessages.threadId, input.threadId),
-        eq(enterpriseMessages.clientMessageKey, input.clientMessageKey),
-      ),
-    )
-    .limit(1);
-  if (!message)
-    throw new RunDomainError(
-      "RUN_INPUT_NOT_FOUND",
-      404,
-      "The submitted message was not found.",
-    );
-  if (
-    JSON.stringify(message.attachments) !== JSON.stringify(input.attachmentRefs)
-  ) {
-    throw new RunDomainError(
-      "RUN_ATTACHMENT_CONFLICT",
-      409,
-      "Run attachment references do not match the submitted message.",
-    );
+  if (conversation.storageBackend === "platform") {
+    const [message] = await tx
+      .select({
+        id: enterpriseMessages.id,
+        attachments: enterpriseMessages.attachments,
+      })
+      .from(enterpriseMessages)
+      .where(
+        and(
+          eq(enterpriseMessages.tenantId, scope.tenantId),
+          eq(enterpriseMessages.threadId, input.threadId),
+          eq(enterpriseMessages.clientMessageKey, input.clientMessageKey),
+        ),
+      )
+      .limit(1);
+    if (!message)
+      throw new RunDomainError(
+        "RUN_INPUT_NOT_FOUND",
+        404,
+        "The submitted message was not found.",
+      );
+    if (
+      JSON.stringify(message.attachments) !==
+      JSON.stringify(input.attachmentRefs)
+    ) {
+      throw new RunDomainError(
+        "RUN_ATTACHMENT_CONFLICT",
+        409,
+        "Run attachment references do not match the submitted message.",
+      );
+    }
+  } else {
+    const [intent] = await tx
+      .select()
+      .from(mastraMessageIntents)
+      .where(
+        and(
+          eq(mastraMessageIntents.tenantId, scope.tenantId),
+          eq(mastraMessageIntents.threadId, input.threadId),
+          eq(mastraMessageIntents.clientMessageKey, input.clientMessageKey),
+        ),
+      )
+      .limit(1);
+    if (!input.messageDigest) {
+      throw new RunDomainError("RUN_INPUT_NOT_FINALIZED", 409);
+    }
+    validateMastraRunIntent(intent, {
+      tenantId: scope.tenantId,
+      threadId: input.threadId,
+      clientMessageKey: input.clientMessageKey,
+      digest: input.messageDigest,
+      actorId: scope.actorId,
+      principalId: scope.principalId,
+      backendVersion: conversation.backendVersion,
+      attachmentIds: input.attachmentRefs,
+    });
   }
   const [priorSubmission] = await tx
     .select({ id: enterpriseRuns.id })
@@ -161,6 +391,7 @@ export async function createRunInTransaction(
       "This submitted message already has a run.",
     );
   }
+  const now = new Date();
   const [existing] = await tx
     .select()
     .from(enterpriseRuns)
@@ -172,14 +403,51 @@ export async function createRunInTransaction(
       ),
     )
     .limit(1);
-  if (existing)
-    throw new RunDomainError(
-      "ACTIVE_RUN_CONFLICT",
-      409,
-      "This conversation already has an active run.",
-    );
-
-  const now = new Date();
+  if (existing) {
+    if (existing.leaseExpiresAt.getTime() > now.getTime())
+      throw new RunDomainError(
+        "ACTIVE_RUN_CONFLICT",
+        409,
+        "This conversation already has an active run.",
+      );
+    // An active-status row whose lease expired belongs to a crashed or
+    // abandoned process: terminalize it truthfully (cancelled with timeout
+    // semantics — its events can no longer settle) in this same
+    // transaction, then reclaim the thread for the new run.
+    await tx
+      .update(enterpriseRuns)
+      .set({
+        status: "cancelled",
+        errorCode: "CANCELLED_TIMEOUT",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(enterpriseRuns.tenantId, scope.tenantId),
+          eq(enterpriseRuns.id, existing.id),
+          eq(enterpriseRuns.attemptGeneration, existing.attemptGeneration),
+          sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+        ),
+      );
+    await tx
+      .update(enterpriseRunAttempts)
+      .set({ status: "cancelled", finishedAt: now })
+      .where(
+        and(
+          eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+          eq(enterpriseRunAttempts.runId, existing.id),
+          eq(enterpriseRunAttempts.generation, existing.attemptGeneration),
+          eq(enterpriseRunAttempts.status, "active"),
+        ),
+      );
+    await tx.insert(enterpriseRunOutbox).values({
+      tenantId: scope.tenantId,
+      runId: existing.id,
+      eventType: "run.cancel",
+      payload: { runId: existing.id, generation: existing.attemptGeneration },
+    });
+  }
   const leaseExpiresAt = new Date(now.getTime() + leaseMs);
   const runId = randomUUID();
   const attemptId = randomUUID();
@@ -259,10 +527,57 @@ export function createRunStore(
         throw new RunDomainError("RUN_NOT_FOUND", 404, "Run was not found.");
       return toRunDTO(row);
     },
+    async getActiveForThread(scope: PlatformScope, threadId: string) {
+      assertTrustedScope(scope);
+      if (
+        typeof threadId !== "string" ||
+        !threadId.trim() ||
+        threadId.length > 200
+      ) {
+        throw new RunDomainError("INVALID_THREAD_ID", 400);
+      }
+      const rows = await this.transaction(scope, (tx) =>
+        tx
+          .select({
+            run: enterpriseRuns,
+            attemptId: enterpriseRunAttempts.id,
+            attemptGeneration: enterpriseRunAttempts.generation,
+            attemptStatus: enterpriseRunAttempts.status,
+            attemptLeaseExpiresAt: enterpriseRunAttempts.leaseExpiresAt,
+          })
+          .from(enterpriseRuns)
+          .innerJoin(
+            enterpriseRunAttempts,
+            and(
+              eq(enterpriseRunAttempts.tenantId, enterpriseRuns.tenantId),
+              eq(enterpriseRunAttempts.runId, enterpriseRuns.id),
+              eq(
+                enterpriseRunAttempts.generation,
+                enterpriseRuns.attemptGeneration,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.threadId, threadId),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+            ),
+          )
+          .limit(2),
+      );
+      return resolveActiveRunLookup(scope, threadId, rows);
+    },
     async cancel(
       scope: PlatformScope,
       runId: string,
       errorCode = "CANCELLED",
+      expectedAttempt?: { attemptId: string; generation: number },
     ): Promise<RunDTO> {
       return this.transaction(scope, async (tx) => {
         const [row] = await tx
@@ -280,6 +595,32 @@ export function createRunStore(
           .limit(1);
         if (!row)
           throw new RunDomainError("RUN_NOT_FOUND", 404, "Run was not found.");
+        if (
+          expectedAttempt &&
+          row.attemptGeneration !== expectedAttempt.generation
+        ) {
+          throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        }
+        if (expectedAttempt) {
+          const [attempt] = await tx
+            .select({ id: enterpriseRunAttempts.id })
+            .from(enterpriseRunAttempts)
+            .where(
+              and(
+                eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+                eq(enterpriseRunAttempts.runId, runId),
+                eq(enterpriseRunAttempts.id, expectedAttempt.attemptId),
+                eq(
+                  enterpriseRunAttempts.generation,
+                  expectedAttempt.generation,
+                ),
+                eq(enterpriseRunAttempts.status, "active"),
+              ),
+            )
+            .for("update")
+            .limit(1);
+          if (!attempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        }
         if (["succeeded", "failed", "cancelled"].includes(row.status))
           return toRunDTO(row);
         const now = new Date();
@@ -324,6 +665,181 @@ export function createRunStore(
           payload: { runId, generation: row.attemptGeneration },
         });
         return toRunDTO(updated);
+      });
+    },
+    async acquireRequestLease(
+      scope: PlatformScope,
+      runId: string,
+    ): Promise<RunnerRequestLease> {
+      assertTrustedScope(scope);
+      if (typeof runId !== "string" || !runId.trim())
+        throw new RunDomainError("INVALID_RUN_ID", 400);
+      return this.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!run) throw new RunDomainError("RUN_NOT_ACTIVE", 409);
+        const [attempt] = await tx
+          .select()
+          .from(enterpriseRunAttempts)
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.generation, run.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!attempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        if (
+          attempt.requestOwnerToken &&
+          attempt.requestOwnerExpiresAt &&
+          attempt.requestOwnerExpiresAt > new Date()
+        ) {
+          throw new RunDomainError("RUN_REQUEST_LEASE_HELD", 409);
+        }
+        const ownerToken = randomUUID();
+        const now = new Date();
+        const expiresAt = new Date(
+          Math.min(
+            now.getTime() + leaseMilliseconds,
+            run.leaseExpiresAt.getTime(),
+          ),
+        );
+        if (expiresAt <= now)
+          throw new RunDomainError("RUN_LEASE_EXPIRED", 409);
+        const [claimed] = await tx
+          .update(enterpriseRunAttempts)
+          .set({
+            requestOwnerToken: ownerToken,
+            requestOwnerExpiresAt: expiresAt,
+          })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.id, attempt.id),
+              eq(enterpriseRunAttempts.generation, run.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`(${enterpriseRunAttempts.requestOwnerToken} is null or ${enterpriseRunAttempts.requestOwnerExpiresAt} <= ${now})`,
+            ),
+          )
+          .returning();
+        if (!claimed) throw new RunDomainError("RUN_REQUEST_LEASE_HELD", 409);
+        return {
+          runId,
+          attemptId: attempt.id,
+          generation: attempt.generation,
+          ownerToken,
+          expiresAt,
+        };
+      });
+    },
+    async renewRequestLease(
+      scope: PlatformScope,
+      lease: RunnerRequestLease,
+    ): Promise<RunnerRequestLease> {
+      assertTrustedScope(scope);
+      return this.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, lease.runId),
+              eq(enterpriseRuns.attemptGeneration, lease.generation),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!run) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        const now = new Date();
+        // A stream longer than one lease window must stay live: the renewal
+        // extends the run's main lease (and the active attempt's) alongside
+        // the request claim, capped by the maximum run duration so renewal
+        // cannot keep a run alive forever.
+        const runLeaseExpiresAt = new Date(
+          Math.min(
+            now.getTime() + leaseMilliseconds,
+            run.createdAt.getTime() + MAXIMUM_RUN_DURATION_MILLISECONDS,
+          ),
+        );
+        if (runLeaseExpiresAt <= now)
+          throw new RunDomainError("RUN_LEASE_EXPIRED", 409);
+        await tx
+          .update(enterpriseRuns)
+          .set({ leaseExpiresAt: runLeaseExpiresAt, updatedAt: now })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, lease.runId),
+              eq(enterpriseRuns.attemptGeneration, lease.generation),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+            ),
+          );
+        const [updated] = await tx
+          .update(enterpriseRunAttempts)
+          .set({
+            requestOwnerExpiresAt: runLeaseExpiresAt,
+            leaseExpiresAt: runLeaseExpiresAt,
+          })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, lease.runId),
+              eq(enterpriseRunAttempts.id, lease.attemptId),
+              eq(enterpriseRunAttempts.generation, lease.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+              eq(enterpriseRunAttempts.requestOwnerToken, lease.ownerToken),
+              sql`${enterpriseRunAttempts.requestOwnerExpiresAt} > now()`,
+            ),
+          )
+          .returning();
+        if (!updated) throw new RunDomainError("RUN_REQUEST_LEASE_STALE", 409);
+        return { ...lease, expiresAt: runLeaseExpiresAt };
+      });
+    },
+    async releaseRequestLease(
+      scope: PlatformScope,
+      lease: RunnerRequestLease,
+    ): Promise<boolean> {
+      assertTrustedScope(scope);
+      return this.transaction(scope, async (tx) => {
+        const [released] = await tx
+          .update(enterpriseRunAttempts)
+          .set({ requestOwnerToken: null, requestOwnerExpiresAt: null })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, lease.runId),
+              eq(enterpriseRunAttempts.id, lease.attemptId),
+              eq(enterpriseRunAttempts.generation, lease.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+              eq(enterpriseRunAttempts.requestOwnerToken, lease.ownerToken),
+            ),
+          )
+          .returning({ id: enterpriseRunAttempts.id });
+        return Boolean(released);
       });
     },
     async currentAttempt(scope: PlatformScope, runId: string) {
@@ -451,9 +967,18 @@ export function createRunStore(
         generation: number;
         status: "succeeded" | "failed";
         errorCode?: string;
+        requestLease?: RunnerRequestLease;
       },
     ): Promise<boolean> {
       return this.transaction(scope, async (tx) => {
+        const leasedTupleAdmitted =
+          !input.requestLease ||
+          (input.status === "failed" &&
+            isAdmittedRunFailureCode(input.errorCode)) ||
+          (input.status === "succeeded" && input.errorCode === undefined);
+        if (!leasedTupleAdmitted) {
+          return false;
+        }
         const [run] = await tx
           .select({ attemptGeneration: enterpriseRuns.attemptGeneration })
           .from(enterpriseRuns)
@@ -463,13 +988,23 @@ export function createRunStore(
               eq(enterpriseRuns.workspaceId, scope.workspaceId),
               eq(enterpriseRuns.principalId, scope.principalId),
               eq(enterpriseRuns.id, input.runId),
+              ...(input.requestLease
+                ? [
+                    sql`${enterpriseRuns.leaseExpiresAt} > clock_timestamp()`,
+                    sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+                  ]
+                : []),
             ),
           )
           .for("update")
           .limit(1);
         if (!run || run.attemptGeneration !== input.generation) return false;
         const [attempt] = await tx
-          .select({ id: enterpriseRunAttempts.id })
+          .select({
+            id: enterpriseRunAttempts.id,
+            requestOwnerToken: enterpriseRunAttempts.requestOwnerToken,
+            requestOwnerExpiresAt: enterpriseRunAttempts.requestOwnerExpiresAt,
+          })
           .from(enterpriseRunAttempts)
           .where(
             and(
@@ -478,12 +1013,37 @@ export function createRunStore(
               eq(enterpriseRunAttempts.id, input.attemptId),
               eq(enterpriseRunAttempts.generation, input.generation),
               eq(enterpriseRunAttempts.status, "active"),
-              sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+              input.requestLease
+                ? sql`${enterpriseRunAttempts.leaseExpiresAt} > clock_timestamp()`
+                : sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+              ...(input.requestLease
+                ? [
+                    eq(
+                      enterpriseRunAttempts.requestOwnerToken,
+                      input.requestLease.ownerToken,
+                    ),
+                    eq(
+                      enterpriseRunAttempts.requestOwnerExpiresAt,
+                      input.requestLease.expiresAt,
+                    ),
+                    sql`${enterpriseRunAttempts.requestOwnerExpiresAt} > clock_timestamp()`,
+                  ]
+                : []),
             ),
           )
           .for("update")
           .limit(1);
         if (!attempt) return false;
+        if (
+          input.requestLease &&
+          !isCurrentRunLeaseSnapshot(
+            input.requestLease,
+            attempt.requestOwnerToken,
+            attempt.requestOwnerExpiresAt,
+          )
+        ) {
+          return false;
+        }
         const [updated] = await tx
           .update(enterpriseRuns)
           .set({
@@ -497,7 +1057,9 @@ export function createRunStore(
               eq(enterpriseRuns.tenantId, scope.tenantId),
               eq(enterpriseRuns.id, input.runId),
               eq(enterpriseRuns.attemptGeneration, input.generation),
-              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+              input.requestLease
+                ? sql`${enterpriseRuns.leaseExpiresAt} > clock_timestamp()`
+                : sql`${enterpriseRuns.leaseExpiresAt} > now()`,
               sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
               sql`exists (
                 select 1 from enterprise_run_attempts active_attempt
@@ -506,7 +1068,8 @@ export function createRunStore(
                   and active_attempt.id = ${input.attemptId}
                   and active_attempt.generation = ${input.generation}
                   and active_attempt.status = 'active'
-                  and active_attempt.lease_expires_at > now()
+                  and active_attempt.lease_expires_at > ${input.requestLease ? sql`clock_timestamp()` : sql`now()`}
+                  ${input.requestLease ? sql`and active_attempt.request_owner_token = ${input.requestLease.ownerToken} and active_attempt.request_owner_expires_at = ${input.requestLease.expiresAt} and active_attempt.request_owner_expires_at > clock_timestamp()` : sql``}
               )`,
             ),
           )
@@ -514,13 +1077,43 @@ export function createRunStore(
         if (!updated) return false;
         const [completedAttempt] = await tx
           .update(enterpriseRunAttempts)
-          .set({ status: "completed", finishedAt: sql`now()` })
+          .set({
+            status: "completed",
+            finishedAt: sql`now()`,
+            ...(input.requestLease
+              ? { requestOwnerToken: null, requestOwnerExpiresAt: null }
+              : {}),
+          })
           .where(
             and(
               eq(enterpriseRunAttempts.tenantId, scope.tenantId),
               eq(enterpriseRunAttempts.id, input.attemptId),
               eq(enterpriseRunAttempts.status, "active"),
-              sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+              input.requestLease
+                ? sql`${enterpriseRunAttempts.leaseExpiresAt} > clock_timestamp()`
+                : sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+              ...(input.requestLease
+                ? [
+                    eq(
+                      enterpriseRunAttempts.requestOwnerToken,
+                      input.requestLease.ownerToken,
+                    ),
+                    eq(
+                      enterpriseRunAttempts.requestOwnerExpiresAt,
+                      input.requestLease.expiresAt,
+                    ),
+                    sql`${enterpriseRunAttempts.requestOwnerExpiresAt} > clock_timestamp()`,
+                    input.status === "succeeded"
+                      ? runSuccessRunLeaseFence(scope, input.requestLease)
+                      : runFailureRunLeaseFence(
+                          scope,
+                          input.requestLease,
+                          // The leased-tuple guard above admitted only fixed
+                          // failure codes, so this is the validated code.
+                          input.errorCode as RunFailureCode,
+                        ),
+                  ]
+                : []),
             ),
           )
           .returning({ id: enterpriseRunAttempts.id });

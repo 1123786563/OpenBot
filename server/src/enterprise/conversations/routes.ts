@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type {
   AppendMessageInput,
   ConversationDTO,
-  ConversationInput,
   ConversationService,
   PlatformScope,
   ScopeResolver,
@@ -10,6 +9,36 @@ import type {
 
 function errorResponse(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
+  const message = error instanceof Error ? error.message : "INTERNAL";
+  const storageCode =
+    typeof code === "string"
+      ? code
+      : message.startsWith("MASTRA_STORAGE_") ||
+          message.startsWith("TENANT_STORAGE_")
+        ? message
+        : undefined;
+  // Only genuinely transient storage faults answer 503: configuration or
+  // authorization defects (BINDING_STALE, FORBIDDEN, REGISTRY_CORRUPT,
+  // CREDENTIAL_MISSING…) are 500s — retrying them cannot help, and folding
+  // them into "unavailable" hides them from operators (OCR R10).
+  const transientStorageCodes = new Set([
+    "MASTRA_STORAGE_UNAVAILABLE",
+    "MASTRA_STORAGE_CLOSING",
+    "MASTRA_MEMORY_STORAGE_UNAVAILABLE",
+    "TENANT_STORAGE_UNAVAILABLE",
+    "TENANT_STORAGE_CLOSING",
+    "TENANT_STORAGE_STATEMENT_TIMEOUT_CONFLICT",
+  ]);
+  if (storageCode !== undefined && transientStorageCodes.has(storageCode))
+    return {
+      status: 503,
+      body: {
+        error: {
+          code: "unavailable",
+          message: "Conversation storage unavailable.",
+        },
+      },
+    };
   if (code === "message_conflict")
     return {
       status: 409,
@@ -20,17 +49,43 @@ function errorResponse(error: unknown) {
         },
       },
     };
-  const message = error instanceof Error ? error.message : "INTERNAL";
   if (message === "AUTH_REQUIRED")
     return {
       status: 401,
       body: { error: { code: "unauthenticated", message } },
     };
-  if (["CONVERSATION_NOT_FOUND", "RESOURCE_NOT_FOUND"].includes(message))
+  if (
+    [
+      "CONVERSATION_NOT_FOUND",
+      "RESOURCE_NOT_FOUND",
+      "THREAD_SCOPE_NOT_FOUND",
+      "THREAD_SCOPE_AMBIGUOUS",
+    ].includes(message)
+  )
     return {
       status: 404,
       body: {
         error: { code: "not_found", message: "Conversation not found." },
+      },
+    };
+  if (message === "DATA_DATABASE_UNAVAILABLE")
+    return {
+      status: 503,
+      body: {
+        error: {
+          code: "unavailable",
+          message: "Conversation storage unavailable.",
+        },
+      },
+    };
+  if (message === "LEGACY_HISTORY_READ_ONLY")
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: "read_only",
+          message: "Legacy conversation history is read-only.",
+        },
       },
     };
   if (
@@ -85,7 +140,7 @@ export function createConversationRoutes(
       const response = errorResponse(error);
       return context.json(
         response.body,
-        response.status as 400 | 401 | 403 | 404 | 409 | 500,
+        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }
   });
@@ -94,25 +149,31 @@ export function createConversationRoutes(
       const scope = await scopes.resolve(context.req.raw);
       const input = await jsonObject(context.req.raw);
       if (
-        (input.threadId !== undefined && typeof input.threadId !== "string") ||
+        Object.keys(input).some((key) => key !== "title") ||
         (input.title !== undefined && typeof input.title !== "string")
       )
         throw new Error("INVALID_REQUEST");
       return context.json(
-        await service.getOrCreate(scope, input as ConversationInput),
+        await service.getOrCreate(
+          scope,
+          typeof input.title === "string" ? { title: input.title } : {},
+        ),
         201,
       );
     } catch (error) {
       const response = errorResponse(error);
       return context.json(
         response.body,
-        response.status as 400 | 401 | 403 | 404 | 409 | 500,
+        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }
   });
   routes.get("/:threadId/messages", async (context) => {
     try {
-      const scope = await scopes.resolve(context.req.raw);
+      const scope = await scopes.resolveForThread(
+        context.req.raw,
+        context.req.param("threadId"),
+      );
       const before = context.req.query("before_seq");
       const limit = context.req.query("limit");
       return context.json(
@@ -126,13 +187,16 @@ export function createConversationRoutes(
       const response = errorResponse(error);
       return context.json(
         response.body,
-        response.status as 400 | 401 | 403 | 404 | 409 | 500,
+        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }
   });
   routes.post("/:threadId/messages", async (context) => {
     try {
-      const scope = await scopes.resolve(context.req.raw);
+      const scope = await scopes.resolveForThread(
+        context.req.raw,
+        context.req.param("threadId"),
+      );
       const body = await jsonObject(context.req.raw);
       if (
         typeof body.clientMessageKey !== "string" ||
@@ -152,9 +216,25 @@ export function createConversationRoutes(
       const response = errorResponse(error);
       return context.json(
         response.body,
-        response.status as 400 | 401 | 403 | 404 | 409 | 500,
+        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }
   });
+  return routes;
+}
+
+export function createUnavailableConversationRoutes() {
+  const routes = new Hono();
+  routes.all("*", (context) =>
+    context.json(
+      {
+        error: {
+          code: "unavailable",
+          message: "Enterprise storage unavailable.",
+        },
+      },
+      503,
+    ),
+  );
   return routes;
 }

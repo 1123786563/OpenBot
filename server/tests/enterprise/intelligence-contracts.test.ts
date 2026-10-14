@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { MastraDBMessage } from "@mastra/core/agent";
+import { convertMessages, type MastraDBMessage } from "@mastra/core/agent";
 import { InMemoryStore } from "@mastra/core/storage";
 import { Memory } from "@mastra/memory";
 import type { PlatformScope } from "../../src/enterprise/contracts";
@@ -358,6 +358,307 @@ test("parser preserves complete V2 content and legacy V1 tool results", () => {
   expect(scope.tenantId).toBe("tenant-a");
 });
 
+test("parsed message content is immutable after detachment", () => {
+  const v2Input = {
+    id: "immutable-v2",
+    role: "assistant",
+    content: {
+      format: 2,
+      parts: [{ type: "text", text: "before", metadata: { value: "before" } }],
+      metadata: { nested: { value: "before" } },
+    },
+  };
+  const parsedV2 = parseMessageInput(v2Input);
+  expect(parsedV2.ok).toBe(true);
+  if (!parsedV2.ok) throw new Error("valid V2 message was rejected");
+
+  const v1Input = {
+    id: "immutable-v1",
+    role: "assistant",
+    type: "tool-call",
+    content: "calling tool",
+    toolCallIds: ["call-before"],
+    toolNames: ["search"],
+    toolCallArgs: [{ query: { value: "before" } }],
+  };
+  const parsedV1 = parseMessageInput(v1Input);
+  expect(parsedV1.ok).toBe(true);
+  if (!parsedV1.ok) throw new Error("valid V1 message was rejected");
+
+  const beforeV2 = JSON.stringify(parsedV2.value.content);
+  const beforeV1 = JSON.stringify(parsedV1.value);
+  const v2Content = parsedV2.value.content as unknown as {
+    parts: Array<{ metadata: { value: string } }>;
+    metadata: { nested: { value: string } };
+  };
+  const v1Value = parsedV1.value as unknown as {
+    toolCallIds: string[];
+    toolCallArgs: Array<{ query: { value: string } }>;
+  };
+  expect(Object.isFrozen(parsedV2.value)).toBe(true);
+  expect(Object.isFrozen(parsedV2.value.content)).toBe(true);
+  expect(Object.isFrozen(v2Content.parts)).toBe(true);
+  expect(Object.isFrozen(v2Content.parts[0])).toBe(true);
+  expect(Object.isFrozen(v2Content.parts[0]?.metadata)).toBe(true);
+  expect(Object.isFrozen(v2Content.metadata.nested)).toBe(true);
+  expect(Object.isFrozen(parsedV1.value)).toBe(true);
+  expect(Object.isFrozen(v1Value.toolCallIds)).toBe(true);
+  expect(Object.isFrozen(v1Value.toolCallArgs[0]?.query)).toBe(true);
+
+  Reflect.set(v2Content.parts[0]?.metadata ?? {}, "value", "after");
+  Reflect.set(v2Content.metadata.nested, "value", "after");
+  Reflect.set(v1Value.toolCallIds, "0", "call-after");
+  Reflect.set(v1Value.toolCallArgs[0]?.query ?? {}, "value", "after");
+  v1Input.toolCallIds[0] = "caller-mutated";
+  v1Input.toolCallArgs[0]!.query.value = "caller-mutated";
+
+  expect(JSON.stringify(parsedV2.value.content)).toBe(beforeV2);
+  expect(JSON.stringify(parsedV1.value)).toBe(beforeV1);
+});
+
+test("malformed Mastra V2 parts are rejected", () => {
+  const invalidParts: unknown[][] = [
+    [null],
+    ["text"],
+    [{ text: "missing type" }],
+    [{ type: "unknown-part", text: "unknown" }],
+    [{ type: "text" }],
+    [{ type: "file", mimeType: "text/plain" }],
+    [{ type: "tool-invocation", toolInvocation: { state: "call" } }],
+    [
+      {
+        type: "source-url",
+        sourceId: "source-a",
+        url: "https://example.invalid",
+      },
+    ],
+  ];
+
+  for (const parts of invalidParts) {
+    expect(
+      parseMessageInput({
+        id: "malformed-v2",
+        role: "user",
+        content: { format: 2, parts },
+      }),
+    ).toEqual({
+      ok: false,
+      error: intelligenceFailure("invalid-input"),
+    });
+  }
+
+  expect(
+    parseMessageInput({
+      id: "valid-source-v2",
+      role: "assistant",
+      content: {
+        format: 2,
+        parts: [
+          {
+            type: "source",
+            source: {
+              sourceType: "url",
+              id: "source-a",
+              url: "https://example.invalid",
+            },
+          },
+        ],
+      },
+    }).ok,
+  ).toBe(true);
+});
+
+test("parser detaches legal V1 binary and URL attachments across Mastra conversions", () => {
+  const original = Uint8Array.from([1, 2, 3, 254]);
+  const sliced = Buffer.from([9, 1, 2, 3, 254, 8]).subarray(1, 5);
+  const arrayBuffer = Uint8Array.from([1, 2, 3, 254]).buffer;
+  const mutableUrl = new URL("https://example.com/original");
+  const inputs: Array<[string, unknown, "image" | "file"]> = [
+    ["uint8array", original, "image"],
+    ["buffer", sliced, "file"],
+    ["arraybuffer", arrayBuffer, "image"],
+    ["url", mutableUrl, "file"],
+  ];
+
+  for (const [name, data, kind] of inputs) {
+    const parsed = parseMessageInput({
+      id: `attachment-${name}`,
+      role: "user",
+      type: "text",
+      content: [
+        kind === "image"
+          ? { type: "image", image: data }
+          : { type: "file", data, mimeType: "image/png" },
+      ],
+    });
+    expect(parsed.ok, name).toBe(true);
+    if (!parsed.ok) continue;
+
+    if (name === "url") mutableUrl.pathname = "/mutated";
+    else if (name === "uint8array") original[0] = 99;
+    else if (name === "buffer") sliced[0] = 99;
+    else new Uint8Array(arrayBuffer)[0] = 99;
+
+    const part = parsed.value.content as Array<{
+      image?: unknown;
+      data?: unknown;
+    }>;
+    const canonicalData = kind === "image" ? part[0]?.image : part[0]?.data;
+    expect(canonicalData).toBe(
+      name === "url" ? "https://example.com/original" : "AQID/g==",
+    );
+
+    const v2 = convertMessages([
+      parsed.value as unknown as import("@mastra/core/memory").MastraMessageV1,
+    ]).to("Mastra.V2");
+    const core = convertMessages(v2).to("AIV4.Core");
+    const firstCoreMessage = core[0];
+    if (!firstCoreMessage) throw new Error("Mastra Core conversion was empty");
+    const corePart = (
+      firstCoreMessage.content as Array<{ type?: string; image?: unknown }>
+    ).find((part) => part.type === "image");
+    const bytes = corePart?.image;
+    if (name === "url") {
+      expect(bytes).toBeInstanceOf(URL);
+      expect((bytes as URL).href).toBe("https://example.com/original");
+    } else {
+      expect(bytes instanceof Uint8Array ? [...bytes] : bytes).toEqual([
+        1, 2, 3, 254,
+      ]);
+    }
+  }
+});
+
+test("parser ignores shadowing typed-array and URL accessors", () => {
+  const bytes = Buffer.from([9, 1, 2, 3, 254, 8]).subarray(1, 5);
+  const byteGetterReads = { buffer: 0, byteOffset: 0, byteLength: 0 };
+  for (const key of ["buffer", "byteOffset", "byteLength"] as const) {
+    Object.defineProperty(bytes, key, {
+      configurable: true,
+      get() {
+        byteGetterReads[key] += 1;
+        throw new Error(`must not invoke own ${key} getter`);
+      },
+    });
+  }
+
+  const url = new URL("https://example.com/intrinsic");
+  let hrefGetterReads = 0;
+  Object.defineProperty(url, "href", {
+    configurable: true,
+    get() {
+      hrefGetterReads += 1;
+      throw new Error("must not invoke own href getter");
+    },
+  });
+
+  const parsedBytes = parseMessageInput({
+    id: "shadowed-bytes",
+    role: "user",
+    type: "text",
+    content: [{ type: "file", mimeType: "application/pdf", data: bytes }],
+  });
+  const parsedUrl = parseMessageInput({
+    id: "shadowed-url",
+    role: "user",
+    type: "text",
+    content: [{ type: "file", mimeType: "application/pdf", data: url }],
+  });
+  expect(parsedBytes.ok).toBe(true);
+  expect(parsedUrl.ok).toBe(true);
+  if (!parsedBytes.ok || !parsedUrl.ok) return;
+  expect(byteGetterReads).toEqual({ buffer: 0, byteOffset: 0, byteLength: 0 });
+  expect(hrefGetterReads).toBe(0);
+  expect((parsedBytes.value.content as Array<{ data: string }>)[0]?.data).toBe(
+    "AQID/g==",
+  );
+  expect((parsedUrl.value.content as Array<{ data: string }>)[0]?.data).toBe(
+    "https://example.com/intrinsic",
+  );
+});
+
+test("Mastra adapter preserves application/pdf binary and URL files", () => {
+  const inputs = [
+    {
+      name: "binary",
+      data: Uint8Array.from([1, 2, 3, 254]),
+      expected: "AQID/g==",
+    },
+    {
+      name: "URL",
+      data: new URL("https://example.com/document.pdf"),
+      expected: "https://example.com/document.pdf",
+    },
+  ] as const;
+
+  for (const { name, data, expected } of inputs) {
+    const parsed = parseMessageInput({
+      id: `pdf-${name}`,
+      role: "user",
+      type: "text",
+      content: [{ type: "file", mimeType: "application/pdf", data }],
+    });
+    expect(parsed.ok, name).toBe(true);
+    if (!parsed.ok) continue;
+
+    const v2 = convertMessages([
+      parsed.value as unknown as import("@mastra/core/memory").MastraMessageV1,
+    ]).to("Mastra.V2");
+    const core = convertMessages(v2).to("AIV4.Core");
+    const firstCoreMessage = core[0];
+    if (!firstCoreMessage) throw new Error("Mastra Core conversion was empty");
+    const filePart = (
+      firstCoreMessage.content as Array<{
+        type?: string;
+        data?: unknown;
+        mimeType?: string;
+      }>
+    ).find((part) => part.type === "file");
+    expect(filePart).toBeDefined();
+    expect(filePart?.mimeType).toBe("application/pdf");
+    const fileData = filePart?.data;
+    expect(
+      fileData instanceof URL
+        ? fileData.href
+        : fileData instanceof Uint8Array
+          ? Buffer.from(fileData).toString("base64")
+          : fileData,
+    ).toBe(expected);
+  }
+});
+
+test("parser rejects maximum sparse arrays promptly", async () => {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      `import { parseMessageInput } from "./src/mastra/intelligence-contracts.ts";
+const result = parseMessageInput({ id: "sparse", role: "user", type: "text", content: new Array(2 ** 32 - 1) });
+console.log(JSON.stringify({ ok: result.ok, code: result.ok ? null : result.error.code }));`,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  let timedOut = false;
+  const timeout = new Promise<"timeout">((resolve) => {
+    setTimeout(() => resolve("timeout"), 2_000);
+  });
+  const completed = child.exited.then(() => "completed" as const);
+  const outcome = await Promise.race([completed, timeout]);
+  if (outcome === "timeout") {
+    timedOut = true;
+    child.kill();
+  }
+  const [stdout, stderr] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  expect(timedOut, `child timed out; stderr: ${stderr}`).toBe(false);
+  expect(child.exitCode, stderr).toBe(0);
+  expect(stdout.trim()).toBe(
+    JSON.stringify({ ok: false, code: "invalid-input" }),
+  );
+});
+
 test("message parser rejects empty IDs and client-selected selectors", () => {
   for (const id of ["", "   "]) {
     const invalid = parseMessageInput({
@@ -383,6 +684,121 @@ test("message parser rejects empty IDs and client-selected selectors", () => {
       error: intelligenceFailure("invalid-input"),
     });
   }
+});
+
+test("message parser snapshots hostile own properties and detaches JSON content", () => {
+  const invalidInput = (value: unknown) => {
+    try {
+      return parseMessageInput(value);
+    } catch (error) {
+      return error;
+    }
+  };
+  const expectInvalid = (value: unknown) => {
+    expect(invalidInput(value)).toEqual({
+      ok: false,
+      error: intelligenceFailure("invalid-input"),
+    });
+  };
+
+  const throwingGetter = {
+    role: "user",
+    content: { format: 2, parts: [] },
+  };
+  Object.defineProperty(throwingGetter, "id", {
+    enumerable: true,
+    get() {
+      throw new Error("getter escaped");
+    },
+  });
+  expectInvalid(throwingGetter);
+
+  const proxyTarget = {
+    id: "message-a",
+    role: "user",
+    content: { format: 2, parts: [] },
+  };
+  for (const hostile of [
+    new Proxy(proxyTarget, {
+      ownKeys() {
+        throw new Error("ownKeys");
+      },
+    }),
+    new Proxy(proxyTarget, {
+      getOwnPropertyDescriptor() {
+        throw new Error("descriptor");
+      },
+    }),
+  ])
+    expectInvalid(hostile);
+  const disagreeing = new Proxy(proxyTarget, {
+    get(target, key, receiver) {
+      if (key === "id") return "message-b";
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const captured = parseMessageInput(disagreeing);
+  expect(captured.ok && String(captured.value.id)).toBe("message-a");
+
+  const nested = { text: "before" };
+  const parsed = parseMessageInput({
+    id: "message-a",
+    role: "user",
+    content: {
+      format: 2,
+      parts: [{ type: "text", text: "hello", metadata: nested }],
+    },
+  });
+  expect(parsed.ok).toBe(true);
+  if (!parsed.ok) throw new Error("valid nested payload was rejected");
+  nested.text = "after";
+  expect(JSON.stringify(parsed.value.content)).toContain('"text":"before"');
+
+  const cycle: Record<string, unknown> = {};
+  cycle.self = cycle;
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: { format: 2, parts: [], metadata: cycle },
+  });
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: { format: 2, parts: [], metadata: { value: undefined } },
+  });
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: { format: 2, parts: [], [Symbol("extra")]: true },
+  });
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: "result",
+    type: "tool-result",
+    toolCallIds: "call-a",
+  });
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: "result",
+    type: "tool-result",
+    toolNames: [1],
+  });
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: "result",
+    type: "tool-result",
+    toolCallArgs: [() => null],
+  });
+  expectInvalid({
+    id: "message-a",
+    role: "user",
+    content: "result",
+    type: "tool-result",
+    toolCallArgs: [1],
+  });
 });
 
 test("public failures use fixed messages and carry retry classification", () => {

@@ -11,10 +11,14 @@ import type {
   ModelInvocationCapabilityInput,
   PlatformScope,
   RunDTO,
+  RunFailureCode,
+  RunnerRequestLease,
   RunService,
   StartRunInput,
+  TrustedRunAdmission,
 } from "../contracts";
 import { createConversationStore } from "../conversations/store";
+import type { ExpertVersionCatalog } from "../experts/version-catalog";
 import {
   createModelBudgetService,
   reserveModelBudgetInTransaction,
@@ -23,22 +27,123 @@ import {
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
 import { createModelInvocationCapabilityService } from "./model-capability";
-import { createRunInTransaction, createRunStore } from "./store";
+import { runOutputCeilingFromInput } from "./output-ceiling";
+import {
+  createRunInTransaction,
+  createRunStore,
+  isAdmittedRunFailureCode,
+} from "./store";
 
 export interface RunModelRoute {
-  readonly expertVersionRef: string;
   readonly routeRef: string;
   readonly maximumTokens: number;
+}
+
+export function validateRunFailureInput(input: {
+  lease: RunnerRequestLease;
+  errorCode: RunFailureCode;
+}): void {
+  const lease = input?.lease;
+  if (
+    !lease ||
+    typeof lease.runId !== "string" ||
+    !lease.runId.trim() ||
+    typeof lease.attemptId !== "string" ||
+    !lease.attemptId.trim() ||
+    !Number.isSafeInteger(lease.generation) ||
+    lease.generation <= 0 ||
+    typeof lease.ownerToken !== "string" ||
+    !lease.ownerToken.trim() ||
+    !(lease.expiresAt instanceof Date) ||
+    !Number.isFinite(lease.expiresAt.getTime()) ||
+    lease.expiresAt.getTime() <= Date.now() ||
+    !isAdmittedRunFailureCode(input.errorCode)
+  ) {
+    throw new Error("INVALID_RUN_FAILURE_INPUT");
+  }
+}
+
+export async function failRunWithLease(
+  scope: PlatformScope,
+  input: { lease: RunnerRequestLease; errorCode: RunFailureCode },
+  transition: (
+    scope: PlatformScope,
+    input: { lease: RunnerRequestLease; errorCode: RunFailureCode },
+  ) => Promise<boolean>,
+): Promise<boolean> {
+  assertTrustedScope(scope);
+  validateRunFailureInput(input);
+  return transition(scope, input);
+}
+
+export function validateRunSuccessInput(input: {
+  lease: RunnerRequestLease;
+}): void {
+  const lease = input?.lease;
+  if (
+    !lease ||
+    typeof lease.runId !== "string" ||
+    !lease.runId.trim() ||
+    typeof lease.attemptId !== "string" ||
+    !lease.attemptId.trim() ||
+    !Number.isSafeInteger(lease.generation) ||
+    lease.generation <= 0 ||
+    typeof lease.ownerToken !== "string" ||
+    !lease.ownerToken.trim() ||
+    !(lease.expiresAt instanceof Date) ||
+    !Number.isFinite(lease.expiresAt.getTime()) ||
+    lease.expiresAt.getTime() <= Date.now()
+  ) {
+    throw new Error("INVALID_RUN_SUCCESS_INPUT");
+  }
+}
+
+/**
+ * Stop input is validated with the same shape discipline as the leased
+ * failure/success paths: a malformed runId/attemptId/generation/reason
+ * never reaches the store (M-i).
+ */
+export function validateStopInput(
+  input: CancelRunInput & { attemptId: string; generation: number },
+): void {
+  if (
+    !input ||
+    typeof input.runId !== "string" ||
+    !input.runId.trim() ||
+    input.runId.length > 200 ||
+    typeof input.attemptId !== "string" ||
+    !input.attemptId.trim() ||
+    input.attemptId.length > 200 ||
+    !Number.isSafeInteger(input.generation) ||
+    input.generation <= 0 ||
+    !["user_requested", "timeout", "superseded"].includes(input.reason)
+  ) {
+    throw new Error("INVALID_STOP_INPUT");
+  }
+}
+
+export async function completeRunWithLease(
+  scope: PlatformScope,
+  input: { lease: RunnerRequestLease },
+  transition: (
+    scope: PlatformScope,
+    input: { lease: RunnerRequestLease },
+  ) => Promise<boolean>,
+): Promise<boolean> {
+  assertTrustedScope(scope);
+  validateRunSuccessInput(input);
+  return transition(scope, input);
 }
 
 export interface RunServiceDependencies {
   readonly data: DataDatabase;
   readonly conversations: ConversationService;
+  readonly expertVersions: Pick<ExpertVersionCatalog, "resolveInTransaction">;
   readonly modelRouteFor: (
     scope: PlatformScope,
     threadId: string,
   ) => Promise<RunModelRoute>;
-  readonly configuredBudgetTokens: (
+  readonly configuredBudgetTokens?: (
     scope: PlatformScope,
   ) => number | Promise<number>;
   readonly modelCapabilitySecret: string | Uint8Array;
@@ -69,6 +174,7 @@ function validateStart(scope: PlatformScope, input: StartRunInput): void {
     throw new Error("INVALID_ATTACHMENT_REFS");
   if (input.entrypoint !== scope.entrypoint)
     throw new Error("ENTRYPOINT_SCOPE_MISMATCH");
+  runOutputCeilingFromInput(input);
 }
 
 export function createRunService(deps: RunServiceDependencies): RunService {
@@ -82,51 +188,56 @@ export function createRunService(deps: RunServiceDependencies): RunService {
   }
   const store = createRunStore(deps.data, { leaseMilliseconds });
   const scopedStore = createConversationStore(deps.data);
-  const budget = createModelBudgetService({
-    data: deps.data,
-    configuredLimitTokens: deps.configuredBudgetTokens,
-  });
+  const budget = createModelBudgetService({ data: deps.data });
   const modelCapabilities = createModelInvocationCapabilityService({
     data: deps.data,
     secret: deps.modelCapabilitySecret,
   });
 
   return {
-    async start(scope: PlatformScope, input: StartRunInput): Promise<RunDTO> {
+    async start(
+      scope: PlatformScope,
+      admission: TrustedRunAdmission,
+    ): Promise<RunDTO> {
       assertTrustedScope(scope);
+      if (!admission || typeof admission !== "object" || !admission.input)
+        throw new Error("INVALID_RUN_ADMISSION");
+      const input: StartRunInput = admission.input;
       validateStart(scope, input);
+      const runOutputCeiling = runOutputCeilingFromInput(input);
       const backend = await deps.conversations.resolveBackend(
         scope,
         input.threadId,
       );
-      if (backend !== "platform") throw new Error("LEGACY_HISTORY_READ_ONLY");
+      if (backend === "intelligence")
+        throw new Error("LEGACY_HISTORY_READ_ONLY");
       const route = await deps.modelRouteFor(scope, input.threadId);
       if (
         !route ||
-        typeof route.expertVersionRef !== "string" ||
-        !route.expertVersionRef.trim() ||
-        route.expertVersionRef.length > 200 ||
         typeof route.routeRef !== "string" ||
         !route.routeRef.trim() ||
         route.routeRef.length > 200
       ) {
         throw new Error("MODEL_ROUTE_UNAVAILABLE");
       }
-      if (
-        !Number.isSafeInteger(route.maximumTokens) ||
-        route.maximumTokens <= 0
-      ) {
-        throw new Error("MODEL_ROUTE_BUDGET_INVALID");
-      }
-      const configuredLimitTokens = await deps.configuredBudgetTokens(scope);
+      if (admission.routeRef !== route.routeRef)
+        throw new Error("RUN_ROUTE_MISMATCH");
       return store.transaction(scope, async (tx) => {
+        const verified = await deps.expertVersions.resolveInTransaction(
+          scope,
+          tx,
+          admission.expertVersionRef,
+        );
+        if (!verified) throw new Error("EXPERT_VERSION_NOT_FOUND");
+        if (verified.agentId !== admission.agentId)
+          throw new Error("EXPERT_AGENT_MISMATCH");
         const created = await createRunInTransaction(
           tx,
           scope,
           input,
-          route.expertVersionRef,
+          verified.expertVersionRef,
           route.routeRef,
-          route.maximumTokens,
+          runOutputCeiling,
           leaseMilliseconds,
         );
         await reserveModelBudgetInTransaction(
@@ -135,9 +246,8 @@ export function createRunService(deps: RunServiceDependencies): RunService {
           {
             runId: created.runId,
             modelRouteRef: route.routeRef,
-            maximumTokens: configuredLimitTokens,
+            maximumTokens: runOutputCeiling,
           },
-          configuredLimitTokens,
           {
             idempotencyKey: runCeilingIdempotencyKey(created.runId),
             expiresAt: created.leaseExpiresAt,
@@ -146,6 +256,17 @@ export function createRunService(deps: RunServiceDependencies): RunService {
         );
         return created.run;
       });
+    },
+    getActiveForThread(scope: PlatformScope, threadId: string) {
+      assertTrustedScope(scope);
+      if (
+        typeof threadId !== "string" ||
+        !threadId.trim() ||
+        threadId.length > 200
+      ) {
+        throw new Error("INVALID_THREAD_ID");
+      }
+      return store.getActiveForThread(scope, threadId);
     },
     async cancel(scope: PlatformScope, input: CancelRunInput): Promise<RunDTO> {
       assertTrustedScope(scope);
@@ -158,6 +279,57 @@ export function createRunService(deps: RunServiceDependencies): RunService {
         scope,
         input.runId,
         `CANCELLED_${input.reason.toUpperCase()}`,
+      );
+    },
+    async stop(
+      scope: PlatformScope,
+      input: CancelRunInput & { attemptId: string; generation: number },
+    ): Promise<RunDTO> {
+      assertTrustedScope(scope);
+      validateStopInput(input);
+      return store.cancel(
+        scope,
+        input.runId,
+        `CANCELLED_${input.reason.toUpperCase()}`,
+        { attemptId: input.attemptId, generation: input.generation },
+      );
+    },
+    acquireRequestLease(scope: PlatformScope, runId: string) {
+      assertTrustedScope(scope);
+      return store.acquireRequestLease(scope, runId);
+    },
+    renewRequestLease(scope: PlatformScope, lease: RunnerRequestLease) {
+      assertTrustedScope(scope);
+      return store.renewRequestLease(scope, lease);
+    },
+    releaseRequestLease(scope: PlatformScope, lease: RunnerRequestLease) {
+      assertTrustedScope(scope);
+      return store.releaseRequestLease(scope, lease);
+    },
+    fail(
+      scope: PlatformScope,
+      input: { lease: RunnerRequestLease; errorCode: RunFailureCode },
+    ) {
+      return failRunWithLease(scope, input, (trustedScope, failure) =>
+        store.transitionTerminal(trustedScope, {
+          runId: failure.lease.runId,
+          attemptId: failure.lease.attemptId,
+          generation: failure.lease.generation,
+          status: "failed",
+          errorCode: failure.errorCode,
+          requestLease: failure.lease,
+        }),
+      );
+    },
+    complete(scope: PlatformScope, input: { lease: RunnerRequestLease }) {
+      return completeRunWithLease(scope, input, (trustedScope, completion) =>
+        store.transitionTerminal(trustedScope, {
+          runId: completion.lease.runId,
+          attemptId: completion.lease.attemptId,
+          generation: completion.lease.generation,
+          status: "succeeded",
+          requestLease: completion.lease,
+        }),
       );
     },
     get(scope: PlatformScope, runId: string): Promise<RunDTO> {

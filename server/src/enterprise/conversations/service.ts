@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   authorizeAttachmentForSendInTransaction,
@@ -429,6 +429,49 @@ export function createConversationService({
         throw new Error("INVALID_TITLE");
       const suppliedThreadId = input.threadId !== undefined;
       const threadId = input.threadId ?? newThreadId();
+      const conversationId = randomUUID();
+      // Probe Mastra storage availability before opening the conversation
+      // transaction: the advisory locks held by store.transaction must not
+      // span external storage I/O. Only the create path (generated thread id)
+      // needs Mastra storage — supplied thread ids never reach creation.
+      if (!suppliedThreadId) {
+        if (!mastraStorage) {
+          throw Object.assign(new Error("MASTRA_STORAGE_UNAVAILABLE"), {
+            code: "MASTRA_STORAGE_UNAVAILABLE",
+            status: 503,
+          });
+        }
+        try {
+          await mastraStorage.getStore(scope, {
+            tenantId: scope.tenantId,
+            conversationId,
+            threadId,
+            resourceId: mastraPrivateResourceId(
+              scope.tenantId,
+              scope.principalId,
+            ),
+            storageKey: tenantStorageKey(scope.tenantId),
+            backend: "mastra",
+          });
+        } catch (cause) {
+          console.error({
+            error: "MASTRA_STORAGE_PROBE_FAILED",
+            context: {
+              operation: "getOrCreate",
+              tenantId: scope.tenantId,
+            },
+            cause:
+              cause instanceof Error
+                ? ((cause as { code?: unknown }).code ?? cause.constructor.name)
+                : typeof cause,
+          });
+          throw Object.assign(new Error("MASTRA_STORAGE_UNAVAILABLE"), {
+            code: "MASTRA_STORAGE_UNAVAILABLE",
+            status: 503,
+            cause,
+          });
+        }
+      }
       return store.transaction(scope, async (tx) => {
         const initialLegacy = await currentLegacyMapping(tx, scope, threadId);
         const legacy = await authorizedLegacyMapping(
@@ -467,15 +510,10 @@ export function createConversationService({
           return conversationDto(existing);
         }
         if (suppliedThreadId) throw new Error("CONVERSATION_NOT_FOUND");
-        if (!mastraStorage) {
-          throw Object.assign(new Error("MASTRA_STORAGE_UNAVAILABLE"), {
-            code: "MASTRA_STORAGE_UNAVAILABLE",
-            status: 503,
-          });
-        }
         const [created] = await tx
           .insert(enterpriseConversations)
           .values({
+            id: conversationId,
             tenantId: scope.tenantId,
             workspaceId: scope.workspaceId,
             principalId: scope.principalId,
