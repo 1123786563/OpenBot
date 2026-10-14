@@ -71,10 +71,10 @@ const WEBAPP_NOT_RUNNING_ERROR =
  */
 async function requestBody(
   context: Context<{ Variables: AppVariables }, string>,
-): Promise<Uint8Array | undefined> {
+): Promise<ArrayBuffer | undefined> {
   const method = context.req.method;
   if (method === "GET" || method === "HEAD") return undefined;
-  const bytes = new Uint8Array(await context.req.raw.arrayBuffer());
+  const bytes = await context.req.raw.arrayBuffer();
   return bytes.byteLength > 0 ? bytes : undefined;
 }
 
