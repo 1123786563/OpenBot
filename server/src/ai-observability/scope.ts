@@ -16,9 +16,12 @@
  * This file must not grow a tenant table read, a tenant header parse, a workspace-to-tenant map, or
  * a second scope kind. When the enterprise Spec is approved, the seam to replace is this function.
  */
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
   ObservationScopeError,
+  type EvaluationEligibility,
   type ObservationScope,
+  type ObservationStorageLocator,
   type ScopeResolutionInput,
 } from "./contracts";
 
@@ -32,7 +35,11 @@ const PLACEHOLDER_ACTOR = "dev-local-user";
  * with another (actor, bot, epoch) triple. `wb` is the kind tag; a future kind gets its own tag and
  * therefore its own key space rather than sharing this one.
  */
-export function scopeKey(actorId: string, botId: string, epoch: number): string {
+export function scopeKey(
+  actorId: string,
+  botId: string,
+  epoch: number,
+): string {
   const parts = ["wb", actorId, botId, String(epoch)];
   return parts.map((part) => `${part.length}:${part}`).join("|");
 }
@@ -41,7 +48,9 @@ function isEnterpriseHint(hint: unknown): boolean {
   return hint !== undefined && hint !== null;
 }
 
-export function resolveObservationScope(input: ScopeResolutionInput): ObservationScope {
+export function resolveObservationScope(
+  input: ScopeResolutionInput,
+): ObservationScope {
   /*
    * Order matters. The enterprise refusal comes first: an enterprise caller with a perfectly valid
    * workbench ownership answer must NOT be quietly served under workbench scope, because that is
@@ -80,8 +89,124 @@ export function resolveObservationScope(input: ScopeResolutionInput): Observatio
  * so it answers with the same 403 a denied caller gets — it does not leak "this object was almost
  * right".
  */
-export function assertObservationScope(scope: unknown): asserts scope is ObservationScope {
+export function assertObservationScope(
+  scope: unknown,
+): asserts scope is ObservationScope {
   if (typeof scope !== "object" || scope === null || !issued.has(scope)) {
     throw new ObservationScopeError("OWNERSHIP_REQUIRED", 403);
   }
+}
+
+/*
+ * Cursor integrity key. Process-local and per-boot on purpose: a cursor is a pagination position,
+ * not a durable credential, so a restart invalidating outstanding cursors is the safe failure.
+ * What must never happen is one scope accepting another scope's cursor.
+ */
+const CURSOR_KEY = new TextEncoder().encode(
+  `opik-cursor/${process.pid}/${Date.now()}`,
+);
+
+function mac(scopeKey: string, payload: string): Uint8Array {
+  const hmac = createHmac("sha256", CURSOR_KEY);
+  hmac.update(scopeKey);
+  hmac.update("\u0000");
+  hmac.update(payload);
+  return new Uint8Array(hmac.digest());
+}
+
+function encode(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64url");
+}
+
+/** Bind a pagination payload to the scope that minted it. */
+export function bindCursor(scope: ObservationScope, payload: string): string {
+  assertObservationScope(scope);
+  return `${encode(Buffer.from(payload, "utf8"))}.${encode(mac(scope.key, payload))}`;
+}
+
+/**
+ * Read a cursor back. A cursor from another scope, another ownership epoch, or a tampered payload
+ * is an authorization failure — not an empty page, and not a silent restart from page one.
+ */
+export function readCursor(scope: ObservationScope, cursor: string): string {
+  assertObservationScope(scope);
+  const [encodedPayload, encodedMac] = cursor.split(".");
+  if (!encodedPayload || !encodedMac) {
+    throw new ObservationScopeError("OWNERSHIP_REQUIRED", 403);
+  }
+  let payload: string;
+  let offered: Uint8Array;
+  try {
+    payload = Buffer.from(encodedPayload, "base64url").toString("utf8");
+    offered = new Uint8Array(Buffer.from(encodedMac, "base64url"));
+  } catch {
+    throw new ObservationScopeError("OWNERSHIP_REQUIRED", 403);
+  }
+  const expected = mac(scope.key, payload);
+  if (
+    offered.length !== expected.length ||
+    !timingSafeEqual(offered, expected)
+  ) {
+    throw new ObservationScopeError("OWNERSHIP_REQUIRED", 403);
+  }
+  return payload;
+}
+
+/** Cache, job and export keys all carry the scope key, so none of them can be reused across scopes. */
+export function cacheKey(
+  scope: ObservationScope,
+  name: string,
+  ...parts: Array<string | number>
+): string {
+  assertObservationScope(scope);
+  return ["cache", scope.key, name, ...parts.map(String)].join("|");
+}
+
+export function jobKey(
+  scope: ObservationScope,
+  name: string,
+  idempotencyKey: string,
+): string {
+  assertObservationScope(scope);
+  return ["job", scope.key, name, idempotencyKey].join("|");
+}
+
+export function exportKey(scope: ObservationScope, exportId: string): string {
+  assertObservationScope(scope);
+  return ["export", scope.key, exportId].join("|");
+}
+
+/**
+ * Where this scope's records live upstream.
+ *
+ * Derived FROM the authorized scope key. Never the other way round: an upstream workspace or
+ * project name is a storage address, not a permission, and a layout that happens to look like a
+ * tenant boundary proves nothing. No function here reconstructs a scope from a locator.
+ *
+ * The fingerprint carries the key length for readability plus a short hash of the full key: two
+ * scopes can hold the same botId and epochs while their keys stay the same length, so length alone
+ * does not separate them. The hash is one-way; the key is not recoverable from a locator.
+ */
+export function resolveStorageLocator(
+  scope: ObservationScope,
+): ObservationStorageLocator {
+  assertObservationScope(scope);
+  const digest = createHash("sha256")
+    .update(scope.key)
+    .digest("hex")
+    .slice(0, 8);
+  const fingerprint = `${scope.key.length}-${digest}`;
+  return Object.freeze({
+    scopeKey: scope.key,
+    workspace: `openbot-${scope.kind}-${fingerprint}`,
+    project: `bot-${scope.botId}-${fingerprint}-${scope.epoch}`,
+  });
+}
+
+/** Whether this scope may run evaluations. The workbench adapter's answer is the scope itself. */
+export function resolveEvaluationEligibility(
+  scope: ObservationScope,
+): EvaluationEligibility {
+  assertObservationScope(scope);
+  return Object.freeze({ allowed: true as const, scopeKey: scope.key });
 }
