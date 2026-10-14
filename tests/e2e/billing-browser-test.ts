@@ -303,8 +303,16 @@ async function main() {
     return "URL 依次变为 30d/today/7d，切换控件工作正常";
   });
 
-  await step("A8 消耗明细分页器状态文案与翻页按钮", async () => {
+  await step("A8 消耗明细分页器：有数据显示文案与翻页，空窗口隐藏分页器", async () => {
     await ensureOn(page, "/settings/usage?range=30d");
+    await page.waitForTimeout(1500);
+    const empty = await page.locator("text=还没有积分消耗记录").isVisible().catch(() => false);
+    if (empty) {
+      // 修复后的设计：totalCount=0 时空态渲染且分页器不显示（不报「共 0 条」）
+      const pagerGone = (await page.locator("text=/第 \\d+ \\/ \\d+ 页/").count()) === 0;
+      expect(pagerGone, "空窗口下分页器不应显示（totalCount=0 隐藏分页器是修复的一部分）");
+      return "空窗口：空态文案正确，分页器按设计隐藏";
+    }
     const status = page.locator("text=/第 \\d+ \\/ \\d+ 页/").first();
     await status.waitFor({ timeout: 10_000 });
     const text = (await status.innerText()).trim();
