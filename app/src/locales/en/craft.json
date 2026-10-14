@@ -22,6 +22,9 @@
     "downTitle": "The web app isn't running",
     "downHint": "Its dev server has stopped — a start that was interrupted, or a sandbox that restarted. Ask the agent to start the web app again; this pane picks it up on its own as soon as it's serving.",
     "downRetry": "Check again",
+    "expand": "Expand preview",
+    "collapse": "Exit full screen",
+    "openInNewTab": "Open in a new tab",
     "emptyTitle": "Waiting for the first web app",
     "emptyHint": "The web app the agent builds renders here, live.",
     "emptyTabs": "Workspace files land under Files; downloads under Artifacts."

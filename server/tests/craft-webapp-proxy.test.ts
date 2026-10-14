@@ -103,7 +103,11 @@ describe("proxyWebappRequest", () => {
   // exactly the apps craft is asked to build. The preview was a picture, not a
   // running app.
   test("carries the caller's method and body to the upstream, not a hardcoded GET", async () => {
-    const seen: { method: string | null; body: string | null; type: string | null } = {
+    const seen: {
+      method: string | null;
+      body: string | null;
+      type: string | null;
+    } = {
       method: null,
       body: null,
       type: null,

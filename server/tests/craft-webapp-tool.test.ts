@@ -1431,9 +1431,7 @@ describe("webapp preview route (reserved-port attach)", () => {
         expect(forwarded.length).toBe(1);
         expect(forwarded[0]?.method).toBe(method);
         // Query included — a mutation aimed at the wrong path is a silent no-op.
-        expect(forwarded[0]?.path).toBe(
-          "/sessions/cs-pv/webapp/api/tasks?x=1",
-        );
+        expect(forwarded[0]?.path).toBe("/sessions/cs-pv/webapp/api/tasks?x=1");
         expect(forwarded[0]?.body).toBe(body);
       });
     }
