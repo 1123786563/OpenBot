@@ -60,11 +60,24 @@ export type BillingPersistenceOperation =
 /** A database operation failed after the request reached the billing store. */
 export class BillingPersistenceError extends Error {
   override name = "BillingPersistenceError";
-  readonly code = "persistence_failure";
-  readonly retryable = true;
-
-  constructor(readonly operation: BillingPersistenceOperation) {
+  /**
+   * Whether the same delivery could succeed a moment later (a deadlock, a failover, a refused
+   * connection) or is a fact about the data (a constraint violation, a value too long). Both are
+   * OURS, so both are answered 5xx and the provider retries: a 4xx would tell the provider its
+   * delivery was bad and lose the projection permanently (audit A8). The flag only grades the log
+   * line and the operator's expectation.
+   */
+  readonly retryable: boolean;
+  constructor(
+    readonly operation: BillingPersistenceOperation,
+    retryable = true,
+    options?: { cause?: unknown },
+  ) {
     super(`Billing persistence failed (${operation}).`);
+    this.retryable = retryable;
+    // The driver's own error, kept for a debugger. It is never serialised into a response or into
+    // a log message: a driver error can quote a connection string.
+    if (options?.cause !== undefined) this.cause = options.cause;
   }
 }
 

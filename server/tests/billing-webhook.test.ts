@@ -185,7 +185,9 @@ describe("createBillingService.handleWebhook", () => {
     expect(store.inbox.size).toBe(0);
     expect(store.customers.size).toBe(0);
     expect(store.subscriptions.size).toBe(0);
-    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+    expect(logged).toEqual([
+      "billing: webhook failed — webhook_apply (retryable)",
+    ]);
     const retry = await service.handleWebhook(deliver());
     expect(retry.status).toBe(200);
     expect(stub.state.reads).toBe(2);
@@ -429,7 +431,9 @@ describe("createBillingService.handleWebhook", () => {
     expect(stub.state.reads).toBe(2);
     expect(store.subscriptions.size).toBe(1);
     expect(store.inbox.size).toBe(1);
-    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+    expect(logged).toEqual([
+      "billing: webhook failed — webhook_record (retryable)",
+    ]);
   });
 
   test("an unknown store error is not classified as retryable", async () => {
@@ -749,5 +753,56 @@ describe("createBillingService.handleWebhook", () => {
       code: "unsupported",
       retryable: false,
     });
+  });
+
+  test("a non-retryable storage failure is answered 500 so the provider retries, and nothing is recorded", async () => {
+    const store = memoryBillingStore();
+    const { service } = webhookFixture(store);
+    store.applyWebhookProjection = async () => {
+      // What the real store now throws for a constraint violation or a value-too-long: our data
+      // problem, graded non-retryable. It is still not the provider's fault, so it is still 5xx.
+      throw new BillingPersistenceError("webhook_apply", false);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-data-failure", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "Billing webhook could not be applied.",
+    });
+    expect(store.inbox.size).toBe(0);
+  });
+
+  test("a retryable storage failure stays 503", async () => {
+    const store = memoryBillingStore();
+    const { service } = webhookFixture(store);
+    store.applyWebhookProjection = async () => {
+      throw new BillingPersistenceError("webhook_apply", true);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-transient", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(store.inbox.size).toBe(0);
+  });
+
+  test("the 500 carries no detail from the failure", async () => {
+    const store = memoryBillingStore();
+    const { service } = webhookFixture(store);
+    store.applyWebhookProjection = async () => {
+      throw new BillingPersistenceError("webhook_apply", false);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-leak", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    const body = await response.text();
+    expect(body).not.toContain("webhook_apply");
+    expect(body).not.toContain("BillingPersistenceError");
   });
 });

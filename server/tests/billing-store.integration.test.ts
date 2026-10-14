@@ -108,13 +108,18 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
   } catch (error) {
     failure = error;
   }
-  expect(failure).toBeInstanceOf(DrizzleQueryError);
-  expect((failure as DrizzleQueryError).cause).toBeInstanceOf(
-    Bun.SQL.PostgresError,
-  );
-  expect((failure as DrizzleQueryError).cause).toMatchObject({
-    errno: "23503",
-  });
+  expect(failure).toBeInstanceOf(BillingPersistenceError);
+  expect(failure).toMatchObject({ retryable: false });
+  // The driver's own error survives under `cause`, through whatever wrapped it on the way out.
+  let driver = (failure as { cause?: unknown }).cause;
+  while (
+    driver instanceof BillingPersistenceError ||
+    driver instanceof DrizzleQueryError
+  ) {
+    driver = (driver as { cause?: unknown }).cause;
+  }
+  expect(driver).toBeInstanceOf(Bun.SQL.PostgresError);
+  expect(driver).toMatchObject({ errno: "23503" });
 });
 
 test("deleting a customer cascades to its subscriptions", async () => {
@@ -189,13 +194,19 @@ test("a final inbox failure rolls back staged customer and subscription projecti
   } catch (error) {
     failure = error;
   }
-  expect(failure).toBeInstanceOf(DrizzleQueryError);
-  expect((failure as DrizzleQueryError).cause).toBeInstanceOf(
-    Bun.SQL.PostgresError,
-  );
-  expect((failure as DrizzleQueryError).cause).toMatchObject({
-    errno: "23502",
-  });
+  expect(failure).toBeInstanceOf(BillingPersistenceError);
+  expect(failure).toMatchObject({ retryable: false });
+  // The graded sentinel nests: the failing inner operation is wrapped by the apply, with the
+  // driver's own error preserved at the bottom of the `cause` chain.
+  let driver = (failure as { cause?: unknown }).cause;
+  while (
+    driver instanceof BillingPersistenceError ||
+    driver instanceof DrizzleQueryError
+  ) {
+    driver = (driver as { cause?: unknown }).cause;
+  }
+  expect(driver).toBeInstanceOf(Bun.SQL.PostgresError);
+  expect(driver).toMatchObject({ errno: "23502" });
   expect(await store.hasWebhookEvent(event.provider, event.eventId)).toBe(
     false,
   );
@@ -241,9 +252,12 @@ test("an atomic webhook rolls back existing projection updates on inbox failure"
       webhookType: null as unknown as string,
     },
   };
-  await expect(store.applyWebhookProjection(input)).rejects.toBeInstanceOf(
-    DrizzleQueryError,
+  const rejection = await store.applyWebhookProjection(input).then(
+    () => null,
+    (thrown: unknown) => thrown,
   );
+  expect(rejection).toBeInstanceOf(BillingPersistenceError);
+  expect(rejection).toMatchObject({ retryable: false });
   expect(await store.readSubscriptions(externalId)).toEqual(before);
   const rows = await database
     .select({ name: billingCustomers.name })

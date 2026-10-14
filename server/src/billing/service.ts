@@ -67,12 +67,15 @@ export function deploymentExternalCustomerId(tenantId: string): string {
  * handleWebhook order, fixed deliberately: verify (401) → inbox check (a known event is already
  * fully applied, 200) → fresh read of the authoritative object → atomically commit the local
  * projections and inbox row → 200. Provider reads stay outside the SQL transaction.
- * Retryable provider and typed persistence failures answer 503 without writing
- * the inbox, so the provider retries the whole delivery. An inbox row therefore always means "the
- * work it names is done", which is the one property that keeps a crash mid-delivery from losing an
- * event. (The Go implementation this descends from wrote the inbox before acting, so a delivery
- * that failed afterwards was never retried; that gap is not inherited, and this comment is the
- * record of the divergence.)
+ * Retryable provider failures and retryable persistence failures answer 503; a non-retryable
+ * persistence failure — our own data, a constraint violation or a value too long — answers 500.
+ * Both are ours and both are 5xx, so the provider retries the whole delivery and a manual fix
+ * later still converges. A 4xx is reserved for a delivery we verified and then could not make
+ * sense of; our own storage is never the provider's fault. An inbox row therefore always means
+ * "the work it names is done", which is the one property that keeps a crash mid-delivery from
+ * losing an event. (The Go implementation this descends from wrote the inbox before acting, so a
+ * delivery that failed afterwards was never retried; that gap is not inherited, and this comment
+ * is the record of the divergence.)
  *
  * Events about objects this deployment does not project (invoices, wallets, …) have nothing to
  * refresh, which is also finished work: they are recorded and answered 200.
@@ -374,8 +377,15 @@ export function createBillingService(deps: {
         return json(200, { status });
       } catch (error) {
         if (error instanceof BillingPersistenceError) {
-          (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
-          return json(503, { error: "Billing webhook could not be applied." });
+          (deps.log ?? console.warn)(
+            `billing: webhook failed — ${error.operation}${error.retryable ? " (retryable)" : " (non-retryable data failure)"}`,
+          );
+          // 503 when it may heal on its own, 500 when it needs a person: both are ours, never
+          // the provider's delivery. Nothing recorded, so the retry re-reads and re-applies the
+          // whole projection.
+          return json(error.retryable ? 503 : 500, {
+            error: "Billing webhook could not be applied.",
+          });
         }
         if (error instanceof BillingError && error.retryable) {
           (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
