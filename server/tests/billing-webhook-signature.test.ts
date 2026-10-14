@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { createHmac, createSign, generateKeyPairSync } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  createSign,
+  generateKeyPairSync,
+} from "node:crypto";
 import {
   createWebhookVerifier,
   signDeliveryLikeProvider,
@@ -44,6 +49,10 @@ const EXPECTED_DELIVERY = {
   objectId: "lago-sub-1",
   externalCustomerId: "deployment-1",
 };
+
+/** The replay-evidence hash (audit A7): sha256 of the raw body, lowercase hex. */
+const sha256Of = (body: string) =>
+  createHash("sha256").update(body).digest("hex");
 
 function jwtHeaders(
   jwt: string,
@@ -102,7 +111,10 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
   test("accepts a correctly signed delivery and reads it, identity from the header", async () => {
     const jwt = signDeliveryLikeProvider(WIRE_PAYLOAD, privateKeyPem);
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
-    expect(result).toEqual({ ok: true, delivery: EXPECTED_DELIVERY });
+    expect(result).toEqual({
+      ok: true,
+      delivery: { ...EXPECTED_DELIVERY, bodyHash: sha256Of(WIRE_BODY) },
+    });
   });
 
   test("accepts the same delivery without the algorithm header (jwt is the default)", async () => {
@@ -211,9 +223,9 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
     expect(
       await verifier.verify(jwtHeaders("a.b.c", "jwt"), WIRE_BODY),
     ).toEqual({ ok: false });
-    expect(
-      await verifier.verify(jwtHeaders("", undefined), WIRE_BODY),
-    ).toEqual({ ok: false });
+    expect(await verifier.verify(jwtHeaders("", undefined), WIRE_BODY)).toEqual(
+      { ok: false },
+    );
   });
 
   test("refuses a body that is not the provider's payload shape", async () => {
@@ -263,6 +275,7 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
         webhookType: "customer.updated",
         objectId: "lago-customer-1",
         externalCustomerId: "deployment-1",
+        bodyHash: sha256Of(body),
       },
     });
   });
@@ -280,7 +293,11 @@ describe("createWebhookVerifier jwt mode (the default)", () => {
     const result = await verifier.verify(jwtHeaders(jwt), body);
     expect(result).toEqual({
       ok: true,
-      delivery: { eventId: EVENT_ID, webhookType: "subscription.updated" },
+      delivery: {
+        eventId: EVENT_ID,
+        webhookType: "subscription.updated",
+        bodyHash: sha256Of(body),
+      },
     });
   });
 });
@@ -298,7 +315,10 @@ describe("createWebhookVerifier jwt mode, the provider's real double-encoded sha
       { alg: "RS256" },
     );
     const result = await verifier.verify(jwtHeaders(jwt), WIRE_BODY);
-    expect(result).toEqual({ ok: true, delivery: EXPECTED_DELIVERY });
+    expect(result).toEqual({
+      ok: true,
+      delivery: { ...EXPECTED_DELIVERY, bodyHash: sha256Of(WIRE_BODY) },
+    });
   });
 
   test("(b) a `data` string whose JSON is not the raw body is refused", async () => {
@@ -339,7 +359,10 @@ describe("createWebhookVerifier hmac mode", () => {
       hmacHeaders(hmacOf(WIRE_BODY)),
       WIRE_BODY,
     );
-    expect(result).toEqual({ ok: true, delivery: EXPECTED_DELIVERY });
+    expect(result).toEqual({
+      ok: true,
+      delivery: { ...EXPECTED_DELIVERY, bodyHash: sha256Of(WIRE_BODY) },
+    });
   });
 
   test("refuses a bad signature", async () => {
@@ -414,5 +437,87 @@ describe("createWebhookVerifier mode routing", () => {
     expect(
       await asHmac.verify(hmacHeaders(hmacOf(WIRE_BODY), "ed25519"), WIRE_BODY),
     ).toEqual({ ok: false });
+  });
+});
+
+describe("the replay window (audit A7)", () => {
+  test("an expired token is refused even though its signature and body are valid", async () => {
+    const verifier = createWebhookVerifier({
+      key: { mode: "jwt", publicKeyPem },
+      now: () => Math.floor(Date.parse("2026-10-14T12:00:00Z") / 1000),
+    });
+    const signature = signDeliveryLikeProvider(
+      WIRE_PAYLOAD,
+      privateKeyPem,
+      { alg: "RS256" },
+      { exp: Math.floor(Date.parse("2026-10-14T11:00:00Z") / 1000) },
+    );
+    const result = await verifier.verify(jwtHeaders(signature), WIRE_BODY);
+    expect(result.ok).toBe(false);
+  });
+
+  test("a token inside its lifetime is accepted", async () => {
+    const verifier = createWebhookVerifier({
+      key: { mode: "jwt", publicKeyPem },
+      now: () => Math.floor(Date.parse("2026-10-14T12:00:00Z") / 1000),
+    });
+    const signature = signDeliveryLikeProvider(
+      WIRE_PAYLOAD,
+      privateKeyPem,
+      { alg: "RS256" },
+      { exp: Math.floor(Date.parse("2026-10-14T13:00:00Z") / 1000) },
+    );
+    const result = await verifier.verify(jwtHeaders(signature), WIRE_BODY);
+    expect(result.ok).toBe(true);
+  });
+
+  test("an iat further in the past than the skew window is refused", async () => {
+    const verifier = createWebhookVerifier({
+      key: { mode: "jwt", publicKeyPem },
+      now: () => Math.floor(Date.parse("2026-10-14T12:00:00Z") / 1000),
+      maxSkewSeconds: 300,
+    });
+    const signature = signDeliveryLikeProvider(
+      WIRE_PAYLOAD,
+      privateKeyPem,
+      { alg: "RS256" },
+      { iat: Math.floor(Date.parse("2026-10-14T11:00:00Z") / 1000) },
+    );
+    expect((await verifier.verify(jwtHeaders(signature), WIRE_BODY)).ok).toBe(
+      false,
+    );
+  });
+
+  test("a token with no time claims is still accepted, and its body hash is the evidence", async () => {
+    const verifier = createWebhookVerifier({
+      key: { mode: "jwt", publicKeyPem },
+    });
+    const result = await verifier.verify(
+      jwtHeaders(signDeliveryLikeProvider(WIRE_PAYLOAD, privateKeyPem)),
+      WIRE_BODY,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.delivery.bodyHash).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  test("the same body under two unique keys produces the same hash", async () => {
+    const verifier = createWebhookVerifier({
+      key: { mode: "hmac", key: "secret" },
+    });
+    const first = await verifier.verify(
+      hmacHeaders(hmacOf(WIRE_BODY, "secret"), "hmac", "key-1"),
+      WIRE_BODY,
+    );
+    const second = await verifier.verify(
+      hmacHeaders(hmacOf(WIRE_BODY, "secret"), "hmac", "key-2"),
+      WIRE_BODY,
+    );
+    expect(first.ok && second.ok).toBe(true);
+    if (first.ok && second.ok) {
+      expect(first.delivery.eventId).not.toBe(second.delivery.eventId);
+      expect(first.delivery.bodyHash).toBe(second.delivery.bodyHash);
+    }
   });
 });

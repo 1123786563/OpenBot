@@ -16,14 +16,24 @@ export function memoryBillingStore(): BillingStore & {
   subscriptions: Map<string, BillingSubscriptionRow>;
   inbox: Map<
     string,
-    { uniqueKey?: string; webhookType: string; objectId?: string }
+    {
+      uniqueKey?: string;
+      webhookType: string;
+      objectId?: string;
+      bodyHash?: string;
+    }
   >;
 } {
   const customers = new Map<string, { name: string | null }>();
   const subscriptions = new Map<string, BillingSubscriptionRow>();
   const inbox = new Map<
     string,
-    { uniqueKey?: string; webhookType: string; objectId?: string }
+    {
+      uniqueKey?: string;
+      webhookType: string;
+      objectId?: string;
+      bodyHash?: string;
+    }
   >();
   let pending = Promise.resolve();
   return {
@@ -114,8 +124,16 @@ export function memoryBillingStore(): BillingStore & {
         ...(input.uniqueKey ? { uniqueKey: input.uniqueKey } : {}),
         webhookType: input.webhookType,
         ...(input.objectId ? { objectId: input.objectId } : {}),
+        ...(input.bodyHash ? { bodyHash: input.bodyHash } : {}),
       });
       return true;
+    },
+    async countDeliveriesOfBody(bodyHash) {
+      let deliveries = 0;
+      for (const row of inbox.values()) {
+        if (row.bodyHash === bodyHash) deliveries += 1;
+      }
+      return deliveries;
     },
     async snapshot() {
       const times = [...customers.keys()];

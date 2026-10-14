@@ -1,11 +1,11 @@
 import { createBillingEntitlementReader } from "./entitlement";
-import type { ReconcileReport } from "./types";
 import {
   LAGO_PROVIDER_ID,
   type LagoClient,
   type LagoSubscriptionBody,
 } from "./lago";
 import { readBodyCapped } from "./raw-body";
+import type { ReconcileReport } from "./types";
 import {
   type BillingEntitlementEntry,
   type BillingEntitlementSubscriptionContext,
@@ -275,7 +275,8 @@ export function createBillingService(deps: {
       // buys nothing — the exact failure a live sandbox re-purchase exposed.
       const live = existing.filter(
         (subscription) =>
-          subscription.status === "active" || subscription.status === "incomplete",
+          subscription.status === "active" ||
+          subscription.status === "incomplete",
       );
       const onThisPlan = live.find(
         (subscription) => subscription.planCode === input.planCode,
@@ -372,8 +373,20 @@ export function createBillingService(deps: {
             uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
             webhookType: delivery.webhookType,
             ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
+            bodyHash: delivery.bodyHash,
           },
         });
+        // Best-effort replay evidence (audit A7): the count runs after the inbox insert, so it
+        // includes this delivery, and a failed count is swallowed — evidence must never fail a
+        // delivery the projection already accepted.
+        const priorDeliveries = await store
+          .countDeliveriesOfBody(delivery.bodyHash)
+          .catch(() => 1);
+        if (priorDeliveries > 1) {
+          (deps.log ?? console.warn)(
+            `billing: webhook_body_replay event=${delivery.eventId} deliveries=${priorDeliveries}`,
+          );
+        }
         return json(200, { status });
       } catch (error) {
         if (error instanceof BillingPersistenceError) {
@@ -578,9 +591,13 @@ export function createBillingService(deps: {
           if (!body) break;
           for (const event of body.events) {
             const date = dayKey(new Date(event.timestamp));
-            const bucket =
-              buckets.get(date) ??
-              { date, tokens: 0, inputTokens: 0, outputTokens: 0, calls: 0 };
+            const bucket = buckets.get(date) ?? {
+              date,
+              tokens: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              calls: 0,
+            };
             bucket.tokens += numberOf(event.properties, "tokens") ?? 0;
             bucket.inputTokens +=
               numberOf(event.properties, "input_tokens") ?? 0;

@@ -6,18 +6,22 @@ import {
   expect,
   test,
 } from "bun:test";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createReconciler } from "../src/billing/reconcile";
 import { createUsageOutbox } from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
-import { billingCustomers, billingSubscriptions } from "../src/db/schema/billing";
-import { creditGrants, creditLedger } from "../src/db/schema/credits";
+import {
+  billingCustomers,
+  billingSubscriptions,
+  billingWebhookEvents,
+} from "../src/db/schema/billing";
 import {
   creditReservationAllocations,
   creditReservations,
 } from "../src/db/schema/credit-reservations";
+import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -372,9 +376,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
       subject: reservationId,
     });
     expect(finding?.detail).toContain("state=reserved");
-    expect(finding?.detail).toContain(
-      "remediation=operator_recovery_required",
-    );
+    expect(finding?.detail).toContain("remediation=operator_recovery_required");
 
     const after = await reservationSnapshot(reservationId);
     expect(after).toEqual(before);
@@ -431,9 +433,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(finding?.detail).toContain(`idempotency_key=usage:${eventId}`);
     expect(finding?.detail).toContain(`usage_event_id=${eventId}`);
     expect(finding?.detail).toMatch(/expired_age_ms=\d+/);
-    expect(finding?.detail).toContain(
-      "remediation=operator_recovery_required",
-    );
+    expect(finding?.detail).toContain("remediation=operator_recovery_required");
     // It must not claim knowledge of usage that was never durably recorded.
     expect(finding?.detail).not.toContain("input_tokens");
     expect(finding?.detail).not.toContain("output_tokens");
@@ -442,7 +442,8 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(after).toEqual(before);
   });
 
-  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {    const customer = `${prefix}-stuck-boundary`;
+  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {
+    const customer = `${prefix}-stuck-boundary`;
     await creditWriter.grantCredits({
       externalCustomerId: customer,
       source: "promo",
@@ -523,9 +524,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(finding?.detail).toContain("maximum=550");
     expect(finding?.detail).toContain("allocated=500");
     expect(finding?.detail).toContain("delta=-50");
-    expect(finding?.detail).toContain(
-      "remediation=operator_recovery_required",
-    );
+    expect(finding?.detail).toContain("remediation=operator_recovery_required");
 
     const after = await reservationSnapshot(reservationId);
     expect(after).toEqual(before);
@@ -628,11 +627,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
     const event = usageEvent(`${prefix}-usage-blocked`);
     await outbox.record(event);
     await outbox.markLagoDelivered(event.eventId);
-    await outbox.blockDelivery(
-      event.eventId,
-      "credits",
-      "missing_reservation",
-    );
+    await outbox.blockDelivery(event.eventId, "credits", "missing_reservation");
     await database.execute(
       sql`UPDATE usage_outbox SET updated_at = now() - interval '2 hours' WHERE event_id = ${event.eventId}`,
     );
@@ -667,7 +662,8 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(
       report.findings.some(
         (item) =>
-          item.subject === event.eventId && item.code === "usage_target_pending",
+          item.subject === event.eventId &&
+          item.code === "usage_target_pending",
       ),
     ).toBe(false);
 
@@ -763,6 +759,62 @@ describe("reconcile (the skeleton, over real tables)", () => {
     ).toBe(false);
     expect(usageFindings.at(-1)?.detail).toContain("omitted=2");
   });
+
+  test("two inbox rows with the same body hash are webhook_body_replay; one row is silence (audit A7)", async () => {
+    // Rows written directly (the pass audits the table, not the writer): two distinct event ids
+    // carrying one body hash are the replay shape, one id alone is a normal delivery. The
+    // finding's subject is the hash itself, so the assertions match on hashes this test owns.
+    const replayedHash = createHash("sha256")
+      .update(`${prefix}-replayed-body`)
+      .digest("hex");
+    const singleHash = createHash("sha256")
+      .update(`${prefix}-single-body`)
+      .digest("hex");
+    await database.insert(billingWebhookEvents).values([
+      {
+        provider: "lago",
+        eventId: `${prefix}-replay-1`,
+        webhookType: "subscription.updated",
+        bodyHash: replayedHash,
+      },
+      {
+        provider: "lago",
+        eventId: `${prefix}-replay-2`,
+        webhookType: "subscription.updated",
+        bodyHash: replayedHash,
+      },
+      {
+        provider: "lago",
+        eventId: `${prefix}-replay-3`,
+        webhookType: "customer.updated",
+        bodyHash: singleHash,
+      },
+    ]);
+    try {
+      const report = await reconciler.reconcile();
+      const replayed = report.findings.find(
+        (finding) =>
+          finding.code === "webhook_body_replay" &&
+          finding.subject === replayedHash,
+      );
+      expect(replayed).toMatchObject({
+        category: "payment",
+        subject: replayedHash,
+      });
+      expect(replayed?.detail).toContain("deliveries=2");
+      expect(
+        report.findings.some(
+          (finding) =>
+            finding.code === "webhook_body_replay" &&
+            finding.subject === singleHash,
+        ),
+      ).toBe(false);
+    } finally {
+      await database
+        .delete(billingWebhookEvents)
+        .where(like(billingWebhookEvents.eventId, `${prefix}-replay-%`));
+    }
+  });
 });
 
 /*
@@ -807,57 +859,65 @@ describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () =
     `);
   }, SLOW);
 
-  test("a one-unit split at 2^53 magnitude fires the finding with exact decimal strings", async () => {
-    // Grants sum to exactly 2^53 = 9007199254740992; the ledger's make-up row carries one more
-    // unit, so its sum is 9007199254740993 — beyond MAX_SAFE_INTEGER by exactly the split.
-    await database.insert(creditGrants).values({
-      id: `${huge}-g-makeup`,
-      externalCustomerId: huge,
-      source: "promo",
-      reason: "precision-audit",
-      total: MAKE_UP,
-      used: MAKE_UP,
-      expiresAt: new Date(Date.now() + 24 * 3600_000),
-      status: "active",
-      idempotencyKey: `${huge}-gk-makeup`,
-    });
-    await database.insert(creditLedger).values({
-      id: `${huge}-l-makeup`,
-      externalCustomerId: huge,
-      title: "precision-audit",
-      requestId: null,
-      idempotencyKey: `${huge}-lk-makeup`,
-      credits: MAKE_UP + 1,
-      applied: MAKE_UP + 1,
-    });
+  test(
+    "a one-unit split at 2^53 magnitude fires the finding with exact decimal strings",
+    async () => {
+      // Grants sum to exactly 2^53 = 9007199254740992; the ledger's make-up row carries one more
+      // unit, so its sum is 9007199254740993 — beyond MAX_SAFE_INTEGER by exactly the split.
+      await database.insert(creditGrants).values({
+        id: `${huge}-g-makeup`,
+        externalCustomerId: huge,
+        source: "promo",
+        reason: "precision-audit",
+        total: MAKE_UP,
+        used: MAKE_UP,
+        expiresAt: new Date(Date.now() + 24 * 3600_000),
+        status: "active",
+        idempotencyKey: `${huge}-gk-makeup`,
+      });
+      await database.insert(creditLedger).values({
+        id: `${huge}-l-makeup`,
+        externalCustomerId: huge,
+        title: "precision-audit",
+        requestId: null,
+        idempotencyKey: `${huge}-lk-makeup`,
+        credits: MAKE_UP + 1,
+        applied: MAKE_UP + 1,
+      });
 
-    const report = await reconciler.reconcile();
-    const finding = report.findings.find(
-      (item) =>
-        item.code === "grants_ledger_divergence" && item.subject === huge,
-    );
-    expect(finding).toBeDefined();
-    // The exact decimal strings, not a float's idea of them (9007199254740992 loses the split).
-    expect(finding?.detail).toContain("9007199254740992");
-    expect(finding?.detail).toContain("9007199254740993");
-    expect(finding?.detail).toContain("off by 1");
-  }, SLOW);
-
-  test("the identity agrees at 2^53 magnitude and stays silent", async () => {
-    // The make-up ledger row loses the one extra unit: both sums are exactly 2^53.
-    await database
-      .update(creditLedger)
-      .set({ applied: MAKE_UP, credits: MAKE_UP })
-      .where(eq(creditLedger.id, `${huge}-l-makeup`));
-
-    const report = await reconciler.reconcile();
-    expect(
-      report.findings.find(
+      const report = await reconciler.reconcile();
+      const finding = report.findings.find(
         (item) =>
           item.code === "grants_ledger_divergence" && item.subject === huge,
-      ),
-    ).toBeUndefined();
-  }, SLOW);
+      );
+      expect(finding).toBeDefined();
+      // The exact decimal strings, not a float's idea of them (9007199254740992 loses the split).
+      expect(finding?.detail).toContain("9007199254740992");
+      expect(finding?.detail).toContain("9007199254740993");
+      expect(finding?.detail).toContain("off by 1");
+    },
+    SLOW,
+  );
+
+  test(
+    "the identity agrees at 2^53 magnitude and stays silent",
+    async () => {
+      // The make-up ledger row loses the one extra unit: both sums are exactly 2^53.
+      await database
+        .update(creditLedger)
+        .set({ applied: MAKE_UP, credits: MAKE_UP })
+        .where(eq(creditLedger.id, `${huge}-l-makeup`));
+
+      const report = await reconciler.reconcile();
+      expect(
+        report.findings.find(
+          (item) =>
+            item.code === "grants_ledger_divergence" && item.subject === huge,
+        ),
+      ).toBeUndefined();
+    },
+    SLOW,
+  );
 
   test("usage delivery target counts report exact values (F2)", async () => {
     // The counts are whole-table (an estimate is not an audit), so the assertion is on the
@@ -880,18 +940,14 @@ describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () =
     const report = await reconciler.reconcile();
     const beforeTargets = before.checked.usageDeliveryTargets;
     const afterTargets = report.checked.usageDeliveryTargets;
-    expect(
-      afterTargets.pending.credits - beforeTargets.pending.credits,
-    ).toBe(2);
-    expect(
-      afterTargets.blocked.lago - beforeTargets.blocked.lago,
-    ).toBe(1);
-    expect(
-      afterTargets.pending.lago - beforeTargets.pending.lago,
-    ).toBe(0);
-    expect(
-      afterTargets.blocked.credits - beforeTargets.blocked.credits,
-    ).toBe(0);
+    expect(afterTargets.pending.credits - beforeTargets.pending.credits).toBe(
+      2,
+    );
+    expect(afterTargets.blocked.lago - beforeTargets.blocked.lago).toBe(1);
+    expect(afterTargets.pending.lago - beforeTargets.pending.lago).toBe(0);
+    expect(afterTargets.blocked.credits - beforeTargets.blocked.credits).toBe(
+      0,
+    );
   });
 });
 
@@ -956,7 +1012,11 @@ describe("plan payout and payment evidence reconciliation", () => {
 
   test("a paid order whose plan allowance never landed is plan_grant_missing, named by order and the plan:<orderId> key", async () => {
     const orderId = await seedPaidOrder(`${prefix}-grant-missing`);
-    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+    const catalogReconciler = createReconciler(
+      database,
+      prefix,
+      planCreditsFor,
+    );
 
     const report = await catalogReconciler.reconcile();
     const finding = report.findings.find(
@@ -984,7 +1044,11 @@ describe("plan payout and payment evidence reconciliation", () => {
       status: "active",
       idempotencyKey: `plan:${orderId}`,
     });
-    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+    const catalogReconciler = createReconciler(
+      database,
+      prefix,
+      planCreditsFor,
+    );
 
     const report = await catalogReconciler.reconcile();
     const finding = report.findings.find(
@@ -1016,7 +1080,11 @@ describe("plan payout and payment evidence reconciliation", () => {
     });
     // "basic" is not in the test catalog: it grants nothing, so there is nothing to reconcile.
     await seedPaidOrder(`${prefix}-grant-none`, { planCode: "basic" });
-    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+    const catalogReconciler = createReconciler(
+      database,
+      prefix,
+      planCreditsFor,
+    );
 
     const report = await catalogReconciler.reconcile();
     expect(
@@ -1064,8 +1132,7 @@ describe("plan payout and payment evidence reconciliation", () => {
     expect(
       patientReport.findings.some(
         (item) =>
-          item.code === "activation_backlog" &&
-          item.subject.startsWith(prefix),
+          item.code === "activation_backlog" && item.subject.startsWith(prefix),
       ),
     ).toBe(false);
   });

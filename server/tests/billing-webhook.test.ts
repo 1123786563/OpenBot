@@ -805,4 +805,37 @@ describe("createBillingService.handleWebhook", () => {
     expect(body).not.toContain("webhook_apply");
     expect(body).not.toContain("BillingPersistenceError");
   });
+
+  test("a second delivery of the same body under a fresh unique key logs webhook_body_replay (audit A7)", async () => {
+    const logged: string[] = [];
+    const { store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => {
+        logged.push(message);
+      },
+    );
+    // The event id rides in the header, so the same (webhookType, object) pair is a
+    // byte-identical body under a second identity — the replay shape the audit proved.
+    const object = {
+      external_customer_id: "deployment-1",
+      external_id: "deployment-1-sub",
+      plan_code: "pro",
+      status: "active",
+    };
+    const first = await service.handleWebhook(
+      signedDelivery("evt-replay-1", "subscription.updated", object),
+    );
+    expect(first.status).toBe(200);
+    expect(store.inbox.size).toBe(1);
+    expect(logged).toEqual([]); // one delivery of a body is not evidence
+
+    const second = await service.handleWebhook(
+      signedDelivery("evt-replay-2", "subscription.updated", object),
+    );
+    expect(second.status).toBe(200);
+    expect(store.inbox.size).toBe(2); // the inbox grew: a fresh identity is fresh work
+    expect(logged).toContain(
+      "billing: webhook_body_replay event=evt-replay-2 deliveries=2",
+    );
+  });
 });
