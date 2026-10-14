@@ -52,7 +52,7 @@ def main():
     rows = []
     for tid, d in led["dispatches"].items():
         did = d["dispatch_id"]
-        rd = orca(["orchestration", "worker-read", "--dispatch", did, "--source", "auto", "--limit", "12"])
+        rd = orca(["orchestration", "worker-read", "--dispatch", did, "--source", "auto", "--limit", "400"])
         if "_error" in rd:
             print(f"!! {tid} worker-read error: {rd['_error']}", file=sys.stderr)
         res = rd.get("result", {})
@@ -68,6 +68,7 @@ def main():
             "liveness": status.get("liveness"),
             "provider": res.get("provider"),
             "messages_read": len(msgs),
+            "messages_returned": (res.get("transcript") or {}).get("returnedMessageCount"),
             "last_activity": (last_assistant or {}).get("timestamp"),
             "tail": tail_text((last_assistant or {}).get("blocks")) if last_assistant else "(no assistant turn yet)",
             "worktree": (d.get("worktree_path") or "").split("/")[-1],

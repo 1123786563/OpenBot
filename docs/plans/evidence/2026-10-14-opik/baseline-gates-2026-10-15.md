@@ -16,13 +16,52 @@ main as of `33df594a` (verified with `git merge-base --is-ancestor main HEAD`).
 
 ## GREEN gates — these must stay green
 
+Measured **on this branch** after merging main and running `bun install` (see the correction below):
+
 | Command | Result |
 | --- | --- |
 | `cd server && bun run typecheck` | exit 0, no diagnostics |
 | `cd app && bun run typecheck` | exit 0, no diagnostics |
 | `cd app && bun run build` | `✓ built in 17.05s`, exit 0 (chunk-size warning is pre-existing and not an error) |
-| `bunx biome lint --error-on-warnings server/src/agents server/src/auth shared app/src/lib/i18n` | `Checked 81 files in 45ms. No fixes applied.` |
+| `bunx biome lint --error-on-warnings <your own changed files>` | clean |
+| `bunx biome format <your own changed files>` | clean |
 | `bun test app/src/components/settings/linked-accounts.test.tsx` | 31 pass, 0 fail |
+
+### Correction: two gates I originally recorded wrong
+
+The first version of this file claimed `cd server && bun run typecheck` was green and implied a
+repo-wide biome run was a usable gate. **Both claims were wrong**, and three frontier workers
+(T01, T05, T06) independently caught it, proved it was pre-existing rather than their own
+regression, and refused to "fix" it. What I actually measured was `main`, not this branch.
+
+1. **`cd server && bun run typecheck` was RED at this branch's base.** Measured on the opik
+   worktree before merging main:
+   ```
+   src/craft/webapp-proxy.ts(417,7): error TS2322: Type 'Uint8Array<ArrayBufferLike> | undefined'
+     is not assignable to type 'BodyInit | null | undefined'.
+   src/openmuse-documents/fill.ts(1,34): error TS2307: Cannot find module 'pdf-lib' ...
+   src/openmuse-documents/inspect.ts(11,8): error TS2307: Cannot find module 'pdf-lib' ...
+   src/openmuse-documents/routes.ts(1,34): error TS2307: Cannot find module 'pdf-lib' ...
+   src/openmuse-tasks/runner.ts(87,34): error TS2307: Cannot find module 'pdf-lib' ...
+   ```
+   Two distinct causes: `webapp-proxy.ts` was genuinely broken at the branch base and had since
+   been fixed on `main`; the `pdf-lib` errors were a **stale `node_modules`** — the dependency is
+   in `server/package.json` but was not installed in this worktree. Fixed by merging `main` and
+   then running `bun install` (40 packages). Both gates are now genuinely green, re-measured.
+
+2. **Repo-wide biome is RED at baseline and is not a usable gate.** Measured on the untouched
+   base worktree and independently reproduced by T02 and T06 to the digit:
+   ```
+   bunx biome lint .    -> Checked 2243 files. Found 74 errors. Found 132 warnings. Found 29 infos.
+   bunx biome format .  -> Checked 2222 files. Found 377 errors.
+   bunx biome lint --error-on-warnings .  -> non-zero exit ("Some warnings were emitted")
+   ```
+   **Scope biome to your own changed files.** Never chase repo-wide lint/format noise: it is
+   outside every ticket's owned_scope. `docs/tickets/opik-4/manifest.json` has been regenerated
+   so all 37 tickets carry scoped biome commands instead of the repo-wide one I first derived.
+   T06 also notes the methodological point that `node_modules/.bin/biome` (the locked version)
+   and `bunx biome` (which may fetch a different one) can disagree — prefer the locked binary
+   when reproducing a baseline number.
 
 ## KNOWN RED — pre-existing, do NOT fix, do NOT count as yours
 
@@ -48,14 +87,15 @@ the same way, record it as pre-existing and move on.
   `bun run build` both pass with no `.env` present.
 - **Do not copy `.env` into a child worktree.** It holds real credentials and the gates do
   not need it. If a test genuinely requires it, record the blocker instead of copying secrets.
-- **`node_modules` IS installed by Orca setup — measured, not assumed.** `repo show` reports
-  `hookSettings: null`, which is misleading: the `worker-start` receipt for the first child
-  worktree shows `setup.hookFound: true`, `startupPolicy: wait-for-setup`,
-  `setup.state: succeeded`, and the child at
-  `/Users/wuyongjun/orca/workspaces/OpenBot/opik-t01-module-seam` has both `node_modules/` and
-  `server/node_modules/` present. So dependencies are ready on arrival; you should not need
-  `bun install`. If module resolution nonetheless fails, run `bun install` at the worktree root
-  and record that you did — but treat it as an anomaly worth reporting, not as routine.
+- **`node_modules` IS installed by Orca setup — but a merge that adds dependencies needs a
+  re-install.** `repo show` reports `hookSettings: null`, which is misleading: the
+  `worker-start` receipt for the first child worktree shows `setup.hookFound: true`,
+  `startupPolicy: wait-for-setup`, `setup.state: succeeded`, and children arrive with
+  `node_modules/` and `server/node_modules/` present. However, after this branch merged `main`
+  the `pdf-lib` dependency in `server/package.json` was **not** present in `node_modules`, and
+  `bun install` (40 packages) was required to make typecheck green. So: dependencies are ready
+  on arrival for the base you were given; if you merge or your base gains a dependency, run
+  `bun install` and record it.
 - **`TEST_DATABASE_URL` gates the real-PostgreSQL integration tests.** Without it they
   `describe.skipIf(...)` and report as skipped. Per the parent Spec and `failure_policy`,
   **skipped is not passed** — record it as unverified, never as green.

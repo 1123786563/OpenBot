@@ -106,7 +106,12 @@
    "setup_state": "succeeded",
    "setup_hook_found": true,
    "setup_startup_policy": "wait-for-setup",
-   "note": "backfilled from worker-show; the first launch used a receipt parser whose field guesses were wrong"
+   "note": "backfilled from worker-show; the first launch used a receipt parser whose field guesses were wrong",
+   "terminal_state": "retained",
+   "worker_done": {
+    "outcome": "succeeded",
+    "subject_seen": true
+   }
   },
   "T02": {
    "dispatch_id": "ctx_9f7a06774b6b",
@@ -129,6 +134,11 @@
     "agent": "claude",
     "model": null,
     "effort": null
+   },
+   "terminal_state": "retained",
+   "worker_done": {
+    "outcome": "succeeded",
+    "coordinator_verification": "independently re-ran parity test (6 pass), app typecheck (exit 0), 8-state/en-zh parity on all four namespaces, changed files == owned_scope (11, zero out-of-scope)"
    }
   },
   "T03": {
@@ -175,6 +185,10 @@
     "agent": "claude",
     "model": null,
     "effort": null
+   },
+   "terminal_state": "retained",
+   "worker_done": {
+    "outcome": "succeeded"
    }
   },
   "T06": {
@@ -198,6 +212,11 @@
     "agent": "claude",
     "model": null,
     "effort": null
+   },
+   "terminal_state": "retained",
+   "worker_done": {
+    "outcome": "succeeded",
+    "subject_seen": true
    }
   }
  },

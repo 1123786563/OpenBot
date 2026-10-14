@@ -257,7 +257,10 @@ function actorVariables(actor: AuthenticatedActor): MiddlewareHandler<{ Variable
 }
 
 const rejectingUser: MiddlewareHandler<{ Variables: AppVariables }> = async (context) => {
-  await context.json({ error: "Authentication required." }, 401);
+  // `return` is load-bearing: without it the middleware does not short-circuit, Hono reports
+  // "Context is not finalized" and a correct implementation answers 500 instead of 401.
+  // The real guard (auth/guards.ts createRequireUser) returns too.
+  return await context.json({ error: "Authentication required." }, 401);
 };
 
 function appFor(
@@ -512,7 +515,11 @@ import { canManageAgent } from "./agents/profile-policy";
   aiObservability,
 ```
 
-> 若 `agentStore.get(actor, botId)` 的实际签名不同（例如需要先 `getWithin`），以仓库当前实现为准调整这一行；语义不变：读到 profile 后用 `canManageAgent` 判定，读不到返回 `null`。**不要**改成 `canAccessAgent`。
+> 组装说明：`requireUser` 在 `index.ts` 里**并不存在**这个名字的变量。仓库的约定是
+> `createDeploymentRequireUser(config, auth, roleRepository)`（由 `app.ts` 导出，其 docblock 写明
+> 它是 “the one construction both createApp and index.ts's seams mount”）；store 的实际名字是
+> `agentProfileStore` 而不是 `agentStore`。以仓库当前实现为准，但语义不得变：
+> 读到 profile 后用 `canManageAgent` 判定，读不到返回 `null`，**绝不**得改成 `canAccessAgent`。
 
 - [ ] **Step 5: 运行测试与类型检查确认通过**
 

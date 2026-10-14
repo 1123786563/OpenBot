@@ -102,7 +102,9 @@
         "verification": [
           "bun test server/tests/opik-module-skeleton.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/routes/index.ts server/src/ai-observability/context.ts server/src/app.ts server/src/index.ts server/tests/opik-module-skeleton.test.ts",
+          "bunx biome format server/src/ai-observability/routes/index.ts server/src/ai-observability/context.ts server/src/app.ts server/src/index.ts server/tests/opik-module-skeleton.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -133,7 +135,9 @@
           "bun test app/src/lib/i18n/ai-observability.test.ts",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/locales/en/ai-observability-runs.json app/src/locales/en/ai-observability-datasets.json app/src/locales/en/ai-observability-evaluations.json app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-admin.json app/src/lib/i18n/index.ts app/src/lib/i18n/i18next.d.ts app/src/lib/i18n/ai-observability.test.ts",
+          "bunx biome format app/src/locales/en/ai-observability-runs.json app/src/locales/en/ai-observability-datasets.json app/src/locales/en/ai-observability-evaluations.json app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-admin.json app/src/lib/i18n/index.ts app/src/lib/i18n/i18next.d.ts app/src/lib/i18n/ai-observability.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -164,7 +168,9 @@
           "bun test server/tests/opik-deployment.test.ts",
           "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings docker/opik/versions.json server/tests/opik-deployment.test.ts",
+          "bunx biome format docker/opik/versions.json server/tests/opik-deployment.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -201,7 +207,9 @@
           "bun test server/tests/opik-contract.test.ts",
           "bun server/scripts/opik-contract.ts --target <opik-api> --evidence docs/plans/evidence/2026-10-14-opik/t04",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/scripts/opik-contract.ts server/tests/opik-contract.test.ts server/package.json",
+          "bunx biome format server/scripts/opik-contract.ts server/tests/opik-contract.test.ts server/package.json",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A11, A13；前置 #9 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -231,7 +239,9 @@
         "verification": [
           "bun test server/tests/opik-redaction.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/redaction.ts shared/ai-observability.ts server/tests/opik-redaction.test.ts",
+          "bunx biome format server/src/ai-observability/redaction.ts shared/ai-observability.ts server/tests/opik-redaction.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -262,7 +272,9 @@
         "verification": [
           "bun test server/tests/opik-scope.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/scope.ts server/src/ai-observability/contracts.ts server/tests/opik-scope.test.ts",
+          "bunx biome format server/src/ai-observability/scope.ts server/src/ai-observability/contracts.ts server/tests/opik-scope.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A12, A5；无前置；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -300,7 +312,9 @@
           "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-bindings.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/db/schema/ai-observability.ts server/src/ai-observability/bindings.ts server/tests/opik-bindings.integration.test.ts server/scripts/opik-test-env.ts",
+          "bunx biome format server/src/db/schema/ai-observability.ts server/src/ai-observability/bindings.ts server/tests/opik-bindings.integration.test.ts server/scripts/opik-test-env.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A5, A11, A12；前置 #12 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -341,7 +355,9 @@
         "verification": [
           "bun test server/tests/opik-http.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/opik-port.ts server/src/ai-observability/opik-http.ts server/tests/support/opik-fixtures.ts server/tests/opik-http.test.ts",
+          "bunx biome format server/src/ai-observability/opik-port.ts server/src/ai-observability/opik-http.ts server/tests/support/opik-fixtures.ts server/tests/opik-http.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A4, A10, A13；前置 #10, #11, #13 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -376,7 +392,9 @@
         "verification": [
           "bun test server/tests/opik-health.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/config.ts server/src/ai-observability/health.ts server/src/config.ts shared/ai-trace.ts server/tests/opik-health.test.ts",
+          "bunx biome format server/src/ai-observability/config.ts server/src/ai-observability/health.ts server/src/config.ts shared/ai-trace.ts server/tests/opik-health.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A10；前置 #14 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -413,7 +431,9 @@
         "verification": [
           "bun test server/tests/opik-run-agent.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/run-agent.ts server/src/agents/endpoint.ts server/src/agents/agent-resolver.ts server/src/agents/runtime-agents.ts server/src/copilot.ts server/tests/opik-run-agent.test.ts",
+          "bunx biome format server/src/ai-observability/run-agent.ts server/src/agents/endpoint.ts server/src/agents/agent-resolver.ts server/src/agents/runtime-agents.ts server/src/copilot.ts server/tests/opik-run-agent.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A5, A10；前置 #15 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -455,7 +475,9 @@
         "verification": [
           "bun test server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/reader.ts server/src/ai-observability/routes/reader-routes.ts server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
+          "bunx biome format server/src/ai-observability/reader.ts server/src/ai-observability/routes/reader-routes.ts server/tests/opik-reader.test.ts server/tests/opik-routes.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A5, A6, A10, A12；前置 #7, #13, #16 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -495,7 +517,9 @@
           "bun test app/src/components/ai-observability/run-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/routes/_authed/_app/bots.$agentId.runs.tsx app/src/components/ai-observability/run-list.tsx app/src/components/ai-observability/availability.tsx app/src/lib/ai-observability/types.ts app/src/lib/ai-observability/queries.ts app/src/components/ai-observability/run-views.test.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json",
+          "bunx biome format app/src/routes/_authed/_app/bots.$agentId.runs.tsx app/src/components/ai-observability/run-list.tsx app/src/components/ai-observability/availability.tsx app/src/lib/ai-observability/types.ts app/src/lib/ai-observability/queries.ts app/src/components/ai-observability/run-views.test.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A5, A6, A10；前置 #8, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -534,7 +558,9 @@
           "bun test app/src/components/ai-observability/run-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx app/src/components/ai-observability/run-detail.tsx app/src/components/bot-profile/manage.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
+          "bunx biome format app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx app/src/components/ai-observability/run-detail.tsx app/src/components/bot-profile/manage.tsx app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4, A5, A6；前置 #18 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -573,7 +599,9 @@
         "verification": [
           "bun test server/tests/opik-model.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/model.ts server/src/copilot.ts server/tests/opik-model.test.ts",
+          "bunx biome format server/src/ai-observability/model.ts server/src/copilot.ts server/tests/opik-model.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4, A8；前置 #11, #16 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -609,7 +637,9 @@
         "verification": [
           "bun test server/tests/opik-step.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/retrieval.ts server/src/ai-observability/steps.ts server/src/knowledge/middleware.ts server/tests/opik-step.test.ts",
+          "bunx biome format server/src/ai-observability/retrieval.ts server/src/ai-observability/steps.ts server/src/knowledge/middleware.ts server/tests/opik-step.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A4；前置 #20 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -645,7 +675,9 @@
         "verification": [
           "bun test agent-langgraph/tests/opik-tracing.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings agent-langgraph/src/index.ts agent-langgraph/package.json agent-langgraph/tests/opik-tracing.test.ts server/src/ai-observability/langgraph.ts",
+          "bunx biome format agent-langgraph/src/index.ts agent-langgraph/package.json agent-langgraph/tests/opik-tracing.test.ts server/src/ai-observability/langgraph.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A4, A13；前置 #20 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -681,7 +713,9 @@
           "bun test supervisor/tests/environment.test.ts server/tests/opik-propagation.test.ts",
           "cd server && bun run typecheck",
           "cd supervisor && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings supervisor/src/environment.ts supervisor/tests/environment.test.ts shared/ai-trace.ts server/tests/opik-propagation.test.ts",
+          "bunx biome format supervisor/src/environment.ts supervisor/tests/environment.test.ts shared/ai-trace.ts server/tests/opik-propagation.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A13；前置 #22 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -722,7 +756,9 @@
           "bun test app/src/components/ai-observability/run-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/components/ai-observability/step-tree.tsx app/src/components/ai-observability/run-detail.tsx app/src/lib/ai-observability/steps.ts app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
+          "bunx biome format app/src/components/ai-observability/step-tree.tsx app/src/components/ai-observability/run-detail.tsx app/src/lib/ai-observability/steps.ts app/src/locales/en/ai-observability-runs.json app/src/locales/zh-CN/ai-observability-runs.json app/src/components/ai-observability/run-views.test.tsx",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A2, A3, A5；前置 #19, #21, #23 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -763,7 +799,9 @@
           "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-datasets.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/db/schema/ai-observability.ts server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/datasets.ts server/tests/opik-datasets.test.ts server/tests/opik-datasets.integration.test.ts",
+          "bunx biome format server/src/db/schema/ai-observability.ts server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/datasets.ts server/tests/opik-datasets.test.ts server/tests/opik-datasets.integration.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A7, A11, A12；前置 #13, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -801,7 +839,9 @@
         "verification": [
           "bun test server/tests/opik-dataset-cases.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/cases.ts server/src/ai-observability/routes/dataset-routes.ts server/tests/opik-dataset-cases.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/cases.ts server/src/ai-observability/routes/dataset-routes.ts server/tests/opik-dataset-cases.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A6；前置 #11, #25 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -840,7 +880,9 @@
           "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/components/ai-observability/dataset-editor.tsx app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/components/ai-observability/evaluation-views.test.tsx",
+          "bunx biome format app/src/components/ai-observability/dataset-editor.tsx app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-datasets.json app/src/locales/zh-CN/ai-observability-datasets.json app/src/components/ai-observability/evaluation-views.test.tsx",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A7；前置 #8, #26 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -876,7 +918,9 @@
           "bun test server/tests/opik-experiments.test.ts",
           "cd server && bun run db:generate   # 生成迁移后人工核对 SQL 与 snapshot",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/experiments.ts server/tests/opik-experiments.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/contracts.ts server/src/ai-observability/evaluation/experiments.ts server/tests/opik-experiments.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A7, A9；前置 #25 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -915,7 +959,9 @@
         "verification": [
           "bun test server/tests/opik-evaluation-execution.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/execution.ts server/src/copilot.ts server/tests/opik-evaluation-execution.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/execution.ts server/src/copilot.ts server/tests/opik-evaluation-execution.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A8, A10；前置 #16, #20, #28 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -951,7 +997,9 @@
         "verification": [
           "bun test server/tests/opik-evaluation-jobs.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/jobs.ts server/src/ai-observability/evaluation/worker.ts server/src/index.ts server/tests/opik-evaluation-jobs.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/jobs.ts server/src/ai-observability/evaluation/worker.ts server/src/index.ts server/tests/opik-evaluation-jobs.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A6, A10, A12；前置 #29 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -985,7 +1033,9 @@
         "verification": [
           "bun test server/tests/opik-evaluation-billing.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/billing.ts server/tests/opik-evaluation-billing.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/billing.ts server/tests/opik-evaluation-billing.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A8；前置 #30 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1020,7 +1070,9 @@
         "verification": [
           "bun test server/tests/opik-scorers-rules.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/scorers.ts server/tests/opik-scorers-rules.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/scorers.ts server/tests/opik-scorers-rules.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A7, A9；前置 #28 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1058,7 +1110,9 @@
         "verification": [
           "bun test server/tests/opik-scorers-judge.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/judge.ts server/tests/opik-scorers-judge.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/judge.ts server/tests/opik-scorers-judge.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A7, A8；前置 #31, #32 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1094,7 +1148,9 @@
         "verification": [
           "bun test server/tests/opik-evaluation-results.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/results.ts server/src/ai-observability/routes/evaluation-routes.ts server/tests/opik-evaluation-results.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/results.ts server/src/ai-observability/routes/evaluation-routes.ts server/tests/opik-evaluation-results.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A7, A9；前置 #32 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1128,7 +1184,9 @@
         "verification": [
           "bun test server/tests/opik-comparison.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/evaluation/comparison.ts server/tests/opik-comparison.test.ts",
+          "bunx biome format server/src/ai-observability/evaluation/comparison.ts server/tests/opik-comparison.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A9；前置 #34 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1167,7 +1225,9 @@
           "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/components/ai-observability/experiment-list.tsx app/src/components/ai-observability/experiment-detail.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
+          "bunx biome format app/src/components/ai-observability/experiment-list.tsx app/src/components/ai-observability/experiment-detail.tsx app/src/lib/ai-observability/evaluations.ts app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A7, A8；前置 #27, #34 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1204,7 +1264,9 @@
           "bun test app/src/components/ai-observability/evaluation-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/components/ai-observability/experiment-comparison.tsx app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
+          "bunx biome format app/src/components/ai-observability/experiment-comparison.tsx app/src/locales/en/ai-observability-evaluations.json app/src/locales/zh-CN/ai-observability-evaluations.json app/src/components/ai-observability/evaluation-views.test.tsx",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A9；前置 #35, #36 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1241,7 +1303,9 @@
           "bun test server/tests/opik-console-auth.test.ts",
           "docker compose --project-directory . -f docker/compose/opik.yml config --quiet",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/console-auth.ts server/tests/opik-console-auth.test.ts",
+          "bunx biome format server/src/ai-observability/console-auth.ts server/tests/opik-console-auth.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A5, A13；前置 #15 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1280,7 +1344,9 @@
         "verification": [
           "bun test server/tests/opik-admin-routes.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/admin-routes.ts server/src/ai-observability/admin-summary.ts server/tests/opik-admin-routes.test.ts",
+          "bunx biome format server/src/ai-observability/admin-routes.ts server/src/ai-observability/admin-summary.ts server/tests/opik-admin-routes.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A6, A10, A12；前置 #17, #38 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1319,7 +1385,9 @@
         "verification": [
           "bun test server/tests/opik-exports.test.ts",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/exports.ts server/src/ai-observability/routes/export-routes.ts server/tests/opik-exports.test.ts",
+          "bunx biome format server/src/ai-observability/exports.ts server/src/ai-observability/routes/export-routes.ts server/tests/opik-exports.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A4, A6, A10, A11；前置 #11, #17 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1360,7 +1428,9 @@
           "bun test server/tests/opik-lifecycle.test.ts",
           "TEST_DATABASE_URL=<isolated-pg> bun test server/tests/opik-lifecycle.integration.test.ts   # 缺 TEST_DATABASE_URL 会 skip，不得记为通过",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/src/ai-observability/lifecycle.ts server/tests/opik-lifecycle.test.ts server/tests/opik-lifecycle.integration.test.ts",
+          "bunx biome format server/src/ai-observability/lifecycle.ts server/tests/opik-lifecycle.test.ts server/tests/opik-lifecycle.integration.test.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A6, A11, A12；前置 #25, #28, #40 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1402,7 +1472,9 @@
           "bun test app/src/components/ai-observability/admin-views.test.tsx",
           "cd app && bun run typecheck",
           "cd app && bun run build",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings app/src/routes/_authed/admin/ai-observability.tsx app/src/components/ai-observability/admin-overview.tsx app/src/components/ai-observability/export-status.tsx app/src/lib/ai-observability/admin.ts app/src/components/admin/admin-sidebar.tsx app/src/components/ai-observability/admin-views.test.tsx app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-admin.json",
+          "bunx biome format app/src/routes/_authed/admin/ai-observability.tsx app/src/components/ai-observability/admin-overview.tsx app/src/components/ai-observability/export-status.tsx app/src/lib/ai-observability/admin.ts app/src/components/admin/admin-sidebar.tsx app/src/components/ai-observability/admin-views.test.tsx app/src/locales/en/ai-observability-admin.json app/src/locales/zh-CN/ai-observability-admin.json",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A5, A6, A10, A11；前置 #19, #39, #40 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""
@@ -1508,7 +1580,9 @@
           "bun server/scripts/opik-acceptance.ts --target <opik-api> --evidence docs/plans/evidence/2026-10-14-opik/final",
           "bun run test:ui",
           "cd server && bun run typecheck",
-          "bunx biome lint --error-on-warnings . && bunx biome format ."
+          "bunx biome lint --error-on-warnings server/scripts/opik-acceptance.ts tests/e2e/opik-observability.e2e.ts",
+          "bunx biome format server/scripts/opik-acceptance.ts tests/e2e/opik-observability.e2e.ts",
+          "# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；不得为让它们变绿而改 owned_scope 之外的文件。见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md"
         ],
         "resume_hint": "只需读三样东西：父 Spec #4 的 A1, A13；前置 #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42 的 handoff.produces；本 Ticket 的 owned_scope 与验收标准。不要读父会话或 v1/v2 全量计划。中断后从 checkpoint 记录的最后一个 GREEN 命令继续；checkpoint 为空则从 RED 重新开始。owned_scope 之外的文件不要改；需要改就说明契约冲突并按 failure_policy 记录阻塞。",
         "checkpoint": ""

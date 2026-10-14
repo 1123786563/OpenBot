@@ -107,7 +107,17 @@ def verification(tid):
         cmds.append("cd server && bun run typecheck")
     if any(f.startswith("supervisor/") for f in files):
         cmds.append("cd supervisor && bun run typecheck")
-    cmds.append("bunx biome lint --error-on-warnings . && bunx biome format .")
+    # Scoped, NOT repo-wide: `biome lint --error-on-warnings .` is red at baseline on this
+    # branch (measured 74 errors / 132 warnings / 29 infos over 2243 files, and 377 format
+    # errors), so a repo-wide command can never pass and would make every worker either
+    # chase noise outside its owned_scope or falsely report failure.
+    src = [f for f in files if re.search(r"\.(tsx?|json)$", f)]
+    scope = " ".join(src) if src else "<changed files>"
+    cmds.append(f"bunx biome lint --error-on-warnings {scope}")
+    cmds.append(f"bunx biome format {scope}")
+    cmds.append("# 仓库级 biome 与 server/tests/ready.test.ts 在基线即红，不是你的回归；"
+                "不得为让它们变绿而改 owned_scope 之外的文件。"
+                "见 docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md")
 
     seen, out = set(), []
     for c in cmds:
