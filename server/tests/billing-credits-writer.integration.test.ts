@@ -120,6 +120,18 @@ test("a fractional or negative amount is refused before any insert", async () =>
   ).rejects.toThrow(TypeError);
 });
 
+test("grantCredits refuses an amount the 32-bit column cannot hold, before touching the database", async () => {
+  await expect(
+    writer.grantCredits({
+      externalCustomerId: `${prefix}-overflow`,
+      source: "promo",
+      totalCents: 2_147_483_648,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: `${prefix}-overflow-key`,
+    }),
+  ).rejects.toThrow(/32-bit/);
+});
+
 /*
  * The withdrawal half. The spec's four states, each pinned against real SQL: the split across
  * grants, the idempotent retry, the honest shortfall, and the concurrent draws. Grants are
