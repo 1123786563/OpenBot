@@ -1321,3 +1321,123 @@ describe("an unknown usage outcome keeps the hold (audit A2)", () => {
     }
   });
 });
+
+/*
+ * Audit A3: an over-bound finish is work the provider produced and this deployment refuses to
+ * charge. The tokens must not die with the stream error — they leave as durable evidence the
+ * gate can hand to the outbox, with the hold retained.
+ */
+describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
+  /** An upstream that emits exactly these parts, then closes. */
+  function streamOf(parts: Record<string, unknown>[]) {
+    return new ReadableStream<Record<string, unknown>>({
+      start(controller) {
+        for (const part of parts) controller.enqueue(part);
+        controller.close();
+      },
+    });
+  }
+
+  /** Drain a stream to its end (or its error). */
+  async function consume(stream: ReadableStream<Record<string, unknown>>) {
+    for await (const _part of stream) {
+    }
+  }
+
+  test("the settlement failure records the real usage before the stream errors", async () => {
+    const evidence: { inputTokens: number; outputTokens: number; reason: string }[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: {
+          input: {
+            enforced: "counted" as const,
+            maximumTokens: 100n,
+            countInputTokens: async () => 10,
+          },
+          output: { enforced: "provider_cap" as const, maximumTokens: 100n },
+        },
+        recordUnsettled: (input) => {
+          evidence.push({
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+            reason: input.reason,
+          });
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({
+          stream: streamOf([
+            { type: "finish", usage: { inputTokens: { total: 900 }, outputTokens: { total: 10 } } },
+          ]),
+        }),
+      });
+
+      const stream = (await model.doStream({} as never)).stream;
+      await expect(consume(stream)).rejects.toThrow(/usage_over_bound/);
+      expect(evidence).toEqual([
+        { inputTokens: 900, outputTokens: 10, reason: "usage_over_bound" },
+      ]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("malformed usage records what arrived and names the reason", async () => {
+    const evidence: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        // The brief's sketch omitted bounds; without them admission refuses
+        // model_bounds_missing before the provider is called and this finish is never reached.
+        bounds: admittingBounds(),
+        recordUnsettled: (input) => {
+          evidence.push(input.reason);
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({
+          stream: streamOf([
+            { type: "finish", usage: { inputTokens: { total: -1 }, outputTokens: { total: 5 } } },
+          ]),
+        }),
+      });
+      await expect(consume((await model.doStream({} as never)).stream)).rejects.toThrow(/usage_invalid/);
+      expect(evidence).toEqual(["usage_invalid"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a half-reported usage carries the reported half to the fail path's evidence", async () => {
+    const seen: Array<{ reason: string; inputTokens?: number; outputTokens?: number }> = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (input) => {
+          seen.push({
+            reason: input.reason,
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+          });
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({
+          stream: streamOf([
+            { type: "finish", usage: { inputTokens: { total: 12 }, outputTokens: {} } },
+          ]),
+        }),
+      });
+      await consume((await model.doStream({} as never)).stream);
+      // index.ts writes failure.inputTokens ?? 0 into the evidence row: the reported half
+      // survives, the unreported half stays an honest zero rather than a guessed one.
+      expect(seen).toEqual([
+        { reason: "usage_missing", inputTokens: 12, outputTokens: undefined },
+      ]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+});

@@ -448,10 +448,24 @@ export type ModelUsageProviderBounds = {
 export type ModelUsageGateLifecycle = {
   bounds?: ModelUsageProviderBounds;
   finish?: (usage: ModelUsageReport) => Promise<void> | void;
+  /**
+   * Durable evidence for work the provider produced that this deployment will not charge:
+   * usage above a configured bound, or a charge the pricing refused. The hold is retained.
+   */
+  recordUnsettled?: (input: {
+    eventId: string;
+    occurredAt: Date;
+    inputTokens: number;
+    outputTokens: number;
+    reason: string;
+  }) => Promise<void> | void;
   fail?: (input: {
     eventId: string;
     occurredAt: Date;
     reason: ModelUsageFailureReason;
+    /** What the stream had learned by the time it failed, when it had learned anything. */
+    inputTokens?: number;
+    outputTokens?: number;
   }) => Promise<void> | void;
 };
 
@@ -750,7 +764,10 @@ function meteredModel<T>(model: T): T {
           // A meter that throws (or rejects) must not take the run's last chunk down with it.
         }
       };
-      const settleFail = async (reason: ModelUsageFailureReason) => {
+      const settleFail = async (
+        reason: ModelUsageFailureReason,
+        reported?: { inputTokens?: number; outputTokens?: number },
+      ) => {
         if (settled) return;
         settled = true;
         try {
@@ -758,6 +775,7 @@ function meteredModel<T>(model: T): T {
             eventId,
             occurredAt,
             reason,
+            ...reported,
           });
         } catch {
           // Release failures stay contained: the hold's own expiry is the backstop.
@@ -789,13 +807,38 @@ function meteredModel<T>(model: T): T {
            * upstream down, error the stream. Cancel — not just `releaseLock` — so the
            * provider's HTTP body is torn down instead of holding its connection open.
            */
-          const failSettlement = (
+          const failSettlement = async (
             logType: string,
             error: Error,
             detail?: Record<string, unknown>,
           ) => {
             settled = true;
             log.error({ type: logType, eventId, ...detail }, logType);
+            /*
+             * Evidence before the tear-down (audit A3): the provider already produced this work,
+             * the hold is retained, and without a durable row the token counts existed only in
+             * this log line — reconciliation would find an expired hold with no usage to reconcile.
+             * Awaited, not fire-and-forget: a record a crash can drop is the exact defect class
+             * this closes. Best-effort by contract: a failed evidence write must not mask the
+             * settlement error.
+             */
+            const tokens = detail as
+              | { inputTokens?: number; outputTokens?: number }
+              | undefined;
+            try {
+              await lifecycle?.recordUnsettled?.({
+                eventId,
+                occurredAt,
+                inputTokens: tokens?.inputTokens ?? 0,
+                outputTokens: tokens?.outputTokens ?? 0,
+                reason:
+                  error instanceof ModelUsageSettlementError
+                    ? error.code
+                    : "usage_unsettled",
+              });
+            } catch {
+              // The settlement error stays the product failure; evidence is best-effort.
+            }
             reader.cancel("settlement_failed").catch(() => {
               // The upstream is already gone; nothing to recover.
             });
@@ -823,8 +866,12 @@ function meteredModel<T>(model: T): T {
               // No return: the person still sees this finish part, exactly as the old no_usage
               // path let it through (decision gate G4 owns any change to that). settleFail
               // claimed `settled`, so every settlement branch below is inert and the part
-              // flows to the enqueue at the bottom.
-              await settleFail("usage_missing");
+              // flows to the enqueue at the bottom. The half the provider DID name travels
+              // with the failure, so the evidence row records what arrived, not zeros.
+              await settleFail("usage_missing", {
+                inputTokens: reportedInput,
+                outputTokens: reportedOutput,
+              });
             }
             const validInput =
               reportedInput === undefined ||
@@ -842,9 +889,10 @@ function meteredModel<T>(model: T): T {
             const billedInput = reportedInput ?? 0;
             const billedOutput = reportedOutput ?? 0;
             if (!validInput || !validOutput) {
-              failSettlement(
+              await failSettlement(
                 "billing-model-usage-invalid",
                 new ModelUsageSettlementError("usage_invalid"),
+                { inputTokens: billedInput, outputTokens: billedOutput },
               );
               return;
             }
@@ -856,7 +904,7 @@ function meteredModel<T>(model: T): T {
               (outputBound?.enforced === "provider_cap" &&
                 BigInt(billedOutput) > outputBound.maximumTokens);
             if (overBound) {
-              failSettlement(
+              await failSettlement(
                 "billing-model-usage-over-bound",
                 new ModelUsageSettlementError("usage_over_bound"),
                 { inputTokens: billedInput, outputTokens: billedOutput },
@@ -879,7 +927,7 @@ function meteredModel<T>(model: T): T {
                   typeof (error as { code?: unknown })?.code === "string"
                     ? (error as { code: string }).code
                     : undefined;
-                failSettlement(
+                await failSettlement(
                   "billing-model-finish-failed",
                   error instanceof ModelUsageSettlementError
                     ? error
