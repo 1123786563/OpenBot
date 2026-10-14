@@ -233,7 +233,7 @@ type ScriptRun = {
 /**
  * One run of the session's bootstrap script, and the cleanup that owes it.
  *
- * TWO PROCESS-Handling RULES, both learned from a dead preview:
+ * TWO PROCESS-HANDLING RULES, both learned from a dead preview:
  *
  * 1. Resolve on `exit`, not on stdio EOF. `close` waits for the stdout pipe to
  *    end, and any grandchild that inherited it — an orphaned `bun install`, a
