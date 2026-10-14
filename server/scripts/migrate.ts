@@ -17,12 +17,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import {
   assertEnterpriseRolePreconditions,
   type EnterpriseRoleCatalogRow,
 } from "./enterprise-role-preflight";
+import { migrateWithValidationBoundary } from "./migration-runner";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -60,11 +60,14 @@ try {
   `)) as unknown as EnterpriseRoleCatalogRow[];
   assertEnterpriseRolePreconditions(roles);
 
-  await migrate(database, {
-    migrationsFolder: join(import.meta.dir, "..", "drizzle"),
-  });
+  await migrateWithValidationBoundary(
+    client,
+    join(import.meta.dir, "..", "drizzle"),
+  );
   console.info(JSON.stringify({ type: "migrations-applied", status: "ok" }));
 } finally {
   // Released whatever happened, so a failure exits rather than hanging on an open socket.
-  await client.end({ timeout: 5 });
+  // The runner's own unsafe-cleanup path may have ended the client already;
+  // a second end() failure here must never mask the original error.
+  await client.end({ timeout: 5 }).catch(() => undefined);
 }

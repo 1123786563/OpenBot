@@ -1,14 +1,31 @@
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import type { BuiltInAgentConfiguration } from "@copilotkit/runtime/v2";
+import type {
+  AgentRunnerConnectRequest,
+  AgentRunnerIsRunningRequest,
+  AgentRunnerRunRequest,
+  AgentRunnerStopRequest,
+  AgentsConfig,
+  BuiltInAgentConfiguration,
+} from "@copilotkit/runtime/v2";
 import {
+  AgentRunner,
   BuiltInAgent,
   CopilotKitIntelligence,
   CopilotRuntime,
+  CopilotSseRuntime,
 } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import type { Observable } from "rxjs";
-import { defer, finalize, from, fromEvent, switchMap, takeUntil } from "rxjs";
+import {
+  defer,
+  finalize,
+  from,
+  fromEvent,
+  switchMap,
+  takeUntil,
+  throwError,
+} from "rxjs";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import {
@@ -39,6 +56,11 @@ import { HeadlessToolsMiddleware } from "./computer/headless-tools";
 import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
+import type { GovernedModelRequest } from "./enterprise/runs/governed-execution";
+import {
+  currentRunnerRequest,
+  withRunnerRequestContext,
+} from "./enterprise/runs/request-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
 import { RemoteLearnedSkillsMiddleware } from "./learning/remote";
 import {
@@ -63,18 +85,53 @@ import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance, parametersFor } from "./plugins/tools";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
 
+export { currentRunnerRequest, withRunnerRequestContext };
+
+export function createRequestBoundAgentRunner(
+  runnerForRequest: (request: Request) => AgentRunner,
+): AgentRunner {
+  return new (class extends AgentRunner {
+    override run(request: AgentRunnerRunRequest) {
+      try {
+        return runnerForRequest(currentRunnerRequest()).run(request);
+      } catch (error) {
+        return throwError(() => error);
+      }
+    }
+
+    override connect(request: AgentRunnerConnectRequest) {
+      try {
+        return runnerForRequest(currentRunnerRequest()).connect(request);
+      } catch (error) {
+        return throwError(() => error);
+      }
+    }
+
+    override async isRunning(request: AgentRunnerIsRunningRequest) {
+      return runnerForRequest(currentRunnerRequest()).isRunning(request);
+    }
+
+    override async stop(request: AgentRunnerStopRequest) {
+      return runnerForRequest(currentRunnerRequest()).stop(request);
+    }
+  })();
+}
+
+export function createCopilotSseRuntime(
+  agents: AgentsConfig,
+  runner: AgentRunner,
+) {
+  return new CopilotSseRuntime({ agents, runner });
+}
+
 /**
- * The CopilotKit runtime, always in Intelligence mode.
+ * The CopilotKit runtime: Intelligence mode, or SSE mode once the durable enterprise Runner is
+ * composed.
  *
- * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots are
- * reached over AG-UI as `HttpAgent` instances, so anything that speaks the protocol remains a Bot
- * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
- * server.
- *
- * There is no SSE branch. Intelligence is a requirement of the product, not a tier: it owns
- * durable threads, memory and learning, and a deployment without it silently forgets every
- * conversation. config.ts refuses to boot without the full contract, so by the time this runs the
- * settings are present and this file has one mode.
+ * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots
+ * (remote_ag_ui / remote_mastra) currently fail closed: until the durable Runner can verify a
+ * third-party endpoint against a per-run budget, they resolve to UnavailableAgent
+ * (REMOTE_RUN_BUDGET_UNVERIFIED) instead of being dialled over AG-UI.
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -82,11 +139,13 @@ export type IdentifyUser = (
   request: Request,
 ) => Promise<{ id: string; name: string }>;
 
-type RegisteredBuiltInAgent = {
+export type RegisteredBuiltInAgent = {
   id: string;
   name: string;
   type: "built_in";
   systemPrompt: string;
+  /** Trusted source classification carried from the actor-scoped runtime row. */
+  expertSource?: "tenant_package" | "user_profile" | "team_bot";
 };
 
 type RegisteredRemoteAgentFacts = {
@@ -376,8 +435,18 @@ export function builtInAgentConfiguration(
   standingInstructions?: string | null,
   planModel?: PlanModel,
   learnedSkills?: LearnedSkillInvocation,
+  /**
+   * The server-only governed model collaborator, present only inside a
+   * governed admission.
+   *
+   * When present, the Bot's model is the gateway adapter this run was admitted
+   * against: no provider SDK, no provider api key, and no field a client could
+   * override — `overridableProperties` is deliberately absent so nothing in
+   * the wire input can select the route, the credential, or the run identity.
+   */
+  governedModel?: GovernedModelRequest,
 ): BuiltInAgentConfiguration {
-  if (!apiKey && !planModel) {
+  if (!apiKey && !planModel && !governedModel) {
     return {
       type: "custom",
       // biome-ignore lint/correctness/useYield: this agent must fail when iteration starts.
@@ -399,6 +468,50 @@ export function builtInAgentConfiguration(
       execute: (args: unknown) => learnedSkills.execute(tool.name, args),
     })) ?? []),
   ];
+
+  if (governedModel) {
+    governedModel.markConsumed();
+    return {
+      model: governedModel.model,
+      prompt: [
+        agent.systemPrompt,
+        ...(standing ? [standing] : []),
+        PROVENANCE_GUIDANCE,
+        UNTRUSTED_GUIDANCE,
+        ...(grantedToolGuidance(tools, connectedVendors)
+          ? [grantedToolGuidance(tools, connectedVendors)]
+          : []),
+        ...(computerGuidance ? [computerGuidance] : []),
+        ...(learnedSkills?.catalog ? [learnedSkills.catalog] : []),
+      ].join("\n\n"),
+      // The admitted run ceiling, set by the server. The adapter narrows every
+      // step's request to what remains of it.
+      maxOutputTokens: governedModel.maxOutputTokens,
+      /*
+       * A retry would mint a fresh capability against the same run ceiling,
+       * and a 402 budget refusal is terminal by contract, so the SDK's
+       * retry loop is off for governed calls entirely.
+       */
+      maxRetries: 0,
+      ...(allTools.length > 0
+        ? {
+            tools: allTools.map((tool) => ({
+              ...tool,
+              execute: (args: unknown, execution?: { toolCallId?: string }) =>
+                executeNativeApprovalTool(
+                  tool.name,
+                  args,
+                  execution?.toolCallId,
+                  tools.find((granted) => granted.name === tool.name)
+                    ?.initiator,
+                  () => tool.execute(args),
+                ),
+            })),
+            maxSteps: TOOL_STEPS,
+          }
+        : {}),
+    };
+  }
 
   return {
     model: planModel ?? `${model.provider}/${model.defaultModel}`,
@@ -527,6 +640,8 @@ export async function buildAgents(
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
+  /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
+  governedModel?: GovernedModelRequest,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -583,8 +698,9 @@ export async function buildAgents(
           loadAttachment,
           markAttachmentsSent,
           acquireLearnedSkills,
+          governedModel,
         );
-        if (loadPersonalMemory)
+        if (loadPersonalMemory && !(built instanceof UnavailableAgent))
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
         return [agent.id, built];
       }),
@@ -845,9 +961,19 @@ async function buildAgent(
   /** How this run records that those files were sent. See {@link buildAgents}. */
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
+  /** Present only inside a governed admission. See {@link builtInAgentConfiguration}. */
+  governedModel?: GovernedModelRequest,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
+  }
+  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
+    return new UnavailableAgent({
+      id: agent.id,
+      name: agent.name,
+      type: "unavailable",
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
   }
 
   const granted = await loadTools(agent.id);
@@ -918,39 +1044,6 @@ async function buildAgent(
     return chosen.offered;
   };
 
-  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
-    /*
-     * The remote path narrows inside its own middleware rather than by being wrapped.
-     *
-     * `.use()` middleware is applied by `runAgent`, not by `run`, so an outer agent delegating to
-     * `remote.run(input)` skips it: the endpoint would get a run with no standing role, no holdings
-     * message, no tools and no signed assertion, and every one of those failures is silent.
-     *
-     * Coordination tools are resolved for this exact run by the same loader built-in Bots use.
-     * Their executable half stays in the signed deployment callback, where current grants, source
-     * ownership and handoff lease ownership are checked again.
-     *
-     * AND THE PERSON'S STANDING INSTRUCTIONS ARE NOT SENT HERE EITHER. `standingInstructions` is
-     * built-in only, deliberately: a remote Bot composes its own prompt at somebody else's endpoint,
-     * so this deployment would be sending one person's prose to a server it does not run, with no
-     * way to know whether it is read or how it ranks against the role. See
-     * `standingInstructionsGuidance`.
-     */
-    return remoteAgentWithStandingRole(
-      agent,
-      await remoteTransport(agent, stallGuard, agentFetch, initiator),
-      granted,
-      signRun,
-      connectedVendors,
-      narrowing ? offeredFor : undefined,
-      loadAttachment,
-      markAttachmentsSent,
-      acquireLearnedSkills,
-      handoff,
-      initiator,
-    );
-  }
-
   /*
    * A built-in Bot takes its tools in its configuration, so narrowing means building it again once
    * the message is known. The guidance it is given is generated from the tools passed here, which is
@@ -981,6 +1074,7 @@ async function buildAgent(
             )
           : undefined,
         learnedSkills,
+        governedModel,
       ),
       loadAttachment,
       markAttachmentsSent,
@@ -1870,6 +1964,15 @@ export async function resolveRuntimeAgents(
   markAttachmentsSent?: MarkAttachmentsSent,
   acquireLearnedSkills?: AcquireLearnedSkills,
   loadPersonalMemory?: LoadPersonalMemory,
+  /**
+   * The server-only governed model collaborator, present only inside a
+   * governed admission.
+   *
+   * Its presence also suppresses the provider api-key read entirely: a
+   * governed Bot dials the model gateway with a capability, never a provider
+   * SDK key, so resolving one would be a credential read nothing consumes.
+   */
+  governedModel?: GovernedModelRequest,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -1885,9 +1988,10 @@ export async function resolveRuntimeAgents(
   // what that means, exactly as it would have from a roster that did not contain it.
   if (registered.length === 0) return {};
 
-  const apiKey = registered.some((agent) => agent.type === "built_in")
-    ? await resolveModelApiKey()
-    : null;
+  const apiKey =
+    !governedModel && registered.some((agent) => agent.type === "built_in")
+      ? await resolveModelApiKey()
+      : null;
   return buildAgents(
     registered,
     model,
@@ -1906,6 +2010,7 @@ export async function resolveRuntimeAgents(
     markAttachmentsSent,
     acquireLearnedSkills,
     loadPersonalMemory,
+    governedModel,
   );
 }
 
@@ -2044,6 +2149,14 @@ export function mountCopilotRuntime(
     basePath?: string;
     onRunBusy?: (input: { threadId: string; busy: boolean }) => void;
     learningSettings?: LearningSettingsStore;
+    /**
+     * The durable enterprise Runner, present only when the verified Directory/Data capabilities
+     * composed at boot. Present, the browser mount speaks CopilotKit SSE with OpenBot's own
+     * admission; absent, the Intelligence runtime stays mounted as today.
+     */
+    enterpriseRunner?: {
+      runnerForRequest: (request: Request) => AgentRunner;
+    };
   } = {},
 ) {
   const { intelligence } = config.runtime;
@@ -2117,16 +2230,19 @@ export function mountCopilotRuntime(
       })
     : undefined;
 
-  const runtime = new CopilotRuntime({
-    // `mode` is inferred from the presence of `intelligence`; passing it is a type error.
-    //
+  /*
+   * Which transport the browser mount speaks is decided by what the deployment composed, not by a
+   * mode flag: the durable enterprise Runner is handed in only when the verified Directory/Data
+   * capabilities exist at boot, and without them this stays the Intelligence runtime that headless
+   * consumers already use. An SSE runtime without the durable Runner would answer every admission
+   * question with nobody's authority, so a missing capability keeps today's mode instead of
+   * inventing a permissive in-between.
+   */
+  const commonRuntimeOptions = {
     // identifyUser is NOT optional in practice. Threads and memory are scoped to the user it
     // returns, so omitting it puts every person in the deployment in the same thread space and one
     // person's conversations become another's.
     identifyUser,
-    // The subclass, not the base: a thread nobody has run yet reads as empty rather than as a 500.
-    // See IntelligenceKnowingANewThread.
-    intelligence: intelligenceClient,
     licenseToken: intelligence.licenseToken,
     // Carried on the events the runtime already sends, so OpenBot's traffic is separable from any
     // other deployment's. Adds no events of its own.
@@ -2157,7 +2273,24 @@ export function mountCopilotRuntime(
     // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
     // one resolver decides both whose threads these are and whose coworkers exist.
     agents: createRequestAgents(identifyActor, resolver) as never,
-  });
+  };
+
+  const runtime = options.enterpriseRunner
+    ? // SSE, with admission and lifecycle answered by OpenBot's own durable Runner. The Hono
+      // middleware in app.ts captures the live request; the factory binds scope, thread and lease
+      // to that request alone, so no client field or cross-request state can choose authority.
+      new CopilotSseRuntime({
+        ...commonRuntimeOptions,
+        runner: createRequestBoundAgentRunner(
+          options.enterpriseRunner.runnerForRequest,
+        ),
+      })
+    : // The subclass, not the base: a thread nobody has run yet reads as empty rather than as a
+      // 500. See IntelligenceKnowingANewThread.
+      new CopilotRuntime({
+        ...commonRuntimeOptions,
+        intelligence: intelligenceClient,
+      });
 
   return {
     handler: createCopilotHonoHandler({ runtime, basePath }),

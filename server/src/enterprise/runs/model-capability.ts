@@ -185,6 +185,23 @@ export function createModelInvocationCapabilityService(deps: {
   if (secret.byteLength < 32)
     throw new RangeError("MODEL_CAPABILITY_SECRET_TOO_SHORT");
 
+  const assertCapabilityAuthentic = (
+    row: CapabilityRow,
+    capability: string,
+  ) => {
+    const expectedCapability = Buffer.from(
+      createCapability(secret, row),
+      "utf8",
+    );
+    const presentedCapability = Buffer.from(capability, "utf8");
+    if (
+      expectedCapability.length !== presentedCapability.length ||
+      !timingSafeEqual(expectedCapability, presentedCapability)
+    ) {
+      throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
+    }
+  };
+
   return {
     async issue(
       scope: PlatformScope,
@@ -567,6 +584,7 @@ export function createModelInvocationCapabilityService(deps: {
           .limit(1);
         if (!row)
           throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
+        assertCapabilityAuthentic(row, capability);
         assertCapabilityOwner(row, scope);
         if (
           row.runId !== candidate.runId ||
@@ -575,17 +593,6 @@ export function createModelInvocationCapabilityService(deps: {
           row.modelRouteRef !== candidate.modelRouteRef ||
           row.modelRequestId !== candidate.modelRequestId ||
           row.maximumTokens !== candidate.maximumTokens
-        ) {
-          throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
-        }
-        const expectedCapability = Buffer.from(
-          createCapability(secret, row),
-          "utf8",
-        );
-        const presentedCapability = Buffer.from(capability, "utf8");
-        if (
-          expectedCapability.length !== presentedCapability.length ||
-          !timingSafeEqual(expectedCapability, presentedCapability)
         ) {
           throw new ModelInvocationError("MODEL_CAPABILITY_INVALID", 401);
         }
@@ -679,6 +686,7 @@ export function createModelInvocationCapabilityService(deps: {
       }
       await store.transaction(scope, async (tx) => {
         const row = await loadByCapability(tx, scope, capability);
+        assertCapabilityAuthentic(row, capability);
         assertCapabilityOwner(row, scope);
         if (row.status === "confirmed") {
           if (row.usedTokens !== usedTokens)
@@ -720,6 +728,7 @@ export function createModelInvocationCapabilityService(deps: {
     async markUnknown(scope: PlatformScope, capability: string): Promise<void> {
       await store.transaction(scope, async (tx) => {
         const row = await loadByCapability(tx, scope, capability);
+        assertCapabilityAuthentic(row, capability);
         assertCapabilityOwner(row, scope);
         if (row.status === "unknown") return;
         if (row.status !== "reserved" && row.status !== "consumed")
@@ -746,6 +755,7 @@ export function createModelInvocationCapabilityService(deps: {
     async release(scope: PlatformScope, capability: string): Promise<void> {
       await store.transaction(scope, async (tx) => {
         const row = await loadByCapability(tx, scope, capability);
+        assertCapabilityAuthentic(row, capability);
         assertCapabilityOwner(row, scope);
         if (row.status === "released") return;
         if (row.status !== "reserved")

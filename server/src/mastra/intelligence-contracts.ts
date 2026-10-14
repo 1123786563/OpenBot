@@ -8,6 +8,31 @@ const attestationBrand: unique symbol = Symbol("BindingAttestation");
 const stableMessageIdBrand: unique symbol = Symbol("StableMessageId");
 const intelligenceErrorBrand: unique symbol = Symbol("IntelligenceError");
 const createdIntelligenceErrors = new WeakSet<object>();
+const typedArrayPrototype = Object.getPrototypeOf(
+  Uint8Array.prototype,
+) as object;
+const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "buffer",
+)?.get as (this: Uint8Array) => ArrayBuffer;
+const typedArrayByteOffsetGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteOffset",
+)?.get as (this: Uint8Array) => number;
+const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteLength",
+)?.get as (this: Uint8Array) => number;
+const urlHrefGetter = Object.getOwnPropertyDescriptor(URL.prototype, "href")
+  ?.get as (this: URL) => string;
+if (
+  !typedArrayBufferGetter ||
+  !typedArrayByteOffsetGetter ||
+  !typedArrayByteLengthGetter ||
+  !urlHrefGetter
+) {
+  throw new Error("Required intrinsic content accessors are unavailable.");
+}
 
 export type BindingAttestation = string & {
   readonly [attestationBrand]: true;
@@ -477,49 +502,274 @@ const allowedMessageKeys = new Set([
 export function parseMessageInput(
   value: unknown,
 ): IntelligenceResult<MessageInput> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  try {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+
+    // Reflect once and retain only descriptor values; never read the untrusted object again.
+    const keys = Reflect.ownKeys(value);
+    if (
+      keys.some((key) => typeof key !== "string") ||
+      keys.some((key) => !allowedMessageKeys.has(key as string)) ||
+      keys.some((key) => forbiddenSelectors.has(key as string))
+    ) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+    const candidate: Record<string, unknown> = Object.create(null);
+    for (const key of keys as string[]) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+        return { ok: false, error: intelligenceFailure("invalid-input") };
+      }
+      candidate[key] = clonePersistenceValue(descriptor.value, new WeakSet());
+    }
+
+    if (typeof candidate.id !== "string" || candidate.id.trim().length === 0) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+    const content = candidate.content;
+    const isV2 =
+      content !== null &&
+      typeof content === "object" &&
+      !Array.isArray(content) &&
+      (content as Record<string, unknown>).format === 2 &&
+      Array.isArray((content as Record<string, unknown>).parts) &&
+      ["user", "assistant", "system", "signal"].includes(
+        candidate.role as string,
+      );
+    const isV1 =
+      (typeof content === "string" || Array.isArray(content)) &&
+      ["system", "user", "assistant", "tool", "signal"].includes(
+        candidate.role as string,
+      ) &&
+      ["text", "tool-call", "tool-result"].includes(candidate.type as string);
+    if (!isV1 && !isV2) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+    if (isV2 && !validV2Parts(content as Record<string, unknown>)) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+    if (isV1 && !validV1Helpers(candidate)) {
+      return { ok: false, error: intelligenceFailure("invalid-input") };
+    }
+
+    for (const key of Object.keys(candidate)) {
+      deepFreezePersistenceValue(candidate[key]);
+    }
+
+    return {
+      ok: true,
+      value: Object.freeze({
+        ...candidate,
+        id: candidate.id as StableMessageId,
+      }) as MessageInput,
+    };
+  } catch {
     return { ok: false, error: intelligenceFailure("invalid-input") };
   }
+}
 
-  const candidate = value as Record<string, unknown>;
-  const keys = Object.keys(candidate);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasStringFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+): boolean {
+  return fields.every((field) => typeof value[field] === "string");
+}
+
+function validV2Parts(content: Record<string, unknown>): boolean {
+  const parts = content.parts;
+  return Array.isArray(parts) && parts.every(validV2Part);
+}
+
+function validV2Part(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.type !== "string") return false;
+  switch (value.type) {
+    case "text":
+      return typeof value.text === "string";
+    case "reasoning":
+      return (
+        typeof value.reasoning === "string" &&
+        Array.isArray(value.details) &&
+        value.details.every(
+          (detail) =>
+            isRecord(detail) &&
+            ((detail.type === "text" && typeof detail.text === "string") ||
+              (detail.type === "redacted" && typeof detail.data === "string")),
+        )
+      );
+    case "tool-invocation": {
+      const invocation = value.toolInvocation;
+      return (
+        isRecord(invocation) &&
+        hasStringFields(invocation, ["toolCallId", "toolName", "state"]) &&
+        Object.hasOwn(invocation, "args") &&
+        [
+          "partial-call",
+          "call",
+          "result",
+          "approval-requested",
+          "approval-responded",
+          "output-error",
+          "output-denied",
+        ].includes(invocation.state as string)
+      );
+    }
+    case "source": {
+      const source = value.source;
+      return (
+        isRecord(source) &&
+        source.sourceType === "url" &&
+        hasStringFields(source, ["id", "url"])
+      );
+    }
+    case "source-document":
+      return hasStringFields(value, ["sourceId", "mediaType", "title"]);
+    case "file":
+      return hasStringFields(value, ["mimeType", "data"]);
+    case "step-start":
+      return true;
+    default:
+      return value.type.startsWith("data-") && Object.hasOwn(value, "data");
+  }
+}
+
+function deepFreezePersistenceValue(value: unknown): void {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    deepFreezePersistenceValue((value as Record<string, unknown>)[key]);
+  }
+  Object.freeze(value);
+}
+
+function clonePersistenceValue(
+  value: unknown,
+  ancestors: WeakSet<object>,
+): unknown {
   if (
-    keys.some((key) => forbiddenSelectors.has(key)) ||
-    keys.some((key) => !allowedMessageKeys.has(key)) ||
-    typeof candidate.id !== "string" ||
-    candidate.id.trim().length === 0
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
   ) {
-    return { ok: false, error: intelligenceFailure("invalid-input") };
+    return value;
   }
-
-  const content = candidate.content;
-  const isV2 =
-    content !== null &&
-    typeof content === "object" &&
-    !Array.isArray(content) &&
-    (content as Record<string, unknown>).format === 2 &&
-    Array.isArray((content as Record<string, unknown>).parts) &&
-    ["user", "assistant", "system", "signal"].includes(
-      candidate.role as string,
-    );
-  const isV1 =
-    (typeof content === "string" || Array.isArray(content)) &&
-    ["system", "user", "assistant", "tool", "signal"].includes(
-      candidate.role as string,
-    ) &&
-    ["text", "tool-call", "tool-result"].includes(candidate.type as string);
-
-  if (!isV1 && !isV2) {
-    return { ok: false, error: intelligenceFailure("invalid-input") };
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "object")
+    throw new TypeError("Unsupported persisted value");
+  if (ancestors.has(value)) throw new TypeError("Cyclic persisted value");
+  ancestors.add(value);
+  try {
+    if (value instanceof Uint8Array) {
+      const buffer = Reflect.apply(
+        typedArrayBufferGetter,
+        value,
+        [],
+      ) as ArrayBuffer;
+      const byteOffset = Reflect.apply(
+        typedArrayByteOffsetGetter,
+        value,
+        [],
+      ) as number;
+      const byteLength = Reflect.apply(
+        typedArrayByteLengthGetter,
+        value,
+        [],
+      ) as number;
+      return Buffer.from(buffer, byteOffset, byteLength).toString("base64");
+    }
+    if (value instanceof ArrayBuffer) {
+      return Buffer.from(value).toString("base64");
+    }
+    if (value instanceof URL)
+      return Reflect.apply(urlHrefGetter, value, []) as string;
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key === "symbol")) {
+      throw new TypeError("Symbol key in persisted value");
+    }
+    if (Array.isArray(value)) {
+      const result: unknown[] = [];
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+      if (
+        !lengthDescriptor ||
+        !("value" in lengthDescriptor) ||
+        !Number.isSafeInteger(lengthDescriptor.value) ||
+        lengthDescriptor.value < 0
+      ) {
+        throw new TypeError("Invalid JSON array length");
+      }
+      const length = lengthDescriptor.value as number;
+      if (keys.length !== length + 1 || !keys.includes("length")) {
+        throw new TypeError("Non-JSON array shape");
+      }
+      for (const key of keys) {
+        if (key === "length") continue;
+        if (
+          typeof key !== "string" ||
+          !/^(0|[1-9]\d*)$/.test(key) ||
+          Number(key) >= length
+        ) {
+          throw new TypeError("Non-JSON array shape");
+        }
+      }
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          value,
+          String(index),
+        );
+        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+          throw new TypeError("Non-data array element");
+        }
+        result.push(clonePersistenceValue(descriptor.value, ancestors));
+      }
+      return result;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Non-JSON object prototype");
+    }
+    const result: Record<string, unknown> = Object.create(null);
+    for (const key of keys as string[]) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+        throw new TypeError("Non-data object property");
+      }
+      result[key] = clonePersistenceValue(descriptor.value, ancestors);
+    }
+    return result;
+  } finally {
+    ancestors.delete(value);
   }
+}
 
-  return {
-    ok: true,
-    value: {
-      ...candidate,
-      id: candidate.id as StableMessageId,
-    } as MessageInput,
-  };
+function validV1Helpers(candidate: Record<string, unknown>): boolean {
+  for (const key of ["toolCallIds", "toolNames"] as const) {
+    const value = candidate[key];
+    if (
+      value !== undefined &&
+      (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
+    ) {
+      return false;
+    }
+  }
+  const args = candidate.toolCallArgs;
+  return (
+    args === undefined ||
+    (Array.isArray(args) &&
+      args.every(
+        (item) =>
+          item !== null && typeof item === "object" && !Array.isArray(item),
+      ))
+  );
 }
 
 /** Persistence, authorized memory, and learning submission only. */

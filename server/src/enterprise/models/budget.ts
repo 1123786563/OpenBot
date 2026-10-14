@@ -81,19 +81,66 @@ function reservationDto(
   };
 }
 
+export function assertRunBudgetClaim(
+  runCeilingTokens: number,
+  existingClaims: readonly {
+    readonly reservedTokens: number;
+    readonly settledTokens?: number;
+  }[],
+  requestedTokens: number,
+): void {
+  assertTokens(runCeilingTokens, "runCeilingTokens");
+  assertTokens(requestedTokens, "maximumTokens");
+  let spentTokens = 0;
+  for (const claim of existingClaims) {
+    assertTokens(claim.reservedTokens, "reservedTokens");
+    const accountedTokens = claim.settledTokens ?? claim.reservedTokens;
+    if (
+      !Number.isSafeInteger(accountedTokens) ||
+      accountedTokens < 0 ||
+      accountedTokens > 2_147_483_647
+    ) {
+      throw new ModelBudgetError(
+        "INVALID_BUDGET",
+        400,
+        "An existing model claim is invalid.",
+      );
+    }
+    spentTokens += accountedTokens;
+    if (!Number.isSafeInteger(spentTokens)) {
+      throw new ModelBudgetError(
+        "MODEL_BUDGET_EXCEEDED",
+        402,
+        "The Run token ceiling has been exhausted.",
+      );
+    }
+  }
+  if (requestedTokens > runCeilingTokens - spentTokens) {
+    throw new ModelBudgetError(
+      "MODEL_BUDGET_EXCEEDED",
+      402,
+      "The Run token ceiling has been exhausted.",
+    );
+  }
+}
+
+type ReserveModelBudgetOptions = {
+  idempotencyKey?: string;
+  expiresAt?: Date;
+  runCeiling?: boolean;
+  /** Per-tenant configured ceiling a run-ceiling reservation must not exceed. */
+  configuredLimitTokens?: number;
+};
+
 export async function reserveModelBudgetInTransaction(
   tx: Transaction,
   scope: PlatformScope,
   input: BudgetInput,
-  configuredLimitTokens: number,
-  options: {
-    idempotencyKey?: string;
-    expiresAt?: Date;
-    runCeiling?: boolean;
-  } = {},
+  options: ReserveModelBudgetOptions = {},
 ): Promise<BudgetReservation> {
   assertTokens(input.maximumTokens, "maximumTokens");
-  assertTokens(configuredLimitTokens, "configuredLimitTokens");
+  if (options.configuredLimitTokens !== undefined)
+    assertTokens(options.configuredLimitTokens, "configuredLimitTokens");
   const runCeiling = options.runCeiling ?? false;
   const canonicalCeilingKey = runCeiling
     ? runCeilingIdempotencyKey(input.runId)
@@ -109,7 +156,11 @@ export async function reserveModelBudgetInTransaction(
       "A run's configured token ceiling uses its canonical key.",
     );
   }
-  if (runCeiling && input.maximumTokens > configuredLimitTokens) {
+  if (
+    runCeiling &&
+    options.configuredLimitTokens !== undefined &&
+    input.maximumTokens > options.configuredLimitTokens
+  ) {
     throw new ModelBudgetError(
       "RUN_BUDGET_LIMIT_EXCEEDED",
       400,
@@ -244,18 +295,6 @@ export async function reserveModelBudgetInTransaction(
         ]),
       ),
     );
-  const usedTokens =
-    rows.reduce(
-      (sum, row) =>
-        sum +
-        (row.status === "confirmed" ? row.confirmedTokens : row.tokenLimit),
-      0,
-    ) +
-    claims.reduce(
-      (sum, row) =>
-        sum + (row.status === "confirmed" ? row.usedTokens : row.maximumTokens),
-      0,
-    );
   const [ceiling] = await tx
     .select({ tokenLimit: enterpriseModelBudgetReservations.tokenLimit })
     .from(enterpriseModelBudgetReservations)
@@ -279,13 +318,24 @@ export async function reserveModelBudgetInTransaction(
       409,
       "A run's configured token ceiling is missing.",
     );
-  if (input.maximumTokens > ceiling.tokenLimit - usedTokens) {
-    throw new ModelBudgetError(
-      "MODEL_BUDGET_EXCEEDED",
-      402,
-      "The configured model budget has been exceeded.",
-    );
-  }
+  assertRunBudgetClaim(
+    ceiling.tokenLimit,
+    [
+      ...rows.map((row) => ({
+        reservedTokens: row.tokenLimit,
+        ...(row.status === "confirmed"
+          ? { settledTokens: row.confirmedTokens }
+          : {}),
+      })),
+      ...claims.map((row) => ({
+        reservedTokens: row.maximumTokens,
+        ...(row.status === "confirmed"
+          ? { settledTokens: row.usedTokens }
+          : {}),
+      })),
+    ],
+    input.maximumTokens,
+  );
   const [row] = await tx
     .insert(enterpriseModelBudgetReservations)
     .values({
@@ -311,7 +361,7 @@ export async function reserveModelBudgetInTransaction(
 
 export function createModelBudgetService(deps: {
   data: DataDatabase;
-  configuredLimitTokens(scope: PlatformScope): number | Promise<number>;
+  configuredLimitTokens?: (scope: PlatformScope) => number | Promise<number>;
 }) {
   const store = createConversationStore(deps.data);
   return {
@@ -325,15 +375,17 @@ export function createModelBudgetService(deps: {
       },
     ) {
       assertTrustedScope(scope);
-      return store.transaction(scope, async (tx) =>
-        reserveModelBudgetInTransaction(
-          tx,
-          scope,
-          input,
-          await deps.configuredLimitTokens(scope),
-          options,
-        ),
-      );
+      return store.transaction(scope, async (tx) => {
+        const configuredLimitTokens = deps.configuredLimitTokens
+          ? await deps.configuredLimitTokens(scope)
+          : undefined;
+        return reserveModelBudgetInTransaction(tx, scope, input, {
+          ...options,
+          ...(configuredLimitTokens !== undefined
+            ? { configuredLimitTokens }
+            : {}),
+        });
+      });
     },
     async confirm(
       scope: PlatformScope,

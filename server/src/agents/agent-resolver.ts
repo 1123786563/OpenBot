@@ -1,6 +1,7 @@
 import type { AbstractAgent } from "@ag-ui/client";
 import type { AuditInitiator } from "../audit";
 import type { AgentFetch, StallGuard } from "../channels/stall-guard";
+import type { RegisteredBuiltInAgent } from "../copilot";
 import {
   type HandoffForRun,
   type LoadAgentsForActor,
@@ -13,6 +14,7 @@ import {
   type SignRun,
   type ToolSelection,
 } from "../copilot";
+import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
 import type { AcquireLearnedSkills } from "../learning/runtime";
 import type { LoadPersonalMemory } from "../memory/tools";
 import type { AgentActor } from "./profile-types";
@@ -20,6 +22,15 @@ import type { AgentActor } from "./profile-types";
 export type AgentResolutionContext = {
   initiator?: AuditInitiator;
   depth?: number;
+  /**
+   * The server-only governed model collaborator for one admitted run.
+   *
+   * Set only by the governed Runner admission for the Bot it is about to
+   * execute; every other resolution surface (roster builds, hops, remote
+   * deliveries) resolves without it and gets the ordinary provider-keyed
+   * build. Never taken from a wire field or a global.
+   */
+  governedModel?: GovernedModelRequest;
 };
 
 export class CoworkerUnavailableError extends Error {}
@@ -33,6 +44,18 @@ export type ActorAgentResolver = {
     agentId: string,
     context?: AgentResolutionContext,
   ): Promise<AbstractAgent>;
+  resolveBuiltInBotForActor(
+    actor: AgentActor,
+    agentId: string,
+    context?: AgentResolutionContext,
+  ): Promise<{
+    agent: AbstractAgent;
+    definitionFacts: {
+      agentId: string;
+      source: NonNullable<RegisteredBuiltInAgent["expertSource"]>;
+      systemPrompt: string;
+    };
+  }>;
 };
 
 export type ActorAgentResolverDependencies = {
@@ -112,36 +135,75 @@ export function createActorAgentResolver(
       deps.markAttachmentsSentForActor?.(actor.id),
       deps.acquireLearnedSkills,
       deps.loadPersonalMemoryForActor?.(actor.id),
+      context?.governedModel,
     );
 
   const resolveAgentsForActor = async (actor: AgentActor) =>
     resolveRegisteredAgents(actor, await deps.loadAgents(actor));
+  const unavailable = (id: string) =>
+    new CoworkerUnavailableError(`Coworker ${id} is unavailable to this user.`);
+  const resolveOneRegistered = async (
+    actor: AgentActor,
+    registered: Awaited<ReturnType<typeof deps.loadAgents>>,
+    agentId: string,
+    context?: AgentResolutionContext,
+  ) => {
+    const agents = await resolveRegisteredAgents(
+      actor,
+      registered,
+      agentId,
+      context,
+    );
+    const agent = Object.hasOwn(agents, agentId) ? agents[agentId] : undefined;
+    if (!agent) throw unavailable(agentId);
+    return agent;
+  };
 
   return {
     resolveAgentsForActor,
     async resolveAgentForActor(actor, agentId, context) {
       const registered = await deps.loadAgents(actor);
       if (!registered.some((agent) => agent.id === agentId)) {
-        throw new CoworkerUnavailableError(
-          `Coworker ${agentId} is unavailable to this user.`,
-        );
+        throw unavailable(agentId);
       }
-
-      const agents = await resolveRegisteredAgents(
+      return resolveOneRegistered(actor, registered, agentId, context);
+    },
+    async resolveBuiltInBotForActor(actor, agentId, context) {
+      const registered = await deps.loadAgents(actor);
+      const candidate = registered.find((agent) => agent.id === agentId);
+      if (candidate?.type !== "built_in") {
+        throw unavailable(agentId);
+      }
+      // The guard above narrows the discriminated union; no cast needed.
+      const builtIn = candidate;
+      if (
+        (builtIn.expertSource !== "tenant_package" &&
+          builtIn.expertSource !== "user_profile" &&
+          builtIn.expertSource !== "team_bot") ||
+        /* registeredAgentFromRow already guarantees a non-empty, trimmed
+           prompt; these re-checks are defense in depth against persisted
+           shape drift before the expert facts are persisted, not a
+           reachable dirty-data path. */
+        typeof builtIn.systemPrompt !== "string" ||
+        !builtIn.systemPrompt.trim() ||
+        builtIn.systemPrompt !== builtIn.systemPrompt.trim()
+      ) {
+        throw unavailable(agentId);
+      }
+      const resolved = await resolveOneRegistered(
         actor,
         registered,
         agentId,
         context,
       );
-      const agent = Object.hasOwn(agents, agentId)
-        ? agents[agentId]
-        : undefined;
-      if (!agent) {
-        throw new CoworkerUnavailableError(
-          `Coworker ${agentId} is unavailable to this user.`,
-        );
-      }
-      return agent;
+      return {
+        agent: resolved,
+        definitionFacts: {
+          agentId: builtIn.id,
+          source: builtIn.expertSource,
+          systemPrompt: builtIn.systemPrompt,
+        },
+      };
     },
   };
 }

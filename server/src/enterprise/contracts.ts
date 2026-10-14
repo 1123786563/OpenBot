@@ -1,3 +1,4 @@
+import type { BaseEvent } from "@ag-ui/client";
 import type {
   CheckpointDTO,
   ConversationDTO,
@@ -8,6 +9,7 @@ import type {
   RuntimeInvocation,
   ToolReceiptDTO,
 } from "../../../shared/enterprise/contracts";
+import type { ExpertVersionRef } from "./experts/version-catalog";
 
 export {
   CheckpointDTOZ,
@@ -54,6 +56,7 @@ export interface ResourceView {
 
 export interface ScopeResolver {
   resolve(request: Request): Promise<PlatformScope>;
+  resolveForThread(request: Request, threadId: string): Promise<PlatformScope>;
 }
 
 export interface ResourceReader {
@@ -81,8 +84,36 @@ export interface ConversationService {
 }
 
 export interface RunService {
-  start(scope: PlatformScope, input: StartRunInput): Promise<RunDTO>;
+  start(scope: PlatformScope, admission: TrustedRunAdmission): Promise<RunDTO>;
+  getActiveForThread(
+    scope: PlatformScope,
+    threadId: string,
+  ): Promise<{ run: RunDTO; attemptId: string; generation: number } | null>;
   cancel(scope: PlatformScope, input: CancelRunInput): Promise<RunDTO>;
+  stop(
+    scope: PlatformScope,
+    input: CancelRunInput & { attemptId: string; generation: number },
+  ): Promise<RunDTO>;
+  acquireRequestLease(
+    scope: PlatformScope,
+    runId: string,
+  ): Promise<RunnerRequestLease>;
+  renewRequestLease(
+    scope: PlatformScope,
+    lease: RunnerRequestLease,
+  ): Promise<RunnerRequestLease>;
+  releaseRequestLease(
+    scope: PlatformScope,
+    lease: RunnerRequestLease,
+  ): Promise<boolean>;
+  fail(
+    scope: PlatformScope,
+    input: { lease: RunnerRequestLease; errorCode: RunFailureCode },
+  ): Promise<boolean>;
+  complete(
+    scope: PlatformScope,
+    input: { lease: RunnerRequestLease },
+  ): Promise<boolean>;
   get(scope: PlatformScope, runId: string): Promise<RunDTO>;
   getActiveAttemptGeneration(
     scope: PlatformScope,
@@ -116,6 +147,27 @@ export interface RunService {
   ): Promise<void>;
 }
 
+/**
+ * Complete fixed taxonomy of Run failure codes admitted through the exact
+ * leased failure path. `MODEL_EXECUTION_UNAVAILABLE` remains the no-model
+ * refusal; the other codes classify admitted model execution outcomes:
+ * actual model/stream failure, failed usage settlement, and an exhausted
+ * Run budget. No free-form code is ever accepted.
+ */
+export type RunFailureCode =
+  | "MODEL_EXECUTION_UNAVAILABLE"
+  | "MODEL_EXECUTION_FAILED"
+  | "MODEL_SETTLEMENT_FAILED"
+  | "MODEL_BUDGET_EXCEEDED";
+
+export interface RunnerRequestLease {
+  readonly runId: string;
+  readonly attemptId: string;
+  readonly generation: number;
+  readonly ownerToken: string;
+  readonly expiresAt: Date;
+}
+
 export interface EventService {
   append(scope: PlatformScope, event: EventProposal): Promise<EventAck>;
   replay(scope: PlatformScope, input: EventCursor): Promise<EventPage>;
@@ -123,16 +175,31 @@ export interface EventService {
     scope: PlatformScope,
     input: EventCursor,
     signal: AbortSignal,
-  ): AsyncIterable<EventDTO>;
+  ): AsyncIterable<RunnerEventRecord>;
 }
 
 export interface EventProposal {
+  readonly lease: RunnerRequestLease;
+  readonly sourceEventId: string;
+  readonly schemaVersion: 1;
+  readonly event: BaseEvent;
+}
+
+export interface RunnerEventRecord {
+  readonly eventId: string;
+  readonly tenantId: string;
+  readonly workspaceId: string;
+  readonly principalId: string;
+  readonly threadId: string;
   readonly runId: string;
   readonly attemptId: string;
+  readonly generation: number;
   readonly sourceEventId: string;
-  readonly eventType: string;
+  readonly seq: number;
+  /** The stored row's schema version, replayed verbatim (writes stay v1). */
   readonly schemaVersion: number;
-  readonly payload: EventDTO["payload"];
+  readonly event: BaseEvent;
+  readonly createdAt: Date;
 }
 
 export interface CheckpointService {
@@ -190,8 +257,21 @@ export interface MessagePage {
 export interface StartRunInput {
   readonly threadId: string;
   readonly clientMessageKey: string;
+  readonly messageDigest?: string;
   readonly attachmentRefs: readonly string[];
   readonly entrypoint: PlatformScope["entrypoint"];
+  readonly forwardedProps: Readonly<Record<string, unknown>>;
+}
+/**
+ * Server-only Run admission input: the public wire intent plus the Expert
+ * version and model route refs that trusted server composition issued
+ * independently of any client selector. Neither ref is a client wire field.
+ */
+export interface TrustedRunAdmission {
+  readonly input: StartRunInput;
+  readonly agentId: string;
+  readonly expertVersionRef: ExpertVersionRef;
+  readonly routeRef: string;
 }
 export interface CancelRunInput {
   readonly runId: string;
@@ -284,11 +364,12 @@ export interface EventAck {
   readonly duplicate: boolean;
 }
 export interface EventCursor {
+  readonly threadId: string;
   readonly afterSeq: number;
   readonly limit?: number;
 }
 export interface EventPage {
-  readonly items: readonly EventDTO[];
+  readonly items: readonly RunnerEventRecord[];
   readonly nextCursor: EventCursor | null;
 }
 

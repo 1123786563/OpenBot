@@ -10,6 +10,8 @@ export * from "./coworker";
 export * from "./delivery";
 export * from "./demonstrations";
 export * from "./enterprise-conversations";
+export * from "./enterprise-expert-versions";
+export * from "./enterprise-model-routes";
 export * from "./enterprise-runs";
 export * from "./enterprise-tenancy";
 export * from "./group";

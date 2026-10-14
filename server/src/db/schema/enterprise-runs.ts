@@ -1,5 +1,7 @@
+import type { BaseEvent } from "@ag-ui/client";
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   foreignKey,
@@ -13,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { enterpriseConversations } from "./enterprise-conversations";
 import { enterpriseTenants, enterpriseWorkspaces } from "./enterprise-tenancy";
 import { jsonb } from "./json";
 
@@ -58,6 +61,13 @@ export const enterpriseRuns = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.id] }),
+    uniqueIndex("enterprise_runs_event_owner_binding").on(
+      table.tenantId,
+      table.id,
+      table.workspaceId,
+      table.principalId,
+      table.threadId,
+    ),
     uniqueIndex("enterprise_runs_client_message_key").on(
       table.tenantId,
       table.threadId,
@@ -119,6 +129,10 @@ export const enterpriseRunAttempts = pgTable(
     leaseExpiresAt: timestamp("lease_expires_at", {
       withTimezone: true,
     }).notNull(),
+    requestOwnerToken: uuid("request_owner_token"),
+    requestOwnerExpiresAt: timestamp("request_owner_expires_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -143,6 +157,10 @@ export const enterpriseRunAttempts = pgTable(
     check(
       "enterprise_run_attempts_generation_check",
       sql`${table.generation} > 0 and ${table.fencingToken} > 0`,
+    ),
+    check(
+      "enterprise_run_attempts_request_owner_check",
+      sql`(${table.requestOwnerToken} is null and ${table.requestOwnerExpiresAt} is null) or (${table.requestOwnerToken} is not null and ${table.requestOwnerExpiresAt} is not null)`,
     ),
     pgPolicy("enterprise_run_attempts_data_scope", {
       for: "all",
@@ -338,3 +356,86 @@ export const enterpriseRunOutbox = pgTable(
     }),
   ],
 ).enableRLS();
+
+export const enterpriseRunnerEvents = pgTable(
+  "enterprise_runner_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    threadId: text("thread_id").notNull(),
+    runId: uuid("run_id").notNull(),
+    attemptId: uuid("attempt_id").notNull(),
+    generation: integer("generation").notNull(),
+    sourceEventId: text("source_event_id").notNull(),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    eventType: text("event_type").notNull(),
+    event: jsonb("event").$type<BaseEvent>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("enterprise_runner_events_thread_cursor").on(
+      table.tenantId,
+      table.threadId,
+      table.seq,
+    ),
+    uniqueIndex("enterprise_runner_events_source_identity").on(
+      table.tenantId,
+      table.runId,
+      table.attemptId,
+      table.generation,
+      table.sourceEventId,
+    ),
+    foreignKey({
+      name: "enterprise_runner_events_conversations_fk",
+      columns: [table.tenantId, table.threadId],
+      foreignColumns: [
+        enterpriseConversations.tenantId,
+        enterpriseConversations.threadId,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "enterprise_runner_events_runs_owner_fk",
+      columns: [
+        table.tenantId,
+        table.runId,
+        table.workspaceId,
+        table.principalId,
+        table.threadId,
+      ],
+      foreignColumns: [
+        enterpriseRuns.tenantId,
+        enterpriseRuns.id,
+        enterpriseRuns.workspaceId,
+        enterpriseRuns.principalId,
+        enterpriseRuns.threadId,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "enterprise_runner_events_attempts_fk",
+      columns: [table.tenantId, table.runId, table.generation, table.attemptId],
+      foreignColumns: [
+        enterpriseRunAttempts.tenantId,
+        enterpriseRunAttempts.runId,
+        enterpriseRunAttempts.generation,
+        enterpriseRunAttempts.id,
+      ],
+    }).onDelete("cascade"),
+    check(
+      "enterprise_runner_events_cursor_check",
+      sql`${table.seq} > 0 and ${table.generation} > 0 and ${table.schemaVersion} > 0`,
+    ),
+    pgPolicy("enterprise_runner_events_data_scope", {
+      for: "all",
+      to: "ob_ent_data",
+      using: tenantPolicy("enterprise_runner_events"),
+      withCheck: tenantPolicy("enterprise_runner_events"),
+    }),
+  ],
+).enableRLS();
+
+export type EventRow = typeof enterpriseRunnerEvents.$inferSelect;

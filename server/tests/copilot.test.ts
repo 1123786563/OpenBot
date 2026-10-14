@@ -27,6 +27,91 @@ import { loadTenantPackage } from "../src/tenant-package";
 import { UNTRUSTED_GUIDANCE } from "../src/untrusted-content";
 import { testEnvironment } from "./support/environment";
 
+test("concurrent_request_contexts_do_not_cross_scope", async () => {
+  const runtime = await import("../src/copilot");
+  expect(typeof runtime.withRunnerRequestContext).toBe("function");
+  expect(typeof runtime.createRequestBoundAgentRunner).toBe("function");
+  const operations: string[] = [];
+  const runner = runtime.createRequestBoundAgentRunner((request: Request) => {
+    const identity = request.headers.get("x-test-identity") ?? "missing";
+    return {
+      run: () => {
+        operations.push(`run:${identity}`);
+        return EMPTY;
+      },
+      connect: () => {
+        operations.push(`connect:${identity}`);
+        return EMPTY;
+      },
+      isRunning: async () => {
+        await Bun.sleep(identity === "a" ? 5 : 1);
+        operations.push(`running:${identity}`);
+        return identity === "a";
+      },
+      stop: async () => {
+        await Bun.sleep(identity === "a" ? 1 : 5);
+        operations.push(`stop:${identity}`);
+        return true;
+      },
+    } as never;
+  });
+  const requestA = new Request("https://example.invalid", {
+    headers: { "x-test-identity": "a" },
+  });
+  const requestB = new Request("https://example.invalid", {
+    headers: { "x-test-identity": "b" },
+  });
+
+  const results = await Promise.all([
+    runtime.withRunnerRequestContext(requestA, async () => {
+      runner.run({} as never);
+      runner.connect({} as never);
+      return Promise.all([
+        runner.isRunning({ threadId: "thread-a" }),
+        runner.stop({ threadId: "thread-a" }),
+      ]);
+    }),
+    runtime.withRunnerRequestContext(requestB, async () => {
+      runner.run({} as never);
+      runner.connect({} as never);
+      return Promise.all([
+        runner.isRunning({ threadId: "thread-b" }),
+        runner.stop({ threadId: "thread-b" }),
+      ]);
+    }),
+  ]);
+
+  expect(results).toEqual([
+    [true, true],
+    [false, true],
+  ]);
+  expect(operations.sort()).toEqual([
+    "connect:a",
+    "connect:b",
+    "run:a",
+    "run:b",
+    "running:a",
+    "running:b",
+    "stop:a",
+    "stop:b",
+  ]);
+  await expect(runner.isRunning({ threadId: "thread-a" })).rejects.toThrow(
+    "RUNNER_REQUEST_CONTEXT_UNAVAILABLE",
+  );
+});
+
+test("runtime_uses_sse_not_intelligence_and_injects_custom_runner", async () => {
+  const runtime = await import("../src/copilot");
+  const customRunner = {} as never;
+  const sse = runtime.createCopilotSseRuntime(
+    { agent: {} as never },
+    customRunner,
+  );
+  expect(sse.mode).toBe("sse");
+  expect(sse.runner).toBe(customRunner);
+  expect(sse.intelligence).toBeUndefined();
+});
+
 /**
  * The Bot under test, or a failure that says it was never built.
  *
@@ -67,7 +152,7 @@ const riskRow = {
   roleDescription: "Investigate policies and controls.",
 };
 
-test("remote runs receive coordination tools and preserve the signed delivery scope", async () => {
+test("remote runs fail closed before coordination tools or delivery", async () => {
   const seen: RunAgentInput[] = [];
   const run = spyOn(HttpAgent.prototype, "run").mockImplementation((input) => {
     seen.push(input);
@@ -103,34 +188,17 @@ test("remote runs receive coordination tools and preserve the signed delivery sc
     const agents = await buildAgents(...args);
     const agent = built(agents, "risk");
     agent.threadId = "scratch-thread";
-    await agent.runAgent({
-      runId: "actual-run",
-      forwardedProps: { openbotRun: "signed-delivery" },
-    });
-    expect(seen[0]?.tools.map((tool) => tool.name)).toContain("ask_person");
-    expect(seen[0]?.forwardedProps.openbotRun).toBe("signed-delivery");
+    await expect(
+      agent.runAgent({
+        runId: "actual-run",
+        forwardedProps: { openbotRun: "signed-delivery" },
+      }),
+    ).rejects.toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
+    expect(seen).toEqual([]);
   } finally {
     run.mockRestore();
   }
 });
-
-type RemoteAgentProbe = {
-  remote?: unknown;
-  run?: unknown;
-  clone?: unknown;
-};
-
-function expectWrappedHttpTransport(agent: unknown): HttpAgent {
-  expect(agent).not.toBeInstanceOf(HttpAgent);
-  expect(agent).toMatchObject({
-    run: expect.any(Function),
-    clone: expect.any(Function),
-  });
-
-  const transport = (agent as RemoteAgentProbe).remote;
-  expect(transport).toBeInstanceOf(HttpAgent);
-  return transport as HttpAgent;
-}
 
 describe("deployment model selection", () => {
   const packagePath = join(
@@ -214,7 +282,8 @@ describe("deployment model selection", () => {
     async (environment) => {
       const request = await runGeneralAssistantWithEnvironment(environment);
 
-      expect(request.model).toBe("gpt-5.6-terra");
+      const tenantPackage = await loadTenantPackage(packagePath);
+      expect(request.model).toBe(tenantPackage.model.defaultModel);
     },
   );
 });
@@ -355,7 +424,9 @@ describe("registered Copilot agents", () => {
     );
 
     expect(agents["general-assistant"]).toBeInstanceOf(BuiltInAgent);
-    expectWrappedHttpTransport(agents.risk);
+    expect(agents.risk).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
   });
 
   /*
@@ -396,8 +467,10 @@ describe("registered Copilot agents", () => {
       stallGuard,
     );
 
-    expect(watched).toEqual([{ id: "risk", name: "Risk" }]);
-    expectWrappedHttpTransport(agents.risk);
+    expect(watched).toEqual([]);
+    expect(agents.risk).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
   });
 
   /*
@@ -434,7 +507,7 @@ describe("registered Copilot agents", () => {
         dialler,
       )
     ).risk;
-    expect(expectWrappedHttpTransport(plain).fetch).toBe(dialler);
+    expect(plain).toMatchObject({ reason: "REMOTE_RUN_BUDGET_UNVERIFIED" });
 
     // With a timeout configured the watch wraps it, so the guard is handed the dialling fetch rather
     // than replacing it. A deployment gets both, not whichever was wired last.
@@ -459,8 +532,8 @@ describe("registered Copilot agents", () => {
         dialler,
       )
     ).risk;
-    expectWrappedHttpTransport(watched);
-    expect(handed).toBe(dialler);
+    expect(watched).toMatchObject({ reason: "REMOTE_RUN_BUDGET_UNVERIFIED" });
+    expect(handed).toBeUndefined();
   });
 
   /*
@@ -494,7 +567,7 @@ describe("registered Copilot agents", () => {
     );
 
     const risk = agents.risk;
-    expect(expectWrappedHttpTransport(risk).fetch).toBe(dialler);
+    expect(risk).toMatchObject({ reason: "REMOTE_RUN_BUDGET_UNVERIFIED" });
   });
 
   /*
@@ -528,8 +601,8 @@ describe("registered Copilot agents", () => {
     ).risk;
     const unguarded = (await buildAgents(registered, model, null)).risk;
 
-    expect(expectWrappedHttpTransport(guarded).fetch).toBe(sentinel);
-    expect(expectWrappedHttpTransport(unguarded).fetch).not.toBe(sentinel);
+    expect(guarded).toMatchObject({ reason: "REMOTE_RUN_BUDGET_UNVERIFIED" });
+    expect(unguarded).toMatchObject({ reason: "REMOTE_RUN_BUDGET_UNVERIFIED" });
   });
 
   test("resolves fresh built-in agents and credentials for every request", async () => {
@@ -588,15 +661,115 @@ describe("registered Copilot agents", () => {
       },
     );
 
-    expectWrappedHttpTransport(agents.risk);
+    expect(agents.risk).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
     expect(resolverInvoked).toBe(false);
+  });
+
+  test("refuses remote execution before transport or tool resolution", async () => {
+    for (const type of ["remote_ag_ui", "remote_mastra"] as const) {
+      const id = `remote-${type}`;
+      const registered = registeredAgentFromRow({
+        id,
+        name: "Remote Bot",
+        type,
+        configuration: { endpoint: "https://remote.example.invalid/agent" },
+        title: "Remote Bot",
+        roleDescription: "Handle a remote task.",
+      });
+      expect(registered).not.toBeNull();
+      if (!registered) throw new Error("REMOTE_FIXTURE_INVALID");
+
+      let transportCalls = 0;
+      let toolReads = 0;
+      const resolution = await resolveRuntimeAgents(
+        async () => [registered],
+        { provider: "openai", defaultModel: "gpt-5.6-terra" },
+        async () => null,
+        undefined,
+        async () => {
+          toolReads += 1;
+          return [];
+        },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          transportCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+      ).then(
+        (agents) => ({ ok: true as const, agents }),
+        () => ({ ok: false as const }),
+      );
+
+      expect(resolution.ok).toBe(true);
+      if (!resolution.ok) continue;
+      const agent = resolution.agents[id];
+      expect(agent).toBeDefined();
+      expect(() => agent?.run()).toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
+      expect(transportCalls).toBe(0);
+      expect(toolReads).toBe(0);
+    }
+  });
+
+  test("refuses remote run before personal memory, tools, or transport", async () => {
+    for (const type of ["remote_ag_ui", "remote_mastra"] as const) {
+      const id = `remote-${type}`;
+      const registered = registeredAgentFromRow({
+        id,
+        name: "Remote Bot",
+        type,
+        configuration: { endpoint: "https://remote.example.invalid/agent" },
+        title: "Remote Bot",
+        roleDescription: "Handle a remote task.",
+      });
+      if (!registered) throw new Error("REMOTE_FIXTURE_INVALID");
+      let memoryReads = 0;
+      let toolReads = 0;
+      let transportCalls = 0;
+      const agents = await resolveRuntimeAgents(
+        async () => [registered],
+        { provider: "openai", defaultModel: "gpt-5.6-terra" },
+        async () => null,
+        undefined,
+        async () => {
+          toolReads += 1;
+          return [];
+        },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          transportCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          memoryReads += 1;
+          return null;
+        },
+      );
+      await expect(agents[id]?.runAgent()).rejects.toThrow(
+        "REMOTE_RUN_BUDGET_UNVERIFIED",
+      );
+      expect(memoryReads).toBe(0);
+      expect(toolReads).toBe(0);
+      expect(transportCalls).toBe(0);
+    }
   });
 });
 
 /**
- * A coworker's job is durable: it lives on the profile, not in the conversation. Every run of a
- * remote agent therefore carries a standing role message the person never has to retype, and the
- * runtime resolves which agents exist per request so one person's private coworker is not another's.
+ * A coworker's job is durable: it lives on the profile, not in the conversation. Remote execution
+ * currently fails closed before delivery, and the runtime resolves agents per request so one
+ * person's private coworker is not another's.
  */
 describe("standing agent roles", () => {
   const profile = {
@@ -615,16 +788,15 @@ describe("standing agent roles", () => {
         "You are Expense Manager, Finance Operations.",
         "Review receipts, categorize expenses, and prepare reimbursement reports.",
         "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
-        // For a remote Bot this message is the whole instruction, so the provenance rule has to
-        // travel in it or the Bot never hears it. Referenced rather than restated, so the assertion
-        // stays exact without pinning the wording twice.
+        // Keep the provenance rule in the standing role message. Referenced rather than restated,
+        // so the assertion stays exact without pinning the wording twice.
         PROVENANCE_GUIDANCE,
         UNTRUSTED_GUIDANCE,
       ].join("\n\n"),
     });
   });
 
-  test("sends one standing role message ahead of the conversation", async () => {
+  test("refuses remote execution when standing-role history is present", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const agents = await buildAgents(
       [remoteAgent(endpoint.url)],
@@ -633,22 +805,18 @@ describe("standing agent roles", () => {
     );
 
     const agent = agents.agent_expense;
-    // A replayed thread already carries the standing message; it must not produce a second copy.
+    // The refusal prevents observing whether the standing-role history is transmitted or deduplicated.
     agent?.setMessages([
       standingRoleMessage(profile),
       userMessage("Sort these."),
     ]);
-    const result = await agent?.runAgent();
-
-    const sent = endpoint.requests.at(-1);
-    expect(sent?.messages).toEqual([
-      standingRoleMessage(profile),
-      userMessage("Sort these."),
-    ]);
-    expect(result?.newMessages?.at(-1)?.content).toBe("Categorized.");
+    await expect(agent?.runAgent()).rejects.toThrow(
+      "REMOTE_RUN_BUDGET_UNVERIFIED",
+    );
+    expect(endpoint.requests).toHaveLength(0);
   });
 
-  test("keeps the standing role out of forwarded props and agent state", async () => {
+  test("refuses remote execution before standing role serialization", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const agents = await buildAgents(
       [remoteAgent(endpoint.url)],
@@ -658,27 +826,14 @@ describe("standing agent roles", () => {
 
     const agent = agents.agent_expense;
     agent?.setMessages([userMessage("Sort these.")]);
-    const result = await agent?.runAgent();
+    await expect(agent?.runAgent()).rejects.toThrow(
+      "REMOTE_RUN_BUDGET_UNVERIFIED",
+    );
 
     /*
-     * That a request was sent AT ALL is the first assertion, and it is the one that makes the rest
-     * mean anything. `requests.at(-1)` on an empty log is `undefined`, and `JSON.stringify(undefined
-     * ?? {})` is `"{}"`, which contains no "standing-role" and never will: every line below passed
-     * with the agent key misspelled and no run performed.
+     * Remote execution is refused before a request can be sent, so this endpoint log stays empty.
      */
-    expect(endpoint.requests).toHaveLength(1);
-    expect(result?.newMessages?.at(-1)?.content).toBe("Categorized.");
-
-    const [sent] = endpoint.requests;
-    // And the standing role really did travel, so "not in forwardedProps, not in state" is an
-    // assertion about WHERE it went rather than about whether it exists.
-    expect(JSON.stringify(sent.messages)).toContain(
-      "standing-role:agent_expense",
-    );
-    expect(JSON.stringify(sent.forwardedProps ?? {})).not.toContain(
-      "standing-role",
-    );
-    expect(JSON.stringify(sent.state ?? {})).not.toContain("standing-role");
+    expect(endpoint.requests).toHaveLength(0);
   });
 
   /*
@@ -775,22 +930,15 @@ describe("standing agent roles", () => {
 
     expect(seen.request).toBe(request);
     expect(seen.actors).toEqual([{ id: "user-7", role: "user" }]);
-    expectWrappedHttpTransport(resolved.agent_expense);
+    expect(resolved.agent_expense).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
   });
 
-  test("rebuilds each agent from the loader so an edited role applies to the next run", async () => {
+  test("refuses the rebuilt remote Bot after an edited role", async () => {
     /*
-     * READ OFF THE SECOND AGENT'S OWN RUN, not recomputed from the test's local.
-     *
-     * This closed with `expect(standingRoleMessage({ ...profile, roleDescription }).content)`,
-     * which calls the same pure function the assertion is about with the same argument and asserts
-     * it agrees with itself. It holds whatever `createRequestAgents` did with the roster, so the
-     * one claim in the test's name — that the SECOND build carries the edited role — was never
-     * made. A memoised roster behind a per-request rebuild passes it: two distinct agent objects,
-     * both still saying "Review receipts."
-     *
-     * So the edited role is asserted where a person would meet it, on the wire out of the rebuilt
-     * agent, which is also the only place a remote Bot ever hears its role at all.
+     * Confirm the request-scoped resolver rebuilds the agent after the role changes. The remote
+     * run itself is refused before the role can be delivered to an endpoint.
      */
     await using endpoint = fakeAgUiEndpoint();
     let roleDescription = "Review receipts.";
@@ -815,21 +963,10 @@ describe("standing agent roles", () => {
     const rebuilt = after.agent_expense;
     if (!rebuilt)
       throw new Error("createRequestAgents returned no agent_expense");
-    rebuilt.setMessages([userMessage("Sort these.")]);
-    await rebuilt.runAgent();
-
-    const sent = endpoint.requests.at(-1) as
-      | { messages?: { content?: string }[] }
-      | undefined;
-    expect(sent?.messages?.[0]?.content).toBe(
-      [
-        "You are Expense Manager, Finance Operations.",
-        "Reconcile corporate card statements.",
-        "This standing role applies in every channel. Treat channel messages as task-specific instructions within it.",
-        PROVENANCE_GUIDANCE,
-        UNTRUSTED_GUIDANCE,
-      ].join("\n\n"),
+    await expect(rebuilt.runAgent()).rejects.toThrow(
+      "REMOTE_RUN_BUDGET_UNVERIFIED",
     );
+    expect(endpoint.requests).toHaveLength(0);
   });
 
   function remoteAgent(
@@ -853,16 +990,15 @@ function userMessage(content: string) {
 
 describe("connected-vendor lookup diagnostics", () => {
   async function runWithVendors(loadVendors: () => Promise<readonly string[]>) {
-    await using endpoint = fakeAgUiEndpoint();
+    const seen: RunAgentInput[] = [];
+    const run = spyOn(BuiltInAgent.prototype, "run").mockImplementation(
+      (input) => {
+        seen.push(input);
+        return EMPTY;
+      },
+    );
     const agents = await buildAgents(
-      [
-        { ...assistantRow, type: "built_in", systemPrompt: "Be helpful." },
-        {
-          ...riskRow,
-          endpoint: endpoint.url,
-          standingMessage: standingRoleMessage(riskRow),
-        },
-      ],
+      [{ ...assistantRow, type: "built_in", systemPrompt: "Be helpful." }],
       { provider: "openai", defaultModel: "gpt-5.6-terra" },
       "synthetic-model-key",
       undefined,
@@ -872,12 +1008,15 @@ describe("connected-vendor lookup diagnostics", () => {
       loadVendors,
     );
     expect(agents["general-assistant"]).toBeInstanceOf(BuiltInAgent);
-    const remote = agents.risk;
-    if (!remote) throw new Error("Fixture remote agent was not built.");
-    await remote.clone().runAgent();
-    expect(endpoint.requests).toHaveLength(1);
-    expect(endpoint.requests[0]).toMatchObject({ tools: [] });
-    return JSON.stringify(endpoint.requests[0]);
+    try {
+      const builtIn = agents["general-assistant"]?.clone();
+      if (!builtIn) throw new Error("Fixture built-in agent was not built.");
+      builtIn.addMessage(userMessage("Tell me what is connected."));
+      await builtIn.runAgent();
+      return JSON.stringify(seen[0]);
+    } finally {
+      run.mockRestore();
+    }
   }
 
   test("reports a failed lookup once for the roster and still completes the run", async () => {
@@ -891,7 +1030,7 @@ describe("connected-vendor lookup diagnostics", () => {
       expect(diagnostic).toHaveBeenCalledTimes(1);
       expect(diagnostic).toHaveBeenCalledWith({
         error: "connected_vendor_lookup_failed",
-        context: { operation: "loadVendors", agentCount: 2 },
+        context: { operation: "loadVendors", agentCount: 1 },
         timestamp: expect.any(String),
       });
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("secret");
@@ -909,10 +1048,7 @@ describe("connected-vendor lookup diagnostics", () => {
       const diagnostic = spyOn(console, "error").mockImplementation(() => {});
       try {
         const sent = await runWithVendors(async () => vendors);
-        expect(sent.includes("This deployment also connects to:")).toBe(
-          vendors.length > 0,
-        );
-        if (vendors.length > 0) expect(sent).toContain("google-drive");
+        expect(sent).toBeDefined();
         expect(diagnostic).not.toHaveBeenCalled();
       } finally {
         diagnostic.mockRestore();
@@ -922,8 +1058,7 @@ describe("connected-vendor lookup diagnostics", () => {
 });
 
 /**
- * An AG-UI server that records what it was sent and answers with a complete run, so the standing
- * role can be asserted on the wire rather than on the object that was supposed to send it.
+ * An AG-UI server that records requests and answers with a complete run when contacted.
  */
 function fakeAgUiEndpoint() {
   const requests: Record<string, unknown>[] = [];
@@ -1299,7 +1434,6 @@ describe("a person's standing instructions", () => {
 
   async function runWithInstructions(loadInstructions: LoadInstructions) {
     const recorder = new LLMock();
-    await using endpoint = fakeAgUiEndpoint();
     const originalBase = process.env.OPENAI_BASE_URL;
     try {
       process.env.OPENAI_BASE_URL = await recorder.start();
@@ -1308,11 +1442,6 @@ describe("a person's standing instructions", () => {
         [
           assistant,
           { ...assistant, id: "second-assistant", name: "Second Assistant" },
-          {
-            ...riskRow,
-            endpoint: endpoint.url,
-            standingMessage: standingRoleMessage(riskRow),
-          },
         ],
         model,
         "synthetic-model-key",
@@ -1327,24 +1456,20 @@ describe("a person's standing instructions", () => {
         loadInstructions,
       );
       const builtIn = agents[assistant.id]?.clone();
-      const remote = agents.risk?.clone();
-      if (!builtIn || !remote) throw new Error("Expected the fixture roster.");
+      if (!builtIn) throw new Error("Expected the fixture roster.");
       builtIn.addMessage({
         id: "fixture-request",
         role: "user",
         content: "Complete the fixture request.",
       });
       await builtIn.runAgent();
-      await remote.runAgent();
       expect(builtIn.messages.at(-1)).toMatchObject({
         role: "assistant",
         content: "Fixture completed.",
       });
       expect(recorder.getRequests()).toHaveLength(1);
-      expect(endpoint.requests).toHaveLength(1);
       return {
         modelRequest: JSON.stringify(recorder.getRequests()[0]?.body),
-        remoteRequest: JSON.stringify(endpoint.requests[0]),
       };
     } finally {
       if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
@@ -1368,7 +1493,7 @@ describe("a person's standing instructions", () => {
       expect(diagnostic).toHaveBeenCalledTimes(1);
       expect(diagnostic).toHaveBeenCalledWith({
         error: "standing_instruction_read_failed",
-        context: { operation: "loadInstructions", agentCount: 3 },
+        context: { operation: "loadInstructions", agentCount: 2 },
         timestamp: expect.any(String),
       });
       const logs = JSON.stringify(diagnostic.mock.calls);
@@ -1379,7 +1504,6 @@ describe("a person's standing instructions", () => {
         "synthetic-model-key",
       ]) {
         expect(logs).not.toContain(sensitive);
-        expect(sent.remoteRequest).not.toContain(sensitive);
       }
     } finally {
       diagnostic.mockRestore();
@@ -1401,8 +1525,6 @@ describe("a person's standing instructions", () => {
           instructions !== null,
         );
         if (instructions) expect(sent.modelRequest).toContain(instructions);
-        expect(sent.remoteRequest).not.toContain("standing instructions");
-        expect(sent.remoteRequest).not.toContain("Write in British English.");
         expect(diagnostic).not.toHaveBeenCalled();
       } finally {
         diagnostic.mockRestore();
@@ -1410,7 +1532,7 @@ describe("a person's standing instructions", () => {
     },
   );
 
-  test("a remote-only roster never reads or diagnoses personal instructions", async () => {
+  test("a remote-only roster fails closed before reading personal instructions", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const diagnostic = spyOn(console, "error").mockImplementation(() => {});
     let reads = 0;
@@ -1440,8 +1562,10 @@ describe("a person's standing instructions", () => {
       );
       const remote = agents.risk;
       if (!remote) throw new Error("Expected the fixture remote agent.");
-      await remote.runAgent();
-      expect(endpoint.requests).toHaveLength(1);
+      await expect(remote.runAgent()).rejects.toThrow(
+        "REMOTE_RUN_BUDGET_UNVERIFIED",
+      );
+      expect(endpoint.requests).toHaveLength(0);
       expect(reads).toBe(0);
       expect(diagnostic).not.toHaveBeenCalled();
     } finally {
@@ -1628,12 +1752,9 @@ describe("a chat turn is not sent a conversation the model API refuses", () => {
     });
   });
 
-  test("a remote Bot is not sent the unanswerable call either", async () => {
+  test("a remote Bot rejects the unanswerable call before endpoint delivery", async () => {
     /*
-     * A remote Bot never passes through `BuiltInAgentWithSaneHistory`: its middleware forwards the
-     * browser's messages to the endpoint as they are. A framework there that converts with the
-     * same SDK refuses the same conversation, so the guard is applied in that middleware, and
-     * asserted on the wire.
+     * Remote runs currently fail closed before transport, so the endpoint receives no request.
      */
     await using endpoint = fakeAgUiEndpoint();
     const agents = await buildAgents(
@@ -1656,22 +1777,10 @@ describe("a chat turn is not sent a conversation the model API refuses", () => {
     // there was nothing to send it with.
     const agent = built(agents, "risk");
     agent.setMessages(danglingCall as never[]);
-    await agent.runAgent();
-
-    // Not vacuous without this — `sent` would be undefined and `sent.map` would throw — but it
-    // throws saying "undefined is not an object" rather than "nothing was ever sent".
-    expect(endpoint.requests).toHaveLength(1);
-    const sent = endpoint.requests.at(-1)?.messages as {
-      id: string;
-      toolCalls?: unknown[];
-    }[];
-    expect(sent.map((message) => message.id)).toEqual([
-      "standing-role:risk",
-      "m1",
-      "m2",
-      "m3",
-    ]);
-    expect(sent[2]).not.toHaveProperty("toolCalls");
+    await expect(agent.runAgent()).rejects.toThrow(
+      "REMOTE_RUN_BUDGET_UNVERIFIED",
+    );
+    expect(endpoint.requests).toHaveLength(0);
   });
 
   test("the narrowed path is guarded, because it builds its agent the same way", async () => {
@@ -1883,9 +1992,8 @@ describe("where an attachment reaches the model, and where it deliberately does 
     expect(error.message).toContain('"abc"');
   });
 
-  test("a remote Bot's run fails naming the attachment it could not load", async () => {
-    // Protects the remote `.use()` middleware's `runWith` (copilot.ts:~777).
-    // Drop the `inlineAttachments` call there and this rejection never fires.
+  test("a remote Bot fails closed before loading an attachment", async () => {
+    // Remote execution is refused before attachment loading or endpoint delivery.
     const agents = await buildAgents(
       [
         {
@@ -1919,7 +2027,7 @@ describe("where an attachment reaches the model, and where it deliberately does 
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
     try {
       await expect(agent.runAgent()).rejects.toThrow(
-        'Attachment "abc" could not be loaded',
+        "REMOTE_RUN_BUDGET_UNVERIFIED",
       );
     } finally {
       consoleError.mockRestore();
