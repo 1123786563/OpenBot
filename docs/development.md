@@ -36,6 +36,9 @@ Start the stack:
 bash scripts/start.sh
 ```
 
+The optional stacks — kb, casdoor/open-connector, lago, observability — live in separate files
+under `docker/compose/`; [compose.md](compose.md) has the map, the ports and the invocations.
+
 ## Running services
 
 Use `bash scripts/start.sh` for the full local stack. It starts Docker services, applies migrations, starts the API server, the app, and the routine worker, and verifies health routes.

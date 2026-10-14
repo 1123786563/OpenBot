@@ -27,11 +27,11 @@
 -- may do, and no pre-install survives that DROP. Upstream assumes the app's database user is
 -- the cluster superuser — WeKnora's pinned stack runs exactly that way — so this stack matches
 -- the assumption rather than patching vendor files. The whole postgres is loopback-only with
--- inline development credentials, same as the rest of docker-compose.yml; a deployment that
+-- inline development credentials, same as the rest of docker/compose/lago.yml; a deployment that
 -- wants a real boundary gives Lago its own postgres instead of sharing this one.
 
 -- The login Lago connects with. Local-development password, matching the DATABASE_URL in
--- docker-compose.yml; a deployment sets a real one in both places before anything else can
+-- docker/compose/lago.yml; a deployment sets a real one in both places before anything else can
 -- reach the database.
 DO $$
 BEGIN

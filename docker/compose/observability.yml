@@ -1,23 +1,13 @@
-# Observability: the LGTM stack plus Alloy and GlitchTip — split out of docker-compose.yml
-# (one file per service group), formerly behind the `observability` profile.
+# Observability: the LGTM stack plus Alloy and GlitchTip. Start the main stack first if you want
+# container logs — Alloy tails every container, and the `default` network it and the datasources
+# name is the main project's. The server points at the stack with
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318; observability.md is the guide and
+# docs/compose.md#the-observability-stack the compose-level facts.
 #
-# START THE MAIN STACK FIRST if you want container logs: Alloy tails every container on the
-# machine through the docker socket, which works either way, but the `default` network it and
-# the datasources name is the main project's. Cross-file `depends_on` is not a thing Compose
-# resolves, and the single file deliberately had no depends_on between any of these anyway:
-# Alloy's loki.write retries a Loki that is not up yet, and Grafana's provisioning does not
-# need the datasources to answer at boot.
-#
-# The server points at the stack with OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-# (uncomment it in .env after the stack is up); every port below is loopback-only, like
-# every port in these files. Container-side addresses are service names on the shared
-# `default` network (http://loki:3102, http://tempo:4318); the published loopback ports are
-# the host-side contract (Grafana 3003, Loki 3102, Tempo 3200 + OTLP 4318/4317, Prometheus
-# 9090).
-#
-# Same project name as the main file on purpose: volumes keep their openbot_* names, so a
-# stack that ran under the single file keeps its data (loki-data, tempo-data, prometheus-data,
-# grafana-data, alloy-data) without any migration step.
+# Run from the repository root — --project-directory . is what makes the root .env
+# (GLITCHTIP_SECRET_KEY included) and the ./docker/observability paths resolve exactly as they
+# did when this file lived at the root:
+#   docker compose --project-directory . -f docker/compose/observability.yml up -d
 name: openbot
 
 services:
