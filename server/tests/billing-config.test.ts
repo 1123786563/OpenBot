@@ -642,15 +642,19 @@ describe("billing configuration", () => {
       LAGO_API_KEY: "stub-key",
       BILLING_MODEL_CREDIT_RATES:
         '{"GLM-5.3":{"input":{"numerator":"1","denominator":"100"},"output":{"numerator":"1","denominator":"0"}}}',
-      BILLING_MODEL_MAX_RESERVATION_TOKENS: '{"GLM-5.3":{"input":"128000","output":"16384"}}',
+      BILLING_MODEL_MAX_RESERVATION_TOKENS:
+        '{"GLM-5.3":{"input":"128000","output":"16384"}}',
       BILLING_CODE_RUN_CREDIT_RATE: '{"numerator":"1","denominator":"100"}',
       BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "100000",
     });
     expect(config.billing?.creditPolicy.configured).toBe(false);
     expect(config.billing?.creditPolicy.mode).toBe("hard_cap");
-    expect(
-      (config.billing?.creditPolicy as { issues: readonly { key: string }[] }).issues.map((i) => i.key),
-    ).toContain("BILLING_MODEL_CREDIT_RATES.GLM-5.3.output.denominator");
+    const policy = config.billing?.creditPolicy;
+    if (policy && policy.configured === false) {
+      expect(policy.issues.map((i) => i.key)).toContain(
+        "BILLING_MODEL_CREDIT_RATES.GLM-5.3.output.denominator",
+      );
+    }
   });
 
   test("the jwt webhook key selects jwt mode and is carried verbatim", () => {
@@ -841,9 +845,9 @@ describe("billing configuration", () => {
       }),
     ).toThrow(/valid JSON/);
     // A fraction of a token is not a thing.
-    expect(() => withQuotas({ pro: [{ metricCode: "m", limit: 1.5 }] })).toThrow(
-      /whole number/,
-    );
+    expect(() =>
+      withQuotas({ pro: [{ metricCode: "m", limit: 1.5 }] }),
+    ).toThrow(/whole number/);
     expect(() => withQuotas({ pro: [{ metricCode: "m", limit: -1 }] })).toThrow(
       /negative/,
     );
@@ -880,7 +884,12 @@ describe("billing configuration", () => {
               discountLabel: "7折",
               unit: "month",
             },
-            { code: "monthly", label: "1个月", priceCents: 19900, unit: "month" },
+            {
+              code: "monthly",
+              label: "1个月",
+              priceCents: 19900,
+              unit: "month",
+            },
           ],
         },
       }),
@@ -952,10 +961,14 @@ describe("billing configuration", () => {
     ).toThrow(/valid JSON/);
     expect(() => withCatalog({ pro: { credits: 1 } })).toThrow(/name/);
     expect(() =>
-      withCatalog({ pro: { name: "x", credits: -1, features: [], pricing: [] } }),
+      withCatalog({
+        pro: { name: "x", credits: -1, features: [], pricing: [] },
+      }),
     ).toThrow(/credits/);
     expect(() =>
-      withCatalog({ pro: { name: "x", credits: 1, features: [], pricing: [] } }),
+      withCatalog({
+        pro: { name: "x", credits: 1, features: [], pricing: [] },
+      }),
     ).toThrow(/pricing/);
     expect(() =>
       withCatalog({
@@ -987,5 +1000,40 @@ describe("billing configuration", () => {
       LAGO_API_KEY: "provider-bearer-key",
     });
     expect(config.billing?.planCatalog.size).toBe(0);
+  });
+
+  test("a plan allowance that cannot fit the ledger's 32-bit column refuses to start", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://lago.stub.test",
+        LAGO_API_KEY: "stub-key",
+        LAGO_PLAN_CATALOG:
+          '{"standard":{"name":"标准版","credits":30000000,"features":["a"],"pricing":[{"code":"monthly","priceCents":4900,"unit":"month"}]}}',
+      }),
+    ).toThrow(/credits must fit the credit ledger's 32-bit column/);
+  });
+
+  test("a price that cannot fit the order table's 32-bit column refuses to start", () => {
+    expect(() =>
+      loadConfig({
+        ...baseEnvironment,
+        LAGO_API_URL: "https://lago.stub.test",
+        LAGO_API_KEY: "stub-key",
+        LAGO_PLAN_CATALOG:
+          '{"standard":{"name":"标准版","credits":100,"features":["a"],"pricing":[{"code":"monthly","priceCents":99999999999,"unit":"month"}]}}',
+      }),
+    ).toThrow(/priceCents must fit the payment order table's 32-bit column/);
+  });
+
+  test("the largest representable allowance is accepted exactly", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://lago.stub.test",
+      LAGO_API_KEY: "stub-key",
+      LAGO_PLAN_CATALOG:
+        '{"standard":{"name":"标准版","credits":21474836,"features":["a"],"pricing":[{"code":"monthly","priceCents":2147483647,"unit":"month"}]}}',
+    });
+    expect(config.billing?.planCatalog.get("standard")?.credits).toBe(21474836);
   });
 });

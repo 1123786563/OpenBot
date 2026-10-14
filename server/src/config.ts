@@ -26,6 +26,9 @@ import {
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
+/** The ledger's scale, restated as a config-layer constant: config must not import the read module. */
+const CREDIT_SCALE_FOR_CONFIG = 100;
+
 const log = getLogger("server");
 
 export type RuntimeCapabilities = {
@@ -1336,7 +1339,14 @@ export type BillingCreditPolicyConfig =
       codeRun: BillingCodeRunCreditPolicyConfig;
     };
 
-const MAX_STORED_CREDIT_UNITS = 2_147_483_647n;
+export const MAX_STORED_CREDIT_UNITS = 2_147_483_647n;
+
+/** The largest whole-credit allowance the ledger's 32-bit `total` column can hold at ×100 scale. */
+const MAX_CATALOG_CREDITS = Number(
+  MAX_STORED_CREDIT_UNITS / BigInt(CREDIT_SCALE_FOR_CONFIG),
+);
+/** The largest integer cent amount a 32-bit `amount_cents` column can hold. */
+const MAX_STORED_CENTS = Number(MAX_STORED_CREDIT_UNITS);
 
 export type LagoBillingConfig = {
   /** The provider origin, for example `https://api.getlago.com`. No path, no query, no fragment. */
@@ -2005,6 +2015,15 @@ function billingPlanCatalog(
         `PLAN_CATALOG plan "${planCode}" credits must be a whole non-negative number`,
       );
     }
+    // A paid order pays this allowance out through credit_grants.total, a 32-bit column at ×100
+    // scale. An allowance that does not fit is refused HERE, at boot, rather than after the
+    // money lands: the payout insert would fail inside activation and strand a paid order in a
+    // permanent retry (audit A6).
+    if (record.credits > MAX_CATALOG_CREDITS) {
+      throw new Error(
+        `PLAN_CATALOG plan "${planCode}" credits must fit the credit ledger's 32-bit column (at most ${MAX_CATALOG_CREDITS} whole credits at ×100 scale)`,
+      );
+    }
     if (!Array.isArray(record.features)) {
       throw new Error(
         `PLAN_CATALOG plan "${planCode}" features must be a list of strings`,
@@ -2047,6 +2066,11 @@ function billingPlanCatalog(
           `PLAN_CATALOG plan "${planCode}" cycle "${code}" priceCents must be a whole non-negative number`,
         );
       }
+      if (c.priceCents > MAX_STORED_CENTS) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" priceCents must fit the payment order table's 32-bit column (at most ${MAX_STORED_CENTS})`,
+        );
+      }
       if (c.label !== undefined && typeof c.label !== "string") {
         throw new Error(
           `PLAN_CATALOG plan "${planCode}" cycle "${code}" label must be a string`,
@@ -2060,6 +2084,14 @@ function billingPlanCatalog(
       ) {
         throw new Error(
           `PLAN_CATALOG plan "${planCode}" cycle "${code}" originalCents must be a whole number`,
+        );
+      }
+      if (
+        typeof c.originalCents === "number" &&
+        c.originalCents > MAX_STORED_CENTS
+      ) {
+        throw new Error(
+          `PLAN_CATALOG plan "${planCode}" cycle "${code}" originalCents must fit the payment order table's 32-bit column (at most ${MAX_STORED_CENTS})`,
         );
       }
       if (

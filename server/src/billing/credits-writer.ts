@@ -208,14 +208,17 @@ export function createCreditWriter(database: Database): CreditWriter {
   return {
     async grantCredits(input) {
       // Integer discipline enforced at the seam: a fractional or negative amount is a caller's
-      // bug, and storing it rounded would silently corrupt the ledger it lands in.
+      // bug, and storing it rounded would silently corrupt the ledger it lands in. The upper
+      // bound is the column's: an amount the 32-bit ledger cannot hold is refused here, before
+      // the insert strands a paid activation in a permanent retry (audit A6).
       if (
         !Number.isInteger(input.totalCents) ||
         input.totalCents < 0 ||
+        input.totalCents > MAX_STORED_UNITS ||
         !Number.isFinite(input.expiresAt.getTime())
       ) {
         throw new TypeError(
-          "grantCredits needs a whole non-negative scaled amount and a real expiry.",
+          "grantCredits needs a whole non-negative scaled amount that fits the 32-bit credit column, and a real expiry.",
         );
       }
 
