@@ -46,7 +46,10 @@ import {
   type TenantStorageRegistry,
 } from "../../src/mastra/provisioning";
 import { createTenantMastraStorage } from "../../src/mastra/tenant-storage";
-import { enterpriseTestDatabaseUrlFrom } from "../support/enterprise-database";
+import {
+  enterpriseRuntimeDatabaseUrlFrom,
+  enterpriseTestDatabaseUrlFrom,
+} from "../support/enterprise-database";
 
 const runId = randomUUID().replaceAll("-", "");
 // R1B creates only task-scoped fixture tenants; production role/schema names are then derived
@@ -187,14 +190,13 @@ beforeAll(async () => {
       { id: foreignPrincipalId, userId: foreignActorId },
     ]);
   const operatorDb = createDatabase(
-    process.env.ENTERPRISE_TEST_OPERATOR_DATABASE_URL!,
+    enterpriseRuntimeDatabaseUrlFrom("operator"),
     { max: 2 },
   );
   operator = await verifyOperatorDatabase(operatorDb);
-  const dataDb = createDatabase(
-    process.env.ENTERPRISE_TEST_DATA_DATABASE_URL!,
-    { max: 2 },
-  );
+  const dataDb = createDatabase(enterpriseRuntimeDatabaseUrlFrom("data"), {
+    max: 2,
+  });
   data = await verifyDataDatabase(dataDb);
   await provisionDeployment(operator, {
     operationId: `mastra-${runId}`,
@@ -212,7 +214,7 @@ beforeAll(async () => {
     resources: [],
   });
   const directoryDb = createDatabase(
-    process.env.ENTERPRISE_TEST_DIRECTORY_DATABASE_URL!,
+    enterpriseRuntimeDatabaseUrlFrom("directory"),
     { max: 2 },
   );
   directory = await verifyDirectoryDatabase(directoryDb);
@@ -432,12 +434,28 @@ test("public Mastra append survives closing and recreating the restricted tenant
       }),
     ).rejects.toThrow("CONVERSATION_NOT_FOUND");
     expect(deniedStorageCalls).toBe(0);
-    const foreignConversation = await foreignService.getOrCreate(
+    const foreignStorage = {
+      async getStore() {
+        return { getStore: async () => null };
+      },
+      async withConversationLock<T>(
+        _scope: unknown,
+        _binding: unknown,
+        run: () => Promise<T>,
+      ) {
+        return run();
+      },
+    } as never;
+    const foreignStorageService = createConversationService({
+      data: data!,
+      mastraStorage: foreignStorage,
+    });
+    const foreignConversation = await foreignStorageService.getOrCreate(
       foreignScope,
       {},
     );
     foreignThread = foreignConversation.thread_id;
-    const foreignBinding = await foreignService.resolveMastraBinding(
+    const foreignBinding = await foreignStorageService.resolveMastraBinding(
       foreignScope,
       foreignThread,
     );

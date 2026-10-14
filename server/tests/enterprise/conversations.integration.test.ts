@@ -1195,7 +1195,11 @@ test("legacy channel bindings stay channel-specific and disjoint from principal-
   );
   const mastraService = createConversationService({
     data: dataDatabase!,
-    mastraStorage: {} as never,
+    mastraStorage: {
+      async getStore() {
+        return { getStore: async () => null };
+      },
+    } as never,
   });
   const privateConversation = await mastraService.getOrCreate(scope, {});
   const privateBinding = await mastraService.resolveMastraBinding(
@@ -1356,6 +1360,7 @@ test("Mastra attachment denial writes no message, intent, or attachment stamp", 
     threadId = conversation.thread_id;
     const foreignConversation = await service.getOrCreate(foreignScope, {});
     foreignThreadId = foreignConversation.thread_id;
+    storeCalls = 0;
     await expect(
       service.append(foreignScope, {
         threadId: foreignThreadId,

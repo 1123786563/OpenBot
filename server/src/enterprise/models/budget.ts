@@ -10,6 +10,7 @@ import type {
   PlatformScope,
 } from "../contracts";
 import { createConversationStore } from "../conversations/store";
+import { isPositiveInt32TokenCount } from "../runs/output-ceiling";
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
 
@@ -61,7 +62,7 @@ export class ModelBudgetError extends Error {
 }
 
 function assertTokens(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) {
+  if (!isPositiveInt32TokenCount(value)) {
     throw new ModelBudgetError(
       "INVALID_BUDGET",
       400,

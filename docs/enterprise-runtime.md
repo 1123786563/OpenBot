@@ -31,11 +31,13 @@ Go 运行时候选 (runtime-go, :4203, compose profile "go-runtime")
 
 ## 启动步骤
 
-1. **数据库**：需要 02/03 册的企业库（32 张 enterprise_* 表）+ 五个 runs 能力角色。测试环境：
+1. **数据库**：需要 02/03 册的企业库（32 张 enterprise_* 表）+ 五个 runs 能力角色。企业测试直接使用 `.env` 里的正式测试库 URL（本机约定：一次性容器 `openbot-enterprise-test-pg`，`127.0.0.1:5435/openbot_enterprise_test`；`TEST_DATABASE_URL` 与 `ENTERPRISE_TEST_*` 均指向它）。空库初始化会在迁移后按各 URL userinfo 里的登录名/密码补建受限登录：
    ```bash
-   docker compose up -d openbot-enterprise-test-pg   # :5434
-   bun --env-file=.env server/scripts/enterprise-test-db.ts roles
    bun --env-file=.env server/scripts/enterprise-test-db.ts migrate
+   ```
+   若迁移成功后置备登录失败（迁移一次性、fresh 守卫拒绝重跑），用 `provision` 模式只补建登录：
+   ```bash
+   bun --env-file=.env server/scripts/enterprise-test-db.ts provision
    ```
 2. **离线供种**（角色合同：release/route/grant/账户归 operator 离线供应）：
    ```bash
@@ -61,6 +63,8 @@ bun --env-file=.env server/scripts/enterprise-runtime-e2e.ts
 真实 Go 进程 + 真实账本 + 真实模型端点：断言 SSE 事件契约、账本行（run/attempt/双能力/事件）、预算挂账、受控工具与取消路径。退出码即结论。
 
 ## 测试矩阵
+
+企业 integration 套件是运行时行为门禁，暂不进入 `server typecheck`；server 类型检查刻意只覆盖 `src` 与 `scripts`。合并时移除的 `typecheck:enterprise` 是已删除 main v1 孤立测试的旧门禁，当前 delivery 测试的既有类型债务需单独清理。
 
 | 套件 | 覆盖 |
 |---|---|

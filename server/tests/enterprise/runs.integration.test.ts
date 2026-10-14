@@ -159,7 +159,7 @@ beforeAll(async () => {
   runStore = createRunStore(data);
 });
 
-async function createRunInput(label: string) {
+async function createRunInput(label: string, maximumTokens = 2000) {
   const runThreadId = randomUUID();
   await seedPlatformConversation(runThreadId);
   const conversation = await conversations.getOrCreate(scope, {
@@ -177,7 +177,7 @@ async function createRunInput(label: string) {
     clientMessageKey,
     attachmentRefs: [],
     entrypoint: "web" as const,
-    forwardedProps: { maxOutputTokens: 2000 },
+    forwardedProps: { maxOutputTokens: maximumTokens },
   };
 }
 
@@ -190,8 +190,11 @@ const admit = (input: StartRunInput): TrustedRunAdmission => ({
   expertVersionRef: syntheticExpertVersionRef,
   routeRef: syntheticRouteRef,
 });
-async function admittedRunInput(label: string): Promise<TrustedRunAdmission> {
-  return admit(await createRunInput(label));
+async function admittedRunInput(
+  label: string,
+  maximumTokens = 2000,
+): Promise<TrustedRunAdmission> {
+  return admit(await createRunInput(label, maximumTokens));
 }
 
 async function seedPlatformConversation(seedThreadId: string) {
@@ -654,6 +657,7 @@ test("Run creation and capability issue share a canonical configured ceiling", a
     return tx
       .select({
         idempotencyKey: enterpriseModelBudgetReservations.idempotencyKey,
+        tokenLimit: enterpriseModelBudgetReservations.tokenLimit,
       })
       .from(enterpriseModelBudgetReservations)
       .where(
@@ -665,6 +669,24 @@ test("Run creation and capability issue share a canonical configured ceiling", a
       );
   });
   expect(ceiling?.idempotencyKey).toBe(runCeilingIdempotencyKey(run.run_id));
+  expect(ceiling?.tokenLimit).toBe(2000);
+  const [persistedRun] = await dataDatabase!.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`,
+    );
+    return tx
+      .select({
+        modelRouteMaximumTokens: enterpriseRuns.modelRouteMaximumTokens,
+      })
+      .from(enterpriseRuns)
+      .where(
+        and(
+          eq(enterpriseRuns.tenantId, scope.tenantId),
+          eq(enterpriseRuns.id, run.run_id),
+        ),
+      );
+  });
+  expect(persistedRun?.modelRouteMaximumTokens).toBe(1000);
   await expect(
     dataDatabase!.transaction(async (tx) => {
       await tx.execute(
@@ -678,8 +700,11 @@ test("Run creation and capability issue share a canonical configured ceiling", a
           modelRouteRef: "synthetic-model-route",
           maximumTokens: 2000,
         },
-        2000,
-        { runCeiling: true, idempotencyKey: `custom:${run.run_id}` },
+        {
+          runCeiling: true,
+          idempotencyKey: `custom:${run.run_id}`,
+          configuredLimitTokens: 2000,
+        },
       );
     }),
   ).rejects.toMatchObject({
@@ -1479,7 +1504,6 @@ async function waitForRunLockWaiters(
         FROM pg_stat_activity AS activity
         WHERE activity.datname = current_database()
           AND activity.pid <> pg_backend_pid()
-          AND activity.usename = 'enterprise_data_login'
           AND activity.wait_event_type = 'Lock'
           AND activity.query ILIKE '%enterprise_runs%'
           AND activity.query NOT ILIKE '%pg_stat_activity%'
@@ -1514,7 +1538,6 @@ async function waitForRunLockWaiters(
       left(activity.query, 240) AS query
     FROM pg_stat_activity AS activity
     WHERE activity.datname = current_database()
-      AND activity.usename = 'enterprise_data_login'
       AND activity.pid <> pg_backend_pid()
   `)) as unknown as Array<Record<string, unknown>>;
   throw new Error(

@@ -27,7 +27,10 @@ import {
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
 import { createModelInvocationCapabilityService } from "./model-capability";
-import { runOutputCeilingFromInput } from "./output-ceiling";
+import {
+  isPositiveInt32TokenCount,
+  runOutputCeilingFromInput,
+} from "./output-ceiling";
 import {
   createRunInTransaction,
   createRunStore,
@@ -222,6 +225,23 @@ export function createRunService(deps: RunServiceDependencies): RunService {
       }
       if (admission.routeRef !== route.routeRef)
         throw new Error("RUN_ROUTE_MISMATCH");
+      if (!isPositiveInt32TokenCount(route.maximumTokens))
+        throw new Error("MODEL_ROUTE_UNAVAILABLE");
+      // The service-level contract: the run's route cap is the tighter of the
+      // caller ceiling and the route's own cap, while the budget reservation
+      // below stays at the full caller ceiling (runs.integration pins both:
+      // tokenLimit 2000, modelRouteMaximumTokens 1000). The production runner
+      // wiring cannot currently produce a cap below the ceiling — the request
+      // binding echoes the caller ceiling and the route snapshot carries no
+      // cap — so this clamp only bites injected routes today. Teaching
+      // governed execution a route-level cap is the prerequisite before any
+      // production route may tighten below the ceiling: the adapter issues
+      // capabilities against the caller ceiling, so a lower persisted cap
+      // would 402 at first issuance.
+      const routeMaximumTokens = Math.min(
+        runOutputCeiling,
+        route.maximumTokens,
+      );
       return store.transaction(scope, async (tx) => {
         const verified = await deps.expertVersions.resolveInTransaction(
           scope,
@@ -237,7 +257,7 @@ export function createRunService(deps: RunServiceDependencies): RunService {
           input,
           verified.expertVersionRef,
           route.routeRef,
-          runOutputCeiling,
+          routeMaximumTokens,
           leaseMilliseconds,
         );
         await reserveModelBudgetInTransaction(

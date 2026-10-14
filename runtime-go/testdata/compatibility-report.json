@@ -1,5 +1,5 @@
 {
-  "commit": "dd9ae0b3a7ff0d8e521575b46713c9b529746073",
+  "commit": "522eff8a0ea25231afe968ef492c9c78fedfe33a",
   "go_version": "go version go1.26.3 darwin/arm64",
   "workspace_digest": {
     "dirty": true,
@@ -62,22 +62,21 @@
     ]
   },
   "document_baseline": {
-    "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "f2f874a16c547c4c05585cf0b495284558869d70bc65911216a7858f520a17c3",
+    "docs/superpowers/plans/2026-10-09-enterprise-ai-00-master.md": "3988f0a53a6f51c106ef34373a33b76ead6fa599f2af59b9db6a6a92682e9ce1",
     "docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md": "805ca0d150b22d31a7ba63672951d770981006cde9afc095507e66348cd93d2e",
-    "server/scripts/enterprise-runtime-probe.ts": "505da46557b58433f2eca68398a7ce48d273ac6a3f0c459ba72a213790dd7936",
-    "runtime-go/cmd/runtime/main.go": "ac325430fd49869df3d958e46ea740c8347b8d20149558684f356c02c624e941",
+    "runtime-go/cmd/runtime/main.go": "bd84b072e005941ccc9ab55cd8eb1aac80df49d263f41aea0f79f66248d5e7b0",
     "runtime-go/internal/adapter/agui_test.go": "550271dc6f56d5ffbb7274057f232dc1997b397ea4b136847f76734b6e681df7",
     "runtime-go/internal/adapter/agui.go": "3048e7b089444220c90f14c8f62b01dacfd31a2ed2f1a4b78d60d423da7565af",
     "runtime-go/internal/adapter/backpressure_test.go": "544af6ce63ee1a0cafc26b7f22769bc711918b7e816520a014b69b0392f6026b",
     "runtime-go/internal/adapter/waitmapping.go": "26b5bf1fb6eda66980287de53d084f84edb06a494f6bf5c6fdf15fe81ad704e1",
-    "runtime-go/internal/callback/client_test.go": "0322097b06159d2efdc705bbed075168d2bc5e089ea72e21aba46cb1bee2f340",
-    "runtime-go/internal/callback/client.go": "44e3d8b3b998dcf60ae9539ed966ca2683030885bd600c635aed6ad5c78eebcd",
-    "runtime-go/internal/identity/context_test.go": "c9cd3b801ab07c84257cc2a32170c4e8a6c836dd34a3dc41c9cf07acfe81fce9",
-    "runtime-go/internal/identity/context.go": "9fc0a382ffbb13832998aafdecc5609edf531a2a16b7778f285347e7c288ca4f",
+    "runtime-go/internal/callback/client_test.go": "03505853ea26ac0089363290f0f4ba86d2b3c07b145e684a523f3efe2050532e",
+    "runtime-go/internal/callback/client.go": "675a224d0506600e066084f0915def20a4dabe40590f5d14c6b481b818a48437",
+    "runtime-go/internal/identity/context_test.go": "c441ccf5985738d1f752b3b9d6747cbfb55682ad26bac6deb43872c77e208666",
+    "runtime-go/internal/identity/context.go": "b52d0ed6c8c9092f85809f26d78509dbbbb8bfb651de8f0e332fe2609e3784ab",
     "runtime-go/internal/runtimeconfig/config_test.go": "5b90c8e81d2fbda90ad5a3cf1030a1fa74238ae5938314549446d870670069a7",
     "runtime-go/internal/runtimeconfig/config.go": "164958cf7b9054550d18134be657b5244a81769508345437bb234f9ba6a83ed4",
     "runtime-go/internal/server/auth_test.go": "30faaf75c2468bc80ea635e4de39ea556c95370dbaccf0d189d658b6c96b8c33",
-    "runtime-go/internal/server/auth.go": "808d8d97744b6f9bf7fdb6b4fd17efe5bba50e863bd2733f725f2377f96d087f",
+    "runtime-go/internal/server/auth.go": "7bd2d8d8242ce99efebe642f9123aefbbf5fd9a06fa1592b59395f1754f40b51",
     "runtime-go/internal/server/cancel_test.go": "07f10446b55088fd09979818f3e650c7c3476b393a52d9030982a92302a6894f",
     "runtime-go/internal/server/cancel.go": "3070f7dffcdadfe982c26972ff9e38914f081a75ba4a8b5d8d820acd27640960",
     "runtime-go/internal/server/executions_test.go": "2c8b2086e37d761b5e5a8e6650cb64c50a2c243812ed1c5cbb9f1951624d95c2",
@@ -88,20 +87,24 @@
     "runtime-go/internal/server/inputguard.go": "e6635b1eb642e58258e1ac9a6e80868656700905a0547649eeb53b0ad90596ed",
     "runtime-go/internal/server/runs_test.go": "b22cf35b59b9b235db09afe6364c7d0879ac9e25b616eb9d9b1de59dac14df59",
     "runtime-go/internal/server/runs.go": "a2dba8a6991310a1a7b1979fafdca8c3d9ca9d222522aca2b552641b288ed8df",
-    "runtime-go/internal/trustedinput/input_test.go": "9f736157c6ad9593e4562260903131bc80f92cda42ecd9e001e8aebe8a172faf",
+    "runtime-go/internal/trustedinput/input_test.go": "c97c7d3ed7192bfd4f331630c90bfdb57031f81c11b0891cd3ae35284f9a5f63",
     "runtime-go/internal/trustedinput/input.go": "88c5d6525c03003d44e494f4d6b20f433268f096bbce300edbe2942972a4df89"
   },
   "dependency_graph_digest": {
-    "goModSha256": "aa869ff54106a5a4b53ff3aa55940639326b7708ce73e16e69747443093ec43a",
-    "goSumSha256": "1cb4a7ff4ddf45ebf0b34dc393744254c47106b2f465884859f2369956aa0950",
-    "goSumLines": 169,
+    "goModSha256": "fc596345ef4c02ef684b4945c3faf661c2a2184669b4ef672ba5ed91b6169414",
+    "goSumSha256": "2125a8d07c077ba8a82fdc8ec249ff1c13d9729af67bf7d6afdce0568d8d4cf0",
+    "goSumLines": 129,
     "moduleCount": 119
   },
   "sdk_versions": {
     "@ag-ui/client": "1.0.1",
     "github.com/ag-ui-protocol/ag-ui/sdks/community/go": "v0.0.0-20260514093510-e9e910b230b9",
     "trpc.group/trpc-go/trpc-agent-go": "v1.11.1-0.20260925110348-9bb1c42b968c",
-    "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c"
+    "trpc.group/trpc-go/trpc-agent-go/server/agui": "v1.11.1-0.20260925110348-9bb1c42b968c",
+    "go.opentelemetry.io/otel": "v1.40.0",
+    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp": "v1.29.0",
+    "go.opentelemetry.io/otel/sdk": "v1.40.0",
+    "go.opentelemetry.io/otel/trace": "v1.40.0"
   },
   "environment": {
     "platform": "darwin/arm64",
@@ -707,28 +710,17 @@
   ],
   "commands": [
     {
-      "argv": [
-        "git",
-        "rev-parse",
-        "HEAD"
-      ],
+      "argv": ["git", "rev-parse", "HEAD"],
       "exitCode": 0,
       "purpose": "environment: which commit the candidate is probed at"
     },
     {
-      "argv": [
-        "git",
-        "status",
-        "--porcelain"
-      ],
+      "argv": ["git", "status", "--porcelain"],
       "exitCode": 0,
       "purpose": "environment: workspace difference summary (master §6 工作区差异摘要)"
     },
     {
-      "argv": [
-        "go",
-        "version"
-      ],
+      "argv": ["go", "version"],
       "exitCode": 0,
       "purpose": "environment: toolchain version"
     },
@@ -757,35 +749,17 @@
       "purpose": "candidate build: compile the REAL cmd/runtime binary"
     },
     {
-      "argv": [
-        "ps",
-        "-o",
-        "rss=",
-        "-p",
-        "67937"
-      ],
+      "argv": ["ps", "-o", "rss=", "-p", "67937"],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
     },
     {
-      "argv": [
-        "ps",
-        "-o",
-        "rss=",
-        "-p",
-        "67937"
-      ],
+      "argv": ["ps", "-o", "rss=", "-p", "67937"],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
     },
     {
-      "argv": [
-        "ps",
-        "-o",
-        "rss=",
-        "-p",
-        "67937"
-      ],
+      "argv": ["ps", "-o", "rss=", "-p", "67937"],
       "exitCode": 0,
       "purpose": "measurement: resident set size of the candidate process"
     }
@@ -887,30 +861,15 @@
   },
   "reviewers": {
     "G1a": {
-      "required": [
-        "技术",
-        "运行",
-        "QA"
-      ],
+      "required": ["技术", "运行", "QA"],
       "signed": []
     },
     "G1b": {
-      "required": [
-        "安全",
-        "运行",
-        "SRE",
-        "技术"
-      ],
+      "required": ["安全", "运行", "SRE", "技术"],
       "signed": []
     },
     "G2": {
-      "required": [
-        "产品",
-        "业务",
-        "技术",
-        "安全",
-        "SRE"
-      ],
+      "required": ["产品", "业务", "技术", "安全", "SRE"],
       "signed": []
     }
   }

@@ -23,6 +23,7 @@ import {
 } from "../../src/enterprise/tenancy/connections";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
+  enterpriseTestDatabaseNameFrom,
   enterpriseTestDatabaseUrlFrom,
 } from "../support/enterprise-database";
 
@@ -358,7 +359,9 @@ test("restricted catalog identities and RLS enforce separate directory, data, an
     FROM pg_roles actor WHERE actor.rolname = current_user
   `)) as unknown as Array<Record<string, unknown>>;
   expect(databaseIdentity).toMatchObject({
-    database_name: "openbot_enterprise_r2_codex_20261009",
+    database_name: enterpriseTestDatabaseNameFrom(
+      enterpriseTestDatabaseUrlFrom(),
+    ),
     setup_is_privileged: true,
   });
   expect(["ob_ent_directory", "ob_ent_data", "ob_ent_operator"]).not.toContain(

@@ -259,6 +259,17 @@ describe("Expert version catalog", () => {
     await expect(
       catalog.resolve(scope, row.expert_version_ref as never),
     ).rejects.toThrow("EXPERT_VERSION_CORRUPT");
+    // Rows may store the snapshot as a JSON string; parsing it must restore
+    // the definition, and an unparseable string is row corruption, not an
+    // invalid expert definition.
+    selected = { ...row, snapshot: JSON.stringify(row.snapshot) };
+    await expect(
+      catalog.resolve(scope, row.expert_version_ref as never),
+    ).resolves.toEqual(row.snapshot);
+    selected = { ...row, snapshot: "{not-json" };
+    await expect(
+      catalog.resolve(scope, row.expert_version_ref as never),
+    ).rejects.toThrow("EXPERT_VERSION_CORRUPT");
   });
 
   it("keeps cross-tenant references isolated and rejects invalid scopes and refs", async () => {

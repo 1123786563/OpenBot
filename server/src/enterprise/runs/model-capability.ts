@@ -4,6 +4,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
+import { isPositiveInt32TokenCount } from "./output-ceiling";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   enterpriseModelBudgetReservations,
@@ -117,9 +118,7 @@ function validateCapabilityInput(input: ModelInvocationCapabilityInput): void {
     typeof input.modelRequestId !== "string" ||
     !input.modelRequestId.trim() ||
     input.modelRequestId.length > 200 ||
-    !Number.isSafeInteger(input.maximumTokens) ||
-    input.maximumTokens <= 0 ||
-    input.maximumTokens > 2_147_483_647
+    !isPositiveInt32TokenCount(input.maximumTokens)
   ) {
     throw new ModelInvocationError(
       "INVALID_MODEL_INVOCATION_INPUT",
