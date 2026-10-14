@@ -245,6 +245,7 @@ function RouteComponent() {
               grants={grants.data.grants}
               grantCount={summary.data?.rewards.grantCount ?? 0}
               remaining={summary.data?.rewards.remaining ?? 0}
+              held={summary.data?.rewards.held ?? 0}
             />
           </div>
         )}

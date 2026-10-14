@@ -412,7 +412,7 @@ export type CreditConsumptionPage = {
  * visible, with their derived `expired` status, in the grant list.
  *
  * Computed by `summarizeCapacity` in ./credits.ts over the SAME `liveGrants` read the credit
- * writer admits against (./capacity.ts) — one口径, so the page can no longer show a balance the
+ * writer admits against (./capacity.ts) — one standard, so the page can no longer show a balance the
  * gate would refuse. The one deliberate difference: the writer also occupies a single extra unit
  * while a fractional remainder is owed (`owedUnit`, at most 0.01 credit), which this answer does
  * not subtract.

@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { createCredits } from "../src/billing/credits";
 import { createCreditWriter } from "../src/billing/credits-writer";
