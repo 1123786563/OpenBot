@@ -27,11 +27,6 @@ export type { EnterpriseRuntimeRole };
  */
 
 /**
- * The dedicated setup URL wins when CI pins a disposable database. A developer's official
- * `TEST_DATABASE_URL` (for example 127.0.0.1:5435/openbot_enterprise_test) is accepted as-is,
- * so the enterprise suite runs against the URL already present in `.env`.
- */
-/**
  * Which env variable won the setup-URL lookup. Exported so scripts that need
  * the variable label for their own refusals (enterprise-test-db.ts) derive it
  * from the same rule as the URL itself instead of re-implementing the
@@ -45,6 +40,11 @@ export function enterpriseSetupDatabaseVariable(
     : "TEST_DATABASE_URL";
 }
 
+/**
+ * The dedicated setup URL wins when CI pins a disposable database. A developer's official
+ * `TEST_DATABASE_URL` (for example 127.0.0.1:5435/openbot_enterprise_test) is accepted as-is,
+ * so the enterprise suite runs against the URL already present in `.env`.
+ */
 export function enterpriseTestDatabaseUrlFrom(
   environment: Record<string, string | undefined> = process.env,
 ): string {

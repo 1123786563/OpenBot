@@ -41,5 +41,10 @@
   // accumulated implicit `any`). Only `tests/support/enterprise-database.ts` is individually
   // included, because the URL validation it carries is security-relevant and stays clean.
   // Re-covering the enterprise suite is part of the same future sweep as the rest of `tests`.
-  "include": ["src", "scripts", "tests/support/enterprise-database.ts", "../scripts/composio-smoke.ts"]
+  "include": [
+    "src",
+    "scripts",
+    "tests/support/enterprise-database.ts",
+    "../scripts/composio-smoke.ts"
+  ]
 }

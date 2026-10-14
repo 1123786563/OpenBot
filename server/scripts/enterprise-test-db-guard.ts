@@ -32,13 +32,6 @@ export interface ParsedRuntimeTestLogin {
   password: string;
 }
 
-/**
- * Environment validation for one runtime test login URL: existence, URL
- * shape, identifier and ent* prefix, cross-role login-name dedup (each
- * accepted name is recorded into the caller's seenLoginNames set), and
- * password charset. Environment-injected so tests can lock the rules that
- * gate cluster-wide ALTER ROLE.
- */
 /** One row of pg_roles privilege flags, shared by the migrate-mode precheck and
  * the provisioning transaction so their rejection criteria cannot drift apart. */
 export interface PgRolePrivilegeFlags {
@@ -49,6 +42,13 @@ export interface PgRolePrivilegeFlags {
   rolreplication: boolean;
 }
 
+/**
+ * Environment validation for one runtime test login URL: existence, URL
+ * shape, identifier and ent* prefix, cross-role login-name dedup (each
+ * accepted name is recorded into the caller's seenLoginNames set), and
+ * password charset. Environment-injected so tests can lock the rules that
+ * gate cluster-wide ALTER ROLE.
+ */
 export function parseRuntimeTestLogin(
   role: EnterpriseRuntimeRole,
   variable: string,
