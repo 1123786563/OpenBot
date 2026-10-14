@@ -4,6 +4,14 @@ Every finding from the five committed review reports, with the coordinator's ver
 Read this before adjudicating: three items below did not appear in the `worker_done` summaries and
 two of those are security-relevant.
 
+**Update after coordinator probing (this revision):** two findings moved in opposite directions once
+tested against the delivered code rather than read. T05-F5 was escalated in the first revision of
+this register as a security defect; measurement shows no global pollution and no reachable raw
+attacker value, so the escalation is withdrawn and it stands as a correctness defect. T06-F3 was
+reported low; measurement shows `jobKey` — an idempotency identity for billable evaluation runs —
+collides, so it should be raised. Both directions are recorded rather than quietly edited, because
+a register that only ever confirms the reviewers is not a check on them.
+
 Reports live on the review branches:
 `opik-review-t01@fdbce7e8`, `opik-review-t02@a1894f6d`, `opik-review-t03@1c1d7617`,
 `opik-review-t05@9a2d1ed1`, `opik-review-t06@e1917c2d`, each at
@@ -19,7 +27,7 @@ the report is self-sufficient and re-running adds nothing).
 | --- | --- | --- | --- | --- |
 | T05-F1 | #11 | **high** | PEM deny pattern `\b` anchor never matches at line start or after a newline, so a private key passes through on the **default metadata path**. | **confirmed and worse than reported** — measured MISSED on bare PEM, after-space, after-colon and inside JSON metadata; detected only when glued to a word char. |
 | T05-AC1 | #11 | — | Acceptance criterion 1 of Issue #11 is therefore **fail (fixable)**, not merely "one finding". | **confirmed** — follows from F1. |
-| T05-F5 | #11 | low→**should be raised** | `projectSafeRecord` uses `in`, which walks inherited properties, and `out[key] =` for `__proto__` goes through a setter — a **prototype-pollution path inside the redaction module itself**. | **not yet verified.** Flagged as the highest-priority unverified item: it is a security defect in the component whose whole job is safety, and it was reported as low. |
+| T05-F5 | #11 | low (**coordinator escalation withdrawn**) | `projectSafeRecord` uses `in`, which walks inherited properties, and `out[key] =` for `__proto__` invokes the setter, hijacking the **returned record's** prototype. | **verified — real, but not a security hole.** Measured: global `Object.prototype` not polluted; `out.injectedSecret` undefined (raw attacker value unreachable); `JSON.stringify(out)` is `{}`. What *is* broken: `Object.keys(out)` is `[]` while `'state' in out` is true and `for..in` enumerates `["state","value"]` — inherited keys the record does not own. An allowlist entry naming an `Object.prototype` member (`toString`) also produces a spurious key. Fix is standard: `Object.create(null)` for the accumulator plus `Object.prototype.hasOwnProperty.call()` instead of `in`. |
 | T06-F1 | #12 | medium | Delivered branch fails `biome format` at `contracts.ts:71`; checkpoint recorded `FMT_EXIT=0`. | **confirmed** — the implementer ran `--write` and never committed; ` M contracts.ts` proves it. See errata E13. |
 | T03-F1 | #9 | **high** (plan, not deliverable) | The plan's `PUBLISHED` regex matches zero lines of the delivered compose, so both port guards pass vacuously; changing a line to `0.0.0.0:…` today would still be green. | **confirmed by mutation test** — 0 matches on the real file, 2 on a mutated copy. Deliverable itself is compliant. Errata E15. |
 
@@ -32,7 +40,7 @@ the report is self-sufficient and re-running adds nothing).
 | T05-F4 | #11 | low | `cutToBytes` can leave a lone surrogate, so the UTF-8 tail becomes U+FFFD bytes; the guard sits at the wrong layer. | **not yet verified** |
 | T05-F6 | #11 | low | Arrays/key counts silently truncate at 64 while state stays `projected` — the three-state contract has no representation for silent dropping. | **not yet verified**; note this is the same failure mode as errata S4 (a check that cannot see its own emptiness). |
 | T05-F7 | #11 | low | The manifest's `produces` umbrella name "`projectSafe()` 接口" does not correspond to the six functions actually exported. | **accepted as reported** — my manifest text, my defect. |
-| T06-F3 | #12 | low | `cacheKey` separator ambiguity **within one scope**, with a measured collision. | **not yet verified**, but a collision in a key-derivation function whose entire purpose is preventing cross-scope reuse deserves a fix rather than a note. |
+| T06-F3 | #12 | low→**should be raised to medium/high** | `cacheKey`, `jobKey` and `exportKey` join `name` and `parts` with a bare `\|` and no length prefixing, so they collide **within one scope**. | **confirmed and understated.** Measured: `cacheKey(s,'runs','page\|2')` == `cacheKey(s,'runs\|page','2')` == `cacheKey(s,'runs','page','2')`, and `jobKey` collides the same way. `jobKey` is the **idempotency identity** for evaluation jobs; the parent Spec requires every real execution to carry a stable idempotent identity, replays not to double-charge, and new billable executions not to ride on a reused identity — so a colliding `jobKey` is billing-adjacent, not cosmetic. Note the inconsistency: `scopeKey` in the same module *is* length-prefixed and injective, and T06's own test asserts that a bot id cannot smuggle a separator into a collision. The same discipline was simply not applied to the three derived-key helpers. |
 | T06-F2 | #12 | low | The checkpoint does not explicitly state #17's cursor-invalidation obligation. | **accepted as reported** |
 | T06-F4 | #12 | low | The fingerprint fix has no explicit equal-length-separation regression assertion. | **accepted as reported** — the plan now carries one (E7 patch), the deliverable does not. |
 | T02-M1 | #8 | medium | The implementer wrote its checkpoint but never committed it, so `manifest.handoff.checkpoint` is empty. | **confirmed** — the coordinator collected the file from the worktree; it must be committed at integration. |
