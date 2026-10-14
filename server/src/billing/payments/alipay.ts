@@ -301,6 +301,10 @@ function alipayFact(
   const totalAmount = anyField(record, "total_amount");
   const amountCents =
     totalAmount === undefined ? undefined : amountStringToCents(totalAmount);
+  // Read the wire's own word rather than asserting ours: a cross-border trade can state a
+  // settlement currency, and a fact that claims CNY without reading it is a fact nobody checked.
+  const wireCurrency =
+    anyField(record, "currency") ?? anyField(record, "trans_currency");
   return {
     outTradeNo,
     state,
@@ -308,6 +312,6 @@ function alipayFact(
     ...(amountCents !== null && amountCents !== undefined
       ? { amountCents }
       : {}),
-    currency: "CNY",
+    ...(wireCurrency ? { currency: wireCurrency } : {}),
   };
 }

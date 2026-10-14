@@ -226,6 +226,23 @@ describe("the notification verifier", () => {
     }
   });
 
+  test("a notification naming a settlement currency carries it verbatim; silence stays silent", async () => {
+    // The wire's own word, both spellings (audit A5): a cross-border trade states its currency
+    // directly or as trans_currency, and a notification naming neither states none — the adapter
+    // must not launder that silence into a CNY the wire never claimed.
+    const stated = await verifierOver(signedBody({ currency: "USD" }));
+    expect(stated.ok).toBe(true);
+    if (stated.ok) expect(stated.fact.currency).toBe("USD");
+    const crossBorder = await verifierOver(
+      signedBody({ trans_currency: "USD" }),
+    );
+    expect(crossBorder.ok).toBe(true);
+    if (crossBorder.ok) expect(crossBorder.fact.currency).toBe("USD");
+    const silent = await verifierOver(signedBody());
+    expect(silent.ok).toBe(true);
+    if (silent.ok) expect(silent.fact.currency).toBeUndefined();
+  });
+
   test("a tampered amount breaks the signature and is refused", async () => {
     const body = signedBody();
     const tampered = new URLSearchParams(body);

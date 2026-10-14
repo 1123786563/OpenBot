@@ -193,7 +193,7 @@ export function createReconciler(
             category: "payment",
             code: "fact_amount_mismatch",
             subject: order.id,
-            detail: `the paid fact records order=${order.amountCents} fact=${fact.amountCents} — the channel settled a different sum than the order snapshot; keep both facts, needs an operator (currency is database-enforced CNY on both sides, only the amount can drift)`,
+            detail: `the paid fact records order=${order.amountCents} fact=${fact.amountCents} — the channel settled a different sum than the order snapshot; keep both facts, needs an operator (the order's currency is database-enforced CNY; the channel's stated currency is compared at settlement and a disagreement is recorded as a \`currency_mismatch\` anomaly)`,
           });
         }
       }
