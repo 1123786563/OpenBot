@@ -33,9 +33,12 @@ describe("probe f: the meter's outbox write (static contract, index.ts)", () => 
     // released as no_usage, and the failure is thrown so the run cannot report success.
     expect(SOURCE).toMatch(/logUsageOutboxWriteFailure\(\s*\n\s*"llm",\s*\n\s*input\.eventId,\s*\n\s*error,\s*\n\s*reservation\.reservationId,/);
     expect(SOURCE).toMatch(/throw new ModelUsageSettlementError\(/);
-    expect(SOURCE).not.toMatch(
-      /releaseReservation\(\s*\n\s*reservation\.reservationId,\s*\n\s*"no_usage",/,
+    // Audit A2: release is now a decision over an explicit confirmed-no-cost vocabulary, so the
+    // probe asserts the vocabulary rather than the literal argument of one call site.
+    expect(SOURCE).toMatch(
+      /if \(isConfirmedNoCost\(failure\.reason\)\)/,
     );
+    expect(SOURCE).toMatch(/await recordUnsettledUsage\(\{/);
   });
 
   test("a failed durable write fails the run instead of vanishing into a log line", () => {

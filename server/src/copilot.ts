@@ -390,6 +390,9 @@ export function setModelUsageMeter(
 export type ModelUsageFailureReason =
   | "provider_error"
   | "stream_error"
+  /** The stream ended before any finish part: we never learned the cost. Retained, not free. */
+  | "usage_missing"
+  /** The provider reported a finish with zero tokens: a confirmed no-cost. Released. */
   | "no_usage"
   | "cancelled"
   | "bound_refused";
@@ -774,7 +777,7 @@ function meteredModel<T>(model: T): T {
           }
 
           if (chunk.done) {
-            await settleFail("no_usage");
+            await settleFail("usage_missing");
             reader.releaseLock();
             controller.close();
             return;
@@ -805,14 +808,30 @@ function meteredModel<T>(model: T): T {
                   outputTokens?: { total?: number };
                 }
               | undefined;
-            const inputTokens = usage?.inputTokens?.total;
-            const outputTokens = usage?.outputTokens?.total;
+            const reportedInput = usage?.inputTokens?.total;
+            const reportedOutput = usage?.outputTokens?.total;
+            /*
+             * Absent usage numbers are NOT zero usage (audit A2): an OpenAI-compatible gateway
+             * that ignores `stream_options.include_usage` reports nothing at all, and treating
+             * that as a confirmed no-cost released the hold, metered nothing and charged nothing
+             * — silently free. A HALF-reported usage is the same unknown: billing the number the
+             * provider did name and treating the missing one as zero is a silent under-charge.
+             * `CONTEXT.md` Pending Settlement: the hold stays until settlement or a confirmed
+             * no-cost, so an incomplete report settles as an unknown outcome and the gate retains.
+             */
+            if (reportedInput === undefined || reportedOutput === undefined) {
+              // No return: the person still sees this finish part, exactly as the old no_usage
+              // path let it through (decision gate G4 owns any change to that). settleFail
+              // claimed `settled`, so every settlement branch below is inert and the part
+              // flows to the enqueue at the bottom.
+              await settleFail("usage_missing");
+            }
             const validInput =
-              inputTokens === undefined ||
-              (Number.isSafeInteger(inputTokens) && inputTokens >= 0);
+              reportedInput === undefined ||
+              (Number.isSafeInteger(reportedInput) && reportedInput >= 0);
             const validOutput =
-              outputTokens === undefined ||
-              (Number.isSafeInteger(outputTokens) && outputTokens >= 0);
+              reportedOutput === undefined ||
+              (Number.isSafeInteger(reportedOutput) && reportedOutput >= 0);
 
             /*
              * Malformed or over-bound usage is a DISTINCT settlement failure: no charge is
@@ -820,8 +839,8 @@ function meteredModel<T>(model: T): T {
              * below — the reservation is NOT released. The provider already produced the
              * work; the hold stays visible for operator reconciliation.
              */
-            const billedInput = inputTokens ?? 0;
-            const billedOutput = outputTokens ?? 0;
+            const billedInput = reportedInput ?? 0;
+            const billedOutput = reportedOutput ?? 0;
             if (!validInput || !validOutput) {
               failSettlement(
                 "billing-model-usage-invalid",
