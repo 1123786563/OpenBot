@@ -1,0 +1,129 @@
+{
+ "group": "18",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC16）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 异步任务提交前预留完整任务成本上限；批量属异步族，部分成功与取消都要归属结算）",
+  "CONTEXT.md（批量任务、条目、部分成功、待结算术语）"
+ ],
+ "anchors": {
+  "bifrost-batch": "bifrost/framework/jobaccounting/batch.go（AccountBatchResults、NewBatchSweeper、BatchSettler、BatchResultFetcher、BatchPayload、ModelBreakdown = schemas.BatchModelBreakdown、extractedUsage、batchInputFrom）、doc.go（/v1/batches/{id}/results post-hook）、bifrost/framework/configstore/tables/batchjob.go（VirtualKeyID、CustomerID）",
+  "async-core": "组 17 交付的 AsyncJob 身份、提交预留、终态结算、取消与 unknown 语义",
+  "openbot-credit": "组 06 的 Reserve/Settle/Release 与 06.8 unknown",
+  "test-harness": "provider 批量 fake（部分成功、部分失败、部分取消）+ 真实持久化；go test ./framework/jobaccounting/..."
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "cd bifrost/framework/jobaccounting && go test ./...",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "18.1": {
+   "slug": "batch-overall-bound-reservation",
+   "contracts": {
+    "consumes": ["17.2 的提交前完整上限预留", "上游批量定价与条目结构"],
+    "produces": [
+     "批量整体上限换算：所有条目的最坏情况成本之和（含每条目模型/规格差异）作为一次性预留上限",
+     "批量任务与条目的父子身份：batchId 与逐条 itemId，均归属同一 payer",
+     "上限不足时整批拒绝，不允许部分派发后追加预留"
+    ]
+   },
+   "steps": [
+    "按条目逐条换算最坏成本并求和，足额方向取整，作为整批预留上限",
+    "创建批量任务与条目身份记录，全部绑定同一 payer 与锁定版本",
+    "预留失败时整批拒绝，供应商派发数为 0",
+    "先写失败测试：混合模型条目的上限求和正确；余额不足时整批拒绝"
+   ],
+   "criteria": [
+    "整批预留上限覆盖所有条目的最坏情况成本",
+    "余额不足时整批被拒绝，供应商派发数为 0",
+    "批量与条目身份都归属同一付款账户",
+    "不允许部分派发后再追加预留"
+   ],
+   "tests": ["混合条目上限换算测试", "整批拒绝测试（provider spy=0）", "父子身份归属断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/batch-reservation.integration.test.ts"],
+   "owned_scope": ["批量上限换算与身份记录", "对应测试"],
+   "resume_hint": "条目模型不同则单价不同；接手先用混合模型 fixture 断言求和，避免按单一单价估算整批。"
+  },
+  "18.2": {
+   "slug": "batch-per-item-attributed-settlement",
+   "contracts": {
+    "consumes": ["18.1 的整批预留与条目身份", "17.6 的终态 usage 结算"],
+    "produces": [
+     "逐条结算：每条按真实 usage 与锁定版本结算，条目归属与批量任务一致",
+     "结算聚合：逐条金额之和 ≤ 整批预留上限，未使用部分释放",
+     "明细可按批量任务与条目两级归因"
+    ]
+   },
+   "steps": [
+    "复用 Bifrost 批量结算（AccountBatchResults / BatchSettler）取得逐条 usage",
+    "按条目换算金额并聚合结算，保证总额不超过整批预留",
+    "把两级归因写入消费明细",
+    "先写失败测试：3 条批量 → 逐条金额正确、总额不超上限、余额释放正确"
+   ],
+   "criteria": [
+    "每条按真实 usage 结算，金额可追溯到条目",
+    "逐条金额之和不超过整批预留上限",
+    "未使用额度被释放，用户可用余额恢复",
+    "消费明细支持批量与条目两级归因"
+   ],
+   "tests": ["逐条结算集成测试", "总额不超上限断言", "两级归因明细断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/batch-settlement.integration.test.ts"],
+   "owned_scope": ["批量结算路径与明细归因", "对应测试"],
+   "resume_hint": "聚合结算要保证与逐条记录一致（同一笔台账或可核对的分录）；接手先断言两者金额相等。"
+  },
+  "18.3": {
+   "slug": "batch-partial-success",
+   "contracts": {
+    "consumes": ["18.2 的逐条结算", "06.11 的 Release 证据要求"],
+    "produces": [
+     "部分成功语义：成功条目照常结算，未完成条目按证据释放或进入 unknown",
+     "释放必须有未计费证据，不得因“批量未全部完成”整体释放",
+     "部分成功的批量状态可在用户与管理员视图区分"
+    ]
+   },
+   "steps": [
+    "按条目终态分类：completed / failed-billable / not-dispatched / unknown",
+    "completed 与 failed-billable 结算实际费用；not-dispatched 凭证据释放；unknown 保持预留",
+    "把批量状态标记为 partial 并记录各类条目数量",
+    "先写失败测试：5 条中 3 成功 1 已计费失败 1 未派发 → 结算 4 条、释放 1 条"
+   ],
+   "criteria": [
+    "成功条目按实际费用结算",
+    "已计费的失败条目仍结算实际费用",
+    "未派发条目凭证据释放，无证据则保持 unknown",
+    "批量状态标记为部分成功且各类条目数量可查"
+   ],
+   "tests": ["部分成功分类结算集成测试", "无证据不释放断言", "状态与数量断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/batch-partial-success.integration.test.ts"],
+   "owned_scope": ["条目终态分类与结算分支", "对应测试"],
+   "resume_hint": "整体释放是最常见的错误捷径；接手先跑“1 条未派发 + 4 条已计费”的用例，确认只释放有证据的部分。"
+  },
+  "18.4": {
+   "slug": "batch-partial-cancel-no-loss-no-dup",
+   "contracts": {
+    "consumes": ["18.3 的分类语义", "17.7 的取消语义"],
+    "produces": [
+     "部分取消语义：已取消条目凭证据释放，已执行条目照常结算，未知条目保持预留",
+     "取消不导致丢账（已发生费用未结算）或重复扣费（同一条目结算两次）",
+     "组 18 缝合点：批量提交 → 整批预留 → 部分成功/部分取消 → 两级明细，端到端可演示"
+    ]
+   },
+   "steps": [
+    "实现条目级取消处理，复用 17.7 的证据判定",
+    "以 itemId 作为结算幂等键，避免重复扣费",
+    "把取消结果与证据写入审计，并在视图区分取消与失败",
+    "先写失败测试：部分取消后既不丢账也不重复扣费；重复通知只结算一次"
+   ],
+   "criteria": [
+    "已取消且有未计费证据的条目被释放",
+    "已执行条目的费用被完整结算，不丢账",
+    "同一条目不会被结算两次",
+    "取消与失败在视图中可区分，且有审计记录"
+   ],
+   "tests": ["部分取消集成测试", "重复通知幂等测试", "丢账/重扣双向断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/batch-partial-cancel.integration.test.ts"],
+   "owned_scope": ["条目取消处理与幂等键", "视图与审计接线", "对应测试与验收记录"],
+   "resume_hint": "本 Ticket 是组 18 缝合点：验证时同时断言“不丢账”和“不重扣”，只测一侧会漏掉真实缺陷。"
+  }
+ }
+}

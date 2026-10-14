@@ -1,0 +1,218 @@
+{
+ "group": "21",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC18/AC19）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（Q23 未上线可清理旧部署计费、Q28 只清理旧计费体系数据并保留用户/Bot/会话/知识库、Q29 人工处置需证据）",
+  "docs/adr/0004-company-team-tenancy.md（公司账务历史必须保留）",
+  "CONTEXT.md（付款账户、legacy_deployment、unknown_owner、待结算术语）"
+ ],
+ "anchors": {
+  "billing-schema": "server/src/db/schema/credits.ts（creditGrants、creditLedger）、server/src/db/schema/billing.ts（billingCustomers、billingSubscriptions、billingWebhookEvents）、server/src/db/schema/ 下其他账务相关表",
+  "payments": "server/src/billing/payments/store.ts（订单与事件）、server/src/billing/usage-outbox.ts、server/src/billing/statements.ts、server/src/billing/reconcile.ts",
+  "migrations": "server/drizzle.config.ts 与既有迁移目录（server/src/db/migrations 或 drizzle 输出目录，执行时先定位）",
+  "legacy-mapping": "组 02.2 交付的显式归属映射与 unknown_owner 隔离",
+  "reservation-state": "组 06.8 的 unknown 预留与组 08 的 RecoveryItem（在途责任不得清理）",
+  "audit": "server/src/audit.ts、server/src/audit-retention.ts",
+  "scripts": "scripts/ 下既有维护脚本模式（如 fire-workshop-schedules.ts）与 server/src/billing/maintenance.ts",
+  "test-harness": "专用 PostgreSQL 测试库（TEST_DATABASE_URL）；严禁在开发库或共享库上演练清理"
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "21.1": {
+   "slug": "cleanup-manifest-enumeration",
+   "contracts": {
+    "consumes": ["02.2 的显式归属映射（legacy_deployment / personal / company / unknown_owner）"],
+    "produces": [
+     "CleanupManifest 枚举结果：实际数据库名、schema、表名、行范围与对象ID，全部来自查询而非命名猜测",
+     "每张表的归属分类计数与样例证据（不含敏感明细）",
+     "枚举为只读操作：不修改任何数据"
+    ]
+   },
+   "steps": [
+    "以查询方式枚举旧计费体系涉及的实际对象（积分 Grant/台账、计费客户、订阅、webhook 事件、订单与支付事件、用量 outbox、对账记录）",
+    "为每个对象记录归属分类计数与判定依据，未知归属单列",
+    "禁止用表名或客户前缀猜测归属；无法判定即归 unknown_owner",
+    "输出结构化 manifest 草稿（只读），供 21.2 分类与 21.4 dry-run 使用",
+    "先写失败测试：枚举结果与构造的 fixture 数据完全对应，无遗漏无多余"
+   ],
+   "criteria": [
+    "枚举覆盖旧计费体系的全部实际对象，来自查询证据而非命名猜测",
+    "每个对象都有归属分类计数与判定依据",
+    "未知归属被单列，不被默认归入可清理范围",
+    "枚举过程只读，不修改任何数据"
+   ],
+   "tests": ["混合 fixture 下枚举完整性测试", "未知归属单列断言", "只读断言（无写入）"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-enumeration.integration.test.ts"],
+   "owned_scope": ["清理枚举模块与 manifest 结构", "对应测试"],
+   "resume_hint": "枚举遗漏会导致后续清理不彻底或误删；接手先核对 fixture 中每类记录是否都出现在 manifest 中。"
+  },
+  "21.2": {
+   "slug": "cleanup-classification-evidence",
+   "contracts": {
+    "consumes": ["21.1 的枚举结果", "02.2 的归属映射"],
+    "produces": [
+     "四分类结果：company_history（保留）、personal_records（保留/迁移）、confirmed_obsolete_test（候选清理）、unknown_owner（隔离保留）",
+     "每类的判定证据：归属来源、时间范围、测试数据特征（如测试订单号、测试用户标记）",
+     "分类结果不可由执行者临时调整：调整必须重新生成 manifest"
+    ]
+   },
+   "steps": [
+    "按显式规则分类：公司账务历史一律 company_history；已映射到个人的记录归 personal_records",
+    "候选清理仅限具备明确测试数据特征且归属可证明的记录",
+    "无法证明的一律 unknown_owner 并隔离保留",
+    "把分类规则与证据写入 manifest，可被审查",
+    "先写失败测试：公司记录绝不出现在候选清理；证据不足的记录归 unknown_owner"
+   ],
+   "criteria": [
+    "公司账务历史全部归类为保留，绝不出现在候选清理范围",
+    "候选清理的每条记录都有可审查的归属与测试数据证据",
+    "证据不足的记录归 unknown_owner 并隔离保留",
+    "分类规则与证据随 manifest 持久化，可被独立复核"
+   ],
+   "tests": ["公司记录保留断言", "证据不足归 unknown 测试", "分类规则可复核断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-classification.integration.test.ts"],
+   "owned_scope": ["分类规则与证据模块", "对应测试"],
+   "resume_hint": "“看起来像测试数据”不是证据；接手检查每条候选记录是否有可指向的归属来源与特征字段。"
+  },
+  "21.3": {
+   "slug": "cleanup-fk-and-subscription-links",
+   "contracts": {
+    "consumes": ["21.2 的分类结果"],
+    "produces": [
+     "关联映射：候选记录的外键依赖、反向引用与外部订阅/支付网关关联清单",
+     "级联影响评估：删除某对象会波及哪些保留对象（必须为零，否则该对象移出候选）",
+     "外部有效订阅清单：不得自动取消，需人工确认"
+    ]
+   },
+   "steps": [
+    "从 schema 与实际数据双向确认外键与反向引用关系",
+    "评估每条候选记录的级联影响，波及保留对象者移出候选并记录原因",
+    "标出与外部支付/订阅系统仍有效的关联，列入人工确认清单",
+    "先写失败测试：存在指向保留记录的外键时，该候选被移出清单"
+   ],
+   "criteria": [
+    "候选记录的级联影响被完整评估，波及保留对象者被移出候选",
+    "外键与反向引用关系有数据证据，不只依赖 schema 声明",
+    "外部有效订阅被单列，不自动取消",
+    "关联评估结果随 manifest 持久化"
+   ],
+   "tests": ["外键保护测试", "级联影响移出候选测试", "外部订阅单列断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-relations.integration.test.ts"],
+   "owned_scope": ["关联映射与级联评估模块", "对应测试"],
+   "resume_hint": "schema 声明的外键可能与实际数据不一致（历史遗留）；接手用真实数据反查引用，不要只信迁移文件。"
+  },
+  "21.4": {
+   "slug": "cleanup-dry-run-and-hash",
+   "contracts": {
+    "consumes": ["21.3 的关联评估"],
+    "produces": [
+     "dry-run 报告：将删除的对象清单、行数、保留清单、隔离清单与校验 hash",
+     "hash 绑定 manifest 版本：manifest 变化后旧 dry-run 确认失效",
+     "dry-run 严格只读，可在专用测试库反复运行"
+    ]
+   },
+   "steps": [
+    "实现 dry-run：输出将删除与将保留的完整清单及行数统计，不执行任何写入",
+    "为 manifest 与 dry-run 结果计算校验 hash，并把二者绑定",
+    "报告结构可被管理员审查（分组统计 + 抽样明细，不含敏感字段）",
+    "先写失败测试：dry-run 后数据完全不变；hash 与 manifest 版本绑定；manifest 变更后旧确认失效"
+   ],
+   "criteria": [
+    "dry-run 不修改任何数据，可重复运行且结果一致",
+    "报告包含将删除、将保留与隔离三类清单及行数",
+    "校验 hash 与 manifest 版本绑定，manifest 变化后旧确认失效",
+    "报告不含凭据或敏感个人明细"
+   ],
+   "tests": ["dry-run 只读与幂等测试", "hash 绑定与失效测试", "报告脱敏断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-dry-run.integration.test.ts"],
+   "owned_scope": ["dry-run 与报告模块", "hash 绑定逻辑", "对应测试"],
+   "resume_hint": "hash 必须覆盖 manifest 内容而不只是时间戳；否则改范围后可复用旧确认，等于绕过审查。"
+  },
+  "21.5": {
+   "slug": "cleanup-inflight-and-no-delete-guards",
+   "contracts": {
+    "consumes": ["21.4 的 dry-run 结果", "06.8 的 unknown 预留语义", "08.1 的 RecoveryItem"],
+    "produces": [
+     "在途检查：存在未结算预留、unknown 状态或未完成 RecoveryItem 的对象不得进入清理范围",
+     "不删除约束：公司账务历史、用户、Bot、会话、知识库对象在清理程序中不可被删除（程序级硬约束）",
+     "未知归属对象保持隔离，清理程序无法触达"
+    ]
+   },
+   "steps": [
+    "在清理前检查在途责任（未结算预留、unknown、未完成恢复项），命中者移出范围并记录",
+    "在程序层面加入不可删除清单（公司账务、业务对象），任何路径都无法删除它们",
+    "unknown_owner 对象在查询层即被排除",
+    "先写失败测试：在途预留对象不被清理；尝试删除公司记录被程序拒绝"
+   ],
+   "criteria": [
+    "存在在途责任的记录不进入清理范围",
+    "公司账务历史与用户/Bot/会话/知识库对象在程序层面不可删除",
+    "unknown_owner 记录被隔离，清理程序无法触达",
+    "上述约束在代码中是硬约束，不依赖操作者谨慎"
+   ],
+   "tests": ["在途责任排除测试", "不可删除硬约束测试", "unknown 隔离断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-guards.integration.test.ts"],
+   "owned_scope": ["在途检查与不可删除约束", "对应测试"],
+   "resume_hint": "约束要写在程序里（白名单/断言），不能只写在文档；接手尝试构造一次“误删公司记录”的调用，确认被拒绝。"
+  },
+  "21.6": {
+   "slug": "cleanup-transactional-rehearsal",
+   "contracts": {
+    "consumes": ["21.5 的约束与范围"],
+    "produces": [
+     "隔离测试库上的事务化清理与重建演练：可回滚、可重跑、结果可核对",
+     "并发安全性证明：清理期间新增记录不被误删，外键保护生效",
+     "演练报告：删除行数、保留行数、回滚验证、账务校验结果"
+    ]
+   },
+   "steps": [
+    "在专用测试库构造混合数据（公司/个人/测试/未知/在途），执行事务化清理",
+    "验证失败时完整回滚，成功时行数与 dry-run 报告一致",
+    "并发新增记录场景下重跑，确认不误删新数据、外键保护生效",
+    "清理后重建个人账户体系可正常运行（发放、预留、结算 smoke）",
+    "先写失败测试：注入中途失败 → 完全回滚；并发新增 → 不被误删"
+   ],
+   "criteria": [
+    "清理在事务内完成，失败时完全回滚",
+    "成功执行的删除行数与 dry-run 报告一致",
+    "清理期间并发新增的记录不被误删",
+    "清理后新账务体系可正常运行（发放/预留/结算 smoke 通过）"
+   ],
+   "tests": ["事务回滚测试", "行数一致性断言", "并发新增保护测试", "重建后 smoke 测试"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-rehearsal.integration.test.ts"],
+   "owned_scope": ["事务清理与重建程序", "演练报告输出", "对应测试"],
+   "resume_hint": "演练只在专用测试库进行；若 TEST_DATABASE_URL 缺失，测试必须失败而不是回退到开发库。"
+  },
+  "21.7": {
+   "slug": "authorized-cleanup-execution-report",
+   "contracts": {
+    "consumes": ["21.6 的演练结论", "10.6 的个人账务可追溯视图", "用户对清理范围的明确授权"],
+    "produces": [
+     "受控执行：仅在已核验的 manifest 版本 + dry-run hash + 明确授权三者齐备时执行",
+     "执行报告：实际删除数量、保留记录、隔离记录、恢复方式与账务校验结果，管理员可查看",
+     "重复执行安全：manifest 变化后拒绝沿用旧确认，重复执行不误删新数据；旧余额不被复制到个人与公司两账户；组 21 缝合点"
+    ]
+   },
+   "steps": [
+    "执行前校验三要素（manifest 版本、dry-run hash、授权记录），任一缺失即拒绝执行",
+    "在事务内执行清理并生成报告，报告写入审计与可查看的管理界面",
+    "验证重复执行与 manifest 变更后的拒绝行为",
+    "执行后跑账务校验：公司历史与业务对象 hash 不变、个人账户体系正常",
+    "先写失败测试：缺授权拒绝执行；manifest 变更后旧确认失效；重复执行不误删"
+   ],
+   "criteria": [
+    "缺少授权、manifest 版本不匹配或 hash 不符时拒绝执行",
+    "执行报告包含删除、保留、隔离数量与恢复方式，管理员可查看",
+    "公司历史与用户/Bot/会话/知识库对象在执行后 hash 不变",
+    "旧余额不被复制到个人与公司两个账户；重复执行不误删新数据"
+   ],
+   "tests": ["三要素校验拒绝测试", "重复执行安全测试", "执行后账务校验断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/cleanup-execution.integration.test.ts"],
+   "owned_scope": ["受控执行入口与报告", "管理界面结果展示", "对应测试与验收记录"],
+   "resume_hint": "真实环境执行属于破坏性操作：必须先取得用户对具体 manifest 版本的明确授权，未授权时只交付演练与报告，不得执行。"
+  }
+ }
+}

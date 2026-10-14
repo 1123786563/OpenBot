@@ -4,7 +4,7 @@
  "supersedes": "manifest.json (22) 与 manifest-fine-draft.json (78)",
  "source_read_date": "2026-10-15",
  "source_state": "OPEN",
- "status": "draft-v3-details-in-progress",
+ "status": "details-complete-awaiting-publish-authorization",
  "split_policy": [
   "R1 每张 Ticket 只引入一个可观察行为变化（一个新语义、一个新拒绝路径或一个新展示），验证命令不超过 3 条。",
   "R2 跨仓库工作拆成 side-local 增量 + 一张端到端缝合 Ticket；side-local 增量必须在本仓库公开边界可验证（Bifrost：真实 HTTP 路由 + provider fake；OpenBot：服务接口 + SQL 台账）。",
@@ -5751,7 +5751,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "embedding-pricing-dimensions",
+   "contracts": {
+    "consumes": [
+     "07.12 的端到端准入路径",
+     "03.3 的 PriceStatus",
+     "上游 embedding 定价字段"
+    ],
+    "produces": [
+     "Embedding 计费维度映射：token 数、批量条目数、维度/模型变体等全部上游收费维度进入 PriceSnapshot",
+     "boundEvidence 规则：输入可完整序列化计数，输出为向量不产生额外计费维度时需有上游证据",
+     "能力启用条件：维度齐备且证据可强制才标记为可启用"
+    ]
+   },
+   "steps": [
+    "核对上游 embedding 定价的全部维度，逐一映射到 PriceSnapshot，缺项记 unknown",
+    "实现输入序列化计数（含批量条目与文本全部内容），作为预留上限依据",
+    "为可启用条件写出判定函数，供 03.8 过滤与 06.2 重验使用",
+    "先写失败测试：维度齐备时启用；缺任一维度时 unknown 且不启用"
+   ],
+   "criteria": [
+    "Embedding 的全部上游计费维度都进入价格快照",
+    "输入按完整序列化计数，批量条目不遗漏",
+    "维度齐备且证据可强制时该能力可启用",
+    "缺维度时标记 unknown，不启用且不按 0 成本放行"
+   ],
+   "tests": [
+    "维度映射测试（多维 fixture）",
+    "批量输入计数测试",
+    "启用判定分支测试"
+   ],
+   "verification": [
+    "bun test server/tests/embedding-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "Embedding 维度映射与启用判定",
+    "对应测试与 fixture"
+   ],
+   "resume_hint": "批量 embedding 常漏“条目数”维度；接手先构造多条目的 fixture 断言计数。",
+   "detail_status": "complete"
   },
   {
    "id": "11.2",
@@ -5776,7 +5815,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "embedding-unknown-price-refusal",
+   "contracts": {
+    "consumes": [
+     "11.1 的启用判定",
+     "07.3 的短路拒绝语义"
+    ],
+    "produces": [
+     "Embedding 未知价格拒绝路径：请求被短路拒绝，供应商未被调用，返回可展示原因",
+     "拒绝不产生预留、承诺或结算",
+     "原因码与 03.3 的 unknown 原因一致"
+    ]
+   },
+   "steps": [
+    "在 embedding 入口接入启用判定，unknown 时短路拒绝",
+    "确认拒绝发生在供应商调用之前，且不写入任何账务",
+    "把原因映射为用户可理解的文案",
+    "先写失败测试：价格 unknown 的 embedding 请求被拒绝且供应商调用数为 0"
+   ],
+   "criteria": [
+    "价格未知的 embedding 请求被拒绝，供应商调用数为 0",
+    "拒绝不产生预留、dispatch 承诺或结算记录",
+    "拒绝原因与价格状态分类一致且可展示",
+    "价格补齐后同一请求可正常执行"
+   ],
+   "tests": [
+    "unknown 价格拒绝测试",
+    "无账务写入断言",
+    "补齐价格后可用测试"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run EmbeddingRefusal ./..."
+   ],
+   "owned_scope": [
+    "Embedding 入口的拒绝接线",
+    "对应测试"
+   ],
+   "resume_hint": "拒绝必须发生在派发之前；接手用 provider spy 断言调用数为 0。",
+   "detail_status": "complete"
   },
   {
    "id": "11.3",
@@ -5800,7 +5877,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "rerank-pricing-dimensions",
+   "contracts": {
+    "consumes": [
+     "11.1 的维度映射模式",
+     "上游 rerank 定价与路由"
+    ],
+    "produces": [
+     "Rerank 计费维度映射：查询与文档条目数、token 或文档长度等上游实际收费维度",
+     "boundEvidence 规则：文档集合可完整计数，输出不产生额外费用需有上游证据",
+     "启用判定与 unknown 标记，语义与 11.1 一致"
+    ]
+   },
+   "steps": [
+    "定位 rerank 实际入口与上游定价维度，逐一映射到 PriceSnapshot",
+    "实现文档集合与查询的完整计数作为上限依据",
+    "接入启用判定，缺维度记 unknown",
+    "先写失败测试：多文档请求计数正确；缺维度时不启用"
+   ],
+   "criteria": [
+    "Rerank 的全部上游计费维度进入价格快照",
+    "文档与查询按完整内容计数，不因截断低估",
+    "缺维度时标记 unknown 且不启用",
+    "启用后的预留上限覆盖最坏情况"
+   ],
+   "tests": [
+    "维度映射测试",
+    "多文档计数测试",
+    "启用判定测试"
+   ],
+   "verification": [
+    "bun test server/tests/rerank-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "Rerank 维度映射与启用判定",
+    "对应测试"
+   ],
+   "resume_hint": "rerank 的计费常按文档数或 token 数，两者都要核对上游文档；只按其一实现会系统性低估上限。",
+   "detail_status": "complete"
   },
   {
    "id": "11.4",
@@ -5825,7 +5940,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "rerank-missing-dimension-refusal",
+   "contracts": {
+    "consumes": [
+     "11.3 的启用判定",
+     "07.3 的短路拒绝"
+    ],
+    "produces": [
+     "Rerank 缺维度拒绝路径：短路拒绝、供应商未调用、无账务写入",
+     "拒绝原因指向缺失的具体维度，便于管理员补价",
+     "补价后同一请求可执行"
+    ]
+   },
+   "steps": [
+    "在 rerank 入口接入启用判定并短路拒绝",
+    "拒绝原因包含缺失维度清单",
+    "确认无预留、无承诺、无结算写入",
+    "先写失败测试：缺维度拒绝且供应商调用数为 0；补维度后可用"
+   ],
+   "criteria": [
+    "缺计费维度的 rerank 请求被拒绝，供应商调用数为 0",
+    "拒绝原因列出缺失维度",
+    "拒绝不产生任何账务写入",
+    "维度补齐后请求可正常执行"
+   ],
+   "tests": [
+    "缺维度拒绝测试",
+    "原因内容断言",
+    "补齐后可用测试"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run RerankRefusal ./..."
+   ],
+   "owned_scope": [
+    "Rerank 入口拒绝接线",
+    "对应测试"
+   ],
+   "resume_hint": "原因要具体到维度名，否则管理员无法补价；接手断言原因文本包含缺失维度。",
+   "detail_status": "complete"
   },
   {
    "id": "11.5",
@@ -5849,7 +6002,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "ocr-image-page-pricing",
+   "contracts": {
+    "consumes": [
+     "11.1 的维度映射模式",
+     "上游 OCR 定价（按页/按图像/按 token）"
+    ],
+    "produces": [
+     "OCR 计费维度映射：页数、图像数量与规格、输出 token 等全部上游维度",
+     "输入边界规则：页数与图像规格必须在派发前可确定，否则不可启用",
+     "启用判定与 unknown 标记"
+    ]
+   },
+   "steps": [
+    "核对上游 OCR 定价维度（页/图像/输出 token），逐一映射",
+    "实现派发前的页数与图像规格确定逻辑，无法确定即判证据不足",
+    "接入启用判定，缺维度记 unknown",
+    "先写失败测试：多页文档计数正确；页数不可预先确定时不启用"
+   ],
+   "criteria": [
+    "OCR 的页数、图像与输出维度都进入价格快照",
+    "页数与图像规格在派发前可确定，否则不启用",
+    "缺维度时标记 unknown，不按 0 成本执行",
+    "多页请求的上限覆盖全部页"
+   ],
+   "tests": [
+    "多页计数测试",
+    "不可预先确定页数的拒绝测试",
+    "维度映射测试"
+   ],
+   "verification": [
+    "bun test server/tests/ocr-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "OCR 维度映射与边界判定",
+    "对应测试"
+   ],
+   "resume_hint": "页数在派发前不可知时（如流式解析），必须判为证据不足而不是按估算预留。",
+   "detail_status": "complete"
   },
   {
    "id": "11.6",
@@ -5874,7 +6065,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "ocr-unknown-not-free",
+   "contracts": {
+    "consumes": [
+     "11.5 的启用判定",
+     "03.3 的 known/free/unknown 区分"
+    ],
+    "produces": [
+     "OCR 未知价格拒绝路径：不得按免费执行，供应商未调用、无账务写入",
+     "明确 free 与 unknown 的展示区分：free 可执行（仍需授权与门禁），unknown 拒绝",
+     "组 11 缝合点：三类能力（Embedding/Rerank/OCR）的启用与拒绝端到端可演示"
+    ]
+   },
+   "steps": [
+    "在 OCR 入口接入启用判定并短路拒绝 unknown",
+    "确认 free 标记来自上游明确定价证据，而不是缺维度时的默认值",
+    "把三类能力的启用状态与原因汇总到 03.11 的发现接口",
+    "先写失败测试：unknown OCR 被拒绝；明确 free 的 OCR 可执行；两者展示不同"
+   ],
+   "criteria": [
+    "价格未知的 OCR 请求被拒绝，供应商调用数为 0",
+    "明确免费的 OCR 可执行，但仍需授权与门禁通过",
+    "界面上 free 与 unknown 展示不同，unknown 不显示为免费",
+    "三类能力的启用状态与原因可在发现接口查询"
+   ],
+   "tests": [
+    "unknown 拒绝测试",
+    "free 可执行测试",
+    "展示区分与发现接口断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run OcrPricing ./...",
+    "bun test server/tests/capability-availability.test.ts"
+   ],
+   "owned_scope": [
+    "OCR 拒绝接线与能力状态汇总",
+    "对应测试"
+   ],
+   "resume_hint": "本 Ticket 是组 11 的缝合点：除拒绝路径外，还要确认三类能力状态在发现接口一致可见。",
+   "detail_status": "complete"
   },
   {
    "id": "12.1",
@@ -5900,7 +6130,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "image-generation-spec-reservation",
+   "contracts": {
+    "consumes": [
+     "07.12 的端到端准入路径",
+     "03.2 的 image 维度价格快照"
+    ],
+    "produces": [
+     "图像生成上限换算：按请求数量 × 尺寸 × 质量档位（含输入图像成本，若适用）计算足额上限",
+     "boundEvidence：数量与规格在派发前完全确定，供应商按规格生成",
+     "启用判定：任一规格缺价则 unknown 并拒绝"
+    ]
+   },
+   "steps": [
+    "核对上游图像定价维度（每张单价随尺寸/质量变化、批量数量），映射到 PriceSnapshot",
+    "实现上限换算纯函数：数量 × 单张价（按规格），足额方向取整",
+    "接入 Reserve，派发前完成预留；规格不可确定时拒绝",
+    "先写失败测试：多张不同规格请求的上限换算正确；缺规格价格时拒绝"
+   ],
+   "criteria": [
+    "图像生成按数量与规格全维度预留，上限不低于最坏情况成本",
+    "缺任一规格价格时标记 unknown 并拒绝，不按 0 成本执行",
+    "数量与规格在派发前确定，供应商按该规格生成",
+    "预留锁定当时的价格快照与比例版本"
+   ],
+   "tests": [
+    "多规格上限换算单元测试",
+    "缺价拒绝测试",
+    "版本锁定断言"
+   ],
+   "verification": [
+    "bun test server/tests/image-generation-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "图像生成维度映射与上限换算",
+    "对应测试与 fixture"
+   ],
+   "resume_hint": "常见错误是只按“每张固定价”换算，忽略尺寸/质量档位；接手先用多档位 fixture 断言换算结果。",
+   "detail_status": "complete"
   },
   {
    "id": "12.2",
@@ -5924,7 +6192,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "image-generation-settlement-details",
+   "contracts": {
+    "consumes": [
+     "12.1 的预留与锁定版本",
+     "06.9 的 Settle",
+     "06.12 的用户视图"
+    ],
+    "produces": [
+     "按实际生成结果结算：实际张数与规格决定实际费用，未生成部分释放",
+     "用户消费明细中的图像条目：包含规格、数量与金额，可与其他能力区分",
+     "部分失败语义：已生成部分照常结算，未生成部分释放或进入 unknown"
+    ]
+   },
+   "steps": [
+    "在 PostLLM/结果路径收集实际生成张数与规格，换算实际金额并 Settle",
+    "未生成的部分按 06.11 释放（有未计费证据）或进入 unknown",
+    "把图像条目写入消费明细，附规格与数量",
+    "先写失败测试：请求 4 张实际生成 3 张 → 结算 3 张、释放 1 张；明细可见规格"
+   ],
+   "criteria": [
+    "结算金额按实际生成张数与规格计算，未生成部分不被收费",
+    "部分失败时已生成部分照常结算，剩余按证据释放或进入 unknown",
+    "用户明细显示图像规格、数量与金额",
+    "结算使用预留时锁定的价格版本"
+   ],
+   "tests": [
+    "部分生成结算集成测试",
+    "明细展示测试",
+    "锁定版本一致性断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/image-settlement.integration.test.ts"
+   ],
+   "owned_scope": [
+    "图像结算路径与明细归因",
+    "对应测试"
+   ],
+   "resume_hint": "释放未生成部分必须有未计费证据；无证据时进入 unknown，不要为了余额好看而直接释放。",
+   "detail_status": "complete"
   },
   {
    "id": "12.3",
@@ -5949,7 +6256,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "image-edit-input-cost",
+   "contracts": {
+    "consumes": [
+     "12.1 的上限换算",
+     "上游图像编辑定价"
+    ],
+    "produces": [
+     "编辑请求的上限换算包含输入图像成本（若上游对输入收费）与输出规格成本",
+     "输入图像数量与规格在派发前可确定，否则不启用",
+     "编辑与生成使用同一预留与结算语义"
+    ]
+   },
+   "steps": [
+    "核对上游编辑定价是否对输入图像/掩码收费，映射到 PriceSnapshot",
+    "扩展上限换算，把输入成本与输出规格成本合并计算",
+    "输入不可确定（如动态生成掩码）时判证据不足并拒绝",
+    "先写失败测试：带输入图像的编辑请求上限包含输入成本"
+   ],
+   "criteria": [
+    "编辑请求的上限包含输入图像成本（当上游收费时）",
+    "输入图像数量与规格在派发前可确定，否则拒绝",
+    "编辑与生成共用同一预留与结算语义",
+    "缺输入定价时标记 unknown 并拒绝"
+   ],
+   "tests": [
+    "输入成本纳入换算测试",
+    "输入不可确定拒绝测试",
+    "缺价 unknown 断言"
+   ],
+   "verification": [
+    "bun test server/tests/image-edit-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "图像编辑维度映射与换算",
+    "对应测试"
+   ],
+   "resume_hint": "上游若不收输入费用，要在快照里记为明确 free 并留证据，而不是留空——留空会被判 unknown。",
+   "detail_status": "complete"
   },
   {
    "id": "12.4",
@@ -5974,7 +6319,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "image-variants-no-budget-bypass",
+   "contracts": {
+    "consumes": [
+     "12.1–12.3 的预留与结算语义"
+    ],
+    "produces": [
+     "变体与其他图像入口共用同一预留语义：任何图像入口都无法绕过预算",
+     "入口清单与拒绝矩阵作为证据，供 22.1 全入口核查引用",
+     "组 12 缝合点：生成/编辑/变体三类入口端到端可演示且账务一致"
+    ]
+   },
+   "steps": [
+    "枚举所有图像入口（generations、edits、variations 及任何 provider 特有入口）",
+    "确认每个入口都经过 Reserve 与 Settle，无直连旁路",
+    "对未接入准入的入口硬拒绝，并记录原因",
+    "先写失败测试：逐入口断言余额不足时供应商调用数为 0"
+   ],
+   "criteria": [
+    "全部图像入口都经过积分准入，余额不足时供应商调用数为 0",
+    "变体请求按规格预留并结算，与生成语义一致",
+    "不存在绕过预算的图像入口（以入口清单为证据）",
+    "未接入准入的入口被硬拒绝而不是放行"
+   ],
+   "tests": [
+    "逐入口拒绝矩阵测试",
+    "变体结算一致性测试",
+    "入口清单覆盖断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run ImageEntrypoints ./...",
+    "bun test server/tests/image-entrypoints.test.ts"
+   ],
+   "owned_scope": [
+    "图像入口清单与准入接线",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 12 缝合点：先把入口枚举完整，再逐个断言准入；漏掉一个入口就等于留下旁路。",
+   "detail_status": "complete"
   },
   {
    "id": "13.1",
@@ -6000,7 +6383,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "speech-synthesis-bounded-reservation",
+   "contracts": {
+    "consumes": [
+     "07.12 的端到端准入路径",
+     "03.2 的 audio 维度价格快照"
+    ],
+    "produces": [
+     "语音生成上限换算：输入字符数 × 单价 + 输出音频时长上限 × 单价（含语音档位/音色差异）",
+     "boundEvidence：输入文本完整计数、输出时长存在可强制上限（供应商参数或本地封顶）",
+     "启用判定：无法限制输出时长或音频维度缺价 → 不启用"
+    ]
+   },
+   "steps": [
+    "核对上游语音定价维度（按字符、按输出秒、按音色/档位），映射到 PriceSnapshot",
+    "实现上限换算纯函数，输入按完整文本计数，输出按可强制的时长上限",
+    "接入 Reserve；输出时长不可强制时判证据不足并拒绝",
+    "先写失败测试：长文本上限换算正确；无时长上限能力时拒绝"
+   ],
+   "criteria": [
+    "语音生成按输入字符与输出时长上限全维度预留",
+    "输出时长必须有可强制上限，否则该模型/调用方式不启用",
+    "缺音频维度价格时标记 unknown 并拒绝",
+    "预留锁定当时价格快照与比例版本"
+   ],
+   "tests": [
+    "上限换算单元测试（多档位）",
+    "无时长上限拒绝测试",
+    "缺价 unknown 断言"
+   ],
+   "verification": [
+    "bun test server/tests/speech-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "语音维度映射与上限换算",
+    "对应测试与 fixture"
+   ],
+   "resume_hint": "只按输入字符计价会漏掉输出音频费用；接手先确认快照同时含输入与输出两侧维度。",
+   "detail_status": "complete"
   },
   {
    "id": "13.2",
@@ -6024,7 +6445,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "speech-synthesis-actual-settlement",
+   "contracts": {
+    "consumes": [
+     "13.1 的预留与锁定版本",
+     "06.9 的 Settle",
+     "06.12 的用户视图"
+    ],
+    "produces": [
+     "按实际用量结算：实际输入字符与实际输出音频时长决定金额，未使用额度释放",
+     "用户明细中的语音条目：包含时长/字符与金额，可与其他能力区分",
+     "结算幂等：同一次生成重复上报只结算一次"
+    ]
+   },
+   "steps": [
+    "在结果路径采集实际字符数与音频时长（来自供应商 usage 或可验证的产物元数据）",
+    "换算实际金额并 Settle，释放未使用额度",
+    "写入消费明细，附时长与字符维度",
+    "先写失败测试：上限 60 秒实际 25 秒 → 只结算 25 秒；重复上报只扣一次"
+   ],
+   "criteria": [
+    "结算金额按实际字符与音频时长计算，未使用部分释放",
+    "实际用量来源可验证（供应商 usage 或产物元数据），不用估算代替",
+    "重复上报同一结果只结算一次",
+    "用户明细显示语音时长/字符与金额"
+   ],
+   "tests": [
+    "实际用量结算集成测试",
+    "重复上报幂等测试",
+    "明细展示测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/speech-settlement.integration.test.ts"
+   ],
+   "owned_scope": [
+    "语音结算路径与明细归因",
+    "对应测试"
+   ],
+   "resume_hint": "拿不到真实 usage 时进入 unknown（06.8），不要用输入字符估算输出时长来结算。",
+   "detail_status": "complete"
   },
   {
    "id": "13.3",
@@ -6049,7 +6509,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "speech-interruption-tail-settled-once",
+   "contracts": {
+    "consumes": [
+     "13.2 的结算路径",
+     "06.8 的 unknown 状态",
+     "流式/播放中断的实际入口"
+    ],
+    "produces": [
+     "中断语义：客户端停止播放或断开连接时，已发生的音频生成费用完整结算且只结算一次",
+     "无法确认已生成量的部分进入 unknown，保持预留",
+     "中断不触发第二次派发或第二次结算"
+    ]
+   },
+   "steps": [
+    "定位语音播放/流式传输的中断点，在中断时收集已确认的实际用量",
+    "已确认部分按 13.2 结算；未确认部分标记 unknown 交 08.x",
+    "确认中断不重发请求、不重复结算",
+    "先写失败测试：播放中途断开 → 已发生费用结算一次，未确认部分保持 unknown"
+   ],
+   "criteria": [
+    "播放或流中断后已发生费用被完整结算，且只结算一次",
+    "无法确认的部分进入 unknown 并保持预留占用",
+    "中断不触发第二次供应商派发",
+    "结算金额不超过原预留上限"
+   ],
+   "tests": [
+    "中断结算集成测试",
+    "无重复派发/结算断言",
+    "unknown 保持占用断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/speech-interruption.integration.test.ts"
+   ],
+   "owned_scope": [
+    "中断路径的用量收集与结算接线",
+    "对应测试"
+   ],
+   "resume_hint": "“客户端断开=无费用”是错误默认；接手先跑中断用例，确认已发生费用进入结算或 unknown。",
+   "detail_status": "complete"
   },
   {
    "id": "13.4",
@@ -6074,7 +6573,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "unbounded-speech-paths-disabled",
+   "contracts": {
+    "consumes": [
+     "13.1 的 boundEvidence 判定",
+     "13.3 的尾部语义",
+     "03.11 的发现接口"
+    ],
+    "produces": [
+     "不可约束路径的禁用清单：无法限制输出时长或无法确认尾部费用的模型/调用方式标记为不可用",
+     "不可用原因可在发现接口与用户界面查询",
+     "组 13 缝合点：可约束语音路径端到端可演示，不可约束路径明确拒绝"
+    ]
+   },
+   "steps": [
+    "对每个语音模型/调用方式判定尾部是否可约束（能否确定已生成量、能否停止计费）",
+    "不可约束者标记不可用并在发现接口给出原因，不出现在可选列表",
+    "确认不可用路径被调用时短路拒绝且供应商未被调用",
+    "先写失败测试：不可约束路径不出现在可选列表；强制调用被拒绝"
+   ],
+   "criteria": [
+    "无法约束输出时长或尾部费用的语音路径不可用",
+    "不可用原因可在发现接口与界面查询",
+    "强制调用不可用路径时被短路拒绝，供应商调用数为 0",
+    "可约束路径正常执行且结算正确"
+   ],
+   "tests": [
+    "不可用标记与发现接口断言",
+    "强制调用拒绝测试",
+    "可约束路径回归测试"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run SpeechCapability ./...",
+    "bun test server/tests/capability-availability.test.ts"
+   ],
+   "owned_scope": [
+    "语音能力可用性判定与标记",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 13 缝合点：宁可少开放一个模型，也不要开放无法约束尾部的路径——那是系统性超支来源。",
+   "detail_status": "complete"
   },
   {
    "id": "14.1",
@@ -6099,7 +6638,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "transcription-input-measure",
+   "contracts": {
+    "consumes": [
+     "07.12 的端到端准入路径",
+     "03.2 的 audio 维度价格快照"
+    ],
+    "produces": [
+     "可靠输入计量：以受信任的音频时长来源（容器元数据校验 + 服务端测量）作为预留依据",
+     "上限换算：输入时长上限 × 单价 + 输出 token/字符上限 × 单价",
+     "不可计量即不可启用：时长无法在派发前可靠确定时拒绝"
+    ]
+   },
+   "steps": [
+    "核对上游转录定价维度（按输入秒/分钟、按输出 token），映射到 PriceSnapshot",
+    "实现服务端可信时长测量，不单独信任客户端提交的元数据",
+    "以测量时长 + 输出上限换算足额上限并接入 Reserve",
+    "先写失败测试：已知时长 fixture 的换算正确；无法测量时长时拒绝"
+   ],
+   "criteria": [
+    "转录按可靠输入时长与输出上限全维度预留",
+    "输入时长来自服务端可信测量，而非仅客户端声明",
+    "无法可靠确定时长时不启用该请求",
+    "缺音频维度价格时标记 unknown 并拒绝"
+   ],
+   "tests": [
+    "已知时长 fixture 换算测试",
+    "不可计量拒绝测试",
+    "缺价 unknown 断言"
+   ],
+   "verification": [
+    "bun test server/tests/transcription-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "音频计量与上限换算模块",
+    "对应测试与音频 fixture"
+   ],
+   "resume_hint": "音频 fixture 用极短时长的合成文件即可，重点是时长可验证；不要引入大体积媒体到仓库。",
+   "detail_status": "complete"
   },
   {
    "id": "14.2",
@@ -6124,7 +6701,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "transcription-metadata-tamper-proof",
+   "contracts": {
+    "consumes": [
+     "14.1 的可信计量",
+     "06.9 的 Settle"
+    ],
+    "produces": [
+     "防低报语义：客户端提交的时长/大小元数据与实际测量不一致时，以测量值为准并记录异常",
+     "篡改尝试可审计（差异值、来源、时间），供 22.2 旁路核查引用",
+     "结算按可信测量与真实 usage，二者冲突时进入 unknown 而不是取较小值"
+    ]
+   },
+   "steps": [
+    "比对客户端声明与服务端测量，不一致时以测量值计价并记录异常事件",
+    "确认结算不以客户端声明为依据；真实 usage 与测量冲突时标记 unknown",
+    "把差异记录写入审计，便于发现系统性低报",
+    "先写失败测试：伪造短时长元数据 → 按实际测量计费并产生异常记录"
+   ],
+   "criteria": [
+    "伪造或篡改音频元数据不能降低计费金额",
+    "计费以服务端可信测量与真实 usage 为准",
+    "声明与测量不一致时产生可审计异常记录",
+    "测量与 usage 冲突且无法确认时进入 unknown，保持预留"
+   ],
+   "tests": [
+    "篡改元数据计费测试",
+    "异常记录断言",
+    "冲突进入 unknown 测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/transcription-tamper.integration.test.ts"
+   ],
+   "owned_scope": [
+    "计量比对与异常记录",
+    "对应测试"
+   ],
+   "resume_hint": "不要取 min(声明, 测量) 作为“保守”做法——那是低报；必须取可信测量并在冲突时进入 unknown。",
+   "detail_status": "complete"
   },
   {
    "id": "14.3",
@@ -6148,7 +6763,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "other-audio-paths-evidence",
+   "contracts": {
+    "consumes": [
+     "14.1 的计量模式",
+     "上游各音频处理路径的定价与能力标志"
+    ],
+    "produces": [
+     "逐路径能力证据表：每条音频处理路径（翻译、语音识别变体、分离/增强等）的计费维度、边界可强制性、验证结果",
+     "证据齐备的路径标记可启用，其余保持未启用",
+     "证据结构可被 22.3/22.4 汇总为 conformance 输入"
+    ]
+   },
+   "steps": [
+    "枚举仓库与网关实际支持的音频处理路径，逐条核对上游定价维度",
+    "为每条路径记录边界可强制性与验证方式（本地 fake 或真实供应商）",
+    "证据不足的路径保持未启用，并记录缺失项",
+    "先写失败测试：未具备证据的路径不出现在可选列表"
+   ],
+   "criteria": [
+    "每条启用的音频路径都有维度映射与边界证据",
+    "证据不足的路径保持未启用且缺失项可见",
+    "证据记录包含验证环境与结果，可复现",
+    "枚举覆盖实际入口，不以能力名称推定"
+   ],
+   "tests": [
+    "路径枚举完整性断言",
+    "证据结构完整性测试",
+    "未启用路径不可见断言"
+   ],
+   "verification": [
+    "bun test server/tests/audio-capability-evidence.test.ts"
+   ],
+   "owned_scope": [
+    "音频路径枚举与证据存储",
+    "对应测试"
+   ],
+   "resume_hint": "缺真实供应商环境时用 fake 完成本地确定性验证，并把该路径标为“未验证/不可启用”，不要编造证据。",
+   "detail_status": "complete"
   },
   {
    "id": "14.4",
@@ -6173,7 +6826,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "unverified-audio-paths-unavailable",
+   "contracts": {
+    "consumes": [
+     "14.3 的证据表",
+     "03.11 的发现接口",
+     "07.3 的短路拒绝"
+    ],
+    "produces": [
+     "未验证音频路径的硬拒绝：调用被短路拒绝，供应商未被调用，无账务写入",
+     "不可用原因在发现接口与用户界面可见，指向缺失的证据项",
+     "组 14 缝合点：可信转录端到端可演示，未验证路径明确不可用"
+    ]
+   },
+   "steps": [
+    "把证据表接入可用性判定，未验证路径从可选列表移除",
+    "在入口对未验证路径短路拒绝，返回指向缺失证据的原因",
+    "确认拒绝不产生预留、承诺或结算",
+    "先写失败测试：未验证路径被拒绝且供应商调用数为 0；界面显示原因"
+   ],
+   "criteria": [
+    "未验证音频路径不可调用，供应商调用数为 0",
+    "拒绝原因指向缺失的具体证据项",
+    "拒绝不产生任何账务写入",
+    "补齐证据后路径可启用，无需改动其他能力"
+   ],
+   "tests": [
+    "未验证路径拒绝测试",
+    "原因内容断言",
+    "补证据后启用测试"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run AudioCapability ./...",
+    "bun test app/tests/capability-availability-ui.test.tsx"
+   ],
+   "owned_scope": [
+    "音频可用性判定与拒绝接线",
+    "界面原因展示",
+    "对应测试"
+   ],
+   "resume_hint": "本 Ticket 是组 14 缝合点：除拒绝路径外，确认原因在用户界面可见，否则用户只知道“失败”而无法自助。",
+   "detail_status": "complete"
   },
   {
    "id": "15.1",
@@ -6199,7 +6893,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "realtime-session-identity",
+   "contracts": {
+    "consumes": [
+     "08.1 的 RecoveryItem（未确认单元的恢复入口）",
+     "13.3 的尾部结算语义",
+     "14.2 的可信计量",
+     "05.4 的 CredentialBundle"
+    ],
+    "produces": [
+     "RealtimeSession { sessionId, payerRef, grantId, modelRef, snapshotVersion, rateVersion, startedAt, state }：会话期间身份与账务基准固定不变",
+     "会话建立即校验授权、门禁、开放范围与新鲜度；任一不满足则拒绝建立",
+     "会话身份可被恢复流程还原（断线/重启后仍归属同一账户）"
+    ]
+   },
+   "steps": [
+    "在实时会话建立入口（WebSocket/WebRTC 握手）解析 Key → 授权 → 付款账户，并锁定价格与比例版本",
+    "持久化会话身份记录，包含恢复所需字段",
+    "校验失败时拒绝建立会话，不进入任何计费单元",
+    "先写失败测试：授权撤销或门禁未就绪时会话建立被拒绝；会话期间 payer 不变"
+   ],
+   "criteria": [
+    "会话建立时固定 payer、授权、模型与价格版本，会话期间不变",
+    "授权失效、门禁未就绪或模型不再开放时拒绝建立会话",
+    "会话身份持久化，断线或重启后可还原归属",
+    "会话建立本身不产生供应商计费派发"
+   ],
+   "tests": [
+    "会话建立校验测试（四类拒绝）",
+    "身份固定断言（会话期间注入变更）",
+    "重启后身份还原测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-session-identity.integration.test.ts"
+   ],
+   "owned_scope": [
+    "实时会话身份模块与存储、迁移",
+    "对应测试"
+   ],
+   "resume_hint": "会话身份必须在建立时锁定；若实现成每单元重新解析 payer，撤销与价格变更语义会漂移，接手先断言版本不变。",
+   "detail_status": "complete"
   },
   {
    "id": "15.2",
@@ -6223,7 +6957,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "realtime-unit-reservation-hook",
+   "contracts": {
+    "consumes": [
+     "15.1 的会话身份",
+     "06.3 的原子预留"
+    ],
+    "produces": [
+     "计费单元模型：RealtimeUnit { unitId, sessionId, attemptId, reservationId, kind（输入音频/输出音频/响应/时长）, boundCents }",
+     "每个单元在开始处理前独立预留，单元之间共享同一账户的原子额度",
+     "单元状态机：pending → reserved → processing → settled | unknown | refused"
+    ]
+   },
+   "steps": [
+    "定义计费单元与其状态机，明确哪些事件构成一个单元（按供应商实际计费粒度）",
+    "在单元开始前调用 Reserve，取得独立 attemptId 与 reservationId",
+    "预留失败时单元标记 refused，不进入处理",
+    "先写失败测试：两个单元各自预留；余额只够一个单元时第二个被拒绝"
+   ],
+   "criteria": [
+    "每个计费单元在处理前都有独立 attemptId 与预留",
+    "同一会话的多个单元共享同一账户的原子额度",
+    "预留失败的单元不进入处理，且不产生供应商计费输入",
+    "单元状态可查询并支持恢复"
+   ],
+   "tests": [
+    "多单元独立预留测试",
+    "余额不足时第二个单元拒绝测试",
+    "状态机流转断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-unit-reservation.integration.test.ts"
+   ],
+   "owned_scope": [
+    "计费单元模块与存储、迁移",
+    "预留接线",
+    "对应测试"
+   ],
+   "resume_hint": "单元粒度必须与供应商实际计费粒度一致；粒度过粗会高估占用，过细会漏计费，接手先核对上游计费文档。",
+   "detail_status": "complete"
   },
   {
    "id": "15.3",
@@ -6248,7 +7021,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "realtime-audio-input-gating",
+   "contracts": {
+    "consumes": [
+     "15.2 的单元预留"
+    ],
+    "produces": [
+     "输入门控：未获得当前单元预留时，音频输入不向供应商转发（丢弃或缓冲但不计费）",
+     "门控在网关侧强制，客户端无法绕过",
+     "门控决策可观测（被拦截的输入量与原因），供排查与 22.2 证据"
+    ]
+   },
+   "steps": [
+    "在实时输入转发路径插入门控检查：当前单元是否已预留",
+    "未预留时不转发到供应商，并记录拦截事件",
+    "确认门控位于网关侧，客户端直连供应商的替代端点不可用（与 16.3 一致）",
+    "先写失败测试：未预留时供应商未收到任何计费输入"
+   ],
+   "criteria": [
+    "未获得单元预留时音频输入不被转发到供应商",
+    "门控由网关强制，客户端无法通过参数绕过",
+    "被拦截的输入有可观测记录与原因",
+    "门控不改变已预留单元的正常处理"
+   ],
+   "tests": [
+    "未预留输入拦截测试（真实 WebSocket + provider spy）",
+    "绕过尝试拒绝测试",
+    "拦截记录断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run RealtimeInputGating ./..."
+   ],
+   "owned_scope": [
+    "实时输入转发路径的门控",
+    "拦截记录",
+    "对应 Go 测试"
+   ],
+   "resume_hint": "门控必须在转发之前；若实现成“转发后检查”，供应商已产生费用，接手用 provider spy 验证顺序。",
+   "detail_status": "complete"
   },
   {
    "id": "15.4",
@@ -6273,7 +7084,44 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "no-new-input-while-unit-outstanding",
+   "contracts": {
+    "consumes": [
+     "15.3 的门控"
+    ],
+    "produces": [
+     "严格串行语义：上一单元仍在消耗（未结算且未进入 unknown）时，不因客户端提交新 unitId 而放开未预留输入",
+     "并发单元请求的排队或拒绝规则，且规则可观测",
+     "该语义对同一会话内的所有输入类型一致生效"
+    ]
+   },
+   "steps": [
+    "在门控中加入“前一单元未结清”判定，阻止新单元在未预留时接收输入",
+    "明确排队与拒绝策略（默认拒绝并提示，不静默缓冲无限增长）",
+    "确认策略对音频输入、文本输入与工具事件一致",
+    "先写失败测试：旧单元处理中提交新 unitId，未预留输入仍被拦截"
+   ],
+   "criteria": [
+    "旧单元未结清时，新 unitId 不能放开未预留输入",
+    "并发单元请求按明确策略排队或拒绝，且策略可观测",
+    "策略对所有输入类型一致生效",
+    "不因客户端行为导致无上限缓冲或内存增长"
+   ],
+   "tests": [
+    "旧单元未结清时的新单元拦截测试",
+    "并发单元策略测试",
+    "缓冲上限断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run RealtimeUnitSerialization ./..."
+   ],
+   "owned_scope": [
+    "门控的未结清判定与排队策略",
+    "对应 Go 测试"
+   ],
+   "resume_hint": "客户端可用新 unitId 制造并发；接手先跑并发用例，确认没有“新 ID 即放行”的分支。",
+   "detail_status": "complete"
   },
   {
    "id": "15.5",
@@ -6298,7 +7146,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "exhaustion-stops-further-units",
+   "contracts": {
+    "consumes": [
+     "15.2 的单元预留",
+     "06.3 的原子额度"
+    ],
+    "produces": [
+     "耗尽语义：余额不足以覆盖下一单元上限时，不开始该单元，会话进入可解释的停止状态",
+     "停止后不产生新的供应商计费输入，已发生费用仍按 15.7 结算",
+     "耗尽原因对用户与 Bot 可见，区别于网络错误"
+    ]
+   },
+   "steps": [
+    "在单元预留失败且原因为余额不足时，停止后续单元并标记会话状态",
+    "确认停止后输入门控持续生效，不产生新的计费输入",
+    "把耗尽原因映射为可展示文案，与授权失效、网络错误区分",
+    "先写失败测试：余额耗尽后无新单元、供应商未收到新计费输入"
+   ],
+   "criteria": [
+    "余额耗尽后不开始新的计费单元",
+    "耗尽后供应商不会收到新的计费输入",
+    "耗尽原因对用户可见且与网络错误可区分",
+    "已发生费用的结算责任不受停止影响"
+   ],
+   "tests": [
+    "耗尽停止集成测试",
+    "无新计费输入断言",
+    "原因可区分断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-exhaustion.integration.test.ts"
+   ],
+   "owned_scope": [
+    "耗尽停止逻辑与状态",
+    "原因映射",
+    "对应测试"
+   ],
+   "resume_hint": "停止不等于关闭会话（关闭见 15.6/15.7）；接手确认停止后仍能完成既有单元的结算。",
+   "detail_status": "complete"
   },
   {
    "id": "15.6",
@@ -6324,7 +7211,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "revocation-and-expiry-stop-realtime",
+   "contracts": {
+    "consumes": [
+     "15.5 的停止语义",
+     "05.7 的撤销立即拒绝",
+     "05.5 的 Key 到期"
+    ],
+    "produces": [
+     "撤销/到期语义：授权撤销或 Key 到期后阻止后续单元，并尽力关停会话（关闭上游连接与流）",
+     "关停不取消已发生费用的结算责任，未确认部分进入 unknown",
+     "网关不可达时同样拒绝后续单元（不依赖稍后同步）"
+    ]
+   },
+   "steps": [
+    "在每个单元开始前复核授权与 Key 状态，撤销或到期即停止并触发关停",
+    "实现尽力关停：关闭上游会话、停止转发、标记会话终态",
+    "确认网关侧不可达时按拒绝处理，不乐观继续",
+    "先写失败测试：会话中撤销授权 → 无新单元且会话被关停；已发生费用仍结算"
+   ],
+   "criteria": [
+    "授权撤销后不开始新单元，且会话被尽力关停",
+    "Key 到期后同样阻止新单元并关停",
+    "网关不可达时后续单元被拒绝，不继续计费",
+    "关停不取消已发生费用的结算，未确认部分进入 unknown"
+   ],
+   "tests": [
+    "会话中撤销关停集成测试",
+    "到期关停测试",
+    "网关不可达拒绝测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-revocation.integration.test.ts"
+   ],
+   "owned_scope": [
+    "单元前复核与关停逻辑",
+    "对应测试"
+   ],
+   "resume_hint": "关停要覆盖上游连接与本地转发两侧；只停一侧会继续产生费用，接手用 provider spy 双向断言。",
+   "detail_status": "complete"
   },
   {
    "id": "15.7",
@@ -6349,7 +7275,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "realtime-tail-settled-once",
+   "contracts": {
+    "consumes": [
+     "15.6 的关停",
+     "13.3 的尾部结算语义",
+     "06.9 的 Settle",
+     "06.8 的 unknown"
+    ],
+    "produces": [
+     "关停尾部费用语义：关停后仍可能产生的尾部用量在原预留上限内结算，且只结算一次",
+     "尾部无法约束的 adapter/模型标记不可用（与 13.4 一致）",
+     "尾部超出上限时的处理规则：超出部分进入 unknown，不静默丢弃也不静默追加"
+    ]
+   },
+   "steps": [
+    "在关停路径收集尾部用量，按锁定版本换算并在原预留内结算",
+    "确认尾部结算幂等，重复关停或重复上报只结算一次",
+    "尾部无法约束的 adapter 标记不可用并记录原因",
+    "先写失败测试：关停后尾部费用结算一次；无法约束尾部的 adapter 不可用"
+   ],
+   "criteria": [
+    "关停后的尾部费用在原预留上限内结算，且只结算一次",
+    "尾部无法确认时进入 unknown 并保持预留",
+    "无法约束尾部的 adapter/模型不可用且原因可见",
+    "尾部结算不超过原预留上限"
+   ],
+   "tests": [
+    "尾部结算一次集成测试",
+    "unknown 尾部断言",
+    "不可约束 adapter 禁用测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-tail-settlement.integration.test.ts"
+   ],
+   "owned_scope": [
+    "尾部用量收集与结算",
+    "adapter 可用性标记",
+    "对应测试"
+   ],
+   "resume_hint": "尾部超过预留上限时不要静默追加扣费；进入 unknown 并由 08.x 处置，这是 Q26 的硬约束。",
+   "detail_status": "complete"
   },
   {
    "id": "15.8",
@@ -6375,7 +7342,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "realtime-recovery-and-usage-ui",
+   "contracts": {
+    "consumes": [
+     "15.7 的结算结果",
+     "08.1 的 RecoveryItem",
+     "06.12 的用户视图"
+    ],
+    "produces": [
+     "断线/重启恢复：单元状态持久化，恢复后不重复派发、不重复结算",
+     "多会话共享账户：同一账户的两个实时会话竞争同一份原子额度",
+     "用户界面：实时会话消费、待结算与异常状态可见；组 15 缝合点"
+    ]
+   },
+   "steps": [
+    "确认单元与会话状态在断线/重启后可还原，恢复走 08.x 而不新建单元",
+    "验证两个并发会话共享账户额度（一个耗尽时另一个的新单元被拒绝）",
+    "在用户界面展示实时会话消费、待结算与异常原因",
+    "先写失败测试：断线重连后无重复扣费；双会话额度竞争；界面展示正确"
+   ],
+   "criteria": [
+    "断线或重启后恢复不重复派发、不重复结算",
+    "同一账户的两个实时会话共享原子额度，一个耗尽会影响另一个的新单元",
+    "用户看到实时会话消费、待结算额度与异常原因",
+    "界面不泄露他人会话或账户数据"
+   ],
+   "tests": [
+    "断线重连恢复集成测试",
+    "双会话额度竞争测试",
+    "界面展示与越权不可见测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-recovery.integration.test.ts",
+    "bun test app/tests/realtime-usage-ui.test.tsx"
+   ],
+   "owned_scope": [
+    "会话/单元恢复接线",
+    "实时消费展示页面",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 15 缝合点：完成后应能演示“连续实时对话 → 耗尽停止 → 撤销关停 → 断线恢复 → 明细可见”全流程。",
+   "detail_status": "complete"
   },
   {
    "id": "16.1",
@@ -6400,7 +7408,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "webrtc-reuses-unit-admission",
+   "contracts": {
+    "consumes": [
+     "15.2 的单元预留",
+     "15.3 的输入门控",
+     "WebRTC 会话建立入口（SDP 交换 / client_secrets）"
+    ],
+    "produces": [
+     "WebRTC 入口复用同一 RealtimeSession 与 RealtimeUnit 模型，账务语义与 WebSocket 完全一致",
+     "会话建立与每个单元开始前同样经过校验与预留",
+     "两类入口共用同一套状态机与恢复路径"
+    ]
+   },
+   "steps": [
+    "在 WebRTC 会话建立路径（SDP 交换或 client_secrets 签发）接入 15.1 的会话身份校验",
+    "确认单元级预留与输入门控在 WebRTC 数据通道上同样生效",
+    "复用组 15 的状态机与恢复，不新建第二套账务模型",
+    "先写失败测试：WebRTC 会话建立被校验；未预留单元的输入不被转发"
+   ],
+   "criteria": [
+    "WebRTC 会话建立经过与 WebSocket 相同的校验，未通过则拒绝建立",
+    "WebRTC 的每个计费单元在处理前完成预留",
+    "未预留输入不向供应商转发",
+    "两类入口共用同一账务模型与恢复路径"
+   ],
+   "tests": [
+    "WebRTC 会话建立校验测试",
+    "单元预留与门控测试（SDP + fake 上游）",
+    "共用状态机断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run WebRTCAdmission ./..."
+   ],
+   "owned_scope": [
+    "WebRTC 入口的准入接线",
+    "对应 Go 测试"
+   ],
+   "resume_hint": "不要为 WebRTC 复制一套会话/单元模型；接手确认它复用组 15 的存储与状态机。",
+   "detail_status": "complete"
   },
   {
    "id": "16.2",
@@ -6425,7 +7472,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "webrtc-shutdown-and-tail-parity",
+   "contracts": {
+    "consumes": [
+     "16.1 的接入结果",
+     "15.6 的关停语义",
+     "15.7 的尾部结算"
+    ],
+    "produces": [
+     "WebRTC 的耗尽/撤销/到期停止与关停行为与 WebSocket 一致",
+     "尾部费用在原预留内只结算一次，无法确认进入 unknown",
+     "行为一致性以同一组测试用例覆盖两类入口"
+    ]
+   },
+   "steps": [
+    "把 15.5–15.7 的停止、关停与尾部结算接到 WebRTC 路径",
+    "用同一组用例分别跑 WebSocket 与 WebRTC，断言行为一致",
+    "确认关停覆盖上游会话与数据通道两侧",
+    "先写失败测试：WebRTC 会话中撤销 → 无新单元、会话关停、尾部结算一次"
+   ],
+   "criteria": [
+    "WebRTC 在耗尽、撤销、到期时停止后续单元并尽力关停",
+    "尾部费用在原预留内结算且只结算一次",
+    "无法确认的尾部进入 unknown 并保持预留",
+    "两类入口的行为由同一组用例验证且结果一致"
+   ],
+   "tests": [
+    "WebRTC 停止与关停集成测试",
+    "尾部结算一次断言",
+    "两入口行为一致性对比测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/realtime-webrtc-parity.integration.test.ts",
+    "cd bifrost/plugins/governance && go test -run WebRTCTail ./..."
+   ],
+   "owned_scope": [
+    "WebRTC 关停与尾部接线",
+    "对应测试"
+   ],
+   "resume_hint": "一致性最容易在“关停顺序”上出现差异；接手用同一用例跑两入口并对比 provider spy 计数。",
+   "detail_status": "complete"
   },
   {
    "id": "16.3",
@@ -6450,7 +7537,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "no-ephemeral-provider-session-bypass",
+   "contracts": {
+    "consumes": [
+     "16.1/16.2 的准入与关停",
+     "05.4 的 CredentialBundle 边界"
+    ],
+    "produces": [
+     "旁路拒绝：不能用临时 provider 会话、直连上游 URL 或替代端点绕开 OpenBot 准入",
+     "上游会话凭据（如 client_secrets / SDP）只在已预留的会话内签发，且不可被复用建立第二个会话",
+     "旁路尝试可审计，供 22.1/22.2 全入口核查引用；组 16 缝合点"
+    ]
+   },
+   "steps": [
+    "枚举实时入口可获得的凭据类型，确认它们都由准入路径签发且绑定 sessionId",
+    "拒绝未绑定有效会话的凭据使用，包括重复使用同一凭据建立第二个会话",
+    "确认客户端拿不到可直连上游的长期凭据或 URL",
+    "把旁路尝试写入审计",
+    "先写失败测试：用已签发凭据尝试建立第二个会话被拒绝；直连上游 URL 不可获得"
+   ],
+   "criteria": [
+    "临时 provider 会话或替代端点无法绕开积分准入",
+    "上游会话凭据绑定单一会话，不能复用建立第二个会话",
+    "客户端无法获得可直连上游的长期凭据或 URL",
+    "旁路尝试被拒绝并记录审计"
+   ],
+   "tests": [
+    "凭据复用拒绝测试",
+    "替代端点拒绝测试",
+    "审计记录断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run RealtimeBypass ./...",
+    "bun test server/tests/realtime-bypass-audit.test.ts"
+   ],
+   "owned_scope": [
+    "实时凭据签发与绑定约束",
+    "旁路拒绝与审计",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 16 缝合点：重点不是新增功能，而是证明没有第二条路；把入口枚举结果写入验收记录供 22.1 引用。",
+   "detail_status": "complete"
   },
   {
    "id": "17.1",
@@ -6474,7 +7602,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "async-job-identity",
+   "contracts": {
+    "consumes": [
+     "08.1 的 RecoveryItem（未知任务恢复入口）",
+     "05.4 的 CredentialBundle",
+     "03.11 的 ModelRef"
+    ],
+    "produces": [
+     "AsyncJob { jobId, payerRef, grantId, modelRef, providerJobID?, reservationId?, snapshotVersion, rateVersion, state }",
+     "任务归属固定：创建时绑定付款账户与授权，之后不随会话、Key 或调用方变化",
+     "providerJobID 与本地 jobId 的双向映射，供终态查询与恢复使用"
+    ]
+   },
+   "steps": [
+    "在异步提交入口创建任务身份记录，固定 payer/grant/model 与锁定版本",
+    "建立 providerJobID 映射字段，允许提交时暂缺（响应丢失场景）",
+    "确认任务归属不随当前会话或 Key 变化",
+    "先写失败测试：任务创建后归属固定；Key 到期后任务仍归属原账户"
+   ],
+   "criteria": [
+    "每个异步任务都有稳定的本地身份与固定归属",
+    "providerJobID 与本地 jobId 可双向映射，允许暂缺",
+    "任务归属不随会话、Key 或调用方变化",
+    "任务记录包含恢复所需的预留与版本信息"
+   ],
+   "tests": [
+    "任务身份创建与归属固定测试",
+    "providerJobID 缺失容忍测试",
+    "Key 到期后归属不变测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/async-job-identity.integration.test.ts"
+   ],
+   "owned_scope": [
+    "异步任务身份模块与存储、迁移",
+    "对应测试"
+   ],
+   "resume_hint": "复用 Bifrost 既有 provider job 表而不是新建平行体系；接手先确认映射关系落在哪一侧，避免两套 ID 漂移。",
+   "detail_status": "complete"
   },
   {
    "id": "17.2",
@@ -6499,7 +7666,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "async-submit-full-bound-reservation",
+   "contracts": {
+    "consumes": [
+     "17.1 的任务身份",
+     "06.2/06.3/06.5 的重验、原子预留与足额上限"
+    ],
+    "produces": [
+     "提交前完整上限预留：以任务最坏情况成本（全部条目 × 最坏单价）作为上限，一次性预留",
+     "提交幂等：同一提交请求重放返回同一任务，不创建第二个任务、不产生第二份预留",
+     "预留成功后才向供应商派发任务"
+    ]
+   },
+   "steps": [
+    "实现任务成本上限换算（覆盖全部条目与最坏规格），足额方向取整",
+    "在派发前完成 Reserve，预留失败则拒绝提交",
+    "以提交幂等键保证重放收敛为同一任务",
+    "先写失败测试：余额不足时提交被拒绝且供应商未被调用；重放提交只产生一个任务"
+   ],
+   "criteria": [
+    "提交前完成覆盖最坏情况的完整上限预留",
+    "预留失败时提交被拒绝，供应商派发数为 0",
+    "同一提交重放只产生一个任务与一份预留",
+    "上限换算覆盖全部条目与规格维度"
+   ],
+   "tests": [
+    "完整上限换算测试",
+    "余额不足拒绝测试（provider spy=0）",
+    "提交幂等重放集成测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/async-submit-reservation.integration.test.ts"
+   ],
+   "owned_scope": [
+    "异步提交与预留接线",
+    "幂等键规则",
+    "对应测试"
+   ],
+   "resume_hint": "幂等键必须来自提交请求的稳定标识（而非时间戳）；接手先检查重放是否产生第二个任务。",
+   "detail_status": "complete"
   },
   {
    "id": "17.3",
@@ -6524,7 +7730,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "lost-provider-job-id-recovery",
+   "contracts": {
+    "consumes": [
+     "17.2 的预留与派发",
+     "08.1 的恢复扫描",
+     "06.8 的 unknown"
+    ],
+    "produces": [
+     "providerJobID 响应丢失语义：任务进入 unknown 恢复流程，不自动创建第二个任务",
+     "找回路径：以稳定提交标识向供应商查询是否已存在该任务，找到则补映射",
+     "找不到证据时保持预留占用，不释放"
+    ]
+   },
+   "steps": [
+    "派发时携带可查询的稳定提交标识，便于事后找回",
+    "响应丢失时标记任务为 pending-unknown 并交给恢复扫描",
+    "实现找回逻辑：查到则补 providerJobID 映射，查不到则保持 unknown",
+    "先写失败测试：注入响应丢失 → 不创建第二任务、预留仍占用、可找回映射"
+   ],
+   "criteria": [
+    "providerJobID 响应丢失时不创建第二个任务",
+    "任务进入 unknown 恢复流程，预留保持占用",
+    "可通过稳定标识找回远端任务并补映射",
+    "找回失败时保持 unknown，不释放预留"
+   ],
+   "tests": [
+    "响应丢失注入集成测试",
+    "无第二任务断言",
+    "找回映射成功/失败两路测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/async-lost-jobid.integration.test.ts"
+   ],
+   "owned_scope": [
+    "派发响应丢失处理与找回逻辑",
+    "对应测试"
+   ],
+   "resume_hint": "“响应丢失=提交失败=释放预留”是错误默认；远端可能已在运行，必须进入 unknown。",
+   "detail_status": "complete"
   },
   {
    "id": "17.4",
@@ -6549,7 +7794,44 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "async-status-read-authorization",
+   "contracts": {
+    "consumes": [
+     "17.1 的任务身份与归属"
+    ],
+    "produces": [
+     "状态与结果查询为只读授权操作：只有归属账户（或管理员按既有审计路径）可查询",
+     "查询不触发预留、结算或供应商派发",
+     "越权查询返回统一拒绝，不泄露任务存在性"
+    ]
+   },
+   "steps": [
+    "为状态/结果查询接口加入归属校验，拒绝跨账户读取",
+    "确认查询路径为纯只读，不调用 Reserve/Settle，也不重复派发",
+    "统一越权拒绝响应，避免通过错误差异推断任务存在",
+    "先写失败测试：他人任务查询被拒绝；查询不产生账务或派发"
+   ],
+   "criteria": [
+    "只有归属账户可查询任务状态与结果",
+    "越权查询被拒绝且不泄露任务存在性",
+    "查询不触发预留、结算或供应商派发",
+    "管理员访问走既有审计路径"
+   ],
+   "tests": [
+    "越权查询拒绝测试",
+    "只读断言（无账务/派发 spy）",
+    "统一拒绝响应断言"
+   ],
+   "verification": [
+    "bun test server/tests/async-status-authz.test.ts"
+   ],
+   "owned_scope": [
+    "异步任务查询路由与授权",
+    "对应测试"
+   ],
+   "resume_hint": "结果里可能含敏感输出；接手确认越权拒绝不返回部分内容或长度差异。",
+   "detail_status": "complete"
   },
   {
    "id": "17.5",
@@ -6574,7 +7856,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "repeated-poll-and-notification-settle-once",
+   "contracts": {
+    "consumes": [
+     "17.4 的只读查询",
+     "06.9 的 Settle 幂等",
+     "供应商完成通知/回调入口"
+    ],
+    "produces": [
+     "重复查询与重复完成通知都只结算一次：结算由后台按终态触发，查询本身不结算",
+     "通知与轮询两条路径共用同一幂等键",
+     "结算触发次数可观测，供 22.3 验收"
+    ]
+   },
+   "steps": [
+    "把结算触发点从查询路径移到后台终态处理，查询只读",
+    "为通知与轮询统一幂等键（jobId + 终态版本）",
+    "记录结算触发次数与来源，便于发现重复",
+    "先写失败测试：并发 10 次轮询 + 3 次通知 → 只结算一次"
+   ],
+   "criteria": [
+    "重复查询不触发结算",
+    "重复完成通知只结算一次",
+    "通知与轮询两条路径收敛为同一笔结算",
+    "结算触发次数与来源可观测"
+   ],
+   "tests": [
+    "并发轮询与重复通知集成测试",
+    "幂等键一致性断言",
+    "触发次数可观测断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/async-settle-once.integration.test.ts"
+   ],
+   "owned_scope": [
+    "结算触发路径与幂等键",
+    "对应测试"
+   ],
+   "resume_hint": "若现状是“查询时顺便结算”，必须移到后台；否则重复轮询会重复扣费或产生竞争。",
+   "detail_status": "complete"
   },
   {
    "id": "17.6",
@@ -6598,7 +7919,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "async-terminal-usage-settlement",
+   "contracts": {
+    "consumes": [
+     "17.5 的结算触发",
+     "供应商终态 usage（Bifrost jobaccounting 的 Poll/Settle）",
+     "06.9 的 Settle"
+    ],
+    "produces": [
+     "按可靠终态 usage 结算：金额来自供应商终态与锁定价格版本，不用估算",
+     "未使用额度释放；超出预留上限的部分按规则记录（不静默丢弃、不静默追加）",
+     "结算结果写入消费明细，可按任务归因"
+    ]
+   },
+   "steps": [
+    "复用 Bifrost 既有 job 结算路径取得终态 usage，换算为积分并 Settle",
+    "释放未使用额度；上限外的部分记录为异常并交 08.x 处置",
+    "把任务归因写入消费明细",
+    "先写失败测试：上限 100 实际 60 → 结算 60、释放 40；实际超上限 → 异常记录且不静默追加"
+   ],
+   "criteria": [
+    "结算金额来自真实终态 usage 与锁定版本，不使用估算",
+    "未使用额度被释放，用户可用余额恢复",
+    "实际超出预留上限时产生异常记录，不静默丢弃或追加",
+    "消费明细可按任务归因"
+   ],
+   "tests": [
+    "终态结算集成测试",
+    "超上限异常路径测试",
+    "明细归因断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/async-terminal-settlement.integration.test.ts",
+    "cd bifrost/framework/jobaccounting && go test ./..."
+   ],
+   "owned_scope": [
+    "异步结算路径与异常记录",
+    "对应测试"
+   ],
+   "resume_hint": "超上限属于真实风险，必须有异常记录与处置入口；不要为了余额一致而悄悄按上限截断。",
+   "detail_status": "complete"
   },
   {
    "id": "17.7",
@@ -6624,7 +7985,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cancel-unknown-keeps-full-reservation",
+   "contracts": {
+    "consumes": [
+     "17.6 的结算路径",
+     "06.11 的 Release 证据要求",
+     "06.8 的 unknown"
+    ],
+    "produces": [
+     "取消语义：取消请求不等于无费用证明；供应商不支持取消或取消结果未知时保持完整预留",
+     "只有取得明确未计费证据才释放，释放走 06.11 或 08.9",
+     "Key 到期或客户端离开不改变上述语义"
+    ]
+   },
+   "steps": [
+    "实现取消请求路径：向供应商发起取消并记录结论",
+    "取消成功且有未计费证据 → 释放；取消失败或结论未知 → 保持完整预留",
+    "确认 Key 到期与客户端离开都不触发自动释放",
+    "先写失败测试：供应商不支持取消 → 预留保持；取消结果未知 → unknown"
+   ],
+   "criteria": [
+    "取消失败或结果未知时保持完整预留，不自动释放",
+    "只有具备明确未计费证据时才释放",
+    "Key 到期或客户端离开不触发释放",
+    "取消动作与结论可审计"
+   ],
+   "tests": [
+    "取消不支持保持预留测试",
+    "取消结果未知 unknown 测试",
+    "有证据释放测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/async-cancel-semantics.integration.test.ts"
+   ],
+   "owned_scope": [
+    "取消路径与释放判定",
+    "对应测试"
+   ],
+   "resume_hint": "供应商“取消已接受”不等于“未产生费用”；必须有明确证据才释放，否则保持 unknown。",
+   "detail_status": "complete"
   },
   {
    "id": "17.8",
@@ -6649,7 +8049,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "async-job-status-ui",
+   "contracts": {
+    "consumes": [
+     "17.6/17.7 的结算与取消结果",
+     "06.12 的用户视图",
+     "08.7 的待结算展示"
+    ],
+    "produces": [
+     "用户与管理员视图：任务状态（queued/running/pending-settlement/settled/refused/cancelled）与原因、归属、金额",
+     "Key 到期后任务仍显示原归属，待结算项显示原因",
+     "组 17 缝合点：提交 → 预留 → 查询 → 终态结算/取消 → 明细可见，端到端可演示"
+    ]
+   },
+   "steps": [
+    "在用户页面加入异步任务列表与状态、原因、金额展示",
+    "管理员视图复用 08.8 的只读核查，附加任务维度过滤",
+    "确认展示不泄露他人任务",
+    "先写失败的界面测试：五种状态渲染、待结算原因、越权不可见"
+   ],
+   "criteria": [
+    "用户看到本人任务的状态、原因与金额",
+    "Key 到期后任务仍显示原归属账户",
+    "待结算任务显示可理解原因",
+    "他人任务不可见，管理员访问走审计路径"
+   ],
+   "tests": [
+    "界面状态渲染测试",
+    "越权不可见断言",
+    "归属不变断言"
+   ],
+   "verification": [
+    "bun test app/tests/async-jobs-ui.test.tsx",
+    "bun run --filter app typecheck"
+   ],
+   "owned_scope": [
+    "异步任务页面与查询封装",
+    "对应 app/tests 测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 17 缝合点：状态码表要与 17.1–17.7 的实现一致，接手先核对码表再写界面。",
+   "detail_status": "complete"
   },
   {
    "id": "18.1",
@@ -6674,7 +8114,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "batch-overall-bound-reservation",
+   "contracts": {
+    "consumes": [
+     "17.2 的提交前完整上限预留",
+     "上游批量定价与条目结构"
+    ],
+    "produces": [
+     "批量整体上限换算：所有条目的最坏情况成本之和（含每条目模型/规格差异）作为一次性预留上限",
+     "批量任务与条目的父子身份：batchId 与逐条 itemId，均归属同一 payer",
+     "上限不足时整批拒绝，不允许部分派发后追加预留"
+    ]
+   },
+   "steps": [
+    "按条目逐条换算最坏成本并求和，足额方向取整，作为整批预留上限",
+    "创建批量任务与条目身份记录，全部绑定同一 payer 与锁定版本",
+    "预留失败时整批拒绝，供应商派发数为 0",
+    "先写失败测试：混合模型条目的上限求和正确；余额不足时整批拒绝"
+   ],
+   "criteria": [
+    "整批预留上限覆盖所有条目的最坏情况成本",
+    "余额不足时整批被拒绝，供应商派发数为 0",
+    "批量与条目身份都归属同一付款账户",
+    "不允许部分派发后再追加预留"
+   ],
+   "tests": [
+    "混合条目上限换算测试",
+    "整批拒绝测试（provider spy=0）",
+    "父子身份归属断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/batch-reservation.integration.test.ts"
+   ],
+   "owned_scope": [
+    "批量上限换算与身份记录",
+    "对应测试"
+   ],
+   "resume_hint": "条目模型不同则单价不同；接手先用混合模型 fixture 断言求和，避免按单一单价估算整批。",
+   "detail_status": "complete"
   },
   {
    "id": "18.2",
@@ -6699,7 +8177,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "batch-per-item-attributed-settlement",
+   "contracts": {
+    "consumes": [
+     "18.1 的整批预留与条目身份",
+     "17.6 的终态 usage 结算"
+    ],
+    "produces": [
+     "逐条结算：每条按真实 usage 与锁定版本结算，条目归属与批量任务一致",
+     "结算聚合：逐条金额之和 ≤ 整批预留上限，未使用部分释放",
+     "明细可按批量任务与条目两级归因"
+    ]
+   },
+   "steps": [
+    "复用 Bifrost 批量结算（AccountBatchResults / BatchSettler）取得逐条 usage",
+    "按条目换算金额并聚合结算，保证总额不超过整批预留",
+    "把两级归因写入消费明细",
+    "先写失败测试：3 条批量 → 逐条金额正确、总额不超上限、余额释放正确"
+   ],
+   "criteria": [
+    "每条按真实 usage 结算，金额可追溯到条目",
+    "逐条金额之和不超过整批预留上限",
+    "未使用额度被释放，用户可用余额恢复",
+    "消费明细支持批量与条目两级归因"
+   ],
+   "tests": [
+    "逐条结算集成测试",
+    "总额不超上限断言",
+    "两级归因明细断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/batch-settlement.integration.test.ts"
+   ],
+   "owned_scope": [
+    "批量结算路径与明细归因",
+    "对应测试"
+   ],
+   "resume_hint": "聚合结算要保证与逐条记录一致（同一笔台账或可核对的分录）；接手先断言两者金额相等。",
+   "detail_status": "complete"
   },
   {
    "id": "18.3",
@@ -6724,7 +8240,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "batch-partial-success",
+   "contracts": {
+    "consumes": [
+     "18.2 的逐条结算",
+     "06.11 的 Release 证据要求"
+    ],
+    "produces": [
+     "部分成功语义：成功条目照常结算，未完成条目按证据释放或进入 unknown",
+     "释放必须有未计费证据，不得因“批量未全部完成”整体释放",
+     "部分成功的批量状态可在用户与管理员视图区分"
+    ]
+   },
+   "steps": [
+    "按条目终态分类：completed / failed-billable / not-dispatched / unknown",
+    "completed 与 failed-billable 结算实际费用；not-dispatched 凭证据释放；unknown 保持预留",
+    "把批量状态标记为 partial 并记录各类条目数量",
+    "先写失败测试：5 条中 3 成功 1 已计费失败 1 未派发 → 结算 4 条、释放 1 条"
+   ],
+   "criteria": [
+    "成功条目按实际费用结算",
+    "已计费的失败条目仍结算实际费用",
+    "未派发条目凭证据释放，无证据则保持 unknown",
+    "批量状态标记为部分成功且各类条目数量可查"
+   ],
+   "tests": [
+    "部分成功分类结算集成测试",
+    "无证据不释放断言",
+    "状态与数量断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/batch-partial-success.integration.test.ts"
+   ],
+   "owned_scope": [
+    "条目终态分类与结算分支",
+    "对应测试"
+   ],
+   "resume_hint": "整体释放是最常见的错误捷径；接手先跑“1 条未派发 + 4 条已计费”的用例，确认只释放有证据的部分。",
+   "detail_status": "complete"
   },
   {
    "id": "18.4",
@@ -6749,7 +8303,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "batch-partial-cancel-no-loss-no-dup",
+   "contracts": {
+    "consumes": [
+     "18.3 的分类语义",
+     "17.7 的取消语义"
+    ],
+    "produces": [
+     "部分取消语义：已取消条目凭证据释放，已执行条目照常结算，未知条目保持预留",
+     "取消不导致丢账（已发生费用未结算）或重复扣费（同一条目结算两次）",
+     "组 18 缝合点：批量提交 → 整批预留 → 部分成功/部分取消 → 两级明细，端到端可演示"
+    ]
+   },
+   "steps": [
+    "实现条目级取消处理，复用 17.7 的证据判定",
+    "以 itemId 作为结算幂等键，避免重复扣费",
+    "把取消结果与证据写入审计，并在视图区分取消与失败",
+    "先写失败测试：部分取消后既不丢账也不重复扣费；重复通知只结算一次"
+   ],
+   "criteria": [
+    "已取消且有未计费证据的条目被释放",
+    "已执行条目的费用被完整结算，不丢账",
+    "同一条目不会被结算两次",
+    "取消与失败在视图中可区分，且有审计记录"
+   ],
+   "tests": [
+    "部分取消集成测试",
+    "重复通知幂等测试",
+    "丢账/重扣双向断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/batch-partial-cancel.integration.test.ts"
+   ],
+   "owned_scope": [
+    "条目取消处理与幂等键",
+    "视图与审计接线",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 18 缝合点：验证时同时断言“不丢账”和“不重扣”，只测一侧会漏掉真实缺陷。",
+   "detail_status": "complete"
   },
   {
    "id": "19.1",
@@ -6776,7 +8369,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "video-spec-pricing-and-reservation",
+   "contracts": {
+    "consumes": [
+     "17.2 的提交前完整上限预留",
+     "03.2 的价格快照"
+    ],
+    "produces": [
+     "视频计费维度映射：时长、分辨率、帧率/质量档、生成或编辑类型等上游实际收费维度",
+     "规格上限换算：按请求规格的最坏情况成本一次性预留",
+     "启用判定：任一规格维度缺价 → unknown 并拒绝"
+    ]
+   },
+   "steps": [
+    "核对上游视频定价维度，逐一映射到 PriceSnapshot（含不同分辨率与时长档位）",
+    "实现规格上限换算纯函数，足额方向取整",
+    "接入提交预留，规格不可确定或缺价时拒绝",
+    "先写失败测试：多档位规格换算正确；缺档位价格时拒绝"
+   ],
+   "criteria": [
+    "视频的全部上游计费维度进入价格快照",
+    "按请求规格的最坏情况成本完成一次性预留",
+    "缺任一规格维度价格时标记 unknown 并拒绝",
+    "预留锁定当时价格快照与比例版本"
+   ],
+   "tests": [
+    "多档位换算单元测试",
+    "缺价拒绝测试",
+    "版本锁定断言"
+   ],
+   "verification": [
+    "bun test server/tests/video-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "视频维度映射与上限换算",
+    "对应测试与 fixture"
+   ],
+   "resume_hint": "视频常按“每秒 × 分辨率档”计价；只按秒或只按次都会系统性偏差，接手用多档位 fixture 断言。",
+   "detail_status": "complete"
   },
   {
    "id": "19.2",
@@ -6800,7 +8431,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "unpriced-video-specs-unavailable",
+   "contracts": {
+    "consumes": [
+     "19.1 的启用判定",
+     "03.11 的发现接口",
+     "07.3 的短路拒绝"
+    ],
+    "produces": [
+     "未定价规格的不可用标记与原因（指向缺失维度），在发现接口与界面可见",
+     "强制调用未定价规格时短路拒绝，供应商派发数为 0",
+     "补齐定价后可启用，无需改动其他能力"
+    ]
+   },
+   "steps": [
+    "把规格级可用性接入发现接口与选择界面，未定价规格不出现在可选列表",
+    "在入口对未定价规格短路拒绝，原因指向缺失维度",
+    "确认拒绝不产生预留、承诺或结算",
+    "先写失败测试：未定价规格不可见且强制调用被拒绝"
+   ],
+   "criteria": [
+    "未定价的视频规格不可选择、不可调用，供应商派发数为 0",
+    "不可用原因指向缺失的具体维度",
+    "拒绝不产生任何账务写入",
+    "补齐定价后该规格可启用"
+   ],
+   "tests": [
+    "未定价规格不可见断言",
+    "强制调用拒绝测试",
+    "补价后启用测试"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run VideoSpecAvailability ./...",
+    "bun test server/tests/capability-availability.test.ts"
+   ],
+   "owned_scope": [
+    "规格可用性判定与拒绝接线",
+    "对应测试"
+   ],
+   "resume_hint": "可用性要精确到“模型 + 规格 + 调用方式”，不是整族开关；接手用同模型不同规格的组合断言。",
+   "detail_status": "complete"
   },
   {
    "id": "19.3",
@@ -6825,7 +8496,44 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "video-edit-variant-pricing",
+   "contracts": {
+    "consumes": [
+     "19.1 的维度映射与换算"
+    ],
+    "produces": [
+     "视频编辑与变体的规格计价：包含输入视频成本（若上游收费）与输出规格成本",
+     "输入不可确定（时长/规格未知）时判证据不足并拒绝",
+     "编辑、变体与生成共用同一预留与结算语义"
+    ]
+   },
+   "steps": [
+    "核对上游编辑/变体定价是否对输入视频收费，映射到快照",
+    "扩展上限换算，把输入成本与输出规格成本合并",
+    "输入规格不可确定时拒绝，不用估算代替",
+    "先写失败测试：带输入视频的编辑请求上限包含输入成本；输入不可确定时拒绝"
+   ],
+   "criteria": [
+    "编辑与变体的上限包含输入成本（当上游收费时）",
+    "输入规格不可确定时拒绝该请求",
+    "编辑、变体与生成共用同一预留与结算语义",
+    "缺输入定价时标记 unknown 并拒绝"
+   ],
+   "tests": [
+    "输入成本纳入换算测试",
+    "输入不可确定拒绝测试",
+    "语义一致性断言"
+   ],
+   "verification": [
+    "bun test server/tests/video-edit-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "视频编辑/变体维度映射与换算",
+    "对应测试"
+   ],
+   "resume_hint": "上游不收输入费用时要记为明确 free 并留证据；留空会被判 unknown 而整条路径不可用。",
+   "detail_status": "complete"
   },
   {
    "id": "19.4",
@@ -6851,7 +8559,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "video-async-settlement-recovery",
+   "contracts": {
+    "consumes": [
+     "19.1–19.3 的预留",
+     "17.3 的 providerJobID 丢失恢复",
+     "17.6 的终态结算",
+     "17.7 的取消语义"
+    ],
+    "produces": [
+     "视频任务按终态真实 usage 结算，未使用额度释放，超上限部分记录异常",
+     "产物查询只读且重复查询不重复扣费",
+     "恢复语义与组 17 一致：响应丢失、取消未知、终态不可查都保持预留；组 19 缝合点"
+    ]
+   },
+   "steps": [
+    "复用 VideoSettler/Poll 取得终态与真实 usage，换算并结算",
+    "确认产物查询为只读授权操作，不触发结算",
+    "把恢复分支接到组 17 的 unknown 流程，验证重启后不重复派发或重复扣费",
+    "先写失败测试：完成结算正确；重复查询不扣费；派发响应丢失后重启不建第二任务"
+   ],
+   "criteria": [
+    "视频任务按真实终态 usage 结算，未使用额度释放",
+    "重复查询产物不触发第二次结算",
+    "响应丢失或终态不可查时保持预留并可恢复",
+    "重启后不重复派发、不重复扣费"
+   ],
+   "tests": [
+    "终态结算集成测试",
+    "重复查询只读断言",
+    "跨进程重启恢复测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/video-settlement-recovery.integration.test.ts",
+    "cd bifrost/framework/jobaccounting && go test -run Video ./..."
+   ],
+   "owned_scope": [
+    "视频结算与恢复接线",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 19 缝合点：视频任务耗时长，重启恢复与重复查询是最容易出问题的两处，必须各有测试。",
+   "detail_status": "complete"
   },
   {
    "id": "20.1",
@@ -6876,7 +8625,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "tool-surcharge-dimensions",
+   "contracts": {
+    "consumes": [
+     "08.1 的 RecoveryItem（工具调用未知结果恢复）",
+     "03.2 的价格快照",
+     "上游工具/路由附加定价"
+    ],
+    "produces": [
+     "附加费用维度映射：供应商工具调用、路由附加调用、按次/按量收费项进入 PriceSnapshot 的 surcharge 维度",
+     "工具调用的计费身份：每次真实工具调用有自己的 attemptId 与归属，复用组 07 的承诺语义",
+     "缺维度记 unknown，不得默认为 0"
+    ]
+   },
+   "steps": [
+    "枚举会产生附加费用的工具与路由调用类型（含 MCP 工具、内置工具、A2A）",
+    "把上游附加定价映射到 surcharge 维度，缺项记 unknown 并附原因",
+    "为每次真实工具调用建立计费身份与归属，避免与模型调用混为一笔",
+    "先写失败测试：含工具调用的请求上限包含附加费用；缺附加定价时标记 unknown"
+   ],
+   "criteria": [
+    "全部会产生附加费用的工具/路由调用类型都被枚举并映射维度",
+    "附加费用进入价格快照的 surcharge 维度，缺项记 unknown 而非 0",
+    "每次真实工具调用有独立计费身份与归属",
+    "工具费用与模型费用在数据模型上可区分"
+   ],
+   "tests": [
+    "工具类型枚举完整性断言",
+    "surcharge 维度映射测试",
+    "独立计费身份测试"
+   ],
+   "verification": [
+    "bun test server/tests/tool-surcharge-pricing.test.ts"
+   ],
+   "owned_scope": [
+    "附加费用维度映射与工具计费身份",
+    "对应测试"
+   ],
+   "resume_hint": "枚举要基于实际路由与 hook，而不是工具名称清单；接手用 hook 调用点反推枚举完整性。",
+   "detail_status": "complete"
   },
   {
    "id": "20.2",
@@ -6901,7 +8689,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "tools-enabled-only-when-bounded",
+   "contracts": {
+    "consumes": [
+     "20.1 的维度映射",
+     "07.6 的 boundEvidence",
+     "07.3 的短路拒绝"
+    ],
+    "produces": [
+     "启用门禁：工具/路由附加调用只有在费用可完整计价且成本可强制限额时才启用",
+     "不可限额时短路拒绝该调用方式，供应商与工具均未被调用",
+     "第一版默认禁用未定价工具，禁用状态可配置但不可静默放开"
+    ]
+   },
+   "steps": [
+    "为每个工具调用方式判定“可计价 + 可限额”，不满足则标记不可用",
+    "在 hook 中对不可用工具短路拒绝，确认工具与供应商都未被调用",
+    "把默认禁用状态与放开条件写入配置与审计，放开需要显式操作",
+    "先写失败测试：未定价工具调用被拒绝且工具执行数为 0"
+   ],
+   "criteria": [
+    "只有可完整计价且可强制限额的工具调用才被启用",
+    "未定价或不可限额的工具调用被短路拒绝，工具执行数为 0",
+    "默认禁用状态的放开需要显式配置且有审计",
+    "拒绝不产生预留、承诺或结算"
+   ],
+   "tests": [
+    "未定价工具拒绝测试（工具 spy=0）",
+    "不可限额拒绝测试",
+    "默认禁用与放开审计断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run ToolAdmission ./..."
+   ],
+   "owned_scope": [
+    "工具启用门禁与拒绝接线",
+    "配置与审计",
+    "对应 Go 测试"
+   ],
+   "resume_hint": "Q20 的默认是禁用；接手确认不存在“未定价但先放行、事后补账”的分支。",
+   "detail_status": "complete"
   },
   {
    "id": "20.3",
@@ -6925,7 +8753,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "usage-breakdown-model-vs-surcharge",
+   "contracts": {
+    "consumes": [
+     "20.1 的费用区分",
+     "06.12 的用户视图"
+    ],
+    "produces": [
+     "消费明细区分：模型费用与工具/路由附加费用分行展示，各自可追溯到具体调用",
+     "合计金额与台账一致，两级归因不重不漏",
+     "明细不泄露他人账户或内部工具配置细节"
+    ]
+   },
+   "steps": [
+    "扩展消费明细结构与页面，把附加费用作为独立行展示",
+    "确认合计等于台账金额，且模型费用与附加费用不重复计入",
+    "对内部工具标识做展示友好化，不暴露内部配置",
+    "先写失败的界面测试：含工具调用的消费显示两行且合计正确"
+   ],
+   "criteria": [
+    "用户明细区分模型费用与附加费用，各自可追溯",
+    "两级归因合计与台账一致，不重不漏",
+    "明细不泄露他人账户数据或内部工具配置",
+    "无附加费用时不显示空行或误导性 0"
+   ],
+   "tests": [
+    "明细两行展示测试",
+    "合计一致性集成断言",
+    "越权不可见断言"
+   ],
+   "verification": [
+    "bun test app/tests/usage-breakdown-ui.test.tsx",
+    "TEST_DATABASE_URL=... bun test server/tests/usage-breakdown.integration.test.ts"
+   ],
+   "owned_scope": [
+    "消费明细结构与页面",
+    "对应测试"
+   ],
+   "resume_hint": "合计不一致通常来自附加费用既进模型行又进附加行；接手先断言台账总额与明细合计相等。",
+   "detail_status": "complete"
   },
   {
    "id": "20.4",
@@ -6950,7 +8817,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "no-unpriced-tool-bypass-and-company-tool-isolation",
+   "contracts": {
+    "consumes": [
+     "20.2 的启用门禁",
+     "09.3 的个人 Key 隔离"
+    ],
+    "produces": [
+     "旁路拒绝清单：替代端点、直接工具调用、注入工具、codemode 路径等都不能绕过附加费用准入",
+     "权限隔离：模型 Key 不授予公司工具权限，个人授权不能调用公司范围工具",
+     "组 20 缝合点：工具附加费用端到端可演示，旁路尝试全部被拒绝并审计"
+    ]
+   },
+   "steps": [
+    "枚举所有可触发工具执行的入口（MCP hook、注入工具、responses tools、A2A、codemode）",
+    "逐入口确认经过附加费用准入，未接入者硬拒绝",
+    "确认个人 Key 无法调用公司范围工具，越权尝试被拒绝并审计",
+    "先写失败测试：逐入口余额不足或未定价时工具执行数为 0；个人 Key 调用公司工具被拒绝"
+   ],
+   "criteria": [
+    "所有工具执行入口都经过附加费用准入，无旁路",
+    "未定价或余额不足时工具执行数为 0",
+    "个人模型 Key 不授予公司工具权限，越权被拒绝",
+    "旁路与越权尝试都有审计记录"
+   ],
+   "tests": [
+    "逐入口拒绝矩阵测试",
+    "公司工具越权拒绝测试",
+    "审计记录断言"
+   ],
+   "verification": [
+    "cd bifrost/plugins/governance && go test -run ToolBypass ./...",
+    "bun test server/tests/tool-isolation.test.ts"
+   ],
+   "owned_scope": [
+    "工具入口清单与准入接线",
+    "越权拒绝与审计",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "本 Ticket 是组 20 缝合点：入口枚举结果要写入验收记录，供 22.1 直接引用，不要只留在测试里。",
+   "detail_status": "complete"
   },
   {
    "id": "21.1",
@@ -6974,7 +8881,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cleanup-manifest-enumeration",
+   "contracts": {
+    "consumes": [
+     "02.2 的显式归属映射（legacy_deployment / personal / company / unknown_owner）"
+    ],
+    "produces": [
+     "CleanupManifest 枚举结果：实际数据库名、schema、表名、行范围与对象ID，全部来自查询而非命名猜测",
+     "每张表的归属分类计数与样例证据（不含敏感明细）",
+     "枚举为只读操作：不修改任何数据"
+    ]
+   },
+   "steps": [
+    "以查询方式枚举旧计费体系涉及的实际对象（积分 Grant/台账、计费客户、订阅、webhook 事件、订单与支付事件、用量 outbox、对账记录）",
+    "为每个对象记录归属分类计数与判定依据，未知归属单列",
+    "禁止用表名或客户前缀猜测归属；无法判定即归 unknown_owner",
+    "输出结构化 manifest 草稿（只读），供 21.2 分类与 21.4 dry-run 使用",
+    "先写失败测试：枚举结果与构造的 fixture 数据完全对应，无遗漏无多余"
+   ],
+   "criteria": [
+    "枚举覆盖旧计费体系的全部实际对象，来自查询证据而非命名猜测",
+    "每个对象都有归属分类计数与判定依据",
+    "未知归属被单列，不被默认归入可清理范围",
+    "枚举过程只读，不修改任何数据"
+   ],
+   "tests": [
+    "混合 fixture 下枚举完整性测试",
+    "未知归属单列断言",
+    "只读断言（无写入）"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-enumeration.integration.test.ts"
+   ],
+   "owned_scope": [
+    "清理枚举模块与 manifest 结构",
+    "对应测试"
+   ],
+   "resume_hint": "枚举遗漏会导致后续清理不彻底或误删；接手先核对 fixture 中每类记录是否都出现在 manifest 中。",
+   "detail_status": "complete"
   },
   {
    "id": "21.2",
@@ -6998,7 +8943,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cleanup-classification-evidence",
+   "contracts": {
+    "consumes": [
+     "21.1 的枚举结果",
+     "02.2 的归属映射"
+    ],
+    "produces": [
+     "四分类结果：company_history（保留）、personal_records（保留/迁移）、confirmed_obsolete_test（候选清理）、unknown_owner（隔离保留）",
+     "每类的判定证据：归属来源、时间范围、测试数据特征（如测试订单号、测试用户标记）",
+     "分类结果不可由执行者临时调整：调整必须重新生成 manifest"
+    ]
+   },
+   "steps": [
+    "按显式规则分类：公司账务历史一律 company_history；已映射到个人的记录归 personal_records",
+    "候选清理仅限具备明确测试数据特征且归属可证明的记录",
+    "无法证明的一律 unknown_owner 并隔离保留",
+    "把分类规则与证据写入 manifest，可被审查",
+    "先写失败测试：公司记录绝不出现在候选清理；证据不足的记录归 unknown_owner"
+   ],
+   "criteria": [
+    "公司账务历史全部归类为保留，绝不出现在候选清理范围",
+    "候选清理的每条记录都有可审查的归属与测试数据证据",
+    "证据不足的记录归 unknown_owner 并隔离保留",
+    "分类规则与证据随 manifest 持久化，可被独立复核"
+   ],
+   "tests": [
+    "公司记录保留断言",
+    "证据不足归 unknown 测试",
+    "分类规则可复核断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-classification.integration.test.ts"
+   ],
+   "owned_scope": [
+    "分类规则与证据模块",
+    "对应测试"
+   ],
+   "resume_hint": "“看起来像测试数据”不是证据；接手检查每条候选记录是否有可指向的归属来源与特征字段。",
+   "detail_status": "complete"
   },
   {
    "id": "21.3",
@@ -7022,7 +9006,44 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cleanup-fk-and-subscription-links",
+   "contracts": {
+    "consumes": [
+     "21.2 的分类结果"
+    ],
+    "produces": [
+     "关联映射：候选记录的外键依赖、反向引用与外部订阅/支付网关关联清单",
+     "级联影响评估：删除某对象会波及哪些保留对象（必须为零，否则该对象移出候选）",
+     "外部有效订阅清单：不得自动取消，需人工确认"
+    ]
+   },
+   "steps": [
+    "从 schema 与实际数据双向确认外键与反向引用关系",
+    "评估每条候选记录的级联影响，波及保留对象者移出候选并记录原因",
+    "标出与外部支付/订阅系统仍有效的关联，列入人工确认清单",
+    "先写失败测试：存在指向保留记录的外键时，该候选被移出清单"
+   ],
+   "criteria": [
+    "候选记录的级联影响被完整评估，波及保留对象者被移出候选",
+    "外键与反向引用关系有数据证据，不只依赖 schema 声明",
+    "外部有效订阅被单列，不自动取消",
+    "关联评估结果随 manifest 持久化"
+   ],
+   "tests": [
+    "外键保护测试",
+    "级联影响移出候选测试",
+    "外部订阅单列断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-relations.integration.test.ts"
+   ],
+   "owned_scope": [
+    "关联映射与级联评估模块",
+    "对应测试"
+   ],
+   "resume_hint": "schema 声明的外键可能与实际数据不一致（历史遗留）；接手用真实数据反查引用，不要只信迁移文件。",
+   "detail_status": "complete"
   },
   {
    "id": "21.4",
@@ -7047,7 +9068,45 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cleanup-dry-run-and-hash",
+   "contracts": {
+    "consumes": [
+     "21.3 的关联评估"
+    ],
+    "produces": [
+     "dry-run 报告：将删除的对象清单、行数、保留清单、隔离清单与校验 hash",
+     "hash 绑定 manifest 版本：manifest 变化后旧 dry-run 确认失效",
+     "dry-run 严格只读，可在专用测试库反复运行"
+    ]
+   },
+   "steps": [
+    "实现 dry-run：输出将删除与将保留的完整清单及行数统计，不执行任何写入",
+    "为 manifest 与 dry-run 结果计算校验 hash，并把二者绑定",
+    "报告结构可被管理员审查（分组统计 + 抽样明细，不含敏感字段）",
+    "先写失败测试：dry-run 后数据完全不变；hash 与 manifest 版本绑定；manifest 变更后旧确认失效"
+   ],
+   "criteria": [
+    "dry-run 不修改任何数据，可重复运行且结果一致",
+    "报告包含将删除、将保留与隔离三类清单及行数",
+    "校验 hash 与 manifest 版本绑定，manifest 变化后旧确认失效",
+    "报告不含凭据或敏感个人明细"
+   ],
+   "tests": [
+    "dry-run 只读与幂等测试",
+    "hash 绑定与失效测试",
+    "报告脱敏断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-dry-run.integration.test.ts"
+   ],
+   "owned_scope": [
+    "dry-run 与报告模块",
+    "hash 绑定逻辑",
+    "对应测试"
+   ],
+   "resume_hint": "hash 必须覆盖 manifest 内容而不只是时间戳；否则改范围后可复用旧确认，等于绕过审查。",
+   "detail_status": "complete"
   },
   {
    "id": "21.5",
@@ -7072,7 +9131,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cleanup-inflight-and-no-delete-guards",
+   "contracts": {
+    "consumes": [
+     "21.4 的 dry-run 结果",
+     "06.8 的 unknown 预留语义",
+     "08.1 的 RecoveryItem"
+    ],
+    "produces": [
+     "在途检查：存在未结算预留、unknown 状态或未完成 RecoveryItem 的对象不得进入清理范围",
+     "不删除约束：公司账务历史、用户、Bot、会话、知识库对象在清理程序中不可被删除（程序级硬约束）",
+     "未知归属对象保持隔离，清理程序无法触达"
+    ]
+   },
+   "steps": [
+    "在清理前检查在途责任（未结算预留、unknown、未完成恢复项），命中者移出范围并记录",
+    "在程序层面加入不可删除清单（公司账务、业务对象），任何路径都无法删除它们",
+    "unknown_owner 对象在查询层即被排除",
+    "先写失败测试：在途预留对象不被清理；尝试删除公司记录被程序拒绝"
+   ],
+   "criteria": [
+    "存在在途责任的记录不进入清理范围",
+    "公司账务历史与用户/Bot/会话/知识库对象在程序层面不可删除",
+    "unknown_owner 记录被隔离，清理程序无法触达",
+    "上述约束在代码中是硬约束，不依赖操作者谨慎"
+   ],
+   "tests": [
+    "在途责任排除测试",
+    "不可删除硬约束测试",
+    "unknown 隔离断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-guards.integration.test.ts"
+   ],
+   "owned_scope": [
+    "在途检查与不可删除约束",
+    "对应测试"
+   ],
+   "resume_hint": "约束要写在程序里（白名单/断言），不能只写在文档；接手尝试构造一次“误删公司记录”的调用，确认被拒绝。",
+   "detail_status": "complete"
   },
   {
    "id": "21.6",
@@ -7096,7 +9194,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "cleanup-transactional-rehearsal",
+   "contracts": {
+    "consumes": [
+     "21.5 的约束与范围"
+    ],
+    "produces": [
+     "隔离测试库上的事务化清理与重建演练：可回滚、可重跑、结果可核对",
+     "并发安全性证明：清理期间新增记录不被误删，外键保护生效",
+     "演练报告：删除行数、保留行数、回滚验证、账务校验结果"
+    ]
+   },
+   "steps": [
+    "在专用测试库构造混合数据（公司/个人/测试/未知/在途），执行事务化清理",
+    "验证失败时完整回滚，成功时行数与 dry-run 报告一致",
+    "并发新增记录场景下重跑，确认不误删新数据、外键保护生效",
+    "清理后重建个人账户体系可正常运行（发放、预留、结算 smoke）",
+    "先写失败测试：注入中途失败 → 完全回滚；并发新增 → 不被误删"
+   ],
+   "criteria": [
+    "清理在事务内完成，失败时完全回滚",
+    "成功执行的删除行数与 dry-run 报告一致",
+    "清理期间并发新增的记录不被误删",
+    "清理后新账务体系可正常运行（发放/预留/结算 smoke 通过）"
+   ],
+   "tests": [
+    "事务回滚测试",
+    "行数一致性断言",
+    "并发新增保护测试",
+    "重建后 smoke 测试"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-rehearsal.integration.test.ts"
+   ],
+   "owned_scope": [
+    "事务清理与重建程序",
+    "演练报告输出",
+    "对应测试"
+   ],
+   "resume_hint": "演练只在专用测试库进行；若 TEST_DATABASE_URL 缺失，测试必须失败而不是回退到开发库。",
+   "detail_status": "complete"
   },
   {
    "id": "21.7",
@@ -7122,7 +9260,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "authorized-cleanup-execution-report",
+   "contracts": {
+    "consumes": [
+     "21.6 的演练结论",
+     "10.6 的个人账务可追溯视图",
+     "用户对清理范围的明确授权"
+    ],
+    "produces": [
+     "受控执行：仅在已核验的 manifest 版本 + dry-run hash + 明确授权三者齐备时执行",
+     "执行报告：实际删除数量、保留记录、隔离记录、恢复方式与账务校验结果，管理员可查看",
+     "重复执行安全：manifest 变化后拒绝沿用旧确认，重复执行不误删新数据；旧余额不被复制到个人与公司两账户；组 21 缝合点"
+    ]
+   },
+   "steps": [
+    "执行前校验三要素（manifest 版本、dry-run hash、授权记录），任一缺失即拒绝执行",
+    "在事务内执行清理并生成报告，报告写入审计与可查看的管理界面",
+    "验证重复执行与 manifest 变更后的拒绝行为",
+    "执行后跑账务校验：公司历史与业务对象 hash 不变、个人账户体系正常",
+    "先写失败测试：缺授权拒绝执行；manifest 变更后旧确认失效；重复执行不误删"
+   ],
+   "criteria": [
+    "缺少授权、manifest 版本不匹配或 hash 不符时拒绝执行",
+    "执行报告包含删除、保留、隔离数量与恢复方式，管理员可查看",
+    "公司历史与用户/Bot/会话/知识库对象在执行后 hash 不变",
+    "旧余额不被复制到个人与公司两个账户；重复执行不误删新数据"
+   ],
+   "tests": [
+    "三要素校验拒绝测试",
+    "重复执行安全测试",
+    "执行后账务校验断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/cleanup-execution.integration.test.ts"
+   ],
+   "owned_scope": [
+    "受控执行入口与报告",
+    "管理界面结果展示",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "真实环境执行属于破坏性操作：必须先取得用户对具体 manifest 版本的明确授权，未授权时只交付演练与报告，不得执行。",
+   "detail_status": "complete"
   },
   {
    "id": "22.1",
@@ -7166,7 +9345,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "entrypoint-enumeration",
+   "contracts": {
+    "consumes": [
+     "各组终点 Ticket 的交付（01.8、02.8、03.11、04.8、05.10、06.12、07.12、08.10、09.3、09.4、10.6、11.6、12.4、13.4、14.4、15.8、16.3、17.8、18.4、19.4、20.4、21.7）",
+     "20.4 与 12.4 的入口清单证据"
+    ],
+    "produces": [
+     "完整入口清单：所有可触发供应商模型调用的路径（HTTP 路由、hook、实时、异步、批量、视频、工具/MCP/A2A、内置运行时、订阅 harness），每条标注是否经过准入",
+     "清单以代码证据为准（hook 注册点、路由表、provider 调用点），不以 Ticket 标题或文档推定",
+     "未接入准入的入口列为阻塞项，不得放行"
+    ]
+   },
+   "steps": [
+    "从 Bifrost 的 hook 注册点与 provider 调用点反向枚举全部推理入口",
+    "从 OpenBot 侧枚举模型调用发起点（工作台、agent 运行时、内部服务）",
+    "为每条入口标注：是否经过 Reserve、是否有硬拒绝、付款账户来源",
+    "把未接入准入的入口列为阻塞项并给出具体位置",
+    "先写失败测试：入口清单与自动化枚举结果一致（新增入口未登记时测试失败）"
+   ],
+   "criteria": [
+    "入口清单覆盖全部可触发供应商调用的路径，且有代码证据",
+    "每条入口都标注准入状态与付款账户来源",
+    "存在未接入准入的入口时被列为阻塞项，不放行",
+    "新增入口未登记到清单时自动化检查失败"
+   ],
+   "tests": [
+    "自动化入口枚举与清单一致性测试",
+    "未准入入口阻塞断言",
+    "新增入口漏登记失败测试"
+   ],
+   "verification": [
+    "bun test server/tests/entrypoint-enumeration.test.ts",
+    "cd bifrost/plugins/governance && go test -run Entrypoints ./..."
+   ],
+   "owned_scope": [
+    "入口枚举清单与其自动化检查",
+    "验收记录文档"
+   ],
+   "resume_hint": "别按 Ticket 标题推定覆盖：以 hook 注册点和 provider 调用点为准反向枚举，漏一个入口就等于留一条免费通道。",
+   "detail_status": "complete"
   },
   {
    "id": "22.2",
@@ -7191,7 +9410,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "per-entrypoint-gate-and-payer-audit",
+   "contracts": {
+    "consumes": [
+     "22.1 的入口清单",
+     "02.5 的不切换语义",
+     "07.3/16.3/20.4 的拒绝与旁路证据"
+    ],
+    "produces": [
+     "逐入口核查结果：准入门禁生效、付款账户正确、拒绝路径可触发、无直连供应商旁路",
+     "核查证据（命令、输出摘要、代码版本），可被独立复核",
+     "发现缺陷时生成修复项并回到对应 Ticket 的语义边界处理，不在本 Ticket 静默修补"
+    ]
+   },
+   "steps": [
+    "对清单中每条入口执行四类核查：门禁、payer、拒绝、旁路",
+    "记录核查命令与结果摘要，绑定当时代码版本",
+    "发现缺陷时开修复项（引用对应 Ticket 的验收标准），不静默改语义",
+    "先写失败测试：逐入口的余额不足场景下供应商调用数为 0"
+   ],
+   "criteria": [
+    "每条入口都通过门禁、payer、拒绝与旁路四类核查",
+    "核查证据绑定代码版本且可独立复核",
+    "发现的缺陷都有对应修复项与验收标准引用",
+    "任何入口都不存在直连供应商的旁路"
+   ],
+   "tests": [
+    "逐入口余额不足拒绝矩阵测试",
+    "payer 正确性断言",
+    "旁路不存在断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/entrypoint-gate-audit.integration.test.ts"
+   ],
+   "owned_scope": [
+    "核查脚本与证据记录",
+    "对应测试与验收记录"
+   ],
+   "resume_hint": "核查失败不要就地放宽语义：开修复项回到对应 Ticket，否则会破坏已批准的 AC 映射。",
+   "detail_status": "complete"
   },
   {
    "id": "22.3",
@@ -7216,7 +9474,47 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "conformance-evidence-text-image-audio",
+   "contracts": {
+    "consumes": [
+     "22.2 的核查结果",
+     "07.7 的输出封顶证据",
+     "12.x/13.x/14.x 的能力证据"
+    ],
+    "produces": [
+     "文本、图像、音频三族的 conformance 证据：上限可强制性、真实 usage 可得性、取消/尾部行为，绑定 provider/model/调用方式与验证环境",
+     "配置或版本变更使受影响证据失效的规则",
+     "缺真实供应商环境的能力明确标记为未验证/不可启用，不编造证据"
+    ]
+   },
+   "steps": [
+    "汇总三族已有证据，补齐缺口（每个启用的 model + 调用方式都要有证据）",
+    "为证据绑定 provider/model/调用方式/价格版本/验证环境/实际结果",
+    "实现证据失效规则：相关配置或版本变更后标记失效",
+    "缺环境时用本地确定性测试完成可完成部分，其余标记未验证并列出所需环境",
+    "先写失败测试：启用但缺证据的能力被标记不可用"
+   ],
+   "criteria": [
+    "三族中每个启用的能力都有绑定版本的 conformance 证据",
+    "证据包含验证环境与实际结果，可复现",
+    "配置或版本变更后受影响证据失效",
+    "缺真实环境的能力标记为未验证/不可启用，不编造证据"
+   ],
+   "tests": [
+    "证据完整性检查测试",
+    "证据失效规则测试",
+    "未验证能力不可用断言"
+   ],
+   "verification": [
+    "bun test server/tests/conformance-evidence.test.ts"
+   ],
+   "owned_scope": [
+    "conformance 证据汇总与失效规则",
+    "验收记录文档"
+   ],
+   "resume_hint": "证据不是“测试 exit 0”，而是具体上限/usage/尾部行为的可复现结果；接手检查每条证据是否含环境与数值。",
+   "detail_status": "complete"
   },
   {
    "id": "22.4",
@@ -7242,7 +9540,46 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "conformance-evidence-embedding-realtime-async-tools",
+   "contracts": {
+    "consumes": [
+     "22.2 的核查结果",
+     "11.6/15.8/16.3/17.8/18.4/19.4/20.4 的能力与入口证据"
+    ],
+    "produces": [
+     "Embedding/Rerank/OCR、实时（WS/WebRTC）、异步/批量/视频、工具附加费四组的 conformance 证据，结构与 22.3 一致",
+     "实时族的单元门控与尾部约束证据、异步族的终态与取消证据、工具族的附加费用与旁路证据",
+     "同样的证据失效规则与未验证标记"
+    ]
+   },
+   "steps": [
+    "按 22.3 的证据结构汇总其余能力族，逐族补齐缺口",
+    "实时族重点验证单元门控、耗尽停止、关停尾部；异步族验证终态结算与取消未知保持预留",
+    "工具族验证附加费用计价与逐入口无旁路",
+    "缺环境的能力标记未验证并列出所需条件",
+    "先写失败测试：每个启用的能力都有对应证据记录"
+   ],
+   "criteria": [
+    "其余能力族中每个启用的能力都有绑定版本的证据",
+    "实时、异步与工具族的关键约束各有专门证据条目",
+    "证据失效规则与 22.3 一致",
+    "缺真实环境的能力标记为未验证/不可启用"
+   ],
+   "tests": [
+    "各族证据完整性测试",
+    "关键约束专项证据断言",
+    "未验证标记断言"
+   ],
+   "verification": [
+    "bun test server/tests/conformance-evidence-extended.test.ts"
+   ],
+   "owned_scope": [
+    "其余能力族证据汇总",
+    "验收记录文档"
+   ],
+   "resume_hint": "与 22.3 共用同一证据结构与存储；不要为这几族另建一套格式，否则 22.5 无法统一核验。",
+   "detail_status": "complete"
   },
   {
    "id": "22.5",
@@ -7285,7 +9622,48 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "full-spec-acceptance-run",
+   "contracts": {
+    "consumes": [
+     "22.3/22.4 的证据",
+     "父 Spec #5 的 AC01–AC19",
+     "各组缝合 Ticket 的端到端用例"
+    ],
+    "produces": [
+     "AC 验收矩阵：AC01–AC19 每条对应具体行为证据、执行命令、结果与代码版本",
+     "跨进程故障场景结果（重启、并发、重放、时钟推进、断线）",
+     "未通过项清单与阻塞原因；skip 不计为通过"
+    ]
+   },
+   "steps": [
+    "把 19 条 AC 映射到具体可执行场景与命令，逐条执行并记录结果",
+    "包含跨进程故障场景：杀进程重启、双 worker 并发、重复投递、时钟推进、客户端断线",
+    "对未通过项记录阻塞原因与影响的 AC，不降级判定",
+    "输出验收矩阵，绑定代码版本与执行时间",
+    "先确认矩阵中每条 AC 都有至少一个可复现命令，再执行"
+   ],
+   "criteria": [
+    "AC01–AC19 每条都有绑定代码版本的可复现结果",
+    "跨进程故障场景全部执行并记录结果",
+    "skip 或因环境缺失未执行的项不计为通过",
+    "未通过项有明确阻塞原因与影响范围"
+   ],
+   "tests": [
+    "AC 矩阵可执行性检查",
+    "跨进程故障场景集成测试",
+    "skip 不计通过的断言"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun run test:ci",
+    "bun test server/tests/acceptance-matrix.integration.test.ts"
+   ],
+   "owned_scope": [
+    "AC 验收矩阵与执行脚本",
+    "验收记录文档"
+   ],
+   "resume_hint": "矩阵里出现 skip 就是未完成；接手先补齐可执行性，再谈通过率。",
+   "detail_status": "complete"
   },
   {
    "id": "22.6",
@@ -7309,7 +9687,49 @@
     "verification": "",
     "resume_hint": "",
     "checkpoint": ""
-   }
+   },
+   "slug": "version-pinning-review-and-ocr",
+   "contracts": {
+    "consumes": [
+     "22.5 的验收矩阵",
+     "AGENTS.md 的 Review 与 OCR 流程",
+     "OpenBot 与 Bifrost 的实际交付版本"
+    ],
+    "produces": [
+     "版本固定记录：OpenBot 提交/检查点与 Bifrost 子模块提交，作为交付基线",
+     "独立 Review 结论（Spec compliance + code quality）与全范围 OCR 报告（含未提交改动的 workspace 模式覆盖）",
+     "部署就绪结论：覆盖范围、遗留限制、未验证能力清单与所需环境；组 22 与整个 Spec 的终点"
+    ]
+   },
+   "steps": [
+    "记录 OpenBot 与 Bifrost（子模块）的交付版本与检查点哈希",
+    "按 AGENTS.md 执行独立 Review 与 OCR：已提交范围用实际 BASE/HEAD，未提交改动用 workspace 模式，两者都覆盖",
+    "对 critical/high/medium finding 核实证据并按 SDD 修复循环处理，保存每轮报告",
+    "汇总部署就绪结论：已验证能力、未验证能力与所需环境、遗留限制",
+    "先确认 OCR 覆盖完整（退出码 0 但覆盖不足不算通过），再给结论"
+   ],
+   "criteria": [
+    "OpenBot 与 Bifrost 的交付版本被明确固定并记录",
+    "独立 Review 给出 Spec compliance 与 code quality 两个结论",
+    "OCR 覆盖全部交付范围（含未提交改动），无有效 critical/high/medium 遗留",
+    "部署就绪结论明确列出未验证能力与遗留限制，不以“测试通过”代替证据"
+   ],
+   "tests": [
+    "交付范围核验（最终 diff 只含授权范围）",
+    "OCR 覆盖完整性检查",
+    "就绪结论文档完整性断言"
+   ],
+   "verification": [
+    "git rev-parse HEAD && git -C bifrost rev-parse HEAD",
+    "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/tickets/bifrost-5/ocr/<round>.md",
+    "bun run test:ci"
+   ],
+   "owned_scope": [
+    "版本固定与 Review/OCR 记录",
+    "部署就绪结论文档"
+   ],
+   "resume_hint": "OCR exit 0 不等于覆盖完整：核对报告覆盖的文件范围与跳过项；覆盖不足时补跑，不能据此宣布完成。",
+   "detail_status": "complete"
   }
  ],
  "edge_relaxations": [
@@ -7527,10 +9947,249 @@
     "bun run --filter app typecheck",
     "bunx biome lint --error-on-warnings <changed files>"
    ]
+  },
+  "11": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q11 无价格或无法强制上限则不启用、Q20 能力范围）",
+    "docs/adr/0001-conservative-input-bound.md（经验估算不作为上限证明）",
+    "CONTEXT.md（价格维度、能力、可用/不可用原因、待结算术语）"
+   ],
+   "anchors": {
+    "capability-playbook": "能力族通用做法：① 用组 03 的 PriceSnapshot 维度核对上游定价是否覆盖该能力的全部计费维度；② 用组 07 的 boundEvidence 证明输入边界与输出上限可强制；③ 缺任一证据 → 标记不可用并给出 reasonCode，不降级为免费或估算；④ 结算走 06.9 Settle，未知结果走 06.8 unknown",
+    "bifrost-routes": "OpenAI 兼容入口 /v1/embeddings（core/providers/*，如 openrouter.go、parasail.go）；rerank 与 OCR 走各自 provider 路由，执行时先定位实际入口",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go、pricingscopes 测试、batch.go、video.go、doc.go）",
+    "openbot-price": "组 03 交付的 PriceSnapshot 维度集合与 PriceStatus（known/free/unknown）",
+    "openbot-admission": "组 06/07 交付的 Reserve（boundEvidence）与 Settle 路径",
+    "test-harness": "server/tests/support/database.ts；Bifrost 侧 go test ./plugins/governance/... 与 ./framework/jobaccounting/..."
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "12": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q11 无价格或不可强制上限不启用、Q20 第一版覆盖图像能力）",
+    "CONTEXT.md（图像规格、变体、输入成本、待结算术语）"
+   ],
+   "anchors": {
+    "capability-playbook": "沿用组 11 的能力族通用做法：维度齐备 + 边界可强制才启用；缺证据短路拒绝且不写账务；结算走 06.9，未知走 06.8",
+    "bifrost-images": "OpenAI 兼容图像入口（/v1/images/generations、edits、variations；core/providers/* 内的 provider 实现，执行时先定位实际路由与能力标志）",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go、pricingscopes 测试）",
+    "openbot-price": "组 03 的 PriceSnapshot 维度（含 image 维度：数量、尺寸、质量、输入图像）",
+    "openbot-admission": "组 06/07 的 Reserve（boundEvidence）与 Settle",
+    "test-harness": "server/tests/support/database.ts；go test ./plugins/governance/... 与 ./framework/jobaccounting/..."
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "13": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 第一版覆盖语音能力、Q26 按可强制限制的计费单元逐段预留、Q11 无法限制时长/用量则不启用）",
+    "CONTEXT.md（计费单元、尾部费用、待结算术语）"
+   ],
+   "anchors": {
+    "capability-playbook": "沿用组 11 能力族做法：维度齐备 + 边界可强制才启用；缺证据短路拒绝且不写账务；结算走 06.9，未知走 06.8",
+    "bifrost-speech": "OpenAI 兼容语音合成入口 /v1/audio/speech（core/providers/*，如 openrouter.go 的 SpeechSynthesis 能力标志）；流式音频与播放器路径执行时先定位",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go）与上游按字符/按秒定价",
+    "openbot-price": "组 03 的 PriceSnapshot audio 维度（输入字符、输出音频时长、语音档位）",
+    "openbot-admission": "组 06/07 的 Reserve（boundEvidence）与 Settle；06.8 unknown 用于尾部未确认",
+    "test-harness": "server/tests/support/database.ts；go test ./plugins/governance/...；音频时长用可控 fake 时钟与 fake provider 输出"
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "14": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 覆盖音频能力、Q11 无法证明输入边界则不启用、Q12 结果未知保留预留）",
+    "CONTEXT.md（输入边界、可验证用量、待结算术语）"
+   ],
+   "anchors": {
+    "capability-playbook": "沿用组 11 能力族做法：维度齐备 + 边界可强制才启用；缺证据短路拒绝且不写账务；结算走 06.9，未知走 06.8",
+    "bifrost-audio": "OpenAI 兼容音频入口 /v1/audio/transcriptions（core/providers/*，如 openrouter.go 的 Transcription 能力标志）；其余音频处理路径执行时先定位实际入口与能力标志",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go）与上游按秒/按分钟/按字符定价",
+    "openbot-price": "组 03 的 PriceSnapshot audio 维度（输入时长、输出 token/字符）",
+    "openbot-admission": "组 06/07 的 Reserve（boundEvidence）与 Settle；06.8 unknown",
+    "test-harness": "server/tests/support/database.ts；go test ./plugins/governance/...；音频时长以受控 fixture（已知时长文件）与 fake provider 验证"
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "15": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC08/AC16/AC17/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 实时会话按可强制限制的计费单元逐段预留、余额不足或授权失效时停止并尽力关停；做不到的路径保持不可用）",
+    "docs/adr/0003-bifrost-openbot-credit-admission.md",
+    "CONTEXT.md（实时会话、计费单元 unit、尾部费用、待结算术语）"
+   ],
+   "anchors": {
+    "bifrost-realtime": "bifrost/core/providers/azure/realtime.go（RealtimeWebSocketURL、RealtimeWebSocketSubprotocol、SupportsRealtimeWebRTC、ExchangeRealtimeWebRTCSDP、RealtimeWebRTCDataChannelLabel、client_secrets 会话）、bifrost/core/sessionaffinity_test.go（会话与 Key 绑定语义）",
+    "bifrost-hooks": "bifrost/plugins/governance/main.go（PreRequestHook、PostLLMHook、HTTPTransportStreamChunkHook、postHookWorker）",
+    "openbot-credit": "组 06 的 Reserve/Status/Settle/Release 与 06.8 unknown；组 08 的 RecoveryItem 与恢复扫描",
+    "openbot-audio": "组 13/14 交付的音频计量、尾部结算与能力证据",
+    "openbot-ui": "组 06.12 的用户视图（待结算与消费明细）",
+    "test-harness": "真实 WebSocket 连接测试 + 可控音频时钟 + fake provider 尾部输出；server/tests/support/database.ts；go test ./plugins/governance/..."
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "16": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC08/AC16）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 实时按受控单元预留；替代入口不得绕过准入）",
+    "CONTEXT.md（实时会话、计费单元、WebRTC 入口术语）"
+   ],
+   "anchors": {
+    "bifrost-webrtc": "bifrost/core/providers/azure/realtime.go（SupportsRealtimeWebRTC、ExchangeRealtimeWebRTCSDP、RealtimeWebRTCDataChannelLabel、client_secrets 会话签发）、bifrost/core/sessionaffinity_test.go（会话与 Key 绑定）",
+    "realtime-core": "组 15 交付的 RealtimeSession / RealtimeUnit / 门控 / 关停 / 尾部结算",
+    "openbot-credit": "组 06 的 Reserve/Settle 与 06.8 unknown",
+    "test-harness": "go test ./plugins/governance/... 与 ./core/...；WebRTC 以 SDP 交换 + fake 上游验证，不依赖真实媒体设备"
+   },
+   "verification_common": [
+    "cd bifrost/plugins/governance && go test ./...",
+    "bun run --filter server typecheck"
+   ]
+  },
+  "17": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC15/AC16/AC17/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 异步任务提交前预留完整任务成本上限，完成后结算；查询不重复扣费；客户端离开、取消失败或 Key 到期都不自动释放预留）",
+    "docs/adr/0003-bifrost-openbot-credit-admission.md",
+    "CONTEXT.md（异步任务 Job、providerJobID、待结算、终态术语）"
+   ],
+   "anchors": {
+    "bifrost-jobs": "bifrost/framework/jobaccounting/（types.go JobRequest / JobStore / PricingManager / ProviderJobKind、engine.go、sweeper.go Sweeper + SweeperConfig、batch.go AccountBatchResults / NewBatchSweeper / BatchSettler / BatchResultFetcher、video.go VideoSettler / VideoRetriever / Poll / Settle、doc.go 提到 /v1/batches/{id}/results post-hook）",
+    "bifrost-tables": "bifrost/framework/configstore/tables/batchjob.go（VirtualKeyID、CustomerID）、TableProviderJob",
+    "openbot-credit": "组 06 的 Reserve/Status/Settle/Release、06.8 unknown；组 08 的 RecoveryItem 与恢复扫描",
+    "openbot-ui": "组 06.12 的用户视图",
+    "test-harness": "provider 异步 fake（queued → running → completed/failed/cancel-unsupported）+ 真实持久化跨进程重启；server/tests/support/database.ts；go test ./framework/jobaccounting/..."
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/framework/jobaccounting && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "18": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC16）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 异步任务提交前预留完整任务成本上限；批量属异步族，部分成功与取消都要归属结算）",
+    "CONTEXT.md（批量任务、条目、部分成功、待结算术语）"
+   ],
+   "anchors": {
+    "bifrost-batch": "bifrost/framework/jobaccounting/batch.go（AccountBatchResults、NewBatchSweeper、BatchSettler、BatchResultFetcher、BatchPayload、ModelBreakdown = schemas.BatchModelBreakdown、extractedUsage、batchInputFrom）、doc.go（/v1/batches/{id}/results post-hook）、bifrost/framework/configstore/tables/batchjob.go（VirtualKeyID、CustomerID）",
+    "async-core": "组 17 交付的 AsyncJob 身份、提交预留、终态结算、取消与 unknown 语义",
+    "openbot-credit": "组 06 的 Reserve/Settle/Release 与 06.8 unknown",
+    "test-harness": "provider 批量 fake（部分成功、部分失败、部分取消）+ 真实持久化；go test ./framework/jobaccounting/..."
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/framework/jobaccounting && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "19": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07/AC16）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 第一版覆盖视频能力、Q11 未定价规格不可用、Q26 异步任务预留完整上限）",
+    "CONTEXT.md（视频规格、异步任务、待结算术语）"
+   ],
+   "anchors": {
+    "bifrost-video": "bifrost/framework/jobaccounting/video.go（VideoSettler、VideoRetriever、VideoPayload、Poll、Settle、SupportsProvider、Backoff、ProviderJobKindVideo、videoLogNamespace）、video_test.go",
+    "async-core": "组 17 的任务身份、提交预留、终态结算、取消与 unknown；组 18 的逐条归因模式",
+    "openbot-price": "组 03 的 PriceSnapshot（视频维度：时长、分辨率、生成/编辑类型）与 03.3 的 known/free/unknown",
+    "openbot-credit": "组 06 的 Reserve/Settle/Release 与 06.8 unknown",
+    "test-harness": "provider 视频 fake（queued → processing → completed/failed）+ 真实持久化；go test ./framework/jobaccounting/..."
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/framework/jobaccounting && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "20": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07/AC13/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 另外收费的供应商工具第一版默认禁用，直到能完整计费并限制成本；Q4 可用范围精确到“模型 + 调用方式”）",
+    "docs/adr/0004-company-team-tenancy.md（个人模型 Key 不授予公司内容与公司工具权限）",
+    "CONTEXT.md（供应商工具、路由附加调用、附加费用、明细归因术语）"
+   ],
+   "anchors": {
+    "bifrost-tools": "bifrost/plugins/governance/main.go（PreMCPHook / PostMCPHook、PreMCPConnectionHook / PostMCPConnectionHook、stampMCPToolAccessForCodemode、PreA2AHook / PostA2AHook）、mcpauthorization.go、mcplibrary.go、mcpclientaccess_test.go、bifrost/core/injectedtools.go、responsestools.go",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（PricingManager、pricingscopes）与上游工具/路由附加定价",
+    "openbot-price": "组 03 的 PriceSnapshot surcharge 维度与 03.3 的 known/free/unknown",
+    "openbot-credit": "组 06 的 Reserve/Settle 与 06.12 的用户明细；组 07 的 attempt/承诺语义",
+    "openbot-isolation": "组 09.3 的个人 Key 不获得公司内容与公司工具权限",
+    "test-harness": "go test ./plugins/governance/...；server/tests/support/database.ts"
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "21": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC18/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q23 未上线可清理旧部署计费、Q28 只清理旧计费体系数据并保留用户/Bot/会话/知识库、Q29 人工处置需证据）",
+    "docs/adr/0004-company-team-tenancy.md（公司账务历史必须保留）",
+    "CONTEXT.md（付款账户、legacy_deployment、unknown_owner、待结算术语）"
+   ],
+   "anchors": {
+    "billing-schema": "server/src/db/schema/credits.ts（creditGrants、creditLedger）、server/src/db/schema/billing.ts（billingCustomers、billingSubscriptions、billingWebhookEvents）、server/src/db/schema/ 下其他账务相关表",
+    "payments": "server/src/billing/payments/store.ts（订单与事件）、server/src/billing/usage-outbox.ts、server/src/billing/statements.ts、server/src/billing/reconcile.ts",
+    "migrations": "server/drizzle.config.ts 与既有迁移目录（server/src/db/migrations 或 drizzle 输出目录，执行时先定位）",
+    "legacy-mapping": "组 02.2 交付的显式归属映射与 unknown_owner 隔离",
+    "reservation-state": "组 06.8 的 unknown 预留与组 08 的 RecoveryItem（在途责任不得清理）",
+    "audit": "server/src/audit.ts、server/src/audit-retention.ts",
+    "scripts": "scripts/ 下既有维护脚本模式（如 fire-workshop-schedules.ts）与 server/src/billing/maintenance.ts",
+    "test-harness": "专用 PostgreSQL 测试库（TEST_DATABASE_URL）；严禁在开发库或共享库上演练清理"
+   },
+   "verification_common": [
+    "bun run --filter server typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+   ]
+  },
+  "22": {
+   "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01–AC19 全部）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（30 项决定与 19 条验收标准的映射）",
+    "docs/adr/0001-conservative-input-bound.md、0002-per-user-bot-model-access.md、0003-bifrost-openbot-credit-admission.md、0004-company-team-tenancy.md",
+    "AGENTS.md（完成标准：Evidence over claims；OCR 外层审查与 SDD 修复循环）"
+   ],
+   "anchors": {
+    "entry-enumeration": "Bifrost 侧：plugins/governance/main.go 的全部 hook（PreRequestHook、PreLLMHook、PostLLMHook、HTTPTransport*Hook、PreMCPHook/PostMCPHook、PreMCPConnectionHook、PreA2AHook/PostA2AHook）、core/providers/* 的路由与能力标志、framework/jobaccounting/*（batch/video/sweeper）；OpenBot 侧：server/src/copilot.ts 的模型调用与门禁、server/src/billing/routes.ts 的各路由组、agent-trpc 与其他 agent-* 运行时的模型入口",
+    "evidence-store": "组 07.7 的输出封顶证据、组 14.3 的音频路径证据、组 11.6/12.4/13.4/19.2/20.4 的能力可用性与入口清单",
+    "test-entrypoints": "package.json（test、test:ci、typecheck、lint、format:check）、scripts/test-ci.ts、e2e.config.ts 与 tests/ 下的 e2e 框架、server/tests/support/database.ts（TEST_DATABASE_URL）",
+    "go-tests": "bifrost/plugins/governance/... 与 bifrost/framework/jobaccounting/... 的 go test（含 -race）",
+    "review": "AGENTS.md 的 OCR 外层审查流程（ocr review --audience agent --from <BASE> --to <HEAD> / workspace 模式）与 Superpowers 的独立 reviewer 结论"
+   },
+   "verification_common": [
+    "bun run typecheck",
+    "bunx biome lint --error-on-warnings .",
+    "cd bifrost/plugins/governance && go test -race ./..."
+   ]
   }
  },
  "detail_progress": {
-  "tickets_detailed": 89,
+  "tickets_detailed": 151,
   "tickets_total": 151,
   "groups_detailed": [
    "01",
@@ -7542,9 +10201,7 @@
    "07",
    "08",
    "09",
-   "10"
-  ],
-  "groups_pending": [
+   "10",
    "11",
    "12",
    "13",
@@ -7557,6 +10214,8 @@
    "20",
    "21",
    "22"
-  ]
+  ],
+  "groups_pending": [],
+  "completed_at": "2026-10-15"
  }
 }
