@@ -4,13 +4,21 @@ Every finding from the five committed review reports, with the coordinator's ver
 Read this before adjudicating: three items below did not appear in the `worker_done` summaries and
 two of those are security-relevant.
 
-**Update after coordinator probing (this revision):** two findings moved in opposite directions once
+**Verification complete: zero findings remain unverified.** Every blocking and non-blocking finding
+in this register has been reproduced or refuted against the delivered code. Two moved in opposite
+directions once
 tested against the delivered code rather than read. T05-F5 was escalated in the first revision of
 this register as a security defect; measurement shows no global pollution and no reachable raw
 attacker value, so the escalation is withdrawn and it stands as a correctness defect. T06-F3 was
 reported low; measurement shows `jobKey` — an idempotency identity for billable evaluation runs —
 collides, so it should be raised. Both directions are recorded rather than quietly edited, because
 a register that only ever confirms the reviewers is not a check on them.
+
+A second probing pass then resolved the five remaining "not yet verified" entries: T05-F2 (the
+label-before-value form is the one that escapes), T05-F4 (reproduced exactly at one of four byte
+paddings; the U+FFFD strip operates on the wrong layer), T05-F6 (100 → 64 with state still
+`projected`), T02-L1 (a guard gap with no live defect) and T03-F2 (the real minio image string is
+never scanned). Three of the five are instances of the same failure mode recorded as S4.
 
 Reports live on the review branches:
 `opik-review-t01@fdbce7e8`, `opik-review-t02@a1894f6d`, `opik-review-t03@1c1d7617`,
@@ -35,10 +43,10 @@ the report is self-sufficient and re-running adds nothing).
 
 | ID | Ticket | Sev | Finding | Coordinator status |
 | --- | --- | --- | --- | --- |
-| T05-F2 | #11 | medium | The AWS-secret pattern requires a context word *after* the token; with no context word, `allowFreeText: true` passes it through, contradicting the documented promise. | **not yet verified** |
+| T05-F2 | #11 | medium | The AWS-secret pattern requires a context word *after* the token; with no context word, `allowFreeText: true` passes it through, contradicting the documented promise. | **confirmed, and the common form is the one that escapes.** Measured with `allowFreeText: true`: a bare secret → `projected`; `aws_secret_access_key=<secret>` → `projected`; `<secret> is the aws secret` → `omitted`; `AKIAIOSFODNN7EXAMPLE` → `omitted`. The `(?=.*(secret\|password\|…))` lookahead is forward-only, so the label-before-value form used by every real config file and env dump is exactly the form that is not caught. Exposure is bounded because the default `allowFreeText: false` omits free text anyway, so only callers asserting reviewed content are affected. |
 | T05-F3 | #11 | medium | The plan's Self-Review claimed Slack and PEM canary coverage; the test's `CANARIES` dict contains neither. | **confirmed by inspection** — errata E12. |
-| T05-F4 | #11 | low | `cutToBytes` can leave a lone surrogate, so the UTF-8 tail becomes U+FFFD bytes; the guard sits at the wrong layer. | **not yet verified** |
-| T05-F6 | #11 | low | Arrays/key counts silently truncate at 64 while state stays `projected` — the three-state contract has no representation for silent dropping. | **not yet verified**; note this is the same failure mode as errata S4 (a check that cannot see its own emptiness). |
+| T05-F4 | #11 | low | `cutToBytes` can leave a lone surrogate, so the UTF-8 tail becomes U+FFFD bytes; the guard sits at the wrong layer. | **confirmed with an exact reproduction.** Filling to the 8192-byte budget with emoji after 0/1/2/3 ASCII pad characters: at `pad=1` the truncated text ends in code unit `0xd83d` — a lone high surrogate — `roundtripStable=false`, encoded tail `ef bf bd`. The other three paddings land cleanly, so this is boundary-dependent and easy to miss. Root cause is exactly as reported: `.replace(/\uFFFD$/, "")` strips an actual U+FFFD *character*, but a lone surrogate is not U+FFFD, it merely *encodes* to it, so the guard never fires for the real case. |
+| T05-F6 | #11 | low | Arrays/key counts silently truncate at 64 while state stays `projected` — the three-state contract has no representation for silent dropping. | **confirmed.** A 100-element array projects to 64 with `state: "projected"` and `item-99` gone; 100 requested keys return 64. Same failure mode as errata S4: the projection cannot express that it dropped something, so a consumer reading `projected` has no way to know the value is partial. |
 | T05-F7 | #11 | low | The manifest's `produces` umbrella name "`projectSafe()` 接口" does not correspond to the six functions actually exported. | **accepted as reported** — my manifest text, my defect. |
 | T06-F3 | #12 | low→**should be raised to medium/high** | `cacheKey`, `jobKey` and `exportKey` join `name` and `parts` with a bare `\|` and no length prefixing, so they collide **within one scope**. | **confirmed and understated.** Measured: `cacheKey(s,'runs','page\|2')` == `cacheKey(s,'runs\|page','2')` == `cacheKey(s,'runs','page','2')`, and `jobKey` collides the same way. `jobKey` is the **idempotency identity** for evaluation jobs; the parent Spec requires every real execution to carry a stable idempotent identity, replays not to double-charge, and new billable executions not to ride on a reused identity — so a colliding `jobKey` is billing-adjacent, not cosmetic. Note the inconsistency: `scopeKey` in the same module *is* length-prefixed and injective, and T06's own test asserts that a bot id cannot smuggle a separator into a collision. The same discipline was simply not applied to the three derived-key helpers. |
 | T06-F2 | #12 | low | The checkpoint does not explicitly state #17's cursor-invalidation obligation. | **accepted as reported** |
@@ -53,11 +61,11 @@ the report is self-sufficient and re-running adds nothing).
 | T01-F2 | #7 | "disabled → 404" is not exercised through the real `createApp`. | accepted; matches the plan's own scope note |
 | T01-F3 | #7 | An empty `manifest.handoff.checkpoint` is a convention conflict, not an implementer error. | accepted — my convention said "write the file", the manifest expected a folded value |
 | T01-F4 | #7 | The `git stash` violation's recovery is **independently verified clean**; delivery integrity additionally proven by reconstructing all five commits with `git show` and matching the delivered file set. | **confirmed** — matches my own `git stash list` check. This is the evidence for the pending E8 ruling. |
-| T02-L1 | #8 | zh-CN titles' mutual distinctness is not guarded (only en is). | not yet verified |
+| T02-L1 | #8 | zh-CN titles' mutual distinctness is not guarded (only en is). | **confirmed as a guard gap, no live defect.** The distinctness assertion exists at `ai-observability.test.ts:93` but only over the en bundle. All four zh-CN namespaces currently do have 8/8 distinct titles, so nothing is wrong today; a future zh edit could introduce duplicate titles with no test failing. Low is the right rating. |
 | T02-L2 | #8 | The plan's Task 4 Step 3 lint expectation does not match reality. | accepted — my plan defect, same family as E1 |
 | T02-I1 | #8 | `server typecheck` red versus the baseline record = environment drift. | accepted — that is errata E2, since fixed by merging main |
 | T02-I2 | #8 | The errata file the coordinator referenced does not exist in the review worktree. | accepted — independently confirms errata E10 |
-| T03-F2 | #9 | `image: &minio-image` / `*minio-image` YAML anchors mean the floating-tag scan sees only the anchor name, not minio's real image string. The rendered config confirms the actual value is compliant. | not yet verified; same family as E15 (a scan that cannot see what it scans) |
+| T03-F2 | #9 | `image: &minio-image` / `*minio-image` YAML anchors mean the floating-tag scan sees only the anchor name, not minio's real image string. The rendered config confirms the actual value is compliant. | **confirmed.** The scan sees 10 image tokens, two of which are `&minio-image` and `*minio-image`; the real string `docker.io/cloudpirates/image-minio:RELEASE.2025-10-15T17-29-55Z-hardened` is never examined. Same family as E15/S4 — a check blind to part of what it claims to check. Fix with F1: assert against the rendered `docker compose config` output rather than the raw YAML. |
 | T03-F3 | #9 | Minor literal deviations: the compose header comment changed 4 lines rather than "one appended line"; `.env.example` insertion point is after the Sentry block rather than after the TEMPO line. | accepted as reported — cosmetic, same files, no functional effect |
 | T03-F4 | #9 | `python-backend` keeps upstream `privileged: true` (needed by its DinD code executor). Not a violation of this ticket, but an inherent upstream attack surface. | **accepted, and must be carried forward** — see below |
 | T03-F5 | #9 | Checkpoint says 62 optional `${VAR:-}` variables; the reviewer measured 67. | accepted — counting-basis difference, no impact |
