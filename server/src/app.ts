@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -7,6 +8,7 @@ import { MAX_IMAGE_BYTES } from "../../shared/attachments";
 import { getLogger } from "../../shared/logger";
 import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
+import { createOpenMuseTemplateAdminRoutes } from "./admin/openmuse-template-routes";
 import { createEnterpriseAdminRoutes } from "./admin/routes";
 import {
   authoriseAgentCall,
@@ -19,6 +21,10 @@ import {
   type BotLifecycleServices,
   createBotLifecycleRoutes,
 } from "./agents/lifecycle-routes";
+import type {
+  OpenMuseTemplateMethods,
+  OpenMuseTemplateRevisionService,
+} from "./agents/openmuse-template-store";
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
@@ -121,8 +127,27 @@ import type { MemoryIngestion } from "./memory/ingestion";
 import { createMemoryRoutes } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
 import { createMobileBffActivity } from "./mobile-bff/activity";
+import {
+  createOpenMuseBotProvisioner,
+  OPENMUSE_TEMPLATE_KEY,
+} from "./mobile-bff/openmuse-bot";
 import { createMobileBffRoutes } from "./mobile-bff/routes";
 import { createMobileBffWorkspace } from "./mobile-bff/workspace";
+import { openMuseAccountFence } from "./openmuse-deletion/fence";
+import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
+import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
+import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
+import { createOpenMuseDeletionAdminRoutes } from "./openmuse-deletion/restore";
+import type {
+  OpenMuseDeletionCleanupView,
+} from "./openmuse-deletion/retention";
+import type { OpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+import { createOpenMuseAccountDeletionRoutes } from "./openmuse-deletion/routes";
+import type { OpenMuseAccountDeletionStore } from "./openmuse-deletion/store";
+import { createOpenMuseFilesRoutes } from "./openmuse-files/routes";
+import type { OpenMuseFileStore } from "./openmuse-files/store";
+import { createOpenMuseTasksRoutes } from "./openmuse-tasks/routes";
+import type { OpenMuseTaskStore } from "./openmuse-tasks/store";
 import { parsePageLimit } from "./paging";
 import { createPasswordRoutes, createSignInRoutes } from "./passwords/routes";
 import type { SignInService } from "./passwords/service";
@@ -216,6 +241,29 @@ const MULTIPART_FRAMING_ALLOWANCE = 64 * 1024;
 export const UPLOAD_BODY_LIMIT_BYTES =
   MAX_IMAGE_BYTES + MULTIPART_FRAMING_ALLOWANCE;
 
+/** The ceiling on one readiness ping. A database that has said nothing for this long is down. */
+const READY_TIMEOUT_MS = 1500;
+
+/**
+ * The default probe behind `/ready`: one SELECT 1, raced against a timeout so a database that
+ * hangs answers down rather than holding the probe open for the pool's own connect timeout.
+ *
+ * With no database wired the probe always fails, because "this app has no database" is down — a
+ * readiness route that answered up about a deployment with nothing behind it would be the one
+ * lie a load balancer is not allowed to be told.
+ */
+function defaultReadinessProbe(database: Database | undefined) {
+  return async () => {
+    if (!database) throw new Error("No database is wired.");
+    await Promise.race([
+      database.execute(sql`select 1`),
+      Bun.sleep(READY_TIMEOUT_MS).then(() => {
+        throw new Error("The readiness ping timed out.");
+      }),
+    ]);
+  };
+}
+
 /**
  * One row for something an administrator did to somebody's access.
  *
@@ -253,6 +301,26 @@ async function recordPersonEvent(
     actorUserId: context.var.actor.id,
     payload: { email: person.email, ...payload },
   });
+}
+
+/**
+ * The deployment's session guard, the one construction both createApp and index.ts's OpenMuse
+ * seams (Google OAuth, mail, calendar) mount: single-user answers its one administrator, a
+ * configured provider answers real sessions, and neither configured is a deployment that never
+ * booted (loadConfig refuses it) — answered at 503 rather than left undefined so the seam is
+ * always a guard. Exported because index.ts used to carry a hand-copied twin of this ternary,
+ * and one `/api` prefix guarded by two differently-aged guards is exactly the silent fork this
+ * factory exists to prevent.
+ */
+export function createDeploymentRequireUser(
+  config: Pick<DeploymentConfig, "singleUser">,
+  auth?: AuthService,
+  roleRepository?: RoleRepository,
+): MiddlewareHandler<{ Variables: AppVariables }> {
+  if (config.singleUser) return createDevRequireUser();
+  if (auth && roleRepository) return createRequireUser(auth, roleRepository);
+  return async (context) =>
+    context.json({ error: "No identity provider is configured." }, 503);
 }
 
 export function createApp(
@@ -588,14 +656,115 @@ export function createApp(
    * wiring (store, gateway, manager, executor, the deployment's model catalog) is one boot
    * decision; the craft tree carries its own enabled gate (503 mid-flight) and needs only
    * `requireUser` (its sandbox routing is not Bot-scoped like the workshop's canUseBot).
-   * Absent (or the deployment's OPENBOT_CRAFT_ENABLED unset) mounts nothing.
+   * Absent (or OPENBOT_CRAFT_ENABLED explicitly disabled) mounts nothing.
    */
   craftRoutes?: CraftRoutesFactory,
+  /**
+   * The OpenMuse seam tail, ONE named object instead of seventeen trailing
+   * positionals: ten of those were the same Hono router type, where any call
+   * site's silent argument misordering typechecks and mounts a family under
+   * the wrong prefix (goals under /api/mobile/openmuse-calendar) with no
+   * runtime error to notice. Named fields cannot be transposed; the older
+   * positional parameters above this one stay as they were.
+   */
+  openMuseSeams?: {
+    /** The OpenMuse template seam (see the docblock this object replaced). */
+    templateStore?: OpenMuseTemplateMethods;
+    /** The /ready probe; absent defaults to a real SELECT 1 on the database. */
+    readinessProbe?: () => Promise<void>;
+    /** The template revision admin seam (preview/apply). */
+    templateRevisions?: OpenMuseTemplateRevisionService;
+    /** The OpenMuse personal-files store. */
+    files?: OpenMuseFileStore;
+    /** The OpenMuse Task store (T01). */
+    tasks?: OpenMuseTaskStore;
+    /** The OpenMuse Google OAuth pair: the guarded app and the public callback. */
+    googleOAuth?: { app: Hono<{ Variables: AppVariables }>; callback: Hono };
+    mail?: Hono<{ Variables: AppVariables }>;
+    reviewedActions?: Hono<{ Variables: AppVariables }>;
+    goals?: Hono<{ Variables: AppVariables }>;
+    calendar?: Hono<{ Variables: AppVariables }>;
+    ideas?: Hono<{ Variables: AppVariables }>;
+    memories?: Hono<{ Variables: AppVariables }>;
+    documents?: Hono<{ Variables: AppVariables }>;
+    notifications?: Hono<{ Variables: AppVariables }>;
+    /** D01 (§9): the marker store behind the delete route and the fence. */
+    accountDeletion?: OpenMuseAccountDeletionStore;
+    /**
+     * D02 (§9): the work shutdown the delete route runs behind the marker —
+     * cancels Tasks/Monitors and awaiting Reviewed actions, records the
+     * transitions on the marker.
+     */
+    deletionShutdown?: (userId: string) => Promise<unknown>;
+    /**
+     * D03 (§9): the external access revocation — Google seats withdrawn at
+     * the vendor best-effort, rows landing revoked.
+     */
+    deletionRevoke?: (userId: string) => Promise<unknown>;
+    /** D04 (§9): the resource manifest built before any metadata removal. */
+    deletionManifest?: (userId: string) => Promise<OpenMuseDeletionManifest>;
+    /**
+     * §9 hardening (the fence's tracked exposure): the delete route revokes
+     * the deleting owner's auth sessions with the marker, so a still-valid
+     * session cannot keep reaching the seams the /api/mobile fence does not
+     * cover (channels, the computer stream, copilot).
+     */
+    deletionRevokeSessions?: (userId: string) => Promise<unknown>;
+    /**
+     * D09 (§9): the backup-retention bookkeeping — notes on the marker that
+     * the deployment's backup window covers this deletion.
+     */
+    deletionNoteBackupRetention?: (userId: string) => Promise<string | null>;
+    /**
+     * D05/D06/D08/D09 (§9): the admin surface at /api/admin/openmuse-deletion
+     * — restore, the file byte purge, the final relational purge and the
+     * cleanup view. Absent leaves the admin surface unmounted.
+     */
+    deletionAdmin?: {
+      restore: OpenMuseDeletionRestore;
+      purge?: (userId: string) => Promise<OpenMuseFileBytePurgeReport>;
+      purgeRelational?: (
+        userId: string,
+      ) => Promise<OpenMuseRelationalPurgeOutcome>;
+      cleanupView?: () => Promise<OpenMuseDeletionCleanupView>;
+    };
+    activity?: Hono<{ Variables: AppVariables }>;
+    opsSignals?: Hono<{ Variables: AppVariables }>;
+  },
   /** A person's own linked accounts. Absent answers 503 on /api/identity. */
   identity?: IdentityStore,
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
 ) {
+  // The OpenMuse seam tail, unpacked to the local names the body below reads —
+  // one named object at the call site, no seventeen positional arguments to
+  // transpose. (Finding ocr-ob-certify #14.)
+  const {
+    templateStore: openMuseTemplateStore,
+    readinessProbe,
+    templateRevisions: openMuseTemplateRevisions,
+    files: openMuseFiles,
+    tasks: openMuseTasks,
+    googleOAuth: openMuseGoogleOAuth,
+    mail: openMuseMail,
+    reviewedActions: openMuseReviewedActions,
+    goals: openMuseGoals,
+    calendar: openMuseCalendar,
+    ideas: openMuseIdeas,
+    memories: openMuseMemories,
+    documents: openMuseDocuments,
+    notifications: openMuseNotifications,
+    accountDeletion: openMuseAccountDeletion,
+    deletionShutdown: openMuseDeletionShutdown,
+    deletionRevoke: openMuseDeletionRevoke,
+    deletionManifest: openMuseDeletionManifest,
+    deletionRevokeSessions: openMuseDeletionRevokeSessions,
+    deletionNoteBackupRetention: openMuseDeletionNoteBackupRetention,
+    deletionAdmin: openMuseDeletionAdmin,
+    activity: openMuseActivity,
+    opsSignals: openMuseOpsSignals,
+  } = openMuseSeams ?? {};
+
   const app = new Hono<{ Variables: AppVariables }>();
   // Browser origins the deployment already trusts (TRUSTED_ORIGINS plus the app URL) get CORS
   // headers on API responses, so a bundle served from one of them can call this API. Registered
@@ -625,6 +794,22 @@ export function createApp(
   mountProviderOAuthProxy(app, modelProviderProxy);
 
   app.get("/health", (context) => context.json({ status: "ok" }));
+  /*
+   * Readiness, which unlike liveness is allowed to say no. `/health` above answers whether this
+   * process is serving; `/ready` answers whether the deployment behind it is usable, which for
+   * OpenBot is one question: does the database answer. The probe is injected so tests decide up
+   * and down in code, and the default is a real SELECT 1 rather than an echo, so a caller polling
+   * this route learns the truth about the deployment instead of the truth about the process.
+   */
+  const probe = readinessProbe ?? defaultReadinessProbe(attachmentDatabase);
+  app.get("/ready", async (context) => {
+    try {
+      await probe();
+      return context.json({ status: "ok", database: "up" });
+    } catch {
+      return context.json({ status: "unavailable", database: "down" }, 503);
+    }
+  });
   // The public key Bots' browsers sign their requests with, where Cloudflare and any other verifier
   // look for it. Public by design, and absent when Web Bot Auth is off. See web-bot-auth.ts.
   const webBotAuth = config.webBotAuth;
@@ -799,17 +984,9 @@ export function createApp(
     return answer;
   });
 
-  const authenticationUnavailable: MiddlewareHandler<{
-    Variables: AppVariables;
-  }> = async (context) =>
-    context.json({ error: "No identity provider is configured." }, 503);
   // One administrator, when nothing is configured to sign anybody in. Checked first, and only ever
   // true when there is no provider, so a configured deployment cannot fall back to it.
-  const requireUser = config.singleUser
-    ? createDevRequireUser()
-    : auth && roleRepository
-      ? createRequireUser(auth, roleRepository)
-      : authenticationUnavailable;
+  const requireUser = createDeploymentRequireUser(config, auth, roleRepository);
   // Enterprise controls: capability switches and the model allowlist in front of the routes they
   // govern, the admin screen's API, and the SCIM verbs the GET/POST auth handler above does not take.
   app.use("/api/*", createEnterpriseGate(requireUser));
@@ -825,6 +1002,19 @@ export function createApp(
    */
   app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
+  if (openMuseTemplateRevisions) {
+    /*
+     * Template revision preview/apply: administrator-only (requireUser + requireAdmin inside the
+     * factory), mounted only where the assembly built the revision store beside the template store.
+     */
+    app.route(
+      "/api/admin/openmuse-template",
+      createOpenMuseTemplateAdminRoutes({
+        requireUser,
+        revisions: openMuseTemplateRevisions,
+      }),
+    );
+  }
   app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", (context) =>
     auth
       ? auth.handler(context.req.raw)
@@ -1758,6 +1948,69 @@ export function createApp(
     }
   }
 
+  /*
+   * The OpenMuse account fence (D01, contracts §9): one shared guard in front
+   * of the whole /api/mobile prefix, standing before the mobile-bff mount and
+   * every openmuse-* sub-app mount below it. A user carrying the deletion
+   * marker is refused 403 with the stable code before any family runs;
+   * unauthenticated requests keep the guards' own 401. The delete route is
+   * registered BEFORE the fence on purpose: it is the route that writes the
+   * marker, so a repeated delete after the marker exists must still answer
+   * (idempotently, insert-once) rather than be fenced by its own act.
+   */
+  if (openMuseAccountDeletion) {
+    app.route(
+      "/api/mobile/openmuse-account",
+      createOpenMuseAccountDeletionRoutes({
+        requireUser,
+        store: openMuseAccountDeletion,
+        // D02/D03/D04 wired (ocr-ob-certify findings 15/16): the shutdown,
+        // the external revocation and the manifest run behind the marker, and
+        // the owner's auth sessions go with it (the fence's tracked exposure
+        // — channels/computer/copilot read no marker, so the session itself
+        // is what has to die).
+        ...(openMuseDeletionShutdown
+          ? { shutdownOwnerWork: openMuseDeletionShutdown }
+          : {}),
+        ...(openMuseDeletionRevoke
+          ? { revokeExternalAccess: openMuseDeletionRevoke }
+          : {}),
+        ...(openMuseDeletionManifest
+          ? { buildManifest: openMuseDeletionManifest }
+          : {}),
+        ...(openMuseDeletionRevokeSessions
+          ? { revokeSessions: openMuseDeletionRevokeSessions }
+          : {}),
+        ...(openMuseDeletionNoteBackupRetention
+          ? { noteBackupRetention: openMuseDeletionNoteBackupRetention }
+          : {}),
+      }),
+    );
+    app.use(
+      "/api/mobile/*",
+      openMuseAccountFence({
+        requireUser,
+        isDisabled: openMuseAccountDeletion.isDisabled,
+      }),
+    );
+  }
+
+  /*
+   * The OpenMuse document surface (F05/F06/F09), under the files prefix the
+   * route contract names: mounted beside — but BEFORE — the mobile bff whose
+   * family-wide 8 KiB body limit would otherwise answer every fill first
+   * (round 6 H5: a two-field fill §5's per-field budget admits is ~20 KiB,
+   * so the family 413 made F06 unusable for large values; this sub-app
+   * carries its own 1 MB fill ceiling and 64 KiB transfer ceiling, plus its
+   * own requireUser). Deliberately OUTSIDE the channelStore block (round 6
+   * M4): the documents seams depend on no channel store, and a deployment
+   * without channels must still mount its routes rather than silently skip
+   * them. The /api/mobile fence above runs first either way.
+   */
+  if (openMuseDocuments) {
+    app.route("/api/mobile/openmuse-files", openMuseDocuments);
+  }
+
   if (channelStore) {
     app.route(
       "/api/channels",
@@ -1779,6 +2032,23 @@ export function createApp(
           agentProfileStore,
           channelStore,
         }),
+        ...(agentProfileStore && openMuseTemplateStore
+          ? {
+              openMuseProvisioner: createOpenMuseBotProvisioner({
+                agentProfileStore: {
+                  ...agentProfileStore,
+                  ...openMuseTemplateStore,
+                },
+                /*
+                 * A Bot's computer is keyed by the Bot's own id — the per-bot
+                 * provider locates it lazily by botId and no separate computer
+                 * profile row exists — so the id the template provisioned is
+                 * the computer profile id.
+                 */
+                computerProfileIdFor: async (profile) => profile.id,
+              }),
+            }
+          : {}),
         ...(coworker
           ? {
               activity: createMobileBffActivity({
@@ -1787,8 +2057,160 @@ export function createApp(
               }),
             }
           : {}),
+        ...(openMuseFiles
+          ? {
+              openMuseFiles: createOpenMuseFilesRoutes({
+                store: openMuseFiles,
+                requireUser,
+              }),
+            }
+          : {}),
+        ...(openMuseTasks && openMuseTemplateStore
+          ? {
+              openMuseTasks: createOpenMuseTasksRoutes({
+                store: openMuseTasks,
+                requireUser,
+                resolvePrivateBotId: async (ownerUserId) =>
+                  (
+                    await openMuseTemplateStore.findByTemplateKey(
+                      ownerUserId,
+                      OPENMUSE_TEMPLATE_KEY,
+                    )
+                  )?.id ?? null,
+                // T13/T15: the files seam finance and document tasks validate
+                // their File inputs through at creation — without it the
+                // routes answer 503 rather than writing rows that cannot run.
+                ...(openMuseFiles ? { files: openMuseFiles } : {}),
+              }),
+            }
+          : {}),
       }),
     );
+  }
+
+  /*
+   * The OpenMuse Gmail consent surface (G01), mounted only where the assembly
+   * built it: the session-guarded half under the mobile prefix its client
+   * calls, and the public callback half Google redirects to. The callback is
+   * deliberately NOT behind requireUser — its caller is Google — but the
+   * sub-app resolves the session itself and refuses any callback whose
+   * session is not the one that started the consent.
+   */
+  if (openMuseGoogleOAuth) {
+    app.route("/api/mobile/openmuse-google", openMuseGoogleOAuth.app);
+    app.route("/api/public/openmuse-google", openMuseGoogleOAuth.callback);
+  }
+
+  /*
+   * The OpenMuse Mail read surface (M01), beside the Google consent surface it
+   * depends on: the owner's Gmail messages, behind the session guard and the
+   * G01 connection guard the router carries itself.
+   */
+  if (openMuseMail) {
+    app.route("/api/mobile/openmuse-mail", openMuseMail);
+  }
+
+  /*
+   * The OpenMuse Reviewed action surface (R01), beside the Mail surface whose
+   * proposals it will one day execute: the §6 state machine behind the same
+   * session guard, with the assembly-injected executor (the fake until R02).
+   */
+  if (openMuseReviewedActions) {
+    app.route("/api/mobile/openmuse-reviewed-actions", openMuseReviewedActions);
+  }
+
+  /*
+   * The OpenMuse private Goal surface (P01), beside the Reviewed action
+   * surface: the owner's Goals behind the session guard the router carries
+   * itself. goalLookupFor (the private Bot's read-only tool seam) lives in
+   * the module, unwired until C07 ports the runtime's tool registry.
+   */
+  if (openMuseGoals) {
+    app.route("/api/mobile/openmuse-goals", openMuseGoals);
+  }
+
+  /*
+   * The OpenMuse Calendar read surface (A01), beside the Goal surface: the
+   * owner's Calendar events behind the session guard and the G03 connection
+   * guard the router carries itself — the branch a Gmail grant never
+   * satisfies.
+   */
+  if (openMuseCalendar) {
+    app.route("/api/mobile/openmuse-calendar", openMuseCalendar);
+  }
+
+  /*
+   * The OpenMuse private Idea surface (P02), beside the Calendar surface:
+   * the owner's Ideas behind the session guard the router carries itself.
+   * ideaLookupFor (the private Bot's read-only tool seam) lives in the
+   * module, unwired until C07 ports the runtime's tool registry.
+   */
+  if (openMuseIdeas) {
+    app.route("/api/mobile/openmuse-ideas", openMuseIdeas);
+  }
+
+  /*
+   * The OpenMuse private Memory surface (P03), beside the Idea surface: the
+   * owner's Memories behind the session guard the router carries itself.
+   * memoryLookupFor (the private Bot's read-only tool seam) lives in the
+   * module, unwired until C07 ports the runtime's tool registry.
+   */
+  if (openMuseMemories) {
+    app.route("/api/mobile/openmuse-memories", openMuseMemories);
+  }
+
+  /*
+   * The OpenMuse Task notification surface (T12), beside the Memory surface:
+   * the owner's notification feed behind the session guard the router
+   * carries itself. Read and mark-read only — the events are emitted by the
+   * task runner's transitions, never written here.
+   */
+  if (openMuseNotifications) {
+    app.route("/api/mobile/openmuse-notifications", openMuseNotifications);
+  }
+
+  /*
+   * The OpenMuse Activity feed (V01, contracts §8), beside the notification
+   * surface: the owner's merged policy-approval and reviewed-action list,
+   * behind the session guard the router carries itself. Every decision is
+   * the owning module's own path — this surface aggregates, it never
+   * decides.
+   */
+  if (openMuseActivity) {
+    app.route("/api/mobile/openmuse-activity", openMuseActivity);
+  }
+
+  /*
+   * The OpenMuse ops signals (O05, contracts §10), the operator's read-only
+   * health surface: one aggregation over the feature seams, behind the
+   * requireUser + requireAdmin double layer the router carries itself.
+   */
+  if (openMuseAccountDeletion && openMuseDeletionAdmin) {
+    /*
+     * D05/D06/D08/D09 (§9), mounted (ocr-ob-certify finding 20): without this
+     * surface the 30-day restore window could never be exercised — the store's
+     * only restore caller lived on this unmounted router — and the purge
+     * convergence could never run, so markers fenced forever. Administrator
+     * only, the template routes' own gate shape.
+     */
+    app.route(
+      "/api/admin/openmuse-deletion",
+      createOpenMuseDeletionAdminRoutes({
+        requireUser,
+        restore: openMuseDeletionAdmin.restore,
+        ...(openMuseDeletionAdmin.purge ? { purge: openMuseDeletionAdmin.purge } : {}),
+        ...(openMuseDeletionAdmin.purgeRelational
+          ? { purgeRelational: openMuseDeletionAdmin.purgeRelational }
+          : {}),
+        ...(openMuseDeletionAdmin.cleanupView
+          ? { cleanupView: openMuseDeletionAdmin.cleanupView }
+          : {}),
+      }),
+    );
+  }
+
+  if (openMuseOpsSignals) {
+    app.route("/api/admin/openmuse-ops", openMuseOpsSignals);
   }
 
   if (attachmentDatabase) {

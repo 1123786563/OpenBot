@@ -211,13 +211,14 @@ describe("the capabilities endpoint", () => {
 
   // createApp takes its services positionally; the banner is followed by the optional billing
   // group, the OpenConnector broker, the payments/code-run/statements/credits/workshop/craft
-  // tail, and the identity store + GitHub sign-in callback. Counted from the end, because the
-  // tail only ever gains optionals appended last — the file's own rule — so a new one moves the
-  // banner's offset by exactly one and this comment by one line.
+  // tail, the identity store + GitHub sign-in callback, and the OpenMuse seams (one named
+  // object). Counted from the end, because the tail only ever gains optionals appended last —
+  // the file's own rule — so a new one moves the banner's offset by exactly one and this
+  // comment by one line.
   function appWith(banner: ReturnType<typeof createSelfHostBanner>) {
     const args: unknown[] = new Array(createApp.length).fill(undefined);
     args[0] = config;
-    args[createApp.length - 12] = banner;
+    args[createApp.length - 13] = banner;
     return (createApp as (...input: unknown[]) => ReturnType<typeof createApp>)(
       ...args,
     );

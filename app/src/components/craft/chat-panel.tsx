@@ -9,7 +9,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { decideCraftApproval, generateSessionName, listLiveApprovals } from "@/lib/craft/client";
+import {
+  decideCraftApproval,
+  generateSessionName,
+  listLiveApprovals,
+} from "@/lib/craft/client";
 import {
   craftKeys,
   craftMessagesQueryOptions,
@@ -122,6 +126,11 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
       await queryClient.invalidateQueries({
         queryKey: scheduledRunContextKey(sessionId),
       });
+      // A scheduled run can scaffold and start a web app exactly like an
+      // interactive turn; the preview pane gates on this read.
+      await queryClient.invalidateQueries({
+        queryKey: craftKeys.webapp(sessionId),
+      });
     })();
     return () => {
       cancelled = true;
@@ -166,6 +175,13 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     });
     await queryClient.invalidateQueries({
       queryKey: craftKeys.session(sessionId),
+    });
+    // A turn is the only thing that can start (or crash) the session's dev
+    // server, so turn end is when the preview's `has_webapp`/`ready` facts
+    // change. Without this the pane kept serving the pre-turn read and showed
+    // "waiting for the first web app" beside an app the agent had just built.
+    await queryClient.invalidateQueries({
+      queryKey: craftKeys.webapp(sessionId),
     });
   };
 

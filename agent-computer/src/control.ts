@@ -2,6 +2,7 @@ import type {
   ComputerControlState,
   HandoffRequest,
   HandoffSource,
+  HandoffStatus,
 } from "../../shared/computer-control";
 import { createActionBarrier } from "./action-barrier";
 import {
@@ -38,6 +39,13 @@ export const HUMAN_HAS_CONTROL =
   "A person has control or has been asked to take control. Wait for them to hand it back before acting.";
 export const TAKE_CONTROL_FIRST =
   "Take control before driving the computer yourself.";
+/** Input the lease has already seen: the same number is a replay, a smaller one a reorder. */
+const STALE_INPUT_SEQUENCE =
+  "That input was already seen, so it was not delivered.";
+const BAD_INPUT_SEQUENCE =
+  "An input sequence must be a whole number of at least 1.";
+/** The revocation reason when the caller did not give one worth reading. */
+export const CONTROL_REVOKED = "The control request was revoked.";
 type Options = {
   store?: ControlStore;
   invalidateSnapshot?: () => void;
@@ -84,10 +92,28 @@ export function createControl(
     | { label: string; ref: string; snapshotId?: number; requestedAt: string }
     | undefined;
   let storageError: Error | undefined;
+  /**
+   * The last input sequence a lease admitted. Belongs to the lease, not the process: taking a
+   * fresh lease starts the numbering over, and no lease survives this process restarting.
+   */
+  let lastInputSeq: number | undefined;
   const current = () =>
     data.requests.find((r) => r.id === data.currentRequestId);
   const active = (request: HandoffRequest | undefined) =>
     request?.status === "waiting" || request?.status === "taken";
+  /**
+   * Whether a held lease belongs to somebody else. A taker that brings no identity joins the
+   * lease as before (older callers, and the surfaces that predate identities); one that brings
+   * a different identity than the holder's is refused, so the idempotent re-take cannot be a
+   * second person's way in.
+   */
+  const heldByAnother = (
+    request: HandoffRequest,
+    holder?: { userId: string },
+  ) =>
+    holder !== undefined &&
+    request.takenBy !== undefined &&
+    request.takenBy !== holder.userId;
   function persist() {
     // Keep the current identity and the latest 32 terminal records. Their aliases expire together.
     const cutoff = Date.parse(now()) - 30 * 24 * 60 * 60 * 1000;
@@ -125,7 +151,7 @@ export function createControl(
    */
   function finish(
     request: HandoffRequest,
-    status: "completed" | "cancelled" | "expired" | "interrupted",
+    status: HandoffStatus,
     interruption?: string,
     keepPage = false,
   ) {
@@ -227,7 +253,12 @@ export function createControl(
     return request;
   }
   /**
-   * The computer stopped serving the current request.
+   * End whatever handover is in flight, from outside it.
+   *
+   * The outcome names who ended it: `interrupted` for the process and its browser lifecycle
+   * (restarts, resets, replaced browsers), `refused` for a revocation asked of this process —
+   * logout, disconnect policy, a policy refusal — where the §3 outcome the lease owes is that
+   * it was refused, not that the computer hiccuped.
    *
    * `keepPage` only for a restart underneath the request (the process or the browser coming back up):
    * then a request raised from the blank browser that follows can reopen the page. A deliberate stop
@@ -235,15 +266,15 @@ export function createControl(
    */
   function interrupt(
     reason: string,
-    { keepPage = false }: { keepPage?: boolean } = {},
+    outcome: "interrupted" | "refused" = "interrupted",
+    keepPage = false,
   ): ControlState {
     const request = current();
     // Recovery is for a page a person was driving: what they left it as is unknown until someone
     // looks. A request nobody took left the page exactly as the Bot had it, and holding the Bot
     // until a person "checks" a page no person touched stranded it asking for control it had.
     const personHadIt = data.holder === "human" || request?.status === "taken";
-    if (request && active(request))
-      finish(request, "interrupted", reason, keepPage);
+    if (request && active(request)) finish(request, outcome, reason, keepPage);
     if (!keepPage) {
       // A restart may already have interrupted this request and kept its page (a stop closes the
       // browser first, which reports as a replacement). The stop or reset is the last word.
@@ -267,7 +298,8 @@ export function createControl(
   if (restored && (active(current()) || data.holder === "human"))
     interrupt(
       "The computer process restarted; the previous page was interrupted. Request help again to continue.",
-      { keepPage: true },
+      "interrupted",
+      true,
     );
   // Records saved before finished requests dropped their pages are cleaned on first read.
   if (restored && scrubPages(now())) persist();
@@ -367,9 +399,19 @@ export function createControl(
       persist();
       return get();
     },
-    async take(requestId: string): Promise<ControlState> {
+    async take(
+      requestId: string,
+      holder?: { userId: string },
+    ): Promise<ControlState> {
       const request = intended(requestId);
-      if (request.status === "taken" && data.holder === "human") return get();
+      if (request.status === "taken" && data.holder === "human") {
+        if (heldByAnother(request, holder))
+          throw new ControlRequestError(
+            "Another person already holds this control request.",
+            409,
+          );
+        return get();
+      }
       if (request.status !== "waiting")
         throw new ControlRequestError(
           "That request is no longer waiting for control.",
@@ -379,7 +421,14 @@ export function createControl(
       // Never await here from requestHelp: a navigation detector still owns its action lease.
       await barrier.drain(options.drainTimeoutMs);
       const after = intended(requestId);
-      if (after.status === "taken" && data.holder === "human") return get();
+      if (after.status === "taken" && data.holder === "human") {
+        if (heldByAnother(after, holder))
+          throw new ControlRequestError(
+            "Another person already holds this control request.",
+            409,
+          );
+        return get();
+      }
       if (after.status !== "waiting")
         throw new ControlRequestError(
           "That request is no longer waiting for control.",
@@ -387,14 +436,18 @@ export function createControl(
         );
       after.status = "taken";
       after.updatedAt = now();
+      if (holder) after.takenBy = holder.userId;
       delete after.expiresAt;
       data.holder = "human";
       data.since = now();
       secret = undefined;
+      // A fresh lease numbers its input from the start; the previous holder's last gesture is
+      // not this holder's to have to out-number.
+      lastInputSeq = undefined;
       persist();
       return get();
     },
-    release(requestId: string): ControlState {
+    release(requestId: string, holder?: { userId: string }): ControlState {
       const request = intended(requestId);
       if (request.status === "completed" && data.holder === "bot") return get();
       if (
@@ -403,6 +456,17 @@ export function createControl(
       )
         throw new ControlRequestError(
           "That request is no longer held by a person.",
+          409,
+        );
+      /*
+       * Take refuses a second person's claim of a held lease; release must not be
+       * their way around it — putting the holder off the wheel is the same
+       * interference take's 409 exists to prevent, so the same check applies. A
+       * caller that brings no identity joins the older, identity-less contract.
+       */
+      if (heldByAnother(request, holder))
+        throw new ControlRequestError(
+          "Another person holds this control request.",
           409,
         );
       if (request.status === "taken") finish(request, "completed");
@@ -416,11 +480,22 @@ export function createControl(
       syncAdmission();
       return get();
     },
-    cancel(requestId: string): ControlState {
+    cancel(requestId: string, holder?: { userId: string }): ControlState {
       const request = intended(requestId);
       if (request.status === "cancelled") return get();
       if (!active(request))
         throw new ControlRequestError("That request is no longer active.", 409);
+      /*
+       * A taken lease is the holder's, so cancelling it is release's "put the
+       * holder off the wheel" in another coat and carries the same identity
+       * check. A waiting request is the Bot's own ask — any member may still
+       * cancel it, exactly as before.
+       */
+      if (request.status === "taken" && heldByAnother(request, holder))
+        throw new ControlRequestError(
+          "Another person holds this control request.",
+          409,
+        );
       finish(request, "cancelled");
       persist();
       syncAdmission();
@@ -461,6 +536,32 @@ export function createControl(
     },
     humanMayDrive(): boolean {
       return data.holder === "human" && barrier.pending() === 0;
+    },
+    /**
+     * The gate a person's input passes: the lease, and the order the sender numbers it in.
+     *
+     * The HTTP gestures answer here before anything reaches a page, so a refusal is input that
+     * was never delivered. The live screen (WS screencast input) is NOT gated here: it checks
+     * `humanMayDrive` alone, because it carries no sequence numbers to judge — extending the
+     * numbering to that path is deferred (k03 records "WS path unchanged"). A sender that brings
+     * no number is admitted as before — numbering is the surface's choice, not a demand the
+     * lease makes — and one that brings a number moves only forward: the same number is a
+     * replay, a smaller one a reorder, and neither is delivered.
+     */
+    admitHumanInput(input?: {
+      seq?: number;
+    }): { ok: true } | { ok: false; error: string; status: 400 | 409 } {
+      expire();
+      if (!this.humanMayDrive())
+        return { ok: false, error: TAKE_CONTROL_FIRST, status: 409 };
+      const seq = input?.seq;
+      if (seq === undefined) return { ok: true };
+      if (!Number.isInteger(seq) || seq < 1)
+        return { ok: false, error: BAD_INPUT_SEQUENCE, status: 400 };
+      if (lastInputSeq !== undefined && seq <= lastInputSeq)
+        return { ok: false, error: STALE_INPUT_SEQUENCE, status: 409 };
+      lastInputSeq = seq;
+      return { ok: true };
     },
     requestSecret(input: {
       label?: unknown;

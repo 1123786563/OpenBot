@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import {
@@ -7,6 +7,12 @@ import {
   agents,
   deploymentPackages,
 } from "../db/schema";
+import { teamBotPublications } from "../db/schema/team-bots";
+import {
+  assignedCondition,
+  assignedToActor,
+  teamBotAccess,
+} from "../team-bots/access";
 import {
   authFromConfiguration,
   retireReplacedKey,
@@ -17,12 +23,6 @@ import {
   mintCallbackToken,
   sameToken,
 } from "./callback-token";
-import {
-  assignedCondition,
-  assignedToActor,
-  teamBotAccess,
-} from "../team-bots/access";
-import { teamBotPublications } from "../db/schema/team-bots";
 import { canManageAgent } from "./profile-policy";
 import type {
   AgentActor,
@@ -80,6 +80,27 @@ export type AgentProfileStore = {
   setPinned(actor: AgentActor, id: string, pinned: boolean): Promise<void>;
   softDelete(actor: AgentActor, id: string): Promise<void>;
   /**
+   * D08 (§9 final relational cleanup): hard-delete the OWNER'S Bots the
+   * deletion manifest names — the `agents` row plus everything cascading
+   * from it (profile, preferences, channel seats). Owner-scoped through the
+   * profile row, so a foreign id deletes nothing; a repeat (the idempotent
+   * re-cleanup) deletes nothing either. The vault key each Bot's
+   * configuration points at is retired in the same transaction, exactly as
+   * `softDelete` retires it: a purged Bot must not leave a decryptable,
+   * still-valid credential behind.
+   */
+  hardDelete(ownerUserId: string, agentIds: string[]): Promise<void>;
+  /**
+   * §9 (openmuse-deletion D04): every Bot the owner-scoped `hardDelete`
+   * above can remove — ALL of this owner's Bots, soft-deleted included,
+   * never another owner's public or shared one. `list` cannot answer this:
+   * its visibility filter admits foreign Bots and hides soft-deleted ones,
+   * both directions away from what a deletion manifest must owe.
+   */
+  enumerateOwner(
+    ownerUserId: string,
+  ): Promise<Array<{ kind: "openmuse-bot"; id: string }>>;
+  /**
    * Issue this agent a credential for calling tools back, and return it once.
    *
    * Returned rather than stored: only the hash is kept, so this is the one moment the token exists in
@@ -128,7 +149,12 @@ export class ManagedAgentUnavailableError extends Error {
   }
 }
 
-const joinedProjection = {
+/*
+ * The one projection of an agents⨝agent_profiles row. Exported because the OpenMuse template
+ * store reads the same rows for the same fields — a private twin there would silently stop
+ * projecting a column this one gains (the joins differ, the columns must not).
+ */
+export const joinedProjection = {
   id: agents.id,
   name: agents.name,
   title: agentProfiles.title,
@@ -768,6 +794,67 @@ export function createAgentProfileStore(
         },
         { isolationLevel: "read committed" },
       );
+    },
+
+    /*
+     * D08's transactional per-module batch: every manifest-named Bot of the
+     * owner in ONE transaction, so a failure anywhere rolls back the whole
+     * module and the manifest's rows stay owing for the retry.
+     */
+    async hardDelete(ownerUserId, agentIds) {
+      if (agentIds.length === 0) return;
+      await database.transaction(async (transaction) => {
+        const owned = await transaction
+          .select({ id: agents.id, configuration: agents.configuration })
+          .from(agents)
+          .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+          .where(
+            and(
+              eq(agentProfiles.ownerUserId, ownerUserId),
+              inArray(agents.id, agentIds),
+            ),
+          );
+        // The key goes before the row that names it, in this transaction,
+        // for the same reason softDelete's does — and with the same "never
+        // throws" contract, so a vault that will not revoke cannot hold the
+        // purge hostage either.
+        if (vault) {
+          for (const row of owned) {
+            await retireReplacedKey(
+              vault.store,
+              (row.configuration ?? {}) as Record<string, unknown>,
+              {},
+              transaction,
+            );
+          }
+        }
+        /*
+         * Idempotent re-run: the manifest can name ids a previous run already deleted (the
+         * crash window between this seam's delete and its markDeleted landing). An empty
+         * `owned` commits the empty transaction rather than building an inArray that drizzle
+         * refuses to compile — which would leave this kind permanently undeletable, the
+         * opposite of the re-run contract above.
+         */
+        if (owned.length === 0) return;
+        await transaction.delete(agents).where(
+          inArray(
+            agents.id,
+            owned.map((row) => row.id),
+          ),
+        );
+      });
+    },
+
+    // The owner-scoped enumeration hardDelete's own select answers — the
+    // same owner filter, and deliberately no deletedAt filter, so a
+    // tombstoned Bot's row and vault key are owed like any other's.
+    async enumerateOwner(ownerUserId) {
+      const rows = await database
+        .select({ id: agents.id })
+        .from(agents)
+        .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+        .where(eq(agentProfiles.ownerUserId, ownerUserId));
+      return rows.map((row) => ({ kind: "openmuse-bot" as const, id: row.id }));
     },
 
     issueCallbackToken(actor, id) {

@@ -56,19 +56,19 @@ describe("finding the secret a caller offered", () => {
     expect(offeredToken(headers, url("/snapshot"))).toBe(SECRET);
   });
 
-  test("the stream takes it from the query, because an upgrade carries no headers", () => {
+  test("the stream takes it from the query, because a browser upgrade carries no headers", () => {
     const headers = new Headers();
     expect(offeredToken(headers, url(`/stream?bot=b&token=${SECRET}`))).toBe(
       SECRET,
     );
   });
 
-  test("the stream does NOT accept a header instead", () => {
-    // Not a restriction that matters for security, both are checked against the same secret, but
-    // the socket has one way in, and a surface that sent the header would fail loudly rather than
-    // appearing to work until somebody looked.
+  test("the stream also accepts the header — the server proxy prefers it so the token stays off the URL", () => {
+    // Both forms are checked against the same secret; the header is the one
+    // the OpenBot proxy uses (round 6 M5): a query string would land the
+    // deployment token in access logs.
     const headers = new Headers({ "x-openbot-computer-token": SECRET });
-    expect(offeredToken(headers, url("/stream?bot=b"))).toBe("");
+    expect(offeredToken(headers, url("/stream?bot=b"))).toBe(SECRET);
   });
 
   test("nothing offered is an empty string, not a crash", () => {

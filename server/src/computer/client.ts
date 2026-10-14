@@ -27,6 +27,81 @@ export class ComputerStoppedError extends ComputerUnavailableError {
   }
 }
 
+/**
+ * The transport refusals that PROVE the request never reached the computer:
+ * no listener on the port, no such host, DNS not answering yet. Matched over
+ * every error in the chain and its `code` (the syscall's own name), plus the
+ * message, because a fetch failure arrives as a bare `TypeError` whose only
+ * signal is the sentence.
+ */
+const NEVER_REACHED = [
+  /ECONNREFUSED/i,
+  /ENOTFOUND/i,
+  /EAI_AGAIN/i,
+  /connection refused/i,
+];
+
+/**
+ * The interruptions that prove the opposite — the connection WAS established
+ * and broke with the request in flight, so the write may have landed. These
+ * stay on the AMBIGUOUS side of the write budget's refund decision.
+ */
+const INTERRUPTED_MID_FLIGHT = [
+  /ECONNRESET/i,
+  /EPIPE/i,
+  /UND_ERR_SOCKET/i,
+  /socket hang up/i,
+  /connection reset/i,
+];
+
+/** Every node of an error's cause chain, the error itself first. */
+function causesOf(
+  error: unknown,
+): Array<{ code?: unknown; message?: unknown }> {
+  const nodes: Array<{ code?: unknown; message?: unknown }> = [];
+  for (
+    let node: unknown = error;
+    node !== undefined && node !== null;
+    node = (node as { cause?: unknown }).cause
+  ) {
+    nodes.push(node as { code?: unknown; message?: unknown });
+  }
+  return nodes;
+}
+
+/**
+ * Whether a fetch rejection proves the request never reached the computer.
+ * Only the never-connected directions answer true: a reset or socket death
+ * mid-flight (the write may have committed) outranks any refusal wording and
+ * answers false, and so does every failure this classifier does not
+ * recognise — the ambiguous direction keeps the charge.
+ */
+function provablyNeverReached(error: unknown): boolean {
+  const signals = causesOf(error)
+    .flatMap((node) => [
+      typeof node.code === "string" ? node.code : "",
+      typeof node.message === "string" ? node.message : "",
+    ])
+    .join(" | ");
+  if (INTERRUPTED_MID_FLIGHT.some((shape) => shape.test(signals)))
+    return false;
+  return NEVER_REACHED.some((shape) => shape.test(signals));
+}
+
+/**
+ * The request provably never reached the computer: the transport itself refused (no listener,
+ * no route) before anything was sent. A subclass of `ComputerUnavailableError` so every existing
+ * catch keeps working; what it adds is the proof, which the write budget's refund decision needs
+ * — a timeout or a mid-flight abort may have landed its bytes, a connection that was never
+ * established cannot have.
+ */
+export class ComputerUnreachableError extends ComputerUnavailableError {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "ComputerUnreachableError";
+  }
+}
+
 /** The requested element is not on the current page. */
 export class ElementNotFoundError extends Error {
   constructor(reason: string) {
@@ -232,10 +307,27 @@ export function createComputerTransport(
       if (caller?.aborted) {
         throw new ComputerStoppedError("The action was stopped.");
       }
+      if (error instanceof Error && error.name === "TimeoutError") {
+        // Ambiguous: the request was sent, an answer never came — the write may have landed.
+        throw new ComputerUnavailableError(
+          "The assistant's computer did not respond in time.",
+        );
+      }
+      /*
+       * Only a failure that proves the connection was never established says
+       * "not running" — the write budget refunds on that proof alone. A reset
+       * or socket death with the request in flight (the write may have
+       * committed) and any unrecognised transport failure keep the ambiguous
+       * class instead, so the charge errs toward never letting a workspace
+       * past what it was promised.
+       */
+      if (provablyNeverReached(error)) {
+        throw new ComputerUnreachableError(
+          "The assistant's computer is not running.",
+        );
+      }
       throw new ComputerUnavailableError(
-        error instanceof Error && error.name === "TimeoutError"
-          ? "The assistant's computer did not respond in time."
-          : "The assistant's computer is not running.",
+        "The assistant's computer dropped the connection mid-flight.",
       );
     }
     return response;

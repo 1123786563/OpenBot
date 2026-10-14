@@ -34,6 +34,7 @@ const statuses = new Set([
   "cancelled",
   "expired",
   "interrupted",
+  "refused",
 ]);
 const sources = new Set(["model", "manual", "cloudflare", "visible-challenge"]);
 /** The longest page address a request keeps. Longer ones are not kept rather than cut. */
@@ -59,6 +60,8 @@ function validRequest(v: unknown): v is HandoffRequest {
     timestamp(v.updatedAt) &&
     (v.toolCallId === undefined ||
       (typeof v.toolCallId === "string" && v.toolCallId.length <= 200)) &&
+    (v.takenBy === undefined ||
+      (typeof v.takenBy === "string" && v.takenBy.length <= 200)) &&
     (v.expiresAt === undefined || timestamp(v.expiresAt)) &&
     (v.finishedAt === undefined || timestamp(v.finishedAt)) &&
     (v.interruption === undefined || typeof v.interruption === "string") &&

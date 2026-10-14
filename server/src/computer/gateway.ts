@@ -25,11 +25,18 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { withUntrustedNotice } from "../untrusted-content";
+import { type ComputerCapacity, computerCapacity } from "./capacity";
 import {
   ComputerStoppedError,
   ComputerUnavailableError,
+  ComputerUnreachableError,
   createComputerTransport,
+  HumanHasControlError,
   StaleSnapshotError,
+  WorkspaceNotFoundError,
+  WorkspaceRefusedError,
+  WorkspaceRequestError,
+  WorkspaceTooLargeError,
 } from "./client";
 import { HeadlessToolSuspension } from "./headless-tools";
 import { checkComputerAddress } from "./target";
@@ -139,6 +146,12 @@ export type ComputerGatewayOptions = {
    * this deployment makes in as many words.
    */
   pageFrames?: PageFrameStore;
+  /**
+   * The §10 capacity bounds. Absent, built from the provider with the contract's defaults and the
+   * OPENMUSE_* envs, so a deployment wired without a second thought still gets the bounds; present,
+   * a test decides what the bounds see.
+   */
+  capacity?: ComputerCapacity;
 };
 
 export interface ComputerGateway {
@@ -230,6 +243,16 @@ export interface ComputerGateway {
     actor: ActionActor,
     requestId: string,
   ): Promise<ControlState>;
+  /** End any active lease from outside it: logout, disconnect policy, a policy refusal. */
+  revokeControl(
+    botId: string,
+    actor: ActionActor,
+    reason: string,
+    /** The lease the server read before deciding; the computer refuses if the wheel has moved.
+     * requestId null is the explicit observed-none reading — the computer refuses if anything
+     * became active between the read and the revoke. */
+    observed?: { requestId: string | null; takenBy: string | null | undefined },
+  ): Promise<ControlState>;
   requestSecret(
     botId: string,
     actor: ActionActor,
@@ -293,6 +316,38 @@ export function createComputerGateway(
    */
   const snapshots = options.snapshots ?? createInMemorySnapshotStore();
   const pageFrames = options.pageFrames;
+  /**
+   * The capacity bounds every start and workspace write passes. See capacity.ts.
+   *
+   * Built here rather than in index.ts so the default is not an option someone forgot to pass.
+   * Its control consult must not ride this gateway's own `get`: that locates first, locate
+   * reserves, and reserve touches the very Bot being consulted — stamping the sweep's judgment
+   * with a brand-new "just used" moment, so no candidate could ever be judged idle and a full
+   * deployment refused every further start. The consult locates on the provider directly (the
+   * sweep only asks computers the list already says are running, so /ensure is a refresh) and
+   * checks the address the same way locate does.
+   */
+  const capacity =
+    options.capacity ??
+    computerCapacity({
+      provider,
+      control: async (botId) => {
+        const address = await provider.locate(botId);
+        const verdict = checkComputerAddress(address);
+        // An address this deployment will not speak to is no answer rather than a failure: the
+        // sweep judges that computer on run activity alone, as a deployment without a consult would.
+        if (!verdict.allowed) return undefined;
+        // A computer that cannot be asked is not one a sweep may judge on control — so the
+        // failure propagates instead of reading as "no human holds it": capacity's per-computer
+        // catch skips the computer the consult was for, which is the only reading that keeps the
+        // "a held lease is never idle" promise when the asking itself fails.
+        return await transport.call<ControlState>(
+          verdict.url,
+          botId,
+          "/control",
+        );
+      },
+    });
 
   /**
    * Where this Bot's computer is, checked before anything is sent to it.
@@ -306,6 +361,11 @@ export function createComputerGateway(
    * Bot may browse and the wrong one here, where loopback is the normal case.
    */
   async function locate(botId: string): Promise<string> {
+    // Capacity first, and on every action: locate is /ensure, the one call that can start a
+    // computer, so a start that would pass the cap is refused before the provider is reached.
+    // Reads within the throttle window in capacity.ts keep a human's gesture stream from
+    // re-listing the fleet on every move.
+    await capacity.reserve(botId);
     const address = await provider.locate(botId);
     const verdict = checkComputerAddress(address);
     if (!verdict.allowed) {
@@ -764,6 +824,7 @@ export function createComputerGateway(
         botId,
         actor,
         reason,
+        ...(state.request ? { leaseId: state.request.id } : {}),
       });
       return state;
     },
@@ -771,6 +832,13 @@ export function createComputerGateway(
     async takeControl(botId: string, actor: ActionActor, requestId: string) {
       const state = await post<ControlState>(botId, "/control/take", {
         requestId,
+        /*
+         * Who is claiming, from the session the route authenticated. The client's own body cannot
+         * name a user (the route extracts the requestId and nothing else), so the lease is bound
+         * to an identity the session guard vouched for, and the computer can refuse a second
+         * person's take of a lease already held.
+         */
+        userId: actor.id,
       });
       await writeControlEvent(auditStore, "computer.control_taken", {
         botId,
@@ -778,6 +846,7 @@ export function createComputerGateway(
         // Carried onto the row so the trail says what the person was handed, not merely that they
         // took over.
         reason: state.reason,
+        leaseId: requestId,
       });
       return state;
     },
@@ -785,10 +854,17 @@ export function createComputerGateway(
     async releaseControl(botId: string, actor: ActionActor, requestId: string) {
       const state = await post<ControlState>(botId, "/control/release", {
         requestId,
+        /*
+         * The holder binding take already carries, from the session the route authenticated:
+         * the computer refuses a release that would put somebody else off the wheel, exactly as
+         * it refuses a second person's take.
+         */
+        userId: actor.id,
       });
       await writeControlEvent(auditStore, "computer.control_released", {
         botId,
         actor,
+        leaseId: requestId,
       });
       return state;
     },
@@ -796,10 +872,45 @@ export function createComputerGateway(
     async cancelControl(botId: string, actor: ActionActor, requestId: string) {
       const state = await post<ControlState>(botId, "/control/cancel", {
         requestId,
+        // The same holder binding release carries: cancelling a lease somebody else holds is
+        // release's interference in another coat, and the computer refuses it the same way.
+        userId: actor.id,
       });
       await writeControlEvent(auditStore, "computer.help_cancelled", {
         botId,
         actor,
+        leaseId: requestId,
+      });
+      return state;
+    },
+
+    /**
+     * Revoke a lease the holder did not end. The revocation, not the holder, is who the outcome
+     * names: the computer finishes any active request as `refused`, a later input is refused by
+     * the lease gate and never delivered, and the row says who asked, which Bot, and which lease.
+     */
+    async revokeControl(
+      botId: string,
+      actor: ActionActor,
+      reason: string,
+      /** The lease the server read before deciding to revoke, sent as the computer's precondition. */
+      observed?: { requestId: string | null; takenBy: string | null | undefined },
+    ) {
+      const state = await post<ControlState>(botId, "/control/revoke", {
+        reason,
+        // The observed lease: if the wheel changed hands between the server's read and this
+        // revoke, the computer answers 409 rather than ending the lease now on it. requestId
+        // null is the observed-none reading — the computer 409s anything that went active
+        // after it, instead of revoking a lease sight-unseen.
+        ...(observed
+          ? { requestId: observed.requestId, takenBy: observed.takenBy }
+          : {}),
+      });
+      await writeControlEvent(auditStore, "computer.control_revoked", {
+        botId,
+        actor,
+        reason,
+        ...(state.request ? { leaseId: state.request.id } : {}),
       });
       return state;
     },
@@ -838,6 +949,9 @@ export function createComputerGateway(
      */
     async stopComputer(botId: string, actor: ActionActor) {
       const result = await provider.stop(botId);
+      // The run-activity entry describes a computer that is no longer running; the disk charge
+      // stays, because the supervisor keeps the workspace volume across stops.
+      capacity.forget(botId);
       await writeControlEvent(auditStore, "computer.stopped", {
         botId,
         actor,
@@ -899,16 +1013,26 @@ export function createComputerGateway(
       });
       // The refs the last snapshot handed out describe a page that no longer exists, and a fresh
       // computer counts generations from one again, so the row has to go with the profile.
-      await snapshots.clear(botId);
-      /*
-       * And the pictures, which are the part that made the promise above untrue.
-       *
-       * "Every login the Bot had is gone" was said while screenshots of the signed-in pages stayed
-       * in the database: an inbox, an admin console, a bank statement, still readable from the
-       * transcript by anybody who could reach that Bot. A reset that leaves those has not reset
-       * anything a person would recognise as private.
-       */
-      await pageFrames?.clear(botId);
+      try {
+        await snapshots.clear(botId);
+        /*
+         * And the pictures, which are the part that made the promise above untrue.
+         *
+         * "Every login the Bot had is gone" was said while screenshots of the signed-in pages stayed
+         * in the database: an inbox, an admin console, a bank statement, still readable from the
+         * transcript by anybody who could reach that Bot. A reset that leaves those has not reset
+         * anything a person would recognise as private.
+         */
+        await pageFrames?.clear(botId);
+      } finally {
+        // A wiped workspace starts its disk budget over with the profile it
+        // came with — the workspace is already gone at this point, so the
+        // budget must go with it even when the trailing deletes above fail:
+        // a wiped profile carrying a phantom charge 413s forever with no
+        // bytes behind it, and the only recovery would be pressing the most
+        // destructive button again.
+        capacity.resetUsage(botId);
+      }
       return result;
     },
 
@@ -1198,7 +1322,36 @@ export function createComputerGateway(
         botId,
         actor,
         { filePath: input.path },
-        () => post<WriteFileResult>(botId, "/files/write", input),
+        async () => {
+          // Charged before the write is sent, so a refused write writes nothing. See capacity.ts.
+          const bytes = Buffer.byteLength(input.contents, "utf8");
+          capacity.chargeWrite(botId, bytes);
+          try {
+            return await post<WriteFileResult>(botId, "/files/write", input);
+          } catch (error) {
+            // Only failures that PROVE the write never landed refund the charge:
+            // the transport refusing before anything was sent
+            // (ComputerUnreachableError), and every deterministic refusal the
+            // COMPUTER itself answered BEFORE writing — the human-has-control
+            // gate's 409, the workspace refusals (403/400/404) and the size
+            // cap's 413. A timeout, a Stop mid-flight, or a connection reset
+            // after the computer committed the write cannot prove the bytes
+            // are not on disk, and the cap errs toward never letting a
+            // workspace past what it was promised — so the ambiguous
+            // direction keeps the charge. See refundWrite.
+            if (
+              error instanceof ComputerUnreachableError ||
+              error instanceof HumanHasControlError ||
+              error instanceof WorkspaceRefusedError ||
+              error instanceof WorkspaceRequestError ||
+              error instanceof WorkspaceNotFoundError ||
+              error instanceof WorkspaceTooLargeError
+            ) {
+              capacity.refundWrite(botId, bytes);
+            }
+            throw error;
+          }
+        },
       );
     },
   };
@@ -1410,6 +1563,7 @@ async function writeControlEvent(
     | "computer.help_cancelled"
     | "computer.control_taken"
     | "computer.control_released"
+    | "computer.control_revoked"
     | "computer.secret_requested"
     | "computer.secret_supplied"
     | "computer.stopped"
@@ -1419,6 +1573,8 @@ async function writeControlEvent(
     botId: string;
     actor: ActionActor;
     reason?: string;
+    /** The lease (the handoff request's id) the event was about, when there was one. */
+    leaseId?: string;
   },
 ) {
   await recordAuditEvent(auditStore, {
@@ -1431,6 +1587,7 @@ async function writeControlEvent(
       bot: entry.botId,
       actor: entry.actor.id,
       ...(entry.reason ? { reason: entry.reason } : {}),
+      ...(entry.leaseId ? { lease: entry.leaseId } : {}),
     },
   });
 }

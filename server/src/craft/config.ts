@@ -299,7 +299,7 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
   );
 
   return {
-    enabled: boolEnv(env, "OPENBOT_CRAFT_ENABLED", false),
+    enabled: boolEnv(env, "OPENBOT_CRAFT_ENABLED", true),
     enableBrowser: boolEnv(env, "OPENBOT_CRAFT_ENABLE_BROWSER", true),
 
     opencodeDisabledTools: disabledToolsRaw

@@ -26,6 +26,7 @@ export * from "./lifecycle";
 export * from "./mastra-message-intents";
 export * from "./mastra-tenant-storage";
 export * from "./memory";
+export * from "./openmuse";
 export * from "./passwords";
 export * from "./payment";
 export * from "./plugins";

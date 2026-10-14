@@ -1,0 +1,131 @@
+{
+ "group": "12",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（Q11 无价格或不可强制上限不启用、Q20 第一版覆盖图像能力）",
+  "CONTEXT.md（图像规格、变体、输入成本、待结算术语）"
+ ],
+ "anchors": {
+  "capability-playbook": "沿用组 11 的能力族通用做法：维度齐备 + 边界可强制才启用；缺证据短路拒绝且不写账务；结算走 06.9，未知走 06.8",
+  "bifrost-images": "OpenAI 兼容图像入口（/v1/images/generations、edits、variations；core/providers/* 内的 provider 实现，执行时先定位实际路由与能力标志）",
+  "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go、pricingscopes 测试）",
+  "openbot-price": "组 03 的 PriceSnapshot 维度（含 image 维度：数量、尺寸、质量、输入图像）",
+  "openbot-admission": "组 06/07 的 Reserve（boundEvidence）与 Settle",
+  "test-harness": "server/tests/support/database.ts；go test ./plugins/governance/... 与 ./framework/jobaccounting/..."
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "cd bifrost/plugins/governance && go test ./...",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "12.1": {
+   "slug": "image-generation-spec-reservation",
+   "contracts": {
+    "consumes": ["07.12 的端到端准入路径", "03.2 的 image 维度价格快照"],
+    "produces": [
+     "图像生成上限换算：按请求数量 × 尺寸 × 质量档位（含输入图像成本，若适用）计算足额上限",
+     "boundEvidence：数量与规格在派发前完全确定，供应商按规格生成",
+     "启用判定：任一规格缺价则 unknown 并拒绝"
+    ]
+   },
+   "steps": [
+    "核对上游图像定价维度（每张单价随尺寸/质量变化、批量数量），映射到 PriceSnapshot",
+    "实现上限换算纯函数：数量 × 单张价（按规格），足额方向取整",
+    "接入 Reserve，派发前完成预留；规格不可确定时拒绝",
+    "先写失败测试：多张不同规格请求的上限换算正确；缺规格价格时拒绝"
+   ],
+   "criteria": [
+    "图像生成按数量与规格全维度预留，上限不低于最坏情况成本",
+    "缺任一规格价格时标记 unknown 并拒绝，不按 0 成本执行",
+    "数量与规格在派发前确定，供应商按该规格生成",
+    "预留锁定当时的价格快照与比例版本"
+   ],
+   "tests": ["多规格上限换算单元测试", "缺价拒绝测试", "版本锁定断言"],
+   "verification": ["bun test server/tests/image-generation-pricing.test.ts"],
+   "owned_scope": ["图像生成维度映射与上限换算", "对应测试与 fixture"],
+   "resume_hint": "常见错误是只按“每张固定价”换算，忽略尺寸/质量档位；接手先用多档位 fixture 断言换算结果。"
+  },
+  "12.2": {
+   "slug": "image-generation-settlement-details",
+   "contracts": {
+    "consumes": ["12.1 的预留与锁定版本", "06.9 的 Settle", "06.12 的用户视图"],
+    "produces": [
+     "按实际生成结果结算：实际张数与规格决定实际费用，未生成部分释放",
+     "用户消费明细中的图像条目：包含规格、数量与金额，可与其他能力区分",
+     "部分失败语义：已生成部分照常结算，未生成部分释放或进入 unknown"
+    ]
+   },
+   "steps": [
+    "在 PostLLM/结果路径收集实际生成张数与规格，换算实际金额并 Settle",
+    "未生成的部分按 06.11 释放（有未计费证据）或进入 unknown",
+    "把图像条目写入消费明细，附规格与数量",
+    "先写失败测试：请求 4 张实际生成 3 张 → 结算 3 张、释放 1 张；明细可见规格"
+   ],
+   "criteria": [
+    "结算金额按实际生成张数与规格计算，未生成部分不被收费",
+    "部分失败时已生成部分照常结算，剩余按证据释放或进入 unknown",
+    "用户明细显示图像规格、数量与金额",
+    "结算使用预留时锁定的价格版本"
+   ],
+   "tests": ["部分生成结算集成测试", "明细展示测试", "锁定版本一致性断言"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/image-settlement.integration.test.ts"],
+   "owned_scope": ["图像结算路径与明细归因", "对应测试"],
+   "resume_hint": "释放未生成部分必须有未计费证据；无证据时进入 unknown，不要为了余额好看而直接释放。"
+  },
+  "12.3": {
+   "slug": "image-edit-input-cost",
+   "contracts": {
+    "consumes": ["12.1 的上限换算", "上游图像编辑定价"],
+    "produces": [
+     "编辑请求的上限换算包含输入图像成本（若上游对输入收费）与输出规格成本",
+     "输入图像数量与规格在派发前可确定，否则不启用",
+     "编辑与生成使用同一预留与结算语义"
+    ]
+   },
+   "steps": [
+    "核对上游编辑定价是否对输入图像/掩码收费，映射到 PriceSnapshot",
+    "扩展上限换算，把输入成本与输出规格成本合并计算",
+    "输入不可确定（如动态生成掩码）时判证据不足并拒绝",
+    "先写失败测试：带输入图像的编辑请求上限包含输入成本"
+   ],
+   "criteria": [
+    "编辑请求的上限包含输入图像成本（当上游收费时）",
+    "输入图像数量与规格在派发前可确定，否则拒绝",
+    "编辑与生成共用同一预留与结算语义",
+    "缺输入定价时标记 unknown 并拒绝"
+   ],
+   "tests": ["输入成本纳入换算测试", "输入不可确定拒绝测试", "缺价 unknown 断言"],
+   "verification": ["bun test server/tests/image-edit-pricing.test.ts"],
+   "owned_scope": ["图像编辑维度映射与换算", "对应测试"],
+   "resume_hint": "上游若不收输入费用，要在快照里记为明确 free 并留证据，而不是留空——留空会被判 unknown。"
+  },
+  "12.4": {
+   "slug": "image-variants-no-budget-bypass",
+   "contracts": {
+    "consumes": ["12.1–12.3 的预留与结算语义"],
+    "produces": [
+     "变体与其他图像入口共用同一预留语义：任何图像入口都无法绕过预算",
+     "入口清单与拒绝矩阵作为证据，供 22.1 全入口核查引用",
+     "组 12 缝合点：生成/编辑/变体三类入口端到端可演示且账务一致"
+    ]
+   },
+   "steps": [
+    "枚举所有图像入口（generations、edits、variations 及任何 provider 特有入口）",
+    "确认每个入口都经过 Reserve 与 Settle，无直连旁路",
+    "对未接入准入的入口硬拒绝，并记录原因",
+    "先写失败测试：逐入口断言余额不足时供应商调用数为 0"
+   ],
+   "criteria": [
+    "全部图像入口都经过积分准入，余额不足时供应商调用数为 0",
+    "变体请求按规格预留并结算，与生成语义一致",
+    "不存在绕过预算的图像入口（以入口清单为证据）",
+    "未接入准入的入口被硬拒绝而不是放行"
+   ],
+   "tests": ["逐入口拒绝矩阵测试", "变体结算一致性测试", "入口清单覆盖断言"],
+   "verification": ["cd bifrost/plugins/governance && go test -run ImageEntrypoints ./...", "bun test server/tests/image-entrypoints.test.ts"],
+   "owned_scope": ["图像入口清单与准入接线", "对应测试与验收记录"],
+   "resume_hint": "本 Ticket 是组 12 缝合点：先把入口枚举完整，再逐个断言准入；漏掉一个入口就等于留下旁路。"
+  }
+ }
+}

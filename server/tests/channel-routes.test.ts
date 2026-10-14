@@ -21,12 +21,14 @@ import { DEV_ACTOR } from "../src/auth/dev-actor";
 import type { AppVariables } from "../src/auth/guards";
 import {
   type AgentChannel,
+  ChannelNotArchivedError,
   ChannelNotFoundError,
   ChannelPackageOwnedError,
   type ChannelStore,
   createChannelRoutes,
   createChannelStore,
   parseChannelInput,
+  parseRenameInput,
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { loadConfig } from "../src/config";
@@ -58,6 +60,7 @@ function channel(overrides: Partial<AgentChannel> = {}): AgentChannel {
     threadId: "thread-1",
     active: true,
     lastMessageAt: null,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -85,6 +88,17 @@ function fakeStore(
     },
     async softDelete(receivedActor, id) {
       calls.push(["softDelete", receivedActor, id]);
+    },
+    async rename(receivedActor, id, name) {
+      calls.push(["rename", receivedActor, id, name]);
+      return channel({ id, name });
+    },
+    async archive(receivedActor, id) {
+      calls.push(["archive", receivedActor, id]);
+      return true;
+    },
+    async unarchive(receivedActor, id) {
+      calls.push(["unarchive", receivedActor, id]);
     },
   };
 
@@ -158,6 +172,42 @@ describe("channel input parser", () => {
   });
 });
 
+describe("channel rename input parser", () => {
+  test.each([[null], [[]], ["input"], [42], [true]])(
+    "rejects a non-object root: %p",
+    (input) => {
+      expect(parseRenameInput(input)).toEqual({
+        ok: false,
+        error: "Rename input must be a JSON object.",
+      });
+    },
+  );
+
+  test.each([
+    [undefined, "A channel name is required."],
+    [null, "A channel name is required."],
+    [42, "A channel name is required."],
+    ["", "A channel name is required."],
+    ["   ", "A channel name is required."],
+  ])("rejects an invalid name %p", (name, error) => {
+    expect(parseRenameInput({ name })).toEqual({ ok: false, error });
+  });
+
+  test("rejects a name past the ceiling a derived name is truncated to", () => {
+    expect(parseRenameInput({ name: "😀".repeat(121) })).toEqual({
+      ok: false,
+      error: "A channel name must be at most 120 characters.",
+    });
+  });
+
+  test("trims a well-formed name", () => {
+    expect(parseRenameInput({ name: "  Payroll  " })).toEqual({
+      ok: true,
+      value: { name: "Payroll" },
+    });
+  });
+});
+
 describe("channel list limit", () => {
   /**
    * `?limit=` used to be read with `Number.parseInt`, which coerces: `"12abc"` arrived as 12
@@ -211,6 +261,32 @@ describe("channel list limit", () => {
 
     expect(response.status).toBe(200);
     expect(calls.queries).toEqual([{}]);
+  });
+
+  test.each([
+    ["true", { archived: true }],
+    ["false", {}],
+  ])("passes archived=%p through as %p", async (archived, query) => {
+    const calls = { queries: [] as unknown[] };
+    const response = await listApp(calls).request(
+      `http://openbot.test/?archived=${archived}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(calls.queries).toEqual([query]);
+  });
+
+  test("refuses an archived flag that is neither true nor false", async () => {
+    const calls = { queries: [] as unknown[] };
+    const response = await listApp(calls).request(
+      "http://openbot.test/?archived=yes",
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Query parameter "archived" must be "true" or "false".',
+    });
+    expect(calls.queries).toEqual([]);
   });
 });
 
@@ -279,6 +355,7 @@ describe("channel routes", () => {
         threadId: "thread-1",
         active: true,
         lastMessageAt: null,
+        archivedAt: null,
       },
     });
     expect(fetched.status).toBe(200);
@@ -495,6 +572,132 @@ describe("channel routes", () => {
 
     expect(response.status).toBe(204);
     expect(store.calls).toEqual([["softDelete", actor, "channel-1"]]);
+  });
+
+  test("renames through the authenticated actor and answers with the channel", async () => {
+    const store = fakeStore();
+    const response = await appFor(store).request(
+      "http://openbot.test/channel-1",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Payroll" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await json(response)).toEqual({
+      channel: { ...channel(), name: "Payroll" },
+    });
+    expect(store.calls).toEqual([["rename", actor, "channel-1", "Payroll"]]);
+  });
+
+  test.each([
+    ["{", "Rename input must be a JSON object."],
+    [JSON.stringify([]), "Rename input must be a JSON object."],
+    [JSON.stringify({}), "A channel name is required."],
+    [JSON.stringify({ name: "   " }), "A channel name is required."],
+  ])(
+    "rejects a malformed rename body %p without reaching the store",
+    async (body, error) => {
+      const store = fakeStore();
+      const response = await appFor(store).request(
+        "http://openbot.test/channel-1",
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body,
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(await json(response)).toEqual({ error });
+      expect(store.calls).toEqual([]);
+    },
+  );
+
+  test("maps an unknown channel on rename to 404", async () => {
+    const store = fakeStore({
+      rename: async () => {
+        throw new ChannelNotFoundError("channel-1");
+      },
+    });
+    const response = await appFor(store).request(
+      "http://openbot.test/channel-1",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Payroll" }),
+      },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await json(response)).toEqual({ error: "Channel not found." });
+  });
+
+  test("archives through the authenticated actor and answers 204", async () => {
+    const store = fakeStore();
+    const response = await appFor(store).request(
+      "http://openbot.test/channel-1/archive",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(204);
+    expect(store.calls).toEqual([["archive", actor, "channel-1"]]);
+  });
+
+  test("unarchives through the authenticated actor and answers 204", async () => {
+    const store = fakeStore();
+    const response = await appFor(store).request(
+      "http://openbot.test/channel-1/unarchive",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(204);
+    expect(store.calls).toEqual([["unarchive", actor, "channel-1"]]);
+  });
+
+  test("maps unarchiving a channel that was never archived to 409", async () => {
+    const store = fakeStore({
+      unarchive: async () => {
+        throw new ChannelNotArchivedError("channel-1");
+      },
+    });
+    const response = await appFor(store).request(
+      "http://openbot.test/channel-1/unarchive",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await json(response)).toEqual({
+      error: "Channel is not archived.",
+    });
+  });
+
+  test.each([
+    [
+      "renaming",
+      "http://openbot.test/channel-1",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Payroll" }),
+      },
+    ],
+    ["archiving", "http://openbot.test/channel-1/archive", { method: "POST" }],
+    [
+      "unarchiving",
+      "http://openbot.test/channel-1/unarchive",
+      { method: "POST" },
+    ],
+  ])("keeps authentication in front of %s", async (_what, url, init) => {
+    const store = fakeStore();
+    const denied: MiddlewareHandler<{ Variables: AppVariables }> = (context) =>
+      Promise.resolve(context.json({ error: "denied" }, 401));
+    const response = await appFor(store, denied).request(url, init);
+
+    expect(response.status).toBe(401);
+    expect(store.calls).toEqual([]);
   });
 
   test("maps a package-owned refusal to 409", async () => {
@@ -1073,6 +1276,7 @@ describe("channel store integration", () => {
       threadId: created.threadId,
       active: true,
       lastMessageAt: null,
+      archivedAt: null,
     });
     const persisted = await persistedChannel(created.id);
     expect(persisted.channelRow?.name).toBe("Zulu, Alpha");
@@ -1559,6 +1763,251 @@ describe("channel soft delete", () => {
     await expect(
       persistentStore.softDelete(actor, channelId),
     ).rejects.toBeInstanceOf(ChannelPackageOwnedError);
+  });
+});
+
+describe("channel rename", () => {
+  test("renames the display name and touches nothing else about the channel", async () => {
+    const actor = await createPersistentUser();
+    const agentId = await createPersistentAgent({
+      name: "Renamable agent",
+      owner: actor,
+    });
+    const created = await persistentStore.create(actor, [agentId]);
+    createdChannelIds.push(created.id);
+    await persistentStore.recordActivity(actor, created.id, {
+      agentId,
+      at: new Date(Date.now() - 60_000),
+      text: "Said before the rename.",
+    });
+
+    const renamed = await persistentStore.rename(actor, created.id, "Payroll");
+
+    // The display name moved; the identity did not. `lastMessageAt` moved because the
+    // conversation was spoken in after `created` was snapshotted, which is history kept, not
+    // touched — the row assertions below pin that precisely.
+    expect(renamed).toMatchObject({
+      id: created.id,
+      threadId: created.threadId,
+      name: "Payroll",
+      archivedAt: null,
+    });
+    // Everything but the display name survived: the membership, the agent
+    // link, the thread mapping, and the history the roster shows.
+    const persisted = await persistedChannel(created.id);
+    expect(persisted.channelRow).toMatchObject({
+      id: created.id,
+      name: "Payroll",
+      lastMessage: "Said before the rename.",
+    });
+    expect(persisted.memberships).toHaveLength(1);
+    expect(persisted.linkedAgents).toHaveLength(1);
+    expect(persisted.mappings).toHaveLength(1);
+    expect(persisted.mappings[0]?.threadId).toBe(created.threadId);
+  });
+
+  test("refuses to rename a channel the caller is not a member of", async () => {
+    const member = await createPersistentUser();
+    const outsider = await createPersistentUser();
+    const agentId = await createPersistentAgent({
+      name: "Guarded renamable agent",
+      owner: member,
+    });
+    const created = await persistentStore.create(member, [agentId]);
+    createdChannelIds.push(created.id);
+
+    await expect(
+      persistentStore.rename(outsider, created.id, "Not mine"),
+    ).rejects.toBeInstanceOf(ChannelNotFoundError);
+  });
+
+  test("refuses to rename a deleted channel", async () => {
+    const actor = await createPersistentUser();
+    const agentId = await createPersistentAgent({
+      name: "Deleted renamable agent",
+      owner: actor,
+    });
+    const created = await persistentStore.create(actor, [agentId]);
+    createdChannelIds.push(created.id);
+    await persistentStore.softDelete(actor, created.id);
+
+    await expect(
+      persistentStore.rename(actor, created.id, "Too late"),
+    ).rejects.toBeInstanceOf(ChannelNotFoundError);
+  });
+});
+
+describe("channel archive and unarchive", () => {
+  async function archivableChannel(name: string) {
+    const actor = await createPersistentUser();
+    const agentId = await createPersistentAgent({ name, owner: actor });
+    const created = await persistentStore.create(actor, [agentId]);
+    createdChannelIds.push(created.id);
+    return { actor, agentId, created };
+  }
+
+  test("archive stamps archived_at and hides the channel from the active listing only", async () => {
+    const { actor, created } = await archivableChannel("Archivable agent");
+    const keptAgentId = await createPersistentAgent({
+      name: "Kept agent",
+      owner: actor,
+    });
+    const kept = await persistentStore.create(actor, [keptAgentId]);
+    createdChannelIds.push(kept.id);
+
+    await expect(persistentStore.archive(actor, created.id)).resolves.toBe(
+      true,
+    );
+
+    const [row] = await database
+      .select({ archivedAt: channels.archivedAt })
+      .from(channels)
+      .where(eq(channels.id, created.id));
+    expect(row?.archivedAt).not.toBeNull();
+
+    const active = await persistentStore.list(actor);
+    expect(
+      active.channels.find((channel) => channel.id === created.id),
+    ).toBeUndefined();
+    expect(
+      active.channels.find((channel) => channel.id === kept.id),
+    ).toBeDefined();
+
+    const archived = await persistentStore.list(actor, { archived: true });
+    expect(
+      archived.channels.find((channel) => channel.id === created.id)
+        ?.archivedAt,
+    ).toBeInstanceOf(Date);
+    expect(
+      archived.channels.find((channel) => channel.id === kept.id),
+    ).toBeUndefined();
+  });
+
+  test("the archived listing pages with the same cursor discipline", async () => {
+    const actor = await createPersistentUser();
+    for (const name of ["First", "Second", "Third"]) {
+      const agentId = await createPersistentAgent({ name, owner: actor });
+      const created = await persistentStore.create(actor, [agentId]);
+      createdChannelIds.push(created.id);
+      await persistentStore.archive(actor, created.id);
+    }
+
+    const whole = await persistentStore.list(actor, { archived: true });
+    expect(whole.channels).toHaveLength(3);
+
+    // Page through one at a time: the concatenation is the whole listing,
+    // in the same order, with no row served twice or skipped.
+    const paged: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await persistentStore.list(actor, {
+        archived: true,
+        limit: 1,
+        ...(cursor ? { cursor } : {}),
+      });
+      paged.push(...page.channels.map((channel) => channel.id));
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+
+    expect(paged).toEqual(whole.channels.map((channel) => channel.id));
+  });
+
+  test("archiving twice is a no-op that changes nothing", async () => {
+    const { actor, created } = await archivableChannel("Twice-archived agent");
+
+    await expect(persistentStore.archive(actor, created.id)).resolves.toBe(
+      true,
+    );
+    const [stamped] = await database
+      .select({ archivedAt: channels.archivedAt })
+      .from(channels)
+      .where(eq(channels.id, created.id));
+    await expect(persistentStore.archive(actor, created.id)).resolves.toBe(
+      false,
+    );
+    const [after] = await database
+      .select({ archivedAt: channels.archivedAt })
+      .from(channels)
+      .where(eq(channels.id, created.id));
+    expect(after?.archivedAt?.getTime()).toBe(stamped?.archivedAt?.getTime());
+  });
+
+  test("unarchive clears archived_at keeping the id, the thread, and the history", async () => {
+    const { actor, agentId, created } =
+      await archivableChannel("Unarchivable agent");
+    await persistentStore.recordActivity(actor, created.id, {
+      agentId,
+      at: new Date(Date.now() - 60_000),
+      text: "Said before the archive.",
+    });
+    await persistentStore.archive(actor, created.id);
+
+    await persistentStore.unarchive(actor, created.id);
+
+    const [row] = await database
+      .select({
+        archivedAt: channels.archivedAt,
+        lastMessage: channels.lastMessage,
+      })
+      .from(channels)
+      .where(eq(channels.id, created.id));
+    expect(row?.archivedAt).toBeNull();
+    expect(row?.lastMessage).toBe("Said before the archive.");
+    const mappings = await database
+      .select({ threadId: intelligenceChannelMappings.threadId })
+      .from(intelligenceChannelMappings)
+      .where(eq(intelligenceChannelMappings.channelId, created.id));
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0]?.threadId).toBe(created.threadId);
+    const resumed = await persistentStore.get(actor, created.id);
+    expect(resumed).toMatchObject({
+      id: created.id,
+      threadId: created.threadId,
+      archivedAt: null,
+    });
+  });
+
+  test("unarchiving a channel that was never archived is refused", async () => {
+    const { actor, created } = await archivableChannel("Never-archived agent");
+
+    await expect(
+      persistentStore.unarchive(actor, created.id),
+    ).rejects.toBeInstanceOf(ChannelNotArchivedError);
+  });
+
+  test("refuses archive and unarchive for a channel the caller is not a member of", async () => {
+    const { created } = await archivableChannel("Members-only archive agent");
+    const outsider = await createPersistentUser();
+
+    await expect(
+      persistentStore.archive(outsider, created.id),
+    ).rejects.toBeInstanceOf(ChannelNotFoundError);
+    await expect(
+      persistentStore.unarchive(outsider, created.id),
+    ).rejects.toBeInstanceOf(ChannelNotFoundError);
+  });
+
+  test("a soft delete still wins over archive on every listing and every write", async () => {
+    const { actor, created } = await archivableChannel("Then-deleted agent");
+    await persistentStore.archive(actor, created.id);
+    await persistentStore.softDelete(actor, created.id);
+
+    // Gone from both partitions: deleted_at outranks archived_at everywhere.
+    expect(
+      (await persistentStore.list(actor)).channels.find(
+        (channel) => channel.id === created.id,
+      ),
+    ).toBeUndefined();
+    expect(
+      (await persistentStore.list(actor, { archived: true })).channels.find(
+        (channel) => channel.id === created.id,
+      ),
+    ).toBeUndefined();
+
+    // And unarchive of a deleted channel answers as missing, not as unarchived.
+    await expect(
+      persistentStore.unarchive(actor, created.id),
+    ).rejects.toBeInstanceOf(ChannelNotFoundError);
   });
 });
 
