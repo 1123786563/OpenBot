@@ -6,8 +6,10 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   builtInAgentConfiguration,
   CreditGateError,
+  CreditPolicyUnconfiguredError,
   type ModelUsageGateLifecycle,
   meteredModelForTests,
+  ModelNotPricedError,
   ModelUsageSettlementError,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
@@ -1436,6 +1438,84 @@ describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
       expect(seen).toEqual([
         { reason: "usage_missing", inputTokens: 12, outputTokens: undefined },
       ]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+});
+
+/*
+ * Audit A4: a refusal must name its real cause. "No credits left" was the one sentence for
+ * three different failures — prices never configured, this model never priced, and a balance
+ * that cannot fund the hold — and each of them sends an administrator to a different fix.
+ */
+describe("a refusal names its real cause (audit A4)", () => {
+  /** An upstream that emits exactly these parts, then closes. */
+  function streamOf(parts: Record<string, unknown>[]) {
+    return new ReadableStream<Record<string, unknown>>({
+      start(controller) {
+        for (const part of parts) controller.enqueue(part);
+        controller.close();
+      },
+    });
+  }
+
+  test("an unconfigured credit policy is not 'no credits left'", async () => {
+    try {
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({ stream: streamOf([]) }),
+      });
+      setModelUsageGate(async () => {
+        throw new CreditPolicyUnconfiguredError([
+          { key: "BILLING_MODEL_CREDIT_RATES", reason: "missing" },
+        ]);
+      });
+      await expect(model.doStream({} as never)).rejects.toMatchObject({
+        name: "CreditPolicyUnconfiguredError",
+        code: "credit_policy_unconfigured",
+      });
+      await expect(model.doStream({} as never)).rejects.not.toMatchObject({
+        code: "credits_exhausted",
+      });
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("an unpriced model names the model, not the balance", async () => {
+    try {
+      const model = meteredModelForTests({
+        modelId: "gpt-4o-mini",
+        doStream: async () => ({ stream: streamOf([]) }),
+      });
+      setModelUsageGate(async () => {
+        throw new ModelNotPricedError("gpt-4o-mini");
+      });
+      await expect(model.doStream({} as never)).rejects.toMatchObject({
+        code: "model_not_priced",
+        modelId: "gpt-4o-mini",
+      });
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a gate that broke for an unknown reason stays fail-closed under its own name", async () => {
+    try {
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({ stream: streamOf([]) }),
+      });
+      setModelUsageGate(async () => {
+        throw new Error("select 1: connection reset by peer");
+      });
+      await expect(model.doStream({} as never)).rejects.toMatchObject({
+        code: "credit_gate_failed",
+      });
+      await expect(model.doStream({} as never)).rejects.toThrow(
+        /^(?!.*connection reset).*$/,
+      );
     } finally {
       setModelUsageGate(undefined);
     }

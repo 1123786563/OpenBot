@@ -635,6 +635,24 @@ describe("billing configuration", () => {
     );
   });
 
+  test("one model's bad rate leaves the policy unconfigured and names the offending key", () => {
+    const config = loadConfig({
+      ...baseEnvironment,
+      LAGO_API_URL: "https://lago.stub.test",
+      LAGO_API_KEY: "stub-key",
+      BILLING_MODEL_CREDIT_RATES:
+        '{"GLM-5.3":{"input":{"numerator":"1","denominator":"100"},"output":{"numerator":"1","denominator":"0"}}}',
+      BILLING_MODEL_MAX_RESERVATION_TOKENS: '{"GLM-5.3":{"input":"128000","output":"16384"}}',
+      BILLING_CODE_RUN_CREDIT_RATE: '{"numerator":"1","denominator":"100"}',
+      BILLING_CODE_RUN_MAX_RESERVATION_TOKENS: "100000",
+    });
+    expect(config.billing?.creditPolicy.configured).toBe(false);
+    expect(config.billing?.creditPolicy.mode).toBe("hard_cap");
+    expect(
+      (config.billing?.creditPolicy as { issues: readonly { key: string }[] }).issues.map((i) => i.key),
+    ).toContain("BILLING_MODEL_CREDIT_RATES.GLM-5.3.output.denominator");
+  });
+
   test("the jwt webhook key selects jwt mode and is carried verbatim", () => {
     const pem = "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----";
     const config = loadConfig({

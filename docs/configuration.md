@@ -53,6 +53,10 @@ decimal string; values outside JavaScript's safe-integer range must be quoted as
 exact. Negative values, zero denominators, malformed JSON, and shape mismatches leave the block
 unconfigured instead of defaulting to a free rate.
 
+`.env.example` carries the same four keys with these worked examples; a deployment copied from the
+template with the billing provider configured but these four commented out refuses every metered
+call at boot with `billing-credit-policy-unconfigured` in the log.
+
 The input maximum for a chat model is enforced by the deployment itself (ADR-0001): the
 request is counted conservatively from serialized bytes and truncated — oldest non-system
 messages dropped, system block and latest turn kept — until the count fits, and a request
