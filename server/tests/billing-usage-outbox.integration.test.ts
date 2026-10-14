@@ -233,6 +233,42 @@ test("delivery failures are target-specific and leave the target pending", async
   ]);
 });
 
+test("delivery failures count attempts per target; a delivered target stays at zero (audit C1)", async () => {
+  const event = usageEvent(`${prefix}-attempts`);
+  await outbox.record(event);
+
+  expect(
+    await outbox.recordDeliveryFailure(
+      event.eventId,
+      "lago",
+      "provider_unavailable",
+    ),
+  ).toEqual({ attempts: 1 });
+  expect(
+    await outbox.recordDeliveryFailure(
+      event.eventId,
+      "lago",
+      "provider_unavailable",
+    ),
+  ).toEqual({ attempts: 2 });
+  await outbox.markCreditsDelivered(event.eventId);
+
+  expect(
+    await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.eventId, event.eventId)),
+  ).toMatchObject([
+    {
+      eventId: event.eventId,
+      lagoStatus: "pending",
+      creditsStatus: "delivered",
+      lagoAttempts: 2,
+      creditsAttempts: 0,
+    },
+  ]);
+});
+
 test("a blocked delivery target leaves durable manual-review evidence and no longer requeues", async () => {
   const event = usageEvent(`${prefix}-blocked`);
   await outbox.record(event);
