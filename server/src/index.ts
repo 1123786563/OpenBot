@@ -33,7 +33,7 @@ import {
   readApprovedRunAssertion,
   readRunAssertion,
 } from "./agents/callback-token";
-import { canUseComputer, computerAccessCheck } from "./agents/computer-access";
+import { canUseComputer } from "./agents/computer-access";
 import { createAgentFetch } from "./agents/endpoint";
 import { createHandoffDesk, HANDOFF_KIND } from "./agents/handoff";
 import { createHandoffDelivery } from "./agents/handoff-delivery";
@@ -49,6 +49,10 @@ import {
   createBotLifecycleStore,
 } from "./agents/lifecycle";
 import { createBotReset } from "./agents/lifecycle-reset";
+import {
+  createOpenMuseTemplateRevisionStore,
+  createOpenMuseTemplateStore,
+} from "./agents/openmuse-template-store";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -57,7 +61,7 @@ import {
   createWakeUpStore,
   wakeUpTools,
 } from "./agents/wake-up";
-import { createApp } from "./app";
+import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import {
   PERSON_QUESTION_WAITING,
@@ -161,7 +165,7 @@ import {
   describeComputerIsolation,
 } from "./computer/provider";
 import { createSnapshotStore } from "./computer/snapshot-store";
-import { streamPathBotId } from "./computer/stream-path";
+import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig } from "./config";
 import {
   CreditGateError,
@@ -197,6 +201,7 @@ import {
   intelligenceChannelMappings,
   responsibilityRuns,
   routineRuns,
+  sessions,
 } from "./db/schema";
 import { createDeliveryRouter, DELIVERY_WORK_KINDS } from "./delivery/router";
 import {
@@ -229,6 +234,94 @@ import { createMarketplaceStore } from "./marketplace/store";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
+import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
+import { createActivityFeed } from "./openmuse-activity/feed";
+import { createOpenMuseActivityRoutes } from "./openmuse-activity/routes";
+import { createOpenMuseCalendarClient } from "./openmuse-calendar/client";
+import { createOpenMuseCalendarRoutes } from "./openmuse-calendar/routes";
+import {
+  createOpenConnectorOAuthClient,
+  gmailClientCredentialsFromEnv,
+  pushGmailClientConfig,
+} from "./openmuse-connectors/client";
+import { createOpenMuseGoogleOAuth } from "./openmuse-connectors/google-oauth";
+import {
+  createOpenMuseGoogleCallbackRoutes,
+  createOpenMuseGoogleRoutes,
+} from "./openmuse-connectors/routes";
+import { createOpenMuseGoogleRows } from "./openmuse-connectors/store";
+import { createOpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
+import { createOpenMuseFileBytePurger } from "./openmuse-deletion/purge";
+import { createOpenMuseRelationalPurger } from "./openmuse-deletion/purge-relational";
+import {
+  createOpenMuseBackupRetention,
+  createOpenMuseDeletionCleanupView,
+} from "./openmuse-deletion/retention";
+import { createOpenMuseDeletionRestore } from "./openmuse-deletion/restore";
+import { createOpenMuseExternalAccessRevoker } from "./openmuse-deletion/revoke";
+import { createOpenMuseWorkShutdown, recordWorkShutdown } from "./openmuse-deletion/shutdown";
+import {
+  createOpenMuseAccountDeletionStore,
+  createOpenMuseDeletionResourceRows,
+  recordDeletionResources,
+} from "./openmuse-deletion/store";
+import { createOpenMuseDocumentsRoutes } from "./openmuse-documents/routes";
+import { createLocalFileByteStore } from "./openmuse-files/bytes";
+import {
+  createOpenMuseFileRows,
+  createOpenMuseFileStore,
+} from "./openmuse-files/store";
+import {
+  buildOpenMuseMailClient,
+  createOpenMuseMailDial,
+} from "./openmuse-mail/client";
+import { createOpenMuseMailRoutes } from "./openmuse-mail/routes";
+import { createOpenMuseNotificationRoutes } from "./openmuse-notifications/routes";
+import {
+  createOpenMuseNotificationRows,
+  createOpenMuseNotificationStore,
+  type OpenMuseNotificationEvent,
+} from "./openmuse-notifications/store";
+import { createOpenMuseOpsSignalsRoutes } from "./openmuse-ops/routes";
+import {
+  createOpenMuseOpsSignalReaders,
+  createOpenMuseOpsSignals,
+} from "./openmuse-ops/signals";
+import {
+  createOpenMuseGoalRows,
+  createOpenMuseGoalStore,
+  createOpenMuseGoalsRoutes,
+  goalLookupFor,
+} from "./openmuse-personal/goals";
+import {
+  createOpenMuseIdeaRows,
+  createOpenMuseIdeaStore,
+  createOpenMuseIdeasRoutes,
+  ideaLookupFor,
+} from "./openmuse-personal/ideas";
+import {
+  createOpenMuseMemoriesRoutes,
+  createOpenMuseMemoryRows,
+  createOpenMuseMemoryStore,
+  memoryLookupFor,
+} from "./openmuse-personal/memories";
+import { openMusePersonalTools } from "./openmuse-personal/tools";
+import { createCalendarCreateExecutor } from "./openmuse-reviewed-actions/calendar-create-executor";
+import { createCalendarDeleteExecutor } from "./openmuse-reviewed-actions/calendar-delete-executor";
+import { createCalendarUpdateExecutor } from "./openmuse-reviewed-actions/calendar-update-executor";
+import { createKindDispatchingExecutor } from "./openmuse-reviewed-actions/dispatch-executor";
+import { createGmailSendExecutor } from "./openmuse-reviewed-actions/gmail-send-executor";
+import { createOpenMuseReviewedActionsRoutes } from "./openmuse-reviewed-actions/routes";
+import { createOpenMuseReviewedActionService } from "./openmuse-reviewed-actions/service";
+import {
+  createOpenMuseActivityReviewedLister,
+  createOpenMuseReviewedActionRows,
+} from "./openmuse-reviewed-actions/store";
+import { createOpenMuseTaskRunner } from "./openmuse-tasks/runner";
+import {
+  createOpenMuseTaskRows,
+  createOpenMuseTaskStore,
+} from "./openmuse-tasks/store";
 import { createSignInNotifier, createSignInResumer } from "./passwords/resume";
 import { createSignInService } from "./passwords/service";
 import { createPasswordStore } from "./passwords/store";
@@ -1284,6 +1377,13 @@ const loadToolsForActor =
           timeoutMs: knowledgeService?.timeoutMs,
         })
       : []),
+    /*
+     * C07 (contracts §7): the private OpenMuse Bot's own context — the P trio's
+     * goal/idea/memory reads plus one-durable-Task delegation — bound to the
+     * calling owner. Gated on the template row, so no other Bot is offered
+     * them; the owner is the actor, never a tool argument.
+     */
+    ...(await openMuseToolsFor(actorId, botId)),
   ];
 
 /** One person's standing instructions, for both the /api/settings routes and every run they start. */
@@ -1820,6 +1920,36 @@ const routineAgentRunner = new IntelligenceAgentRunner({
   authToken: routineIntelligence.ɵgetRunnerAuthToken(),
 });
 
+/*
+ * The headless computer tools every turn runner (routines, delivery, OpenMuse tasks) hands its
+ * turn: one assembly, because `canUseComputer` and the actor shape are the security-relevant
+ * parts and three hand-copied toolsets would mean the next gate change lands in one runner and
+ * silently not in the other two.
+ */
+const computerToolsForTurn = async ({
+  ownerUserId,
+  agentId,
+  initiator,
+}: {
+  ownerUserId: string;
+  agentId: string;
+  initiator: AuditInitiator;
+}) => {
+  if (!computerGateway) return [];
+  const actor = await actorFor(ownerUserId);
+  const profile = await agentProfileStore.get(actor, agentId);
+  if (!profile) throw new Error("That Bot is not available to this owner.");
+  // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
+  if (!canUseComputer(profile, actor)) return [];
+  return createHeadlessComputerTools({
+    gateway: computerGateway,
+    botId: agentId,
+    actor: { id: actor.id, userId: actor.id, initiator },
+    auditStore: bootAuditStore,
+    ...(signInService ? { signIn: signInService } : {}),
+  });
+};
+
 const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
@@ -1828,21 +1958,7 @@ const routineRunner = createRoutineRunner({
     runner: routineAgentRunner,
     components: { store: componentStore, auditStore: bootAuditStore },
     buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        botId: agentId,
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
+    toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
       copilotRuntime.learning?.containerForThread(input) ??
       Promise.resolve(undefined),
@@ -2516,21 +2632,7 @@ const wakeUpRunner = createWakeUpRunner({
     runner: routineAgentRunner,
     components: { store: componentStore, auditStore: bootAuditStore },
     buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        botId: agentId,
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
+    toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
       copilotRuntime.learning?.containerForThread(input) ??
       Promise.resolve(undefined),
@@ -2555,6 +2657,146 @@ const wakeUpSweep = repeatAfterEach(async () => {
 }, 5_000);
 const wakeUpReaper = repeatAfterEach(async () => {
   await wakeUpRunner.reap().catch(() => 0);
+}, 60 * 60_000);
+/*
+ * OpenMuse Tasks (contracts §7 small first path): each Task row is offered to the
+ * same work queue as a follow-up at creation, claimed here once, and run through
+ * the same headless turn runner, into the owner's own conversation with their
+ * private OpenMuse Bot. See openmuse-tasks/runner.ts. The store is built here —
+ * not inline in the app tail — so its queue offer and this runner share one seam.
+ */
+const openMuseTaskQueue = createWorkQueue(database);
+const openMuseTaskStore = createOpenMuseTaskStore({
+  rows: createOpenMuseTaskRows(database),
+  queue: openMuseTaskQueue,
+});
+/*
+ * The §9 account-deletion store (D01), hoisted for the same reason: the C07 tool seam
+ * below fences reads through its isDisabled, and the app tail's delete route and
+ * /api/mobile fence answer through the same instance.
+ */
+const openMuseAccountDeletionStore = createOpenMuseAccountDeletionStore(database);
+/*
+ * The personal-files store (F01), hoisted beside the runner it feeds: the task
+ * runner reads finance CSVs and document versions through it, and the app tail
+ * passes the same one to the mobile bff mount and the documents router.
+ */
+/*
+ * The ONE OpenMuse file-bytes root (round 6 M1): the store above and D06's
+ * byte purger below read the same env default through the same instance, so
+ * the two can never drift onto different roots — a purger pointed elsewhere
+ * would mark purge complete while the user's bytes stayed on disk.
+ */
+const openMuseFileBytes = createLocalFileByteStore(
+  process.env.OPENBOT_OPENMUSE_FILES_DIR ?? ".openmuse/files",
+);
+const openMuseFileStore = createOpenMuseFileStore({
+  rows: createOpenMuseFileRows(database),
+  byteStore: openMuseFileBytes,
+});
+/*
+ * The OpenMuse template seam, hoisted beside the Task store it gates: the tool
+ * wiring below and the app-tail mount at the bottom answer through one store,
+ * per the same "built here, not inline in the tail" rule as the store above.
+ */
+const openMuseTemplateMethods = createOpenMuseTemplateStore({
+  database,
+  managedAgentAgUiUrl: config.managedAgent?.endpoint,
+});
+/*
+ * C07 (contracts §7): the private OpenMuse Bot's runtime tools. The template
+ * row is the gate — a Bot that is not the owner's OpenMuse Bot holds nothing —
+ * and the owner is the actor the tools were built for. The template's grants
+ * fixture does not yet name these four tools; recording them is a template
+ * revision (I09), not a wiring change, so this grants nothing wider than the
+ * private Bot's owner.
+ */
+/*
+ * The rows the personal tools read, hoisted ONCE (round 6 M2): the template
+ * gate used to rebuild three row objects per turn per call.
+ */
+const openMusePersonalGoalRows = createOpenMuseGoalRows(database);
+const openMusePersonalIdeaRows = createOpenMuseIdeaRows(database);
+const openMusePersonalMemoryRows = createOpenMuseMemoryRows(database);
+/*
+ * The template gate's answer per (owner, bot), cached in-process (M2): the
+ * answer is stable for a bot's lifetime — the key moves only by
+ * re-provisioning, which lands a NEW bot id and misses the cache — so one
+ * lookup per bot serves every turn instead of a findByTemplateKey round
+ * trip on every tool load of every Bot, OpenMuse deployment or not.
+ */
+const openMuseTemplateKeyCache = new Map<string, string | null>();
+const openMuseToolsFor = async (ownerUserId: string, botId: string) => {
+  const cacheKey = `${ownerUserId}:${botId}`;
+  if (!openMuseTemplateKeyCache.has(cacheKey)) {
+    const privateBot = await openMuseTemplateMethods.findByTemplateKey(
+      ownerUserId,
+      OPENMUSE_TEMPLATE_KEY,
+    );
+    openMuseTemplateKeyCache.set(cacheKey, privateBot?.id ?? null);
+  }
+  if (openMuseTemplateKeyCache.get(cacheKey) !== botId) return [];
+  return openMusePersonalTools({
+    ownerUserId,
+    agentId: botId,
+    goalLookup: goalLookupFor({ rows: openMusePersonalGoalRows }, ownerUserId),
+    ideaLookup: ideaLookupFor({ rows: openMusePersonalIdeaRows }, ownerUserId),
+    memoryLookup: memoryLookupFor(
+      { rows: openMusePersonalMemoryRows },
+      ownerUserId,
+    ),
+    tasks: openMuseTaskStore,
+    // D01 at the tool seam: the chat path has no /api/mobile fence, so the fence is here.
+    ownerFenced: () => openMuseAccountDeletionStore.isDisabled(ownerUserId),
+  });
+};
+/*
+ * T12 (§7): the notification store the runner emits through — built before
+ * the runner so the seam is the same one the routes read.
+ */
+const openMuseNotificationStore = createOpenMuseNotificationStore({
+  rows: createOpenMuseNotificationRows(database),
+});
+const openMuseTaskRunner = createOpenMuseTaskRunner({
+  queue: openMuseTaskQueue,
+  store: openMuseTaskStore,
+  owner: workOwner("openmuse-task"),
+  actorFor,
+  channels: channelStore,
+  // T13/T15: the files seam the finance CSV read and the document version
+  // read/write run through — wired, so a finance or document Task's run reads
+  // its File instead of failing on the unwired-seam default.
+  files: openMuseFileStore,
+  emitNotification: openMuseNotificationStore.emit,
+  runTurn: createTurnRunner({
+    intelligence: routineIntelligence,
+    runner: routineAgentRunner,
+    components: { store: componentStore, auditStore: bootAuditStore },
+    buildAgentFor,
+    toolsForTurn: computerToolsForTurn,
+    learningContainerForThread: (input) =>
+      copilotRuntime.learning?.containerForThread(input) ??
+      Promise.resolve(undefined),
+  }),
+});
+const openMuseTaskSweep = repeatAfterEach(async () => {
+  try {
+    const report = await openMuseTaskRunner.sweep();
+    if (report.ran.length || report.skipped.length)
+      log.info({ type: "openmuse-task", ...report }, "openmuse-task");
+  } catch (error) {
+    log.error(
+      {
+        type: "openmuse-task-error",
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      },
+      "openmuse-task-error",
+    );
+  }
+}, 5_000);
+const openMuseTaskReaper = repeatAfterEach(async () => {
+  await openMuseTaskRunner.reap().catch(() => 0);
 }, 60 * 60_000);
 const deliverySweeps = DELIVERY_WORK_KINDS.map((kind) =>
   repeatAfterEach(async () => {
@@ -2599,21 +2841,7 @@ const groupConversations = createGroupConversations({
     runner: routineAgentRunner,
     components: { store: componentStore, auditStore: bootAuditStore },
     buildAgentFor,
-    toolsForTurn: async ({ ownerUserId, agentId, initiator }) => {
-      if (!computerGateway) return [];
-      const actor = await actorFor(ownerUserId);
-      const profile = await agentProfileStore.get(actor, agentId);
-      if (!profile) throw new Error("That Bot is not available to this owner.");
-      // A Team Bot's teammate uses the Bot, not its owner's signed-in computer.
-      if (!canUseComputer(profile, actor)) return [];
-      return createHeadlessComputerTools({
-        gateway: computerGateway,
-        botId: agentId,
-        actor: { id: actor.id, userId: actor.id, initiator },
-        auditStore: bootAuditStore,
-        ...(signInService ? { signIn: signInService } : {}),
-      });
-    },
+    toolsForTurn: computerToolsForTurn,
     learningContainerForThread: (input) =>
       copilotRuntime.learning?.containerForThread(input) ??
       Promise.resolve(undefined),
@@ -3778,6 +4006,426 @@ async function craftGenerateName(
   return content;
 }
 
+/*
+ * The OpenMuse Gmail consent seam (G01). The vendor dial is built from the
+ * deployment's OpenConnector address; a base that cannot be dialled logs and
+ * leaves the dial unset, which the connect route answers 503 — a boot must
+ * not die over a connector, but neither must it pretend to reach one.
+ */
+const openMuseGoogleClient = (() => {
+  try {
+    return createOpenConnectorOAuthClient({
+      url: config.openConnectorUrl,
+    });
+  } catch (error) {
+    log.error(
+      {
+        type: "openmuse-google-vendor-refused",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "openmuse-google-vendor-refused",
+    );
+    return undefined;
+  }
+})();
+// Hoisted: the Mail and Calendar surfaces read the same deleted-owner fence
+// (D01's marker, via the connectors rows) that the OAuth service itself does,
+// so a disabled owner's reads stop before any vendor dial on every surface.
+const openMuseGoogleRows = createOpenMuseGoogleRows(database);
+const openMuseGoogleService = createOpenMuseGoogleOAuth({
+  ...(openMuseGoogleClient ? { client: openMuseGoogleClient } : {}),
+  rows: openMuseGoogleRows,
+});
+/*
+ * The origin the browser reaches this deployment on. GOOGLE_OAUTH_* carries
+ * the Google client this deployment registers with the vendor once at boot
+ * (credentials read in the module; config.ts is not edited for this seam).
+ * The redirect URI is this origin's public callback path — O02 wires the
+ * origin into config; until then OPENBOT_PUBLIC_ORIGIN names it.
+ */
+const openMusePublicOrigin = process.env.OPENBOT_PUBLIC_ORIGIN?.replace(
+  /\/+$/,
+  "",
+);
+const openMuseGoogleCredentials = gmailClientCredentialsFromEnv();
+if (openMuseGoogleClient && openMuseGoogleCredentials && openMusePublicOrigin) {
+  void pushGmailClientConfig(openMuseGoogleClient, {
+    ...openMuseGoogleCredentials,
+    redirectUri: `${openMusePublicOrigin}/api/public/openmuse-google/callback`,
+  });
+}
+// The same deployment guard createApp mounts for /api — one construction, not a hand-copied
+// twin: a second copy would age separately, and one prefix family guarded two ways is a
+// silent fork the first time either gains a check. (Unreachable-in-a-booted-deployment branch
+// included for the same reason it always was.)
+const openMuseGoogleGuard = createDeploymentRequireUser(
+  config,
+  auth,
+  roleRepository,
+);
+const openMuseGoogleOAuth = {
+  app: createOpenMuseGoogleRoutes({
+    service: openMuseGoogleService,
+    requireUser: openMuseGoogleGuard,
+    ...(openMusePublicOrigin
+      ? { allowedHttpOrigin: openMusePublicOrigin }
+      : {}),
+  }),
+  callback: createOpenMuseGoogleCallbackRoutes({
+    service: openMuseGoogleService,
+    resolveActor: async (headers) => {
+      if (config.singleUser) return { id: DEV_ACTOR.id };
+      const session = await auth?.api.getSession({ headers }).catch(() => null);
+      return session?.user ? { id: session.user.id } : null;
+    },
+  }),
+};
+
+/*
+ * The OpenMuse Mail read seam (M01). Its vendor dial is built from the same
+ * deployment OpenConnector address as the consent client; a base that cannot
+ * be dialled logs and leaves the dial unset, which the read route answers
+ * 503 — a boot must not die over a connector, but neither must it pretend to
+ * reach one. The guard and requireConnection are the G01 seam's own. R02
+ * dials the SAME transport for the reviewed action send executor below.
+ */
+const openMuseMailDial = (() => {
+  try {
+    return createOpenMuseMailDial({
+      url: config.openConnectorUrl,
+    });
+  } catch (error) {
+    log.error(
+      {
+        type: "openmuse-mail-vendor-refused",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "openmuse-mail-vendor-refused",
+    );
+    return undefined;
+  }
+})();
+const openMuseMail = createOpenMuseMailRoutes({
+  ...(openMuseMailDial
+    ? { client: buildOpenMuseMailClient({ dial: openMuseMailDial }) }
+    : {}),
+  service: openMuseGoogleService,
+  requireUser: openMuseGoogleGuard,
+  ownerDisabled: openMuseGoogleRows.ownerDisabled,
+});
+
+/*
+ * The OpenMuse Calendar read seam (A01). Its vendor client is built from the
+ * same deployment OpenConnector address as the consent client, the same way
+ * the Mail seam builds its own dial; a base that cannot be dialled logs and
+ * leaves the client unset, which the read route answers 503 — a boot must
+ * not die over a connector, but neither must it pretend to reach one. The
+ * guard is the G01 seam's own; the route's requireConnection ask is the G03
+ * calendar branch, which a Gmail grant never satisfies.
+ */
+const openMuseCalendarClient = (() => {
+  try {
+    return createOpenMuseCalendarClient({
+      url: config.openConnectorUrl,
+    });
+  } catch (error) {
+    log.error(
+      {
+        type: "openmuse-calendar-vendor-refused",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "openmuse-calendar-vendor-refused",
+    );
+    return undefined;
+  }
+})();
+const openMuseCalendar = createOpenMuseCalendarRoutes({
+  ...(openMuseCalendarClient ? { client: openMuseCalendarClient } : {}),
+  service: openMuseGoogleService,
+  requireUser: openMuseGoogleGuard,
+  ownerDisabled: openMuseGoogleRows.ownerDisabled,
+});
+
+/*
+ * The OpenMuse Reviewed action seam (R01/R02, contracts §6): the claim/receipt
+ * state machine with the Gmail send executor — the same deployment
+ * OpenConnector dial the mail reads use, behind the G01 requireConnection
+ * guard, whose pre-claim check answers a disconnected or re-bound account 409
+ * before any provider call. The service, store and routes are R01's, plus the
+ * service's one preflight call. The rows and service are hoisted (V01): the
+ * Activity feed reads through the same rows and dispatches through the same
+ * service instance, so both surfaces share one in-flight execution map.
+ */
+const openMuseReviewedActionRows = createOpenMuseReviewedActionRows(database);
+const openMuseReviewedActionService = createOpenMuseReviewedActionService({
+  rows: openMuseReviewedActionRows,
+  // One executor per provider surface, dispatched by kind: the Gmail send
+  // executor dials the mail transport, the gcalendar executors dial the
+  // calendar client, and a kind no executor owns settles `failed` without a
+  // dial (never a wrong-surface send).
+  executor: createKindDispatchingExecutor({
+    "gmail.send": createGmailSendExecutor({
+      ...(openMuseMailDial ? { dial: openMuseMailDial } : {}),
+      requireConnection: openMuseGoogleService.requireConnection,
+    }),
+    ...(openMuseCalendarClient
+      ? {
+          "gcalendar.create": createCalendarCreateExecutor({
+            client: openMuseCalendarClient,
+            requireConnection: openMuseGoogleService.requireConnection,
+          }),
+          "gcalendar.update": createCalendarUpdateExecutor({
+            client: openMuseCalendarClient,
+            requireConnection: openMuseGoogleService.requireConnection,
+          }),
+          "gcalendar.delete": createCalendarDeleteExecutor({
+            client: openMuseCalendarClient,
+            requireConnection: openMuseGoogleService.requireConnection,
+          }),
+        }
+      : {}),
+  }),
+});
+// Crash recovery (§6): a process that died between claim and settle leaves
+// `executing` rows nothing can decide — flip them past the grace to
+// outcome_unknown so the operator's reconcile owns the tail. Best-effort at
+// boot; the sweep is idempotent.
+void openMuseReviewedActionService
+  .recoverAbandonedExecutions()
+  .catch((error: unknown) => {
+    log.warn(
+      {
+        type: "openmuse-reviewed-actions-recovery-failed",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "openmuse-reviewed-actions-recovery-failed",
+    );
+  });
+const openMuseReviewedActions = createOpenMuseReviewedActionsRoutes({
+  service: openMuseReviewedActionService,
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The OpenMuse Activity feed (V01+V02, contracts §8): the owner's merged
+ * policy-approval, reviewed-action and task-notification list over the
+ * approvals service (the same seam mobile-bff's activity reads), the
+ * reviewed store's one activity lister, and the notification store's own
+ * owner list — its list/markRead signatures are the feed's seam exactly.
+ * Decisions route straight back to the owning modules — the feed itself
+ * decides nothing.
+ */
+const openMuseActivity = createOpenMuseActivityRoutes({
+  feed: createActivityFeed({
+    approvals: approvalService,
+    reviewed: openMuseReviewedActionService,
+    listReviewed: createOpenMuseActivityReviewedLister({
+      database,
+      rows: openMuseReviewedActionRows,
+    }),
+    notifications: openMuseNotificationStore,
+  }),
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The §9 marker store's bookkeeping rows and the ONE cleanup view every
+ * reader shares (the ops signals below, the admin surface below): hoisted
+ * above their first consumer (round 6 M3) so no reader builds its own
+ * second instance of either.
+ */
+const openMuseDeletionResourceRows = createOpenMuseDeletionResourceRows(
+  database,
+);
+const openMuseDeletionCleanup = createOpenMuseDeletionCleanupView({
+  markers: openMuseAccountDeletionStore,
+  rows: openMuseDeletionResourceRows,
+});
+
+/*
+ * The OpenMuse ops signals surface (O05, contracts §10): the operator's
+ * health read at /api/admin/openmuse-ops/signals. The four readers are the
+ * feature seams' own rows (G04 connections, the WorkQueue's task leases,
+ * R04's uncertain actions) plus D09's cleanup view — read-only, so the
+ * aggregation never writes through a seam it does not own.
+ */
+const openMuseOpsSignals = createOpenMuseOpsSignalsRoutes({
+  signals: createOpenMuseOpsSignals({
+    ...createOpenMuseOpsSignalReaders({
+      database,
+      // The ONE cleanup view (round 6 M3): the deletion assembly's own
+      // instance, not a second markers+rows pair built here — the
+      // "single-instance seam" rule the §9 assembly declared for itself.
+      cleanupView: openMuseDeletionCleanup,
+    }),
+  }),
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The OpenMuse private Goal seam (P01, contracts §7): owner CRUD at
+ * /api/mobile/openmuse-goals. The Bot-facing read-only lookup
+ * (goalLookupFor) stays unwired here — no runtime tool registry exists yet,
+ * so C07 ports the runtime and registers the owner's goal.read tool against
+ * that seam.
+ */
+const openMuseGoals = createOpenMuseGoalsRoutes({
+  store: createOpenMuseGoalStore({
+    rows: createOpenMuseGoalRows(database),
+  }),
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The OpenMuse private Idea seam (P02, contracts §7): owner CRUD plus
+ * accept/withdraw at /api/mobile/openmuse-ideas. Accept validates the Task
+ * link through the tasks store's owner-scoped get (no store.ts export was
+ * missing — the existing get already answers it). The Bot-facing read-only
+ * lookup (ideaLookupFor) stays unwired here — no runtime tool registry
+ * exists yet, so C07 ports the runtime and registers the owner's idea.read
+ * tool against that seam.
+ */
+const openMuseIdeas = createOpenMuseIdeasRoutes({
+  store: createOpenMuseIdeaStore({
+    rows: createOpenMuseIdeaRows(database),
+    getTask: (ownerUserId, taskId) =>
+      openMuseTaskStore.get(ownerUserId, taskId),
+  }),
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The OpenMuse private Memory seam (P03, contracts §7): owner CRUD at
+ * /api/mobile/openmuse-memories. The Bot-facing read-only lookup
+ * (memoryLookupFor) stays unwired here — no runtime tool registry exists
+ * yet, so C07 ports the runtime and registers the owner's memory.read tool
+ * against that seam.
+ */
+const openMuseMemories = createOpenMuseMemoriesRoutes({
+  store: createOpenMuseMemoryStore({
+    rows: createOpenMuseMemoryRows(database),
+  }),
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The OpenMuse Task notification seam (T12, contracts §7): the owner's
+ * notification feed beside the Task surface whose transitions emit into it.
+ * Creation stays emit-only — the runner owns the writes, this is the read
+ * and mark-read surface.
+ */
+const openMuseNotifications = createOpenMuseNotificationRoutes({
+  store: openMuseNotificationStore,
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The OpenMuse document inspection seam (F05): POST
+ * /api/mobile/openmuse-files/:id/inspect over the personal-files store, so
+ * the store is hoisted here — createApp passes the same one to the mobile
+ * bff mount beside this router.
+ */
+// openMuseFileStore is the instance hoisted beside the task runner above.
+const openMuseDocuments = createOpenMuseDocumentsRoutes({
+  store: openMuseFileStore,
+  requireUser: openMuseGoogleGuard,
+});
+
+/*
+ * The §9 deletion assembly (D02–D09), built where every seam it consumes
+ * already lives (ocr-ob-certify findings 15/16/19/20): the delete route's
+ * shutdown/revocation/manifest, the admin surface's restore/purge/cleanup,
+ * the backup-retention bookkeeping, and the session revocation that closes
+ * the fence's tracked exposure.
+ */
+const openMuseDeletionRecord = recordDeletionResources(database);
+const openMuseDeletionManifestBuilder = createOpenMuseDeletionManifest({
+  rows: openMuseDeletionResourceRows,
+  marker: openMuseAccountDeletionStore,
+  files: openMuseFileStore,
+  tasks: openMuseTaskStore,
+  reviewed: openMuseReviewedActionService,
+  goals: createOpenMuseGoalStore({ rows: createOpenMuseGoalRows(database) }),
+  ideas: createOpenMuseIdeaStore({
+    rows: createOpenMuseIdeaRows(database),
+    getTask: (ownerUserId, taskId) =>
+      openMuseTaskStore.get(ownerUserId, taskId),
+  }),
+  memories: createOpenMuseMemoryStore({
+    rows: createOpenMuseMemoryRows(database),
+  }),
+  notifications: openMuseNotificationStore,
+  connectors: openMuseGoogleService,
+  agents: agentProfileStore,
+  channels: channelStore,
+});
+/*
+ * D02's work shutdown and D03's external revocation, run by the delete route
+ * behind the marker. The shutdown's cancellation notices go through the
+ * notification store's DELETION-FENCE BYPASS — their owner is fenced by the
+ * time they fire (see notifications/store.ts's emit).
+ */
+const openMuseWorkShutdown = createOpenMuseWorkShutdown({
+  tasks: openMuseTaskStore,
+  // The ROWS seam carries cancelAwaiting (the service wraps it for HTTP); the
+  // shutdown wants the row-level CAS the route matrix itself uses.
+  reviewed: openMuseReviewedActionRows,
+  record: recordWorkShutdown(database),
+  emit: (event) =>
+    openMuseNotificationStore.emit({
+      userId: event.userId,
+      taskId: event.taskId,
+      eventKind: event.eventKind as OpenMuseNotificationEvent,
+      attemptKey: event.attemptKey,
+      title: event.title,
+      ...(event.detail !== undefined ? { detail: event.detail } : {}),
+      bypassDeletionFence: true,
+    }),
+});
+const openMuseExternalAccessRevoker = createOpenMuseExternalAccessRevoker({
+  connectors: openMuseGoogleService,
+  record: openMuseDeletionRecord,
+});
+/** §9 hardening: the deleting owner's sessions go with the marker (one statement). */
+const openMuseDeleteOwnerSessions = async (userId: string) => {
+  await database.delete(sessions).where(eq(sessions.userId, userId));
+};
+/** D05/D06/D08/D09: the admin surface's seams. */
+const openMuseDeletionRestore = createOpenMuseDeletionRestore({
+  marker: openMuseAccountDeletionStore,
+  files: openMuseFileStore,
+  notifications: openMuseNotificationStore,
+  manifestRows: openMuseDeletionResourceRows,
+});
+const openMuseFileBytePurger = createOpenMuseFileBytePurger({
+  rows: openMuseDeletionResourceRows,
+  marker: openMuseAccountDeletionStore,
+  byteStore: openMuseFileBytes,
+  files: openMuseFileStore,
+});
+const openMuseRelationalPurger = createOpenMuseRelationalPurger({
+  rows: openMuseDeletionResourceRows,
+  marker: openMuseAccountDeletionStore,
+  agents: agentProfileStore,
+  channels: channelStore,
+  tasks: openMuseTaskStore,
+  reviewed: openMuseReviewedActionService,
+  goals: createOpenMuseGoalStore({ rows: createOpenMuseGoalRows(database) }),
+  ideas: createOpenMuseIdeaStore({
+    rows: createOpenMuseIdeaRows(database),
+    getTask: (ownerUserId, taskId) =>
+      openMuseTaskStore.get(ownerUserId, taskId),
+  }),
+  memories: createOpenMuseMemoryStore({
+    rows: createOpenMuseMemoryRows(database),
+  }),
+  notifications: openMuseNotificationStore,
+});
+const openMuseBackupRetention = createOpenMuseBackupRetention({
+  marker: openMuseAccountDeletionStore,
+  record: openMuseDeletionRecord,
+});
+
 const app = createApp(
   config,
   auth,
@@ -3989,6 +4637,42 @@ const app = createApp(
   // The craft surface, after the workshop pair it sits beside. APPENDED LAST, same
   // positional rule; undefined when the deployment disabled craft, which mounts nothing.
   craftRoutes,
+  // The OpenMuse seam tail as ONE named object (ocr-ob-certify finding 14):
+  // seventeen same-shaped positionals transposed silently at the typechecker;
+  // named fields cannot be. Every field's own story is app.ts's docblock.
+  {
+    templateStore: openMuseTemplateMethods,
+    // readinessProbe stays default (SELECT 1 on the deployment database).
+    templateRevisions: createOpenMuseTemplateRevisionStore({ database }),
+    files: openMuseFileStore,
+    tasks: openMuseTaskStore,
+    googleOAuth: openMuseGoogleOAuth,
+    mail: openMuseMail,
+    reviewedActions: openMuseReviewedActions,
+    goals: openMuseGoals,
+    calendar: openMuseCalendar,
+    ideas: openMuseIdeas,
+    memories: openMuseMemories,
+    documents: openMuseDocuments,
+    notifications: openMuseNotifications,
+    accountDeletion: openMuseAccountDeletionStore,
+    deletionShutdown: openMuseWorkShutdown,
+    deletionRevoke: openMuseExternalAccessRevoker,
+    deletionManifest: (userId) =>
+      openMuseDeletionManifestBuilder.buildManifest(userId),
+    deletionRevokeSessions: openMuseDeleteOwnerSessions,
+    deletionNoteBackupRetention: (userId) =>
+      openMuseBackupRetention.noteBackupRetention(userId),
+    deletionAdmin: {
+      restore: openMuseDeletionRestore,
+      purge: (userId) => openMuseFileBytePurger.purgeFileBytes(userId),
+      purgeRelational: (userId) =>
+        openMuseRelationalPurger.purgeRelationalData(userId),
+      cleanupView: openMuseDeletionCleanup,
+    },
+    activity: openMuseActivity,
+    opsSignals: openMuseOpsSignals,
+  },
 );
 
 /**
@@ -4002,16 +4686,23 @@ const app = createApp(
  * Not a Hono route because an upgrade is not a request/response: Bun hands it over before Hono sees a
  * body, so it is handled in `fetch` ahead of the app.
  */
-const toStreamUrl = (baseUrl: string, botId: string) =>
-  // The Bot travels in the query, because a websocket upgrade carries no custom header for the
-  // computer to read and every call it serves is per Bot. The secret travels the same way and for the
-  // same reason, this socket is the one a person can type into, so it is the last thing that should
-  // be reachable without it.
-  `${baseUrl.replace(/^http/, "ws").replace(/\/$/, "")}/stream?bot=${encodeURIComponent(botId)}&token=${encodeURIComponent(config.computer?.token ?? "")}`;
+// The stream's gate, extracted so its decisions can be tested without binding a port
+// (see computer/stream-auth.ts): computer on → session → which Bot → route inward.
+const authorizeStream = createStreamAuthorizer({
+  resolveRequestActor,
+  agentProfileStore,
+  computerGateway,
+  config,
+  // Same list the sensitive writes trust (learning/routes.ts), so a SameSite=None deployment
+  // cannot be ridden cross-site into a screen socket.
+  trustedOrigins: config.auth?.trustedOrigins ?? [],
+});
 
 /** What each proxied socket carries: where to connect inward, and the socket once opened. */
 type StreamData = {
   upstream: string;
+  /** The computer token, handed to the inward socket as a header, never on the URL. */
+  token: string;
   ownerUserId: string;
   botId: string;
   recordingId?: string;
@@ -4052,69 +4743,25 @@ serve<SocketData>({
     }
     if (url.pathname === "/api/voice/calls") server.timeout(request, 30);
     if (url.pathname === "/api/voice/sessions") server.timeout(request, 30);
-    const streamBotId = streamPathBotId(url.pathname);
-    if (
-      streamBotId !== null &&
-      request.headers.get("upgrade")?.toLowerCase() === "websocket"
-    ) {
-      if (!config.computer) {
-        return new Response("No computer is configured.", { status: 503 });
-      }
-      // The session guard, applied by hand because middleware does not run on an upgrade. An
-      // unauthenticated socket here would be the whole point of the proxy defeated.
-      const actor = await resolveRequestActor(request).catch(() => null);
-      if (!actor) {
-        return new Response("Sign in first.", { status: 401 });
-      }
-      // And which Bot, which the guard above does not answer. This socket carries that Bot's screen,
-      // so signing in is not enough: without this, anybody signed in watches anybody's Bot work. And
-      // seeing a Team Bot is not enough either: its screen is its owner's signed-in browser.
-      if (
-        !(await computerAccessCheck(agentProfileStore)(
-          { id: actor.id, role: actor.role },
-          streamBotId,
-        ))
-      ) {
-        return new Response("There is no such Bot.", { status: 404 });
-      }
-      /*
-       * Through the gateway, not the provider.
-       *
-       * `gateway.locate` runs checkComputerAddress; `provider.locate` does not, and the URL built
-       * below carries COMPUTER_TOKEN in its query string. A provider that answered with a foreign
-       * host was handed the deployment's computer token, which is the case that check was written
-       * for. Every acting path already went through the gateway; this one did not.
-       */
-      let upstream: string;
-      try {
-        const streamBase = computerGateway
-          ? await computerGateway.locate(streamBotId)
-          : undefined;
-        if (!streamBase) {
-          return new Response("No computer address is configured.", {
-            status: 503,
-          });
-        }
-        upstream = toStreamUrl(streamBase, streamBotId);
-      } catch (error) {
-        // Said out loud rather than falling back to another Bot's computer, which is the failure this
-        // whole path exists to prevent.
-        return new Response(
-          error instanceof Error
-            ? error.message
-            : "That Bot's computer could not be reached.",
-          { status: 502 },
-        );
-      }
-      const recording = await demonstrationStore.active(actor.id, streamBotId);
-      if (recording)
-        upstream += `&recording=${encodeURIComponent(recording.id)}`;
+    const decision = await authorizeStream(request);
+    if (decision.kind === "refuse") {
+      return new Response(decision.message, { status: decision.status });
+    }
+    if (decision.kind === "proxy") {
+      const recording = await demonstrationStore.active(
+        decision.actorId,
+        decision.botId,
+      );
+      const upstream = recording
+        ? `${decision.upstream}&recording=${encodeURIComponent(recording.id)}`
+        : decision.upstream;
       if (
         server.upgrade(request, {
           data: {
             upstream,
-            ownerUserId: actor.id,
-            botId: streamBotId,
+            token: decision.token,
+            ownerUserId: decision.actorId,
+            botId: decision.botId,
             ...(recording ? { recordingId: recording.id } : {}),
           },
         })
@@ -4132,7 +4779,15 @@ serve<SocketData>({
         return;
       }
       const stream = ws.data;
-      const inward = new WebSocket(stream.upstream);
+      /*
+       * The token rides the upgrade's headers (Bun's options form — the DOM
+       * types only know the protocols argument, hence the cast), matching
+       * every HTTP call the transport makes to the computer, so it stays out
+       * of any proxy or computer access log the URL would land in.
+       */
+      const inward = new WebSocket(stream.upstream, {
+        headers: { "x-openbot-computer-token": stream.token },
+      } as unknown as string | string[]);
       stream.inward = inward;
       // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for
       // should be dropped, not queued, because a stale frame is worse than a missing one.
@@ -4240,6 +4895,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     responsibilitySweep.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
+    openMuseTaskSweep.stop();
+    openMuseTaskReaper.stop();
     memorySweep.stop();
     proactiveSweep.stop();
     approvalSweep.stop();

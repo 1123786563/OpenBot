@@ -119,10 +119,17 @@ test("request/rejoin and exact polling/take/release/cancel identities reach the 
     reason: "Sign in",
     toolCallId: "call-1",
   });
-  for (const request of requests.slice(2))
-    expect(JSON.parse(String(request.init?.body))).toEqual({
-      requestId: "request-1",
-    });
+  for (const request of requests.slice(2)) {
+    const body = JSON.parse(String(request.init?.body)) as Record<
+      string,
+      unknown
+    >;
+    expect(body).toMatchObject({ requestId: "request-1" });
+    // Every lease verb names who: the actor the server's session authenticated, never the
+    // client's own body — take to bind the claim, release/cancel so the computer can refuse
+    // a second person's way around take's 409 (they put the holder off the wheel instead).
+    expect(body).toEqual({ requestId: "request-1", userId: "user-1" });
+  }
   const count = requests.length;
   expect((await post("/control/take", {})).status).toBe(400);
   expect(requests).toHaveLength(count);

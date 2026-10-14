@@ -38,6 +38,20 @@ export type ChannelActivityEvent = {
    */
   pinned?: boolean;
   /**
+   * The channel was archived (`true`) or taken back out (`false`). Absent on an ordinary activity
+   * event.
+   *
+   * Like deletion, the stamp lands on the channels row, so it is every member's roster that
+   * changes — without this increment a second tab and a second replica keep listing a channel
+   * the archive has already filed away until something else makes them refetch.
+   */
+  archived?: boolean;
+  /**
+   * The channel's new name, on the event a rename broadcasts. Absent on an ordinary activity
+   * event; the roster that hears it can patch the row rather than render yesterday's title.
+   */
+  renamed?: string;
+  /**
    * A turn started or ended in this channel. Absent on an ordinary activity event.
    *
    * Transient and message-less: it is never written to a table, only announced, so the roster can

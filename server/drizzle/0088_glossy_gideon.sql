@@ -1,0 +1,1 @@
+ALTER TABLE "openmuse_google_connections" ADD COLUMN "last_error" text;

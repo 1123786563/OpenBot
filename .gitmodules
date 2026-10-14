@@ -1,0 +1,3 @@
+[submodule "apps/openmuse"]
+	path = apps/openmuse
+	url = https://github.com/1123786563/openmuse

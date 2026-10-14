@@ -1,0 +1,1 @@
+ALTER TABLE "openmuse_tasks" ADD COLUMN "last_retry_key" text;

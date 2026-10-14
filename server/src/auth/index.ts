@@ -375,7 +375,7 @@ export function createAuth(
    * never be sent there.
    *
    * EXPO_APP_SCHEME names WHICH app that is. The built-in client uses openbotmobile://; the OpenMuse
-   * client (apps/openmuse-mobile) registers openmuse://, and its OAuth callback is refused as an
+   * client (apps/openmuse submodule, apps/mobile) registers openmuse://, and its OAuth callback is refused as an
    * untrusted origin unless the deployment says so. A custom scheme is deliberately not a URL the
    * browser validates, so this accepts scheme:// only and rejects anything else loudly rather than
    * silently widening the trust base to an arbitrary web origin.

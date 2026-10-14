@@ -558,4 +558,42 @@ describe("a person's Stop", () => {
       transport.post("http://computer", "bot-1", "/click", {}),
     ).rejects.toThrow("The assistant's computer is not running.");
   });
+
+  /*
+   * Round 6 (H1): a reset with the request in flight is NOT proof the bytes
+   * never arrived — the write may have committed before the socket died — so
+   * it must stay on the ambiguous side (ComputerUnavailableError, keeps the
+   * charge), not the refund-proving Unreachable one. Only the
+   * never-established directions (ECONNREFUSED/ENOTFOUND/EAI_AGAIN, by code
+   * on the error or its cause chain, or by message) say "not running".
+   */
+  test("a connection reset mid-flight stays ambiguous — the write may have landed", async () => {
+    const reset = (() => {
+      const cause = new Error("read ECONNRESET");
+      Object.assign(cause, { code: "ECONNRESET" });
+      const error = new TypeError("fetch failed");
+      error.cause = cause;
+      return Promise.reject(error);
+    }) as unknown as typeof fetch;
+    const transport = createComputerTransport({ fetchImpl: reset });
+
+    await expect(
+      transport.post("http://computer", "bot-1", "/files/write", {}),
+    ).rejects.toThrow("The assistant's computer dropped the connection mid-flight.");
+  });
+
+  test("a refused connection proven by the cause code still says not running", async () => {
+    const refused = (() => {
+      const cause = new Error("connect failed");
+      Object.assign(cause, { code: "ECONNREFUSED" });
+      const error = new TypeError("fetch failed");
+      error.cause = cause;
+      return Promise.reject(error);
+    }) as unknown as typeof fetch;
+    const transport = createComputerTransport({ fetchImpl: refused });
+
+    await expect(
+      transport.post("http://computer", "bot-1", "/files/write", {}),
+    ).rejects.toThrow("The assistant's computer is not running.");
+  });
 });

@@ -269,6 +269,37 @@ describe("runtime agent loading", () => {
     expect(idsOf(await loadAgents(otherUser))).not.toContain(profile.id);
   });
 
+  test("enumerates the owner's channels for deletion, soft-deleted included", async () => {
+    const owner = await createUser();
+    const otherUser = await createUser();
+    const ownerProfile = await createCoworker(owner);
+    const otherProfile = await createCoworker(otherUser);
+    const liveChannel = await channelStore.create(owner, [ownerProfile.id]);
+    const deletedChannel = await channelStore.create(owner, [ownerProfile.id]);
+    const foreignChannel = await channelStore.create(otherUser, [
+      otherProfile.id,
+    ]);
+    createdChannelIds.push(
+      liveChannel.id,
+      deletedChannel.id,
+      foreignChannel.id,
+    );
+
+    await channelStore.softDelete(owner, deletedChannel.id);
+
+    // §9 (D04): the deletion manifest enumerates soft-deleted channels too —
+    // `list` hides them in both its partitions, but the account's deletion
+    // still owes their rows, exactly as the Bot seam owes soft-deleted Bots.
+    expect(
+      (await channelStore.enumerateOwner(owner.id)).map((row) => row.id).sort(),
+    ).toEqual([deletedChannel.id, liveChannel.id].sort());
+    expect(
+      (await channelStore.enumerateOwner(otherUser.id))
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([foreignChannel.id].sort());
+  });
+
   test("authorizes deleted coworker tombstones only through live channels", async () => {
     const owner = await createUser();
     const otherUser = await createUser();

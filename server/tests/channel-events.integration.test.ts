@@ -384,6 +384,33 @@ describe("channel change delivery", () => {
     expect(watched.of(owner.id)).toEqual([]);
   });
 
+  test("announces a rename to every member with the new name, exactly once", async () => {
+    const owner = await createTestUser("Renaming Member");
+    const other = await createTestUser("Rename Bystander");
+    const channel = await createSharedChannel(owner, other);
+
+    const hub = createChannelEventHub();
+    const watched = watch(hub, [owner.id, other.id]);
+    const listener = await startChannelActivityListener(databaseUrl, hub);
+
+    try {
+      await store.rename(owner, channel.id, "Payroll");
+      await within5s(watched.anything);
+    } finally {
+      await listener.stop();
+    }
+
+    // The name lives on the channels row, so every member's roster hears it — the same
+    // owed-to-everybody shape as the delete above, which is what the transaction wrapping
+    // the change and its announcement together is for.
+    expect(watched.of(owner.id)).toHaveLength(1);
+    expect(watched.of(other.id)).toHaveLength(1);
+    expect(watched.of(owner.id)[0]).toMatchObject({
+      channelId: channel.id,
+      renamed: "Payroll",
+    });
+  });
+
   test("tells the pinning member's own tabs and nobody else's", async () => {
     const owner = await createTestUser("Pinning Member");
     const other = await createTestUser("Other Member");

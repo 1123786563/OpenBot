@@ -12,6 +12,7 @@ import {
 import {
   actsOnTheComputer,
   isOpenPath,
+  isQuietPath,
   matchesToken,
   mutatesBrowser,
   offeredToken,
@@ -20,6 +21,7 @@ import { isPlainBotId } from "./bot-id";
 import { browserRuntimeFromEnv } from "./browser-runtime";
 import { detectChallenge } from "./challenge";
 import {
+  CONTROL_REVOKED,
   ControlError,
   ControlRequestError,
   NO_SECRET_PENDING,
@@ -688,6 +690,15 @@ serve<StreamData>({
     const session = sessions.for(botId);
 
     /*
+     * The computer's own record of being used, surfaced on GET /control for the server's idle
+     * sweep: `since` and the run's start are beginnings, not activity, and the server's activity
+     * map only knows the replica a call happened to land on — this is the one idleness signal a
+     * DIFFERENT server can read. Polls and orchestrator reads are not use, so they are excluded;
+     * everything else that reaches a session is somebody driving this computer.
+     */
+    if (!isQuietPath(url.pathname)) session.lastActivityAt = new Date();
+
+    /*
      * The wheel, asked once for everything that acts.
      *
      * Refused here rather than inside each handler because the handler that forgets is the whole
@@ -738,9 +749,15 @@ serve<StreamData>({
       // Who has the wheel. Polled by the surface alongside the screen, so the person sees the Bot ask
       // for help without having to reload anything.
       if (url.pathname === "/control" && request.method === "GET") {
-        return json(
-          session.control.get(url.searchParams.get("requestId") ?? undefined),
+        const state = session.control.get(
+          url.searchParams.get("requestId") ?? undefined,
         );
+        return json({
+          ...state,
+          ...(session.lastActivityAt !== undefined
+            ? { lastActivity: session.lastActivityAt.toISOString() }
+            : {}),
+        });
       }
 
       // The Bot asking for help. It does not take control: it says it is stuck and why, and a person
@@ -868,39 +885,143 @@ serve<StreamData>({
       }
 
       if (
-        ["/control/take", "/control/release", "/control/cancel"].includes(
-          url.pathname,
-        ) &&
+        [
+          "/control/take",
+          "/control/release",
+          "/control/cancel",
+          "/control/revoke",
+        ].includes(url.pathname) &&
         request.method === "POST"
       ) {
         const body = (await request.json().catch(() => null)) as {
           requestId?: unknown;
+          reason?: unknown;
+          userId?: unknown;
+          takenBy?: unknown;
         } | null;
+        /*
+         * A revocation from outside the lease: logout, disconnect policy, a policy refusal. It is
+         * the server's to ask (the caller holds COMPUTER_TOKEN and an actor identity), never a
+         * person's mid-handover, which is why it lands `refused` and asks nothing of the holder:
+         * the page a person was driving is left as they left it, exactly like a restart.
+         */
+        if (url.pathname === "/control/revoke") {
+          /*
+           * The lease the server read before revoking rides along as a precondition, in
+           * both shapes that read can be: naming the lease (a requestId string), or the
+           * explicit observed-none reading (requestId null) — if the wheel changed hands
+           * between that read and this revoke (the holder released and a second person
+           * took, a waiting request was claimed, or a request appeared where the server
+           * read none), the observed lease is stale and ending what is on the wheel now
+           * would be the very takeover this route guards against, so it answers with
+           * take's own 409 rather than interrupting. The 409 carries controlRequestError
+           * so the server's client maps it to the control-error shape, the same shape the
+           * server route's holder check answers for this same condition.
+           */
+          const namesALease =
+            typeof body?.requestId === "string" && body.requestId.trim();
+          const observedNone = body?.requestId === null;
+          if (namesALease || observedNone) {
+            const request = session.control.get().request;
+            const active =
+              request !== undefined &&
+              (request.status === "waiting" || request.status === "taken")
+                ? request
+                : undefined;
+            const stale =
+              active !== undefined &&
+              (observedNone ||
+                active.id !== body?.requestId ||
+                active.takenBy !==
+                  (typeof body?.takenBy === "string"
+                    ? body.takenBy
+                    : undefined));
+            if (stale) {
+              return json(
+                {
+                  error: "Another person holds this control request.",
+                  controlRequestError: true,
+                },
+                409,
+              );
+            }
+          }
+          return json(
+            session.control.interrupt(
+              typeof body?.reason === "string" && body.reason.trim()
+                ? body.reason.trim().slice(0, 500)
+                : CONTROL_REVOKED,
+              "refused",
+            ),
+          );
+        }
         if (typeof body?.requestId !== "string" || !body.requestId.trim())
           return json({ error: "A requestId is required." }, 400);
+        // Who is asking, injected by the server from the session that asked. A caller
+        // without one joins the lease as before; one with a different identity than the
+        // holder's is refused by the state machine — on take, and on release/cancel of a
+        // lease somebody else holds.
+        const holder =
+          typeof body?.userId === "string" && body.userId.trim()
+            ? { userId: body.userId.trim().slice(0, 200) }
+            : undefined;
         if (url.pathname === "/control/take")
-          return json(await session.control.take(body.requestId));
+          return json(await session.control.take(body.requestId, holder));
         if (url.pathname === "/control/cancel")
-          return json(session.control.cancel(body.requestId));
-        return json(session.control.release(body.requestId));
+          return json(session.control.cancel(body.requestId, holder));
+        return json(session.control.release(body.requestId, holder));
       }
 
       // A person's input, by pixel. The Bot addresses elements by reference because it reads a list; a
       // person addresses them by pointing, because they are looking at a picture. Different problem,
       // different endpoint, and only usable while they hold the wheel.
       if (HUMAN_INPUT.has(url.pathname) && request.method === "POST") {
-        if (!session.control.humanMayDrive()) {
-          return json({ error: TAKE_CONTROL_FIRST }, 409);
-        }
         const body = (await request.json().catch(() => null)) as Record<
           string,
           unknown
         > | null;
+        // The endpoint's own payload is validated before the sequence is spent: a rejected
+        // gesture must not consume its number, or the corrected retry of that very gesture
+        // answers as a replay (409) and the input is refused forever.
         if (url.pathname === "/human/scroll") {
           const parsed = parseScrollDelta(body?.deltaY);
           if (!parsed.ok) {
             return json({ error: parsed.error }, 400);
           }
+        }
+        if (
+          url.pathname === "/human/click" &&
+          !(
+            typeof body?.x === "number" &&
+            Number.isFinite(body.x) &&
+            typeof body?.y === "number" &&
+            Number.isFinite(body.y)
+          )
+        ) {
+          return json(
+            { error: "A click needs an x and a y inside the page." },
+            400,
+          );
+        }
+        if (url.pathname === "/human/type" && typeof body?.text !== "string") {
+          return json({ error: "Typing needs text." }, 400);
+        }
+        if (
+          url.pathname === "/human/key" &&
+          (typeof body?.key !== "string" || !body.key)
+        ) {
+          return json({ error: "A key press needs a key name." }, 400);
+        }
+        // The lease gate, and with it the input's order: a replayed or reordered sequence number
+        // answers here, before anything reaches the page, so the gesture is not delivered. The
+        // value is the body's own, unvalidated here because the lease judges it: a number that is
+        // not a sequence answers 400 from the gate itself.
+        const seq = body?.seq;
+        const gate = session.control.admitHumanInput(
+          seq === undefined ? undefined : { seq: seq as number },
+        );
+        if (!gate.ok) {
+          return json({ error: gate.error }, gate.status);
         }
         try {
           const target = await currentPage(botId);

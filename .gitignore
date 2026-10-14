@@ -59,3 +59,8 @@ venv/
 .mastra/
 # kb local storage backend (uploaded originals live here)
 server/data/
+
+# agent orchestration state and local logs
+.omc/
+.omo/
+*.log

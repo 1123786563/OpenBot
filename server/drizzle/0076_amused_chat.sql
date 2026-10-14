@@ -1,0 +1,2 @@
+ALTER TABLE "agent_profiles" ADD COLUMN "template_key" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_profiles_owner_template_uq" ON "agent_profiles" USING btree ("owner_user_id","template_key");
