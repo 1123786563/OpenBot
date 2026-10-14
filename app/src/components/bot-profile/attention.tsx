@@ -1,16 +1,11 @@
-import { IconPlayerPause } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
-import { setBotPausedMutationOptions } from "@/lib/bot-lifecycle/mutations";
 import {
   type BotAttention,
   botAttentionQueryOptions,
 } from "@/lib/bot-lifecycle/queries";
-import i18n from "@/lib/i18n";
-import { queryClient } from "@/query-client";
 
 /** Questions, approvals and stalled hand-offs: the things only the person can move forward. */
 export function needsInput(bot: BotAttention): number {
@@ -18,20 +13,15 @@ export function needsInput(bot: BotAttention): number {
 }
 
 /** What the badge says, in words, for the row's accessible name and its tooltip. */
-export function attentionSummary(bot: BotAttention): string {
+export function attentionSummary(
+  bot: BotAttention,
+  t: TFunction<"agents">,
+): string {
   const parts: string[] = [];
-  if (bot.questions)
-    parts.push(
-      i18n.t("computer:attention.questions", { count: bot.questions }),
-    );
-  if (bot.approvals)
-    parts.push(
-      i18n.t("computer:attention.approvals", { count: bot.approvals }),
-    );
-  if (bot.handoffs)
-    parts.push(i18n.t("computer:attention.handoffs", { count: bot.handoffs }));
-  if (bot.unread)
-    parts.push(i18n.t("computer:attention.unread", { count: bot.unread }));
+  if (bot.questions) parts.push(t("attention.questions", { count: bot.questions }));
+  if (bot.approvals) parts.push(t("attention.approvals", { count: bot.approvals }));
+  if (bot.handoffs) parts.push(t("attention.handoffs", { count: bot.handoffs }));
+  if (bot.unread) parts.push(t("attention.unread", { count: bot.unread }));
   return parts.join(", ");
 }
 
@@ -40,6 +30,7 @@ export function attentionSummary(bot: BotAttention): string {
  * did not mute this Bot. Badges show either way; this is the interruption, and it is opt-in.
  */
 function useAttentionNotifications(bots: BotAttention[] | undefined) {
+  const { t } = useTranslation("agents");
   const seen = useRef<Map<string, number> | null>(null);
   useEffect(() => {
     if (!bots) return;
@@ -61,88 +52,52 @@ function useAttentionNotifications(bots: BotAttention[] | undefined) {
       if (bot.notify === "none" || now <= (previous.get(bot.agentId) ?? 0))
         continue;
       try {
-        new Notification(
-          i18n.t("computer:attention.needsYouName", { name: bot.name }),
-          {
-            body: attentionSummary(bot),
-            tag: `openbot-attention-${bot.agentId}`,
-          },
-        );
+        new Notification(t("attention.needsYouName", { name: bot.name }), {
+          body: attentionSummary(bot, t),
+          tag: `openbot-attention-${bot.agentId}`,
+        });
       } catch {
         // A browser that refuses the constructor still has the badge.
       }
     }
-  }, [bots]);
+  }, [bots, t]);
 }
 
 /**
- * The Bots that need this person, for the sidebar: a badge per Bot that has a question, an approval
- * or a stalled hand-off waiting, or something unread, and a resume button for one they paused.
+ * The badge on the sidebar's Bots item: how many questions, approvals and stalled hand-offs wait on
+ * this person across all their Bots, or a dot when the only news is something unread. Opening Bots
+ * lists the Bots behind the number first, under Needs you.
  *
- * Renders nothing when no Bot needs anything, so a quiet day costs the roster no space.
+ * It also sends the browser notification when a Bot starts needing the person, since it is the one
+ * piece of the app that is always on screen and always reading this.
+ *
+ * Renders nothing when nothing is waiting, so a quiet day costs the sidebar nothing.
  */
-export function BotAttentionList() {
-  const { t } = useTranslation("computer");
+export function BotsNavBadge() {
+  const { t } = useTranslation("agents");
   const attention = useQuery(botAttentionQueryOptions());
-  const resume = useMutation(setBotPausedMutationOptions(queryClient));
   useAttentionNotifications(attention.data);
-  const bots = (attention.data ?? []).filter(
-    (bot) => bot.paused || needsInput(bot) > 0 || bot.unread > 0,
-  );
-  if (attention.isPending || attention.error || bots.length === 0) return null;
-  return (
-    <>
-      {bots.map((bot) => {
-        const waiting = needsInput(bot);
-        return (
-          <SidebarMenuItem key={bot.agentId} className="flex flex-row gap-1">
-            <SidebarMenuButton
-              aria-label={`${bot.name}: ${
-                bot.paused ? t("attention.paused") : attentionSummary(bot)
-              }`}
-              className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9 flex-1"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/bots/$agentId"
-                  params={{ agentId: bot.agentId }}
-                  activeProps={{
-                    className:
-                      "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-                  }}
-                />
-              )}
-            >
-              <span className="truncate text-sm">{bot.name}</span>
-              {waiting > 0 ? (
-                <span
-                  className="ml-auto rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums"
-                  title={attentionSummary(bot)}
-                >
-                  {waiting}
-                </span>
-              ) : bot.unread > 0 ? (
-                <span
-                  className="ml-auto size-2 rounded-full bg-primary"
-                  title={attentionSummary(bot)}
-                />
-              ) : null}
-            </SidebarMenuButton>
-            {bot.paused ? (
-              <SidebarMenuButton
-                className="hover:bg-foreground/5 h-9 w-auto shrink-0 gap-1 text-muted-foreground text-xs"
-                disabled={resume.isPending}
-                onClick={() =>
-                  resume.mutate({ agentId: bot.agentId, paused: false })
-                }
-              >
-                <IconPlayerPause className="size-3.5" />
-                {t("paused.tapToResume")}
-              </SidebarMenuButton>
-            ) : null}
-          </SidebarMenuItem>
-        );
-      })}
-    </>
-  );
+  const bots = attention.data ?? [];
+  const waiting = bots.reduce((total, bot) => total + needsInput(bot), 0);
+  if (waiting > 0) {
+    return (
+      <span
+        aria-label={t("attention.badge", { count: waiting })}
+        className="ml-auto rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums"
+        role="img"
+      >
+        {waiting}
+      </span>
+    );
+  }
+  if (bots.some((bot) => bot.unread > 0)) {
+    return (
+      <span
+        aria-label={t("attention.unreadMessages")}
+        className="ml-auto size-2 rounded-full bg-primary"
+        role="img"
+      />
+    );
+  }
+  return null;
 }

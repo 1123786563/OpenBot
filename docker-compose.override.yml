@@ -1,0 +1,9 @@
+# ponytail: 端口范围 3010-3100 与 vite dev server (3010) 冲突，收窄为 3011-3098；与 .env 的
+# OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 保持一致（docs/compose.md#the-sandbox-port-range）。
+services:
+  agent-sandbox:
+    ports: !override
+      - "127.0.0.1:${SANDBOX_PORT:-4300}:4300"
+      - "[::1]:${SANDBOX_PORT:-4300}:4300"
+      - "127.0.0.1:3011-3098:3011-3098"
+      - "[::1]:3011-3098:3011-3098"

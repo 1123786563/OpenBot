@@ -36,7 +36,12 @@
  * comes from, and how to reach the agent-sandbox gateway.
  */
 
-export { generateAgentInstructions } from "./agent-instructions";
+export {
+  buildConnectableAppsList,
+  COMPANY_KNOWLEDGE_SECTION,
+  type ConnectableApp,
+  generateAgentInstructions,
+} from "./agent-instructions";
 export {
   type CreateCraftPermissionGateInput,
   createCraftPermissionGate,
@@ -98,6 +103,21 @@ export {
   parseAgentSelection,
 } from "./llm-config";
 export { createSessionFlowLocks, type SessionFlowLocks } from "./locks";
+export {
+  type ConnectableAppServerRow,
+  type CraftManagedContent,
+  type CraftManagedContentResolver,
+  type CraftManagedContentSources,
+  companySearchSkillAvailable,
+  createCraftManagedContentResolver,
+  MANAGED_SKILLS_DIR,
+  type ManagedContentFileApi,
+  materializeManagedContent,
+  personalUnconnectedApps,
+  type ResolvedCraftManagedContent,
+  USER_LIBRARY_DIR,
+  WEB_TEMPLATE_DIR,
+} from "./managed-content";
 export { CraftSessionManager } from "./manager";
 export { generateSessionName } from "./naming";
 export { PodEventBus } from "./opencode/event-bus";
@@ -181,15 +201,19 @@ export {
 } from "./streaming";
 export {
   clearTurnDeadline,
-  SESSION_PLUGINS,
-  SESSION_TURN_BUDGET_PLUGIN_SPEC,
   stampTurnDeadline,
   TURN_BUDGET_CLEAR_JSON,
-  TURN_BUDGET_PLUGIN_RELPATH,
   turnBudgetPluginSource,
   turnBudgetStampJson,
   turnBudgetStampPath,
 } from "./turn-budget";
+export {
+  CONNECT_APP_PLUGIN_RELPATH,
+  SESSION_CONNECT_APP_PLUGIN_SPEC,
+  SESSION_PLUGINS,
+  SESSION_TURN_BUDGET_PLUGIN_SPEC,
+  TURN_BUDGET_PLUGIN_RELPATH,
+} from "./session-plugins";
 export {
   createTurnExecutor,
   MAX_TIMEOUT_CONTINUATIONS,

@@ -190,6 +190,14 @@ export type CraftConfig = {
    */
   readonly sandboxBotId: string;
 
+  /**
+   * Operator override for the base url the per-user craft MCP set stamps into session
+   * opencode.json entries (the relay's origin — the sandbox's opencode dials it and it
+   * attaches credentials). Unset = derive from the deployment's public url at the
+   * wiring (the boot file), which is the honest default for a co-located deployment.
+   */
+  readonly mcpRelayBaseUrl: string;
+
   // ── phase-2 gates (webapp proxy / scheduled tasks) ────────────────────────
   /** Gate the crafting UI's webapp reverse-proxy (Preview tab). */
   readonly webappProxyEnabled: boolean;
@@ -291,7 +299,7 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
   );
 
   return {
-    enabled: boolEnv(env, "OPENBOT_CRAFT_ENABLED", false),
+    enabled: boolEnv(env, "OPENBOT_CRAFT_ENABLED", true),
     enableBrowser: boolEnv(env, "OPENBOT_CRAFT_ENABLE_BROWSER", true),
 
     opencodeDisabledTools: disabledToolsRaw
@@ -437,6 +445,8 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     )
       ? stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft")
       : "craft",
+
+    mcpRelayBaseUrl: stringEnv(env, "OPENBOT_CRAFT_MCP_RELAY_BASE_URL", ""),
 
     // ── phase-2 gates ─────────────────────────────────────────────────────────
     webappProxyEnabled: boolEnv(

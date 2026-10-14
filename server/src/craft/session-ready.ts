@@ -11,10 +11,25 @@
  */
 
 import type { Database } from "../db/client";
+import { generateAgentInstructions } from "./agent-instructions";
 import type { CraftConfig } from "./config";
+import { writeConnectAppPlugin } from "./connect-app-plugin";
 import { StaleProvisioningAttemptError } from "./errors";
-import type { AgentSandboxFileApi, SandboxGateway } from "./sandbox-gateway";
+import {
+  type CraftManagedContentResolver,
+  companySearchSkillAvailable,
+  materializeManagedContent,
+} from "./managed-content";
+import { writeWebappBootstrapScript } from "./nextjs-dev";
+import {
+  buildProviderOpencodeConfig,
+  opencodeConfigJson,
+} from "./opencode-config";
+import type { SandboxGateway } from "./sandbox-gateway";
+import { SESSION_PLUGINS } from "./session-plugins";
 import type { CraftSessionRow, CraftStore } from "./store";
+import { writeTurnBudgetPlugin } from "./turn-budget";
+import { writeWebappPlugin } from "./webapp-plugin";
 import {
   sessionDirectory,
   sessionWorkspaceExists,
@@ -57,8 +72,16 @@ export type EnsureSessionReadyInput = {
   llmConfigFor: (
     session: CraftSessionRow,
   ) => Promise<import("./opencode-config").CraftLLMProviderConfig>;
+  /**
+   * Resolves the session owner's managed content BEFORE anything is built: a
+   * failed resolution fails provisioning (AGENTS.md is only ever written after
+   * resolution succeeded — onyx reads the payload up front and builds after).
+   */
+  managedContentResolver?: CraftManagedContentResolver;
   /** The craft runtime config — workspace generation reads it (explicit DI, no globals). */
   config: CraftConfig;
+  /** The base the sandbox dials back on (MCP relay + company-search CLI). */
+  mcpRelayBaseUrl?: string | null;
 };
 
 /**
@@ -76,27 +99,129 @@ export async function ensureSessionReady(
     session.id,
     input.config.sessionDirectoryMode,
   );
-
-  if (
-    await sessionWorkspaceExists(
-      gateway.fileApiFor(botId) ?? nullApi,
-      session.id,
-      input.config.sessionDirectoryMode,
-    )
-  ) {
-    if (session.status !== "active") {
-      await store.updateSession(session.id, { status: "active" });
-    }
-    return;
-  }
-
   const fileApi = gateway.fileApiFor(botId);
-  if (!fileApi) {
-    throw new Error(`No sandbox configured for bot ${botId}`);
-  }
 
-  const llmConfig = await input.llmConfigFor(session);
   try {
+    // Managed content resolves BEFORE anything is built: a failed resolution
+    // fails provisioning here, so no AGENTS.md ever names apps or skills the
+    // deployment could not stand behind (onyx reads the payload up front, then
+    // commits before any external work).
+    const managedContent = input.managedContentResolver
+      ? await input.managedContentResolver(session)
+      : null;
+
+    // The push half (onyx push_managed_content): failures are logged, never
+    // raised — the workspace still builds, and because the skills hash is only
+    // acked on a successful push the next create/reload retries.
+    const pushManagedContent = async (): Promise<boolean> => {
+      if (!managedContent || !fileApi) return false;
+      return materializeManagedContent(fileApi, directory, managedContent);
+    };
+
+    if (
+      fileApi !== null &&
+      (await sessionWorkspaceExists(
+        fileApi,
+        session.id,
+        input.config.sessionDirectoryMode,
+      ))
+    ) {
+      // Light path: the workspace is intact, but the managed content may
+      // predate it (a repair under the same id, a pre-managed-content session)
+      // — push again and record the hashes the push actually landed.
+      const hydrated = await pushManagedContent();
+      if (managedContent) {
+        // AGENTS.md is rewritten from the resolved content BEFORE the ack: the
+        // skills hash fingerprints the connectable-apps section the file renders,
+        // so acking it over a pre-section AGENTS.md would mark a stale prompt
+        // current (and the ack would suppress every later reconcile). Written at
+        // the workspace-setup write point; a failed write fails provisioning
+        // through the envelope below, so the hash is only ever acked after the
+        // render landed.
+        const llmConfig = await input.llmConfigFor(session);
+        const agentsMd = generateAgentInstructions({
+          template: await agentsTemplate(),
+          config: input.config,
+          provider: llmConfig.provider,
+          modelName: llmConfig.modelName,
+          disabledTools: input.config.opencodeDisabledTools,
+          userName: input.userName,
+          organizationInstructions: input.organizationInstructions,
+          connectableAppsSection: managedContent.connectableAppsSection,
+          companySearchSkillAvailable:
+            companySearchSkillAvailable(managedContent),
+        });
+        await fileApi.writeFile(`${directory}/AGENTS.md`, agentsMd);
+        // opencode.json rides along on the light path too: the workspace is
+        // intact but its config may predate a resolved MCP set (a repaired
+        // session, a pre-managed-content runtime). Same snapshot, same bytes
+        // the reconcile computes — one builder, one ordering.
+        await fileApi.writeFile(
+          `${directory}/opencode.json`,
+          opencodeConfigJson(
+            buildProviderOpencodeConfig(llmConfig, {
+              disabledTools: input.config.opencodeDisabledTools,
+              gatedTools: input.config.approvalGatedTools,
+              plugins: SESSION_PLUGINS,
+              mcpServers: managedContent.mcpServers,
+              sessionId: session.id,
+            }),
+          ),
+        );
+        await writeTurnBudgetPlugin(
+          { writeFile: (path, content) => fileApi.writeFile(path, content) },
+          session.id,
+          input.config,
+        );
+        await writeConnectAppPlugin(
+          { writeFile: (path, content) => fileApi.writeFile(path, content) },
+          session.id,
+          input.config,
+        );
+        // The webapp tool's refresh (the workspace may predate it) — plugin
+        // always, bootstrap script when the session holds a reserved port.
+        await writeWebappPlugin(
+          { writeFile: (path, content) => fileApi.writeFile(path, content) },
+          session.id,
+          input.config,
+        );
+        if (session.nextjsPort != null) {
+          await writeWebappBootstrapScript(
+            { writeFile: (path, content) => fileApi.writeFile(path, content) },
+            session.id,
+            input.config,
+            session.nextjsPort,
+          );
+        }
+        // The config rewrite owed any running instance a dispose: instances
+        // cache the directory config at creation, and the hash ack below marks
+        // the row synced — without this, an instance minted before a crashed
+        // provisioning attempt keeps serving the pre-rewrite config while
+        // every later reconcile/reload sees "not stale" and never corrects it
+        // (manager.regenerateSessionConfig's contract; OCR r2's medium).
+        if (session.opencodeSessionId) {
+          await gateway
+            .serveClientFor({ botId, directory })
+            ?.disposeInstance({ directory })
+            .catch(() => undefined);
+        }
+        await store.updateSession(session.id, {
+          ...(session.status !== "active" ? { status: "active" } : {}),
+          mcpConfigHash: managedContent.mcpConfigHash,
+          ...(hydrated ? { skillsHash: managedContent.skillsHash } : {}),
+        });
+      } else if (session.status !== "active") {
+        await store.updateSession(session.id, { status: "active" });
+      }
+      return;
+    }
+
+    if (!fileApi) {
+      throw new Error(`No sandbox configured for bot ${botId}`);
+    }
+
+    const llmConfig = await input.llmConfigFor(session);
+    const skillsHydrated = await pushManagedContent();
     await setupSessionWorkspace(
       {
         writeFile: (path, content) => fileApi.writeFile(path, content),
@@ -109,6 +234,16 @@ export async function ensureSessionReady(
         userName: input.userName,
         organizationInstructions: input.organizationInstructions,
         agentsTemplate: await agentsTemplate(),
+        webappPort: session.nextjsPort,
+        mcpRelayBaseUrl: input.mcpRelayBaseUrl,
+        managedContent: managedContent
+          ? {
+              connectableAppsSection: managedContent.connectableAppsSection,
+              companySearchSkillAvailable:
+                companySearchSkillAvailable(managedContent),
+              mcpServers: managedContent.mcpServers,
+            }
+          : null,
       },
     );
 
@@ -127,6 +262,16 @@ export async function ensureSessionReady(
       sessionId: session.id,
       toStatus: "active",
       opencodeSessionId,
+      // onyx finalize carries the sandbox row's hashes: the MCP fingerprint
+      // regardless (the config is written per session), the skills hash only
+      // when the push landed — a failed push leaves the row behind the content
+      // so the next reconcile/reload retries it.
+      ...(managedContent
+        ? { mcpConfigHash: managedContent.mcpConfigHash }
+        : {}),
+      ...(managedContent && skillsHydrated
+        ? { skillsHash: managedContent.skillsHash }
+        : {}),
     });
     if (!finalized) {
       throw new StaleProvisioningAttemptError(
@@ -144,10 +289,3 @@ export async function ensureSessionReady(
     throw error;
   }
 }
-
-/** A null-object file API: every probe fails, so "workspace exists" answers false. */
-const nullApi: Pick<AgentSandboxFileApi, "listFiles"> = {
-  async listFiles() {
-    throw new Error("no sandbox file api");
-  },
-};

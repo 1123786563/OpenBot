@@ -1,73 +1,33 @@
-# The Lago billing stack lives in docker-compose.lago.yml; the observability stack in
-# docker-compose.observability.yml; Casdoor and OpenConnector in docker-compose.services.yml;
-# the knowledge-base dependencies (qdrant, kb-redis, docreader) in docker-compose.kb.yml.
-# All of them share this project's name and `data` network — start this file first, then
-# whichever of those a deployment needs.
+# The main local stack. The optional stacks live in docker/compose/ — kb.yml, services.yml,
+# lago.yml, observability.yml — beside the support files they mount. Start this file first;
+# docs/compose.md carries the map, the start order and the --project-directory . invocation.
 services:
   postgres:
-    # Plain PostgreSQL plus pg_partman. The pgvector base image this service used to build on
-    # is gone: embeddings moved to Qdrant (the `qdrant` service below), the last Postgres-side
-    # vector column was dropped in migration 0010, and nothing here needs the extension
-    # anymore. The overlay that remains exists only for the `lago` profile's benefit — see
-    # docker/postgres-partman.Dockerfile for why the extension has to be in the server itself —
-    # and the data volume this stack already runs on is unaffected by the image swap.
-    # Named like the other built images, and pullable the same way.
+    # Stock PostgreSQL plus pg_partman, from docker/postgres-partman.Dockerfile — why that image
+    # still carries two extensions nothing here uses: docs/compose.md#the-postgres-image.
     build:
       context: .
       dockerfile: docker/postgres-partman.Dockerfile
     image: ${POSTGRES_IMAGE:-openbot-postgres:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
-    # Off the network the Bots are on, because a Bot's computer is on it and a Bot has a shell.
-    #
-    # With no `networks:` anywhere, Compose puts every service on one network with DNS by service
-    # name, so `agent-computer` could open `postgres:5432` and the credentials three lines below are
-    # in this file. That is the audit trail, the policy store and the agent tables, reachable from
-    # the one container whose whole job is to run what a Bot asks for. `agent-computer/src/shell.ts`
-    # says it plainly: isolation is the container's job, a shell can reach whatever the container
-    # can reach.
-    #
-    # `migrate` is the only service that reaches this by name, so the two of them are all that
-    # belongs here. Everything else that needs the database is outside this file: the API server
-    # runs on the host in local development and connects through the published port below.
+    # On `data`, off the Bots' default network — docs/compose.md#the-network-split has what that
+    # keeps away from the one container that runs a Bot's shell.
     environment:
       POSTGRES_DB: openbot
       POSTGRES_USER: openbot
       POSTGRES_PASSWORD: openbot
     ports:
-      # Loopback, like every other port in this file, and for the reason the network split above
-      # exists. Published on every interface, this is reachable from the Bot's computer at the
-      # container's default gateway, which is the host: taking `postgres` off that network removes
-      # the name and leaves the address. Proven from inside `agent-computer`, where the gateway on
-      # :5432 answered and began authenticating as `openbot` on `openbot`, with the password in
-      # this file. The server on the host still reaches it, because that is what loopback is.
-      # Both loopback addresses, because `localhost` is not one address.
-      #
-      # It resolves to ::1 and 127.0.0.1 in an order the platform decides, and a client that gets
-      # ::1 first does not fall back: Bun and Node both fail the connection outright rather than
-      # trying the other. Publishing on one of them makes `localhost` work on some machines and not
-      # others, for a reason nothing in the error mentions. Publishing on both is still loopback,
-      # so nothing here is reachable from another host.
+      # Loopback on both families; docs/compose.md#loopback-on-both-families says why one is not
+      # enough, and #the-network-split why the interface is loopback at all.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
       - "[::1]:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # Casdoor's role and database in the postgres this container owns. Read-only, and run by
-      # the image's own entrypoint on the first boot of a fresh data volume only; the volume
-      # this stack already runs on had it applied by hand, since init scripts do not run
-      # against existing data.
+      # Casdoor, Lago, OpenConnector and the kb domain: one role and one database each, read-only,
+      # first-boot-of-a-fresh-volume only — docs/compose.md#the-databases-on-this-postgres.
       - ./casdoor/init-db.sql:/docker-entrypoint-initdb.d/10-casdoor.sql:ro
-      # Lago's role and database on the postgres this stack already owns, in the spirit of
-      # Casdoor's mount above. Read-only, and run by the image's own entrypoint on the first
-      # boot of a fresh data volume only; the volume this stack already runs on had it applied
-      # by hand, since init scripts do not run against existing data.
       - ./docker/lago/init-db.sql:/docker-entrypoint-initdb.d/20-lago.sql:ro
-      # OpenConnector's role and database, the third of the three mounts above. Read-only,
-      # first-boot-only, hand-applied to the volume this stack already runs on — same story
-      # as Casdoor's and Lago's.
       - ./docker/openconnector/init-db.sql:/docker-entrypoint-initdb.d/30-openconnector.sql:ro
-      # The kb domain's role and database (metadata four tables only; vectors are in Qdrant,
-      # docker-compose.kb.yml). The kb service itself runs on the host (server/src/kb), but its
-      # database stays on this postgres. Same story as the three above.
       - ./docker/kb-mastra/init-db.sql:/docker-entrypoint-initdb.d/40-kb-mastra.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openbot -d openbot"]
@@ -81,16 +41,8 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    # Named, and pullable, for the same reason as agent-computer below: a release publishes this
-    # image, and a machine that can name it does not need a toolchain to build it. `pull_policy`
-    # is what decides between the two, because a service carrying a `build` section builds by
-    # default however its image is named. IMAGE_PULL_POLICY=missing makes it pull instead.
-    #
-    # Not a guarantee that nothing is built: a pull that fails falls back to building, silently,
-    # which is right for a developer and wrong for an installed OpenBot, where there is no
-    # toolchain and the honest answer is that the image could not be fetched. Anything shipping
-    # these images to a machine that cannot build them overrides the `build` section away rather
-    # than relying on this variable.
+    # Named and pullable like the other built images: docs/compose.md#image-names-and-pull-policy
+    # is what `pull_policy` decides here (and what it does not guarantee).
     image: ${SERVER_IMAGE:-openbot-server:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     command: ["bun", "x", "drizzle-kit", "migrate", "--config=drizzle.config.ts"]
@@ -108,8 +60,7 @@ services:
     build:
       context: .
       dockerfile: agent-computer/Dockerfile
-    # Tagged explicitly because the supervisor starts one computer per Bot from this image by name,
-    # and a Compose-derived name would change with the project.
+    # Tagged explicitly: the supervisor starts one computer per Bot from this image by name.
     image: ${COMPUTER_IMAGE:-openbot-agent-computer:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     ports:
@@ -117,34 +68,22 @@ services:
       # request control, and loopback keeps the surface off routed networks.
       - "127.0.0.1:${COMPUTER_PORT:-4100}:4100"
       - "[::1]:${COMPUTER_PORT:-4100}:4100"
-    # Per-Bot egress, in a file of its own because the names are not knowable here.
-    #
-    # `EGRESS_PROXY_<BOT>` is derived from the Bot's id, so there is no fixed list to write out the
-    # way COMPUTER_TOKEN is. Not `.env`: that holds the deployment's secrets, and this container
-    # drives a browser and runs a Bot's shell, so it is given what it needs and not the rest.
-    # Optional, because going out directly is the ordinary case and must still start.
+    # Per-Bot egress: the names are not knowable here, and it is not `.env` because this container
+    # must not receive the deployment's secrets — docs/compose.md#per-bot-egress.
     env_file:
       - path: ./egress.env
         required: false
     environment:
-      # Traces flow to Tempo only when the observability profile is up and this points at it;
+      # Traces flow to Tempo only when the observability stack is up and this points at it;
       # empty keeps the service recording locally without exporting (see shared/trace.ts).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${CONTAINER_OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # The secret every caller must present. The container refuses to start without it.
-      #
-      # The default matches the one scripts/start.sh applies when .env leaves this blank, which
-      # .env.example does. Without it the two paths disagree: the script exports a value and brings
-      # the stack up working, while a plain `docker compose up -d` -- which this project's own
-      # shutdown notes tell you to use -- hands the container an empty string instead. Reaches only
-      # a loopback-bound port; a deployment sets a real value in .env.
+      # Request control for a loopback-bound port; a deployment sets a real one. The default
+      # matches scripts/start.sh so `docker compose up -d` by hand configures the same stack.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-openbot-dev-computer-token}
-      # `headed` runs full Chromium behind the same streamed screen, so a person taking the wheel
-      # gets a browser sites treat like their ordinary desktop browser. Headless remains the default.
-      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headless}
-      # How many Bots may hold a running browser at once, and how long an untouched one is kept.
-      # A few hundred MB each, so on a deployment with many Bots these are the difference between
-      # a container that holds steady and one that is killed for memory. Defaults are 8 and 30
-      # minutes; closing a browser costs only a relaunch, because the profile is on the volume below.
+      # Headed by default: bot checks, Cloudflare's challenge among them, mind headless far more.
+      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headed}
+      # Browser budget and idle keepalive, defaults 8 and 30 minutes (a closed browser costs only
+      # a relaunch, because the profile is on the volume below).
       COMPUTER_MAX_BROWSERS: ${COMPUTER_MAX_BROWSERS:-}
       COMPUTER_BROWSER_IDLE_MS: ${COMPUTER_BROWSER_IDLE_MS:-}
     volumes:
@@ -174,6 +113,10 @@ services:
       # control and the published loopback keeps the surface off routed networks.
       - "127.0.0.1:${SANDBOX_PORT:-4300}:4300"
       - "[::1]:${SANDBOX_PORT:-4300}:4300"
+      # Craft's per-session dev servers bind OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_[START|END]
+      # inside; keep in step with the craft config — docs/compose.md#the-sandbox-port-range.
+      - "127.0.0.1:3010-3100:3010-3100"
+      - "[::1]:3010-3100:3010-3100"
     # Unprivileged, cap-less, no privilege escalation — the same posture Craft's Docker backend
     # provisions its per-user sandboxes with (docker_sandbox_manager.py).
     user: "1000:1000"
@@ -205,13 +148,8 @@ services:
       - openbot-sandbox-config:/config
     restart: unless-stopped
 
-  # OpenBot's own Redis — turn locks and event fan-out for the workshop — named to stay
-  # unmistakable from lago-redis, glitchtip-redis and kb-redis (docker-compose.*.yml), which
-  # belong to other stacks. Pure memory
-  # (`--save '' --appendonly no`): persisting it would carry lock state across restarts and
-  # resurrect locks whose owner process is long gone. On `data` beside postgres and never on
-  # `openbot_sandbox`: a sandbox container must not be able to resolve Redis. Port published to
-  # loopback only, like every other port in this file.
+  # OpenBot's own Redis: workshop turn locks and event fan-out, pure memory on purpose, on `data`
+  # (never `openbot_sandbox`) so a sandbox cannot resolve it — docs/compose.md#the-redis-instances.
   openbot-redis:
     image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     command: --port 6379 --save '' --appendonly no
@@ -229,15 +167,9 @@ services:
     networks:
       - data
 
-  # Bot identity is attested by SPIRE when these optional services run.
-  #
-  # SPIRE issues each computer an SVID based on the container labels set by the supervisor. A
-  # computer cannot claim another Bot's identity, and an unregistered container receives no identity.
-  #
-  # Optional. Without these two services the product runs without workload identity and reports that
-  # state explicitly.
-  # Fresh named volumes arrive owned by root, while SPIRE runs as uid 1000. This one-shot service
-  # assigns ownership without running the CA or agent as root.
+  # Optional SPIRE workload identity for the computers: each gets an SVID from the labels the
+  # supervisor sets, so one cannot claim another's identity. `spire-init` chowns the fresh volumes
+  # (they arrive owned by root) so neither CA nor agent runs as root — docs/compose.md#spire.
   spire-init:
     image: busybox:1.37
     command: ["sh", "-c", "chown -R 1000:1000 /server /agent"]
@@ -252,8 +184,7 @@ services:
       spire-init:
         condition: service_completed_successfully
     command: ["-config", "/opt/spire/conf/server.conf"]
-    # Comes back after a daemon restart like the other long-lived services; the CA state is the
-    # spire-server-data volume, so nothing is lost by the restart.
+    # The CA state is the spire-server-data volume; a restart loses nothing.
     restart: unless-stopped
     volumes:
       - ./spire/server.conf:/opt/spire/conf/server.conf:ro
@@ -269,11 +200,9 @@ services:
   spire-agent:
     image: ghcr.io/spiffe/spire-agent:1.15.1
     command: ["-config", "/opt/spire/conf/agent.conf", "-joinToken", "${SPIRE_JOIN_TOKEN:-openbot-dev-token}"]
-    # The agent's SVID persists in spire-agent-data, so a restart renews rather than rejoining and
-    # does not need the one-time token again.
+    # The SVID persists in spire-agent-data, so a restart does not need the token again.
     restart: unless-stopped
-    # The agent must see the caller's process to map the Workload API peer to a Docker container. The
-    # host PID namespace is required because the attestor reads the peer cgroup from that pid.
+    # pid: host — the attestor reads the peer cgroup from the host pid namespace.
     pid: host
     depends_on:
       spire-server:
@@ -287,11 +216,9 @@ services:
       # Read-only, and only so the docker workload attestor can see which container is asking.
       - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
 
-  # One computer per Bot.
-  #
-  # Each Bot gets a container with its own files, browser session and processes. The Docker socket is
-  # root-equivalent on the host, so only the supervisor holds it and only exposes Bot-level verbs.
-  # The SPIRE agent mounts the socket read-only to attest workloads and creates nothing.
+  # One computer per Bot: its own container, files, browser session and processes. The Docker
+  # socket is root-equivalent, so only the supervisor holds it —
+  # docs/compose.md#the-supervisor-and-the-engine-socket.
   supervisor:
     build:
       context: .
@@ -299,35 +226,29 @@ services:
     # Published by a release; see migrate above for what pull_policy decides.
     image: ${SUPERVISOR_IMAGE:-openbot-supervisor:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
-    # The same file, because this process does not read these itself: it forwards every EGRESS_PROXY
-    # key out of its own environment into each computer it creates, so it has to be given them first.
+    # Same file: this process does not read these; it forwards them into each computer it creates.
     env_file:
       - path: ./egress.env
         required: false
     environment:
       PORT: "4300"
-      # Traces flow to Tempo only when the observability profile is up and this points at it;
+      # Traces flow to Tempo only when the observability stack is up and this points at it;
       # empty keeps the service recording locally without exporting (see shared/trace.ts).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${CONTAINER_OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Shared with the API server. The Bot-level verb set is the boundary; this token keeps other
-      # services on the network from calling those verbs.
-      # Defaulted for the same reason as agent-computer's above: so `docker compose up -d` by hand
-      # configures the same stack scripts/start.sh does, rather than a silently unauthenticated one.
+      # Shared with the API server; the Bot-level verb set is the boundary. Defaulted so a plain
+      # `docker compose up -d` configures the same stack scripts/start.sh does.
       SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:-openbot-dev-supervisor-token}
       # Handed to every computer this creates, so the server and the computers share one secret.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-openbot-dev-computer-token}
-      # Forwarded into every per-Bot computer the supervisor creates.
-      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headless}
+      # Forwarded into every per-Bot computer the supervisor creates. Headed, as above.
+      COMPUTER_BROWSER_MODE: ${COMPUTER_BROWSER_MODE:-headed}
       COMPUTER_IMAGE: ${COMPUTER_IMAGE:-openbot-agent-computer:latest}
-      # Which deployment the computers it creates belong to, so two stacks on one Docker host never
-      # derive the same container and volume names for the same Bot.
+      # Scopes the names the computers it creates derive; two stacks on one host stay apart.
       COMPUTER_NAMESPACE: ${COMPUTER_NAMESPACE:-openbot}
-      # Empty by default because the API server runs on the host in local development and reaches
-      # computers by published loopback ports. Deployments running the server inside this network set
-      # the network name so computers publish no host ports.
+      # Empty keeps the host-port path (the API server runs on the host); set it for an in-Compose
+      # server, so computers publish no host ports.
       COMPUTER_NETWORK: ${COMPUTER_NETWORK:-}
-      # Set to runsc to run every computer under gVisor, when the host has it. Left unset each
-      # computer is an ordinary container and shares the host kernel.
+      # runsc runs every computer under gVisor where the host has it; unset shares the host kernel.
       COMPUTER_RUNTIME: ${COMPUTER_RUNTIME:-}
       # Identity, when SPIRE is part of this deployment. The supervisor registers an entry per Bot
       # and mounts the agent's socket into that Bot's computer so it can fetch its own SVID.
@@ -336,29 +257,15 @@ services:
       SPIRE_AGENT_ID: spiffe://openbot.local/spire/agent/join_token/${SPIRE_JOIN_TOKEN:-openbot-dev-token}
       SPIRE_AGENT_SOCKET_VOLUME: ${COMPOSE_PROJECT_NAME:-openbot}_spire-agent-socket
     ports:
-      # For the server on the host to ask for a Bot's computer.
-      #
-      # Loopback only, like the computer's own port and for a stronger version of the same reason.
-      # This process holds the Docker socket, so reaching it is root on the host through four verbs,
-      # and SUPERVISOR_TOKEN is a shared secret rather than a network boundary. Published without an
-      # interface in front of it this answered every address the host has.
-      #
-      # A deployment running the server inside this network does not use this mapping at all: it sets
-      # COMPUTER_NETWORK and reaches the supervisor as `supervisor:4300`, which is unaffected because
-      # the process still listens on every interface inside its own container.
+      # For the server on the host. Loopback only — this process holds the Docker socket and the
+      # token is a shared secret, not a network boundary. An in-Compose server sets COMPUTER_NETWORK
+      # and reaches `supervisor:4300` instead.
       - "127.0.0.1:${SUPERVISOR_PORT:-4500}:4300"
       - "[::1]:${SUPERVISOR_PORT:-4500}:4300"
     volumes:
-      # Read-only because this service only ever needs to ask; it is still root-equivalent, which is
-      # the whole reason nothing else here gets it.
-      #
-      # The source is a setting because the default is wrong on one of the engines this runs on.
-      # Docker puts its socket at this path, and so does Podman on macOS, where `podman machine`
-      # symlinks it to the rootless socket inside the virtual machine. Rootless Podman on Linux does
-      # not: the path is either absent or, with podman-docker installed, a symlink to
-      # /run/podman/podman.sock, which is the *rootful* socket and is not the one running. The
-      # supervisor then holds a dead socket and reports that it cannot reach Docker. Point
-      # ENGINE_SOCKET at $XDG_RUNTIME_DIR/podman/podman.sock there.
+      # Read-only, still root-equivalent. ENGINE_SOCKET exists because the default path is wrong on
+      # rootless Podman on Linux: point it at $XDG_RUNTIME_DIR/podman/podman.sock there
+      # (docs/compose.md#the-supervisor-and-the-engine-socket).
       - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       # To register an entry per Bot as each computer is created.
       - spire-server-socket:/tmp/spire-server/private
@@ -380,24 +287,20 @@ services:
     image: ${BOT_IMAGE:-openbot-agent-bot:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
     ports:
-      # Loopback, not every interface. The token is the boundary; this means an attacker needs to be
-      # on the machine before they can even try it. Nothing legitimate reaches a Bot from another
-      # host: the server calls it over localhost, and other containers use the compose network.
+      # Loopback: the token is the boundary, and nothing legitimate reaches a Bot off-machine.
       - "127.0.0.1:${BOT_PORT:-4200}:4200"
       - "[::1]:${BOT_PORT:-4200}:4200"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      # Traces flow to Tempo only when the observability profile is up and this points at it;
+      # Traces flow to Tempo only when the observability stack is up and this points at it;
       # empty keeps the service recording locally without exporting (see shared/trace.ts).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${CONTAINER_OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # Server sends this on every call to the managed Bot. It refuses to start without it.
       MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:-}
-      # Unset means OpenAI. Set, it is any endpoint speaking the same API, and BOT_MODEL is sent
-      # to it verbatim.
+      # Unset means OpenAI; set, any endpoint speaking the same API, with BOT_MODEL sent verbatim.
       OPENAI_BASE_URL: ${OPENAI_CONTAINER_BASE_URL:-${OPENAI_BASE_URL:-}}
-      # gpt-5.5, not the deployment default: this Bot writes /v1/chat/completions by hand, and
-      # gpt-5.6-* rejects function tools there unless reasoning is turned off. Its own variable, so
-      # a BOT_MODEL set for the framework Bot cannot silently take its tools away.
+      # gpt-5.5 on purpose: this Bot writes /v1/chat/completions by hand, where gpt-5.6-* rejects
+      # function tools unless reasoning is off. Its own variable, separate from the framework Bot's.
       BOT_MODEL: ${AGENT_BOT_MODEL:-gpt-5.5}
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"await fetch('http://localhost:4200/health')\""]
@@ -405,26 +308,15 @@ services:
       timeout: 5s
       retries: 5
 
-  # The harness somebody picked during setup, whichever one it is.
-  #
-  # ONE SERVICE RATHER THAN TWELVE, because a picked harness is a choice and not twelve branches in
-  # this file. The image and the port come from `.env`, which the shell writes from the pick, and
-  # both are facts about the image: each harness fixes its own port in its own Dockerfile.
-  #
-  # Behind a profile so a deployment that has picked nothing does not try to start it. Without that
-  # an unset `PICKED_HARNESS_IMAGE` becomes a request to pull the empty string, which fails the
-  # whole `compose up` rather than the one service nobody asked for.
-  #
-  # No `build:`, so `pull_policy` cannot be `build` here as it is elsewhere: this image is only ever
-  # published, never built from this tree.
+  # The harness somebody picked during setup. One service rather than twelve: the image and port
+  # come from `.env`, written by the pick. Profile-gated so nothing picked means nothing starts —
+  # and never built from this tree, so `pull_policy: missing` — docs/compose.md#the-picked-harness.
   agent-harness:
     profiles: ["harness"]
     image: ${PICKED_HARNESS_IMAGE:-}
     pull_policy: missing
     ports:
-      # Loopback, and on the image's own port on both sides. The server is a host process, so it
-      # reaches this the same way it reaches agent-bot: over the published port, not the compose
-      # network.
+      # Loopback, image's own port on both sides; the server reaches it over the published port.
       - "127.0.0.1:${PICKED_HARNESS_PORT:-4202}:${PICKED_HARNESS_PORT:-4202}"
       - "[::1]:${PICKED_HARNESS_PORT:-4202}:${PICKED_HARNESS_PORT:-4202}"
     environment:
@@ -433,9 +325,8 @@ services:
       # Deployment-owned tools use the same signed callback as agent-langgraph.
       OPENBOT_TOOL_URL: ${OPENBOT_TOOL_URL:-http://host.docker.internal:3001/api/agent-tools/call}
       AGENT_TOOL_TOKEN: ${AGENT_TOOL_TOKEN:-}
-      # Whichever the model screen chose. A harness reads the one its provider needs and ignores the
-      # rest, and the ones the choice did not imply are written empty rather than left stale: see
-      # `ModelCredential`.
+      # Whichever the model screen chose; the ones it did not imply are written empty (see
+      # `ModelCredential`).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_CONTAINER_BASE_URL:-${OPENAI_BASE_URL:-}}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -444,19 +335,14 @@ services:
       GOOGLE_GENERATIVE_AI_BASE_URL: ${GOOGLE_GENERATIVE_AI_BASE_URL:-}
       BOT_PROVIDER: ${BOT_PROVIDER:-openai}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
-      # A path into the mount below, set only when a ChatGPT plan was signed in to. The file is
-      # there either way; this variable is what tells the harness to read it.
+      # Set only when a ChatGPT plan was signed in; the file is there either way.
       CHATGPT_AUTH_FILE: ${CHATGPT_AUTH_FILE:-}
       BOT_MODEL: ${BOT_MODEL:-gpt-5.5}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # A bind mount, not a named volume, and read-write on purpose. The signed-in plan's access
-      # token expires within the hour and the harness renews it, so the renewal has to land back on
-      # this machine or every restart would replay a refresh token that had already been spent.
-      #
-      # The provider writes by atomically replacing the file with a sibling temporary file, so the
-      # mount has to be the containing directory rather than the file mount point.
+      # A bind mount on the containing directory, read-write: the hourly-renewed token must land
+      # back here, and the provider replaces the file atomically (a file mount point would break).
       - ./.langchain:/root/.langchain
 
   # The same Bot behavior on a framework, exposed as another AG-UI endpoint and registry row.
@@ -483,18 +369,13 @@ services:
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GOOGLE_GENERATIVE_AI_BASE_URL: ${GOOGLE_GENERATIVE_AI_BASE_URL:-}
-      # Unset, this Bot takes the spec file's row for its model rather than this line
-      # substituting gpt-5.5 whatever BOT_PROVIDER named — a provider other than OpenAI was
-      # handed that substitute and then failed at its own vendor on it. The file's OpenAI row is
-      # the same gpt-5.5 as before, so an OpenAI deployment answers on the model it always did;
-      # BOT_MODEL still wins when it is set, and a 5.6 tier named there switches the Responses
-      # API on by itself below.
+      # Unset takes the spec file's row for the chosen provider instead of substituting gpt-5.5;
+      # set wins, and a 5.6 tier named there switches the Responses API on by itself below.
       BOT_MODEL: ${BOT_MODEL:-}
       BOT_RESPONSES_API: ${BOT_RESPONSES_API:-false}
       # How hard it thinks, on a model that reasons. Empty leaves the provider's own default.
       BOT_REASONING_EFFORT: ${BOT_REASONING_EFFORT:-}
-      # Where this Bot runs a tool: back through the deployment that granted it, never at the vendor.
-      # `host.docker.internal` because the API server runs on the host, not in this network.
+      # Tools run back through the deployment that granted them, never at the vendor.
       OPENBOT_TOOL_URL: ${OPENBOT_TOOL_URL:-http://host.docker.internal:3001/api/agent-tools/call}
       AGENT_TOOL_TOKEN: ${AGENT_TOOL_TOKEN:-}
     extra_hosts:
@@ -505,14 +386,39 @@ services:
       timeout: 5s
       retries: 5
 
-  # The Go runtime candidate (docs/superpowers/plans/2026-10-09-enterprise-ai-01-runtime.md):
-  # a verification-candidate execution runtime the ENTERPRISE entry's run gateway dials.
-  # Off by default — the `go-runtime` profile only starts when asked for:
-  #   docker compose --profile go-runtime up go-runtime
-  # It serves the enterprise wire (three-header authenticated execution/cancel), validates
-  # identity against the enterprise entry's /internal/enterprise/v1/runtime/validate, and calls
-  # governed tools back through /internal/enterprise/v1/tool-invocations. Nothing here touches
-  # the legacy deployment's bot registry.
+  # The trpc-agent-go Bot: the same Bot contract on a Go framework, registered from the workbench
+  # like any bring-your-own agent. Not the enterprise go-runtime candidate, which is separate.
+  agent-trpc:
+    build:
+      # Repository root: the default model lives in shared/model-providers.json, copied into the image.
+      context: .
+      dockerfile: agent-trpc/Dockerfile.bot
+    image: ${AGENT_TRPC_IMAGE:-openbot-agent-trpc:latest}
+    pull_policy: ${IMAGE_PULL_POLICY:-build}
+    ports:
+      # Loopback, for the same reason as agent-bot above.
+      - "127.0.0.1:${AGENT_TRPC_PORT:-4204}:4204"
+      - "[::1]:${AGENT_TRPC_PORT:-4204}:4204"
+    environment:
+      # Same server-to-Bot request boundary as agent-bot above.
+      MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # AGENT_TRPC_BASE_URL is this Bot's own override: point it at GLM (or any OpenAI-compatible
+      # endpoint) without moving every other Bot off the shared chain.
+      OPENAI_BASE_URL: ${AGENT_TRPC_BASE_URL:-${OPENAI_CONTAINER_BASE_URL:-${OPENAI_BASE_URL:-}}}
+      # The bots.agent-trpc row's gpt-5.5 unless a deployment names its own.
+      BOT_MODEL: ${AGENT_TRPC_MODEL:-}
+    healthcheck:
+      # Exec-form: the image is distroless, so the binary probes itself.
+      test: ["CMD", "/agent-trpc-bot", "-healthcheck", "http://localhost:4204/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # The Go runtime candidate: a verification-candidate execution runtime the ENTERPRISE entry's
+  # run gateway dials. Off by default; starts with `docker compose --profile go-runtime up
+  # go-runtime`. Loopback only — the host-run enterprise entry is the sole caller
+  # (docs/compose.md#the-go-runtime).
   go-runtime:
     profiles: ["go-runtime"]
     build:
@@ -543,17 +449,13 @@ services:
       - "host.docker.internal:host-gateway"
 
 networks:
-  # The database and the services that reach it by name. Nothing a Bot can reach is on it.
-  #
-  # A deployment that runs the API server inside Compose rather than on the host puts that service
-  # on both this and `default`, which is the one place the two are meant to meet.
+  # Database and the services that reach it by name; nothing a Bot can reach is on it. An
+  # in-Compose API server joins this and `default` — docs/compose.md#the-network-split.
   data:
-  # Everything else, which is where `default` already put it. Named here only so that adding a
-  # service without a `networks:` key keeps landing beside the Bots rather than beside the database.
+  # Everything else — where Compose's default already put it; named so a service added without a
+  # `networks:` key keeps landing beside the Bots rather than beside the database.
   default:
-  # Dedicated bridge: the sandbox resolves nothing of the compose stack by service name
-  # (postgres/redis/minio unreachable), while outbound internet — the model endpoint — still
-  # works. A containerized API server joins this network too when it exists.
+  # The sandbox's own bridge: nothing of the stack resolves by name here, the internet still does.
   openbot_sandbox:
 
 volumes:

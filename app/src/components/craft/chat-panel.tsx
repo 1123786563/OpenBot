@@ -1,9 +1,15 @@
-import { IconClock } from "@tabler/icons-react";
+import {
+  IconChartBar,
+  IconClock,
+  IconLayout,
+  IconTool,
+  IconWand,
+} from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { decideCraftApproval, listLiveApprovals } from "@/lib/craft/client";
+import { decideCraftApproval, generateSessionName, listLiveApprovals } from "@/lib/craft/client";
 import {
   craftKeys,
   craftMessagesQueryOptions,
@@ -34,7 +40,16 @@ import { SubagentView } from "./subagent-view";
  * (`viewedSubagentId`, onyx's viewedSubagentSessionId minus the cross-fade): the `task` tool
  * card's click-through sets it, the view's return button clears it, and the composer is hidden
  * while a subagent is on screen so the pane is unambiguously read-only.
+ *
+ * The first-run moment: a fresh session's empty transcript is the product's front door, so it
+ * carries the craft glyph, one sentence of what happens here, and three suggestion pills that
+ * pre-fill (never send) the composer — the person keeps the trigger.
  */
+const SUGGESTIONS = [
+  { icon: IconLayout, key: "chat.suggest.landing" },
+  { icon: IconTool, key: "chat.suggest.tool" },
+  { icon: IconChartBar, key: "chat.suggest.report" },
+] as const;
 export function ChatPanel({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
@@ -63,6 +78,10 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
   // Focus on a sleeping sandbox is the wake signal (onyx's useWakeOnIntent): the composer's
   // textarea onFocus forces the session reload whose server side restores the snapshot.
   const wakeOnIntent = useWakeOnIntent(sessionId);
+  // The suggestion pills' half of the composer seam: they write the draft and bump the focus
+  // signal; the composer owns the textarea, so the fill lands ready to edit, never sent.
+  const [draft, setDraft] = useState("");
+  const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 
   // The subagent view is session-scoped: switching sessions mid-mount (the route keeps this
   // panel alive) drops the viewer back to the conversation — the render-time reset, so no
@@ -119,7 +138,26 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     content: string,
     attachments?: { name: string; path: string; mime_type: string }[],
   ) => {
-    await streamMessage(content, attachments);
+    // onyx's naming trigger, FE-shaped: an unnamed session is titled by the LLM once its
+    // first user message is durable. onSent fires after send-message persisted the row (so
+    // the naming read always sees it), and the generation races the turn — the sidebar's
+    // title lands in seconds, not at turn end. A session the person already named is never
+    // re-titled, and a failed generation stays silent: naming is best-effort and the next
+    // send of an unnamed session retries it.
+    const unnamed = session.data?.name == null;
+    await streamMessage(content, attachments, () => {
+      if (!unnamed) return;
+      void generateSessionName(sessionId)
+        .then(async () => {
+          await queryClient.invalidateQueries({
+            queryKey: craftKeys.list(),
+          });
+          await queryClient.invalidateQueries({
+            queryKey: craftKeys.session(sessionId),
+          });
+        })
+        .catch(() => undefined);
+    });
     await queryClient.invalidateQueries({
       queryKey: craftKeys.messages(sessionId),
     });
@@ -172,7 +210,39 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
           {messages.isPending && items.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("chat.loading")}</p>
           ) : items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("chat.empty")}</p>
+            <div className="flex h-full flex-col items-center justify-center gap-6 px-6 py-10 text-center">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card shadow-sm">
+                <IconWand className="size-5 text-muted-foreground" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {t("chat.emptyTitle")}
+                </h2>
+                <p className="mx-auto max-w-[52ch] text-sm leading-relaxed text-muted-foreground">
+                  {t("chat.emptyHint")}
+                </p>
+              </div>
+              <div className="flex max-w-[60ch] flex-wrap items-center justify-center gap-2">
+                {SUGGESTIONS.map(({ icon: Icon, key }, index) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className="flex animate-in fade-in slide-in-from-bottom-1 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs text-muted-foreground transition-all duration-150 hover:-translate-y-0.5 hover:border-input hover:text-foreground hover:shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    style={{
+                      animationDelay: `${index * 50}ms`,
+                      animationFillMode: "backwards",
+                    }}
+                    onClick={() => {
+                      setDraft(t(key));
+                      setComposerFocusSignal((n) => n + 1);
+                    }}
+                  >
+                    <Icon className="size-3.5" />
+                    {t(key)}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : (
             <ul className="space-y-3">
               {items.map((item) => (
@@ -231,6 +301,9 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
           onSend={handleSend}
           onInterrupt={interruptStreaming}
           onInputFocus={wakeOnIntent}
+          draft={draft}
+          onDraftChange={setDraft}
+          focusSignal={composerFocusSignal}
         />
       )}
     </div>

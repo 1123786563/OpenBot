@@ -4,12 +4,88 @@
  * Placeholder substitution with a deliberately ordered pipeline: `{{ORGANIZATION_INSTRUCTIONS_SECTION}}`
  * is replaced LAST so admin-authored text containing literal `{{…}}` tokens (copy-pasted from
  * the base template) is never expanded. The template is the onyx original verbatim except for
- * the ported infrastructure wording (egress-proxy Hard rules, the webapp tool entry) and the
- * cut sections OpenBot has no counterpart for (connectable apps, company-search) — see
- * docs/craft-port/port-parity.md.
+ * the ported infrastructure wording (egress-proxy Hard rules, the webapp tool entry — Task 4's
+ * restore) and the one environment fact that cannot be true in OpenBot (the "numeric" app-id
+ * qualifier: OpenBot connector ids are string keys).
+ *
+ * The company-knowledge section is the one deliberate cut that remains: onyx backs its
+ * `company-search` skill with an in-sandbox CLI over the permissioned corpus, and OpenBot has
+ * no backed delivery path from the craft sandbox to its knowledge domain yet — a prompt must
+ * not promise a missing tool. `companySearchSkillAvailable` splices the pinned, byte-exact
+ * onyx section back in the day the managed-content seam delivers the skill.
  */
 
+import { getLogger } from "../../../shared/logger";
 import type { CraftConfig } from "./config";
+import type { AgentSandboxFileApi } from "./sandbox-gateway";
+
+const logger = getLogger("server");
+
+/**
+ * The attachments section appended to AGENTS.md when the session's attachments/
+ * directory is non-empty — onyx `ATTACHMENTS_SECTION_CONTENT`
+ * (sandbox/util/agent_instructions.py:46-75), verbatim including the heading.
+ */
+export const ATTACHMENTS_SECTION_CONTENT = `## Attachments (PRIORITY)
+
+The \`attachments/\` directory contains files that the user has explicitly
+uploaded during this session. **These files are critically important** and
+should be treated as high-priority context.
+
+### Why Attachments Matter
+
+- The user deliberately chose to upload these files, signaling they are directly relevant to the task
+- These files often contain the specific data, requirements, or examples the user wants you to work with
+- They may include spreadsheets, documents, images, or code that should inform your work
+
+### Required Actions
+
+**At the start of every task, you MUST:**
+
+1. **Check for attachments**: List the contents of \`attachments/\` to see what the user has provided
+2. **Read and analyze each file**: Thoroughly examine every attachment to understand its contents and relevance
+3. **Reference attachment content**: Use the information from attachments to inform your responses and outputs
+
+### File Handling
+
+- Uploaded files may be in various formats: CSV, JSON, PDF, images, text files, etc.
+- For spreadsheets and data files, examine the structure, columns, and sample data
+- For documents, extract key information and requirements
+- For images, analyze and describe their content
+- For code files, understand the logic and patterns
+
+**Do NOT ignore user uploaded files.** They are there for a reason and likely
+contain exactly what you need to complete the task successfully.`;
+
+const ATTACHMENTS_SECTION_HEADING = "## Attachments (PRIORITY)";
+
+/**
+ * onyx's post-write step (docker_sandbox_manager.py:1585-1589): when the session's
+ * attachments/ directory is non-empty, AGENTS.md gains "\n\n" + ATTACHMENTS_SECTION_CONTENT.
+ * Idempotent — an AGENTS.md already carrying the heading is left alone. An absent
+ * attachments directory (the gateway's 404) or an absent AGENTS.md means "nothing to do",
+ * not an error. Returns whether the section was appended.
+ */
+export async function appendAttachmentsSectionIfMissing(
+  api: Pick<AgentSandboxFileApi, "listFiles" | "readFile" | "writeFile">,
+  directory: string,
+  attachmentsDir = "attachments",
+): Promise<boolean> {
+  let entries: string[];
+  try {
+    entries = await api.listFiles(`${directory}/${attachmentsDir}`);
+  } catch {
+    return false;
+  }
+  if (entries.length === 0) return false;
+  const path = `${directory}/AGENTS.md`;
+  const current = await api.readFile(path);
+  if (current === null || current.includes(ATTACHMENTS_SECTION_HEADING)) {
+    return false;
+  }
+  await api.writeFile(path, `${current}\n\n${ATTACHMENTS_SECTION_CONTENT}`);
+  return true;
+}
 
 /** Provider display name mapping (onyx parity). */
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
@@ -35,6 +111,63 @@ function titleCase(value: string): string {
     .join(" ");
 }
 
+/** One org app the user could still connect (OpenBot: a connector server row). */
+export type ConnectableApp = {
+  /** The id the agent will pass to the `connect_app` tool (onyx: ExternalApp.id). */
+  id: string;
+  name: string;
+};
+
+/**
+ * Render the connectable-apps bullet list — org apps the user hasn't set up yet
+ * (onyx `build_connectable_apps_list`). The heading and explanatory prose live in
+ * AGENTS.template.md; this only supplies the dynamic `{{CONNECTABLE_APPS_LIST}}`
+ * value, with a fallback line when there are no apps. Already-connected apps
+ * never reach this function — the app source filters them (onyx
+ * `get_connectable_apps_for_user`).
+ */
+export function buildConnectableAppsList(
+  apps: Iterable<ConnectableApp>,
+): string {
+  const entries = [...apps]
+    .map((app) => [app.id, app.name] as const)
+    .sort(([leftId, leftName], [rightId, rightName]) =>
+      leftId < rightId
+        ? -1
+        : leftId > rightId
+          ? 1
+          : leftName < rightName
+            ? -1
+            : leftName > rightName
+              ? 1
+              : 0,
+    );
+  if (entries.length === 0) {
+    return "No connectable apps available.";
+  }
+  return entries
+    .map(([id, name]) => `- External app ID \`${id}\`: **${name}**`)
+    .join("\n");
+}
+
+/**
+ * onyx's Company knowledge section, byte-exact (`AGENTS.template.md:81-88`) —
+ * spliced in at onyx's position only when the managed-content seam delivers a
+ * backed company-search skill. Note the single leading space on " or label…"
+ * (onyx verbatim).
+ */
+export const COMPANY_KNOWLEDGE_SECTION =
+  "## Company knowledge\n\n" +
+  "When the request relates to the user's work, use the `company-search` skill to search their\n" +
+  "permissioned company corpus. Reformulate and re-search if results are weak, and stop once you\n" +
+  "can answer. Cite every source by title and URL.\n" +
+  "\n" +
+  "If results are empty or weak, say so and name what you searched. Then ask the user for guidance,\n" +
+  " or label any non-grounded content as general knowledge.";
+
+/** Where the company-knowledge section sits in onyx's template: before Files. */
+const COMPANY_KNOWLEDGE_ANCHOR = "## Files & attachments";
+
 function buildOrganizationInstructionsSection(
   instructions: string | null,
 ): string {
@@ -55,6 +188,16 @@ export type GenerateAgentInstructionsInput = {
   disabledTools?: readonly string[] | null;
   userName?: string | null;
   organizationInstructions?: string | null;
+  /**
+   * The pre-rendered connectable-apps list (onyx passes `build_connectable_apps_list`'s
+   * output; the default answers for a deployment whose app source is empty).
+   */
+  connectableAppsSection?: string | null;
+  /**
+   * Whether a backed company-search skill ships in the managed fileset — gates the
+   * Company knowledge section. False while that skill has no backed implementation.
+   */
+  companySearchSkillAvailable?: boolean;
 };
 
 /**
@@ -79,7 +222,29 @@ export function generateAgentInstructions(
     disabledToolsSection = `\n**Disabled Tools**: ${input.disabledTools.join(", ")}\n`;
   }
 
-  let content = input.template;
+  let template = input.template;
+  if (input.companySearchSkillAvailable) {
+    const at = template.indexOf(COMPANY_KNOWLEDGE_ANCHOR);
+    if (at >= 0) {
+      template =
+        template.slice(0, at) +
+        COMPANY_KNOWLEDGE_SECTION +
+        "\n\n" +
+        template.slice(at);
+    } else {
+      // The skill ships but the anchor is gone: the splice silently no-ops and the
+      // agent would be told about a section its prompt never shows. Observable,
+      // not swallowed (the template is deployment-controlled bytes).
+      logger.warn(
+        "[craft] AGENTS template lacks the '## Files & attachments' anchor; the Company knowledge section is not rendered",
+      );
+    }
+  }
+
+  const connectableAppsSection =
+    input.connectableAppsSection ?? "No connectable apps available.";
+
+  let content = template;
   content = content.replaceAll("{{USER_CONTEXT}}", userContext);
   content = content.replaceAll(
     "{{LLM_PROVIDER_NAME}}",
@@ -103,6 +268,10 @@ export function generateAgentInstructions(
   content = content.replaceAll(
     "{{DISABLED_TOOLS_SECTION}}",
     disabledToolsSection,
+  );
+  content = content.replaceAll(
+    "{{CONNECTABLE_APPS_LIST}}",
+    connectableAppsSection,
   );
   // Last, so admin-authored text containing literal {{...}} tokens is never expanded.
   content = content.replaceAll(

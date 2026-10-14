@@ -47,14 +47,22 @@
     "optionPublic": "公开"
   },
   "access": {
-    "loadError": "无法加载这位同事可触达的内容。",
-    "intro": "这位同事工作时可触达的内容。由管理员在“插件”屏幕授予；未列出的内容在被调用时会被拒绝。",
-    "nothingGranted": "尚未授予任何内容",
+    "loadError": "无法加载此 Bot 可触达的内容。",
+    "intro": "此 Bot 工作时可触达的内容。未列出的内容在被调用时会被拒绝。",
+    "nothingGranted": "尚未授予任何内容。管理员会在“插件”屏幕授予应用；在此之前，此 Bot 只能对话，别无其他。",
     "nothingGrantedDescription": "管理员会在“插件”屏幕授予连接器和技能。在此之前，这位同事只能对话，别无其他。",
     "andMore": " 等 {{remaining}} 项",
     "toolSingular": "个工具",
     "toolPlural": "个工具",
-    "skill": "技能"
+    "skill": "技能",
+    "granted": "已授予",
+    "skills": {
+      "title": "你的技能",
+      "intro": "此 Bot 携带的技能会在它的输入框中以 /名称 的形式提供。",
+      "loadError": "无法加载你的技能。",
+      "empty": "你还没有编写过技能。",
+      "writeOne": "写一个"
+    }
   },
   "connection": {
     "builtIn": "运行在本部署自带的 Bot 上。无需连接，也无需认证：它的工具调用由部署自身的凭据承担。",
@@ -63,30 +71,74 @@
   "manage": {
     "pinned": "已置顶",
     "pin": "置顶",
-    "pinnedDescription": "位于你的 Agent 列表顶部。对其他任何人都没有影响。",
-    "pinDescription": "将它保持在你的 Agent 列表顶部。对其他任何人都没有影响。",
+    "pinnedDescription": "位于你的 Bots 列表顶部。其他任何人的列表都不会改变。",
+    "pinDescription": "将它保持在你的 Bots 列表顶部。其他任何人的列表都不会改变。",
     "unpinning": "取消置顶中…",
     "pinning": "置顶中…",
     "unpin": "取消置顶",
     "hidden": "已隐藏",
     "hide": "隐藏",
-    "hiddenDescription": "已从你的 Agent 列表中隐藏。对其他任何人都没有影响。",
-    "hideDescription": "将它从你的 Agent 列表中移除。对其他任何人都没有影响。",
+    "hiddenDescription": "折叠在你 Bots 列表的“已隐藏”之下。其他任何人的列表都不会改变。",
+    "hideDescription": "将它从你的 Bots 列表中移除。其他任何人的列表都不会改变。",
     "unhiding": "取消隐藏中…",
     "hiding": "隐藏中…",
     "unhide": "取消隐藏",
     "duplicate": "创建副本",
-    "duplicateDescription": "属于你自己的副本，没有密钥，也没有频道。",
+    "duplicateDescription": "属于你自己的副本，没有密钥，也没有对话。",
     "duplicating": "创建副本中…",
     "delete": "删除",
     "cannotBeUndone": "此操作无法撤销。",
     "deleteTitle": "删除 {{name}}？",
-    "deleting": "删除中…"
+    "deleting": "删除中…",
+    "title": "管理",
+    "assignedPinned": "由管理员分配给你，因此它会保持在你的 Bots 列表顶部。",
+    "assignedHidden": "由管理员分配给你，因此无法隐藏。",
+    "cancel": "取消",
+    "deleteForEveryone": "对所有人生效。此操作无法撤销。",
+    "resetEntry": {
+      "title": "重置",
+      "description": "删除你与它的对话、它为你记住的内容，以及它的计划任务。你会先看到将删除什么。"
+    },
+    "reset": {
+      "title": "重置 {{name}}？",
+      "description": "这会删除 {{name}} 与你之间的内容，且仅限与你之间。不会影响其他任何人的对话或数据。此操作无法撤销。",
+      "countError": "无法统计重置将删除的内容。",
+      "done": "完成。{{name}} 与你重新开始。",
+      "nothingToDelete": "没有属于你的内容可删除。",
+      "willDelete": "这将删除：",
+      "sharedKept_one": "{{count}} 段对话与其他人或 Bot 共享，将被保留。",
+      "sharedKept_other": "{{count}} 段对话与其他人或 Bot 共享，将被保留。",
+      "ownMemoriesKept": "你自己直接告诉 Bot 的那些记忆会被保留。",
+      "close": "关闭",
+      "cancel": "取消",
+      "resetting": "重置中…",
+      "deleteAndReset": "删除并重置"
+    },
+    "resetItems": {
+      "conversations_one": "{{count}} 段对话",
+      "conversations_other": "{{count}} 段对话",
+      "memorySources_one": "{{count}} 个记忆来源",
+      "memorySources_other": "{{count}} 个记忆来源",
+      "memories_one": "{{count}} 条导入的记忆",
+      "memories_other": "{{count}} 条导入的记忆",
+      "routines_one": "{{count}} 个例程",
+      "routines_other": "{{count}} 个例程",
+      "responsibilities_one": "{{count}} 项职责",
+      "responsibilities_other": "{{count}} 项职责",
+      "followUps_one": "{{count}} 个计划的跟进",
+      "followUps_other": "{{count}} 个计划的跟进",
+      "formedMemories_one": "{{count}} 条它形成的记忆",
+      "formedMemories_other": "{{count}} 条它形成的记忆",
+      "backgroundResearch_one": "{{count}} 项后台调研",
+      "backgroundResearch_other": "{{count}} 项后台调研",
+      "standingApprovals_one": "{{count}} 项长期许可",
+      "standingApprovals_other": "{{count}} 项长期许可"
+    }
   },
   "callback": {
     "title": "工具回调",
     "hasToken": "这位同事持有一份凭据，因此可以使用已授予它的工具。轮换会替换它，旧凭据会立即失效。",
-    "noToken": "这位同事没有凭据，因此可以对话，但无法使用已授予它的任何工具。生成一份并放入该 Agent 的配置中。",
+    "noToken": "这位同事没有凭据，因此可以对话，但无法使用已授予它的任何工具。生成一份并放入该 Bot 的配置中。",
     "copyNow": "请立即复制。它不会再次显示。",
     "hashNote": "部署只保留它的哈希值，因此这里的任何界面都无法再次向你显示它。",
     "done": "完成",
@@ -118,15 +170,15 @@
       "builtinTitle": "内置",
       "builtinDescription": "运行在本部署自带的 Bot 上。无需托管或连接——创建即就绪。",
       "managedTitle": "托管",
-      "managedDescription": "运行在你自己托管的 Agent 上，通过 AG-UI 通信。本服务器会在每次运行时拨接你的端点。",
+      "managedDescription": "运行在你自己托管的 Bot 上，通过 AG-UI 通信。本服务器会在每次运行时拨接你的端点。",
       "unavailable": "此处不可用：本部署没有自带 Bot 供同事运行。",
       "chooseError": "请选择这位同事在哪里运行。",
-      "endpointLabel": "Agent 端点",
+      "endpointLabel": "Bot 端点",
       "testing": "测试中…",
       "test": "测试",
       "answered": "它已应答：{{events}}",
-      "aguiHint": "任何支持 AG-UI 的都可以。本服务器会拨接你的 Agent，因此你自己机器上的 Agent 必须能从这里访问到。",
-      "keyLabel": "该 Agent 的密钥（可选）",
+      "aguiHint": "任何支持 AG-UI 的都可以。本服务器会拨接你的 Bot，因此你自己机器上的 Bot 必须能从这里访问到。",
+      "keyLabel": "该 Bot 的密钥（可选）",
       "keyNote": "在每次运行时作为 <code>Authorization</code> 标头发送，并保存在凭据保险库中。"
     }
   },
@@ -134,11 +186,11 @@
     "title": "它可求助的 Bot",
     "grantedOf": "{{granted}} / {{total}}",
     "intro": "是这位 Bot 可以求助谁，而不是谁可以求助它。被求助的 Bot 所说的内容会回到发起求助的对话中，经转述并注明来源。",
-    "switchedOff": "本部署已关闭此功能",
+    "switchedOff": "本部署已关闭此功能。",
     "switchedOffDescription": "这些授权会被保留，但在 Bot 之间的工作转交重新开启之前都不会生效。",
-    "cannotGrant": "这位同事无法转交工作",
+    "cannotGrant": "这位同事无法转交工作。",
     "cannotGrantDescription": "本部署没有地方记录它可以向哪些 Bot 转交工作，因此无法为它授予。它仍可被有此能力的 Bot 求助。",
-    "noOthers": "这里还没有其他 Bot",
+    "noOthers": "这里还没有其他 Bot。",
     "noOthersDescription": "当本部署有更多 Bot 时，这里就是允许它求助它们的地方。",
     "hiddenFromRoster": "{{title}} · 已从你的名册中隐藏",
     "letAsk": "允许此 Bot 求助 {{name}}",
@@ -181,7 +233,7 @@
     "dismiss": "忽略",
     "none": "现在没有建议。开启了后台调研的 Bot 会在这里提出下一步建议。",
     "title": "后台调研",
-    "intro": "你选择加入的 Bot 会浏览它已能读取的应用，形成供你审阅的记忆，并提出下一步建议。它只能读取：不能发送消息、不能更改应用中的任何内容，也不能使用浏览器或电脑。",
+    "intro": "只要你开启只与这个 Bot 的对话，它就会默认开启：每四小时浏览一次它已能读取的应用，形成供你审阅的记忆，并提出下一步建议。它只能读取：不能发送消息、不能更改应用中的任何内容，也不能使用浏览器或电脑。关闭或移除后会保持该状态。",
     "botLabel": "Bot",
     "chooseBot": "选择 Bot",
     "deliverTo": "将建议送达",
@@ -198,6 +250,11 @@
     "turnOff": "关闭",
     "turnOn": "开启",
     "remove": "移除",
+    "researchAction": "开启调研",
+    "offMessage": "后台调研已关闭。",
+    "dialogDescription": "它按计划读取，并把建议送达它所在的一个频道。",
+    "cancel": "取消",
+    "everyMinutes": "每 {{minutes}} 分钟",
     "interval": {
       "hour": "每小时",
       "fourHours": "每 4 小时",
@@ -207,27 +264,41 @@
   },
   "roster": {
     "pinned": "已置顶",
-    "yourAgents": "你的 Agents",
-    "newAgent": "新建 Agent",
-    "allPinned": "你的 Agents 都已置顶在上方。",
-    "loadError": "无法加载你的 Agents。",
-    "noneCreated": "你还没有创建任何 Agent。",
-    "explore": "探索 Agents",
-    "sharedAllPinned": "与你共享的 Agents 都已置顶在上方。",
-    "sharedLoadError": "无法加载与你共享的 Agents。",
-    "noneShared": "还没有人与你共享 Agent。",
-    "hidden": "已隐藏"
+    "yourAgents": "你的 Bots",
+    "newAgent": "新建 Bot",
+    "allPinned": "你的 Bots 都已置顶在上方。",
+    "loadError": "无法加载你的 Bots。",
+    "noneCreated": "你还没有创建任何 Bot。",
+    "explore": "探索 Bots",
+    "sharedAllPinned": "与你共享的 Bots 都已置顶在上方。",
+    "sharedLoadError": "无法加载与你共享的 Bots。",
+    "noneShared": "还没有人与你共享过 Bot。",
+    "hidden": "已隐藏",
+    "needsYou": "需要你",
+    "yours": "你的",
+    "sharedWithYou": "与你共享的",
+    "allWaiting": "你的 Bots 都在“需要你”之下。",
+    "noneYet": "你还没有自己的 Bot。",
+    "show": "显示",
+    "hide": "隐藏",
+    "hiddenDescription_one": "{{count}} 个被你移出此列表的 Bot。其他任何人的列表都没有改变。",
+    "hiddenDescription_other": "{{count}} 个被你移出此列表的 Bot。其他任何人的列表都没有改变。",
+    "paused": "已暂停"
   },
   "memory": {
     "title": "记忆",
     "description": "查看你的 Bots 记住了什么，并选择哪些已连接的应用可以提供事实。",
     "rememberFact": "记住一条事实",
+    "reachesAll": "它会到达你的每一个 Bot。",
     "factLabel": "你想让你的 Bots 知道的内容",
     "factPlaceholder": "我偏好把会议安排在上午。",
     "remember": "记住",
     "yourMemories": "你的记忆",
     "loadingMemories": "正在加载记忆…",
     "noMemories": "你还没有任何记忆。",
+    "yourBot": "你的 Bot",
+    "keptInIntelligence": "保留在 Intelligence 中",
+    "cancel": "取消",
     "card": {
       "disabled": "已禁用",
       "formedAwaiting": "由你的 Bot 形成 · 待审阅",
@@ -241,11 +312,18 @@
       "confirm": "确认",
       "disable": "禁用",
       "enable": "启用",
-      "forget": "忘记"
+      "forget": "忘记",
+      "formedBy": "由 {{name}} 形成",
+      "awaitingReview": " · 待审阅",
+      "edit": "编辑",
+      "editTitle": "编辑记忆",
+      "memoryLabel": "记忆",
+      "cancel": "取消",
+      "useAria": "使用这条记忆：{{content}}"
     },
     "sources": {
       "title": "已连接的应用来源",
-      "description": "选择让 Bot 读取它已可访问的某个应用。启用的来源每 15 分钟刷新一次，其事实对选定的 Bot 可用。",
+      "description": "你在自己账号中连接、且此 Bot 可读取的每个应用都会自动成为一个来源，你还可以添加更多。启用的来源每 15 分钟刷新一次，其事实仅对此 Bot 可用。关闭或移除后会保持该状态。",
       "numberError": "请为 {{name}} 输入数字。",
       "simpleSettings": "请选择一个带有简单搜索设置的操作。",
       "checkSettings": "请检查来源设置。",
@@ -260,11 +338,17 @@
       "addAndSync": "添加并同步来源",
       "upToDate": "已是最新的",
       "disabled": "已禁用",
-      "lastRead": "上次读取于 {{when}}",
+      "lastRead": " · 上次读取于 {{when}}",
       "syncNow": "立即同步",
       "disable": "禁用",
       "enable": "启用",
-      "remove": "移除"
+      "remove": "移除",
+      "addSource": "添加来源",
+      "empty": "还没有已连接的应用来源。",
+      "addTitle": "添加来源",
+      "addDescription": "现在读取一次，之后在启用期间每 15 分钟读取一次。",
+      "cancel": "取消",
+      "readAria": "读取 {{title}}"
     },
     "loadError": "无法加载你的记忆。"
   },
@@ -288,14 +372,27 @@
       "phone": "手机号码",
       "sendCode": "发送验证码",
       "codeAria": "验证码",
-      "confirmPhone": "确认手机号"
+      "confirmPhone": "确认手机号",
+      "connectPhone": "连接手机",
+      "summarySlack": "在 Slack 中继续对话。",
+      "summaryTeams": "在 Microsoft Teams 中继续对话。",
+      "summarySms": "通过短信继续对话。",
+      "codeOnWay": "验证码正在发送中。输入即可完成。",
+      "linkWaiting": "有一条链接码待发送。打开此处可再次查看。",
+      "smsNotSetUp": "此部署未配置短信。",
+      "settingsIntro": "你的设备、最近的送达记录，以及每类更新的去向在",
+      "settingsLink": "设置 → 通知",
+      "settingsOutro": "。",
+      "dialogDescription": "一个账户或手机号同一时间只能触达一段对话。在此链接会把它从当前所链接的位置移过来。",
+      "close": "关闭"
     },
     "destinations": {
       "title": "已连接的目的地",
       "loading": "正在加载连接…",
       "optedOut": "{{address}}（已回复 STOP；发送 START 恢复）",
       "disconnect": "断开连接",
-      "none": "尚未连接任何目的地。"
+      "none": "尚未连接任何目的地。",
+      "optedOutSuffix": " · 已回复 STOP；发送 START 恢复"
     },
     "devices": {
       "title": "原生设备",
@@ -513,6 +610,169 @@
       "assignAria": "将 {{bot}} 分配到群组",
       "groupPlaceholder": "群组，或 *",
       "assign": "分配"
+    }
+  },
+  "attention": {
+    "questions_one": "{{count}} 个问题",
+    "questions_other": "{{count}} 个问题",
+    "approvals_one": "{{count}} 项审批",
+    "approvals_other": "{{count}} 项审批",
+    "handoffs_one": "{{count}} 个停滞的转交",
+    "handoffs_other": "{{count}} 个停滞的转交",
+    "unread": "{{count}} 条未读",
+    "needsYouName": "{{name}} 需要你",
+    "paused": "已暂停",
+    "badge_one": "{{count}} 件事需要你",
+    "badge_other": "{{count}} 件事需要你",
+    "unreadMessages": "未读消息"
+  },
+  "botSubpage": {
+    "titleFallback": "Bot",
+    "unreachable": "你无法触达此 Bot。"
+  },
+  "botProfile": {
+    "forYou": "为你",
+    "stateLoadError": "无法加载此 Bot 的状态。",
+    "active": "活跃",
+    "activeOn": "已暂停。不会为你启动任何例程、职责、转交或跟进，正在运行的也已停止。",
+    "activeOff": "为你运行它的例程、职责、转交和跟进。",
+    "notifications": {
+      "title": "通知",
+      "badgesAlways": "侧栏徽标始终显示。"
+    },
+    "notify": {
+      "all": "所有消息",
+      "needsInput": "仅在需要我时",
+      "none": "无（仅徽标）"
+    },
+    "browserNotifications": {
+      "title": "浏览器通知",
+      "off": "在此浏览器中已关闭。开启后即可在 Bot 需要你时收到提醒。",
+      "turnOn": "开启"
+    },
+    "message": {
+      "title": "给 {{name}} 发消息",
+      "description": "开始一段对话。"
+    }
+  },
+  "agentProfile": {
+    "loadError": "无法加载这位同事。",
+    "private": "私有",
+    "public": "公开",
+    "systemOwned": "系统自带",
+    "role": "角色",
+    "startNewChannel": "开启新频道",
+    "open": "打开 {{name}}"
+  },
+  "botSettings": {
+    "title": "此 Bot 的设置",
+    "rows": {
+      "responsibilities": "职责",
+      "reach": "联系你的方式",
+      "memory": "记忆",
+      "approvals": "审批规则",
+      "routines": "例程",
+      "access": "技能与访问",
+      "sharing": "共享",
+      "setup": "设置"
+    },
+    "count": {
+      "active": "个活跃中",
+      "noneActive": "无活跃中",
+      "ruleOne": "条规则",
+      "ruleMany": "条规则",
+      "noRules": "无规则",
+      "routineOne": "个例程",
+      "routineMany": "个例程",
+      "noRoutines": "无例程"
+    }
+  },
+  "setup": {
+    "identity": "身份",
+    "visibility": "可见性",
+    "privateHint": "只有你能看到它并与其开启对话。",
+    "publicHint": "部署中的每个人都可以找到并使用它。",
+    "systemOwned": "系统自带",
+    "systemOwnedDescription": "随本部署一同提供，不属于任何个人。",
+    "connection": "连接",
+    "builtIn": "内置",
+    "endpoint": "端点",
+    "builtInDescription": "运行在本部署自带的 Bot 上。无需连接，也无需认证。"
+  },
+  "sharing": {
+    "publishedTitle": "已发布",
+    "toWholeTeam": "给整个团队",
+    "toList": "给 {{list}}",
+    "privateChats": "与它的每段对话都仅对使用它的人可见。",
+    "hiddenDraft": "在拥有正式名称和描述之前对队友隐藏。",
+    "link": "链接",
+    "linkDescription": "打开一段与它的私密对话。",
+    "notPublishedPublic": "尚未发布到团队。它是公开的，部署中的每个人已经可以使用它。",
+    "notPublishedMine": "尚未发布。只有你可以使用它。",
+    "notPublished": "尚未发布。",
+    "publishNote": "发布不会改变它的可见性，而且可以撤销。",
+    "publishedToTitle": "它发布给了谁",
+    "publish": "发布",
+    "audience": "受众",
+    "person": "人",
+    "people": "人",
+    "group": "个群组",
+    "groups": "个群组",
+    "publishedToLabel": "发布给",
+    "commaSeparated": "逗号分隔",
+    "cancel": "取消",
+    "assignDescription": "被分配的 Bot 会置顶在每个成员的 Bots 列表顶部。使用 * 表示整个团队。",
+    "notAssigned": "尚未分配到任何群组。",
+    "remove": "移除",
+    "assignTo": "分配到群组",
+    "assignDialog": "将 {{name}} 分配到群组",
+    "assignDialogDescription": "它会置顶在每个成员的 Bots 列表顶部。",
+    "wholeTeamPlaceholder": "* 表示整个团队"
+  },
+  "pages": {
+    "bots": {
+      "title": "Bots",
+      "description": "你能触达的每个 Bot：各自在做什么、需要你什么，以及是否已暂停。",
+      "newBot": "新建 Bot"
+    },
+    "profile": {
+      "back": "Bots",
+      "description": "此 Bot 在为你做什么，以及它是如何设置的。"
+    },
+    "access": {
+      "title": "技能与访问",
+      "description": "此 Bot 可以使用的技能、应用和其他 Bot。"
+    },
+    "approvals": {
+      "title": "审批规则",
+      "description": "此 Bot 无需先询问你即可做的事情。"
+    },
+    "memory": {
+      "title": "记忆",
+      "description": "哪些已连接的应用为此 Bot 提供事实，以及它为你做的后台调研。",
+      "settingsIntro": "你的 Bots 关于你的记忆在",
+      "settingsLink": "设置 → 记忆",
+      "settingsOutro": "。"
+    },
+    "reach": {
+      "title": "联系你的方式",
+      "description": "在 Slack、Microsoft Teams 或通过短信继续与此 Bot 的对话。"
+    },
+    "responsibilities": {
+      "title": "职责",
+      "description": "此 Bot 为你处理的长期目标、每次运行的起因，以及它的发现。"
+    },
+    "routines": {
+      "title": "例程",
+      "description": "此 Bot 按计划为你做的事。可以关掉某个、立即运行或删除它。"
+    },
+    "setup": {
+      "title": "设置",
+      "description": "此 Bot 是谁、谁能找到它，以及它运行在哪里。"
+    },
+    "sharing": {
+      "title": "共享",
+      "description": "还有谁可以使用此 Bot。与它的每段对话都仅对使用它的人可见。"
     }
   }
 }

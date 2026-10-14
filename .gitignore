@@ -64,3 +64,7 @@ server/data/
 .omc/
 .omo/
 *.log
+deliverables/
+gui-test-screenshots/
+# tester-army e2e runner output: report.json, replay cache, per-test traces
+.e2e/

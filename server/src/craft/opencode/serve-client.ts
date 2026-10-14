@@ -16,11 +16,20 @@
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 import {
+  CONNECT_APP_PERMISSION,
+  type CraftConnectAppPending,
+  type CraftConnectAppSignals,
+  parseConnectAppAsk,
+  stashAndAnnounce,
+} from "../connect-app";
+import {
   type ApprovalRequestedPacket,
   approvalRequestedPacket,
   type CompactionPacket,
+  type ConnectAppRequestPacket,
   type ContextUsagePacket,
   compactionPacket,
+  connectAppRequestPacket,
   contextUsagePacket,
   isBuildPacket,
   type SubagentStartedPacket,
@@ -350,6 +359,8 @@ export type PermissionAskedInfo = {
   permission: string | null;
   /** The command/path patterns the ask covers (display + scope only here). */
   patterns: string[];
+  /** The ask's metadata object when present (the connect-app tool keys its card on it). */
+  metadata: Record<string, unknown> | null;
 };
 
 /** Parse the ask payload; null when the event carries no usable permission id. */
@@ -361,10 +372,15 @@ export function parsePermissionAsked(props: Json): PermissionAskedInfo | null {
         (pattern): pattern is string => typeof pattern === "string",
       )
     : [];
+  const metadata = props.metadata;
   return {
     permissionId,
     permission: typeof props.permission === "string" ? props.permission : null,
     patterns,
+    metadata:
+      metadata instanceof Object && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)
+        : null,
   };
 }
 
@@ -374,6 +390,16 @@ export type PermissionGateDecision =
   | "allow_always"
   | "deny"
   | "expired";
+
+/**
+ * The outcome of answering one permission upstream: `ok` is delivery success;
+ * `permissionGone` means the ask itself is dead upstream (already answered —
+ * opencode 404s re-answers — or expired there), so retrying can never land.
+ */
+export type PermissionAnswerOutcome = {
+  ok: boolean;
+  permissionGone: boolean;
+};
 
 /**
  * How the transport routes permission.asked. A gated ask is NOT answered inline: `open`
@@ -391,6 +417,20 @@ export type PermissionGate = {
   open(info: PermissionAskedInfo): Promise<string>;
   /** The decision, "expired" past the wait window, or null while still pending. */
   poll(approvalId: string): Promise<PermissionGateDecision | null>;
+};
+
+/**
+ * The connect-app handshake binding for one turn: the craft session the ask
+ * belongs to and the KV its two records ride (onyx serve_client.py's
+ * `_handle_connect_app_permission` — this client stashes the answer context and
+ * announces the card, tracks the wait deadline, and rejects on expiry; the
+ * decision endpoint answers out-of-band through the stashed context).
+ * Null = connect_app asks are denied like any unknown category (nothing is
+ * announced, nothing stashed — there is nobody to route a card to).
+ */
+export type ConnectAppRendezvous = {
+  readonly sessionId: string;
+  readonly signals: CraftConnectAppSignals;
 };
 
 /**
@@ -1375,6 +1415,8 @@ export class OpencodeServeClient {
       shouldAbortOnTeardown?: (() => boolean) | null;
       /** Routes gated permission.asked through the approval rendezvous; null = auto-allow. */
       permissionGate?: PermissionGate | null;
+      /** Routes connect_app asks through the connect-card handshake; null = deny them. */
+      connectApp?: ConnectAppRendezvous | null;
     },
   ): AsyncGenerator<
     | SandboxEvent
@@ -1382,6 +1424,7 @@ export class OpencodeServeClient {
     | SubagentStartedPacket
     | CompactionPacket
     | ApprovalRequestedPacket
+    | ConnectAppRequestPacket
   > {
     if (this.bus === null) {
       throw new Error(
@@ -1446,6 +1489,7 @@ export class OpencodeServeClient {
             : null,
         shouldInterrupt: options.shouldInterrupt ?? null,
         permissionGate: options.permissionGate ?? null,
+        connectApp: options.connectApp ?? null,
       });
     } finally {
       // Teardown: abort the posted prompt unless a successor owns the session
@@ -1539,6 +1583,7 @@ export class OpencodeServeClient {
       absoluteDeadlineMs: number | null;
       shouldInterrupt: (() => boolean) | null;
       permissionGate: PermissionGate | null;
+      connectApp: ConnectAppRendezvous | null;
     },
   ): AsyncGenerator<
     | SandboxEvent
@@ -1546,6 +1591,7 @@ export class OpencodeServeClient {
     | SubagentStartedPacket
     | CompactionPacket
     | ApprovalRequestedPacket
+    | ConnectAppRequestPacket
   > {
     const { state, directory } = options;
     const bus = this.bus;
@@ -1567,6 +1613,17 @@ export class OpencodeServeClient {
       { approvalId: string; lastPollAt: number }
     >();
     const pollEveryMs = this.config.pollIntervalSeconds * 1000;
+
+    // Connect-app asks park the same way, but the decision endpoint answers
+    // them out-of-band; the loop only owns the timeout fallback — deadline per
+    // permission id, checked each iteration, one reject when it passes (onyx
+    // serve_client.py:1809-1827). Like the gated set, a parked ask raises the
+    // inactivity floor so the window — not the timeout — cuts the wait.
+    const connectApp = options.connectApp;
+    const pendingConnectApp = new Map<
+      string,
+      { requestId: string; deadline: number }
+    >();
 
     const answerResolvedPermissions = async (): Promise<void> => {
       if (gate === null || pendingPermissions.size === 0) return;
@@ -1600,6 +1657,81 @@ export class OpencodeServeClient {
     for (;;) {
       await answerResolvedPermissions();
 
+      // Timeout fallback for connect-app asks nobody decided: one reject each,
+      // exactly like the gated expiry — the plugin's catch block turns it into
+      // the declined string, so the turn continues rather than hanging.
+      // Reconciled against the out-of-band decide the same way replayed
+      // decisions reconcile with each other — through the atomic TAKE: whoever
+      // takes the record owns the one answer, so a user's late card click and
+      // this loop can never both answer opencode. The entry is only dropped
+      // AFTER an answer landed (or the record is confirmed gone); a failed
+      // delivery keeps it for the next pass, so a KV blip or a dead sandbox
+      // can never lose the record without an answer (the fail-closed posture
+      // this block has always claimed).
+      if (pendingConnectApp.size > 0) {
+        const now = Date.now();
+        for (const [permissionId, entry] of pendingConnectApp) {
+          if (entry.deadline > now) continue;
+          // Entries only exist when the connectApp rendezvous does — its
+          // handler is the sole writer of this map.
+          const signals = connectApp?.signals ?? null;
+          let claimed: CraftConnectAppPending | null = null;
+          if (signals !== null) {
+            try {
+              claimed = await signals.takePending(entry.requestId);
+            } catch (error) {
+              // KV unreadable: cannot tell "decided" from "still pending".
+              // Keep the entry and retry next pass — a blind reject could
+              // contradict a choice the user just made, and while entries
+              // remain the inactivity floor stays raised (the turn is not
+              // cut early).
+              getLogger("server").warn(
+                {
+                  err: error instanceof Error ? error.message : String(error),
+                  permissionId,
+                },
+                "opencode-serve: connect_app timeout take failed; retrying",
+              );
+              continue;
+            }
+            if (claimed === null) {
+              // Answered or expired out-of-band (the decide endpoint won the
+              // take): drop the entry — a second answer would contradict the
+              // user's choice.
+              pendingConnectApp.delete(permissionId);
+              continue;
+            }
+          }
+          const rejected = await this.answerPermission(
+            options.opencodeSessionId,
+            permissionId,
+            { allow: false, directory },
+          );
+          if (rejected.ok || rejected.permissionGone) {
+            // Delivered — or the ask died upstream (already answered by a
+            // decide whose response was lost; opencode 404s re-answers).
+            // Either way this side is done; the take already removed the
+            // record, so a late card click lands in the endpoint's 200 no-op
+            // branch instead of retrying a dead permission.
+            pendingConnectApp.delete(permissionId);
+            continue;
+          }
+          if (claimed !== null) {
+            // The take consumed the record but no answer landed. Put it back
+            // (the decide endpoint's Branch-4 restore semantics) and KEEP the
+            // entry: the user's still-live card can decide, and the next pass
+            // retries the reject — the record is never lost unanswered.
+            await signals
+              ?.stashPending(entry.requestId, claimed)
+              .catch(() => undefined);
+          } else {
+            // Unreachable by the sole-writer invariant (entries require the
+            // rendezvous); kept defensive: don't spin on a dead arm forever.
+            pendingConnectApp.delete(permissionId);
+          }
+        }
+      }
+
       const now = Date.now();
       if (options.shouldInterrupt && now - lastInterruptCheckAt >= 1000) {
         lastInterruptCheckAt = now;
@@ -1610,11 +1742,11 @@ export class OpencodeServeClient {
         }
       }
 
-      // While a gated permission parks the turn, the inactivity floor rises to
-      // window + margin (onyx's derivation) so the expiry path — not the inactivity
-      // timeout — always cuts the wait first.
+      // While a gated permission or connect-app ask parks the turn, the
+      // inactivity floor rises to window + margin (onyx's derivation) so the
+      // expiry path — not the inactivity timeout — always cuts the wait first.
       const inactivityTimeoutMs =
-        pendingPermissions.size > 0
+        pendingPermissions.size > 0 || pendingConnectApp.size > 0
           ? Math.max(
               options.timeoutMs,
               (this.config.approvalWaitTimeoutSeconds +
@@ -1682,15 +1814,71 @@ export class OpencodeServeClient {
         yield sandboxEvent;
       }
 
-      // permission.asked: a gated tool routes through the approval rendezvous —
-      // register + announce + yield the card packet, and let the loop poll for the
-      // decision. Everything else is auto-allowed (phase-1 posture: opencode.json
-      // pre-approves the known categories; an unexpected ask is answered "once" so
-      // the turn never wedges on it).
+      // permission.asked: the connect_app category routes through the connect-card
+      // handshake (stash + announce, decided out-of-band, rejected on timeout);
+      // a gated tool routes through the approval rendezvous — register + announce
+      // + yield the card packet, and let the loop poll for the decision. Everything
+      // else is auto-allowed (opencode.json pre-approves the known categories; an
+      // unexpected ask is answered "once" so the turn never wedges on it).
       if (raw.type === "permission.asked") {
         const info = parsePermissionAsked((raw.properties ?? {}) as Json);
         if (info !== null) {
-          if (gate !== null && gate.isGated(info)) {
+          if (info.permission === CONNECT_APP_PERMISSION) {
+            // onyx serve_client.py:1738-1811: the app id comes from the tool's
+            // metadata; missing/invalid → immediate deny (nothing to announce).
+            // A stash/announce failure also denies — fail closed so the parked
+            // turn resumes with a decline instead of hanging.
+            const ask =
+              info.metadata !== null ? parseConnectAppAsk(info.metadata) : null;
+            const deny = (reason: string): Promise<PermissionAnswerOutcome> => {
+              getLogger("server").warn(
+                { permissionId: info.permissionId, reason },
+                "opencode-serve: denying connect_app permission",
+              );
+              return this.answerPermission(
+                options.opencodeSessionId,
+                info.permissionId,
+                { allow: false, directory },
+              );
+            };
+            if (ask === null) {
+              await deny("ask carried no usable external_app_id");
+            } else if (connectApp !== null) {
+              try {
+                const requestId = await stashAndAnnounce(connectApp.signals, {
+                  sessionId: connectApp.sessionId,
+                  opencodeSessionId: options.opencodeSessionId,
+                  directory,
+                  permissionId: info.permissionId,
+                  externalAppId: ask.externalAppId,
+                  reason: ask.reason,
+                });
+                pendingConnectApp.set(info.permissionId, {
+                  requestId,
+                  deadline:
+                    Date.now() + this.config.approvalWaitTimeoutSeconds * 1000,
+                });
+                // The card rides the announce list (the attach stream's drain)
+                // AND this turn's stream — the same dual emission the approval
+                // card has, so whichever surface the client reads sees it once.
+                yield connectAppRequestPacket(
+                  requestId,
+                  ask.externalAppId,
+                  ask.reason,
+                );
+              } catch (error) {
+                getLogger("server").warn(
+                  {
+                    err: error instanceof Error ? error.message : String(error),
+                  },
+                  "opencode-serve: connect_app announce failed; denying",
+                );
+                await deny("announce failed");
+              }
+            } else {
+              await deny("no connect-app rendezvous for this turn");
+            }
+          } else if (gate !== null && gate.isGated(info)) {
             try {
               const approvalId = await gate.open(info);
               pendingPermissions.set(info.permissionId, {
@@ -1730,12 +1918,23 @@ export class OpencodeServeClient {
     }
   }
 
-  /** Resolve a pending opencode permission: allow ("once") runs the tool; deny ("reject") surfaces it. */
+  /**
+   * Resolve a pending opencode permission: allow ("once") runs the tool; deny
+   * ("reject") surfaces it. `ok` is delivery success. `permissionGone` marks
+   * the ask itself dead upstream: opencode's reply handler deletes the pending
+   * entry on the first answer and 404s `PermissionNotFoundError` on every
+   * re-answer (pinned live + source, opencode 1.18.7
+   * packages/core/src/permission.ts), so a false-negative answer (applied but
+   * its response was lost) can never be re-delivered — callers use it to stop
+   * retry loops instead of promising "try again" forever. The sandbox
+   * gateway's allow-list 404 (`{"error":"Not found."}`) is deliberately NOT
+   * permissionGone: that is a transport/config failure, still retryable.
+   */
   async answerPermission(
     sessionId: string,
     permissionId: string,
     options: { allow: boolean; directory: string },
-  ): Promise<boolean> {
+  ): Promise<PermissionAnswerOutcome> {
     try {
       const response = await this.doFetch(
         `${this.base}/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}?directory=${encodeURIComponent(options.directory)}`,
@@ -1748,9 +1947,17 @@ export class OpencodeServeClient {
           ),
         },
       );
-      return response.ok;
+      if (response.ok) return { ok: true, permissionGone: false };
+      if (response.status === 404) {
+        const body = await response.text().catch(() => "");
+        return {
+          ok: false,
+          permissionGone: body.includes("PermissionNotFoundError"),
+        };
+      }
+      return { ok: false, permissionGone: false };
     } catch {
-      return false;
+      return { ok: false, permissionGone: false };
     }
   }
 }

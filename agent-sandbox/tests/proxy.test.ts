@@ -22,6 +22,7 @@ const env = sandboxEnvFrom({
  * 假上游：占住 base 端口 4600，echo 出自己的端口。
  * 真 spawn 被替换掉，所以第一个 bot（alpha）的"opencode serve"就是这个 serve 的语义替身。
  */
+const eventUpstreamRequests: string[] = [];
 const upstream = serve({
   port: 4600,
   hostname: "127.0.0.1",
@@ -37,8 +38,10 @@ const upstream = serve({
         headers: { "content-length": String(300_000) },
       });
     // The event bus: a short burst of real captured shapes, then the stream ends. The proxy's
-    // keepalive and filter behaviour is what these tests observe.
+    // keepalive and filter behaviour is what these tests observe. The requested scope is
+    // captured for the directory-forwarding test (F-G).
     if (url.pathname === "/event") {
+      eventUpstreamRequests.push(`${url.pathname}${url.search}`);
       const samples = [
         `data: {"id":"e1","type":"server.heartbeat","properties":{}}\n\n`,
         `data: {"id":"e2","type":"message.part.delta","properties":{"sessionID":"s","messageID":"m","partID":"p","field":"text","delta":"你好"}}\n\n`,
@@ -122,6 +125,14 @@ describe("proxy", () => {
     expect(await response.json()).toEqual({ id: "ses_4600" });
   });
 
+  test("GET /doc forwards upstream — craft's chip health-check rides it (fix: forever-provisioning)", async () => {
+    // craft 的 sandbox-status 芯片用 GET /doc 探活：白名单漏掉它时上游活着也只会拿到
+    // 404，healthCheck() 永远 false，active 会话被永久判成 provisioning（“沙箱初始化中…”）。
+    const response = await call("/doc", { headers: botHeaders });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ openapi: "3.1.0", served: "4600" });
+  });
+
   test("a path outside the allow-list is 404 upstream-untouched", async () => {
     const response = await call("/admin", { headers: botHeaders });
     expect(response.status).toBe(404);
@@ -170,6 +181,17 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     expect(response.status).toBe(401);
   });
 
+  test("GET /events forwards the directory scope to the upstream (F-G)", async () => {
+    // opencode publishes a directory-scoped session's events only on the
+    // scoped stream; dropping the scope makes every craft turn invisible.
+    const response = await call("/events?directory=cs-scoped-9", {
+      headers: botHeaders,
+    });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(eventUpstreamRequests).toContain("/event?directory=cs-scoped-9");
+  });
+
   test("POST /session/:id/abort forwards to the upstream abort", async () => {
     const response = await call("/session/ses_1/abort", {
       method: "POST",
@@ -182,6 +204,26 @@ describe("proxy: the workshop surface (S2/S5)", () => {
     };
     expect(body.aborted).toBe(true);
     expect(body.port).toBe("4600");
+  });
+
+  test("POST /session/:id/permissions/:permissionId forwards (F-G: the answer path)", async () => {
+    // Every permission answer — the connect_app decision endpoint's and the
+    // timeout fallback's — rides this verb; an unlisted verb is a silent 404
+    // that parks the turn forever (decide half cannot close).
+    const response = await call(
+      "/session/ses_1/permissions/perm_1?directory=/w",
+      {
+        method: "POST",
+        headers: { ...botHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ response: "reject" }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      echo: "/session/ses_1/permissions/perm_1",
+      method: "POST",
+      port: "4600",
+    });
   });
 
   test("the not-yet-implemented table is empty — every allow-listed verb is real (S4)", async () => {
@@ -251,6 +293,34 @@ describe("proxy: the workshop surface (S2/S5)", () => {
       body: "x",
     });
     expect(escapeAttempt.status).toBe(400);
+  });
+
+  test("GET /file answers absence 404 itself — the upstream's 500-for-absent must not leak (craft's skills sweep)", async () => {
+    // The upstream opencode-serve answers 500, not 404, for a path that does not exist;
+    // craft's managed-skills sweep normalizes 404 to "fresh workspace" and refuses its
+    // ack on anything else, so a leaked 500 left every first provisioning stale until a
+    // reload. The proxy owns the filesystem fact: absence is answered here, before any
+    // runtime is spawned or dialed.
+    const absent = await call("/file?path=no-such-dir", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(absent.status).toBe(404);
+    // The escaping path is refused on this verb too.
+    const escapeAttempt = await call("/file?path=../workspace", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(escapeAttempt.status).toBe(400);
+    // A path that EXISTS is not answered locally — it falls through toward the upstream
+    // (here: no runtime can spawn in this harness, so the honest shape is the runtime
+    // refusal, distinctly not this branch's 404).
+    const present = await call("/file?path=data.csv", {
+      method: "GET",
+      headers: botHeaders,
+    });
+    expect(present.status).not.toBe(404);
+    expect(present.status).not.toBe(400);
   });
 
   test("POST /file carries binary bodies past the 256KB relay cap (craft's upload road)", async () => {

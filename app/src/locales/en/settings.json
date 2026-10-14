@@ -9,7 +9,10 @@
     "passwords": "Passwords",
     "componentsGallery": "Components gallery",
     "plansUsage": "Plans & credits",
-    "invoices": "Bills"
+    "invoices": "Bills",
+    "notifications": "Notifications",
+    "approvals": "Approvals",
+    "memory": "Memory"
   },
   "billing": {
     "retry": "Retry",
@@ -170,6 +173,92 @@
     "saved": "Saved",
     "save": "Save"
   },
+  "devices": {
+    "title": "Your devices",
+    "description": "Sign in to the OpenBot app on your phone and turn on notifications to add it here.",
+    "empty": "No devices yet.",
+    "remove": "Remove",
+    "recentTitle": "Recent deliveries",
+    "noDeliveries": "No deliveries yet."
+  },
+  "githubSources": {
+    "title": "GitHub events",
+    "description": "Register a repository, then add its webhook in GitHub using the address below and the same secret. A responsibility can then start on one of its events, such as issues.opened.",
+    "add": "Add a repository",
+    "empty": "No repositories connected.",
+    "disconnect": "Disconnect",
+    "cancel": "Cancel",
+    "connect": "Connect events",
+    "secretHint": "Use the same secret when you add the webhook in GitHub.",
+    "repositoryLabel": "Repository",
+    "repositoryPlaceholder": "owner/repository",
+    "secretLabel": "Webhook secret"
+  },
+  "linkedAccounts": {
+    "title": "Linked accounts",
+    "loadError": "Your linked accounts could not be loaded: {{error}}",
+    "providersError": "Could not check which accounts can be linked: {{error}}",
+    "slackCodeError": "Could not create a Slack link code: {{error}}",
+    "githubError": "Could not connect GitHub: {{error}}",
+    "linkSlackTitle": "Link your Slack account",
+    "copied": "Copied",
+    "copy": "Copy",
+    "copyFailed": "Couldn't copy. Select the code and copy it yourself.",
+    "codeExpiry": "The code works once and expires in 10 minutes.",
+    "done": "Done",
+    "notLinked": "Not linked",
+    "connect": "Connect",
+    "connectAria": "Connect {{title}}",
+    "disconnect": "Disconnect",
+    "disconnectAria": "Disconnect {{title}}",
+    "disconnectError": "Could not disconnect {{title}}: {{error}}",
+    "linked": "Linked",
+    "needsReconnect": "Needs reconnecting",
+    "needsReconnectHandle": "Needs reconnecting · @{{handle}}"
+  },
+  "updateRouting": {
+    "title": "Where updates go",
+    "description": "Where each kind of update goes when you are not looking. The web always shows everything.",
+    "loadError": "Could not load where your updates go.",
+    "notSetUp": "Not set up",
+    "byAria": "{{kind}} by {{transport}}",
+    "kinds": {
+      "progress": {
+        "title": "Progress",
+        "description": "Replies and results from work you were not watching."
+      },
+      "decision": {
+        "title": "Decisions",
+        "description": "Approvals a Bot needs before it acts."
+      },
+      "question": {
+        "title": "Questions",
+        "description": "Things a Bot asked you and is waiting on."
+      }
+    },
+    "transports": {
+      "push": "Push",
+      "slack": "Slack",
+      "teams": "Microsoft Teams",
+      "sms": "SMS"
+    }
+  },
+  "notificationsPage": {
+    "title": "Notifications",
+    "description": "Where updates from all your Bots reach you when you are not looking. How much each Bot sends is on its own page."
+  },
+  "memoryPage": {
+    "title": "Memory",
+    "description": "What your Bots know about you. Facts you tell them reach every Bot; what a Bot learns stays with that Bot."
+  },
+  "teamBots": {
+    "title": "Bots shared with you",
+    "description": "A Bot someone shared with you uses their connected apps, and yours only where you allowed it on the card it showed you.",
+    "yourAnswers": "Your answers",
+    "cleared": "Cleared. Each will ask again.",
+    "forget": "Forget them, so each asks again.",
+    "clear": "Clear"
+  },
   "hotkeys": {
     "new-chat": {
       "label": "New chat",
@@ -268,7 +357,8 @@
     "badge": "Bonus until 10/31",
     "message": "Welcome to WorkBuddy. Your first month includes the standard plan's base credits — claim them now!",
     "claim": "Claim",
-    "claimed": "Claimed {{date}}"
+    "claimed": "Claimed {{date}}",
+    "claimUnavailable": "Claiming opens soon"
   },
   "planCard": {
     "redeem": "Redeem a code",
@@ -300,11 +390,18 @@
     "validUntil": "Valid until {{date}}",
     "autoRenew": "To continue after this period ends, purchase again (auto-renewal is not available yet)",
     "agreement": "I have read and agree to the Terms of Service",
-    "pay": "Agree",
+    "pay": "Agree & pay",
     "payWith": "Pay with",
     "provider": {
       "alipay": "Alipay",
       "wechat": "WeChat Pay"
+    },
+    "cancelOrder": "Cancel order",
+    "canceling": "Cancelling…",
+    "loadingOptions": "Loading payment options…",
+    "errors": {
+      "pendingPurchase": "Another purchase is already pending. Finish or cancel it before buying again.",
+      "cancelFailed": "The order could not be cancelled. Try again shortly."
     }
   }
 }

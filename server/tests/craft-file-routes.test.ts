@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { gunzipSync } from "node:zlib";
+import { inflateRawSync } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { createArtifactRoutes } from "../src/craft/artifact-routes";
@@ -19,13 +19,15 @@ import {
 
 /**
  * The upload / files-delete / download-directory trio. The sandbox behind the routes is an
- * in-memory file API whose listing returns every descendant (the shape opencode's GET /file
- * answers), so the route's containment and limit decisions are observed against real paths.
+ * in-memory file API whose listing answers the REAL gateway shape (finding F-C): one level
+ * per call — a directory's immediate children as full paths, subdirectories included — so
+ * the route's containment, limit, and archive-walk decisions are observed against what
+ * opencode's GET /file actually answers, not a recursive stand-in that masked F-C.
  */
 
 const config = loadCraftConfig({
   OPENBOT_CRAFT_MAX_UPLOAD_FILE_SIZE_MB: "1",
-  OPENBOT_CRAFT_MAX_UPLOAD_FILES_PER_SESSION: "2",
+  OPENBOT_CRAFT_MAX_UPLOAD_FILES_PER_SESSION: "3",
   OPENBOT_CRAFT_MAX_TOTAL_UPLOAD_SIZE_MB: "1",
 });
 const SESSION_ID = "cs-sess";
@@ -66,23 +68,34 @@ const fakeStore = (): CraftStore =>
   }) as unknown as CraftStore;
 
 /**
- * An in-memory sandbox: keys are absolute paths, values bytes. listFiles returns every
- * descendant of a directory (opencode's recursive listing shape); a directory nothing lives
+ * An in-memory sandbox: keys are absolute paths, values bytes. listFiles answers the REAL
+ * gateway listing shape (finding F-C): ONE level per call — a directory's immediate
+ * children as full paths, subdirectory children included (as bare paths, no trailing
+ * slash, exactly what the gateway normalization hands back). A directory nothing lives
  * under throws (the gateway's behavior for an absent path).
  */
-function memoryFileApi(initial: Record<string, string> = {}) {
+function memoryFileApi(initial: Record<string, string | Uint8Array> = {}) {
   const files = new Map<string, Uint8Array>();
-  for (const [path, text] of Object.entries(initial)) {
-    files.set(path, new TextEncoder().encode(text));
+  for (const [path, value] of Object.entries(initial)) {
+    files.set(
+      path,
+      typeof value === "string" ? new TextEncoder().encode(value) : value,
+    );
   }
   const api: AgentSandboxFileApi = {
     async listFiles(path: string) {
       const prefix = `${path}/`;
-      const found = [...files.keys()].filter((key) => key.startsWith(prefix));
-      if (found.length === 0 && !files.has(path) && !hasDir(path)) {
+      const children = new Set<string>();
+      for (const key of files.keys()) {
+        if (!key.startsWith(prefix)) continue;
+        const rest = key.slice(prefix.length);
+        const first = rest.split("/")[0];
+        children.add(rest.includes("/") ? `${prefix}${first}` : key);
+      }
+      if (children.size === 0 && !files.has(path)) {
         throw new Error(`Sandbox /file answered 404 for ${path}.`);
       }
-      return found;
+      return [...children];
     },
     async writeFile(path, content) {
       files.set(path, new TextEncoder().encode(content));
@@ -103,10 +116,6 @@ function memoryFileApi(initial: Record<string, string> = {}) {
       return files.get(path) ?? null;
     },
   };
-  function hasDir(path: string): boolean {
-    const prefix = `${path}/`;
-    return [...files.keys()].some((key) => key.startsWith(prefix));
-  }
   return { api, files };
 }
 
@@ -293,21 +302,24 @@ describe("upload endpoint", () => {
     const { api } = memoryFileApi({
       [`${DIRECTORY}/attachments/a.txt`]: "a",
       [`${DIRECTORY}/attachments/b.txt`]: "b",
+      [`${DIRECTORY}/attachments/c.txt`]: "c",
     });
     const app = routes(api);
     const response = await app.request(`/sessions/${SESSION_ID}/upload`, {
       method: "POST",
-      body: multipart("c.txt", new Uint8Array([1])),
+      body: multipart("d.txt", new Uint8Array([1])),
     });
     expect(response.status).toBe(429);
     expect(((await response.json()) as { error: string }).error).toBe(
-      "Maximum number of files (2) reached",
+      "Maximum number of files (3) reached",
     );
   });
 
   test("nested descendants of attachments/ don't count toward the file limit (onyx maxdepth 1)", async () => {
-    // Top level holds ONE file (limit is 2); the recursive listing also returns two
-    // NESTED files, which onyx's `find -maxdepth 1 -type f` never sees.
+    // The REAL listing is one level: attachments/ answers [keep.txt, sub] — the two
+    // NESTED files never appear (onyx's `find -maxdepth 1 -type f` never saw them
+    // either). The subdirectory itself occupies one top-level slot name — the flat
+    // path strings cannot say file-or-dir, and counting it is the conservative side.
     const { api, files } = memoryFileApi({
       [`${DIRECTORY}/attachments/keep.txt`]: "top level",
       [`${DIRECTORY}/attachments/sub/one.txt`]: "nested",
@@ -444,50 +456,177 @@ describe("delete file endpoint", () => {
 
 // ── GET /sessions/:id/download-directory/*path ────────────────────────────────
 
-/** Minimal ustar reader: path + size per member (the writer's inverse, for assertions). */
-function untar(buffer: Uint8Array): Array<{ path: string; size: number }> {
+// A minimal ZIP reader — the writer's independent inverse: EOCD → central
+// directory records → local-header data offsets, inflate + CRC-32 verify.
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let crc = -1;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ -1) >>> 0;
+}
+
+function readZip(
+  buffer: Uint8Array,
+): Array<{ name: string; bytes: Uint8Array; method: number }> {
   const view = Buffer.from(buffer);
-  const out: Array<{ path: string; size: number }> = [];
-  let at = 0;
-  while (at + 512 <= view.length) {
-    const header = view.subarray(at, at + 512);
-    if (header.every((byte) => byte === 0)) break;
-    const path = header.toString("utf8", 0, 100).replace(/\0.*$/, "");
-    const size = parseInt(
-      header.toString("ascii", 124, 136).replace(/\0.*$/, "").trim(),
-      8,
+  let eocd = -1;
+  for (
+    let at = view.length - 22;
+    at >= Math.max(0, view.length - 66_000);
+    at--
+  ) {
+    if (
+      view[at] === 0x50 &&
+      view[at + 1] === 0x4b &&
+      view[at + 2] === 0x05 &&
+      view[at + 3] === 0x06
+    ) {
+      eocd = at;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("no end-of-central-directory record");
+
+  const count = view.readUInt16LE(eocd + 10);
+  let at = view.readUInt32LE(eocd + 16);
+  const out: Array<{ name: string; bytes: Uint8Array; method: number }> = [];
+  for (let i = 0; i < count; i++) {
+    if (view.readUInt32LE(at) !== 0x02014b50)
+      throw new Error(`bad central record at ${at}`);
+    const method = view.readUInt16LE(at + 10);
+    const crc = view.readUInt32LE(at + 16);
+    const compSize = view.readUInt32LE(at + 20);
+    const size = view.readUInt32LE(at + 24);
+    const nameLen = view.readUInt16LE(at + 28);
+    const extraLen = view.readUInt16LE(at + 30);
+    const commentLen = view.readUInt16LE(at + 32);
+    const localOffset = view.readUInt32LE(at + 42);
+    const name = new TextDecoder().decode(
+      view.subarray(at + 46, at + 46 + nameLen),
     );
-    out.push({ path, size });
-    at += 512 + size + ((512 - (size % 512)) % 512);
+
+    const localNameLen = view.readUInt16LE(localOffset + 26);
+    const localExtraLen = view.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+    const comp = view.subarray(dataStart, dataStart + compSize);
+    const bytes = new Uint8Array(
+      method === 8 ? inflateRawSync(comp) : (comp as Buffer),
+    );
+    if (bytes.length !== size) throw new Error(`size mismatch for ${name}`);
+    if (crc32(bytes) !== crc) throw new Error(`crc mismatch for ${name}`);
+    out.push({ name, bytes, method });
+    at += 46 + nameLen + extraLen + commentLen;
   }
   return out;
 }
 
-describe("download-directory endpoint", () => {
-  test("packs a directory as tar.gz with arcnames relative to it", async () => {
+const BLOB = (() => {
+  const bytes = new Uint8Array(256);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31 + 7) & 0xff;
+  return bytes;
+})();
+
+describe("download-directory endpoint (ZIP contract)", () => {
+  test("packs a directory as a ZIP with arcnames relative to it", async () => {
     const { api } = memoryFileApi({
       [`${DIRECTORY}/outputs/report.md`]: "# hello",
       [`${DIRECTORY}/outputs/app/main.js`]: "console.log(1)",
+      [`${DIRECTORY}/outputs/app/blob.bin`]: BLOB,
       [`${DIRECTORY}/outputs/.hidden`]: "skipped",
+      [`${DIRECTORY}/outputs/node_modules/pkg/index.js`]: "skipped",
+    });
+    const app = routes(api);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/download-directory/outputs`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    // onyx serving.py:103-115 — ASCII fallback + RFC 5987 filename*, filename
+    // from _sanitize_zip_basename(Path(path).name, allow_dots=True) (F6 A).
+    expect(response.headers.get("content-disposition")).toBe(
+      `attachment; filename="outputs.zip"; filename*=UTF-8''outputs.zip`,
+    );
+
+    const members = readZip(new Uint8Array(await response.arrayBuffer()));
+    expect(members.map((m) => m.name).sort()).toEqual([
+      "app/blob.bin",
+      "app/main.js",
+      "report.md",
+    ]);
+    expect(members.find((m) => m.name === "report.md")?.bytes).toEqual(
+      new TextEncoder().encode("# hello"),
+    );
+    expect(members.find((m) => m.name === "app/blob.bin")?.bytes).toEqual(BLOB);
+    expect(members.every((m) => m.method === 8)).toBe(true); // deflate
+  });
+
+  test("F6-A/F-C: a top level of ONLY subdirectories still packs every nested file", async () => {
+    // The finding's exact live shape: the gateway listing is ONE level, so
+    // `outputs` answers only the `web` directory entry. The walk must recurse —
+    // a single flat listing here used to answer a 200 with a ZERO-entry ZIP,
+    // silently dropping every nested file (remediation-verification §3(viii)).
+    const { api } = memoryFileApi({
+      [`${DIRECTORY}/outputs/web/package.json`]: '{"name":"web"}',
+      [`${DIRECTORY}/outputs/web/src/app/page.tsx`]:
+        "export default function Page() {}",
+      [`${DIRECTORY}/outputs/web/.env`]: "hidden",
+      [`${DIRECTORY}/outputs/web/node_modules/pkg/index.js`]: "hidden",
     });
     const app = routes(api);
     const response = await app.request(
       `/sessions/${SESSION_ID}/download-directory/outputs`,
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("application/gzip");
-    expect(response.headers.get("content-disposition")).toMatch(
-      /outputs\.tar\.gz/,
-    );
-    const members = untar(
-      gunzipSync(new Uint8Array(await response.arrayBuffer())),
-    );
-    expect(members.map((m) => m.path).sort()).toEqual([
-      "app/main.js",
-      "report.md",
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    const members = readZip(new Uint8Array(await response.arrayBuffer()));
+    // The fixture F6 input tree's members, arcnames relative to outputs/
+    // (hidden subtrees pruned whole).
+    expect(members.map((m) => m.name).sort()).toEqual([
+      "web/package.json",
+      "web/src/app/page.tsx",
     ]);
-    const report = members.find((m) => m.path === "report.md");
-    expect(report?.size).toBe("# hello".length);
+  });
+
+  test("F-C ride-along: an archive the writer cannot build is 502, not a misleading 404", async () => {
+    // 65,536 entries: past the non-ZIP64 writer's ceiling. The listing itself is
+    // reachable, so the route must NOT fold the writer's RangeError into onyx's
+    // "directory not found" 404 — the directory exists; the archive failed.
+    const tree: Record<string, string> = {};
+    for (let i = 0; i <= 0xffff; i++)
+      tree[`${DIRECTORY}/outputs/f${i}.txt`] = "x";
+    const { api } = memoryFileApi(tree);
+    const app = routes(api);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/download-directory/outputs`,
+    );
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error: "The directory could not be read.",
+    });
+  });
+
+  test("a dotted directory basename keeps its dots (allow_dots=True)", async () => {
+    const { api } = memoryFileApi({
+      [`${DIRECTORY}/outputs/my.lib/v1.txt`]: "x",
+    });
+    const app = routes(api);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/download-directory/outputs/my.lib`,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toBe(
+      `attachment; filename="my.lib.zip"; filename*=UTF-8''my.lib.zip`,
+    );
   });
 
   test("traversal is 403 and a missing directory is 404", async () => {
@@ -503,13 +642,16 @@ describe("download-directory endpoint", () => {
     expect(missing.status).toBe(404);
   });
 
-  test("unknown session is 404", async () => {
+  test("unknown session is onyx's indistinct 404 Directory not found", async () => {
     const { api } = memoryFileApi();
     const app = routes(api);
     const response = await app.request(
       `/sessions/nope/download-directory/outputs`,
     );
     expect(response.status).toBe(404);
+    // onyx api.py:736-738: every None shape (session, sandbox, directory) is
+    // the same 404 "Directory not found" — ownership probing reads as absence.
+    expect(await response.json()).toEqual({ error: "Directory not found" });
   });
 });
 

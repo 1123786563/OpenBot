@@ -1,0 +1,59 @@
+<!-- Ported from onyx skills/builtin/google-calendar/SKILL.md.template.
+     Divergence (D5: OpenBot has no egress credential proxy): the bundled
+     gcal_api.py helper and its command examples are replaced by the user's
+     connected Google Calendar MCP server tools. Domain guidance (RFC3339
+     times, `primary`, expanded instances, error discipline) is onyx
+     verbatim.
+     the ACTION_AVAILABILITY_SECTION placeholder renders to "" (no admin per-action policy
+     surface yet). -->
+---
+name: google-calendar
+description: Read and manage the connected user's Google Calendar via the Google Calendar MCP server.
+---
+
+# Google Calendar
+
+Call the Google Calendar API as the connected user through the Google
+Calendar MCP server connected to this session. The session's MCP relay
+attaches the user's credential on every call; never ask for or handle
+credentials yourself.
+
+{{ACTION_AVAILABILITY_SECTION}}
+
+## Usage
+
+Read tools (calendars, events, free/busy) run freely; creating and deleting
+events are the only writes. `primary` is the user's default calendar. Read
+tools that paginate should be capped with a result limit to keep your context
+small.
+
+### List calendars
+
+### List events
+
+Events are listed by calendar, optionally bounded by a time range and a
+free-text query.
+
+### One event
+
+### Create an event (write)
+
+An event needs the calendar, a title, and RFC3339 start and end times,
+optionally a description and attendees.
+
+### Delete an event (destructive)
+
+### Free/busy
+
+Free/busy queries take an RFC3339 time range and one or more calendars.
+
+## Output
+
+Tool results are JSON. List tools return the items and whether more existed
+past the limit; failures include Google's error (with `code` and `message`) —
+surface the error rather than retrying blindly.
+
+## Notes
+
+- Times are RFC3339 (e.g. `2026-06-01T10:00:00Z`); event lists return expanded
+  single instances ordered by start time.

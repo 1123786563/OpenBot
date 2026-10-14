@@ -1,0 +1,90 @@
+# Knowledge-base dependencies: qdrant, kb-redis, docreader. The kb domain itself runs on the host
+# (server/src/kb) and reaches these through the loopback ports; a containerized caller reaches
+# them by service name. These three need no postgres, but they join the main project's `data`
+# network — start the main stack first. Do not remove the qdrant-data volume or `docker rm`
+# takes the corpus with it. docs/compose.md#the-knowledge-base has the ports and why kb-redis is
+# separate from openbot-redis.
+#
+# Run from the repository root — --project-directory . is what makes the root .env and the
+# relative paths resolve exactly as they did when this file lived at the root:
+#   docker compose --project-directory . -f docker/compose/kb.yml up -d
+name: openbot
+
+services:
+  # The vector store. Embeddings live here and nowhere else: the last Postgres-side vector
+  # column (chunks.embedding) was dropped in migration 0010, and the knowledge service that
+  # owns embeddings talks to Qdrant over HTTP on 6333. Redis-style: one binary, no external
+  # dependencies, storage in the named volume below.
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:v1.19.2}
+    restart: unless-stopped
+    # Loopback both families, like every other port in these files: a host-run kb process
+    # reaches it through the published port, nothing off the machine can.
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+      - "[::1]:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # TCP on the REST port, not wget: this image ships no wget and no curl, just bash (and
+      # the /dev/tcp probe it can run). The HTTP API serving /healthz is what matters and a
+      # listening 6333 is the best cheap signal bash alone can get; the kb client's startup
+      # self-check (ensureCollection) is the functional probe on top.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - data
+
+  # The kb domain's own Redis: the BullMQ ingest queue (kb-core), and nothing else. The main
+  # stack's openbot-redis is pure-memory by design (lock state must not survive restarts);
+  # BullMQ wants the opposite, so the two get separate instances. Persistence ON here:
+  # an in-flight document pipeline should survive a Redis restart.
+  kb-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --port 6379
+    volumes:
+      - kb-redis-data:/data
+    ports:
+      # 6380 on the host (6379 is openbot-redis's published port); loopback only.
+      - "127.0.0.1:${KB_REDIS_PORT:-6380}:6379"
+      - "[::1]:${KB_REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - data
+
+  # WeKnora's document parser, reused as-is: gRPC :50051, the heavy JVM/LibreOffice/Playwright
+  # stack that turns PDF/DOCX/PPTX/HTML into markdown + source locators. The kb docreader
+  # client dials it (DOCREADER_ADDR, localhost:50051 from the host, docreader:50051 from a
+  # container); nothing else in this stack speaks to it.
+  docreader:
+    image: ${DOCREADER_IMAGE:-wechatopenai/weknora-docreader:latest}
+    restart: unless-stopped
+    ports:
+      # Published for the host-run kb worker: loopback only, both families.
+      - "127.0.0.1:${DOCREADER_PORT:-50051}:50051"
+      - "[::1]:${DOCREADER_PORT:-50051}:50051"
+    healthcheck:
+      # gRPC health probing without grpcurl: the port accepting TCP is the best cheap signal
+      # this image offers. The kb client retries connections anyway.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/50051' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - data
+
+networks:
+  # The same `data` network docker-compose.yml declares (same project name), so containerized
+  # callers reach these three by service name.
+  data:
+
+volumes:
+  qdrant-data:
+  kb-redis-data:

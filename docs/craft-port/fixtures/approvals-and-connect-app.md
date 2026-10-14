@@ -24,7 +24,7 @@ OpenBot 无 egress proxy;拒绝路径 = gated 工具 permission → `answer_perm
 
 ### 输入
 
-agent 调 `connect_app(external_app_id=7, reason="Need Slack to post updates")`;opencode 发 `permission.asked {permission: "connect_app", patterns: ["7"], metadata: {external_app_id: 7, reason: "Need Slack to post updates"}}`(工具定义 B/`sandbox/image/opencode-plugins/connect-app.ts:52-64`)。
+agent 调 `connect_app(external_app_id=7, reason="Need Slack to post updates")`;opencode 发 `permission.asked {permission: "connect_app", patterns: ["7"], metadata: {external_app_id: 7, reason: "Need Slack to post updates"}}`(execute/ask 调用 B/`sandbox/image/opencode-plugins/connect-app.ts:52-64`)。
 
 ### 工具 schema(逐字节,B/`sandbox/image/opencode-plugins/connect-app.ts:36-51`)
 

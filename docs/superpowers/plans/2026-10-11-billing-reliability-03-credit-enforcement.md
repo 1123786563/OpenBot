@@ -31,19 +31,19 @@
 - The chosen policy is fixed: hard cap; reserve maximum before work; fail closed if rate/bound is missing or full capacity is unavailable; settle actual cost and release unused capacity.
 - Do not provide default numeric rates. Deployment configuration must supply approved integer numerator/denominator values before the gate is enabled.
 
-- [ ] **Step 1: Encode the approved integer-rate and maximum-reservation shape**
+- [x] **Step 1: Encode the approved integer-rate and maximum-reservation shape**
 
 Use exact rational configuration fields (integer numerator and denominator for each rate) so converting token counts to scaled credit units never depends on binary floating point. Define per-model input/output maxima and a code-run maximum; compute the maximum reservation with integer ceiling arithmetic. Missing, zero-denominator, negative, or out-of-range values return a typed unconfigured result.
 
-- [ ] **Step 2: Add fail-closed configuration tests**
+- [x] **Step 2: Add fail-closed configuration tests**
 
 Test a complete valid config, each missing model/run rate, missing maximum bound, zero denominator, and exact boundary arithmetic. Assert no default rate is synthesized.
 
-- [ ] **Step 3: Document operator-supplied numeric values**
+- [x] **Step 3: Document operator-supplied numeric values**
 
 Update the billing configuration documentation with the required key names and exact units, and state that billing work is rejected until values are supplied. Do not invent price numbers.
 
-- [ ] **Step 4: Verify parser and documentation**
+- [x] **Step 4: Verify parser and documentation**
 
 Run the focused configuration tests and `bun run --filter server typecheck`; expected: valid config parses, missing values fail closed, no prices default.
 
@@ -64,7 +64,7 @@ Run the focused configuration tests and `bun run --filter server typecheck`; exp
 - `CreditWriter.releaseReservation(reservationId, reason): Promise<void>` is idempotent; expiry recovery releases only reservations still in `reserved` state.
 - Reservation allocations identify each grant that funded the hold, allowing transactionally exact release across multiple grants.
 
-- [ ] **Step 1: Add a concurrent reservation integration test**
+- [x] **Step 1: Add a concurrent reservation integration test**
 
 Seed a 1000-unit grant and issue two concurrent 700-unit reservations with different keys. Assert only one reserves and total reserved capacity never exceeds 1000.
 
@@ -74,21 +74,21 @@ expect(results.filter((result) => result.reserved)).toHaveLength(1);
 expect(await writer.availableBalance(customer)).toBe(300);
 ```
 
-- [ ] **Step 2: Run the reservation test and verify it fails**
+- [x] **Step 2: Run the reservation test and verify it fails**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-credits-writer.integration.test.ts`
 Expected: FAIL because reservation APIs/tables do not exist.
 
-- [ ] **Step 3: Implement reservation records, allocations, and transactional settlement**
+- [x] **Step 3: Implement reservation records, allocations, and transactional settlement**
 
 Add a reservation state and child allocations so one reservation can span expiring grants. Lock grant rows in expiry order, account for all live reservations when computing capacity, persist allocation and reservation rows in one transaction, and settle by converting the actual amount into the existing `credit_ledger` record while releasing unused allocation. Repeated settle/release requests must return the first terminal result.
 
-- [ ] **Step 4: Verify concurrency, replay, expiry, and exact balance**
+- [x] **Step 4: Verify concurrency, replay, expiry, and exact balance**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-credits-writer.integration.test.ts server/tests/qa-batch2-credits-consume.integration.test.ts`
 Expected: PASS; neither concurrent reservations nor settlements can allocate more than live grant capacity.
 
-- [ ] **Step 5: Commit the hard-cap reservation store**
+- [x] **Step 5: Commit the hard-cap reservation store**
 
 ```bash
 git add server/src/db/schema/credit-reservations.ts server/src/db/schema/index.ts server/drizzle server/src/billing/credits-writer.ts server/tests/billing-credits-writer.integration.test.ts server/tests/qa-batch2-credits-consume.integration.test.ts
@@ -113,25 +113,25 @@ git commit -m "feat(billing): reserve credit capacity transactionally" -m "Co-au
 - The current server-side sandbox contract exposes timeout seconds but no token ceiling. If the configured sandbox cannot enforce a token budget, fail closed before the sandbox request; do not pretend a timeout or credit reservation is a token ceiling.
 - The estimator and rate are the exact ones approved in Task 1; no implicit unlimited maximum is permitted.
 
-- [ ] **Step 1: Test missing configuration and zero-capacity model/code-run rejection**
+- [x] **Step 1: Test missing configuration and zero-capacity model/code-run rejection**
 
 Make reservation return `{ reserved: false }` and assert the model provider is not called. Test an unavailable sandbox token-budget capability and assert the code-run sandbox is not started.
 
-- [ ] **Step 2: Run both targeted runtime tests and verify the current gate is insufficient**
+- [x] **Step 2: Run both targeted runtime tests and verify the current gate is insufficient**
 
 Run: `bun test server/tests/copilot-usage-meter.test.ts server/tests/workshop-metering.test.ts`
 Expected: FAIL because the current model gate reads a cached balance and the code-run path has no pre-call reservation.
 
-- [ ] **Step 3: Wire reserve/settle/release to the metering lifecycle**
+- [x] **Step 3: Wire reserve/settle/release to the metering lifecycle**
 
 Replace the cached zero-only admission decision with an atomic reservation; settle it using the durable event identity from plan 01 and actual token costs; release on model/sandbox failure. Add a sandbox budget contract and enforce the configured maximum token budget remotely. Do not downgrade missing pricing/budget support or a failed reservation lookup into an allowed call. If the sandbox deployment does not yet implement the enforcement contract, leave code-run admission closed while still recording an explicit refusal.
 
-- [ ] **Step 4: Verify runtime admission and release**
+- [x] **Step 4: Verify runtime admission and release**
 
 Run: `bun test server/tests/copilot-usage-meter.test.ts server/tests/workshop-metering.test.ts server/tests/billing-usage-delivery.test.ts`
 Expected: PASS; rejected work never reaches its provider, and successful/failed work settles/releases exactly once.
 
-- [ ] **Step 5: Commit the hard-cap runtime integration**
+- [x] **Step 5: Commit the hard-cap runtime integration**
 
 ```bash
 git add server/src/copilot.ts server/src/index.ts server/src/workshop/metering.ts server/tests/copilot-usage-meter.test.ts server/tests/workshop-metering.test.ts
@@ -196,25 +196,25 @@ git commit -m "feat(billing): expose approved credit overdraft policy" -m "Co-au
 - Overdraft branch reports positive unpaid debt and validates the approved future-grant recovery rule.
 - Both branches preserve `Σ credit_grants.used == Σ credit_ledger.applied` after settlement; active reservations are reported separately until converted into ledger entries.
 
-- [ ] **Step 1: Add one real-table finding test for the chosen branch**
+- [x] **Step 1: Add one real-table finding test for the chosen branch**
 
 For hard cap, seed an expired reserved allocation and assert a reservation finding. For overdraft, seed `credits > applied` and assert a debt finding.
 
-- [ ] **Step 2: Run the reconciliation integration test and verify the selected finding is missing**
+- [x] **Step 2: Run the reconciliation integration test and verify the selected finding is missing**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-reconcile.integration.test.ts`
 Expected: FAIL because the current reconciler has no reservation/debt finding.
 
-- [ ] **Step 3: Add the read-only check for the selected credit policy**
+- [x] **Step 3: Add the read-only check for the selected credit policy**
 
 Include stable reservation/debt identifiers, exact integer deltas, and the policy's remediation status. Do not automatically release or forgive funds during reconciliation.
 
-- [ ] **Step 4: Verify reconciliation remains read-only**
+- [x] **Step 4: Verify reconciliation remains read-only**
 
 Run: `TEST_DATABASE_URL="$TEST_DATABASE_URL" bun test server/tests/billing-reconcile.integration.test.ts`
 Expected: PASS; the finding is returned and the seeded ledger/grants/reservation rows are unchanged.
 
-- [ ] **Step 5: Commit the policy reconciliation check**
+- [x] **Step 5: Commit the policy reconciliation check**
 
 ```bash
 git add server/src/billing/reconcile.ts server/src/billing/types.ts server/tests/billing-reconcile.integration.test.ts

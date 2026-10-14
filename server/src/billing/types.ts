@@ -25,6 +25,14 @@ const RETRYABLE: Record<BillingErrorCode, boolean> = {
   unsupported: false,
 };
 
+/**
+ * The idempotency-key prefix tying one admitted model call's reservation to the usage event
+ * its finish is expected to commit: the gate writes `usage:<eventId>`, the reconciler reads
+ * the same prefix back out to name the event an expired hold belongs to. One constant so the
+ * write side and the read side cannot drift apart silently.
+ */
+export const USAGE_IDEMPOTENCY_KEY_PREFIX = "usage:";
+
 export class BillingError extends Error {
   override name = "BillingError";
   readonly code: BillingErrorCode;
@@ -39,6 +47,27 @@ export class BillingError extends Error {
   }
 }
 
+export type BillingPersistenceOperation =
+  | "customer_upsert"
+  | "customer_ensure"
+  | "subscription_upsert"
+  | "subscription_read"
+  | "webhook_lookup"
+  | "webhook_record"
+  | "webhook_apply"
+  | "snapshot";
+
+/** A database operation failed after the request reached the billing store. */
+export class BillingPersistenceError extends Error {
+  override name = "BillingPersistenceError";
+  readonly code = "persistence_failure";
+  readonly retryable = true;
+
+  constructor(readonly operation: BillingPersistenceOperation) {
+    super(`Billing persistence failed (${operation}).`);
+  }
+}
+
 /** A customer that exists remotely. Echoes the local, deterministic external ID only. */
 export type CustomerReceipt = { externalId: string };
 
@@ -47,6 +76,8 @@ export type SubscriptionReceipt = {
   externalCustomerId: string;
   externalSubscriptionId: string;
   planCode: string;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
 };
 
 /** One entitlement a plan grants, with optional presentational copy from deployment config. */
@@ -109,15 +140,31 @@ export type BillingEntitlements = {
  * here — the seam's vocabulary rule — so a report is greppable and a consumer can group it.
  */
 export type ReconcileFinding = {
-  /** The invariant's family: `payment` (the three-way) or `credits` (the identity). */
-  category: "payment" | "credits";
+  /**
+   * The invariant's family: `payment` (the three-way), `credits` (the identity), or `usage`
+   * (delivery backlog evidence).
+   */
+  category: "payment" | "credits" | "usage";
   /** The specific break, stable and greppable. */
   code:
     | "paid_without_fact"
     | "fact_transaction_mismatch"
+    | "fact_amount_mismatch"
     | "applied_without_subscription"
-    | "grants_ledger_divergence";
-  /** The row the finding is about: an order id, or a customer key. */
+    | "grants_ledger_divergence"
+    | "expired_reserved_reservation"
+    | "reservation_allocation_imbalance"
+    | "plan_grant_missing"
+    | "plan_grant_amount_mismatch"
+    | "activation_backlog"
+    | "duplicate_paid_order"
+    | "usage_target_pending"
+    | "usage_target_blocked"
+    | "usage_findings_omitted";
+  /**
+   * The row the finding is about: an order id, a customer key, a reservation id, or a usage
+   * event id.
+   */
   subject: string;
   /** The human sentence — numbers included, because the report is the evidence. */
   detail: string;
@@ -132,6 +179,15 @@ export type ReconcileReport = {
     paidOrders: number;
     appliedOrders: number;
     creditCustomers: number;
+    usageDeliveryTargets: {
+      pending: { lago: number; credits: number };
+      blocked: { lago: number; credits: number };
+    };
+    usageFindings: {
+      limit: number;
+      emitted: number;
+      omitted: number;
+    };
   };
   findings: readonly ReconcileFinding[];
 };
@@ -257,7 +313,7 @@ export type BillingInvoice = {
   method: "alipay" | "wechat";
   /** When the bill was raised: the order's creation. */
   issuedAt: string;
-  /** When money landed, or when the bill reached a terminal state. Absent while pending. */
+  /** When money landed. Absent unless the order actually settled as paid. */
   settledAt: string | null;
   /** The channel's own transaction id, once seen — what a person quotes to the channel. */
   channelTransactionId: string | null;
@@ -386,7 +442,24 @@ export type BillingSubscriptionRow = {
  * the re-read succeeds, never before, so a row always stands for finished work. Redelivery of a
  * known event is answered from the inbox alone; see the service for the ordering and why.
  */
+export type BillingWebhookProjection = {
+  /** An authoritative customer refresh, or an insert-only floor when the name is absent. */
+  customer?: { externalId: string; name?: string | null };
+  subscriptions?: readonly BillingSubscriptionRow[];
+  event: {
+    provider: string;
+    eventId: string;
+    uniqueKey?: string;
+    webhookType: string;
+    objectId?: string;
+  };
+};
+
 export type BillingStore = {
+  /** Commit all local delivery work together; a duplicate retains the durable winner's writes. */
+  applyWebhookProjection(
+    input: BillingWebhookProjection,
+  ): Promise<"processed" | "duplicate">;
   upsertCustomer(input: {
     externalId: string;
     name: string | null;
@@ -488,6 +561,19 @@ export type BillingService = {
     transactionId: string;
     timestamp?: Date;
     /** Absent means this deployment's own customer key. */
+    externalCustomerId?: string;
+  }): Promise<void>;
+  /**
+   * Delivery-grade usage metering for the durable outbox: resolves only once the provider accepted
+   * or deduplicated the event, and rejects with a `UsageDeliveryError` (no active subscription,
+   * provider refusal) or the provider's `BillingError` (transient) so the caller can retry.
+   * `recordUsage` above stays the best-effort, never-throwing variant.
+   */
+  deliverUsage(input: {
+    metricCode: string;
+    properties: Record<string, number | string>;
+    transactionId: string;
+    timestamp?: Date;
     externalCustomerId?: string;
   }): Promise<void>;
   snapshot(): Promise<BillingSnapshot>;

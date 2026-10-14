@@ -295,6 +295,10 @@ describe("createBillingService.ensureSubscription", () => {
       externalCustomerId: "deployment-1",
       externalSubscriptionId: "deployment-1-sub",
       planCode: "pro",
+      // The 7aff8dc5 receipt contract: the facade always carries the period it read, null
+      // when the projection states none.
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
     });
     // The receipt echoes local IDs only.
     expect(JSON.stringify(receipt)).not.toContain("lago");
@@ -338,6 +342,8 @@ describe("createBillingService.ensureSubscription", () => {
       externalCustomerId: "deployment-1",
       externalSubscriptionId: "deployment-1-sub",
       planCode: "pro",
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
     });
     expect(
       stub.requests.filter((request) => request.method === "POST"),
@@ -435,6 +441,8 @@ describe("createBillingService.ensureSubscription", () => {
       externalCustomerId: "deployment-1",
       externalSubscriptionId: "deployment-1-sub",
       planCode: "pro",
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
     });
     expect(
       stub.requests.filter((request) => request.method === "POST"),

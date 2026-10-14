@@ -104,7 +104,12 @@ import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
+import {
+  countChatInputTokens,
+  fitChatInputRequest,
+} from "./billing/input-bound";
 import { createLagoClient } from "./billing/lago";
+import { startUsageDeliverySweeps } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
@@ -118,6 +123,13 @@ import {
 } from "./billing/service";
 import { createBillingStatements } from "./billing/statements";
 import { createBillingStore } from "./billing/store";
+import {
+  createCreditUsageTarget,
+  createLagoUsageTarget,
+  createUsageDelivery,
+} from "./billing/usage-delivery";
+import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import { createWebhookVerifier } from "./billing/webhook-signature";
 import {
   loadAttachmentForTurn,
@@ -132,7 +144,7 @@ import {
   createGroupStore,
   groupSourceForRun,
 } from "./channels/group";
-import { createChannelStore } from "./channels/routes";
+import { type ChannelStore, createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import {
@@ -171,14 +183,22 @@ import {
   CreditGateError,
   type IdentifyActor,
   type IdentifyUser,
+  ModelUsageSettlementError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setModelUsageGate,
-  setModelUsageMeter,
   type ToolSelection,
 } from "./copilot";
 import { loadCraftConfig } from "./craft/config";
+import { builtinSkillFilesFor, buildAvailableSourcesSection } from "./craft/builtin-skills";
+import type { CraftKbSearch } from "./craft/kb-search-relay";
+import { projectKbSearchResults } from "./craft/kb-search-relay";
+import {
+  createCraftManagedContentResolver,
+  personalUnconnectedApps,
+} from "./craft/managed-content";
+import { resolveCraftMcpServers } from "./craft/mcp-servers";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -188,6 +208,13 @@ import {
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "./craft/routes";
+import { createCraftStore } from "./craft/store";
+import {
+  type WebappHmrSocketData,
+  resolveWebappHmrUpgrade,
+  webappHmrSessionIdFromPath,
+  webappHmrSocketHandlers,
+} from "./craft/webapp-proxy";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -218,20 +245,40 @@ import {
   HostAccessRefusedError,
 } from "./host-access/broker";
 import { hostAccessTools } from "./host-access/tools";
+import { githubCallbackRoutes } from "./identity/github-callback";
+import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
+import { slackCodeRedeemer } from "./identity/slack-redeem";
+import { createIdentityStore } from "./identity/store";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
 } from "./intelligence-client";
 import { knowledgeServiceConfig } from "./knowledge/config";
+import { knowledgeRequest } from "./knowledge/client";
+import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
 } from "./knowledge/retrieval";
 import { knowledgeTools } from "./knowledge/tools";
 import { clearLearningRevisionFallback } from "./learning/runtime";
+import {
+  createLearningAutoAssign,
+  probeLearningContainer,
+  withLearningAutoAssign,
+} from "./learning/auto-assign";
+import {
+  cliLoginPresent,
+  ensureLearningContainer,
+  intelligenceApiOrigin,
+  keyIntelligence,
+  learningSetupInstructions,
+} from "./learning/ensure-container";
 import { createLearningSettingsStore } from "./learning/settings";
 import { createMarketplaceStore } from "./marketplace/store";
+import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
+import { createIntelligenceMemory } from "./memory/intelligence";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
@@ -414,7 +461,11 @@ import {
 import { indexArtifacts } from "./workshop/artifacts";
 import { createTurnEventBus } from "./workshop/bus";
 import { createInProcessTurnLock, createRedisTurnLock } from "./workshop/locks";
-import { reportCodeRunUsage } from "./workshop/metering";
+import {
+  calculateExactModelUsageCharge,
+  reportCodeRunUsage,
+  UsageChargeError,
+} from "./workshop/metering";
 import { createTurnOrchestrator } from "./workshop/orchestrator";
 import { createWorkshopPublicRoutes } from "./workshop/public-routes";
 import {
@@ -428,6 +479,73 @@ import {
 import { createWorkshopStore } from "./workshop/store";
 
 const log = getLogger("server");
+const STABLE_BILLING_CODE = /^[a-z0-9_]{1,64}$/;
+const MODEL_RESERVATION_WINDOW_MS = 15 * 60_000;
+
+function usageOutboxWriteFailureCode(error: unknown): string {
+  if (error instanceof UsageOutboxConflictError) {
+    return "usage_outbox_conflict";
+  }
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === "string" && STABLE_BILLING_CODE.test(code)
+    ? code
+    : "usage_outbox_write_failed";
+}
+
+function logUsageOutboxWriteFailure(
+  source: "llm" | "code_run",
+  eventId: string,
+  error: unknown,
+  reservationId?: string,
+  precomputedCode?: string,
+) {
+  // The error's NAME only: a database message can carry connection details, and the sweep
+  // probes pin that nothing of the sort reaches the logs.
+  log.error(
+    {
+      type: "billing-usage-outbox-write-failed",
+      source,
+      eventId,
+      ...(reservationId ? { reservationId } : {}),
+      code: precomputedCode ?? usageOutboxWriteFailureCode(error),
+      ...(error instanceof Error ? { name: error.name } : {}),
+    },
+    "billing-usage-outbox-write-failed",
+  );
+}
+
+function reservationReleaseFailureCode(error: unknown): string {
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === "string" && STABLE_BILLING_CODE.test(code)
+    ? code
+    : "reservation_release_failed";
+}
+
+function logReservationReleaseFailure(input: {
+  source: "llm";
+  eventId: string;
+  reservationId: string;
+  reason: string;
+  error: unknown;
+}) {
+  log.error(
+    {
+      type: "billing-reservation-release-failed",
+      source: input.source,
+      eventId: input.eventId,
+      reservationId: input.reservationId,
+      reason: input.reason,
+      code: reservationReleaseFailureCode(input.error),
+    },
+    "billing-reservation-release-failed",
+  );
+}
 
 // 本进程的全部出站依赖都是内网/本机（Casdoor、kb-mastra、agent 运行时等）：
 // 开发机的 HTTP_PROXY 会把 localhost 请求劫持成代理 404/HTML（Bun fetch 读
@@ -508,11 +626,73 @@ const port = config.port;
 const database = createDatabase(config.databaseUrl);
 // Every dispatch point asks this database whether its person paused the Bot. See agents/lifecycle.ts.
 configureBotLifecycle({ database });
-const learningSettings = createLearningSettingsStore(database, config.learning);
+const learningSettingsStore = createLearningSettingsStore(
+  database,
+  config.learning,
+);
+// Its own client, like the self-host banner's: the constructor opens nothing.
+const learningProbeIntelligence = createIntelligenceClient(
+  config.runtime.intelligence,
+);
+/*
+ * Who can create the `openbot` container here: never the runtime key. A service token the operator
+ * configured (local evaluation installs), or a CopilotKit CLI login on this machine, which is what a
+ * laptop running `bun run start` has. Neither, and the log and Admin say exactly what to run instead.
+ */
+const learningApiOrigin = (() => {
+  try {
+    return intelligenceApiOrigin(config.runtime.intelligence.apiUrl);
+  } catch {
+    return undefined;
+  }
+})();
+const learningCanCreate =
+  learningApiOrigin !== undefined &&
+  (config.learningSetup !== undefined || cliLoginPresent());
+const learningAutoAssign = createLearningAutoAssign({
+  enabled: config.learningAutoAssign,
+  store: learningSettingsStore,
+  probe: (containerId) =>
+    probeLearningContainer(learningProbeIntelligence, containerId),
+  ...(learningApiOrigin
+    ? { instructions: learningSetupInstructions(learningApiOrigin) }
+    : {}),
+  ...(learningCanCreate && learningApiOrigin
+    ? {
+        create: () =>
+          ensureLearningContainer({
+            directory: process.cwd(),
+            apiUrl: learningApiOrigin,
+            nonInteractive: true,
+            key: keyIntelligence(
+              learningApiOrigin,
+              config.runtime.intelligence.apiKey,
+              config.runtime.intelligence.gatewayWsUrl,
+            ),
+            cliLogin: cliLoginPresent(),
+            ...(config.learningSetup
+              ? {
+                  serviceToken: {
+                    token: config.learningSetup.serviceToken,
+                    projectId: config.learningSetup.projectId,
+                  },
+                }
+              : {}),
+          }),
+      }
+    : {}),
+  audit: createAuditStore(database),
+});
+const learningSettings = withLearningAutoAssign(
+  learningSettingsStore,
+  learningAutoAssign,
+);
+learningAutoAssign.start();
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
+const identityStore = createIdentityStore(database, credentialStore);
 const agentVault = {
   store: credentialStore,
   reader: credentialStore,
@@ -532,11 +712,23 @@ const tenantPackage = await loadTenantPackage(config.tenantPackageDirectory);
 const threadIdentity = createThreadIdentity(
   config.deploymentId ?? tenantPackage.tenantId,
 );
-const channelStore = createChannelStore(
+const baseChannelStore = createChannelStore(
   database,
   agentProfileStore,
   threadIdentity,
 );
+/**
+ * A person spoke in one of their conversations. Bound once memory defaults exist (memory/defaults.ts):
+ * a conversation with one Bot switches on that Bot's research and memory sources for this person.
+ */
+let personSpoke: ((ownerUserId: string, channelId: string) => void) | undefined;
+const channelStore: ChannelStore = {
+  ...baseChannelStore,
+  async recordActivity(actor, channelId, activity, source) {
+    await baseChannelStore.recordActivity(actor, channelId, activity, source);
+    if (activity.agentId === null) personSpoke?.(actor.id, channelId);
+  },
+};
 const channelEvents = createChannelEventHub();
 /**
  * Which components each Bot may answer with.
@@ -569,14 +761,29 @@ const peopleStore = createPeopleStore(
   database,
   config.auth?.initialAdminEmails ?? [],
   /*
-   * Removing somebody retires the credentials they granted this deployment.
+   * Removing somebody retires what they connected: their plugin credentials and connections, and
+   * their linked outside accounts (which keep resolving to them, now refused; the tokens are revoked
+   * and every link needs reconnecting). Both halves run whichever fails, and the failure is rethrown
+   * after (see retireOwnedAccounts).
    *
-   * A closure rather than the method itself, because the plugin store is built further down: this
-   * has to exist before `auth` does, and that one needs the vault and the policy. Nothing calls this
-   * during module initialisation — it runs when an administrator removes somebody, over HTTP — so by
-   * then the binding is there.
+   * A closure, because `pluginStore` is built further down: this has to exist before `auth` does,
+   * and that one needs the vault and the policy. `pluginStore` is read only when the closure runs —
+   * an administrator or the directory removing somebody, never during module initialisation — so by
+   * then the binding is there. The linked-account half writes its audit rows through a store made
+   * on its own transaction, so it reads no later binding (`bootAuditStore` included).
    */
-  (userId, by) => pluginStore.retireConnectionsFor(userId, by),
+  (userId, by) =>
+    retireOwnedAccounts({
+      plugins: () => pluginStore.retireConnectionsFor(userId, by),
+      identities: () =>
+        retireIdentityLinks(
+          database,
+          credentialStore,
+          (executor) => createAuditStore(executor),
+          userId,
+          by,
+        ),
+    }),
 );
 const identityProviderStore = createIdentityProviderStore(database);
 /*
@@ -603,6 +810,7 @@ const computerProvider = config.computer
   ? withPolicyPushOnWake(createComputerProvider(config.computer), {
       policyForBot: (botId) => enterpriseControls()?.policyForBot(botId),
       ...(config.computer.token ? { token: config.computer.token } : {}),
+      ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
     })
   : undefined;
 
@@ -719,7 +927,7 @@ const approvalService = createApprovalService(
               id: request.id,
               kind: "approval",
               requestId: request.id,
-              text: `${botName} asks for approval to use ${action.toolRef}. Open your OpenBot approval inbox to review this action.`,
+              text: `${botName} asks for approval to use ${action.toolRef}. Open the Bot's page in OpenBot to review this action.`,
             },
           );
       }
@@ -1267,7 +1475,14 @@ const hostAccessBroker = createHostAccessBroker(Date.now, {
 // grant, the policy and the audit row are exactly where they were. Host-folder tools are also
 // server-dispatched: the selected Bot and the signed-in owner are bound here, then the desktop worker
 // receives only opaque grant ids and relative paths.
-const personalMemoryStore = createMemoryStore(database);
+// Memory lives in CopilotKit Intelligence when this deployment is entitled to it, and in OpenBot's own
+// tables when it is not; see memory/store.ts. Its own client, like the thread reader's: the
+// constructor opens nothing.
+const personalMemoryStore = createMemoryStore(database, {
+  intelligence: createIntelligenceMemory({
+    client: createIntelligenceClient(config.runtime.intelligence),
+  }),
+});
 const demonstrationStore = createDemonstrationStore(database);
 const demonstrationRecorder = createDemonstrationRecorder({
   store: demonstrationStore,
@@ -1305,8 +1520,32 @@ if (!knowledgeRuntime && knowledgeService) {
     "knowledge-retrieval-unconfigured",
   );
 }
-const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) =>
-  memoryIngestion.contextFor(ownerUserId, botId);
+/*
+ * Memory sources and background research, on by default for each person and Bot, and never switched
+ * back on once the person turns one down. See memory/defaults.ts.
+ */
+const memoryDefaults = createMemoryDefaults({
+  database,
+  ingestion: memoryIngestion,
+  sources: config.memoryDefaults.sources,
+  research: config.memoryDefaults.research,
+  channelBots: async (ownerUserId, channelId) =>
+    (await channelStore.get(await actorFor(ownerUserId), channelId))
+      ?.agentIds ?? null,
+  // The same rule research delivery uses, read when a person speaks (long after it is defined).
+  canDeliver: async (ownerUserId, channelId, agentId) =>
+    (await deliveryScopeFor(ownerUserId, channelId, agentId)) !== null,
+  mintThreadId: () => threadIdentity.mint(),
+  // Read when a Bot turn starts, long after `teamBots` below is defined.
+  publishedByAnother: (ownerUserId, agentId) =>
+    teamBots.publishedByAnother(ownerUserId, agentId),
+});
+personSpoke = memoryDefaults.personSpoke;
+const loadPersonalMemoryForActor = (ownerUserId: string) => (botId: string) => {
+  // Apps connected since this Bot's last turn become its memory sources. Never waits.
+  memoryDefaults.botTurn(ownerUserId, botId);
+  return memoryIngestion.contextFor(ownerUserId, botId);
+};
 const memorySweep = repeatAfterEach(async () => {
   try {
     await memoryIngestion.syncDue();
@@ -1319,6 +1558,20 @@ const memorySweep = repeatAfterEach(async () => {
         timestamp: new Date().toISOString(),
       },
       "memory-sweep-error",
+    );
+  }
+  // Mirror to Intelligence what is out of step: the backfill on the first passes after a deployment
+  // becomes entitled, and afterwards whatever an outage left behind. A no-op without Intelligence.
+  try {
+    await personalMemoryStore.mirrorPending();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        type: "memory-sweep-error",
+        error: error instanceof Error ? error.name : "UnknownError",
+        context: { operation: "mirrorPending" },
+        timestamp: new Date().toISOString(),
+      }),
     );
   }
 }, 60_000);
@@ -3234,6 +3487,7 @@ await installEnterpriseControls({
   auditStore: bootAuditStore,
   ...(computerProvider ? { provider: computerProvider } : {}),
   ...(config.computer?.token ? { computerToken: config.computer.token } : {}),
+  ...(config.webBotAuth ? { webBotAuth: config.webBotAuth } : {}),
   builtInModel: `${runtimeModel.provider}/${runtimeModel.defaultModel}`,
   people: peopleStore,
   initialAdminEmails: config.auth?.initialAdminEmails ?? [],
@@ -3308,7 +3562,19 @@ const billing =
             // service holds — the pass audits those collaborators and must not read through
             // them. Scoped to the deployment's customer key, the same key the purchase
             // guard's uncached read uses, so audit and gate agree about "live".
-            reconciler: createReconciler(database, externalCustomerKey),
+            // The reconciliation pass (T7): over the database directly, not the deps the
+            // service holds — the pass audits those collaborators and must not read through
+            // them. Scoped to the deployment's customer key, the same key the purchase
+            // guard's uncached read uses, so audit and gate agree about "live". The catalog
+            // lookup prices each plan's expected allowance in scaled integer units (the same
+            // arithmetic the grantor below uses), so the pass can audit that a paid order's
+            // plan payout actually landed at the priced amount.
+            reconciler: createReconciler(database, externalCustomerKey, (planCode) => {
+              const entry = settings.planCatalog.get(planCode);
+              return entry && entry.credits > 0
+                ? Math.round(entry.credits * CREDIT_SCALE)
+                : null;
+            }),
             ...(settings.webhookKey
               ? {
                   verifier: createWebhookVerifier({
@@ -3329,89 +3595,158 @@ const billing =
           creditWriter: createCreditWriter(database),
         };
       })();
+const usageOutbox =
+  billing === undefined ? undefined : createUsageOutbox(database);
 
 /*
  * The billing seam meters what the built-in Bots consume, once it exists: every model call's
- * finish lands here and becomes one provider event.
- *
- * The transaction id is a per-process monotonic sequence (`llm:<key>:<seq>`), NOT a timestamp
- * mix: the meter callback carries only the token counts (copilot.ts `setModelUsageMeter` — no
- * run id, no session id reaches it; the finish part of a model stream is all it sees), so the
- * two properties the id needs cannot come from a business identifier and are built instead:
- * * different calls → different ids: the sequence increments per reported finish, so two calls
- *   in the same millisecond (or the same tick of any clock) still number apart;
- * * a retried REPORT of the same call → the same id: the id is minted once, when the finish is
- *   first seen, and the report itself is fire-and-forget with no caller-side retry, so there is
- *   no second minting of one call to deduplicate.
- * This replaces the old `llm-<key>-<Date.now()>-<in>-<out>`, which double-metered real retries
- * (a new millisecond meant a "new" event) and merged distinct same-millisecond same-usage calls
- * into one (the provider deduplicates on the id). A usage miss is a billing miss, never a
- * product error, which is why the meter never awaits and the service never throws.
- *
- * THE CREDIT LEDGER'S EXCHANGE RATE (the two meters below share it): one token = one scaled
- * credit unit (×100 ledger units per whole credit ⇒ a 9000-credit plan allowance funds 9000
- * tokens at 1:100, i.e. ledger rows carry `tokens × 100`). This is the v1 placeholder — it
- * aligns the local ledger's magnitude with Lago's `llm_tokens`/`code_run_tokens` units so the
- * two books COULD reconcile — and the product-priced rate plugs in at exactly these two call
- * sites when it exists.
- * TODO(product): replace the 1-token = 1-credit×1/100 placeholder with configured pricing.
+ * admitted call reserves first, then the finished usage becomes one immutable outbox fact with the
+ * same event/reservation identity and exact rational charge. Delivery to Lago and credits happens
+ * downstream; a completed run whose durable write failed stays visible for reconciliation rather
+ * than being silently charged in-process.
  */
-if (billing !== undefined) {
-  const billingService = billing.service;
-  let meterSequence = 0;
-  setModelUsageMeter((usage) => {
-    const input = usage.inputTokens ?? 0;
-    const output = usage.outputTokens ?? 0;
-    if (input === 0 && output === 0) return;
-    meterSequence += 1;
-    const transactionId = `llm:${billing.externalCustomerKey}:${meterSequence}`;
-    void billingService
-      .recordUsage({
-        metricCode: "llm_tokens",
-        transactionId,
-        properties: {
-          input_tokens: input,
-          output_tokens: output,
-          tokens: input + output,
-        },
-      })
-      .catch(() => {});
-    // The local ledger's draw, POST-PAID: the same finish that meters to Lago draws the credit
-    // balance by the actual cost (tokens × 100, the exchange rate above). Fire-and-forget for
-    // the same reason the meter is — a ledger miss must not fail a finished call — and
-    // idempotent on the same sequence-derived key, so a double-reported finish draws once.
-    void billing.creditWriter
-      .consumeCredits({
-        externalCustomerId: billing.externalCustomerKey,
-        amountCents: (input + output) * 100,
-        idempotencyKey: transactionId,
-        title: "模型调用",
-        requestId: transactionId,
-        client: "web",
-      })
-      .catch(() => {});
-  });
+if (billing !== undefined && usageOutbox !== undefined) {
+  const creditPolicy = billingSettings?.creditPolicy;
+  setModelUsageGate(async (input) => {
+    if (!creditPolicy?.configured) throw new CreditGateError();
+    const modelId = input.modelId ?? runtimeModel.defaultModel;
+    const modelPolicy = creditPolicy.models.get(modelId);
+    if (!modelPolicy) throw new CreditGateError();
 
-  /*
-   * The PRE-CALL gate (P0-2's front door): a deployment whose live credit balance is zero does
-   * not get free model calls while it looks paid-for. A 10-second TTL cache in front of the
-   * balance read — a burst of calls costs one read, and a fresh grant shows through at most
-   * 10s later; the consume path above is the accuracy, this gate is only the visibility.
-   * Fail-closed: a balance read that throws refuses the call (copilot.ts wraps it into
-   * CreditGateError), because an unreadable balance is not a free pass.
-   */
-  let gateBalance: { value: number; checkedAt: number } | undefined;
-  setModelUsageGate(async () => {
-    const now = Date.now();
-    if (gateBalance && now - gateBalance.checkedAt < 10_000) {
-      if (gateBalance.value <= 0) throw new CreditGateError();
-      return;
+    let reservation: Awaited<
+      ReturnType<typeof billing.creditWriter.reserveCredits>
+    >;
+    try {
+      reservation = await billing.creditWriter.reserveCredits({
+        externalCustomerId: billing.externalCustomerKey,
+        idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
+        maximumCents: Number(modelPolicy.maximumReservationUnits),
+        expiresAt: new Date(
+          input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
+        ),
+      });
+    } catch {
+      throw new CreditGateError();
     }
-    const balance = await billing.creditWriter.readBalance(
-      billing.externalCustomerKey,
-    );
-    gateBalance = { value: balance, checkedAt: now };
-    if (balance <= 0) throw new CreditGateError();
+    if (!reservation.reserved) throw new CreditGateError();
+
+    return {
+      /*
+       * The provider-bound contract, as it stands for the adapters this deployment actually
+       * invokes. The built-in instance path is the OpenAI-compatible chat model: it maps
+       * maxOutputTokens to max_tokens, which the chat-completions contract enforces, so the
+       * output cap is proven. Its input side has no provider-enforced ceiling, so the bound
+       * is the deployment's own (ADR-0001): a conservative bytes-based count that sits above
+       * a typical tokenizer, and a fit that drops the oldest non-system messages until the
+       * count fits the configured ceiling — the provider cannot be SENT more than the
+       * reservation prices by our own measure, and a tokenizer that beats the calibration
+       * surfaces at settlement as usage_over_bound for reconciliation.
+       */
+      bounds: {
+        input: {
+          enforced: "counted" as const,
+          maximumTokens: modelPolicy.input.maximumTokens,
+          countInputTokens: countChatInputTokens,
+          fit: fitChatInputRequest(modelPolicy.input.maximumTokens),
+        },
+        output: {
+          enforced: "provider_cap" as const,
+          maximumTokens: modelPolicy.output.maximumTokens,
+        },
+      },
+      finish: async (usage) => {
+        /*
+         * The decisive boundary: a successful finish means the immutable usage fact is
+         * COMMITTED to the outbox (or an identical event already exists). Any failure —
+         * invalid or over-bound usage, or a rejected write — is logged with both stable ids
+         * and rethrown as a credential-free settlement error, so the stream the person sees
+         * fails rather than reporting a successful answer whose usage vanished. The hold
+         * stays `reserved`: chargeable work is never released by a failed write, and
+         * reconciliation is what investigates it.
+         */
+        let charged: ReturnType<typeof calculateExactModelUsageCharge>;
+        try {
+          charged = calculateExactModelUsageCharge(modelPolicy, {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          });
+        } catch (error) {
+          // Pricing refused the settlement — a distinct stage from the outbox write, so it
+          // gets its own event and never the write-failure code a foreign error would
+          // otherwise fall back to. The hold is retained either way.
+          const code =
+            error instanceof UsageChargeError ? error.code : "usage_charge_failed";
+          log.error(
+            {
+              type: "billing-usage-charge-refused",
+              source: "llm",
+              eventId: input.eventId,
+              reservationId: reservation.reservationId,
+              ...(error instanceof Error ? { name: error.name } : {}),
+              code,
+            },
+            "billing-usage-charge-refused",
+          );
+          throw new ModelUsageSettlementError(code);
+        }
+        try {
+          await usageOutbox.record({
+            eventId: input.eventId,
+            source: "llm",
+            externalCustomerId: billing.externalCustomerKey,
+            transactionId: input.eventId,
+            inputTokens: charged.inputTokens,
+            outputTokens: charged.outputTokens,
+            model: modelId,
+            client: input.client,
+            occurredAt: input.occurredAt,
+            reservationId: reservation.reservationId,
+            actualCostNumerator: charged.actual.numerator.toString(),
+            actualCostDenominator: charged.actual.denominator.toString(),
+          });
+        } catch (error) {
+          const failureCode = usageOutboxWriteFailureCode(error);
+          logUsageOutboxWriteFailure(
+            "llm",
+            input.eventId,
+            error,
+            reservation.reservationId,
+            failureCode,
+          );
+          throw new ModelUsageSettlementError(failureCode);
+        }
+      },
+      fail: async (failure) => {
+        try {
+          await billing.creditWriter.releaseReservation(
+            reservation.reservationId,
+            failure.reason,
+          );
+        } catch (error) {
+          logReservationReleaseFailure({
+            source: "llm",
+            eventId: input.eventId,
+            reservationId: reservation.reservationId,
+            reason: failure.reason,
+            error,
+          });
+        }
+      },
+    };
+  });
+} else {
+  setModelUsageGate(undefined);
+}
+
+if (billing !== undefined && usageOutbox !== undefined) {
+  const usageDelivery = createUsageDelivery({
+    outbox: usageOutbox,
+    sendToLago: createLagoUsageTarget(billing.service),
+    chargeCredits: createCreditUsageTarget(billing.creditWriter),
+    log: (message) => log.warn(message),
+  });
+  startUsageDeliverySweeps(usageDelivery, {
+    log: (message) => log.warn(message),
   });
 }
 
@@ -3504,7 +3839,7 @@ const payments =
               return { found: false };
             },
             ensureSubscription: async (input) => {
-              await billing.service.ensureSubscription(input);
+              return billing.service.ensureSubscription(input);
             },
           },
           externalCustomerKey,
@@ -3637,6 +3972,7 @@ const credits =
  */
 const sandboxUrl = process.env.AGENT_SANDBOX_URL?.trim();
 const sandboxToken = process.env.SANDBOX_TOKEN?.trim();
+const codeRunBillingEnabled = billing !== undefined;
 const codeRunStore = createCodeRunStore(database);
 /*
  * Metering's one door (I4): every gateway finish that carries usage reports to Lago through
@@ -3645,48 +3981,30 @@ const codeRunStore = createCodeRunStore(database);
  * column is a display copy and is never read here). A deployment without billing passes
  * `billing === undefined` straight through: silent, and the run row still stands.
  */
-const codeRunUsageReporter = billing
-  ? async (input: Parameters<typeof reportCodeRunUsage>[1]): Promise<void> => {
-      await reportCodeRunUsage(billing.service, input);
-      /*
-       * The local ledger's draw, beside the Lago report: the same run's tokens × 100 (the
-       * exchange rate the LLM meter's block above spells), idempotent on the SAME run id the
-       * Lago report uses (`code-run:<runId>`) — a replayed settle is one draw here exactly as
-       * it is one event there. Fire-and-forget for the same reason: the run already finished,
-       * and a ledger miss must not fail it.
-       *
-       * No PRE-call gate on code runs, deliberately: the run has already started by the time
-       * the gateway reports usage (the sandbox's own budget governs the run), and refusing
-       * mid-run saves nothing the sandbox's timeout would not. The LLM gate (above) is where
-       * before-the-first-token refusal lives; this side keeps the ledger honest afterwards.
-       */
-      const tokens = input.inputTokens + input.outputTokens;
-      if (tokens <= 0) return;
-      await billing.creditWriter
-        .consumeCredits({
+const codeRunUsageReporter = billing && usageOutbox
+  ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
+      try {
+        await reportCodeRunUsage(usageOutbox, {
+          ...input,
           externalCustomerId: billing.externalCustomerKey,
-          amountCents: tokens * 100,
-          idempotencyKey: `code-run:${input.runId}`,
-          title: "代码运行",
-          requestId: input.runId,
-          model: input.modelId,
-          client: "web",
-        })
-        .catch(() => {
-          // Contained on purpose — see the comment above.
         });
+      } catch (error) {
+        logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
+      }
     }
   : undefined;
+const sandboxClientFor = (botId: string) =>
+  sandboxUrl && sandboxToken
+    ? createSandboxClient({
+        baseUrl: sandboxUrl,
+        token: sandboxToken,
+        botId,
+      })
+    : null;
 const codeRunGatewayFactory: CodeRunGatewayFactory = ({ botId, ownerUserId }) =>
   createCodeRunGateway({
-    client:
-      sandboxUrl && sandboxToken
-        ? createSandboxClient({
-            baseUrl: sandboxUrl,
-            token: sandboxToken,
-            botId,
-          })
-        : null,
+    client: sandboxClientFor(botId),
+    billingEnabled: codeRunBillingEnabled,
     modelId: runtimeModel.defaultModel,
     botId,
     ownerUserId,
@@ -3718,10 +4036,7 @@ const workshopLock = workshopRedisPort
       ttlMs: Number(process.env.WORKSHOP_LOCK_TTL_MS?.trim() || 30_000),
     })
   : createInProcessTurnLock();
-const workshopClientFor = (botId: string) =>
-  sandboxUrl && sandboxToken
-    ? createSandboxClient({ baseUrl: sandboxUrl, token: sandboxToken, botId })
-    : null;
+const workshopClientFor = (botId: string) => sandboxClientFor(botId);
 
 const workshopOrchestrator = createTurnOrchestrator({
   store: workshopStore,
@@ -3729,6 +4044,7 @@ const workshopOrchestrator = createTurnOrchestrator({
   gatewayFor: ({ botId, ownerUserId }) =>
     createCodeRunGateway({
       client: workshopClientFor(botId),
+      billingEnabled: codeRunBillingEnabled,
       modelId: runtimeModel.defaultModel,
       botId,
       ownerUserId,
@@ -3864,6 +4180,172 @@ const craftEffectiveConfig = sandboxUrl
       ),
     })
   : craftConfig;
+/*
+ * Craft's managed content (AGENTS.md app guidance + skill fileset + fingerprints), answered
+ * for the session's user — never the deployment-wide Bot id. Both live legs resolve below:
+ * the connectable-apps list (personal servers not yet connected) and the per-user craft MCP
+ * set (the personal servers that ARE connected, each entry stamped with the relay url), so
+ * mcp_config_hash fingerprints the resolved set. The one leg still absent is the
+ * company-search skill: OpenBot's knowledge domain has no path the craft sandbox can call
+ * (credentials stay out of agent-readable workspace files), so no such file ships and the
+ * AGENTS.md Company-knowledge section stays out until a backed implementation lands.
+ */
+/*
+ * The relay origin the per-user MCP set stamps into session opencode.json: the
+ * operator's explicit override first, then the deployment's public url (the
+ * same address deliveryProviders resolve against), then the loopback default —
+ * the sandbox's opencode dials this and the relay attaches credentials, so it
+ * must be an address that deployment's sandboxes can reach.
+ */
+const craftMcpRelayBaseUrl =
+  craftEffectiveConfig.mcpRelayBaseUrl ||
+  config.publicUrl ||
+  config.auth?.baseUrl ||
+  `http://localhost:${config.port}`;
+/*
+ * The craft company-search leg (D1): the knowledge domain over the same
+ * service-to-service credential the knowledge routes use. The sources section
+ * lists the deployment's knowledge bases (the KB domain is deployment-tenant);
+ * the search fans out per KB, merges, and projects onyx-cli's result contract.
+ * An unwired knowledge service holds the skill back entirely (null) — the
+ * AGENTS.md Company-knowledge section stays out with it.
+ */
+const craftKnowledgeBases = async (): Promise<
+  Array<{ id: string; name: string; description: string | null }> | null
+> => {
+  if (!knowledgeService) return null;
+  try {
+    const response = await knowledgeRequest(knowledgeService, "/kb");
+    const body = (await response.json()) as {
+      items?: Array<{
+        id: string;
+        name: string;
+        description?: string | null;
+      }>;
+    };
+    return (body.items ?? []).map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description ?? null,
+    }));
+  } catch {
+    return null;
+  }
+};
+const craftCompanySearchSourcesSection = async (): Promise<string | null> => {
+  const kbs = await craftKnowledgeBases();
+  return kbs === null ? null : buildAvailableSourcesSection(kbs);
+};
+const craftKbSearch: CraftKbSearch | null = knowledgeService
+  ? async ({ query, sourceTypes, days }) => {
+      const kbs = (await craftKnowledgeBases()) ?? [];
+      if (kbs.length === 0) return { status: "ok", results: [] };
+      const settled = await Promise.allSettled(
+        kbs.map((kb) =>
+          knowledgeRequest(
+            knowledgeService!,
+            `/kb/${encodeURIComponent(kb.id)}/retrieve`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                query,
+                top_k: 20,
+                score_threshold: 0,
+                hybrid: true,
+              }),
+            },
+          ).then(
+            (response) =>
+              response.json() as Promise<{
+                results: KnowledgeSearchResult[];
+              }>,
+          ),
+        ),
+      );
+      // A KB domain that answers nothing at all is "unavailable" (the relay's
+      // 503 shape); per-KB failures degrade to that KB contributing nothing.
+      const perKb = settled.flatMap((entry) =>
+        entry.status === "fulfilled" ? entry.value.results : [],
+      );
+      if (
+        perKb.length === 0 &&
+        settled.every((entry) => entry.status === "rejected")
+      ) {
+        return { status: "unavailable" };
+      }
+      return {
+        status: "ok",
+        results: projectKbSearchResults(perKb, { days, sourceTypes }),
+      };
+    }
+  : null;
+const craftManagedContentFor = createCraftManagedContentResolver({
+  connectableAppsFor: async (userId) => {
+    const [servers, held, brokered] = await Promise.all([
+      pluginStore.listServers(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return personalUnconnectedApps(
+      servers,
+      new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+    );
+  },
+  /*
+   * The builtin skills (onyx's $ONYX/skills/builtin): pptx and
+   * craft-documentation ship to everyone; a connector skill ships only when
+   * the user has connected the matching MCP server (onyx's
+   * connected-apps-only rule) — the personal connection set above is the same
+   * fact the connectable list inverts. company-search ships when the
+   * knowledge domain backs it, its sources section rendering the deployment's
+   * knowledge bases (onyx renders the user's connector sources; OpenBot's KB
+   * domain is deployment-tenant — the ruled D1 shape).
+   */
+  skillFilesFor: async (userId) => {
+    const [held, brokered, sourcesSection] = await Promise.all([
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+      craftCompanySearchSourcesSection(),
+    ]);
+    return builtinSkillFilesFor({
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      ...(sourcesSection !== null ? { companySearchSourcesSection: sourcesSection } : {}),
+    });
+  },
+  /*
+   * The per-user craft MCP set (the contract's C3 ruling): personal-account
+   * servers the user HAS connected — the same connection fact the connectable
+   * list inverts. Each entry's url is the RELAY route, never the vendor
+   * endpoint: the credential attaches on the server side (mcp-relay.ts), so
+   * none can enter a workspace file. Unconnected servers are dropped entirely,
+   * onyx's unauthenticated-drop, because the relay would refuse their calls.
+   */
+  mcpServersFor: async (userId) => {
+    const [wireServers, held, brokered] = await Promise.all([
+      pluginStore.mcpWireServersFor(),
+      pluginStore.connectionsFor(userId),
+      pluginStore.brokeredConnectionsFor(userId),
+    ]);
+    return resolveCraftMcpServers({
+      servers: wireServers.map((server) => ({
+        id: server.id,
+        name: server.title,
+      })),
+      connectedServerIds: new Set([
+        ...held.map((row) => row.serverId),
+        ...brokered.map((row) => row.serverId),
+      ]),
+      relayBaseUrl: craftMcpRelayBaseUrl,
+    });
+  },
+});
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
   ? ({ requireUser }) =>
       createCraftRoutes({
@@ -3890,9 +4372,41 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
           userNameFor: async (userId) =>
             (await peopleStore.find(userId))?.name ?? null,
           generateName: craftGenerateName,
+          // The managed-content layer over the plugins domain: connectable apps are
+          // the enabled connector rows that act in the person's own account and that
+          // they have NOT connected yet (onyx's get_connectable_apps_for_user —
+          // shared/deployment-account apps answer for everybody and never appear).
+          managedContentFor: craftManagedContentFor,
+          // The relay's credential resolution: the plugins domain's own
+          // per-person connection handling (MCP-wire servers only), decrypted
+          // per forwarded call and never written anywhere the agent reads.
+          mcpConnectionFor: (userId, serverId) =>
+            pluginStore.mcpWireConnectionFor(userId, serverId),
+          kbSearch: craftKbSearch,
+          mcpRelayBaseUrl: craftMcpRelayBaseUrl,
         },
       })
   : undefined;
+
+/*
+ * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a
+ * request/response, so this half terminates in the boot file's upgrade dispatcher beside the
+ * computer-stream proxy — but it resolves through the SAME facts the HTTP webapp proxy uses
+ * (the deployment's sandbox Bot, its gateway connection, the session's reserved port), so the
+ * two surfaces can never route the same session to different upstreams.
+ */
+const craftWebappHmrDeps =
+  craftEffectiveConfig.enabled && craftEffectiveConfig.webappProxyEnabled
+    ? {
+        config: craftEffectiveConfig,
+        store: createCraftStore(database),
+        botIdFor: async () => craftEffectiveConfig.sandboxBotId,
+        sandboxConnectionFor: () =>
+          sandboxUrl && sandboxToken
+            ? { baseUrl: sandboxUrl, token: sandboxToken }
+            : null,
+      }
+    : undefined;
 
 /**
  * The craft model catalog as one descriptor. The limits are honest defaults rather than
@@ -4425,6 +4939,23 @@ const openMuseBackupRetention = createOpenMuseBackupRetention({
   marker: openMuseAccountDeletionStore,
   record: openMuseDeletionRecord,
 });
+const identityGithubCallback =
+  config.githubApp && config.publicUrl
+    ? githubCallbackRoutes({
+        clientId: config.githubApp.clientId,
+        clientSecret: config.githubApp.clientSecret,
+        publicUrl: config.publicUrl,
+        appUrl: config.appUrl,
+        encryptionKey: config.keyEncryptionKey,
+        personIsActive: async (userId) => {
+          const person = await peopleStore.find(userId);
+          return person !== undefined && !person.revoked;
+        },
+        credentials: credentialStore,
+        identity: identityStore,
+        auditStore: bootAuditStore,
+      })
+    : undefined;
 
 const app = createApp(
   config,
@@ -4547,6 +5078,7 @@ const app = createApp(
   },
   {
     store: learningSettings,
+    autoAssign: learningAutoAssign,
     status: copilotRuntime.learning?.status,
     inspect: copilotRuntime.learning?.inspect,
   },
@@ -4581,6 +5113,7 @@ const app = createApp(
         scopeFor: deliveryScopeFor,
         slack: deliveryProviders.slack,
         twilio: deliveryProviders.sms,
+        identity: slackCodeRedeemer(identityStore, bootAuditStore),
       },
     },
     memory: { store: personalMemoryStore, ingestion: memoryIngestion },
@@ -4673,6 +5206,8 @@ const app = createApp(
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
   },
+  identityStore,
+  identityGithubCallback,
 );
 
 /**
@@ -4710,16 +5245,21 @@ type StreamData = {
 };
 
 /**
- * Bun takes exactly one WebSocket handler for the server, and two features need one: the app proxies
- * the computer stream, and it pushes channel activity through Hono's adapter. So this one
- * dispatches on what the upgrade attached, a proxy socket carries `upstream`, a Hono socket does
- * not, rather than either feature quietly taking the slot and breaking the other on connect.
+ * Bun takes exactly one WebSocket handler for the server, and three features need one: the app
+ * proxies the computer stream and the craft webapp's HMR socket, and it pushes channel activity
+ * through Hono's adapter. So this one dispatches on what the upgrade attached — an HMR socket
+ * carries `hmr`, a stream proxy socket carries `upstream` without it, a Hono socket carries
+ * neither — rather than any feature quietly taking the slot and breaking the others on connect.
  */
 type ChannelSocket = Parameters<typeof channelSocket.open>[0];
-type SocketData = StreamData | ChannelSocket["data"];
+type SocketData = StreamData | WebappHmrSocketData | ChannelSocket["data"];
 
 const isProxiedStream = (data: SocketData): data is StreamData =>
-  typeof (data as StreamData).upstream === "string";
+  typeof (data as StreamData).upstream === "string" &&
+  (data as WebappHmrSocketData).hmr !== true;
+
+const isHmrSocket = (data: SocketData): data is WebappHmrSocketData =>
+  (data as WebappHmrSocketData).hmr === true;
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
 const asChannelSocket = (ws: { data: SocketData }) =>
@@ -4732,11 +5272,13 @@ serve<SocketData>({
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }
-    // The workshop's event streams outlive the default request timeout by design: their
-    // connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
-    // default — without this raise, every quiet stream is cut before its first keepalive.
+    // The workshop's and craft's event streams outlive the default request timeout by design:
+    // their connection is the subscription, held open by a 15s keepalive against Bun's 10s idle
+    // default — without this raise, every quiet stream is cut before its first keepalive
+    // (craft's turn attach, parked on a connect_app ask, is exactly that quiet stream).
     if (
-      url.pathname.startsWith("/api/workshop/") &&
+      (url.pathname.startsWith("/api/workshop/") ||
+        url.pathname.startsWith("/api/craft/")) &&
       url.pathname.endsWith("/events")
     ) {
       server.timeout(request, 255);
@@ -4770,10 +5312,45 @@ serve<SocketData>({
       }
       return new Response("Expected a WebSocket upgrade.", { status: 400 });
     }
+    const hmrSessionId =
+      craftWebappHmrDeps !== undefined
+        ? webappHmrSessionIdFromPath(url.pathname)
+        : null;
+    if (
+      hmrSessionId !== null &&
+      craftWebappHmrDeps !== undefined &&
+      request.headers.get("upgrade")?.toLowerCase() === "websocket"
+    ) {
+      // The webapp proxy's own auth, applied by hand because middleware does not run on an
+      // upgrade (the stream branch above sets the precedent). Every refusal lands BEFORE the
+      // upgrade commits — onyx's `_check_webapp_access` → WebSocketException(1008), answered
+      // here as plain HTTP statuses while the request is still a request.
+      const actor = await resolveRequestActor(request).catch(() => null);
+      const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
+        sessionId: hmrSessionId,
+        actor,
+        query: url.search,
+      });
+      if (!decision.ok) {
+        return new Response(decision.error, { status: decision.status });
+      }
+      if (
+        server.upgrade(request, {
+          data: { upstream: decision.upstreamUrl, hmr: true as const },
+        })
+      ) {
+        return undefined as unknown as Response;
+      }
+      return new Response("Expected a WebSocket upgrade.", { status: 400 });
+    }
     return app.fetch(request, { server });
   },
   websocket: {
     open(ws) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.open(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.open(asChannelSocket(ws));
         return;
@@ -4862,6 +5439,13 @@ serve<SocketData>({
       inward.onerror = () => ws.close();
     },
     message(ws, raw) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.message(
+          ws as Bun.ServerWebSocket<WebappHmrSocketData>,
+          raw,
+        );
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.message(asChannelSocket(ws), raw);
         return;
@@ -4869,6 +5453,10 @@ serve<SocketData>({
       if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
     },
     close(ws, code, reason) {
+      if (isHmrSocket(ws.data)) {
+        webappHmrSocketHandlers.close(ws as Bun.ServerWebSocket<WebappHmrSocketData>);
+        return;
+      }
       if (!isProxiedStream(ws.data)) {
         channelSocket.close(asChannelSocket(ws), code, reason);
         return;
@@ -4916,3 +5504,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 log.info({ port }, "OpenBot server listening on http://127.0.0.1");
+

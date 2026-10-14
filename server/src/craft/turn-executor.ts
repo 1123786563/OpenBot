@@ -126,6 +126,15 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
       return interruptLatched;
     };
 
+    // The opencode session id is resolved on the session row before every
+    // prompt pass: the row is what the ATTACH stream and the decision endpoint
+    // key on, so re-minting here (a fresh id per turn) would strand every
+    // observer on the previous id — the attach would drain announces and
+    // keepalives but never the turn's own events, and conversation history
+    // would reset each turn. ensureSession still re-mints when the row's id
+    // has gone stale (a recycled sandbox), persisting the new id via the
+    // callback; continuations re-read and ride the same row.
+    const sessionRow = await store.getSession(input.sessionId, input.userId);
     const eventStream = manager.yieldSandboxEvents(
       {
         sessionId: input.sessionId,
@@ -133,9 +142,7 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         // The permission gate is owner-scoped: the turn's user is who gets asked.
         userId: input.userId,
         userMessageContent: input.prompt,
-        // The opencode session id is resolved on the session row by the drive loop
-        // before the first prompt; continuations rely on the same row.
-        opencodeSessionId: null,
+        opencodeSessionId: sessionRow?.opencodeSessionId ?? null,
         attachments: input.attachments,
         shouldInterrupt,
         shouldAbortOnTeardown: () => !ownershipLost,
@@ -381,16 +388,19 @@ export function createTurnExecutor(deps: TurnExecutorDeps): TurnExecutor {
         runnerId,
       });
     } finally {
-      // True on every exit where this runner still owns the turn; false once a
-      // successor owns it (reclaim). A successor sets the active-turn pointer at
-      // creation, before it ever prompts, so this guard clears our fence exactly
-      // when no other turn can be mid-flight on this session.
+      // True on every exit where no other turn can be mid-flight on this
+      // session; false once a successor owns it (reclaim — it sets the
+      // active-turn pointer at creation, before it ever prompts). `active ===
+      // null` is OWNERSHIP TOO: our own finishTurn just cleared the pointer on
+      // every normal ending, so requiring it to still name THIS turn would
+      // never clear the fence — and a fence left set by an interrupt would
+      // cancel the session's next N turns until its TTL ran out (F-H).
       try {
         const active = await turnState.getActiveTurn({ sessionId, userId });
         const stillOwns =
-          active !== null &&
-          active.turnId === turnId &&
-          (runnerId === null || active.runnerId === runnerId);
+          active === null ||
+          (active.turnId === turnId &&
+            (runnerId === null || active.runnerId === runnerId));
         if (stillOwns) {
           await fence.clearInterrupt(sessionId).catch(() => undefined);
           // Same ownership guard as onyx's clear_turn_deadline: a successor's
