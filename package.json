@@ -16,7 +16,7 @@
     "format": "bunx biome format --write .",
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint --error-on-warnings .",
-    "test": "bun test",
+    "test": "bun test ./app ./agent-bot ./agent-computer ./agent-langgraph ./agent-mastra ./agent-sandbox ./deliverables ./desktop ./scripts ./server ./shared ./supervisor ./tests ./worker",
     "typecheck": "bun run --filter '*' typecheck",
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",

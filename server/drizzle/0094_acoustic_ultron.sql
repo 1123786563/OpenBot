@@ -1,0 +1,1 @@
+ALTER TABLE "openmuse_tasks" ADD COLUMN "pause_requested" boolean DEFAULT false NOT NULL;

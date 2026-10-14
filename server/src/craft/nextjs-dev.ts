@@ -33,6 +33,12 @@
  * the range published from the sandbox), so the server must listen beyond the
  * container's loopback; the script's own readiness curl stays on in-container loopback,
  * and the in-sandbox webapp tool's probe likewise (both run where the server does).
+ *
+ * THE SPAWN IS setsid'd OUT OF THE SCRIPT'S PROCESS GROUP: the webapp plugin runs this
+ * script as a group leader and kills the group when its wait window expires, and the dev
+ * server must outlive that (see the spawn's own comment). Everything else in the script —
+ * the install, the readiness poll — is turn-scoped and dies with the group, which is what
+ * keeps a cancelled start from orphaning a half-finished install holding `.webapp.lock`.
  */
 
 import type { CraftConfig } from "./config";
@@ -107,7 +113,7 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
         # (agent-sandbox exports BUN_INSTALL=/usr/local, root-owned), which
         # fails install with AccessDenied — pin the cache under $HOME unless
         # the deployment already chose one.
-        export BUN_INSTALL_CACHE_DIR="\${BUN_INSTALL_CACHE_DIR:-\$HOME/.bun/install-cache}"
+        export BUN_INSTALL_CACHE_DIR="\${BUN_INSTALL_CACHE_DIR:-$HOME/.bun/install-cache}"
         # Not [ -d node_modules ]: a failed install leaves an empty directory
         # behind, and rerunning would skip straight to a spawn with no bins.
         if [ ! -x node_modules/.bin/next ]; then
@@ -119,7 +125,17 @@ echo $PORT > "$SESSION_PATH/.nextjs-port"
         # check-and-spawn lock for its entire lifetime. -H 0.0.0.0 is onyx's own
         # bind: the preview dials this port on the sandbox host (F-E), not the
         # container's private loopback.
-        PORT="$PORT" nohup bun run dev -- -H 0.0.0.0 -p "$PORT" \\
+        #
+        # setsid puts the server in its OWN process group/session. The webapp
+        # plugin runs this script as a group leader and kills that whole group
+        # when its wait window expires; the dev server is a session-scoped
+        # daemon, not a turn-scoped child, so it must sit outside the group or
+        # a slow first boot is killed at the cap, and every retry is killed at
+        # the cap, and the preview never comes up. setsid execs (rather than
+        # forks) for a background child that is not already a group leader, so
+        # $! below is still the server's own pid — the pid file and the
+        # readlink /proc/<pid>/cwd identity guard keep naming the real process.
+        PORT="$PORT" setsid nohup bun run dev -- -H 0.0.0.0 -p "$PORT" \\
             > "$SESSION_PATH/nextjs.log" 2>&1 9>&- &
         NEXTJS_PID=$!
         echo "Next.js server started with PID $NEXTJS_PID"

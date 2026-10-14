@@ -1,6 +1,6 @@
-import type { AgentActor } from "../agents/profile-types";
 import type { AgentProfileStore } from "../agents/profile-store";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentActor } from "../agents/profile-types";
+import type { AgentChannel, ChannelStore } from "../channels/routes";
 
 /**
  * The cold-start answer the mobile roster screen needs: who am I, which Bots
@@ -15,6 +15,13 @@ export type MobileBffWorkspaceReader = {
     user: { id: string; role: AgentActor["role"] };
     agents: WorkspaceAgent[];
     channels: WorkspaceChannel[];
+    /**
+     * Where the archived partition's walk stopped, when it stopped at the five-page cap with
+     * more behind it. Null once the partition is fully read. The follow-up endpoint that
+     * accepts it is future work; exposing the position now keeps the truncation observable
+     * instead of silent.
+     */
+    archivedNextCursor: string | null;
   }>;
 };
 
@@ -34,6 +41,8 @@ export type WorkspaceChannel = {
   agentIds: string[];
   threadId: string;
   lastMessageAt: string | null;
+  /** When this conversation was filed away, or null for one on the desk. Serialised ISO-8601 like lastMessageAt. */
+  archivedAt: string | null;
 };
 
 export function createMobileBffWorkspace(deps: {
@@ -43,17 +52,55 @@ export function createMobileBffWorkspace(deps: {
   return {
     async read(actor) {
       // Independent reads, one round trip: the caller's cold start is three
-      // sequential fetches today, and the joins here are all in-memory.
-      const [agents, page] = await Promise.all([
+      // sequential fetches today, and the joins here are all in-memory. The
+      // archived partition is a fourth independent read, because a roster that
+      // cannot show the filing cabinet cannot reopen what is in it — and it
+      // follows nextCursor page by page, because dropping the cursor made
+      // everything past the first 100 archived conversations unreachable from
+      // this endpoint.
+      const readArchived = async (): Promise<{
+        channels: AgentChannel[];
+        nextCursor: string | null;
+      }> => {
+        if (!deps.channelStore) return { channels: [], nextCursor: null };
+        const channels: AgentChannel[] = [];
+        let cursor: string | undefined;
+        /*
+         * ponytail: capped at ARCHIVED_COLD_START_MAX_PAGES pages of
+         * ARCHIVED_COLD_START_PAGE rows (500 archived conversations) so one
+         * cold-start response stays bounded. Past the cap the leftover cursor
+         * is handed back as archivedNextCursor, so the truncation is
+         * observable (a follow-up endpoint that accepts it is future work),
+         * not silent. Retune alongside the channels listing's own
+         * MAX_CHANNEL_PAGE (200) — the two page sizes are neighbours, not
+         * strangers.
+         */
+        const ARCHIVED_COLD_START_PAGE = 100;
+        const ARCHIVED_COLD_START_MAX_PAGES = 5;
+        for (let page = 0; page < ARCHIVED_COLD_START_MAX_PAGES; page++) {
+          const result = await deps.channelStore.list(actor, {
+            limit: ARCHIVED_COLD_START_PAGE,
+            archived: true,
+            ...(cursor !== undefined ? { cursor } : {}),
+          });
+          channels.push(...result.channels);
+          if (!result.nextCursor) return { channels, nextCursor: null };
+          cursor = result.nextCursor;
+        }
+        return { channels, nextCursor: cursor ?? null };
+      };
+      const [agents, page, archived] = await Promise.all([
         deps.agentProfileStore
           ? deps.agentProfileStore.list(actor)
           : Promise.resolve([]),
         deps.channelStore
           ? deps.channelStore.list(actor, { limit: 100 })
           : Promise.resolve({ channels: [], nextCursor: null }),
+        readArchived(),
       ]);
       return {
         user: { id: actor.id, role: actor.role },
+        archivedNextCursor: archived.nextCursor,
         agents: agents
           .filter((agent) => !agent.hidden && agent.deletedAt === null)
           .map((agent) => ({
@@ -63,7 +110,9 @@ export function createMobileBffWorkspace(deps: {
             avatarSeed: agent.avatarSeed,
             visibility: agent.visibility,
           })),
-        channels: page.channels.map((channel) => ({
+        // The active listing first, the archived partition after it: one array,
+        // two partitions, told apart by `archivedAt`.
+        channels: [...page.channels, ...archived.channels].map((channel) => ({
           id: channel.id,
           name: channel.name,
           agentIds: [...channel.agentIds],
@@ -72,6 +121,10 @@ export function createMobileBffWorkspace(deps: {
             channel.lastMessageAt instanceof Date
               ? channel.lastMessageAt.toISOString()
               : (channel.lastMessageAt ?? null),
+          archivedAt:
+            channel.archivedAt instanceof Date
+              ? channel.archivedAt.toISOString()
+              : null,
         })),
       };
     },

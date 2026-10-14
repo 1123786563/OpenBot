@@ -4,6 +4,7 @@
  * Split by owner so two people can add tables all day without touching the same lines. Add tables
  * here; never edit core.ts or computer.ts to do it.
  */
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -12,6 +13,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { agents, users } from "./core";
 import { jsonb } from "./json";
@@ -53,6 +55,16 @@ export const agentProfiles = pgTable(
     callbackTokenIssuedAt: timestamp("callback_token_issued_at", {
       withTimezone: true,
     }),
+    /*
+     * Which template provisioned this Bot, if any.
+     *
+     * Null for every hand-made Bot; only template rows carry a key, and
+     * (owner_user_id, template_key) is unique among live rows so a template
+     * provisions exactly one Bot per person while a soft-deleted Bot's
+     * tombstone never blocks re-provisioning (0096). PostgreSQL's unique
+     * indexes skip null keys, so existing rows are untouched by the constraint.
+     */
+    templateKey: text("template_key"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -62,6 +74,16 @@ export const agentProfiles = pgTable(
       table.visibility,
       table.deletedAt,
     ),
+    /*
+     * The I02 provisioning arbiter, partial (0096, the _live_uq name is that
+     * recreation): unique among live rows only. Whole, a soft-deleted Bot's
+     * tombstone kept the (owner, key) pair and re-provisioning failed on it
+     * permanently; the store-side revive in openmuse-template-store is the
+     * matching belt to this pair of braces.
+     */
+    uniqueIndex("agent_profiles_owner_template_live_uq")
+      .on(table.ownerUserId, table.templateKey)
+      .where(sql`${table.deletedAt} IS NULL`),
   ],
 );
 

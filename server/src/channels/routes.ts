@@ -5,6 +5,7 @@ import {
   eq,
   exists,
   inArray,
+  isNotNull,
   isNull,
   lt,
   ne,
@@ -22,7 +23,6 @@ import type { AgentActor, AgentProfile } from "../agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
-import { parsePageLimit } from "../paging";
 import {
   agentProfiles,
   channelAgents,
@@ -30,6 +30,7 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema";
+import { parsePageLimit } from "../paging";
 import {
   CHANNEL_ACTIVITY_TOPIC,
   type ChannelActivityEvent,
@@ -38,6 +39,7 @@ import {
 import { upgradeWebSocket } from "./socket";
 import { oneLine } from "./text";
 import type { ThreadIdentity } from "./thread-identity";
+
 const log = getLogger("server");
 
 export type AgentChannel = {
@@ -55,6 +57,12 @@ export type AgentChannel = {
    * things to put on the screen. See the note in `channel-chat.tsx`.
    */
   lastMessageAt: Date | null;
+  /**
+   * When this channel was filed away, or null. Archiving hides a conversation from the active
+   * listing without touching its identity: unarchive clears this and the same id, thread, and
+   * history resume. Distinct from deletion, which no read path here represents.
+   */
+  archivedAt: Date | null;
 };
 
 /** A channel plus the last thing said in it, which is what a roster renders. */
@@ -85,7 +93,15 @@ export type ChannelPage = {
   nextCursor: string | null;
 };
 
-export type ChannelQuery = { cursor?: string; limit?: number };
+/**
+ * Which page of somebody's channels to read. `archived` selects the filing cabinet instead of
+ * the desk: the same ordering, the same cursor discipline, over the archived partition only.
+ */
+export type ChannelQuery = {
+  cursor?: string;
+  limit?: number;
+  archived?: boolean;
+};
 
 /**
  * How many channels one page holds.
@@ -204,6 +220,52 @@ export type ChannelStore = {
    * no-op, so it announces nothing and its route records nothing.
    */
   softDelete(actor: AgentActor, channelId: string): Promise<boolean>;
+  /**
+   * D08 (§9 final relational cleanup): hard-delete the channels the deletion
+   * manifest names for this member — the `channels` row plus everything
+   * cascading from it: memberships, channel agents, attachments, and the
+   * Intelligence thread mapping the transcript rode. Scoped to channels the
+   * owner holds a membership in, so a foreign id deletes nothing and
+   * package channels (which carry no membership) are never even named; a
+   * repeat (the idempotent re-cleanup) deletes nothing either. Channel
+   * grain, like `softDelete`: deleting a conversation is for everyone in
+   * it, and an OpenMuse channel's humans are one person and their Bots.
+   */
+  hardDelete(ownerUserId: string, channelIds: string[]): Promise<void>;
+  /**
+   * D04 (§9 manifest): this member's channel ids, soft-deleted included — the
+   * same membership scope `hardDelete` deletes by, so a channel the roster's
+   * `list` hides in both its partitions (a softDelete tombstone) still lands
+   * in the account's deletion manifest and is still purged. `list` cannot
+   * answer this: its visibility filter would leave the tombstone's rows and
+   * the thread they carry alive past the completed deletion.
+   */
+  enumerateOwner(ownerUserId: string): Promise<Array<{ id: string }>>;
+  /**
+   * Change what the roster calls this channel, and nothing else: the id, the thread, the
+   * membership, and the history are not rename's to touch. Throws ChannelNotFoundError for a
+   * non-member or a deleted channel.
+   */
+  rename(
+    actor: AgentActor,
+    channelId: string,
+    name: string,
+  ): Promise<AgentChannel>;
+  /**
+   * File the channel away: every listing that does not ask for archived stops showing it, and
+   * nothing about the row changes otherwise.
+   *
+   * True when this call archived it; false when it was already archived, so a repeat is a no-op
+   * the same way `softDelete`'s is. Throws ChannelNotFoundError for a non-member or a deleted
+   * channel — a deleted channel is gone, not filed.
+   */
+  archive(actor: AgentActor, channelId: string): Promise<boolean>;
+  /**
+   * Take the channel back out of the filing cabinet: same id, same thread, same history, now on
+   * the active listing again. Throws ChannelNotFoundError for a non-member or a deleted channel,
+   * and ChannelNotArchivedError for one that was never archived.
+   */
+  unarchive(actor: AgentActor, channelId: string): Promise<void>;
   recordActivity(
     actor: AgentActor,
     channelId: string,
@@ -318,7 +380,15 @@ export function createChannelStore(
       threadId,
     });
 
-    return { id, name, agentIds, threadId, active: true, lastMessageAt: null };
+    return {
+      id,
+      name,
+      agentIds,
+      threadId,
+      active: true,
+      lastMessageAt: null,
+      archivedAt: null,
+    };
   };
 
   const store: ChannelStore = {
@@ -402,6 +472,7 @@ export function createChannelStore(
           agentId: channelAgents.agentId,
           threadId: intelligenceChannelMappings.threadId,
           lastMessageAt: channels.lastMessageAt,
+          archivedAt: channels.archivedAt,
           deletedAt: agentProfiles.deletedAt,
         })
         .from(channels)
@@ -437,6 +508,7 @@ export function createChannelStore(
         threadId: first.threadId,
         active: rows.every((row) => row.deletedAt === null),
         lastMessageAt: first.lastMessageAt,
+        archivedAt: first.archivedAt,
       };
     },
 
@@ -477,6 +549,14 @@ export function createChannelStore(
         .where(
           and(
             isNull(channels.deletedAt),
+            /*
+             * The partition the caller asked for. Default is the desk: everything not filed away.
+             * `archived` reads the filing cabinet instead — the same ordering and cursor over a
+             * disjoint set, never the two mixed, so a page belongs to exactly one listing.
+             */
+            query.archived
+              ? isNotNull(channels.archivedAt)
+              : isNull(channels.archivedAt),
             // One row comparison over the whole sort key, which only reads as "everything after the
             // cursor" because every part of that key descends. See ROSTER_ORDER.
             cursor
@@ -507,6 +587,7 @@ export function createChannelStore(
           name: channels.name,
           agentId: channelAgents.agentId,
           threadId: intelligenceChannelMappings.threadId,
+          archivedAt: channels.archivedAt,
           deletedAt: agentProfiles.deletedAt,
           channelSummary: channels.summary,
           lastMessage: channels.lastMessage,
@@ -546,6 +627,12 @@ export function createChannelStore(
             // on two snapshots, so a delete that commits between them would otherwise hand back a
             // channel this person can no longer see.
             isNull(channels.deletedAt),
+            // And the same partition again, for the same reason: an archive or an unarchive
+            // committing between the two statements would otherwise move a row across listings
+            // under a page that already chose its members.
+            query.archived
+              ? isNotNull(channels.archivedAt)
+              : isNull(channels.archivedAt),
           ),
         )
         // The same order the page was chosen in, since the rows below are read in order.
@@ -567,9 +654,10 @@ export function createChannelStore(
           agentIds: [row.agentId],
           threadId: row.threadId,
           active: row.deletedAt === null,
+          lastMessageAt: row.lastMessageAt,
+          archivedAt: row.archivedAt,
           summary: row.channelSummary,
           lastMessage: row.lastMessage,
-          lastMessageAt: row.lastMessageAt,
           lastMessageAgentId: row.lastMessageAgentId,
           createdAt: row.createdAt,
           pinned: row.pinnedAt !== null,
@@ -666,6 +754,41 @@ export function createChannelStore(
       if (updated.length === 0) throw new ChannelNotFoundError(channelId);
     },
 
+    /*
+     * D08's transactional per-module batch: one statement, the membership
+     * subquery scoping the delete — atomic by construction, and the manifest
+     * is what named every id it touches.
+     */
+    async hardDelete(ownerUserId, channelIds) {
+      if (channelIds.length === 0) return;
+      const owned = database
+        .select({ channelId: channelMemberships.channelId })
+        .from(channelMemberships)
+        .where(
+          and(
+            eq(channelMemberships.userId, ownerUserId),
+            inArray(channelMemberships.channelId, channelIds),
+          ),
+        );
+      await database.delete(channels).where(inArray(channels.id, owned));
+    },
+
+    // The enumeration half of hardDelete's §9 scope: memberships name the
+    // owner's channels, deletedAt hides nothing here, and no page cursor is
+    // walked — one owner-scoped query answers what the manifest records.
+    async enumerateOwner(ownerUserId) {
+      return await database
+        .select({ id: channels.id })
+        .from(channels)
+        .innerJoin(
+          channelMemberships,
+          and(
+            eq(channelMemberships.channelId, channels.id),
+            eq(channelMemberships.userId, ownerUserId),
+          ),
+        );
+    },
+
     async softDelete(actor, channelId) {
       return await database.transaction(
         async (transaction) => {
@@ -727,6 +850,187 @@ export function createChannelStore(
             sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
           );
           return true;
+        },
+        { isolationLevel: "read committed" },
+      );
+    },
+
+    async rename(actor, channelId, name) {
+      /*
+       * The change and its announcement in one transaction, for the same reason softDelete's and
+       * archive's are: the name lives on the channels row, so every member's roster renders it,
+       * and a rename nobody hears leaves every other tab and replica titling the channel with
+       * yesterday's name until something else makes them refetch. Announced inside the
+       * transaction, the notify rides the commit — a rename that rolls back announces nothing,
+       * and a crash between the two cannot commit the one without the other.
+       */
+      const updated = await database.transaction(
+        async (transaction) => {
+          const stamped = await transaction
+            .update(channels)
+            .set({ name, updatedAt: new Date() })
+            .where(
+              and(
+                eq(channels.id, channelId),
+                // The same alive-and-mine guard setPinned carries: a deleted channel is not
+                // there to rename, and a membership row is what says this channel is the
+                // caller's to name.
+                isNull(channels.deletedAt),
+                exists(
+                  database
+                    .select({ one: sql`1` })
+                    .from(channelMemberships)
+                    .where(
+                      and(
+                        eq(channelMemberships.channelId, channelId),
+                        eq(channelMemberships.userId, actor.id),
+                      ),
+                    ),
+                ),
+              ),
+            )
+            .returning({ id: channels.id });
+          // Not a member, no such channel, or a deleted one: the same answer every way,
+          // matching every other channel write.
+          if (stamped.length === 0) throw new ChannelNotFoundError(channelId);
+          // Read on this transaction, so the members told are the ones the channel had when
+          // the rename landed — the same list a concurrent leave/join cannot split.
+          const members = await transaction
+            .select({ userId: channelMemberships.userId })
+            .from(channelMemberships)
+            .where(eq(channelMemberships.channelId, channelId));
+          const event: ChannelActivityEvent = {
+            channelId,
+            memberIds: members.map((member) => member.userId),
+            lastMessage: null,
+            lastMessageAt: null,
+            lastMessageAgentId: null,
+            renamed: name,
+          };
+          await transaction.execute(
+            sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
+          );
+          return stamped;
+        },
+        { isolationLevel: "read committed" },
+      );
+      if (updated.length === 0) throw new ChannelNotFoundError(channelId);
+      const renamed = await store.get(actor, channelId);
+      // Null only if it was deleted between the two statements, which is the same refusal.
+      if (!renamed) throw new ChannelNotFoundError(channelId);
+      return renamed;
+    },
+
+    async archive(actor, channelId) {
+      const [row] = await database
+        .select({ archivedAt: channels.archivedAt })
+        .from(channels)
+        .innerJoin(
+          channelMemberships,
+          and(
+            eq(channelMemberships.channelId, channels.id),
+            eq(channelMemberships.userId, actor.id),
+          ),
+        )
+        .where(and(eq(channels.id, channelId), isNull(channels.deletedAt)));
+      // Not a member, no such channel, or a deleted one: the same answer every way. A deleted
+      // channel is not filed-away, it is gone, so it archives as missing rather than as itself.
+      if (!row) throw new ChannelNotFoundError(channelId);
+      // Already filed: a repeat changed nothing, so nothing is announced or recorded.
+      if (row.archivedAt !== null) return false;
+      /*
+       * The stamp and its announcement in one transaction, for the same reason softDelete's are:
+       * an archive is a channel-level change (the stamp lands on the channels row, not any
+       * membership), so without the event a second tab and a second replica keep listing a
+       * channel the archive has already filed away until something else makes them refetch.
+       */
+      return database.transaction(
+        async (transaction) => {
+          // The guard on archivedAt is what makes a concurrent repeat a no-op rather than a new
+          // stamp — and a repeat that changed nothing announces nothing.
+          const stamped = await transaction
+            .update(channels)
+            .set({ archivedAt: new Date(), updatedAt: new Date() })
+            .where(
+              and(
+                eq(channels.id, channelId),
+                isNull(channels.deletedAt),
+                isNull(channels.archivedAt),
+              ),
+            )
+            .returning({ id: channels.id });
+          if (stamped.length === 0) return false;
+          const members = await transaction
+            .select({ userId: channelMemberships.userId })
+            .from(channelMemberships)
+            .where(eq(channelMemberships.channelId, channelId));
+          const event: ChannelActivityEvent = {
+            channelId,
+            memberIds: members.map((member) => member.userId),
+            lastMessage: null,
+            lastMessageAt: null,
+            lastMessageAgentId: null,
+            archived: true,
+          };
+          await transaction.execute(
+            sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
+          );
+          return true;
+        },
+        { isolationLevel: "read committed" },
+      );
+    },
+
+    async unarchive(actor, channelId) {
+      const [row] = await database
+        .select({ archivedAt: channels.archivedAt })
+        .from(channels)
+        .innerJoin(
+          channelMemberships,
+          and(
+            eq(channelMemberships.channelId, channels.id),
+            eq(channelMemberships.userId, actor.id),
+          ),
+        )
+        .where(and(eq(channels.id, channelId), isNull(channels.deletedAt)));
+      // Not a member, no such channel, or a deleted one: the same answer every way.
+      if (!row) throw new ChannelNotFoundError(channelId);
+      // Unarchiving a channel nobody filed is a caller mixed up about the row it holds, not the
+      // same request repeated: answered rather than absorbed, so the client can look again.
+      if (row.archivedAt === null) throw new ChannelNotArchivedError(channelId);
+      await database.transaction(
+        async (transaction) => {
+          const cleared = await transaction
+            .update(channels)
+            .set({ archivedAt: null, updatedAt: new Date() })
+            .where(
+              and(
+                eq(channels.id, channelId),
+                isNull(channels.deletedAt),
+                isNotNull(channels.archivedAt),
+              ),
+            )
+            .returning({ id: channels.id });
+          // Lost the race to a concurrent unarchive: the same answer the pre-check above gives,
+          // not a silent 204 for a request whose stated precondition stopped holding on the way.
+          if (cleared.length === 0)
+            throw new ChannelNotArchivedError(channelId);
+          // The roster that hid the row on `archived` is the one that has to hear it came back.
+          const members = await transaction
+            .select({ userId: channelMemberships.userId })
+            .from(channelMemberships)
+            .where(eq(channelMemberships.channelId, channelId));
+          const event: ChannelActivityEvent = {
+            channelId,
+            memberIds: members.map((member) => member.userId),
+            lastMessage: null,
+            lastMessageAt: null,
+            lastMessageAgentId: null,
+            archived: false,
+          };
+          await transaction.execute(
+            sql`select pg_notify(${CHANNEL_ACTIVITY_TOPIC}, ${JSON.stringify(event)})`,
+          );
         },
         { isolationLevel: "read committed" },
       );
@@ -919,6 +1223,13 @@ export class ChannelPackageOwnedError extends Error {
   }
 }
 
+export class ChannelNotArchivedError extends Error {
+  constructor(id: string) {
+    super(`Channel ${id} is not archived.`);
+    this.name = "ChannelNotArchivedError";
+  }
+}
+
 type ChannelInputParseResult =
   | { ok: true; value: { agentIds: string[] } }
   | { ok: false; error: string };
@@ -951,6 +1262,39 @@ export function parseChannelInput(input: unknown): ChannelInputParseResult {
 
 function isChannelInputObject(input: unknown): input is ChannelInputObject {
   return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+type RenameInputParseResult =
+  | { ok: true; value: { name: string } }
+  | { ok: false; error: string };
+
+/**
+ * Parse a rename.
+ *
+ * The same validation class `create`'s input goes through: a JSON object, a string that is
+ * something after trimming, and no longer than a channel's name may be. Refused rather than
+ * truncated, because this text was written, not derived — silently cutting a name somebody chose
+ * is a different channel than the one they named.
+ */
+export function parseRenameInput(input: unknown): RenameInputParseResult {
+  if (!isChannelInputObject(input)) {
+    return { ok: false, error: "Rename input must be a JSON object." };
+  }
+
+  const { name } = input as { name?: unknown };
+  if (typeof name !== "string" || name.trim().length === 0) {
+    return { ok: false, error: "A channel name is required." };
+  }
+
+  const trimmed = name.trim();
+  if (Array.from(trimmed).length > MAX_CHANNEL_NAME_CODE_POINTS) {
+    return {
+      ok: false,
+      error: `A channel name must be at most ${MAX_CHANNEL_NAME_CODE_POINTS} characters.`,
+    };
+  }
+
+  return { ok: true, value: { name: trimmed } };
 }
 
 type ActivityInputParseResult =
@@ -1123,11 +1467,26 @@ export function createChannelRoutes(
         MAX_CHANNEL_PAGE,
       );
       if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+      /*
+       * Parsed as strictly as `limit`, and for the same reason: a listing parameter that silently
+       * coerces hands back the wrong partition. "true" asks for the archived partition; "false"
+       * and absent both mean the default, the active listing. An empty string is as wrong as any
+       * other non-value — a client that concatenates "?archived=" by bug should hear about it,
+       * not be silently handed the default listing.
+       */
+      const archived = url.searchParams.get("archived");
+      if (archived !== null && archived !== "true" && archived !== "false") {
+        return context.json(
+          { error: 'Query parameter "archived" must be "true" or "false".' },
+          400,
+        );
+      }
       const page = await store.list(context.var.actor, {
         ...(url.searchParams.get("cursor")
           ? { cursor: url.searchParams.get("cursor") as string }
           : {}),
         ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+        ...(archived === "true" ? { archived: true } : {}),
       });
 
       return context.json({
@@ -1225,6 +1584,41 @@ export function createChannelRoutes(
     }
   });
 
+  routes.patch("/:channelId", requireUser, async (context) => {
+    const parsed = parseRenameInput(await context.req.json().catch(() => null));
+    if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+
+    try {
+      const channel = await store.rename(
+        context.var.actor,
+        context.req.param("channelId"),
+        parsed.value.name,
+      );
+      return context.json({ channel: channelDto(channel) });
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  routes.post("/:channelId/archive", requireUser, async (context) => {
+    try {
+      // A repeat archived nothing, and there is no trail to write: filing is not deletion.
+      await store.archive(context.var.actor, context.req.param("channelId"));
+      return context.body(null, 204);
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
+  routes.post("/:channelId/unarchive", requireUser, async (context) => {
+    try {
+      await store.unarchive(context.var.actor, context.req.param("channelId"));
+      return context.body(null, 204);
+    } catch (error) {
+      return mapStoreError(context, error);
+    }
+  });
+
   routes.get("/:channelId", requireUser, async (context) => {
     try {
       const channel = await store.get(
@@ -1243,9 +1637,10 @@ export function createChannelRoutes(
   return routes;
 }
 
-/** A channel as it goes over the wire: the same shape, with the date serialised. */
-type ChannelWire = Omit<AgentChannel, "lastMessageAt"> & {
+/** A channel as it goes over the wire: the same shape, with the dates serialised. */
+type ChannelWire = Omit<AgentChannel, "lastMessageAt" | "archivedAt"> & {
   lastMessageAt: string | null;
+  archivedAt: string | null;
 };
 
 function channelDto(channel: AgentChannel): ChannelWire {
@@ -1257,6 +1652,8 @@ function channelDto(channel: AgentChannel): ChannelWire {
     active: channel.active,
     // ISO-8601 so the browser gets a string it can compare, like the roster's copy.
     lastMessageAt: channel.lastMessageAt?.toISOString() ?? null,
+    // Serialised the same way, so a filed channel is recognisable on the wire.
+    archivedAt: channel.archivedAt?.toISOString() ?? null,
   };
 }
 
@@ -1288,6 +1685,9 @@ function mapStoreError(context: Context, error: unknown): Response {
       },
       409,
     );
+  }
+  if (error instanceof ChannelNotArchivedError) {
+    return context.json({ error: "Channel is not archived." }, 409);
   }
   throw error;
 }

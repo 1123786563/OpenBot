@@ -104,3 +104,123 @@ describe("the main deployment app", () => {
     expect(response.headers.get("x-request-id") ?? "").toMatch(UUID);
   });
 });
+
+describe("the OpenMuse seam tail mounts by name (ocr-ob-certify findings 14/15/20)", () => {
+  test("deletionAdmin mounts /api/admin/openmuse-deletion and the delete route runs the wired seams", async () => {
+    const ran: string[] = [];
+    const { createApp } = await import("../src/app");
+    const { loadConfig } = await import("../src/config");
+    const app = createApp(
+      loadConfig(
+        testEnvironment({
+          OPENBOT_SINGLE_USER: "true",
+          // Single-user is refused while any provider is configured — drop
+          // the Google pair so the no-sign-in mode this test needs applies.
+          GOOGLE_OAUTH_CLIENT_ID: undefined,
+          GOOGLE_OAUTH_CLIENT_SECRET: undefined,
+          BETTER_AUTH_SECRET: undefined,
+          BETTER_AUTH_URL: undefined,
+        }),
+      ),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        accountDeletion: {
+          delete: async (userId: string) => ({
+            userId,
+            disabledAt: new Date("2026-10-13T00:00:00Z"),
+            phase: "fenced" as const,
+            restoreUntil: null,
+            resources: [],
+          }),
+          get: async () => null,
+          list: async () => [],
+          isDisabled: async () => false,
+          restore: async () => null,
+          complete: async () => null,
+          enumerateOwner: async () => [],
+        },
+        deletionShutdown: async () => {
+          ran.push("shutdown");
+        },
+        deletionRevoke: async () => {
+          ran.push("revoke");
+        },
+        deletionManifest: async () => {
+          ran.push("manifest");
+          return {
+            userId: "user-1",
+            disabledAt: null,
+            restoreUntil: null,
+            phase: "fenced",
+            resources: [],
+          };
+        },
+        deletionRevokeSessions: async () => {
+          ran.push("sessions");
+        },
+        deletionAdmin: {
+          restore: async () => ({
+            status: 410 as const,
+            restoreUntil: "2026-11-12T00:00:00.000Z",
+          }),
+        },
+      },
+    );
+    // The admin surface is mounted (finding 20): its gate answers, not 404.
+    const restore = await app.request(
+      "/api/admin/openmuse-deletion/nobody/restore",
+      { method: "POST" },
+    );
+    expect(restore.status).not.toBe(404);
+    // The delete route runs the wired seams in §9 order (finding 15/16):
+    // sessions first, then shutdown, revoke, manifest.
+    const deleted = await app.request("/api/mobile/openmuse-account/delete", {
+      method: "POST",
+    });
+    expect(deleted.status).toBe(200);
+    expect(ran).toEqual(["sessions", "shutdown", "revoke", "manifest"]);
+  });
+});

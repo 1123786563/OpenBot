@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS "agent_profiles_owner_template_uq";--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_profiles_owner_template_live_uq" ON "agent_profiles" USING btree ("owner_user_id","template_key") WHERE "agent_profiles"."deleted_at" IS NULL;

@@ -213,3 +213,129 @@ describe("human input", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+/**
+ * Round 3: revoke is the stronger sibling of take — it ends somebody else's lease and parks the
+ * Bot — so it may not be the weaker-guarded one. Take already refuses a second person's claim;
+ * revoke is limited to the current holder (or an administrator) the same way.
+ */
+describe("control revoke", () => {
+  function revokeApp(options: { holder?: string; actor: AuthenticatedActor }) {
+    const revoked: string[] = [];
+    const preconditions: Array<unknown> = [];
+    const gateway = {
+      control: async () => ({
+        holder: "bot" as const,
+        requested: false,
+        transitioning: false,
+        resumeSnapshotRequired: false,
+        ...(options.holder !== undefined
+          ? {
+              request: {
+                id: "lease-1",
+                takenBy: options.holder,
+              },
+            }
+          : {}),
+      }),
+      revokeControl: async (
+        botId: string,
+        _actor: unknown,
+        _reason: string,
+        observed?: unknown,
+      ) => {
+        revoked.push(botId);
+        preconditions.push(observed);
+        return { holder: "bot" };
+      },
+      // The route asks the fleet before the lease: a computer that is not running holds no
+      // live lease, and reading one would /ensure — start it just to be told nothing.
+      computers: async () => ({
+        isolation: "shared",
+        computers: [{ botId: "bot-1", running: true, startedAt: null }],
+      }),
+    } as unknown as ComputerGateway;
+    const app = createComputerRoutes(
+      gateway,
+      {} as PolicyStore,
+      asActor(options.actor),
+      async () => true,
+    );
+    return { app, revoked, preconditions };
+  }
+
+  const stranger: AuthenticatedActor = {
+    id: "user-9",
+    email: "stranger@openbot.test",
+    role: "user",
+  };
+  const holder: AuthenticatedActor = {
+    id: "user-2",
+    email: "holder@openbot.test",
+    role: "user",
+  };
+
+  test("refuses a stranger while someone else holds the lease (409), and does not revoke", async () => {
+    const { app, revoked } = revokeApp({ holder: "user-2", actor: stranger });
+    const response = await app.request(
+      "http://openbot.test/bot-1/control/revoke",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    expect(response.status).toBe(409);
+    expect(revoked).toEqual([]);
+  });
+
+  test("the holder may revoke their own lease", async () => {
+    const { app, revoked } = revokeApp({ holder: "user-2", actor: holder });
+    const response = await app.request(
+      "http://openbot.test/bot-1/control/revoke",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    expect(response.status).toBe(200);
+    expect(revoked).toEqual(["bot-1"]);
+  });
+
+  test("an administrator may revoke a held lease", async () => {
+    const { app, revoked } = revokeApp({
+      holder: "user-2",
+      actor: administrator,
+    });
+    const response = await app.request(
+      "http://openbot.test/bot-1/control/revoke",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    expect(response.status).toBe(200);
+    expect(revoked).toEqual(["bot-1"]);
+  });
+
+  test("a lease nobody holds may still be revoked by any caller with Bot access", async () => {
+    const { app, revoked } = revokeApp({ actor: stranger });
+    const response = await app.request(
+      "http://openbot.test/bot-1/control/revoke",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    expect(response.status).toBe(200);
+    expect(revoked).toEqual(["bot-1"]);
+  });
+
+  test("the observed lease rides into the revoke named, and an observed-none read rides as the null precondition", async () => {
+    // The read this authorization was made on must reach the computer WHOLE: naming the
+    // lease when one was read, and the explicit observed-none shape when none was — the
+    // read-then-revoke window is closed on both branches, so a lease taken over in between
+    // is refused by the computer (409) rather than ended sight-unseen.
+    const named = revokeApp({ holder: "user-2", actor: holder });
+    await named.app.request("http://openbot.test/bot-1/control/revoke", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(named.preconditions).toEqual([
+      { requestId: "lease-1", takenBy: "user-2" },
+    ]);
+    const none = revokeApp({ actor: stranger });
+    await none.app.request("http://openbot.test/bot-1/control/revoke", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(none.preconditions).toEqual([{ requestId: null, takenBy: null }]);
+  });
+});

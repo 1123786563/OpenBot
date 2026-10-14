@@ -61,6 +61,7 @@
     "ioredis": "^6.0.0",
     "marked": "^18.1.0",
     "p-limit": "^7.3.3",
+    "pdf-lib": "^1.17.1",
     "pino": "^10.4.0",
     "postgres": "^3.4.9",
     "pptxgenjs": "^4.0.1",

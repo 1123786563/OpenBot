@@ -14,6 +14,7 @@ import { getLogger } from "../../shared/logger";
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
 import { parsePageLimit } from "./paging";
+
 const log = getLogger("server");
 
 const sensitiveKeys = new Set([
@@ -263,6 +264,9 @@ export const auditEventTypes = [
   "computer.help_cancelled",
   "computer.control_taken",
   "computer.control_released",
+  // A lease ended from outside it: a logout, a disconnect policy, a policy refusal. Beside the
+  // taken and released rows so a trail can say which takeover a revocation cut short.
+  "computer.control_revoked",
   // A credential a person entered by hand. The row records that it happened, what it was called and
   // which field it went in; the value is on a path this trail is not on.
   "computer.secret_requested",

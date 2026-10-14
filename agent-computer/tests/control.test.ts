@@ -109,6 +109,29 @@ describe("request-aware handoff", () => {
     expect(control.get().resumeSnapshotRequired).toBe(true);
   });
 
+  test("a held lease is the holder's to release or cancel, not a second person's", async () => {
+    const { control, request } = fixture();
+    const help = request();
+    await control.take(help.id, { userId: "holder-1" });
+    // Putting the holder off the wheel is the interference take's 409 exists to prevent,
+    // whichever verb attempts it.
+    expect(() => control.release(help.id, { userId: "stranger" })).toThrow(
+      /Another person/,
+    );
+    expect(() => control.cancel(help.id, { userId: "stranger" })).toThrow(
+      /Another person/,
+    );
+    expect(control.get(help.id).request?.status).toBe("taken");
+    // The holder's own verbs work, and an identity-less caller keeps the older contract.
+    expect(
+      control.release(help.id, { userId: "holder-1" }).request?.status,
+    ).toBe("completed");
+    const waiting = request("call-waiting");
+    expect(
+      control.cancel(waiting.id, { userId: "stranger" }).request?.status,
+    ).toBe("cancelled");
+  });
+
   test("cancel waiting and reset report terminal outcomes, never success", async () => {
     const { control, request } = fixture();
     const cancelled = request();

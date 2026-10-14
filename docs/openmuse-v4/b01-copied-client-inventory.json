@@ -1,0 +1,1183 @@
+{
+  "metadata": {
+    "canonical_base_sha": "46792335",
+    "copied_base_sha": "748f91ad",
+    "copied_file_count": 71,
+    "canonical_file_count": 108,
+    "hash_rule": "File difference hash = sha256( (\"identical\"|\"differs\") + \"\\n\" + unified_diff_text ), where unified_diff_text is the output of `diff -u -L canonical/<canonical_path> -L copied/<copied_path> <canonical file> <copied file>`. For copied-only/canonical-only rows the hash is sha256( (\"copied-only\"|\"canonical-only\") + \"\\n\" + hex(sha256(file bytes)) ). Labels are fixed so hashes are machine-independent and reproducible.",
+    "regenerate_command": "python3 docs/openmuse-v4/b01-build-inventory.py && python3 docs/openmuse-v4/b01-build-inventory.py --verify",
+    "generated_at_utc": "2026-10-13T02:47:41Z"
+  },
+  "rows": [
+    {
+      "copied_path": ".gitignore",
+      "canonical_path": null,
+      "status": "copied_only",
+      "difference_hash": "46666623f65725de22e6d23bd1238f4033c844cd53440826c5a25b55548c173d",
+      "kind": "config",
+      "intent": "copied-tree bookkeeping: upstream ignore rules lived at the source repo root and had to be re-created for the standalone package (MIGRATION.md)",
+      "target_ticket": "B04",
+      "resolved_commit": "resolved-by B04 — copy-tree bookkeeping, dies with the copy"
+    },
+    {
+      "copied_path": ".npmrc",
+      "canonical_path": null,
+      "status": "copied_only",
+      "difference_hash": "8357a757b6b628c8550e8ce0c33ce4e6015ea0064ab086bee4989b6ef7883f51",
+      "kind": "config",
+      "intent": "copied-tree bookkeeping: reproduces the source repo's pnpm peer-dependency behavior outside the workspace (MIGRATION.md)",
+      "target_ticket": "B04",
+      "resolved_commit": "resolved-by B04 — copy-tree bookkeeping, dies with the copy"
+    },
+    {
+      "copied_path": "App.tsx",
+      "canonical_path": "App.tsx",
+      "status": "diverged",
+      "difference_hash": "a655c43b7ef38f7fd7f52f9712535c10a343f61edf013176b8689f547e7c4bb0",
+      "kind": "source",
+      "intent": "OpenBot session integration: OpenBotGate sign-in gate, SignOutButton, openbotBackend switch (src/openbot/*), plus pre-catalog inline zh-CN and vendored-domain path rewrite; adopted by the canonical v4-base worktree at I01 (I03 entry sequence, later screens extend it) — the copy is the stale seed",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01/I03 — apps/mobile/App.tsx:139 (OpenBotGate entry)"
+    },
+    {
+      "copied_path": "MIGRATION.md",
+      "canonical_path": null,
+      "status": "copied_only",
+      "difference_hash": "cf7f37eaa0f14da41ee2dbe8ae64332e673b5c1998146406d666dc4bf78cedac",
+      "kind": "doc",
+      "intent": "copied-tree bookkeeping: migration record for the copy itself, removed with the subtree at B04",
+      "target_ticket": "B04",
+      "resolved_commit": "resolved-by B04 — copy-tree bookkeeping, dies with the copy"
+    },
+    {
+      "copied_path": "README.md",
+      "canonical_path": "README.md",
+      "status": "diverged",
+      "difference_hash": "781c3603b351ef1ed48c1edc2351a63990bb6fd706150ccab98d45ae90220fbe",
+      "kind": "doc",
+      "intent": "copied-tree bookkeeping: demo media/doc relative links rewritten to upstream pinned-commit absolute URLs, commands run from package dir (MIGRATION.md)",
+      "target_ticket": "B04",
+      "resolved_commit": "resolved-by B04 — copy-tree bookkeeping, dies with the copy"
+    },
+    {
+      "copied_path": "app.json",
+      "canonical_path": "app.json",
+      "status": "diverged",
+      "difference_hash": "14ec983cac3c5e0ce51c352600a2d961233bb1c3c077f197ff7e5885b2490f1b",
+      "kind": "config",
+      "intent": "canonical 46792335 localized the web app name to zh-CN; the copy keeps the English name; divergence dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "assets/README.md",
+      "canonical_path": "assets/README.md",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "asset",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "assets/capybara.png",
+      "canonical_path": "assets/capybara.png",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "asset",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "bun.lock",
+      "canonical_path": null,
+      "status": "copied_only",
+      "difference_hash": "6952b2ddea5082b8f4e2c5d8f393ccb256e2017f1ff0208cd239f4e00b8425f4",
+      "kind": "lockfile",
+      "intent": "copied-tree bookkeeping: lockfile produced by the standalone Bun install on the OpenBot side (upstream uses pnpm-lock)",
+      "target_ticket": "B04",
+      "resolved_commit": "resolved-by B04 — copy-tree bookkeeping, dies with the copy"
+    },
+    {
+      "copied_path": "index.js",
+      "canonical_path": "index.js",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "metro.config.js",
+      "canonical_path": "metro.config.js",
+      "status": "diverged",
+      "difference_hash": "0b540763c4567e58d56cd1140b533b67a4c8933217b67e161a6d5b65de3a9236",
+      "kind": "config",
+      "intent": "watchFolders changed from source monorepo root to the package dir so Metro does not watch the whole OpenBot backend repo (MIGRATION.md); canonical config works as-is under the submodule (B02/B03), copy change dies with B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B02/B03 — canonical tree builds unmodified under the submodule"
+    },
+    {
+      "copied_path": "package.json",
+      "canonical_path": "package.json",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "config",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "packages/domain/src/agent.ts",
+      "canonical_path": "packages/domain/src/agent.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "packages/domain/src/computer.ts",
+      "canonical_path": "packages/domain/src/computer.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "packages/domain/src/date-time.ts",
+      "canonical_path": "packages/domain/src/date-time.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "packages/domain/src/index.ts",
+      "canonical_path": "packages/domain/src/index.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "packages/domain/src/jev.ts",
+      "canonical_path": "packages/domain/src/jev.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/BrowserConsole.native.tsx",
+      "canonical_path": "src/BrowserConsole.native.tsx",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/BrowserConsole.web.tsx",
+      "canonical_path": "src/BrowserConsole.web.tsx",
+      "status": "diverged",
+      "difference_hash": "4494ca20e2af38068fb608bbd566c80c2605f2e4f1581070a5d562ad2d4ab225",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/DateFields.native.tsx",
+      "canonical_path": "src/DateFields.native.tsx",
+      "status": "diverged",
+      "difference_hash": "2d2880e0f6224593e5211d2bafa97fc4788fd859c80575298048274631772484",
+      "kind": "source",
+      "intent": "canonical 46792335 switched user-visible strings to t() lookups from src/strings.ts; the copy was never localized and keeps English inline strings; divergence dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/DateFields.web.tsx",
+      "canonical_path": "src/DateFields.web.tsx",
+      "status": "diverged",
+      "difference_hash": "2420c4551256e0c939283de756e6382243f37bd2381671213c63bdba469dab0b",
+      "kind": "source",
+      "intent": "canonical 46792335 switched user-visible strings to t() lookups from src/strings.ts; the copy was never localized and keeps English inline strings; divergence dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/DateTimeEditor.tsx",
+      "canonical_path": "src/DateTimeEditor.tsx",
+      "status": "diverged",
+      "difference_hash": "dd4b96983932be3785b4b74cd00a4d17015a24120c70c3381ce2f15d93a5497a",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/PdfReader.native.tsx",
+      "canonical_path": "src/PdfReader.native.tsx",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/PdfReader.web.tsx",
+      "canonical_path": "src/PdfReader.web.tsx",
+      "status": "diverged",
+      "difference_hash": "9ec1b7e6eacf6721b60c8fbf8e3aba2d465be43e38a5d76ae57188abc78e6f63",
+      "kind": "source",
+      "intent": "canonical 46792335 switched user-visible strings to t() lookups from src/strings.ts; the copy was never localized and keeps English inline strings; divergence dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/agent-ui.tsx",
+      "canonical_path": "src/agent-ui.tsx",
+      "status": "diverged",
+      "difference_hash": "90c6ffc67d35fd8205541b2adc2f926ddb288607da6df11ec8effcb23ecc9745",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/agent-workspace.tsx",
+      "canonical_path": "src/agent-workspace.tsx",
+      "status": "diverged",
+      "difference_hash": "d35d17f8bac7dcf9fab45421f7bd89d2338f58f4d9a1f879ff45aa4cf2592ac4",
+      "kind": "source",
+      "intent": "zh-CN strings inline only in the copied tree (canonical's 46792335 catalog has no entries for this file) plus the vendored-domain path rewrite; gap recorded below, dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B04 — inline zh-CN dies with the copy; localization gap recorded below"
+    },
+    {
+      "copied_path": "src/api-response.ts",
+      "canonical_path": "src/api-response.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/api.ts",
+      "canonical_path": "src/api.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/assistant-markdown.ts",
+      "canonical_path": "src/assistant-markdown.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/assistant-response.tsx",
+      "canonical_path": "src/assistant-response.tsx",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/background-updates.tsx",
+      "canonical_path": "src/background-updates.tsx",
+      "status": "diverged",
+      "difference_hash": "428686c83dc3621b30a31b63d3a7f74a6611111458c5713d42a6df2ef0cdffcb",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/browser-address.ts",
+      "canonical_path": "src/browser-address.ts",
+      "status": "diverged",
+      "difference_hash": "4d1953ff24f64f3b69829d54b3ef12fdaced6b39aa458728c86d6db190f68281",
+      "kind": "source",
+      "intent": "zh-CN strings inline only in the copied tree (canonical's 46792335 catalog has no entries for this file); gap recorded below, dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B04 — inline zh-CN dies with the copy; localization gap recorded below"
+    },
+    {
+      "copied_path": "src/browser-tool-card.tsx",
+      "canonical_path": "src/browser-tool-card.tsx",
+      "status": "diverged",
+      "difference_hash": "f9265edcdfa170a77f42c894da292b3ff7dcdf190f14f871fc2a35cfedf03fa8",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/chat.tsx",
+      "canonical_path": "src/chat.tsx",
+      "status": "diverged",
+      "difference_hash": "b438c6753f35afc072cd66d1bcf8020a47fb98171d1adc0b90beeb9f53c0434f",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/computer-drafts.tsx",
+      "canonical_path": "src/computer-drafts.tsx",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/computer-status.ts",
+      "canonical_path": "src/computer-status.ts",
+      "status": "diverged",
+      "difference_hash": "b0f25261bb0244c233b2de1fcb341782768167ec27816472c39420acac53ae49",
+      "kind": "source",
+      "intent": "zh-CN strings inline only in the copied tree (canonical's 46792335 catalog has no entries for this file); gap recorded below, dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B04 — inline zh-CN dies with the copy; localization gap recorded below"
+    },
+    {
+      "copied_path": "src/computer-workspace.tsx",
+      "canonical_path": "src/computer-workspace.tsx",
+      "status": "diverged",
+      "difference_hash": "c6ab8a9fe414e2dcab1d6de335fc31264d8034489d64e12a556c83c8d9ed2ad4",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/computer.tsx",
+      "canonical_path": "src/computer.tsx",
+      "status": "diverged",
+      "difference_hash": "f53f63c0a1394f54cff6486b6440dc86e0f879f530d24e8d12c3eca8045d53e8",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/conversation-queue.ts",
+      "canonical_path": "src/conversation-queue.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/conversation-run.ts",
+      "canonical_path": "src/conversation-run.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "source",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "src/date-time.ts",
+      "canonical_path": "src/date-time.ts",
+      "status": "diverged",
+      "difference_hash": "d563dfdc7006094de3bb57036184f428ed875ad4d34196aade82c86669dc884e",
+      "kind": "source",
+      "intent": "vendored domain import path rewrite (../../../packages/domain/src -> ../packages/domain/src, per MIGRATION.md); unnecessary once the submodule build (B02/B03) uses the canonical tree, copy deleted at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B02/B03 — canonical tree builds unmodified under the submodule"
+    },
+    {
+      "copied_path": "src/desktop-stream.tsx",
+      "canonical_path": "src/desktop-stream.tsx",
+      "status": "diverged",
+      "difference_hash": "d918dfe6396545d1841a5b77b77270604a6e4f644b0fe193cc3c259e4ee1588f",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/desktop-tool-card.tsx",
+      "canonical_path": "src/desktop-tool-card.tsx",
+      "status": "diverged",
+      "difference_hash": "0fe8efdaa75a174d42ee9b5804a9717dafc1787f61e0b5ca019590b06b2598cc",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/details.tsx",
+      "canonical_path": "src/details.tsx",
+      "status": "diverged",
+      "difference_hash": "3c7a330c82071ffc733ecb063a3d987a94e836b0462277d0bd05fc0a55623ebb",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/jev-actions.ts",
+      "canonical_path": "src/jev-actions.ts",
+      "status": "diverged",
+      "difference_hash": "48e757a920213d5dc220f26ad72c795caa52afea89ecbd2736390d0e2abc68d5",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/jev-tool-card.tsx",
+      "canonical_path": "src/jev-tool-card.tsx",
+      "status": "diverged",
+      "difference_hash": "fe11be84e07338b11873fff71a33c06cbe03ad0ef25623bcef46b14750da5827",
+      "kind": "source",
+      "intent": "vendored domain import path rewrite (../../../packages/domain/src -> ../packages/domain/src, per MIGRATION.md); unnecessary once the submodule build (B02/B03) uses the canonical tree, copy deleted at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B02/B03 — canonical tree builds unmodified under the submodule"
+    },
+    {
+      "copied_path": "src/mail-tool-card.tsx",
+      "canonical_path": "src/mail-tool-card.tsx",
+      "status": "diverged",
+      "difference_hash": "a504038e7424a685c75c8c5694677aaa9d75552a33d6cf6bb97062c808db2939",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/openbot/api.ts",
+      "canonical_path": "src/openbot/api.ts",
+      "status": "diverged",
+      "difference_hash": "2af50570aec0d1f64608620b32e22fae798758af96a5f29b39e84b64ccc98dc6",
+      "kind": "source",
+      "intent": "OpenBot REST facade (zod-checked /api/me, workspace, conversations, history, message send, activity): adopted by the canonical v4-base worktree at I01 and extended by later client tickets (files/tasks/calendar/connections/provisioning)",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01/I03 — apps/mobile/src/openbot/api.ts:37 (fetchMe)"
+    },
+    {
+      "copied_path": "src/openbot/auth.ts",
+      "canonical_path": "src/openbot/auth.ts",
+      "status": "diverged",
+      "difference_hash": "6ae9a083a092f823d3bf1bf711fe38f44fa185e74abdf7512796349bfc55991e",
+      "kind": "source",
+      "intent": "Better Auth client with @better-auth/expo + SecureStore native session persistence and web cookie storage: adopted by the canonical v4-base worktree (native restore I04, Android twin I05)",
+      "target_ticket": "I04",
+      "resolved_commit": "superseded-by I04/I05 — apps/mobile/src/openbot/auth.ts:28 (authClient)"
+    },
+    {
+      "copied_path": "src/openbot/client.ts",
+      "canonical_path": "src/openbot/client.ts",
+      "status": "diverged",
+      "difference_hash": "00225d1c8d87a6c6fd4a8c5eeac544bb5abf0a84f74f2619c2b756dc9f7c5701",
+      "kind": "source",
+      "intent": "OpenBot HTTP transport (Cookie header injection, 20s timeout/abort, 401->authentication_required / 403->refused mapping, outcomeUnknown on 5xx/408 writes): adopted by the canonical v4-base worktree at I01, extended with binary downloads (F04)",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01 — apps/mobile/src/openbot/client.ts:119 (openbotFetch)"
+    },
+    {
+      "copied_path": "src/openbot/config.ts",
+      "canonical_path": "src/openbot/config.ts",
+      "status": "diverged",
+      "difference_hash": "4d05a46705a7724271ae3c0e5ec72f709b832eb7857423b600f7f4ee84d57c82",
+      "kind": "source",
+      "intent": "EXPO_PUBLIC_OPENBOT_URL / EXPO_PUBLIC_BACKEND backend-selection switch with URL validation and loopback normalization: adopted by the canonical v4-base worktree at I01 (+I05 Android delta)",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01/I05 — apps/mobile/src/openbot/config.ts:13 (EXPO_PUBLIC_OPENBOT_URL)"
+    },
+    {
+      "copied_path": "src/openbot/email-signin.tsx",
+      "canonical_path": "src/openbot/email-signin.tsx",
+      "status": "diverged",
+      "difference_hash": "e05ab66cabf99c2d1cafeabd3e053a084c3ecb42276a50eb30ed00289939dc7c",
+      "kind": "source",
+      "intent": "email/password sign-in and sign-up form plus SignOutButton on Better Auth: adopted by the canonical v4-base worktree at I01",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01 — apps/mobile/src/openbot/email-signin.tsx:55 (EmailSignInForm)"
+    },
+    {
+      "copied_path": "src/openbot/errors.ts",
+      "canonical_path": "src/openbot/errors.ts",
+      "status": "diverged",
+      "difference_hash": "81d435eaef4d5437e111c46e7ab8a33b324658338a881629a06cf821a97a1c00",
+      "kind": "source",
+      "intent": "OpenBot error model (nine error codes incl. authentication_required): adopted by the canonical v4-base worktree at I01",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01 — apps/mobile/src/openbot/errors.ts:25 (OpenBotError)"
+    },
+    {
+      "copied_path": "src/openbot/gate.tsx",
+      "canonical_path": "src/openbot/gate.tsx",
+      "status": "diverged",
+      "difference_hash": "b719ec97bf1a7003800509a87638e0f72f575d158c86bcd70721613111a4ba58",
+      "kind": "source",
+      "intent": "OpenBotGate session gate: adopted by the canonical v4-base worktree at I01 and extended at I03 (provision->workspace->conversation entry sequence)",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01/I03 — apps/mobile/src/openbot/gate.tsx:93 (OpenBotGate)"
+    },
+    {
+      "copied_path": "src/openbot/types.ts",
+      "canonical_path": "src/openbot/types.ts",
+      "status": "diverged",
+      "difference_hash": "9770d09b80b98e433ed6889e4b57a07edaa5485f8269712b870ecb343c446245",
+      "kind": "source",
+      "intent": "zod DTO schemas for OpenBot mobile endpoints: adopted by the canonical v4-base worktree at I01 and extended by later tickets (files/tasks/calendar/connections)",
+      "target_ticket": "I01",
+      "resolved_commit": "superseded-by I01 — apps/mobile/src/openbot/types.ts:21 (openBotSessionSchema)"
+    },
+    {
+      "copied_path": "src/relative-date.ts",
+      "canonical_path": "src/relative-date.ts",
+      "status": "diverged",
+      "difference_hash": "db0ca740b097e23ff42459ab4ed4bedc9ff3f2a0c14e08501212f6e1b4652d9f",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/screens.tsx",
+      "canonical_path": "src/screens.tsx",
+      "status": "diverged",
+      "difference_hash": "434e781b0b99ccce0487c379798f1b40145bc3c97344298460d1bf0f53ea1151",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/search-tool-card.tsx",
+      "canonical_path": "src/search-tool-card.tsx",
+      "status": "diverged",
+      "difference_hash": "b594cb4435321c1a4c22e1302fc251ec5667f3efa8196a5ee12cf339a7a6c833",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/thread-artifacts.tsx",
+      "canonical_path": "src/thread-artifacts.tsx",
+      "status": "diverged",
+      "difference_hash": "d0cb96b90b8636da32decc91ca26e4b66a396517f621a22eb66ebca66d3edf21",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/threads.tsx",
+      "canonical_path": "src/threads.tsx",
+      "status": "diverged",
+      "difference_hash": "6602935b0738d540ce84ecf877f5b35fec1eada204eceb70146a2c8a19f046c2",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/ui.tsx",
+      "canonical_path": "src/ui.tsx",
+      "status": "diverged",
+      "difference_hash": "300455d108f4b10164f08eeaa63b69719371721b23e7287264f9fcf7dddc3f8e",
+      "kind": "source",
+      "intent": "canonical 46792335 ported the zh-CN UI into a src/strings.ts catalog (t() lookups); the copy keeps its earlier inline zh-CN literals, so the difference is implementation form only and dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "src/workspace.tsx",
+      "canonical_path": "src/workspace.tsx",
+      "status": "diverged",
+      "difference_hash": "b717ef4949c37d7bb42c6949a42b689299c3913b411df56618c1b5be60730f7e",
+      "kind": "source",
+      "intent": "vendored domain import path rewrite (../../../packages/domain/src -> ../packages/domain/src, per MIGRATION.md); unnecessary once the submodule build (B02/B03) uses the canonical tree, copy deleted at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B02/B03 — canonical tree builds unmodified under the submodule"
+    },
+    {
+      "copied_path": "test/api-response.test.ts",
+      "canonical_path": "test/api-response.test.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "test",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "test/assistant-markdown.test.ts",
+      "canonical_path": "test/assistant-markdown.test.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "test",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "test/browser-address.test.ts",
+      "canonical_path": "test/browser-address.test.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "test",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "test/computer-status.test.ts",
+      "canonical_path": "test/computer-status.test.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "test",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "test/conversation-queue.test.ts",
+      "canonical_path": "test/conversation-queue.test.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "test",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "test/date-time.test.ts",
+      "canonical_path": "test/date-time.test.ts",
+      "status": "identical",
+      "difference_hash": "1cc103f316d7707bb7ead8d7a203934bbf0f1251b615eb6056deb22c90d6144f",
+      "kind": "test",
+      "intent": "in sync",
+      "target_ticket": null,
+      "resolved_commit": "trivial (identical)"
+    },
+    {
+      "copied_path": "test/jev-actions.test.ts",
+      "canonical_path": "test/jev-actions.test.ts",
+      "status": "diverged",
+      "difference_hash": "ad446d967a8cca191feb8134e8f36b25b5a438d430907f8be3b86ade2bf2a665",
+      "kind": "test",
+      "intent": "vendored domain import path rewrite (../../../packages/domain/src -> ../packages/domain/src, per MIGRATION.md); unnecessary once the submodule build (B02/B03) uses the canonical tree, copy deleted at B04; canonical 46792335 additionally localized the test fixtures to zh-CN, which the copy predates",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335 (zh-CN fixtures); path rewrite unnecessary under the submodule (B02/B03)"
+    },
+    {
+      "copied_path": "test/relative-date.test.ts",
+      "canonical_path": "test/relative-date.test.ts",
+      "status": "diverged",
+      "difference_hash": "7a5cabfd50904642eec3c4c200a410b9ec52ab5c4db9466730e11945d95a85cc",
+      "kind": "test",
+      "intent": "canonical 46792335 localized the relative-date test fixtures to zh-CN; the copy predates that change; divergence dies with the copy at B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "canonical-parity 46792335"
+    },
+    {
+      "copied_path": "tsconfig.json",
+      "canonical_path": "tsconfig.json",
+      "status": "diverged",
+      "difference_hash": "19d98c37336fe90807364d3e03115fb7b74dca13f0fcdd038d23f46db9c6cb8d",
+      "kind": "config",
+      "intent": "paths['@openmuse/domain'] pointed at the in-package vendored copy (MIGRATION.md); canonical keeps its own mapping under the submodule, copy change dies with B04",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "resolved-by B02/B03 — canonical tree builds unmodified under the submodule"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/calendar-view.ts",
+      "status": "canonical_only",
+      "difference_hash": "96646c62877ee6c21af763d2a4d1a67cfbd490a2c2d4999911da8e74ca717ea1",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket A03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "A03",
+      "resolved_commit": "landed-in-canonical A03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/calendar.tsx",
+      "status": "canonical_only",
+      "difference_hash": "77cc2d2197a91ebdd3294ddb967620025b7a55fc4dd85b68f2944ef43a1a1727",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket A03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "A03",
+      "resolved_commit": "landed-in-canonical A03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/channel-actions.ts",
+      "status": "canonical_only",
+      "difference_hash": "1bc76b87e820f1003364cf2ca366f722a6c21c2c8b78fde164884f9323e7f8e9",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C03",
+      "resolved_commit": "landed-in-canonical C03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/channel-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "e0a43e8dc027da391fe1b8748782ef1a65a92a35a4f90f991c6f14e413c3cd9c",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C02 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C02",
+      "resolved_commit": "landed-in-canonical C02 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/channels.tsx",
+      "status": "canonical_only",
+      "difference_hash": "4f8a5dce81d87c227af4af327befde27829fbce969c967bea5fdeeec49bfe274",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C02 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C02",
+      "resolved_commit": "landed-in-canonical C02 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/chat-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "05a9619fd86ef7f5d838e8830664d6c79b6ce10461504b7f62eac19507abf17b",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C01 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C01",
+      "resolved_commit": "landed-in-canonical C01 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/chat.tsx",
+      "status": "canonical_only",
+      "difference_hash": "5e54f1b0d71f29a03bc63337787587d4b2a648fac4c6673d504c93ee475f49fb",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C01 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C01",
+      "resolved_commit": "landed-in-canonical C01 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/computer-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "bc641132e531dca00b0d43d37411681f9ec7cfa4566473de2278359e8af98f9d",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket K02 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "K02",
+      "resolved_commit": "landed-in-canonical K02 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/computer.tsx",
+      "status": "canonical_only",
+      "difference_hash": "056ebcb3065c63e4c4dd082335c7820d18897b2054127e9c80347d82ac12b8a2",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket K02 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "K02",
+      "resolved_commit": "landed-in-canonical K02 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/connection-status.ts",
+      "status": "canonical_only",
+      "difference_hash": "9dc19ebc6c8fa00e7f0fa113c67585349648439f69786f51bc0e33e4b7428591",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket G06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "G06",
+      "resolved_commit": "landed-in-canonical G06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/connections.tsx",
+      "status": "canonical_only",
+      "difference_hash": "2e46a6eec55c33c958ed989b0e40b30a4a094f9ddf197138895549a58619d9f6",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket G06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "G06",
+      "resolved_commit": "landed-in-canonical G06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/control-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "94f98679bb2791b11663a358f3cfde24f0ff71ad467e6e1bdab91db9129c73a9",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket K04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "K04",
+      "resolved_commit": "landed-in-canonical K04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/control.tsx",
+      "status": "canonical_only",
+      "difference_hash": "8e53063f259f48b36c2a05de352caaa52803ae26610ac30f0668d592b2240e02",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket K04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "K04",
+      "resolved_commit": "landed-in-canonical K04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/file-cache.ts",
+      "status": "canonical_only",
+      "difference_hash": "8b482bea9e97ab06d3852eafad54395f2e61f9f624127925b52cc603e3f30df9",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket F04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "F04",
+      "resolved_commit": "landed-in-canonical F04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/files.tsx",
+      "status": "canonical_only",
+      "difference_hash": "392d571f3eea20168245fc8096ef94a1605c186734ce2018761431ee6be9a718",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket F04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "F04",
+      "resolved_commit": "landed-in-canonical F04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/gate-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "3359af046b7eb7a5d23d2286a50aaf7a989a3274c87b8efaa464ef39cba8bd75",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket I01/I03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I01/I03",
+      "resolved_commit": "landed-in-canonical I01/I03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/pdf-view-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "a516ccff8f478d27d00ec36c924172f4dceb1e426ac18911471b0b8e71694bbd",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket F07/F08 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "F07/F08",
+      "resolved_commit": "landed-in-canonical F07/F08 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/pdf-view.tsx",
+      "status": "canonical_only",
+      "difference_hash": "cc76b34cc74d405f00f35f0897b20f918b95316930113e81b8681def6135e891",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket F07/F08 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "F07/F08",
+      "resolved_commit": "landed-in-canonical F07/F08 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/private-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "534194afc3b35c80119321457d4cc70e0fd8c6455bed5900317eaef510a0699f",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket I06/I07/I08 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I06/I07/I08",
+      "resolved_commit": "landed-in-canonical I06/I07/I08 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/stop-state.ts",
+      "status": "canonical_only",
+      "difference_hash": "3bef338f6d5304a7c9438b1deae142ec023f0944ca78b4fb2fad1b70919c58a1",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C04",
+      "resolved_commit": "landed-in-canonical C04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/stream-resume.ts",
+      "status": "canonical_only",
+      "difference_hash": "4c5dbecbcc7ef42ad2f4a559d1268d8a6cb7d7d3600b02e5c7840a7e91e437ed",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C05 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C05",
+      "resolved_commit": "landed-in-canonical C05 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/task-view.ts",
+      "status": "canonical_only",
+      "difference_hash": "f1bdabb5bdb0f802bb94457dfe96eb44774aa2a0516a1000c19654e3a1db2fa4",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket T03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "T03",
+      "resolved_commit": "landed-in-canonical T03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/tasks.tsx",
+      "status": "canonical_only",
+      "difference_hash": "836f6944fbf6c70ea2a3178f2de391b26ea5819d21313671c0c0f3522e92e6fb",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket T03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "T03",
+      "resolved_commit": "landed-in-canonical T03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/openbot/tool-cards.ts",
+      "status": "canonical_only",
+      "difference_hash": "6a1116bbb4f5b6b753ec97aee68d98a584e48b37c68e78747af2ccc19678e42e",
+      "kind": "source",
+      "intent": "canonical addition landed by ticket C06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C06",
+      "resolved_commit": "landed-in-canonical C06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "src/strings.ts",
+      "status": "canonical_only",
+      "difference_hash": "e852c536590698f4812d87157ca122441c46d243f5592e1b5a06512e01773e1f",
+      "kind": "source",
+      "intent": "canonical zh-CN string catalog (and its tests), added upstream at 46792335; the copy predates the catalog; divergence disappears when B04 replaces the copy with the canonical tree",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "landed-in-canonical 46792335 — zh-CN string catalog supersedes the copy's inline literals"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-android-config.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "e833e0eb9964d3b9bac01b3f2580b0c8ce97f0085b25547981fd30a89fdfbea1",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I05 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I05",
+      "resolved_commit": "landed-in-canonical I05 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-api.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "99b49786944bb3ececddc5ce1857afc5da46c95f87b5be90136f7163700aca6c",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I01/I03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I01/I03",
+      "resolved_commit": "landed-in-canonical I01/I03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-calendar-view.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "e82a57f7666c7802a4bf832596cd4493b24d670164ab719a6509027721ec0de7",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket A03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "A03",
+      "resolved_commit": "landed-in-canonical A03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-channel-actions.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "482e699e2a3435b24fd8b9da48d868b06018ccf587c9828e70ebeb5ae554d13b",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket C03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C03",
+      "resolved_commit": "landed-in-canonical C03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-channel-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "1cfc08296c8e51e104ef1f65f4392948652d354450b6894eac84627be1efe809",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket C02 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C02",
+      "resolved_commit": "landed-in-canonical C02 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-chat-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "e65a660eb962a9f47efdd0f14bda3a1b976046c8979daa9fb4cbd18d8bf9ce33",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket C01 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C01",
+      "resolved_commit": "landed-in-canonical C01 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-client.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "e9937de6ee8ff5362c3a0d97e37eecbc06de8fe34c001eac9ec5dce66c0452d6",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I01/I04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I01/I04",
+      "resolved_commit": "landed-in-canonical I01/I04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-computer-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "46946a4ef7a64d45fdad38ae2db209d1ecf452ecc1c196a90adc5476c020abc6",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket K02 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "K02",
+      "resolved_commit": "landed-in-canonical K02 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-connection-status.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "bc9f6712e8722d7f5e39729760786d31a5088bcb1ef6195381e6b735ec116f82",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket G06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "G06",
+      "resolved_commit": "landed-in-canonical G06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-control-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "9f6f1bcd9d119478f0837462b35bf714cae7057d469fdba14707795938102b3e",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket K04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "K04",
+      "resolved_commit": "landed-in-canonical K04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-file-cache.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "6f682ae9569ff137bee68566950e0311154b6d95a73237c7f79948e51356adf6",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket F04/F10 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "F04/F10",
+      "resolved_commit": "landed-in-canonical F04/F10 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-gate.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "0fdb6204a8f11742fc39a21b707f36e5bd88ba261297bb7c9131b9bb76026e6c",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I01/I03/I06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I01/I03/I06",
+      "resolved_commit": "landed-in-canonical I01/I03/I06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-native-private-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "a2256f47e4314d92304c5b0a0459aca37e49928ce7d1abcb05605f644adff508",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I07/I08 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I07/I08",
+      "resolved_commit": "landed-in-canonical I07/I08 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-native-session.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "cdabd917fe8649be23b3057534efa8faf1313b14fe03caec521216a7080fdfaf",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I04/I05 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I04/I05",
+      "resolved_commit": "landed-in-canonical I04/I05 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-pdf-view-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "53de7e6c046af2ae58113c2070c32ba2a1e7af0964465258cadbf29297f88eb4",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket F07/F08 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "F07/F08",
+      "resolved_commit": "landed-in-canonical F07/F08 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-private-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "5022fa4b2d16ca412df95eb22d518a2fa6d570f6d14c2d2375bcb37da62c1721",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket I06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "I06",
+      "resolved_commit": "landed-in-canonical I06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-stop-state.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "2f1f7b0fe2569c4a01e737a5da292062183642d1559ae6d8546990f1d276b937",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket C04 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C04",
+      "resolved_commit": "landed-in-canonical C04 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-stream-resume.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "ac40740cff4c5c57a5a189a261e379ac73a99d43534b16a9220562e3b4a1a625",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket C05 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C05",
+      "resolved_commit": "landed-in-canonical C05 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-task-view.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "544d1ee574a0bc4a794906accb31730a530e5766f8524004fab0c567c89efe83",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket T03 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "T03",
+      "resolved_commit": "landed-in-canonical T03 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/openbot-tool-cards.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "c55b52a497f2f4138217434eabc953b937e986bd8b7a71201e912abdf79fc10f",
+      "kind": "test",
+      "intent": "canonical addition landed by ticket C06 in the OpenMuse v4-base worktree (uncommitted checkpoint on 46792335); the copy predates the submodule switch and never carried it — canonical growth, not copy loss",
+      "target_ticket": "C06",
+      "resolved_commit": "landed-in-canonical C06 — canonical addition, no copy counterpart"
+    },
+    {
+      "copied_path": null,
+      "canonical_path": "test/strings.test.ts",
+      "status": "canonical_only",
+      "difference_hash": "5031816729ea7e0acf08eccb975441f52d56bc599d5d0beb4177abc1d91fd26f",
+      "kind": "test",
+      "intent": "canonical zh-CN string catalog (and its tests), added upstream at 46792335; the copy predates the catalog; divergence disappears when B04 replaces the copy with the canonical tree",
+      "target_ticket": "B04-cleanup",
+      "resolved_commit": "landed-in-canonical 46792335 — zh-CN string catalog tests"
+    }
+  ]
+}

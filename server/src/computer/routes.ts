@@ -6,6 +6,7 @@ import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AuditReader } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
+import { ComputerCapacityError, WorkspaceQuotaError } from "./capacity";
 import { DEPLOYMENT_ROUTES } from "./deployment-routes";
 import {
   type ActionActor,
@@ -25,6 +26,7 @@ import {
 import type { PageFrameStore } from "./page-frames";
 import { dryRunAgainstHistory, REPLAYABLE_EVENT_TYPES } from "./policy-dry-run";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
+
 const log = getLogger("server");
 
 /**
@@ -453,6 +455,64 @@ export function createComputerRoutes(
     ),
   );
 
+  /**
+   * Revoke a lease its holder did not end: a logout, a disconnect policy, a policy refusal.
+   *
+   * Named on the lease's own path because it is the lease's own event — the outcome the lease
+   * records is `refused`, and any later input is refused by the gate that already exists rather
+   * than by anything this route does. The reason is the caller's to give; the audit row carries
+   * the actor, the Bot, and the lease, so a trail can say which takeover a logout ended.
+   */
+  routes.post("/:botId/control/revoke", (context) =>
+    act(context, async (botId, actor, body) => {
+      /*
+       * A computer that is not running holds no live lease — a restart interrupts whatever it
+       * had — so there is nothing to revoke, and asking would /ensure: starting a stopped
+       * computer just to be told about a lease it cannot have. The list answers without
+       * ensuring, and the not-running case answers as the no-op it is.
+       */
+      const fleet = await gateway.computers();
+      if (!fleet.computers.some((c) => c.botId === botId && c.running)) {
+        return { holder: "bot" };
+      }
+      /*
+       * Take already refuses a second person's claim; revoke is the stronger action (it ends
+       * somebody else's lease and parks the Bot on recoveryRequired), so it must not be the
+       * weaker-guarded route. Only the lease's current holder — or an administrator — may end a
+       * held lease from outside; a lease nobody holds is any caller's to refuse.
+       *
+       * The reading this authorization was made on rides into the revoke as the computer's
+       * precondition, so a lease taken over between the read and the revoke is refused there
+       * (409) instead of ended — the read-then-revoke window is otherwise a stranger's way to
+       * a lease the check here never saw them hold.
+       */
+      const observed = await gateway.control(botId);
+      const holder = observed.request?.takenBy;
+      if (holder && holder !== actor.id && context.var.actor.role !== "admin") {
+        throw new HandoffRequestError(
+          "Another person holds this control request.",
+          409,
+        );
+      }
+      return gateway.revokeControl(
+        botId,
+        actor,
+        typeof body?.reason === "string" && body.reason.trim()
+          ? body.reason.trim().slice(0, 500)
+          : "The control request was revoked.",
+        // The observed state rides whole — including "no lease was on the wheel when this
+        // authorization read it": the computer answers 409 if a request became active in the
+        // read-then-revoke window, so a takeover this check never saw cannot be ended by it.
+        observed.request
+          ? {
+              requestId: observed.request.id,
+              takenBy: observed.request.takenBy,
+            }
+          : { requestId: null, takenBy: null },
+      );
+    }),
+  );
+
   /** The Bot asking for a value it must not be told. */
   routes.post("/:botId/control/secret", (context) =>
     act(context, (botId, actor, body) => {
@@ -553,6 +613,24 @@ export function createComputerRoutes(
     }
     if (kind === "scroll" && !usableDeltaY(body?.deltaY)) {
       return context.json(badDeltaY, 400);
+    }
+    /*
+     * The gesture's sequence number, when the surface numbers its input. Shaped here like the
+     * gestures themselves: `typeof` alone admits `1.5` and `1e999`, which would travel to the
+     * computer and be judged against the lease as though they had been numbers. The lease, not
+     * this route, decides whether the number is stale; this only refuses numbers that are not
+     * numbers a lease could order.
+     */
+    if (
+      body?.seq !== undefined &&
+      (typeof body.seq !== "number" ||
+        !Number.isInteger(body.seq) ||
+        body.seq < 1)
+    ) {
+      return context.json(
+        { error: "An input sequence must be a whole number of at least 1." },
+        400,
+      );
     }
     try {
       return context.json(
@@ -996,6 +1074,22 @@ function errorBody(error: unknown): Record<string, unknown> {
     ...(error instanceof HandoffRequestError
       ? { controlRequestError: true }
       : {}),
+    // Stable codes, so a surface can tell a capacity refusal apart from a generic failure without
+    // parsing prose — and, for these two, the whole story the browser gets: their messages carry
+    // operator guidance (which OPENMUSE_* to raise) that is not for a browser, the same neutrality
+    // stream-auth.ts gives the socket's 503. The full message stays in the server's own channels.
+    ...(error instanceof ComputerCapacityError
+      ? {
+          code: error.code,
+          error: "Every computer this deployment allows is running.",
+        }
+      : {}),
+    ...(error instanceof WorkspaceQuotaError
+      ? {
+          code: error.code,
+          error: "That write would pass this Bot's workspace cap.",
+        }
+      : {}),
   };
 }
 
@@ -1031,6 +1125,12 @@ function statusFor(error: unknown): 400 | 403 | 404 | 409 | 413 | 500 | 503 {
   if (error instanceof WorkspaceRequestError) return 400;
   if (error instanceof WorkspaceNotFoundError) return 404;
   if (error instanceof WorkspaceTooLargeError) return 413;
+  // A quota, like the too-large download above: the caller asked for more than this Bot's
+  // workspace may hold. The body carries its own code so the two are told apart.
+  if (error instanceof WorkspaceQuotaError) return 413;
   if (error instanceof ComputerUnavailableError) return 503;
+  // The deployment's computers are all running: nobody is broken, there is no room. Unlike an
+  // unavailable computer this names the bound and says what to do about it, with a stable code.
+  if (error instanceof ComputerCapacityError) return 503;
   return 500;
 }

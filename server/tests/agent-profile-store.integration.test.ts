@@ -943,4 +943,34 @@ describe("agent profile store integration", () => {
       packageId: null,
     });
   });
+
+  test("enumerateOwner names every Bot the owner-scoped hardDelete removes: soft-deleted included, foreign public never", async () => {
+    const owner = await createUser();
+    const other = await createUser();
+    const live = await createProfileFixture({
+      owner,
+      visibility: "private",
+    });
+    const tombstoned = await createProfileFixture({
+      owner,
+      visibility: "private",
+    });
+    // Another owner's public Bot: visible to the owner's list, never the
+    // owner's to delete.
+    const foreign = await createProfileFixture({
+      owner: other,
+      visibility: "public",
+    });
+    await store.softDelete(owner, tombstoned.agentId);
+    const refs = await store.enumerateOwner(owner.id);
+    // §9 (openmuse-deletion D04): the enumeration owes exactly what
+    // hardDelete removes — list deviates in both directions (visibility
+    // admits foreign Bots, deletedAt hides soft-deleted ones), so this seam
+    // is owner-scoped and tombstone-blind.
+    expect(refs.map((ref) => ref.id).sort()).toEqual(
+      [live.agentId, tombstoned.agentId].sort(),
+    );
+    expect(refs.every((ref) => ref.kind === "openmuse-bot")).toBe(true);
+    expect(refs.some((ref) => ref.id === foreign.agentId)).toBe(false);
+  });
 });
