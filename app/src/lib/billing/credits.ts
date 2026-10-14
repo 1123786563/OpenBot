@@ -42,6 +42,8 @@ export type CreditConsumptionEntry = {
   title: string;
   requestId: string | null;
   credits: number;
+  /** What the grants absorbed of that cost; `credits - applied` is the unfunded shortfall. */
+  applied: number;
   model: string | null;
   client: string | null;
   timestamp: string;

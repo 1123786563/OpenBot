@@ -166,6 +166,7 @@ export type ReconcileFinding = {
     | "fact_amount_mismatch"
     | "applied_without_subscription"
     | "grants_ledger_divergence"
+    | "credit_overdraw"
     | "expired_reserved_reservation"
     | "reservation_allocation_imbalance"
     | "plan_grant_missing"
@@ -194,6 +195,13 @@ export type ReconcileReport = {
     paidOrders: number;
     appliedOrders: number;
     creditCustomers: number;
+    /**
+     * The whole-report overdraw total (audit D1): what consumption the grants could not fund,
+     * summed from `credits - applied` across the ledger. `units` is an exact decimal string (the
+     * reconciler's BigInt discipline — a money figure is never rounded on its way into a report
+     * that audits somebody else's arithmetic); `entries` counts the shortfall-carrying rows.
+     */
+    overdraw: { entries: number; units: string };
     usageDeliveryTargets: {
       pending: { lago: number; credits: number };
       blocked: { lago: number; credits: number };
@@ -399,8 +407,13 @@ export type CreditConsumptionEntry = {
   title: string;
   /** The request id shown under the title, to be truncated by the client. */
   requestId: string | null;
-  /** How many credits this call cost. */
+  /** How many credits this call cost, in full. */
   credits: number;
+  /**
+   * How much of that cost the grants absorbed. Equal to `credits` except when the balance came up
+   * short; `credits - applied` is the shortfall the reconciler totals as `overdraw`.
+   */
+  applied: number;
   model: string | null;
   /** The surface that made the call (web/api/cli). */
   client: string | null;
