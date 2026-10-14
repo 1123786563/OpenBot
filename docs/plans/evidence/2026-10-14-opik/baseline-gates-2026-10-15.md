@@ -48,10 +48,14 @@ the same way, record it as pre-existing and move on.
   `bun run build` both pass with no `.env` present.
 - **Do not copy `.env` into a child worktree.** It holds real credentials and the gates do
   not need it. If a test genuinely requires it, record the blocker instead of copying secrets.
-- **`node_modules` is per-worktree and not installed by Orca setup.** This repo has
-  `hookSettings: null` and `projectHostSetupMethod: null`, so `--setup run` has no repo hook
-  to execute. If `bun test` cannot resolve modules, run `bun install` at the worktree root
-  first and record that you did.
+- **`node_modules` IS installed by Orca setup — measured, not assumed.** `repo show` reports
+  `hookSettings: null`, which is misleading: the `worker-start` receipt for the first child
+  worktree shows `setup.hookFound: true`, `startupPolicy: wait-for-setup`,
+  `setup.state: succeeded`, and the child at
+  `/Users/wuyongjun/orca/workspaces/OpenBot/opik-t01-module-seam` has both `node_modules/` and
+  `server/node_modules/` present. So dependencies are ready on arrival; you should not need
+  `bun install`. If module resolution nonetheless fails, run `bun install` at the worktree root
+  and record that you did — but treat it as an anomaly worth reporting, not as routine.
 - **`TEST_DATABASE_URL` gates the real-PostgreSQL integration tests.** Without it they
   `describe.skipIf(...)` and report as skipped. Per the parent Spec and `failure_policy`,
   **skipped is not passed** — record it as unverified, never as green.
@@ -71,6 +75,23 @@ green at baseline, so a RED they produce is genuinely their own:
 | #9 T03 | `bun test server/tests/opik-deployment.test.ts` + `docker compose ... config --quiet` | files absent (new); Docker availability is the worker's to confirm |
 | #11 T05 | `bun test server/tests/opik-redaction.test.ts` | file absent (new) |
 | #12 T06 | `bun test server/tests/opik-scope.test.ts` | file absent (new) |
+
+## Child worktree placement (measured on the first dispatch)
+
+Workers are placed as stacked child worktrees of `opik-integration` with an explicit git base:
+
+```
+orca orchestration worker-start --run <run_id> --task <task_id> \
+  --worktree new-child --repo id:d6edf033-748a-4549-ae5a-e9efd34cef91 \
+  --base-branch 1123786563/opik-integration --name opik-t01-module-seam \
+  --agent claude --setup run --json
+```
+
+Verified on `ctx_ae959c2a4e7b`: child branch `1123786563/opik-t01-module-seam`, based exactly on
+the opik tip, carrying this file, the plan and `docs/tickets/opik-4/manifest.json`.
+`launch.effective` was `{"agent": "claude", "model": null, "effort": null}` — `--model` is
+deliberately omitted so each worker inherits the configured claude default, and the effective
+value (not the requested one) is what is recorded.
 
 ## Checkpoint convention (avoids a shared-file write conflict)
 

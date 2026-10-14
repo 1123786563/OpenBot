@@ -1,0 +1,131 @@
+{
+ "created_at": "2026-10-15",
+ "run_id": "run_5f5dfacf3715",
+ "repository": "1123786563/OpenBot",
+ "base_branch": "1123786563/opik-integration",
+ "repo_id": "d6edf033-748a-4549-ae5a-e9efd34cef91",
+ "coordinator_worktree": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration",
+ "agent": "claude",
+ "model_policy": {
+  "implementers": "omit --model so each worker inherits the user's configured claude default (user did not name a model)",
+  "reviewers": "omit --model, same reason",
+  "final_review": "strongest tier per the user's instruction; set --model/--effort at dispatch and verify launch.effective, never claim from launch.requested"
+ },
+ "placement": {
+  "worktree": "new-child",
+  "parent_worktree": "opik-integration",
+  "base_branch": "1123786563/opik-integration",
+  "setup": "run (repo hookSettings is null, so no hook runs; workers must bun install if modules are missing)"
+ },
+ "tasks": {
+  "implementers": {
+   "T01": {
+    "task_id": "task_1e2b04977281",
+    "issue": 7,
+    "worktree_name": "opik-t01-module-seam",
+    "plan": "docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md"
+   },
+   "T02": {
+    "task_id": "task_35bafd362a24",
+    "issue": 8,
+    "worktree_name": "opik-t02-ui-i18n",
+    "plan": "docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md"
+   },
+   "T03": {
+    "task_id": "task_894ec9805947",
+    "issue": 9,
+    "worktree_name": "opik-t03-deployment",
+    "plan": "docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md"
+   },
+   "T05": {
+    "task_id": "task_1aac79b79517",
+    "issue": 11,
+    "worktree_name": "opik-t05-redaction",
+    "plan": "docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md"
+   },
+   "T06": {
+    "task_id": "task_7d5dec524ab4",
+    "issue": 12,
+    "worktree_name": "opik-t06-scope-seam",
+    "plan": "docs/superpowers/plans/2026-10-15-opik-t06-trusted-scope-seam.md"
+   }
+  },
+  "reviewers": {
+   "T01": {
+    "task_id": "task_52b7dca49189",
+    "depends_on": "task_1e2b04977281"
+   },
+   "T02": {
+    "task_id": "task_fa2d1ae12402",
+    "depends_on": "task_35bafd362a24"
+   },
+   "T03": {
+    "task_id": "task_78a502a23cd6",
+    "depends_on": "task_894ec9805947"
+   },
+   "T05": {
+    "task_id": "task_76fad057e67e",
+    "depends_on": "task_1aac79b79517"
+   },
+   "T06": {
+    "task_id": "task_a4d82f0b5f83",
+    "depends_on": "task_7d5dec524ab4"
+   }
+  },
+  "final_review": {
+   "task_id": "task_131500fb8487",
+   "depends_on": [
+    "task_52b7dca49189",
+    "task_fa2d1ae12402",
+    "task_78a502a23cd6",
+    "task_76fad057e67e",
+    "task_a4d82f0b5f83"
+   ]
+  }
+ },
+ "dispatches": {
+  "T01": {
+   "dispatch_id": "ctx_ae959c2a4e7b",
+   "task_id": "task_1e2b04977281",
+   "terminal": null,
+   "worktree_id": null,
+   "worktree_path": null,
+   "branch": null,
+   "launch_requested": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   },
+   "launch_effective": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   },
+   "setup": {
+    "requested": "run",
+    "effective": "run",
+    "source": "explicit_request",
+    "hookFound": true,
+    "startupPolicy": "wait-for-setup",
+    "state": "succeeded"
+   },
+   "receipt_keys": [
+    "dispatchId",
+    "effects",
+    "launch",
+    "mode",
+    "mutation",
+    "residualResources",
+    "runId",
+    "setup",
+    "stage",
+    "state",
+    "taskId",
+    "timeoutMs",
+    "turnStart"
+   ]
+  }
+ },
+ "baseline_evidence": "docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md",
+ "checkpoint_convention": "docs/tickets/opik-4/checkpoints/<TID>.md written by each implementer; coordinator folds into manifest.json after review"
+}
