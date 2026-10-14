@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { createDatabase } from "../src/db/client";
+import { reasonWithoutStatement } from "../src/db/query-failure";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
   enterpriseSetupDatabaseVariable,
@@ -121,6 +122,15 @@ if ((mode === "migrate" && exitCode === 0) || mode === "provision") {
 }
 process.exit(exitCode);
 
+/**
+ * Quotes a string as a PostgreSQL identifier, doubling embedded double
+ * quotes. Lets the defense-in-depth claim below hold even for callers that
+ * skip parseRuntimeTestLogin validation.
+ */
+function ident(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
 /** Shared by the migrate-mode precheck and the provisioning transaction. */
 function assertLoginNotPrivileged(
   existing: PgRolePrivilegeFlags | undefined,
@@ -212,17 +222,16 @@ async function provisionRuntimeTestLogins(
               // pg_auth_members names can legally contain double quotes; a
               // hostile CREATEROLE peer could use one to break out of the
               // quoted identifier, and this connection is superuser.
-              const quoted = rolname.replaceAll('"', '""');
-              await tx.unsafe(`REVOKE "${quoted}" FROM "${name}"`);
+              await tx.unsafe(`REVOKE ${ident(rolname)} FROM ${ident(name)}`);
             }
           }
           await tx.unsafe(
-            `${operation} "${name}" LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ${literal(password)}`,
+            `${operation} ${ident(name)} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ${literal(password)}`,
           );
-          await tx.unsafe(`GRANT "${login.capability}" TO "${name}"`);
+          await tx.unsafe(`GRANT ${ident(login.capability)} TO ${ident(name)}`);
         } catch (error) {
           const code = (error as { code?: unknown }).code;
-          const detail = error instanceof Error ? error.message : String(error);
+          const detail = reasonWithoutStatement(error);
           throw new Error(
             `Failed to ${existing ? "alter" : "create"} test login "${name}"${typeof code === "string" ? ` (postgres ${code})` : ""}: ${detail}`,
           );
