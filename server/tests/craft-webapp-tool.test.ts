@@ -78,6 +78,43 @@ async function startListener(): Promise<number> {
   return devServer.port;
 }
 
+/** One request an echoing upstream actually received. */
+type EchoedRequest = { method: string; path: string; body: string };
+
+/**
+ * A loopback listener that answers with what it was handed — the witness for the
+ * preview's interactivity half. A GET-only route made every mutation a 404 from
+ * Hono that never reached the app, so what the upstream RECEIVES is the fact
+ * worth pinning, not what the route returns.
+ */
+async function startEchoListener(): Promise<{
+  port: number;
+  received: EchoedRequest[];
+}> {
+  const received: EchoedRequest[] = [];
+  devServer = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      received.push({
+        method: request.method,
+        path: url.pathname + url.search,
+        body:
+          request.method === "GET" ||
+          request.method === "HEAD" ||
+          request.method === "OPTIONS"
+            ? ""
+            : await request.text(),
+      });
+      return new Response(JSON.stringify({ saw: received.at(-1) }), {
+        status: request.method === "POST" ? 201 : 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  return { port: devServer.port, received };
+}
+
 /** A process that stays alive so nextjs.pid points at a live pid. */
 function spawnLivePid(): number {
   livePidChild = Bun.spawn(["sleep", "60"]);
@@ -1347,6 +1384,76 @@ describe("webapp preview route (reserved-port attach)", () => {
     const { app } = proxyHarness({ session: undefined });
     const response = await app.request("/sessions/cs-pv/webapp/");
     expect(response.status).toBe(404);
+  });
+
+  // ── the preview is an app you can drive, not a picture of one ────────────────
+  //
+  // The route registered GET only, so POST/PUT/PATCH/DELETE/OPTIONS answered 404
+  // from Hono and never reached the dev server (measured live against the route).
+  // That is every Server Action, every API-route mutation, every POST form and
+  // every preflighted fetch — the whole of "operate and test it".
+  describe("the preview forwards every method", () => {
+    const cases = [
+      { method: "POST", body: '{"title":"ship it"}' },
+      { method: "PUT", body: '{"title":"renamed"}' },
+      { method: "PATCH", body: '{"done":true}' },
+      { method: "DELETE", body: "" },
+      { method: "OPTIONS", body: "" },
+    ] as const;
+
+    for (const { method, body } of cases) {
+      test(`${method} reaches the dev server with its body intact`, async () => {
+        const { port, received } = await startEchoListener();
+        const { app } = proxyHarness({
+          session: sessionRow({ nextjsPort: port }),
+          files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+        });
+        const response = await app.request(
+          "/sessions/cs-pv/webapp/api/tasks?x=1",
+          {
+            method,
+            body: body === "" ? undefined : body,
+            headers: { "content-type": "application/json" },
+          },
+        );
+        expect(response.status).toBeLessThan(400);
+        expect(received.length).toBe(1);
+        expect(received[0]?.method).toBe(method);
+        // The full mount path rides through (the scaffold's basePath equals it),
+        // query included — a mutation aimed at the wrong path is a silent no-op.
+        expect(received[0]?.path).toBe(
+          "/api/craft/sessions/cs-pv/webapp/api/tasks?x=1",
+        );
+        expect(received[0]?.body).toBe(body);
+      });
+    }
+
+    test("a POST to a session whose dev server is down still answers the honest 503", async () => {
+      const { app } = proxyHarness({
+        session: sessionRow({ nextjsPort: 3017 }),
+        files: ["/workspace/sessions/cs-pv/outputs/web/package.json"],
+      });
+      const response = await app.request("/sessions/cs-pv/webapp/api/tasks", {
+        method: "POST",
+        body: "{}",
+        headers: { accept: "application/json" },
+      });
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toContain("not running");
+    });
+
+    test("ownership still gates a mutation: another user's session is a 404", async () => {
+      const { port, received } = await startEchoListener();
+      const { app } = proxyHarness({ session: undefined });
+      void port;
+      const response = await app.request("/sessions/cs-pv/webapp/api/tasks", {
+        method: "POST",
+        body: "{}",
+      });
+      expect(response.status).toBe(404);
+      expect(received.length).toBe(0);
+    });
   });
 });
 

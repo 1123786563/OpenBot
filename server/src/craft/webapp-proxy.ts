@@ -4,7 +4,7 @@
  *
  * Three endpoints:
  * - GET /sessions/:id/webapp-info    — has_webapp / webapp_url / status / ready
- * - GET /sessions/:id/webapp/*        — reverse-proxy the session's dev server
+ * - ANY /sessions/:id/webapp/*        — reverse-proxy the session's dev server
  * - GET /sessions/:id/webapp-download — the scaffolded webapp as a ZIP (T5: onyx parity)
  *
  * onyx points a Next.js dev server at a backend-reserved port and proxies to it with header
@@ -62,6 +62,21 @@ const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
 const WEBAPP_NO_SUPPORT_ERROR = "This session has no web-app support.";
 const WEBAPP_NOT_RUNNING_ERROR =
   "The web app is not running. Ask the agent to call the webapp tool with action 'start'.";
+
+/**
+ * The caller's request body, or undefined when there is nothing to forward.
+ * GET and HEAD may not carry one at all (fetch rejects it outright), and an
+ * empty buffer on the remaining verbs is dropped so the proxy never invents a
+ * content-length the caller did not send.
+ */
+async function requestBody(
+  context: Context<{ Variables: AppVariables }, string>,
+): Promise<Uint8Array | undefined> {
+  const method = context.req.method;
+  if (method === "GET" || method === "HEAD") return undefined;
+  const bytes = new Uint8Array(await context.req.raw.arrayBuffer());
+  return bytes.byteLength > 0 ? bytes : undefined;
+}
 
 /**
  * A refusal an iframe can land on. The preview pane gates on `ready` now, but the
@@ -190,12 +205,18 @@ export type ProxyWebappResult = {
 /**
  * One proxied request to a dev-server upstream. Returns a 504 on upstream timeout, 502 on a
  * connection failure, 503 when the upstream is not running — mirroring onyx's `_proxy_request`.
+ *
+ * `method` is required, not defaulted: a hardcoded GET here is what made the preview a
+ * picture of an app rather than an app (see WEBAPP_METHODS).
  */
 export async function proxyWebappRequest(input: {
   upstreamBaseUrl: string;
   path: string;
   query: string;
+  method: string;
   requestHeaders: Headers;
+  /** The caller's request body, when it carried one. Omitted for a bodyless verb. */
+  body?: BodyInit | null;
   fetchImpl?: typeof fetch;
 }): Promise<ProxyWebappResult> {
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -206,8 +227,14 @@ export async function proxyWebappRequest(input: {
   let upstream: Response;
   try {
     upstream = await fetchImpl(target, {
-      method: "GET",
+      method: input.method,
       headers,
+      // Only a verb that may carry one gets a body: fetch rejects a body on
+      // GET/HEAD outright, and an empty buffer on DELETE/OPTIONS would invent a
+      // content-length the caller never sent.
+      ...(input.body === undefined || input.body === null
+        ? {}
+        : { body: input.body }),
       redirect: "manual",
       signal: AbortSignal.timeout(WEBAPP_PROBE_TIMEOUT_MS),
     });
@@ -240,6 +267,29 @@ function hasWebappScaffold(paths: string[]): boolean {
     (path) => path.endsWith("/package.json") || path.endsWith("package.json"),
   );
 }
+
+/**
+ * Every verb the preview carries. The route used to register GET alone, and the
+ * helper below hardcoded it: POST/PUT/PATCH/DELETE/OPTIONS then answered 404
+ * from Hono and never reached the dev server (measured live against the route).
+ * That silently killed every Next.js Server Action (POST), every API-route
+ * mutation, every `<form method="POST">` and every preflighted fetch — which is
+ * to say the whole of "open the preview and actually use the app". A preview
+ * that cannot POST is a screenshot.
+ *
+ * OPTIONS is in the list rather than answered locally on purpose: the app owns
+ * its own CORS story, and a proxy that invents a 204 preflight answer would
+ * advertise permissions the app never granted.
+ */
+const WEBAPP_METHODS = [
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "OPTIONS",
+] as const;
 
 export function createWebappProxyRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
@@ -312,11 +362,12 @@ export function createWebappProxyRoutes(
     });
   });
 
-  // ── GET /sessions/:id/webapp/* — the reverse proxy ──────────────────────────
+  // ── ANY /sessions/:id/webapp/* — the reverse proxy ──────────────────────────
   // `:path{.+}` not `*`: Hono 4.13's bare wildcard matches but `param("*")` reads null;
   // the named regex param is the readable multi-segment shape (see artifact-routes). The
   // bare `/webapp` registration keeps the iframe's root URL (webapp-info answers exactly
-  // that shape) served — a regex param alone would 404 the empty path.
+  // that shape) served — a regex param alone would 404 the empty path. Every verb rides
+  // the same handler: see WEBAPP_METHODS for why a GET-only preview is a screenshot.
   const proxyWebapp = async (
     context: Context<{ Variables: AppVariables }, string>,
   ) => {
@@ -358,6 +409,12 @@ export function createWebappProxyRoutes(
       query: context.req.url.includes("?")
         ? context.req.url.slice(context.req.url.indexOf("?"))
         : "",
+      method: context.req.method,
+      // Buffered, not streamed: a preview is driven by a person clicking through
+      // an app, so the payloads are JSON-sized, and a forwarded stream can only
+      // be consumed once — which a retry after the ready probe would find already
+      // disturbed. Read AFTER the gate, so a refused request never pays for it.
+      body: await requestBody(context),
       requestHeaders: context.req.raw.headers,
     });
     return new Response(result.body, {
@@ -365,8 +422,12 @@ export function createWebappProxyRoutes(
       headers: result.headers,
     });
   };
-  app.get("/sessions/:sessionId/webapp/:path{.+}", proxyWebapp);
-  app.get("/sessions/:sessionId/webapp", proxyWebapp);
+  app.on(
+    [...WEBAPP_METHODS],
+    "/sessions/:sessionId/webapp/:path{.+}",
+    proxyWebapp,
+  );
+  app.on([...WEBAPP_METHODS], "/sessions/:sessionId/webapp", proxyWebapp);
 
   // ── GET /sessions/:id/webapp-download — the scaffolded webapp as a ZIP ──────
   // onyx api.py:681-708 + manager.py:1595-1636: every None shape (no session, no
