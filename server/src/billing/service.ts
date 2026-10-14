@@ -500,6 +500,11 @@ export function createBillingService(deps: {
         externalSubscriptionId: active.externalSubscriptionId,
         properties: input.properties,
       });
+      // Only 404/422 can reach this check: lago.ts's request() already turned 429/5xx and refused
+      // redirects into the retryable BillingError("unreachable") before a status is returned, and
+      // postEvent passes only 200/202/404/422 through (every other 4xx becomes
+      // BillingError("invalid_response")). A refusal here is therefore always a permanent
+      // "unknown metric or subscription", never a transient provider blip.
       if (result.status !== 200 && result.status !== 202) {
         throw new UsageDeliveryError("provider_refused");
       }
