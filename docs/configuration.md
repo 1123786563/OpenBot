@@ -72,6 +72,11 @@ can enforce the configured token budget — the code-run decision recorded in
 surface").（G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与
 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
 
+The provider list is requested for four statuses (`active`, `incomplete`, `canceled`,
+`terminated`); a subscription in Lago's `pending` state is therefore invisible to the sync and to
+the purchase guard. Adding it needs a `billing_subscriptions_status_check` migration and a
+`BillingSubscriptionStatus` widening, and is deliberately not part of this change.
+
 `MANAGED_AGENT_AG_UI_URL` names the Bot in the box: the default endpoint for coworkers created in
 the product. It needs `MANAGED_AGENT_TOKEN` beside it, or the server refuses to start. Unset, the
 server starts without a managed Bot, the shipped Risk Analyst coworker is omitted, and creating a

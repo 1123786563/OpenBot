@@ -80,6 +80,16 @@ export function memoryBillingStore(): BillingStore & {
           for (const subscription of input.subscriptions ?? []) {
             await this.upsertSubscription(subscription);
           }
+          if (input.subscriptionsPresentFor !== undefined) {
+            // Same contract as the real store's transaction: retire inside the staged apply, so
+            // the restore() above replays a failed projection's retirement too.
+            await this.retireAbsentSubscriptions(
+              input.subscriptionsPresentFor,
+              (input.subscriptions ?? []).map(
+                (subscription) => subscription.externalSubscriptionId,
+              ),
+            );
+          }
           if (!(await this.recordWebhookEvent(input.event))) {
             restore();
             return "duplicate";
@@ -108,6 +118,27 @@ export function memoryBillingStore(): BillingStore & {
         );
       }
       subscriptions.set(input.externalSubscriptionId, { ...input });
+    },
+    async retireAbsentSubscriptions(
+      externalCustomerId,
+      presentExternalSubscriptionIds,
+    ) {
+      const present = new Set(presentExternalSubscriptionIds);
+      let retired = 0;
+      for (const [id, row] of subscriptions) {
+        // Same semantics as the real store: one customer only, already-terminated rows are not
+        // "moved" so they are not counted, and the row is retired, never deleted.
+        if (
+          row.externalCustomerId !== externalCustomerId ||
+          row.status === "terminated" ||
+          present.has(id)
+        ) {
+          continue;
+        }
+        subscriptions.set(id, { ...row, status: "terminated" });
+        retired += 1;
+      }
+      return retired;
     },
     async readSubscriptions(externalCustomerId) {
       return [...subscriptions.values()].filter(

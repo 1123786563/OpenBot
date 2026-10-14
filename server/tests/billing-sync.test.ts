@@ -504,4 +504,32 @@ describe("createBillingService.ensureSubscription", () => {
       },
     ]);
   });
+
+  test("a sync whose provider list no longer names a local row retires it (audit B6)", async () => {
+    const { stub, store, service } = syncFixture();
+    stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    // The provider deleted this one: locally active, absent from the list the sync just read.
+    store.subscriptions.set("deployment-1-old", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old",
+      planCode: "base",
+      status: "active",
+    });
+    stub.subscriptions.set("deployment-1-sub", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-sub",
+      planCode: "pro",
+      status: "active",
+    });
+    await service.ensureSubscription({
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-sub",
+      planCode: "pro",
+    });
+    expect(store.subscriptions.get("deployment-1-old")?.status).toBe(
+      "terminated",
+    );
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
+  });
 });

@@ -1,4 +1,4 @@
-import { and, count, eq, max } from "drizzle-orm";
+import { and, count, eq, max, ne, notInArray } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import type { Database } from "../db/client";
 import {
@@ -94,7 +94,7 @@ async function withPersistenceError<T>(
  * sync or a webhook converges rather than accumulating rows.
  */
 export function createBillingStore(
-  database: Pick<Database, "insert" | "select" | "transaction">,
+  database: Pick<Database, "insert" | "select" | "update" | "transaction">,
 ): BillingStore {
   return {
     async applyWebhookProjection(input) {
@@ -116,6 +116,22 @@ export function createBillingStore(
             }
             for (const subscription of input.subscriptions ?? []) {
               await local.upsertSubscription(subscription);
+            }
+            if (input.subscriptionsPresentFor !== undefined) {
+              // A `subscriptionsPresentFor` delivery carries the provider's full list for that
+              // customer, so a local row it does not name retires here, in the same transaction:
+              // the delivery either fully applies or fully rolls back. An empty list with the
+              // scope set is a real answer — the service's read throws on a malformed body, so an
+              // empty list that reached here was a successful read of an empty truth — and
+              // retires everything for that customer. No scope means the delivery says nothing
+              // about subscriptions (a customer.* event, an unprojected type): nothing retires,
+              // because there is no customer to guess at.
+              await local.retireAbsentSubscriptions(
+                input.subscriptionsPresentFor,
+                (input.subscriptions ?? []).map(
+                  (subscription) => subscription.externalSubscriptionId,
+                ),
+              );
             }
             if (!(await local.recordWebhookEvent(input.event))) {
               // ON CONFLICT waits for the winner to commit. Roll back this delivery's staged
@@ -186,6 +202,36 @@ export function createBillingStore(
             },
           }),
       );
+    },
+    async retireAbsentSubscriptions(
+      externalCustomerId,
+      presentExternalSubscriptionIds,
+    ) {
+      const now = new Date();
+      // One UPDATE, guarded by the customer and by "not in the list the provider just returned".
+      // `terminated` rather than a delete: the row is the record of what this deployment believed,
+      // and a later delivery can still move it back through upsertSubscription. Rows already
+      // `terminated` are skipped so the returned count means "rows this call moved".
+      const conditions = [
+        eq(billingSubscriptions.externalCustomerId, externalCustomerId),
+        ne(billingSubscriptions.status, "terminated"),
+      ];
+      if (presentExternalSubscriptionIds.length > 0) {
+        conditions.push(
+          notInArray(billingSubscriptions.externalSubscriptionId, [
+            ...presentExternalSubscriptionIds,
+          ]),
+        );
+      }
+      const rows = await withPersistenceError(
+        "subscription_retire",
+        database
+          .update(billingSubscriptions)
+          .set({ status: "terminated", updatedAt: now })
+          .where(and(...conditions))
+          .returning({ id: billingSubscriptions.externalSubscriptionId }),
+      );
+      return rows.length;
     },
     async readSubscriptions(externalCustomerId) {
       return withPersistenceError(

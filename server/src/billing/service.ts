@@ -120,6 +120,12 @@ export function createBillingService(deps: {
     return false;
   }
 
+  /**
+   * The provider list is requested for four statuses (`active`, `incomplete`, `canceled`,
+   * `terminated`); a subscription in Lago's `pending` state is therefore invisible to the sync and to
+   * the purchase guard. Adding it needs a `billing_subscriptions_status_check` migration and a
+   * `BillingSubscriptionStatus` widening, and is deliberately not part of this change.
+   */
   async function readSubscriptions(
     externalCustomerId: string,
   ): Promise<readonly LagoSubscriptionBody[]> {
@@ -138,6 +144,31 @@ export function createBillingService(deps: {
         planCode: subscription.planCode,
         status: subscription.status,
       });
+    }
+    /*
+     * The list the provider just returned is the whole truth about what it holds, so a local row
+     * it does not name is stale — and a stale `active` row is an entitlement that never ends and a
+     * purchase guard that never opens (audit B6). Retire rather than delete: the row stays as the
+     * record, and a later delivery can move it back. An empty list reaching here is a real answer,
+     * not a failed read — readSubscriptions throws on a malformed or absent body — and with no
+     * row naming a customer there is nothing to scope a retirement to, so nothing retires.
+     */
+    const byCustomer = new Map<string, string[]>();
+    for (const subscription of subscriptions) {
+      const present = byCustomer.get(subscription.externalCustomerId) ?? [];
+      present.push(subscription.externalSubscriptionId);
+      byCustomer.set(subscription.externalCustomerId, present);
+    }
+    for (const [externalCustomerId, present] of byCustomer) {
+      const retired = await store.retireAbsentSubscriptions(
+        externalCustomerId,
+        present,
+      );
+      if (retired > 0) {
+        (deps.log ?? console.warn)(
+          `billing: retired ${retired} subscription projection(s) the provider no longer lists for ${externalCustomerId}`,
+        );
+      }
     }
   }
 
@@ -184,6 +215,9 @@ export function createBillingService(deps: {
           planCode: subscription.planCode,
           status: subscription.status,
         })),
+        // The scope the apply retires absent rows under: this delivery's customer, the one an
+        // empty list would otherwise leave unnamed.
+        subscriptionsPresentFor: delivery.externalCustomerId,
       };
     }
     // Every other type names an object this deployment does not project. Nothing to refresh is
@@ -365,6 +399,29 @@ export function createBillingService(deps: {
         }
 
         const projection = await readProjectionFor(delivery);
+        // Audit B6's visibility rule: the apply retires rows inside its transaction, but the log
+        // is this service's, so the rows this delivery is about to retire are counted here,
+        // before the apply, and named only once the transaction committed. Best-effort like the
+        // replay evidence below — a failed count is swallowed and a concurrent writer can make it
+        // approximate, and neither may fail a delivery the projection already accepted.
+        const retireScope = projection.subscriptionsPresentFor;
+        const presentIds = new Set(
+          (projection.subscriptions ?? []).map(
+            (row) => row.externalSubscriptionId,
+          ),
+        );
+        const retiring =
+          retireScope === undefined
+            ? []
+            : (
+                await store
+                  .readSubscriptions(retireScope)
+                  .catch(() => [] as readonly BillingSubscriptionRow[])
+              ).filter(
+                (row) =>
+                  row.status !== "terminated" &&
+                  !presentIds.has(row.externalSubscriptionId),
+              );
         const status = await store.applyWebhookProjection({
           ...projection,
           event: {
@@ -376,6 +433,11 @@ export function createBillingService(deps: {
             bodyHash: delivery.bodyHash,
           },
         });
+        if (status === "processed" && retiring.length > 0) {
+          (deps.log ?? console.warn)(
+            `billing: retired ${retiring.length} subscription projection(s) the provider no longer lists for ${retireScope}`,
+          );
+        }
         // Best-effort replay evidence (audit A7): the count runs after the inbox insert, so it
         // includes this delivery, and a failed count is swallowed — evidence must never fail a
         // delivery the projection already accepted.
