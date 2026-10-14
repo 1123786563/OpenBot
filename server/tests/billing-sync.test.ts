@@ -532,4 +532,29 @@ describe("createBillingService.ensureSubscription", () => {
     );
     expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
   });
+
+  test("a sync whose provider list is EMPTY still retires the stale row (audit B6 review r1)", async () => {
+    // The B6 headline on a webhook-off deployment: the provider deleted the customer's only
+    // subscription, so the list comes back empty and every branch below would only create a new
+    // one. The fold must happen before the branching, or the stale row stays active forever —
+    // the entitlement never ends and the purchase guard never opens.
+    const { stub, store, service } = syncFixture();
+    stub.customers.set("deployment-1", { name: "Deployment 1" });
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-old", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old",
+      planCode: "pro",
+      status: "active",
+    });
+    await service.ensureSubscription({
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-new",
+      planCode: "pro",
+    });
+    expect(store.subscriptions.get("deployment-1-old")?.status).toBe(
+      "terminated",
+    );
+    expect(store.subscriptions.get("deployment-1-new")?.status).toBe("active");
+  });
 });

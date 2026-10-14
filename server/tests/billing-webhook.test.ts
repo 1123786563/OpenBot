@@ -936,4 +936,104 @@ describe("createBillingService.handleWebhook", () => {
     });
     expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
   });
+
+  test("the retirement log counts what the committed transaction moved, and nothing else (audit B6 review r1)", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    // The provider holds nothing, so both local rows are stale — the count on the evidence
+    // line is the transaction's own, and a delivery that retires nothing says nothing.
+    stub.state.list = [];
+    store.subscriptions.set("deployment-1-old-1", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-1",
+      planCode: "base",
+      status: "active",
+    });
+    store.subscriptions.set("deployment-1-old-2", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-2",
+      planCode: "base",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-count-2", "subscription.terminated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(logged).toContain(
+      "billing: retired 2 subscription projection(s) the provider no longer lists for deployment-1",
+    );
+    // A delivery with nothing left to retire logs nothing: no phantom, no noise.
+    const quiet = await service.handleWebhook(
+      signedDelivery("evt-count-0", "subscription.terminated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(quiet.status).toBe(200);
+    expect(logged.filter((line) => line.includes("retired"))).toHaveLength(1);
+  });
+
+  test("the memory twin's onRetired is buffered inside the apply and flushed only on commit (audit B6 review r1)", async () => {
+    const store = memoryBillingStore();
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-old-1", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-1",
+      planCode: "base",
+      status: "active",
+    });
+    store.subscriptions.set("deployment-1-old-2", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-2",
+      planCode: "base",
+      status: "active",
+    });
+    const retired: { externalCustomerId: string; count: number }[] = [];
+    const recordWebhookEvent = store.recordWebhookEvent.bind(store);
+    let failNext = true;
+    store.recordWebhookEvent = async (input) => {
+      if (failNext) {
+        failNext = false;
+        throw new BillingPersistenceError("webhook_record");
+      }
+      return recordWebhookEvent(input);
+    };
+    // The staged apply retires both rows, then the inbox write fails and everything rolls
+    // back: the buffered notification must go with it, not escape a moved-nothing delivery.
+    await expect(
+      store.applyWebhookProjection({
+        customer: { externalId: "deployment-1" },
+        subscriptionsPresentFor: "deployment-1",
+        onRetired: (info) => retired.push(info),
+        event: {
+          provider: "test",
+          eventId: "evt-twin-commit-gate",
+          webhookType: "subscription.terminated",
+        },
+      }),
+    ).rejects.toBeInstanceOf(BillingPersistenceError);
+    expect(retired).toEqual([]);
+    expect(store.subscriptions.get("deployment-1-old-1")?.status).toBe(
+      "active",
+    );
+    // The retry commits: the line carries the transaction's own count, both rows.
+    expect(
+      await store.applyWebhookProjection({
+        customer: { externalId: "deployment-1" },
+        subscriptionsPresentFor: "deployment-1",
+        onRetired: (info) => retired.push(info),
+        event: {
+          provider: "test",
+          eventId: "evt-twin-commit-gate",
+          webhookType: "subscription.terminated",
+        },
+      }),
+    ).toBe("processed");
+    expect(retired).toEqual([{ externalCustomerId: "deployment-1", count: 2 }]);
+  });
 });

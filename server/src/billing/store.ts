@@ -99,8 +99,12 @@ export function createBillingStore(
   return {
     async applyWebhookProjection(input) {
       const duplicate = new Error("Duplicate billing webhook.");
+      // Buffered by the retirement inside the transaction, flushed only once it committed: a
+      // rolled-back apply — the duplicate loser — moved nothing durable, so it must not have
+      // already told the world a retirement happened (audit B6 review r1).
+      let retired: { externalCustomerId: string; count: number } | undefined;
       try {
-        return await withPersistenceError(
+        const status = await withPersistenceError(
           "webhook_apply",
           database.transaction(async (transaction) => {
             const local = createBillingStore(transaction);
@@ -125,13 +129,20 @@ export function createBillingStore(
               // empty list that reached here was a successful read of an empty truth — and
               // retires everything for that customer. No scope means the delivery says nothing
               // about subscriptions (a customer.* event, an unprojected type): nothing retires,
-              // because there is no customer to guess at.
-              await local.retireAbsentSubscriptions(
+              // because there is no customer to guess at. The moved count is buffered for
+              // `onRetired`, which the commit path below flushes.
+              const moved = await local.retireAbsentSubscriptions(
                 input.subscriptionsPresentFor,
                 (input.subscriptions ?? []).map(
                   (subscription) => subscription.externalSubscriptionId,
                 ),
               );
+              if (moved > 0) {
+                retired = {
+                  externalCustomerId: input.subscriptionsPresentFor,
+                  count: moved,
+                };
+              }
             }
             if (!(await local.recordWebhookEvent(input.event))) {
               // ON CONFLICT waits for the winner to commit. Roll back this delivery's staged
@@ -141,6 +152,11 @@ export function createBillingStore(
             return "processed" as const;
           }),
         );
+        // The transaction committed: the buffered count is durable evidence, never a phantom.
+        if (retired !== undefined && input.onRetired !== undefined) {
+          input.onRetired(retired);
+        }
+        return status;
       } catch (error) {
         // The duplicate signal is control flow thrown from inside the transaction (to roll back
         // the staged projections), so the apply's own persistence wrapper catches it first and it

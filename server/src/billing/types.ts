@@ -479,6 +479,16 @@ export type BillingWebhookProjection = {
    * only thing left to scope an everything-retires answer to.
    */
   subscriptionsPresentFor?: string;
+  /**
+   * Retirement evidence (audit B6 review r1): the count is captured at the retirement UPDATE
+   * inside the apply transaction — the rows that transaction actually moved — because a number
+   * read before the transaction can describe a retirement another delivery performed, or miss
+   * one this delivery performs. The callback runs only once the transaction committed, so a
+   * rolled-back apply (a duplicate loser) cannot have already told the world a retirement
+   * happened. It is synchronous and must only log — I/O here would be a defect inside a
+   * transaction.
+   */
+  onRetired?: (info: { externalCustomerId: string; count: number }) => void;
   event: {
     provider: string;
     eventId: string;

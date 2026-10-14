@@ -66,6 +66,10 @@ export function memoryBillingStore(): BillingStore & {
             subscriptions.set(key, value);
           for (const [key, value] of before.inbox) inbox.set(key, value);
         };
+        // Same commit gate as the real store's transaction: the count is buffered inside the
+        // staged apply and flushed only once the inbox write commits, so a failed or duplicate
+        // apply cannot have already told the world a retirement happened (audit B6 review r1).
+        let retired: { externalCustomerId: string; count: number } | undefined;
         try {
           if (input.customer) {
             if (input.customer.name === undefined) {
@@ -82,17 +86,26 @@ export function memoryBillingStore(): BillingStore & {
           }
           if (input.subscriptionsPresentFor !== undefined) {
             // Same contract as the real store's transaction: retire inside the staged apply, so
-            // the restore() above replays a failed projection's retirement too.
-            await this.retireAbsentSubscriptions(
+            // the restore() above rolls back a failed projection's retirement too.
+            const moved = await this.retireAbsentSubscriptions(
               input.subscriptionsPresentFor,
               (input.subscriptions ?? []).map(
                 (subscription) => subscription.externalSubscriptionId,
               ),
             );
+            if (moved > 0) {
+              retired = {
+                externalCustomerId: input.subscriptionsPresentFor,
+                count: moved,
+              };
+            }
           }
           if (!(await this.recordWebhookEvent(input.event))) {
             restore();
             return "duplicate";
+          }
+          if (retired !== undefined && input.onRetired !== undefined) {
+            input.onRetired(retired);
           }
           return "processed";
         } catch (error) {

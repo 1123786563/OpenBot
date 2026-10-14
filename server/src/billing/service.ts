@@ -134,8 +134,24 @@ export function createBillingService(deps: {
     return result.body;
   }
 
+  /**
+   * Fold one provider list into the projections: upsert every row it names, then retire the
+   * customer's rows it does not. The list the provider just returned is the whole truth about
+   * what it holds, so a local row it does not name is stale — and a stale `active` row is an
+   * entitlement that never ends and a purchase guard that never opens (audit B6). Retire rather
+   * than delete: the row stays as the record, and a later delivery can move it back.
+   *
+   * The one retirement rule: the scope is the explicit customer the list was read for, never
+   * customers derived from the list itself. The read is per customer
+   * (`listSubscriptions(externalCustomerId)`), so every row in the list belongs to that customer
+   * and the derived grouping could only ever rediscover it — while an EMPTY list, the answer
+   * that must retire the customer's every row (the provider deleted the only subscription),
+   * names no customer of its own. An empty list reaching here is a real answer, not a failed
+   * read: `readSubscriptions` throws on a malformed or absent body.
+   */
   async function writeSubscriptionProjections(
     subscriptions: readonly LagoSubscriptionBody[],
+    externalCustomerId: string,
   ): Promise<void> {
     for (const subscription of subscriptions) {
       await store.upsertSubscription({
@@ -145,30 +161,14 @@ export function createBillingService(deps: {
         status: subscription.status,
       });
     }
-    /*
-     * The list the provider just returned is the whole truth about what it holds, so a local row
-     * it does not name is stale — and a stale `active` row is an entitlement that never ends and a
-     * purchase guard that never opens (audit B6). Retire rather than delete: the row stays as the
-     * record, and a later delivery can move it back. An empty list reaching here is a real answer,
-     * not a failed read — readSubscriptions throws on a malformed or absent body — and with no
-     * row naming a customer there is nothing to scope a retirement to, so nothing retires.
-     */
-    const byCustomer = new Map<string, string[]>();
-    for (const subscription of subscriptions) {
-      const present = byCustomer.get(subscription.externalCustomerId) ?? [];
-      present.push(subscription.externalSubscriptionId);
-      byCustomer.set(subscription.externalCustomerId, present);
-    }
-    for (const [externalCustomerId, present] of byCustomer) {
-      const retired = await store.retireAbsentSubscriptions(
-        externalCustomerId,
-        present,
+    const retired = await store.retireAbsentSubscriptions(
+      externalCustomerId,
+      subscriptions.map((subscription) => subscription.externalSubscriptionId),
+    );
+    if (retired > 0) {
+      (deps.log ?? console.warn)(
+        `billing: retired ${retired} subscription projection(s) the provider no longer lists for ${externalCustomerId}`,
       );
-      if (retired > 0) {
-        (deps.log ?? console.warn)(
-          `billing: retired ${retired} subscription projection(s) the provider no longer lists for ${externalCustomerId}`,
-        );
-      }
     }
   }
 
@@ -302,6 +302,13 @@ export function createBillingService(deps: {
 
     async ensureSubscription(input) {
       const existing = await readSubscriptions(input.externalCustomerId);
+      // The fold runs immediately, before any branch decision below: whatever the branches then
+      // decide, the projections already hold the provider's newest truth — and a customer whose
+      // only subscription the provider deleted (an empty list, live.length 0 below) has the
+      // stale row retired even though the branch that follows would only create a new one, which
+      // is the B6 headline on a deployment with no webhooks mounted. Folding is a projection
+      // write, never a decision to subscribe; it does not soften the conflicts below.
+      await writeSubscriptionProjections(existing, input.externalCustomerId);
       // Only a LIVE subscription counts anywhere below — active, or incomplete (created, not yet
       // started). The provider keeps one record per subscription lifecycle, so after a terminate
       // and re-buy the list answers with the terminated record AND its active replacement: a
@@ -316,7 +323,6 @@ export function createBillingService(deps: {
         (subscription) => subscription.planCode === input.planCode,
       );
       if (onThisPlan) {
-        await writeSubscriptionProjections(existing);
         return {
           externalCustomerId: input.externalCustomerId,
           externalSubscriptionId: onThisPlan.externalSubscriptionId,
@@ -335,6 +341,8 @@ export function createBillingService(deps: {
       const created = await client.postSubscription(input);
       if (created.status === 422) {
         const reread = await readSubscriptions(input.externalCustomerId);
+        // Same rule as the first read: the newest list is folded before the branch reads it.
+        await writeSubscriptionProjections(reread, input.externalCustomerId);
         const again = reread.find(
           (subscription) =>
             subscription.planCode === input.planCode &&
@@ -342,7 +350,6 @@ export function createBillingService(deps: {
               subscription.status === "incomplete"),
         );
         if (again) {
-          await writeSubscriptionProjections(reread);
           return {
             externalCustomerId: input.externalCustomerId,
             externalSubscriptionId: again.externalSubscriptionId,
@@ -399,31 +406,17 @@ export function createBillingService(deps: {
         }
 
         const projection = await readProjectionFor(delivery);
-        // Audit B6's visibility rule: the apply retires rows inside its transaction, but the log
-        // is this service's, so the rows this delivery is about to retire are counted here,
-        // before the apply, and named only once the transaction committed. Best-effort like the
-        // replay evidence below — a failed count is swallowed and a concurrent writer can make it
-        // approximate, and neither may fail a delivery the projection already accepted.
-        const retireScope = projection.subscriptionsPresentFor;
-        const presentIds = new Set(
-          (projection.subscriptions ?? []).map(
-            (row) => row.externalSubscriptionId,
-          ),
-        );
-        const retiring =
-          retireScope === undefined
-            ? []
-            : (
-                await store
-                  .readSubscriptions(retireScope)
-                  .catch(() => [] as readonly BillingSubscriptionRow[])
-              ).filter(
-                (row) =>
-                  row.status !== "terminated" &&
-                  !presentIds.has(row.externalSubscriptionId),
-              );
         const status = await store.applyWebhookProjection({
           ...projection,
+          // Audit B6's visibility rule: the retirement evidence line comes from the write that
+          // produced it — the apply captures the count at its own UPDATE and calls this only
+          // once that transaction committed, so the line can neither claim a retirement another
+          // delivery performed nor miss one this delivery performed (audit B6 review r1).
+          onRetired: ({ externalCustomerId, count }) => {
+            (deps.log ?? console.warn)(
+              `billing: retired ${count} subscription projection(s) the provider no longer lists for ${externalCustomerId}`,
+            );
+          },
           event: {
             provider: LAGO_PROVIDER_ID,
             eventId: delivery.eventId,
@@ -433,11 +426,6 @@ export function createBillingService(deps: {
             bodyHash: delivery.bodyHash,
           },
         });
-        if (status === "processed" && retiring.length > 0) {
-          (deps.log ?? console.warn)(
-            `billing: retired ${retiring.length} subscription projection(s) the provider no longer lists for ${retireScope}`,
-          );
-        }
         // Best-effort replay evidence (audit A7): the count runs after the inbox insert, so it
         // includes this delivery, and a failed count is swallowed — evidence must never fail a
         // delivery the projection already accepted.

@@ -438,6 +438,79 @@ test("retiring is idempotent and never touches another customer", async () => {
   expect((await store.readSubscriptions(other))[0]?.status).toBe("active");
 });
 
+test("onRetired reports only what a committed transaction moved (audit B6 review r1)", async () => {
+  const externalId = `${prefix}-onretired`;
+  await store.upsertCustomer({ externalId, name: null });
+  await store.upsertSubscription({
+    externalCustomerId: externalId,
+    externalSubscriptionId: `${prefix}-onretired-a`,
+    planCode: "pro",
+    status: "active" as const,
+  });
+  await store.upsertSubscription({
+    externalCustomerId: externalId,
+    externalSubscriptionId: `${prefix}-onretired-b`,
+    planCode: "base",
+    status: "active" as const,
+  });
+  const retired: { externalCustomerId: string; count: number }[] = [];
+
+  // A rolled-back apply: the retirement stages inside the transaction, then the inbox write
+  // fails (the null webhook_type violates its constraint) and everything rolls back — the
+  // buffered notification must go with it, never escape a delivery that moved nothing durable.
+  const rejection = await store
+    .applyWebhookProjection({
+      customer: { externalId, name: null },
+      subscriptionsPresentFor: externalId,
+      onRetired: (info) => retired.push(info),
+      event: {
+        provider: "test",
+        eventId: `${prefix}-onretired-rollback`,
+        webhookType: null as unknown as string,
+      },
+    })
+    .then(
+      () => null,
+      (thrown: unknown) => thrown,
+    );
+  expect(rejection).toBeInstanceOf(BillingPersistenceError);
+  expect(rejection).toMatchObject({ retryable: false });
+  expect(retired).toEqual([]);
+  expect(
+    (await store.readSubscriptions(externalId)).every(
+      (row) => row.status === "active",
+    ),
+  ).toBe(true);
+
+  // A committed apply: the count is what the transaction itself moved, from the transaction.
+  expect(
+    await store.applyWebhookProjection({
+      customer: { externalId },
+      subscriptions: [
+        {
+          externalCustomerId: externalId,
+          externalSubscriptionId: `${prefix}-onretired-b`,
+          planCode: "base",
+          status: "active" as const,
+        },
+      ],
+      subscriptionsPresentFor: externalId,
+      onRetired: (info) => retired.push(info),
+      event: {
+        provider: "test",
+        eventId: `${prefix}-onretired-commit`,
+        webhookType: "subscription.updated",
+      },
+    }),
+  ).toBe("processed");
+  expect(retired).toEqual([{ externalCustomerId: externalId, count: 1 }]);
+  expect(
+    (await store.readSubscriptions(externalId)).find(
+      (row) => row.externalSubscriptionId === `${prefix}-onretired-a`,
+    )?.status,
+  ).toBe("terminated");
+});
+
 test("snapshot counts customers, subscriptions and the latest sync", async () => {
   const counted = await database.execute(sql`
     SELECT
