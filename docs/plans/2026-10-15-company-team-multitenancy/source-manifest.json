@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-14",
+  "source_workspace": "/Users/wuyongjun/trea/OpenBot",
+  "execution_workspace": "/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy",
+  "base": "c0167c5cf33c441588fa20d3eb5a7e2ade789371",
+  "files": [
+    {
+      "path": "CONTEXT.md",
+      "sha256": "24a2fc6ac532f0805720930aa7b0742d0cd371d261349c38824c5eaa72dbe01e",
+      "bytes": 6073
+    },
+    {
+      "path": "docs/specs/2026-10-14-company-team-multitenancy-design.md",
+      "sha256": "b8e6f782a6464609a6f4f54f9428fd4c4e101f45c7abfe1e7cdd3c1f424f67a9",
+      "bytes": 26510
+    },
+    {
+      "path": "docs/adr/0002-per-user-bot-model-access.md",
+      "sha256": "9a5a8444956f549e0884e25192515512046bb25ed0d2f41f14fb75b5ea6b723b",
+      "bytes": 1236
+    },
+    {
+      "path": "docs/adr/0003-bifrost-openbot-credit-admission.md",
+      "sha256": "20f8fda59be5545dffcfc5dc04c81be6bb3eb80d711f4ddf94754d07afdfdab0",
+      "bytes": 1461
+    },
+    {
+      "path": "docs/adr/0004-company-team-tenancy.md",
+      "sha256": "95cf48e6c4b3d2c1b6e790da6724977eadb60172d7de622e196a2ff0cbfd3e61",
+      "bytes": 2197
+    },
+    {
+      "path": "docs/specs/2026-10-14-bifrost-integration-design.md",
+      "sha256": "4743f80ab46f669b8eaf165ef77d6bb02bf2616b28c99d0ae7f329f6f9703053",
+      "bytes": 11532
+    },
+    {
+      "path": "docs/specs/2026-10-14-opik-integration-design.md",
+      "sha256": "6ed5e9ce9ae427acc904ed31a0e402d50d6b10c15f932bd0d64230e93bb56c97",
+      "bytes": 20805
+    }
+  ],
+  "unrelated_changes_excluded": [
+    "tests/e2e/bot-chat.e2e.ts"
+  ],
+  "scope": "Planning documents only; no commits, dependencies, database changes or product code."
+}
