@@ -21,15 +21,72 @@ import { gunzipSync, gzipSync } from "node:zlib";
  * restored to. The proxy refuses the restore while the Bot holds a live turn, and the
  * caller stops the serve before extracting — a workspace swapped under a live serve is a
  * serve whose memory lies about its files.
+ *
+ * THE WORKSPACE IS NOT ALWAYS SMALL, SO THE WALK PRUNES AND THE SIZE IS CAPPED. "Small"
+ * holds for a workshop Bot's artifacts; it does not hold for a CRAFT workspace, which hosts
+ * every session of a Bot and grows a ~700MB node_modules per scaffolded webapp. Measured
+ * live: /workspace at 1.9GB, 1.43GB of it two sessions' dependency trees — and craft's idle
+ * reaper snapshots it every 60s. Three in-memory copies of 1.9GB against a 2GiB container
+ * limit is an OOM kill, not a slow request: the container went from 57MB idle to its hard
+ * ceiling within 5s of a sweep tick and restarted, on a clean 60s period, forever (the
+ * snapshot always failed, so the session never flipped idle and stayed a candidate). Every
+ * restart took every session's dev server with it.
+ *
+ * So two guards, and they answer to different rules:
+ * - PRUNE derived trees. Not because they are big, but because their entire contents are
+ *   reproducible from files that ARE archived: package.json + bun.lock regenerate
+ *   node_modules (craft's start-webapp.sh already reinstalls when node_modules/.bin/next is
+ *   missing), a build regenerates .next, requirements regenerate .venv. Archiving them is
+ *   both fatal and pointless. Pruning took that same live workspace from 1.9GB to 19MB.
+ *   Real state is kept: .git is hidden but not derived, so it rides along.
+ * - CAP the input. Whatever else fills a workspace, the answer must be a logged refusal the
+ *   caller survives, never an allocation that takes the container down.
  */
 
 export const SNAPSHOT_SENTINEL = ".openbot-snapshot";
+
+/**
+ * Directory names pruned whole, at any depth: trees whose contents are reproducible from
+ * files this archive DOES carry. The test is derivability, not size and not visibility —
+ * `.git` is hidden and stays, `dist` may be the deliverable and stays.
+ */
+export const PRUNED_DIRECTORIES = new Set([
+  "node_modules", // ← package.json + bun.lock / package-lock.json
+  ".next", // ← a Next.js build
+  ".venv", // ← requirements.txt / pyproject.toml
+  "__pycache__", // ← the sources beside it
+]);
+
+/**
+ * The default input ceiling. This module holds the tree three times over (members, tar,
+ * gzip), so the peak is ~3x this; 256MB peaks near 768MB, inside a 2GiB container with
+ * room for everything else, and is ~13x the pruned craft workspace measured live (19MB).
+ */
+export const DEFAULT_SNAPSHOT_MAX_INPUT_BYTES = 256 * 1024 * 1024;
+
+/** Raised instead of allocating past the ceiling — see the head's CAP rule. */
+export class SnapshotTooLargeError extends Error {
+  constructor(
+    readonly bytes: number,
+    readonly maxInputBytes: number,
+  ) {
+    super(
+      `workspace snapshot refused: ${bytes} bytes of content exceeds the ${maxInputBytes} byte ceiling`,
+    );
+    this.name = "SnapshotTooLargeError";
+  }
+}
 
 export type SnapshotOptions = {
   /** The Bot's workspace directory — the archive's whole world. */
   botWorkspace: string;
   /** The sentinel's content: the bot id and the moment, for an operator's eyes. */
   botId: string;
+  /**
+   * Ceiling on the bytes the walk may collect, before tar and gzip. Exceeding it throws
+   * SnapshotTooLargeError rather than growing the allocation into the container's limit.
+   */
+  maxInputBytes?: number;
 };
 
 /** One in-memory archive: the gzipped bytes of the workspace tree. */
@@ -44,7 +101,10 @@ export async function createSnapshot(
     `${options.botId}\n${new Date().toISOString()}\n`,
     "utf8",
   );
-  const files = await walk(options.botWorkspace, options.botWorkspace);
+  const files = await walk(options.botWorkspace, options.botWorkspace, {
+    maxInputBytes: options.maxInputBytes ?? DEFAULT_SNAPSHOT_MAX_INPUT_BYTES,
+    bytes: 0,
+  });
   return gzipSync(tarBytes(files));
 }
 
@@ -92,20 +152,35 @@ export async function restoreArchive(
 
 type TarMember = { path: string; bytes: Uint8Array };
 
+/**
+ * The walk, pruning derived directories whole and refusing to collect past the ceiling.
+ * The check is per file as it is read, so the throw lands at the moment the budget is
+ * exceeded rather than after the whole tree is already resident — and the running total
+ * rides one shared budget object, so the error always names the caller's real ceiling
+ * rather than whatever slice of it a nested directory happened to be handed.
+ */
+type WalkBudget = { readonly maxInputBytes: number; bytes: number };
+
 async function walk(
   root: string,
   dir: string,
+  budget: WalkBudget,
 ): Promise<TarMember[]> {
   const out: TarMember[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      out.push(...(await walk(root, full)));
+      if (PRUNED_DIRECTORIES.has(entry.name)) continue;
+      out.push(...(await walk(root, full, budget)));
     } else if (entry.isFile()) {
-      const bytes = await readFile(full);
+      const content = await readFile(full);
+      budget.bytes += content.length;
+      if (budget.bytes > budget.maxInputBytes) {
+        throw new SnapshotTooLargeError(budget.bytes, budget.maxInputBytes);
+      }
       out.push({
         path: full.slice(root.length + 1),
-        bytes: new Uint8Array(bytes),
+        bytes: new Uint8Array(content),
       });
     }
   }

@@ -18,6 +18,19 @@ export default defineConfig({
    * the schema file.
    */
   schema: [
+    /*
+     * The deletion subsystem's two tables (openmuse_account_deletions,
+     * openmuse_deletion_resources) live in db/schema like everything else.
+     * They used to be declared beside their business code in
+     * openmuse-deletion/store.ts, which dragged drizzle-kit's bundled import
+     * graph through that module's value-level cycle (store → manifest →
+     * google-oauth — a pino logger constructed at load — and retention →
+     * restore → store): load-time side effects inside migration tooling that
+     * only "happened to work". Round 6 (M7) moved the pgTable definitions
+     * here; store.ts imports them back and re-exports, so callers are
+     * unchanged. Keep new deletion tables in db/schema, not beside the code.
+     */
+    "./src/db/schema/openmuse-deletion.ts",
     "./src/db/schema/core.ts",
     "./src/db/schema/computer.ts",
     "./src/db/schema/coworker.ts",
@@ -30,6 +43,7 @@ export default defineConfig({
     "./src/db/schema/responsibilities.ts",
     "./src/db/schema/approvals.ts",
     "./src/db/schema/memory.ts",
+    "./src/db/schema/openmuse.ts",
     "./src/db/schema/defaults.ts",
     "./src/db/schema/proactive.ts",
     "./src/db/schema/demonstrations.ts",

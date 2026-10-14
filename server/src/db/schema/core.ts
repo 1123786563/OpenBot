@@ -329,6 +329,13 @@ export const channels = pgTable(
       },
     ),
     /**
+     * When this channel was archived, or null. Filing, not deletion: the channel leaves the
+     * active listing, and unarchive clears this stamp and the same id, thread, and history
+     * resume — where `deleted_at` is the row's end. Channel grain for the same reason deletion
+     * is: archiving is for every member, not a per-member fact.
+     */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /**
      * When this channel was deleted, or null. Soft: the row, the transcript, and the Intelligence
      * thread stay intact, and every read path filters on this instead. Channel grain, because
      * deleting is for everyone — per-member hiding would be a membership fact instead.

@@ -60,6 +60,45 @@ export type WebappProxyRoutesDeps = {
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
 /** The headless refusal: no reserved port, no webapp support (onyx parity). */
 const WEBAPP_NO_SUPPORT_ERROR = "This session has no web-app support.";
+const WEBAPP_NOT_RUNNING_ERROR =
+  "The web app is not running. Ask the agent to call the webapp tool with action 'start'.";
+
+/**
+ * A refusal an iframe can land on. The preview pane gates on `ready` now, but the
+ * proxy URL is handed to the client unconditionally and a browser can still reach
+ * it (a stale frame, a reload race, a shared link) — and raw JSON in an iframe is
+ * exactly the `{"error":"The web app is not running…"}` page this used to show.
+ * A caller that accepts HTML gets a readable page; a programmatic caller keeps the
+ * JSON shape it parses.
+ */
+function refuse(
+  context: Context<{ Variables: AppVariables }, string>,
+  message: string,
+) {
+  const accepts = context.req.header("accept") ?? "";
+  const wantsHtml =
+    accepts.includes("text/html") || accepts.includes("application/xhtml+xml");
+  if (!wantsHtml) return context.json({ error: message }, 503);
+  // Escaped, because the message is server-authored today but this is an HTML
+  // sink and a caller-supplied string must never become script here.
+  const safe = message
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  return context.html(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+      `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<title>Web app unavailable</title>` +
+      `<style>body{margin:0;display:flex;min-height:100vh;align-items:center;` +
+      `justify-content:center;background:#fff;color:#18181b;` +
+      `font:13px/1.6 ui-sans-serif,system-ui,-apple-system,sans-serif}` +
+      `p{max-width:34ch;margin:0;padding:24px;text-align:center}` +
+      `@media (prefers-color-scheme:dark){body{background:#09090b;color:#fafafa}` +
+      `}</style></head><body><p>${safe}</p></body></html>`,
+    503,
+  );
+}
 
 const logger = getLogger("server");
 
@@ -264,7 +303,11 @@ export function createWebappProxyRoutes(
     return context.json({
       has_webapp: hasWebapp,
       webapp_url: `/api/craft/sessions/${sessionId}/webapp`,
-      status: "running",
+      // Honest, and the distinction the preview pane gates on: `has_webapp` is
+      // "a scaffold exists", `ready` is "a server is serving it". A hardcoded
+      // "running" beside `ready: false` is the contradiction that let the pane
+      // iframe the proxy's 503 — nothing downstream could tell the two apart.
+      status: ready ? "running" : "stopped",
       ready,
     });
   });
@@ -284,7 +327,7 @@ export function createWebappProxyRoutes(
     const { session, botId, conn } = await resolve(sessionId, actor.id);
     if (!session) return context.json({ error: "Session not found" }, 404);
     if (!botId || !conn) {
-      return context.json({ error: "The sandbox is not available." }, 503);
+      return refuse(context, "The sandbox is not available.");
     }
 
     // Attach, never spawn: the session's reserved port is the managed process's
@@ -292,7 +335,7 @@ export function createWebappProxyRoutes(
     // per session, and the preview refuses rather than double-spawning beside it.
     const port = session.nextjsPort;
     if (port === null) {
-      return context.json({ error: WEBAPP_NO_SUPPORT_ERROR }, 503);
+      return refuse(context, WEBAPP_NO_SUPPORT_ERROR);
     }
     // The reserved port lives INSIDE the sandbox: the probe and the proxy both
     // dial the sandbox host (the gateway connection's host), never this server's
@@ -301,13 +344,7 @@ export function createWebappProxyRoutes(
       deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
     );
     if (!(await webappDevServerReady({ host: upstreamHost, port }))) {
-      return context.json(
-        {
-          error:
-            "The web app is not running. Ask the agent to call the webapp tool with action 'start'.",
-        },
-        503,
-      );
+      return refuse(context, WEBAPP_NOT_RUNNING_ERROR);
     }
 
     const result = await proxyWebappRequest({
@@ -411,7 +448,8 @@ export function createWebappProxyRoutes(
 // `_proxy_webapp_hmr_websocket`.
 
 /** onyx's websocket route shape under OpenBot's mount: /api/craft/sessions/:id/webapp/_next/webpack-hmr. */
-const WEBAPP_HMR_PATH = /^\/api\/craft\/sessions\/([^/]+)\/webapp\/_next\/webpack-hmr$/;
+const WEBAPP_HMR_PATH =
+  /^\/api\/craft\/sessions\/([^/]+)\/webapp\/_next\/webpack-hmr$/;
 
 /** The session id an HMR upgrade names, or null when the path is not the HMR endpoint. */
 export function webappHmrSessionIdFromPath(pathname: string): string | null {
@@ -481,7 +519,9 @@ export async function resolveWebappHmrUpgrade(
   return {
     ok: true,
     upstreamUrl: webappHmrUpstreamUrl({
-      host: webappUpstreamHost(deps.config.sandboxGatewayBaseUrl || conn.baseUrl),
+      host: webappUpstreamHost(
+        deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
+      ),
       port: session.nextjsPort,
       query: input.query,
     }),

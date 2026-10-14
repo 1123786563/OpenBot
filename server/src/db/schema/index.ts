@@ -25,6 +25,7 @@ export * from "./identity";
 export * from "./learning";
 export * from "./lifecycle";
 export * from "./memory";
+export * from "./openmuse";
 export * from "./passwords";
 export * from "./payment";
 export * from "./plugins";

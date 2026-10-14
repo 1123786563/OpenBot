@@ -104,6 +104,12 @@ function boundary(id: string, refusal?: "unauthenticated" | "forbidden") {
     async agentForCallbackToken() {
       throw new Error("unexpected callback lookup");
     },
+    async hardDelete() {
+      throw new Error("unexpected hard delete");
+    },
+    async enumerateOwner() {
+      throw new Error("unexpected owner enumeration");
+    },
   };
   const auth: Parameters<typeof createAgentRoutes>[1] = async (
     context,

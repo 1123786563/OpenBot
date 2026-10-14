@@ -1,3 +1,6 @@
+[submodule "apps/openmuse"]
+	path = apps/openmuse
+	url = https://github.com/1123786563/openmuse
 [submodule "bifrost"]
 	path = bifrost
 	url = https://github.com/1123786563/bifrost.git

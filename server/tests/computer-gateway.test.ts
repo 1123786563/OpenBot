@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AuditEventInput, AuditStore } from "../src/audit";
+import type { ComputerCapacity } from "../src/computer/capacity";
+import { computerCapacity } from "../src/computer/capacity";
 import { StaleSnapshotError } from "../src/computer/client";
 import {
   ActionRefusedError,
@@ -209,6 +211,7 @@ async function gatewayWith(
     resetResult?: { cleared: boolean };
     locations?: ComputerLocation[];
     token?: string;
+    capacity?: ComputerCapacity;
     /** Endpoints the computer answers differently, for the calls that have to fail. */
     routes?: Record<
       string,
@@ -225,6 +228,7 @@ async function gatewayWith(
     auditStore: store,
     policy: () => policy,
     token: options?.token,
+    ...(options?.capacity ? { capacity: options.capacity } : {}),
   });
   // Every test acts on refs, so the server must hold a snapshot first, exactly as the real flow does.
   await gateway.snapshot("bot-1");
@@ -1733,5 +1737,168 @@ describe("updating a computer's image", () => {
       /no computer image/,
     );
     expect(rows).toHaveLength(0);
+  });
+});
+
+/**
+ * Round 3: the default capacity's control consult must not ride the gateway's own locate.
+ *
+ * locate reserves, reserve touches the consulted Bot's run activity, and the sweep consults
+ * before it judges — so a consult that located stamped every candidate with a brand-new
+ * "just used" moment and the deployment-level startup deadlock the finding described: full cap,
+ * a sweep that can never judge a machine idle, and every further start refused.
+ */
+describe("the default capacity's sweep consult", () => {
+  test("an idle computer frees its slot for a contending start", async () => {
+    process.env.OPENMUSE_MAX_ACTIVE_COMPUTERS = "1";
+    try {
+      const { fetchImpl } = fakeComputer({
+        routes: {
+          "/control": () => Response.json({ holder: "bot" }),
+        },
+      });
+      // A provider whose list answers its own stops, so the reserve's recheck sees the freed slot.
+      const locations: ComputerLocation[] = [
+        {
+          botId: "sleepy",
+          status: "running",
+          startedAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+        },
+      ];
+      const stopped: string[] = [];
+      const provider: ComputerProvider = {
+        name: "test",
+        isolation: "per-bot",
+        locate: async () => "http://agent-computer:4100",
+        status: async (botId) => ({ botId, state: "ready" }),
+        stop: async (botId) => {
+          const index = locations.findIndex(
+            (computer) => computer.botId === botId,
+          );
+          if (index >= 0)
+            locations[index] = { ...locations[index], status: "stopped" };
+          stopped.push(botId);
+          return { wasRunning: index >= 0 };
+        },
+        reset: async () => ({ cleared: true }),
+        list: async () => locations.map((computer) => ({ ...computer })),
+      };
+      const { store } = fakeAudit();
+      const gateway = createComputerGateway({
+        provider,
+        fetchImpl,
+        auditStore: store,
+        policy: () => PERMISSIVE,
+      });
+
+      // Contended (one other computer running, cap 1): the sweep must judge sleepy idle on
+      // its hour-old start — not on the consult's own timestamp — stop it, and let this
+      // screenshot through.
+      const shot = await gateway.screenshot("bot-2");
+      expect(shot.image).toBe("aGVsbG8=");
+      expect(stopped).toEqual(["sleepy"]);
+    } finally {
+      delete process.env.OPENMUSE_MAX_ACTIVE_COMPUTERS;
+    }
+  });
+});
+
+/**
+ * The write budget's refund direction (§10 row 3): only a failure that PROVES the write
+ * never reached the computer may hand the charge back. A timeout, a Stop mid-flight or a
+ * computer that errored after committing cannot prove the bytes are not on disk, and the
+ * cap errs toward never letting a workspace past what it was promised — so the ambiguous
+ * direction keeps the charge even at the price of over-counting a failed write.
+ */
+describe("the write budget's refund direction", () => {
+  function spyingCapacity() {
+    const { provider } = fakeComputer({});
+    const base = computerCapacity({ provider });
+    const charged: number[] = [];
+    const refunded: number[] = [];
+    const capacity = {
+      ...base,
+      chargeWrite(botId: string, bytes: number) {
+        charged.push(bytes);
+        base.chargeWrite(botId, bytes);
+      },
+      refundWrite(botId: string, bytes: number) {
+        refunded.push(bytes);
+        base.refundWrite(botId, bytes);
+      },
+    } satisfies ComputerCapacity;
+    return { capacity, charged, refunded };
+  }
+
+  test("a write that provably never reached the computer refunds its charge", async () => {
+    const { capacity, refunded } = spyingCapacity();
+    const { gateway } = await gatewayWith(PERMISSIVE, {
+      capacity,
+      routes: {
+        "/files/write": () => {
+          throw new TypeError("connection refused — no listener");
+        },
+      },
+    });
+
+    await expect(
+      gateway.writeFile("bot-1", ACTOR, {
+        path: "notes.md",
+        contents: "four",
+      }),
+    ).rejects.toThrow();
+    expect(refunded).toEqual([4]);
+  });
+
+  /*
+   * Round 6 (H2): a refusal the COMPUTER itself answered before writing is
+   * proven not to have landed — the human-has-control gate's 409 answers
+   * without writing, and so do the workspace refusals and the size cap.
+   * Without the refund, a human holding the wheel makes every model retry
+   * burn quota for bytes that never landed, until the write path 413s with
+   * nothing on disk — exactly what the refund exists to prevent.
+   */
+  test("a computer-answered pre-write refusal refunds its charge", async () => {
+    for (const route of [
+      { path: "/files/write", status: 409, body: { error: "human has the wheel", humanHasControl: true } },
+      { path: "/files/write", status: 403, body: { error: "outside the workspace" } },
+      { path: "/files/write", status: 413, body: { error: "over the cap" } },
+    ]) {
+      const { capacity, refunded } = spyingCapacity();
+      const { gateway } = await gatewayWith(PERMISSIVE, {
+        capacity,
+        routes: {
+          [route.path]: () => Response.json(route.body, { status: route.status }),
+        },
+      });
+
+      await expect(
+        gateway.writeFile("bot-1", ACTOR, {
+          path: "notes.md",
+          contents: "four",
+        }),
+      ).rejects.toThrow();
+      expect(refunded).toEqual([4]);
+    }
+  });
+
+  test("an ambiguous failure keeps the charge — the bytes may be on disk", async () => {
+    const { capacity, refunded, charged } = spyingCapacity();
+    const { gateway } = await gatewayWith(PERMISSIVE, {
+      capacity,
+      routes: {
+        "/files/write": () =>
+          Response.json({ error: "reset mid-commit" }, { status: 500 }),
+      },
+    });
+
+    await expect(
+      gateway.writeFile("bot-1", ACTOR, {
+        path: "notes.md",
+        contents: "four",
+      }),
+    ).rejects.toThrow();
+    expect(charged).toEqual([4]);
+    expect(refunded).toEqual([]);
   });
 });
