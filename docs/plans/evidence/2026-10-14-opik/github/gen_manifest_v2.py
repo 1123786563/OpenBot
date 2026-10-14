@@ -199,6 +199,7 @@ manifest = {
         "T02(#8) 的验收标准第 3 条提到「直接输入路由时仍执行权限校验」，但对应路由要到 T12(#18) 才存在，因此该条在 T02 阶段只能验证路由约定本身，不能端到端验证；实施 T02 时不得把该条记为通过，应留到 T12(#18) 验证。",
         "T37(#43) 依赖全部 36 张，是协调与验收性质，不引入新功能；其 blocked_by 边在 GitHub 上为 36 条。",
         "T02(#8) owned files = 11，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON、2 个是 i18n 注册文件、1 个是 parity 测试。总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
+        "T03(#9) owned files = 11，超过 O1 的 ≤8 上限：其中 5 个是上游 deployment/docker-compose 会挂载的支撑配置（otel-collector-config.yaml、nginx_default_local.conf、clickhouse-config/ 下 3 个 xml），属静态配置而非逻辑代码；缺了它们 docker compose config 无法通过、栈无法正确运行。原 owned_scope 只列 6 个是计划漏项。实现者交付时被发现『越界』，经其审阅者独立核验与协调者复核**一致裁定为 owned_scope 漂移而非违规**，manifest 已据此更正。",
         "owned_scope 在 writing-plans 阶段按真实代码结构校正过三处：T01(#7) 补 server/src/app.ts（挂载点实际在 createApp 的 app.route，不在 index.ts）；T02(#8) 补 parity 测试文件；T03(#9) 补 docker-compose.yml 的可选栈清单注释与 server/tests/opik-deployment.test.ts（无 Docker 也能跑的静态约束测试）。",
         "T11(#17) 增加 T01(#7) 为前置：原草案里 T01 没有任何后继，属于孤儿 prefactor，路由 seam 可能被跳过或与需要它的 Ticket 并行；补边后 T01 成为全部路由类 Ticket 的祖先。",
         "T02(#8) 由单一 ai-observability 命名空间改为 -runs/-datasets/-evaluations/-admin 四个子命名空间：图分析发现 6 个前端 Ticket 共享同两个 locale JSON，其中 10 对在依赖图上不可比较，并行派发必然冲突；拆分后四条前端链文件不相交。",

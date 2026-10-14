@@ -56,10 +56,10 @@ Parent Spec: https://github.com/1123786563/OpenBot/issues/4
 **T03 Opik 可选部署与版本锁定清单**
 - Blocked by: None
 - Delivers: 平台运维可用可选 compose 启动真实自托管 Opik，服务与 SDK 版本被锁定为实际验证过的值；关闭集成时现有执行与 tracing 行为不变。
-- Owned: `docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`、`docker-compose.yml`、`server/tests/opik-deployment.test.ts`
+- Owned: `docker/compose/opik.yml`、`docker/opik/versions.json`、`docker/opik/otel-collector-config.yaml`、`docker/opik/nginx_default_local.conf`、`docker/opik/clickhouse-config/additional_config.xml`、`docker/opik/clickhouse-config/users.d/distributed_insert_queue.xml`、`docker/opik/clickhouse-config/users.d/enable_time_type.xml`、`docs/opik.md`、`.env.example`、`docker-compose.yml`、`server/tests/opik-deployment.test.ts`
 - Handoff: `versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名
 - Covers: A1
-- Size: ~6 files / 单 agent
+- Size: ~11 files / 单 agent（其中 5 个是上游 compose 必需挂载的支撑配置文件，非逻辑代码；见 manifest 的 documented_deviations）
 
 **T04 上游契约冒烟与 VerifiedOpikContract manifest**
 - Blocked by: T03

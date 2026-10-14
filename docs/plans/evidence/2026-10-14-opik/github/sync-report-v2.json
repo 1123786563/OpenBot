@@ -19,7 +19,8 @@
  ],
  "owned_max": 11,
  "owned_over_8": {
-  "T02": 11
+  "T02": 11,
+  "T03": 11
  },
  "parallel_unsafe_pairs": [],
  "changes": []
