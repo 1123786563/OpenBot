@@ -243,3 +243,34 @@ means *keep waiting*, and stall requires positive proof (`exited` liveness, the 
 observation of process exit, or a transcript whose final turn sent no `worker_done`). An unchanged
 `worker-read` tail is absence, not proof. Had I acted on the false diagnosis I would have stopped a
 healthy worker; the reference is what stopped me, not my own judgement.
+
+## E10 — Coordinator defect: reviewers based on implementer branches do not inherit coordinator artifacts
+
+**What I did:** each reviewer was placed in a new child worktree with
+`--base-branch <implementer branch>`. That is correct for the diff-based scope check
+(`git diff --name-only <base>..HEAD`), and it makes "read-only" structural rather than a promise.
+
+**What I missed:** the coordination artifacts live on `1123786563/opik-integration`, which the
+implementer branches do not descend from. So the reviewer briefings pointed at files that do not
+exist in the reviewers' own checkouts:
+
+- `plan-errata-2026-10-15.md` — committed at `3e663587`/`d7d48b0d`, after every implementer base
+  (`5e15ce4c` / `ef58d946`). Absent from all four review worktrees.
+- The **corrected** `baseline-gates-2026-10-15.md` — same problem, and worse: the stale copy inside
+  each review worktree still asserts that `cd server && bun run typecheck` is green and treats
+  repo-wide biome as a usable gate. Both claims were disproven. A reviewer trusting its own checkout
+  would have filed findings against implementers for numbers that were the coordinator's error.
+- Checkpoints for T02 and T05 — those two workers wrote their checkpoint but did not commit it, so
+  it is absent from their branch history. T01 and T06 did commit theirs.
+
+**Fix applied:** all four reviewers were sent the absolute paths on the shared host
+(`/Users/wuyongjun/orca/workspaces/OpenBot/opik-integration/...`), with an explicit warning that the
+baseline document inside their own worktree is the superseded version and that its wrong conclusions
+must not be charged to the implementer.
+
+**Rule for the next wave:** when a reviewer is placed on an implementer branch, either
+(a) merge the coordinator branch into the implementer branch before review, or
+(b) hand the reviewer absolute paths and say which copy is authoritative. Do not assume a briefing
+path resolves just because it resolves for the coordinator. Also decide up front whether checkpoints
+are committed by the worker or collected by the coordinator — the frontier wave ended up with both,
+which is why two of four were missing from branch history.

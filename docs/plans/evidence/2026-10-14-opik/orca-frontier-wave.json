@@ -53,11 +53,35 @@
   "reviewers": {
    "T01": {
     "task_id": "task_52b7dca49189",
-    "depends_on": "task_1e2b04977281"
+    "depends_on": "task_1e2b04977281",
+    "dispatch_id": "ctx_f632f378e4b9",
+    "terminal": "structworker_b75962d0-4e7d-48ef-932e-25c91a8bebb9",
+    "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-review-t01",
+    "audits_branch": "1123786563/opik-t01-module-seam",
+    "diff_base": "5e15ce4c7463a276e294626ad22e71791733a250",
+    "launch_effective": {
+     "agent": "claude",
+     "model": null,
+     "effort": null
+    },
+    "coordinates_message": "msg_567a732f4b90",
+    "briefing_addendum": "msg_a37b82069506"
    },
    "T02": {
     "task_id": "task_fa2d1ae12402",
-    "depends_on": "task_35bafd362a24"
+    "depends_on": "task_35bafd362a24",
+    "dispatch_id": "ctx_d59b58b29d82",
+    "terminal": "structworker_b90f6db4-ba0f-40c2-bdd5-af1a912fa6f5",
+    "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-review-t02",
+    "audits_branch": "1123786563/opik-t02-ui-i18n",
+    "diff_base": "ef58d94654df9cbaa565474acf75d6193a0f6ddf",
+    "launch_effective": {
+     "agent": "claude",
+     "model": null,
+     "effort": null
+    },
+    "coordinates_message": "msg_3170ed12cf2f",
+    "briefing_addendum": "msg_4ccf7ee3dbe9"
    },
    "T03": {
     "task_id": "task_78a502a23cd6",
@@ -65,11 +89,35 @@
    },
    "T05": {
     "task_id": "task_76fad057e67e",
-    "depends_on": "task_1aac79b79517"
+    "depends_on": "task_1aac79b79517",
+    "dispatch_id": "ctx_8b7d79216b0f",
+    "terminal": "structworker_fc92c8da-8c9c-4b49-93a4-fa8ba18b4eb2",
+    "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-review-t05",
+    "audits_branch": "1123786563/opik-t05-redaction",
+    "diff_base": "ef58d94654df9cbaa565474acf75d6193a0f6ddf",
+    "launch_effective": {
+     "agent": "claude",
+     "model": null,
+     "effort": null
+    },
+    "coordinates_message": "msg_19f305e2573c",
+    "briefing_addendum": "msg_5d4031e28759"
    },
    "T06": {
     "task_id": "task_a4d82f0b5f83",
-    "depends_on": "task_7d5dec524ab4"
+    "depends_on": "task_7d5dec524ab4",
+    "dispatch_id": "ctx_cd2a3ebf7d76",
+    "terminal": "structworker_854b1902-5520-42a9-b371-32deeea6541a",
+    "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-review-t06",
+    "audits_branch": "1123786563/opik-t06-scope-seam",
+    "diff_base": "ef58d94654df9cbaa565474acf75d6193a0f6ddf",
+    "launch_effective": {
+     "agent": "claude",
+     "model": null,
+     "effort": null
+    },
+    "coordinates_message": "msg_6f26d05238f4",
+    "briefing_addendum": "msg_7939fc2eb363"
    }
   },
   "final_review": {
