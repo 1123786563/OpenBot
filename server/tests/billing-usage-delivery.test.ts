@@ -586,24 +586,6 @@ describe("BillingService.deliverUsage", () => {
       code: "unreachable",
     });
   });
-
-  test("recordUsage stays best-effort", async () => {
-    const warn = console.warn;
-    console.warn = () => {};
-    try {
-      const { svc } = service({ rows: [] });
-      await expect(svc.recordUsage(input)).resolves.toBeUndefined();
-      const failing = service({
-        rows: active,
-        post: async () => {
-          throw new BillingError("unreachable");
-        },
-      });
-      await expect(failing.svc.recordUsage(input)).resolves.toBeUndefined();
-    } finally {
-      console.warn = warn;
-    }
-  });
 });
 
 describe("startUsageDeliverySweeps", () => {

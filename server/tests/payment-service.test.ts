@@ -101,20 +101,6 @@ function memoryStore(): PaymentStore {
           .find((order) => order.status === "pending") ?? null
       );
     },
-    async readLatestPaidOrder(planCode, excludeOrderId) {
-      const paid = [...orders.values()]
-        .filter(
-          (order) =>
-            order.planCode === planCode &&
-            order.status === "paid" &&
-            order.id !== excludeOrderId,
-        )
-        .sort(
-          (a, b) =>
-            (b.terminalAt?.getTime() ?? 0) - (a.terminalAt?.getTime() ?? 0),
-        );
-      return paid[0] ?? null;
-    },
     async readLatestLiveOrder() {
       const live = [...orders.values()]
         .filter(

@@ -615,24 +615,9 @@ export type BillingService = {
   /** The active subscription's current-period usage bucketed by day, 60s-cached. */
   usageDaily(externalCustomerId?: string): Promise<BillingUsageDaily>;
   /**
-   * Meter one consumption event against the active subscription. Fire-and-forget by design: the
-   * caller is a model call's epilogue, and billing must never sit in front of a token stream.
-   * The transaction id makes a retried report free — the provider stores it once.
-   */
-  recordUsage(input: {
-    metricCode: string;
-    properties: Record<string, number | string>;
-    /** Stable per-occurrence id; the same value twice is one event at the provider. */
-    transactionId: string;
-    timestamp?: Date;
-    /** Absent means this deployment's own customer key. */
-    externalCustomerId?: string;
-  }): Promise<void>;
-  /**
    * Delivery-grade usage metering for the durable outbox: resolves only once the provider accepted
    * or deduplicated the event, and rejects with a `UsageDeliveryError` (no active subscription,
    * provider refusal) or the provider's `BillingError` (transient) so the caller can retry.
-   * `recordUsage` above stays the best-effort, never-throwing variant.
    */
   deliverUsage(input: {
     metricCode: string;

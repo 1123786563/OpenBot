@@ -216,18 +216,6 @@ export type PaymentStore = {
     planCode: string,
     provider: PaymentProviderId,
   ): Promise<PaymentOrderRecord | null>;
-  /**
-   * The newest paid order for one plan, any provider — the duplicate-payment check.
-   *
-   * `excludeOrderId` takes the caller's own order out of the answer: the check runs after that
-   * order's own confirm (which stamped it the newest paid row), so without the exclusion the
-   * read can only ever answer the caller itself and the duplicate it is looking for is the one
-   * row it cannot see. Optional, so callers that want the plain "newest paid" keep the old call.
-   */
-  readLatestPaidOrder(
-    planCode: string,
-    excludeOrderId?: string,
-  ): Promise<PaymentOrderRecord | null>;
   /** The newest order still live (pending or paid) — what "current purchase" means. */
   readLatestLiveOrder(
     scope?: PaymentOrderReadScope,

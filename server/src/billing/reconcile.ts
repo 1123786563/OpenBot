@@ -34,7 +34,7 @@ import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
  *        Σ credit_grants.used  ==  Σ credit_ledger.applied
  *
  *    Both sides are the same coin seen from its two tables: `used` is what the grants were
- *    drawn for, `applied` is what the draws recorded absorbing. consumeCredits moves them in
+ *    drawn for, `applied` is what the draws recorded absorbing. settleReservation moves them in
  *    ONE transaction, so a live system cannot split them — but a crashed migration, a manual
  *    `UPDATE`, or a future writer that forgets the pair can. The grants' CHECK(used <= total)
  *    is the RUNTIME fence (an overdraw can never commit); this identity is the AFTER-THE-FACT

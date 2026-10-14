@@ -17,24 +17,26 @@ import {
 import type { CreditGrantSource } from "./types";
 
 /**
- * The local credit ledger's WRITE side — both halves. The deposit (grantCredits) is the only
- * writer `credit_grants` has ever had; the withdrawal (consumeCredits) is the only writer that
- * moves `used` or writes `credit_ledger`, so every invariant about the ledger is decided here,
- * once. The reads live in ./credits.ts and stay untouched.
+ * The local credit ledger's WRITE side. The deposit (grantCredits) is the only writer
+ * `credit_grants` has ever had; the reserve/settle/release trio (reserveCredits,
+ * settleReservation, releaseReservation) is the only writer that moves `used` or writes
+ * `credit_ledger`, so every invariant about the ledger is decided here, once. The reads live
+ * in ./credits.ts and stay untouched.
  *
  * Discipline carried over from the payments module: credits stay integers scaled by
  * `CREDIT_SCALE` (×100) from input to storage — a grant of "23.63 credits" is the integer 2363
  * and never a binary float — timestamps are timestamptz, and failures answer with the billing
  * seam's sentinel codes rather than raw messages.
  *
- * Idempotency (both halves): every grant AND every draw carries an idempotency key, and the
- * unique indexes on `credit_grants.idempotency_key` / `credit_ledger.idempotency_key` are the
+ * Idempotency: every grant AND every reservation carries an idempotency key, and the unique
+ * indexes on `credit_grants.idempotency_key` / `credit_ledger.idempotency_key` are the
  * authorities — the insert-or-nothing against them turns a retry into a read of the row that
  * already exists. A caller with no natural key (an operator pressing the promo button, where
  * two presses MEAN two grants) gets a random one derived here, which keeps the insert
  * always-fresh while holding the columns NOT NULL — that is what lets both indexes be plain
  * unique, so ON CONFLICT can infer them (Postgres cannot infer a partial index without its
- * WHERE spelled in-statement).
+ * WHERE spelled in-statement). A settled hold's ledger row carries the derived key
+ * `reservation:<id>`, so the ledger's own index fences a double settle.
  *
  * A grant row is born `active` and is never status-flipped afterwards: the read side derives
  * `exhausted`/`expired` from the clock and the balance (credits.ts `deriveGrantStatus`), so the
@@ -109,13 +111,6 @@ export type CreditWriter = {
   }): Promise<{ inserted: boolean; grant: CreditGrantResult }>;
 
   /**
-   * The currently spendable balance, in scaled units (×100): live grant capacity after active
-   * reservations and any carried fractional charge are accounted for. This is a read-only
-   * pre-call signal; reserveCredits remains the atomic admission authority.
-   */
-  readBalance(externalCustomerId: string): Promise<number>;
-
-  /**
    * The capacity a new hold could take now: live grant capacity minus every active hold, and one
    * unit while a fractional remainder is owed (the owed fraction keeps counting against capacity).
    */
@@ -166,44 +161,6 @@ export type CreditWriter = {
    * changes nothing (the first terminal result stands).
    */
   releaseReservation(reservationId: string, reason: string): Promise<void>;
-
-  /**
-   * Record one withdrawal, drawn across the customer's live grants.
-   *
-   * POST-PAID semantics: the amount is what the call ACTUALLY cost (tokens ×100, decided after
-   * the model answered), and the ledger row always records it in full — the ledger is the truth
-   * about what was consumed. The grants only ever absorb what they can: if the balance was
-   * smaller than the cost (the pre-call gate missed, or a concurrent call drained it between
-   * gate and finish), the grants are drawn to zero and `applied < amountCents` reports the
-   * shortfall — the account reads as overdrawn-but-honest rather than quietly rounded down.
-   *
-   * Idempotent on `idempotencyKey`: a retried report of the same consumption is the FIRST
-   * report's answer (`inserted: false`), never a second deduction — the unique index on
-   * `credit_ledger.idempotency_key` is the authority, claimed inside the transaction before any
-   * grant moves.
-   *
-   * `insufficient` is NOT this method's answer: a zero-balance draw is still recorded (a free
-   * deployment's calls are real consumption facts). The pre-call gate (readBalance + the model
-   * wrapper copilot.ts wires) is where "no credits" refuses the call.
-   */
-  consumeCredits(input: {
-    externalCustomerId: string;
-    /** Scaled units (×100). The actual cost; may exceed the balance (see above). */
-    amountCents: number;
-    /** The consumption's stable id — the same id the Lago meter reports under, when it does. */
-    idempotencyKey: string;
-    /** The consumption table's two lines. */
-    title: string;
-    requestId?: string | null;
-    model?: string | null;
-    client?: string | null;
-  }): Promise<{
-    inserted: boolean;
-    /** How much the grants actually absorbed; < amountCents when the balance came up short. */
-    applied: number;
-    /** The balance after this draw, before any concurrent one. */
-    remaining: number;
-  }>;
 };
 
 export function createCreditWriter(database: Database): CreditWriter {
@@ -274,10 +231,6 @@ export function createCreditWriter(database: Database): CreditWriter {
         );
       }
       return { inserted: false, grant: resultOf(existing) };
-    },
-
-    async readBalance(externalCustomerId) {
-      return (await readCapacity(database, externalCustomerId)).spendableUnits;
     },
 
     async availableBalance(externalCustomerId) {
@@ -562,118 +515,6 @@ export function createCreditWriter(database: Database): CreditWriter {
             terminalAt: new Date(),
           })
           .where(eq(creditReservations.id, reservationId));
-      });
-    },
-
-    async consumeCredits(input) {
-      // The same integer discipline the deposit enforces: a fractional or negative cost is a
-      // caller's bug, and the ledger it lands in must never inherit it.
-      if (!Number.isInteger(input.amountCents) || input.amountCents < 0) {
-        throw new TypeError(
-          "consumeCredits needs a whole non-negative scaled amount.",
-        );
-      }
-
-      // The same customer floor the deposit lays: a zero-balance customer's FIRST ledger row
-      // must not discover the missing billing_customers row as a foreign-key violation — a
-      // deployment that never granted anything still records what it consumed.
-      await database
-        .insert(billingCustomers)
-        .values({ externalId: input.externalCustomerId, name: null })
-        .onConflictDoNothing({ target: billingCustomers.externalId });
-
-      // The idempotency pre-check outside the transaction is a fast path (the payment store's
-      // confirmPaid uses the same shape): a retried report is answered from the unique index's
-      // contents without opening a transaction, and the insert inside re-checks it.
-      const [known] = await database
-        .select({ applied: ledger.applied })
-        .from(ledger)
-        .where(eq(ledger.idempotencyKey, input.idempotencyKey))
-        .limit(1);
-      if (known)
-        return { inserted: false, applied: known.applied, remaining: 0 };
-
-      const at = new Date();
-      return database.transaction(async (tx) => {
-        await lockCustomer(tx, input.externalCustomerId);
-
-        // Insert the ledger row FIRST, inside the transaction: the unique index is the
-        // idempotency, and claiming it before any grant moves means a concurrent report of
-        // the same key loses HERE (inserted nothing) rather than after having drawn grants.
-        const insertedRows = await tx
-          .insert(ledger)
-          .values({
-            id: generateGrantId(),
-            externalCustomerId: input.externalCustomerId,
-            grantId: null, // Attributed below, to the grant the draw started on.
-            title: input.title,
-            requestId: input.requestId ?? null,
-            idempotencyKey: input.idempotencyKey,
-            credits: input.amountCents,
-            model: input.model ?? null,
-            client: input.client ?? null,
-          })
-          .onConflictDoNothing({ target: ledger.idempotencyKey })
-          .returning({ id: ledger.id });
-        if (insertedRows.length === 0) {
-          // Another report of this key won the race: its answer is this one's.
-          const [existing] = await tx
-            .select({ applied: ledger.applied })
-            .from(ledger)
-            .where(eq(ledger.idempotencyKey, input.idempotencyKey))
-            .limit(1);
-          return {
-            inserted: false,
-            applied: existing?.applied ?? 0,
-            remaining: 0,
-          };
-        }
-
-        /*
-         * The customer lock serializes this draw with reservations and settlements. Grant
-         * locks then let liveGrants subtract active holds before this post-paid path uses only
-         * unreserved capacity; expired allowance is excluded and the remaining grants stay in
-         * soonest-to-lapse order. A fractional carried charge keeps one additional unit free.
-         */
-        const grants = await liveGrants(tx, input.externalCustomerId, at, true);
-        const owed = await carriedRemainder(tx, input.externalCustomerId);
-        if (owed.numerator > 0n) {
-          const lastAvailable = grants.reduce(
-            (last, grant, index) => (grant.free > 0 ? index : last),
-            -1,
-          );
-          const remainderGrant = grants[lastAvailable];
-          if (remainderGrant) remainderGrant.free -= 1;
-        }
-
-        let toApply = input.amountCents;
-        let applied = 0;
-        let firstGrantId: string | null = null;
-        for (const grant of grants) {
-          if (toApply === 0) break;
-          const drew = Math.min(toApply, grant.free);
-          if (drew === 0) continue;
-          await tx
-            .update(creditGrants)
-            .set({ used: sql`${creditGrants.used} + ${drew}` })
-            .where(eq(creditGrants.id, grant.id));
-          applied += drew;
-          toApply -= drew;
-          if (firstGrantId === null) firstGrantId = grant.id;
-        }
-
-        // Attribute the draw to its first grant (the display copy the consumption table
-        // joins on); a multi-grant draw names where it started, and `applied` records what
-        // the balance could fund of the full cost the ledger row already holds.
-        await tx
-          .update(ledger)
-          .set({ grantId: firstGrantId, applied })
-          .where(eq(ledger.id, insertedRows[0]!.id));
-
-        // The balance after this draw, inside the same transaction: the caller's "remaining"
-        // is consistent with the rows this draw just moved.
-        const after = (await readCapacity(tx, input.externalCustomerId, at)).spendableUnits;
-        return { inserted: true, applied, remaining: after };
       });
     },
   };

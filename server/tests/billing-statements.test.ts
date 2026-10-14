@@ -53,7 +53,6 @@ function fakeService(
       nextPage: null,
     }),
     usageDaily: async () => ({ days: [], truncated: false }),
-    recordUsage: async () => {},
     snapshot: async () => ({
       configured: true,
       customers: 1,
@@ -139,7 +138,6 @@ function fakeOrders(rows: PaymentOrderRecord[]) {
     readOrder: async (id: string, scope?: PaymentOrderReadScope) =>
       rows.find((row) => row.id === id && matchesScope(row, scope)) ?? null,
     readPendingOrder: async () => null,
-    readLatestPaidOrder: async () => null,
     readLatestLiveOrder: async () => null,
     setCheckoutPayload: async () => {},
     cancelOrder: async () => false,
