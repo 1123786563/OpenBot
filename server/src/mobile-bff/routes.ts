@@ -1,19 +1,28 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
-import type { AgentActor } from "../agents/profile-types";
 import type { AgentProfileStore } from "../agents/profile-store";
+import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
 import type { ChannelStore } from "../channels/routes";
 import type { MobileBffActivityReader } from "./activity";
+import {
+  OpenMuseConnectionRefusedError,
+  OpenMuseOwnerDisabledError,
+  OpenMuseVendorUnavailableError,
+} from "../openmuse-connectors/google-oauth";
+import { OpenMuseFileQuotaError } from "../openmuse-files/store";
+import { OpenMuseMailVendorError } from "../openmuse-mail/client";
+import type { OpenMuseBotProvisioner } from "./openmuse-bot";
 import type { MobileBffWorkspaceReader } from "./workspace";
 
 const log = getLogger("server");
 
 /**
  * `/api/mobile`: thin aggregation for the OpenMuse mobile client
- * (`apps/openmuse-mobile`).
+ * (the `apps/openmuse` submodule, `apps/mobile`).
  *
  * WHAT THIS LAYER IS. A read-mostly convenience seam: the mobile cold start
  * needs three answers the web app already fetches in parallel (me, agents,
@@ -39,10 +48,85 @@ export function createMobileBffRoutes(deps: {
   channelStore?: ChannelStore;
   workspace: MobileBffWorkspaceReader;
   activity?: MobileBffActivityReader;
+  openMuseProvisioner?: OpenMuseBotProvisioner;
+  /**
+   * The personal-files sub-app, mounted only where the assembly built one
+   * (`/api/mobile/openmuse-files`). Mount-only on purpose: the sub-app
+   * carries its own session guard and its own 20 MiB body limit, and it is
+   * mounted before the 8 KiB family body limit below so that limit — sized
+   * for this layer's JSON reads — never wraps an upload.
+   */
+  openMuseFiles?: Hono<{ Variables: AppVariables }>;
+  /**
+   * The OpenMuse Tasks sub-app (T01): create+list queued tasks at /openmuse-tasks.
+   * Mounted before the 8 KiB family body limit below, so it must carry its own
+   * body limit: its POST handlers buffer and parse request bodies, and this
+   * layer's limit never wraps them (it carries 64 KiB).
+   */
+  openMuseTasks?: Hono<{ Variables: AppVariables }>;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
-  routes.use("*", deps.requireUser, bodyLimit({ maxSize: 8_192 }));
+  routes.use("*", deps.requireUser);
+  if (deps.openMuseFiles) {
+    routes.route("/openmuse-files", deps.openMuseFiles);
+  }
+  if (deps.openMuseTasks) {
+    routes.route("/openmuse-tasks", deps.openMuseTasks);
+  }
+  routes.use("*", bodyLimit({ maxSize: 8_192 }));
   routes.onError((error, context) => {
+    // A sub-app's deliberate HTTP answer — a body limit's 413, say — is an
+    // answer, not an error: pass it through instead of masking it as 503.
+    if (error instanceof HTTPException) return error.getResponse();
+    /*
+     * `route()` merges a sub-app's route handlers, not its application-level `onError`, so a
+     * sub-app's deliberate error classes land HERE at the mount. Without these branches the
+     * files sub-app's stable contract (§4's 409 connection_required that sends the client to
+     * consent, the 403 of a disabled owner, the 502 of a vendor failure) degrades to this
+     * layer's 503 — which tells the client to retry a request that can never succeed.
+     */
+    /*
+     * Three stores in this tree declare an OpenMuseOwnerDisabledError (files, tasks, and the
+     * connectors one imported above), and the mounted sub-apps throw their OWN — an instanceof
+     * against any one class never matches the others', which is how a disabled owner's 403 used
+     * to fall through to the 503 below. The name is the stable contract here, not the class.
+     */
+    if (
+      error instanceof OpenMuseOwnerDisabledError ||
+      error.name === "OpenMuseOwnerDisabledError"
+    ) {
+      return context.json(
+        { error: "This owner's files are unavailable." },
+        403,
+      );
+    }
+    if (error instanceof OpenMuseConnectionRefusedError) {
+      return context.json(
+        { error: error.message, code: "connection_required" },
+        error.status,
+      );
+    }
+    if (error instanceof OpenMuseVendorUnavailableError) {
+      return context.json({ error: error.message }, 503);
+    }
+    if (error instanceof OpenMuseMailVendorError) {
+      return context.json({ error: error.message }, 502);
+    }
+    if (error instanceof OpenMuseFileQuotaError) {
+      /*
+       * The files sub-app's own onError answers this 413 standalone, but `route()` does not
+       * carry a sub-app's onError to the mount — restated here so the quota keeps its stable
+       * contract at this layer too: a determinate "delete some files first", never the
+       * retry-me 503 below, which would send the client back into the same refusal.
+       */
+      return context.json(
+        {
+          error: `That upload would pass this owner's ${error.capBytes}-byte Files quota. Delete some files first.`,
+          code: error.code,
+        },
+        413,
+      );
+    }
     if (error instanceof z.ZodError || error instanceof SyntaxError) {
       return context.json({ error: "Supply a valid request." }, 400);
     }
@@ -112,6 +196,33 @@ export function createMobileBffRoutes(deps: {
       },
       201,
     );
+  });
+
+  /**
+   * Provision — or find — this person's one private OpenMuse Bot.
+   *
+   * The one write this seam performs. No user id is accepted, ever: ownership
+   * is the authenticated session, and the body is empty or `{}` so a caller
+   * cannot ask for anybody else's Bot. Any field at all is refused, because
+   * there is nothing a legitimate caller has to say here.
+   */
+  routes.post("/openmuse-bot", async (context) => {
+    if (!deps.openMuseProvisioner) {
+      return context.json(
+        {
+          error: "OpenMuse Bot provisioning is unavailable on this deployment.",
+        },
+        503,
+      );
+    }
+    const body = await context.req.text();
+    z.strictObject({}).parse(
+      body.trim() === "" ? {} : (JSON.parse(body) as unknown),
+    );
+    const provisioned = await deps.openMuseProvisioner.provision(
+      context.var.actor,
+    );
+    return context.json(provisioned);
   });
 
   const activity = deps.activity;

@@ -27,19 +27,23 @@ export function matchesToken(expected: string, offered: string): boolean {
 /**
  * The secret a caller offered, however it could carry it.
  *
- * WebSocket clients cannot set upgrade headers, so the stream also accepts the token as a query
- * parameter.
+ * WebSocket clients a BROWSER opens cannot set upgrade headers, so the stream also accepts
+ * the token as a query parameter — but the server-side proxy CAN set headers (Bun's
+ * WebSocket constructor carries them), and it prefers the header so the secret stays out
+ * of access logs the query string would land in.
  */
 export function offeredToken(headers: Headers, url: URL): string {
-  // The header path trims; the query path must too, or `?token=%20SECRET` 401s while the same
-  // value in a header succeeds and the failure looks stream-specific.
-  if (url.pathname === "/stream")
-    return url.searchParams.get("token")?.trim() ?? "";
   const header = headers.get("x-openbot-computer-token")?.trim();
   if (header) return header;
   const authorization = headers.get("authorization")?.trim() ?? "";
   // The remainder needs trimming too: `Bearer   SECRET  ` left leading spaces behind.
-  return authorization.replace(/^Bearer /i, "").trim();
+  const bearer = authorization.replace(/^Bearer /i, "").trim();
+  if (bearer) return bearer;
+  // The query fallback trims like the header path, or `?token=%20SECRET` 401s
+  // while the same value in a header succeeds and the failure looks stream-specific.
+  if (url.pathname === "/stream")
+    return url.searchParams.get("token")?.trim() ?? "";
+  return "";
 }
 
 /**
@@ -79,6 +83,29 @@ const ACTING_PATHS = new Set([
 
 export function actsOnTheComputer(pathname: string): boolean {
   return ACTING_PATHS.has(pathname);
+}
+
+/**
+ * Which paths are nobody USING the computer, and so do not refresh the session's
+ * last-activity moment (the idleness signal GET /control answers for the server's sweep).
+ *
+ * Polls (`/control`, the surface's and the sweep's own reads), probes (`/health`), the
+ * orchestrator's inventory (`/computers`, `/run`) and the policy push (`/egress-policy`)
+ * would otherwise keep every computer looking busy forever, which is the sweep made dead.
+ * Everything else that reaches a session is somebody driving this computer — a Bot's
+ * actions and reads, a person's gestures, a takeover — and counts.
+ */
+const QUIET_PATHS = new Set([
+  "/health",
+  "/control",
+  "/egress-policy",
+  "/computers",
+  "/run",
+  "/stream",
+]);
+
+export function isQuietPath(pathname: string): boolean {
+  return QUIET_PATHS.has(pathname);
 }
 
 /** Only page mutations need a fresh browser snapshot after handback. */
