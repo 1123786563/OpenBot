@@ -7,12 +7,12 @@
 -- carry the arguments): one login role and one database of its own, so the credentials people
 -- type into the broker never sit in the same schema OpenBot's tables do. The broker's tables
 -- land in the database's `public` schema — the connection's default search_path, so the URL
--- in docker-compose.yml needs no search_path option. Its own migration command
--- (`docker compose run --rm open-connector npm run runtime:migrate`) still has to run before
--- first start on a fresh database, as the compose file records.
+-- in docker/compose/services.yml needs no search_path option. Its own migration command
+-- (docker compose --project-directory . -f docker/compose/services.yml run --rm open-connector
+-- npm run runtime:migrate) still has to run before first start on a fresh database.
 
 -- The login OpenConnector connects with. Local-development password, matching the default
--- OOMOL_CONNECT_DATABASE_URL in docker-compose.yml; a deployment sets a real one in both
+-- OOMOL_CONNECT_DATABASE_URL in docker/compose/services.yml; a deployment sets a real one in both
 -- places before anything else can reach the database.
 DO $$
 BEGIN

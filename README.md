@@ -438,6 +438,7 @@ Use `bash scripts/start.sh` for the whole stack and `bash scripts/stop.sh` to ta
 - [docs/architecture.md](docs/architecture.md)
 - [docs/configuration.md](docs/configuration.md)
 - [docs/development.md](docs/development.md)
+- [docs/compose.md](docs/compose.md): the Compose files described and how to run them
 - [docs/coworkers.md](docs/coworkers.md)
 - [docs/routines.md](docs/routines.md)
 - [docs/automatic-learning.md](docs/automatic-learning.md)

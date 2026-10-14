@@ -1,28 +1,13 @@
-# Knowledge-base dependencies — split out of docker-compose.yml (one file per service group).
+# Knowledge-base dependencies: qdrant, kb-redis, docreader. The kb domain itself runs on the host
+# (server/src/kb) and reaches these through the loopback ports; a containerized caller reaches
+# them by service name. These three need no postgres, but they join the main project's `data`
+# network — start the main stack first. Do not remove the qdrant-data volume or `docker rm`
+# takes the corpus with it. docs/compose.md#the-knowledge-base has the ports and why kb-redis is
+# separate from openbot-redis.
 #
-# The kb service itself no longer runs in Docker: the WeKnora knowledge domain now lives in
-# server/src/kb (HTTP `bun run kb:dev` :8082, ingest worker `bun run kb:worker`) and runs on
-# the host in local development, like the API server. What the kb domain still needs from
-# Docker is exactly these three dependencies, plus the kb_mastra database on the main stack's
-# postgres (docker/kb-mastra/init-db.sql mounts into that service).
-#
-# On the host the kb processes reach all three through the loopback ports below:
-#   qdrant    → QDRANT_URL=http://localhost:6333
-#   redis     → KB_REDIS_URL=redis://localhost:6380 (its own Redis, not the main stack's
-#               openbot-redis on 6379: the ingest queue's persistence profile is BullMQ's,
-#               and mixing it with the workshop's pure-memory cache would couple two
-#               unrelated lifecycles)
-#   docreader → DOCREADER_ADDR=localhost:50051
-# A containerized kb (or anything else on the `data` network) reaches them by service name:
-#   qdrant:6333 / kb-redis:6379 / docreader:50051.
-#
-# START THE MAIN STACK FIRST if anything here needs postgres; these three do not (no
-# depends_on anywhere), but they join the same project's `data` network so the service names
-# resolve from the main stack's containers.
-#
-# Same project name as the main file on purpose: the qdrant-data volume keeps its openbot_
-# prefix, so a stack that ran under the single file keeps its vector corpus without any
-# migration step. Do not remove the volume or `docker rm` takes the corpus with it.
+# Run from the repository root — --project-directory . is what makes the root .env and the
+# relative paths resolve exactly as they did when this file lived at the root:
+#   docker compose --project-directory . -f docker/compose/kb.yml up -d
 name: openbot
 
 services:

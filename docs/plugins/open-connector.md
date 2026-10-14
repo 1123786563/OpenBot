@@ -1,7 +1,7 @@
 # OpenConnector
 
 OpenConnector is a broker this deployment runs itself. It is a container — the `open-connector`
-service in this repository's `docker-compose.yml` — that proxies a catalogue of apps and holds each
+service in `docker/compose/services.yml` — that proxies a catalogue of apps and holds each
 person's credentials for them, so a Bot can act in GitHub or Firecrawl or the long tail behind them
 without this deployment registering an OAuth client with each vendor. What makes it unlike Composio
 is where the credentials live: not at a vendor's cloud, but in this deployment's own volume, next to

@@ -9,7 +9,7 @@
 # the same source the pgvector base image itself uses — just without pinning the whole base:
 #
 #   vector   → migration 0000's chunks.embedding (dropped by 0010; kept for chain replay)
-#   partman  → Lago (docker-compose.lago.yml), which installs from db/structure.sql and
+#   partman  → Lago (docker/compose/lago.yml), which installs from db/structure.sql and
 #              unconditionally DROPs and re-CREATEs pg_partman (getlago/lago v1.53,
 #              structure.sql lines 1435-1464). Without the binary in this image that load
 #              fails with "extension pg_partman is not available", and pre-installing it is

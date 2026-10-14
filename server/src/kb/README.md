@@ -23,7 +23,7 @@ WeKnora 知识库域的 TypeScript 移植，替换 Go kb-service 作为 OpenBot 
 
 ```bash
 # 依赖在仓库根 bun install 一次即可；kb 的 compose 依赖（qdrant/redis/docreader）：
-docker compose -f docker-compose.kb.yml up -d
+docker compose --project-directory . -f docker/compose/kb.yml up -d
 # postgres 的 kb_mastra 库见 docker/kb-mastra/init-db.sql（主 compose postgres 初始化）
 
 # 根 .env 填 KB_EMBED_MODEL（必填）等（见 .env.example 的 kb 段落）

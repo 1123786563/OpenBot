@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate docker/lago/.env — the secrets and one-shot seed values for the Lago services in
-# docker-compose.yml. Local-only, never commit (`.env` is gitignored).
+# docker/compose/lago.yml. Local-only, never commit (`.env` is gitignored).
 #
 # Usage: ./docker/lago/init-env.sh
 #
