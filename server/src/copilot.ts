@@ -809,7 +809,7 @@ function meteredModel<T>(model: T): T {
            */
           const failSettlement = async (
             logType: string,
-            error: Error,
+            error: ModelUsageSettlementError,
             detail?: Record<string, unknown>,
           ) => {
             settled = true;
@@ -831,10 +831,7 @@ function meteredModel<T>(model: T): T {
                 occurredAt,
                 inputTokens: tokens?.inputTokens ?? 0,
                 outputTokens: tokens?.outputTokens ?? 0,
-                reason:
-                  error instanceof ModelUsageSettlementError
-                    ? error.code
-                    : "usage_unsettled",
+                reason: error.code,
               });
             } catch {
               // The settlement error stays the product failure; evidence is best-effort.
@@ -867,10 +864,11 @@ function meteredModel<T>(model: T): T {
               // path let it through (decision gate G4 owns any change to that). settleFail
               // claimed `settled`, so every settlement branch below is inert and the part
               // flows to the enqueue at the bottom. The half the provider DID name travels
-              // with the failure, so the evidence row records what arrived, not zeros.
+              // with the failure, so the evidence row records what arrived, not zeros — with
+              // keys only for what did arrive, absent like every other settleFail site.
               await settleFail("usage_missing", {
-                inputTokens: reportedInput,
-                outputTokens: reportedOutput,
+                ...(reportedInput !== undefined && { inputTokens: reportedInput }),
+                ...(reportedOutput !== undefined && { outputTokens: reportedOutput }),
               });
             }
             const validInput =
