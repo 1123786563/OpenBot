@@ -12,6 +12,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { cloneElement, createContext, useContext } from "react";
 import type {
+  CreditConsumptionEntry,
   CreditGrantEntry,
   PlanCatalogEntry,
 } from "@/lib/billing/credits";
@@ -881,4 +882,37 @@ test("ConsumptionTable keeps the pager for a page walked off the end", () => {
   expect(view.queryByText(/还没有积分消耗记录/)).toBeNull();
   expect(view.getByText(/共 5 条/)).toBeTruthy();
   expect(view.getByRole("table")).toBeTruthy();
+});
+
+test("ConsumptionTable shows the unfunded suffix only on a row the grants could not fully fund", () => {
+  // Audit D1: a settlement that cost more than the balance could fund records the full cost
+  // with `applied` clamped to the hold. The shortfall row says so through the muted badge and
+  // its tooltip; a fully funded row must look exactly as it always has.
+  const entry = (overdrawn: boolean): CreditConsumptionEntry => ({
+    id: overdrawn ? "cl-over" : "cl-ok",
+    title: overdrawn ? "over-bound settlement" : "fully funded",
+    requestId: null,
+    credits: overdrawn ? 2.5 : 0.5,
+    applied: overdrawn ? 1 : 0.5,
+    model: null,
+    client: null,
+    timestamp: "2026-10-15T10:00:00.000Z",
+  });
+  const view = render(
+    <ConsumptionTable
+      entries={[entry(true), entry(false)]}
+      pagination={{ totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null }}
+      range="7d"
+      onRangeChange={() => {}}
+      onPage={() => {}}
+      statusTemplate="第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条"
+    />,
+  );
+  // zh-CN is this suite's per-test language; the badge interpolates the shortfall (2.5 − 1 = 1.5)
+  // and carries the hint as its tooltip. No raw key path in either.
+  const badge = view.getByText(/未覆盖 1.5/);
+  expect(badge.getAttribute("title")).toContain("无积分覆盖");
+  expect(view.container.textContent).not.toContain("{{");
+  // The fully funded row: exactly one badge in the table, and no zero-shortfall one.
+  expect(view.getAllByText(/未覆盖/)).toHaveLength(1);
 });

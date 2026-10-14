@@ -1203,3 +1203,62 @@ describe("plan payout and payment evidence reconciliation", () => {
     ).toBe(false);
   });
 });
+
+describe("overdraw is reported exactly (audit D1)", () => {
+  const customer = `${prefix}-overdraw`;
+
+  test("a ledger the grants could not fund totals the shortfall in exact scaled units", async () => {
+    await database
+      .insert(billingCustomers)
+      .values({ externalId: customer, name: null })
+      .onConflictDoNothing({ target: billingCustomers.externalId });
+    await database.insert(creditGrants).values({
+      id: `${customer}-g1`,
+      externalCustomerId: customer,
+      source: "promo",
+      reason: "overdraw-audit",
+      total: 100,
+      used: 100,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `${customer}-gk1`,
+    });
+    // credits > applied is the overdraw shape the settle path writes when a charge exceeds the
+    // capacity behind its hold. The grant identity still holds: used 100 == applied 100.
+    await database.insert(creditLedger).values({
+      id: `${customer}-l1`,
+      externalCustomerId: customer,
+      title: "over-bound settlement",
+      requestId: null,
+      idempotencyKey: `${customer}-lk1`,
+      credits: 250,
+      applied: 100,
+    });
+
+    const report = await reconciler.reconcile();
+
+    expect(report.checked.overdraw.units).not.toBe("0");
+    const finding = report.findings.find(
+      (item) => item.code === "credit_overdraw" && item.subject === customer,
+    );
+    expect(finding?.category).toBe("credits");
+    expect(finding?.detail).toContain("entries=1");
+    expect(finding?.detail).toContain("units=150");
+    // The identity invariant must NOT fire for this customer: overdraw is not divergence.
+    expect(
+      report.findings.some(
+        (item) =>
+          item.code === "grants_ledger_divergence" && item.subject === customer,
+      ),
+    ).toBe(false);
+  });
+
+  test("a customer that never overdraws produces no credit_overdraw finding", async () => {
+    const report = await reconciler.reconcile();
+    expect(
+      report.findings.some(
+        (item) => item.code === "credit_overdraw" && item.subject === prefix,
+      ),
+    ).toBe(false);
+  });
+});

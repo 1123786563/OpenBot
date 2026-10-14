@@ -386,6 +386,46 @@ export function createReconciler(
       }
 
       /*
+       * The shortfall the ledger already records per row (`credits - applied`): what the grants
+       * could not fund. Exact decimal strings and BigInt, the same discipline as the identity sums
+       * above — an overdraw total is a money figure and must not be rounded on the way into a
+       * report that audits somebody else's arithmetic (audit D1).
+       */
+      const overdrawByCustomer = await database
+        .select({
+          customer: creditLedger.externalCustomerId,
+          entries: sql<string>`COUNT(*)::bigint`,
+          units: sql<string>`COALESCE(SUM(${creditLedger.credits} - ${creditLedger.applied}), 0)::bigint`,
+        })
+        .from(creditLedger)
+        .where(sql`${creditLedger.credits} > ${creditLedger.applied}`)
+        .groupBy(creditLedger.externalCustomerId);
+
+      let overdrawEntries = 0n;
+      let overdrawUnits = 0n;
+      for (const row of overdrawByCustomer) {
+        const entries = BigInt(row.entries);
+        const units = BigInt(row.units);
+        overdrawEntries += entries;
+        overdrawUnits += units;
+        findings.push({
+          category: "credits",
+          code: "credit_overdraw",
+          subject: row.customer,
+          detail: `entries=${entries} units=${units} — consumption the grants could not fund; the ledger recorded the full cost and applied what the balance allowed. Remediation is an operator decision (grant, invoice, or accept)`,
+        });
+      }
+      // The total's entry count: a count of rows, not money, so it stays a number for the admin
+      // route's shape — but guarded the way the usage-outbox counts are, because it too was read
+      // as a ::bigint string: a total the report cannot represent exactly, it refuses.
+      const overdrawEntryCount = Number(overdrawEntries);
+      if (!Number.isSafeInteger(overdrawEntryCount)) {
+        throw new RangeError(
+          `credit_ledger overdraw entry count is not a safe integer (${overdrawEntries}); the report refuses to round a backlog it cannot represent`,
+        );
+      }
+
+      /*
        * ── Hard-cap reservation evidence: active holds are intentionally OUTSIDE the
        *    grants.used ↔ ledger.applied identity until a settlement converts them into a
        *    ledger fact, so reconciliation inspects reserved rows on their own terms.
@@ -673,6 +713,10 @@ export function createReconciler(
           paidOrders: paidOrders.length,
           appliedOrders: appliedOrders.length,
           creditCustomers: customers.size,
+          overdraw: {
+            entries: overdrawEntryCount,
+            units: overdrawUnits.toString(),
+          },
           usageDeliveryTargets,
           usageFindings: {
             limit: usageFindingLimit,

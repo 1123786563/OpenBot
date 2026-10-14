@@ -127,6 +127,7 @@ export function createCredits(deps: {
           title: row.title,
           requestId: row.requestId,
           credits: scaleDown(row.credits),
+          applied: scaleDown(row.applied),
           model: row.model,
           client: row.client,
           timestamp: row.createdAt.toISOString(),
