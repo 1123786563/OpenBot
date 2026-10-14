@@ -383,6 +383,61 @@ test("a real transaction-scoped lock timeout is retryable and leaves the deliver
   expect(await store.readSubscriptions(externalId)).toHaveLength(1);
 });
 
+test("a subscription the provider no longer lists is retired, not left active", async () => {
+  const customer = `${prefix}-retire`;
+  await store.upsertCustomer({ externalId: customer, name: null });
+  await store.upsertSubscription({
+    externalCustomerId: customer,
+    externalSubscriptionId: `${prefix}-s-old`,
+    planCode: "standard",
+    status: "active",
+  });
+  await store.upsertSubscription({
+    externalCustomerId: customer,
+    externalSubscriptionId: `${prefix}-s-new`,
+    planCode: "pro",
+    status: "active",
+  });
+
+  const retired = await store.retireAbsentSubscriptions(customer, [
+    `${prefix}-s-new`,
+  ]);
+
+  expect(retired).toBe(1);
+  const rows = await store.readSubscriptions(customer);
+  expect(
+    rows.find((row) => row.externalSubscriptionId === `${prefix}-s-old`)
+      ?.status,
+  ).toBe("terminated");
+  expect(
+    rows.find((row) => row.externalSubscriptionId === `${prefix}-s-new`)
+      ?.status,
+  ).toBe("active");
+});
+
+test("retiring is idempotent and never touches another customer", async () => {
+  const customer = `${prefix}-retire-a`;
+  const other = `${prefix}-retire-b`;
+  await store.upsertCustomer({ externalId: customer, name: null });
+  await store.upsertCustomer({ externalId: other, name: null });
+  await store.upsertSubscription({
+    externalCustomerId: customer,
+    externalSubscriptionId: `${prefix}-s-a`,
+    planCode: "standard",
+    status: "active",
+  });
+  await store.upsertSubscription({
+    externalCustomerId: other,
+    externalSubscriptionId: `${prefix}-s-b`,
+    planCode: "standard",
+    status: "active",
+  });
+
+  expect(await store.retireAbsentSubscriptions(customer, [])).toBe(1);
+  expect(await store.retireAbsentSubscriptions(customer, [])).toBe(0);
+  expect((await store.readSubscriptions(other))[0]?.status).toBe("active");
+});
+
 test("snapshot counts customers, subscriptions and the latest sync", async () => {
   const counted = await database.execute(sql`
     SELECT

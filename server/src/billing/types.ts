@@ -51,6 +51,7 @@ export type BillingPersistenceOperation =
   | "customer_upsert"
   | "customer_ensure"
   | "subscription_upsert"
+  | "subscription_retire"
   | "subscription_read"
   | "webhook_lookup"
   | "webhook_record"
@@ -469,6 +470,15 @@ export type BillingWebhookProjection = {
   /** An authoritative customer refresh, or an insert-only floor when the name is absent. */
   customer?: { externalId: string; name?: string | null };
   subscriptions?: readonly BillingSubscriptionRow[];
+  /**
+   * The customer whose FULL present list `subscriptions` is, straight from the provider's own
+   * read: set only by a `subscription.*` delivery, and the scope its apply retires absent rows
+   * inside the same transaction (audit B6). Absent means the delivery says nothing about
+   * subscriptions — a `customer.*` event, an unprojected type — so nothing retires. The field
+   * exists because an empty list names no customer of its own: the delivery's customer is the
+   * only thing left to scope an everything-retires answer to.
+   */
+  subscriptionsPresentFor?: string;
   event: {
     provider: string;
     eventId: string;
@@ -497,6 +507,15 @@ export type BillingStore = {
    */
   ensureCustomerRow(input: { externalId: string }): Promise<void>;
   upsertSubscription(input: BillingSubscriptionRow): Promise<void>;
+  /**
+   * Retire the local rows for one customer that the provider's own list no longer contains:
+   * status → `terminated`, `updatedAt` → now. Returns how many rows moved. Never deletes —
+   * the row is the audit of what this deployment believed.
+   */
+  retireAbsentSubscriptions(
+    externalCustomerId: string,
+    presentExternalSubscriptionIds: readonly string[],
+  ): Promise<number>;
   readSubscriptions(
     externalCustomerId: string,
   ): Promise<readonly BillingSubscriptionRow[]>;

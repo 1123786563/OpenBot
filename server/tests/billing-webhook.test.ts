@@ -838,4 +838,102 @@ describe("createBillingService.handleWebhook", () => {
       "billing: webhook_body_replay event=evt-replay-2 deliveries=2",
     );
   });
+
+  test("a subscription delivery whose re-read no longer names a local row retires it (audit B6)", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    // The provider deleted (or hid) this one: it is absent from the re-read but active locally —
+    // the exact stale row the audit found, which used to stay active forever.
+    store.subscriptions.set("deployment-1-old", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old",
+      planCode: "base",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-retire", "subscription.updated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(store.subscriptions.get("deployment-1-old")?.status).toBe(
+      "terminated",
+    );
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
+    expect(logged).toContain(
+      "billing: retired 1 subscription projection(s) the provider no longer lists for deployment-1",
+    );
+    // A retirement is a move, never a delete: the row stays as the record.
+    expect(store.subscriptions.has("deployment-1-old")).toBe(true);
+  });
+
+  test("an empty present-list retires everything for that customer — it is a real answer (audit B6)", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    // The provider holds nothing: readSubscriptions throws on a malformed body, so an empty list
+    // reaching the projection is a successful read of an empty truth, not a failed one.
+    stub.state.list = [];
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-sub", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-sub",
+      planCode: "pro",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-retire-all", "subscription.terminated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe(
+      "terminated",
+    );
+    expect(logged).toContain(
+      "billing: retired 1 subscription projection(s) the provider no longer lists for deployment-1",
+    );
+    // The audit's headline consequence: the entitlement read stops answering active.
+    await expect(service.entitlements()).resolves.toEqual({
+      active: false,
+      codes: [],
+      subscription: null,
+    });
+  });
+
+  test("a customer delivery says nothing about subscriptions: nothing retires", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.customers.set("deployment-1", "Renamed Deployment");
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-sub", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-sub",
+      planCode: "pro",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-customer-only", "customer.updated", {
+        external_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(store.customers.get("deployment-1")).toEqual({
+      name: "Renamed Deployment",
+    });
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
+  });
 });
