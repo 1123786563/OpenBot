@@ -142,6 +142,54 @@ describe("createAlipayProvider over the SDK transport", () => {
     expect((error as BillingError).code).toBe("unreachable");
     expect((error as BillingError).retryable).toBe(true);
   });
+
+  test("the precreate amount is the exact decimal, not a float division", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const provider = providerWith(async (_method, params) => {
+      calls.push(params.bizContent as Record<string, unknown>);
+      return { code: "10000", qr_code: "https://qr.alipay.com/x" };
+    });
+    for (const [cents] of [
+      [1, "0.01"],
+      [1099, "10.99"],
+      [12850, "128.50"],
+      [4900, "49.00"],
+      [2147483647, "21474836.47"],
+    ] as const) {
+      await provider.createSession({
+        outTradeNo: `po-${cents}`,
+        description: "test",
+        amountCents: cents,
+        currency: "CNY",
+        notifyUrl: "https://example.test/cb",
+        expiresAt: new Date(Date.now() + 900_000),
+      });
+    }
+    expect(calls.map((call) => call.total_amount)).toEqual([
+      "0.01",
+      "10.99",
+      "128.50",
+      "49.00",
+      "21474836.47",
+    ]);
+  });
+
+  test("a non-integer cent amount is refused rather than rounded onto the wire", async () => {
+    const provider = providerWith(async () => ({
+      code: "10000",
+      qr_code: "x",
+    }));
+    await expect(
+      provider.createSession({
+        outTradeNo: "po-1",
+        description: "test",
+        amountCents: 10.5,
+        currency: "CNY",
+        notifyUrl: "https://example.test/cb",
+        expiresAt: new Date(Date.now() + 900_000),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_response" });
+  });
 });
 
 describe("the notification verifier", () => {
