@@ -3648,8 +3648,9 @@ if (billing !== undefined && usageOutbox !== undefined) {
        * count fits the configured ceiling — the provider cannot be SENT more than the
        * reservation prices by our own measure, and a tokenizer that beats the calibration
        * surfaces at settlement as usage_over_bound: the stream fails, the hold is retained,
-       * and billing/usage-evidence.ts keeps the provider's real token counts as a durable
-       * outbox row both delivery targets leave in terminal evidence.
+       * and billing/usage-evidence.ts keeps the provider's real token counts — the credits
+       * target blocks the row in manual review (`missing_reservation`) while the Lago
+       * target still meters the tokens the provider did report.
        * （G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
        */
       bounds: {

@@ -14,9 +14,10 @@ const log = getLogger("server");
  * answer (the conservative direction), and the fitter drops the oldest non-system messages
  * until the count fits. A tokenizer that beats the calibration shows up at settlement as
  * `usage_over_bound`: the stream fails, the hold is RETAINED, and one durable outbox row
- * (billing/usage-evidence.ts) keeps the provider's real token counts with both delivery
- * targets in a terminal-evidence state. That row — not the log line — is what reconciliation
- * and an operator read.
+ * (billing/usage-evidence.ts) keeps the provider's real token counts — the credits target
+ * blocks that row in terminal manual review (`missing_reservation`) while the Lago target
+ * still meters the tokens the provider did report. That row — not the log line — is what
+ * reconciliation and an operator read.
  * （G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
  */
 

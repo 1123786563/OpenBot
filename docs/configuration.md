@@ -59,8 +59,9 @@ messages dropped, system block and latest turn kept — until the count fits, an
 that still cannot fit is refused before the provider is called. A tokenizer that produces
 more tokens than the conservative count surfaces at settlement as `usage_over_bound`: the
 run fails, the hold is retained until it expires into an `expired_reserved_reservation`
-finding, and a durable `usage_outbox` row keeps the provider's real token counts (both
-targets terminal-evidence) so an operator can price the call by hand. Billed code runs are
+finding, and a durable `usage_outbox` row keeps the provider's real token counts — Lago
+still receives the metered event, while the credit side blocks the row
+(`missing_reservation`) so an operator can price the call by hand. Billed code runs are
 still refused fail-closed with `billing-token-budget-unavailable` until the sandbox contract
 can enforce the configured token budget — the code-run decision recorded in
 `docs/superpowers/specs/2026-10-11-billing-reliability-design.md` ("Billed admission per
