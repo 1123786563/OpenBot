@@ -337,7 +337,7 @@
     "expiringSoon": "24小时内过期",
     "expiresAt": "到期时间: {{time}}",
     "reason": "下发原因：{{reason}}",
-    "rewardsSummary": "可用{{count}}个·剩余{{remaining}}积分",
+    "rewardsSummary": "{{count}} 个奖励，可用 {{remaining}}（进行中调用占用 {{held}}）",
     "viewAll": "查看全部",
     "range": {
       "today": "今天",

@@ -1,6 +1,10 @@
 import { and, asc, count, desc, eq, gte, lte, ne } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { creditGrants, creditLedger } from "../db/schema/credits";
+import {
+  type GrantCapacity,
+  liveGrants,
+} from "./capacity";
 import type {
   CreditConsumptionPage,
   CreditGrantEntry,
@@ -62,45 +66,15 @@ export function createCredits(deps: {
   return {
     catalog,
     async summary(externalCustomerId) {
-      const rows = await database
-        .select()
-        .from(creditGrants)
-        .where(eq(creditGrants.externalCustomerId, keyOf(externalCustomerId)));
-
-      const now = Date.now();
-      let plan = { total: 0, used: 0, remaining: 0 };
-      let rewards = { total: 0, used: 0, remaining: 0, grantCount: 0 };
-
-      for (const row of rows) {
-        const total = row.total;
-        const used = row.used;
-        const remaining = Math.max(total - used, 0);
-        const live = remaining > 0 && row.expiresAt.getTime() > now;
-        if (row.source === "plan") {
-          plan.total += total;
-          plan.used += used;
-          plan.remaining += remaining;
-        } else {
-          rewards.total += total;
-          rewards.used += used;
-          rewards.remaining += remaining;
-          if (live) rewards.grantCount += 1;
-        }
-      }
-
-      return {
-        plan: {
-          total: scaleDown(plan.total),
-          used: scaleDown(plan.used),
-          remaining: scaleDown(plan.remaining),
-        },
-        rewards: {
-          total: scaleDown(rewards.total),
-          used: scaleDown(rewards.used),
-          remaining: scaleDown(rewards.remaining),
-          grantCount: rewards.grantCount,
-        },
-      };
+      // The same live-grant read admission uses, unlocked: expired grants drop out and active
+      // holds are subtracted, so this answer and the gate's answer cannot disagree (audit A1).
+      const grants = await liveGrants(
+        database,
+        keyOf(externalCustomerId),
+        new Date(),
+        false,
+      );
+      return summarizeCapacity(grants);
     },
 
     async grants(externalCustomerId) {
@@ -167,6 +141,41 @@ export function createCredits(deps: {
               : null,
         },
       };
+    },
+  };
+}
+
+/**
+ * The page's balance answer, from the same per-grant capacity facts admission uses. Pure, so the
+ * aggregation is testable without a database (audit A1: the previous version was reachable only
+ * through a live query and had no test at all).
+ */
+export function summarizeCapacity(
+  grants: readonly GrantCapacity[],
+): CreditSummary {
+  const plan = { total: 0, used: 0, remaining: 0, held: 0 };
+  const rewards = { total: 0, used: 0, remaining: 0, held: 0, grantCount: 0 };
+  for (const grant of grants) {
+    const bucket = grant.source === "plan" ? plan : rewards;
+    bucket.total += grant.total;
+    bucket.used += grant.used;
+    bucket.held += grant.held;
+    bucket.remaining += grant.free;
+    if (grant.source !== "plan" && grant.free > 0) rewards.grantCount += 1;
+  }
+  return {
+    plan: {
+      total: scaleDown(plan.total),
+      used: scaleDown(plan.used),
+      remaining: scaleDown(plan.remaining),
+      held: scaleDown(plan.held),
+    },
+    rewards: {
+      total: scaleDown(rewards.total),
+      used: scaleDown(rewards.used),
+      remaining: scaleDown(rewards.remaining),
+      held: scaleDown(rewards.held),
+      grantCount: rewards.grantCount,
     },
   };
 }
