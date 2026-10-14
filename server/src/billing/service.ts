@@ -489,54 +489,9 @@ export function createBillingService(deps: {
     },
 
     /**
-     * Meter one event against the active subscription, without blocking the caller.
-     *
-     * The provider's transaction id deduplicates, so a crashed run reporting twice costs nothing;
-     * every failure below is a logged sentence, never a throw — usage that cannot be metered is a
-     * billing miss, not a product error, and a throw here would fail the very run that produced it.
-     * No plan vocabulary and no per-call configuration: the metric code is the caller's own word,
-     * which is also the provider's because the deployment registered it there on purpose.
-     */
-    async recordUsage(input) {
-      const key = input.externalCustomerId ?? config.externalCustomerKey;
-      try {
-        const rows = await store.readSubscriptions(key);
-        const active = rows.find((row) => row.status === "active");
-        if (!active) {
-          console.warn(
-            `billing: usage for ${input.metricCode} dropped — no active subscription for this deployment`,
-          );
-          return;
-        }
-        const result = await client.postEvent({
-          transactionId: input.transactionId,
-          code: input.metricCode,
-          // Unix seconds: the provider's v1.53 event validator refuses every ISO-8601 spelling
-          // (invalid_format), so the wire carries the integer its own frontend sends.
-          timestamp: Math.floor(
-            (input.timestamp ?? new Date()).getTime() / 1000,
-          ),
-          externalSubscriptionId: active.externalSubscriptionId,
-          properties: input.properties,
-        });
-        if (result.status === 404 || result.status === 422) {
-          console.warn(
-            `billing: usage for ${input.metricCode} refused by the provider (status ${result.status}) — check the metric and the subscription exist there`,
-          );
-        }
-      } catch (error) {
-        console.warn(
-          `billing: usage for ${input.metricCode} could not be reported — ${
-            error instanceof BillingError ? error.code : "unexpected error"
-          }`,
-        );
-      }
-    },
-
-    /**
-     * Delivery-grade twin of recordUsage: the same provider call, but success means the provider
-     * accepted (or deduplicated, by transaction id) the event, and every other outcome rejects with
-     * a stable code so the outbox keeps the target pending.
+     * Delivery-grade usage metering: resolves only once the provider accepted (or deduplicated,
+     * by transaction id) the event, and every other outcome rejects with a stable code so the
+     * outbox keeps the target pending.
      */
     async deliverUsage(input) {
       const key = input.externalCustomerId ?? config.externalCustomerKey;

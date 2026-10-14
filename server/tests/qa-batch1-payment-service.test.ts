@@ -159,15 +159,6 @@ function memoryStore(): PaymentStore & {
       }
       return { outcome: "owner" as const, order: current };
     },
-    async readLatestPaidOrder(planCode) {
-      const paid = [...orders.values()]
-        .filter((o) => o.planCode === planCode && o.status === "paid")
-        .sort(
-          (a, b) =>
-            (b.terminalAt?.getTime() ?? 0) - (a.terminalAt?.getTime() ?? 0),
-        );
-      return paid[0] ?? null;
-    },
     async readLatestLiveOrder() {
       return null;
     },

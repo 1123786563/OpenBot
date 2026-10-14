@@ -639,13 +639,14 @@ export function createPaymentService(deps: {
       return { kind: "retryable-failure" };
     }
 
-    // A cross-order duplicate is worth one more look on EVERY confirm, not only a canceled order
-    // reviving: two QR codes can coexist only if one predates the pending-pair index, or the pair
-    // spans providers (one pending alipay + one pending wechat — the index is per (plan,
-    // provider), deliberately, because a channel switch is a legal flow). Either way, the same
-    // plan already holding another paid order while this money lands means double collection for
-    // one entitlement. The confirm STANDS — the money is real and the payer bought something —
-    // the anomaly is what makes it visible to reconciliation instead of hiding inside a second
+    /*
+     * The confirm stands on its own evidence: the paid fact's partial unique index makes one
+     * channel transaction claimable by exactly one order, and cross-order duplicates are settled
+     * by `resolveActivationOwnership` inside `activateOrder` below (which records the
+     * `duplicate_paid` anomaly and withholds the second entitlement). An earlier revision compared
+     * `readLatestPaidOrder` here as well; that check was folded into the ownership resolution in
+     * 88664e88, and this comment is the record of why nothing here looks like it.
+     */
     const fresh = await deps.store.readOrder(order.id).catch(() => null);
     if (fresh) await activateOrder(fresh);
     return { kind: "claimed" };

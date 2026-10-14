@@ -10,8 +10,8 @@ import { withUsageOrigin } from "../src/usage-origin";
 
 /**
  * The metering pipeline's contract (I4): one run, one provider event — and no provider at
- * all is silence, never an error. The fake billing records every recordUsage call; nothing
- * here touches Lago, the database, or the network.
+ * all is silence, never an error. The fake outbox records every write; nothing here touches
+ * Lago, the database, or the network.
  */
 function fakeOutbox() {
   const calls: UsageOutboxInput[] = [];

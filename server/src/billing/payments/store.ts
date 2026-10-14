@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Database } from "../../db/client";
 import { paymentEvents, paymentOrders } from "../../db/schema/payment";
 import { BillingError } from "../types";
@@ -287,32 +287,6 @@ export function createPaymentStore(database: Database): PaymentStore {
 
     async readPendingOrder(planCode, provider) {
       return readPendingRow(database, planCode, provider);
-    },
-
-    async readLatestPaidOrder(planCode, excludeOrderId) {
-      // The conditions are built FLAT, not spread from an array inside and(): this drizzle
-      // version's `and()` takes its conditions as direct arguments, and a spread array among
-      // them silently degrades the whole predicate (the exclusion vanished exactly that way
-      // once — the caller's own confirm kept answering itself and duplicate_paid never fired).
-      const conditions = [
-        eq(paymentOrders.planCode, planCode),
-        eq(paymentOrders.status, "paid"),
-      ];
-      // The duplicate check runs AFTER the caller's own confirm, and that confirm stamps
-      // the caller's terminalAt with now() — without the exclusion the newest paid row is
-      // always the caller itself, and the anomaly can never fire (the sequential
-      // cross-provider double payment, where exactly this happened, is pinned by
-      // qa-batch1-duplicate-paid.integration.test.ts).
-      if (excludeOrderId !== undefined) {
-        conditions.push(ne(paymentOrders.id, excludeOrderId));
-      }
-      const [row] = await database
-        .select()
-        .from(paymentOrders)
-        .where(and(...conditions))
-        .orderBy(sql`${paymentOrders.terminalAt} DESC NULLS LAST`)
-        .limit(1);
-      return row ? rowOf(row) : null;
     },
 
     async readLatestLiveOrder(scope) {
@@ -706,10 +680,9 @@ export function createPaymentStore(database: Database): PaymentStore {
     },
 
     async listOrdersInWindow({ from, to, limit, offset, scope }) {
-      // Flat condition construction (see readLatestPaidOrder's note): this drizzle version's
-      // `and()` takes conditions as direct arguments, and a spread array among them silently
-      // degrades the whole predicate — an optional-end window must degrade to "no bound", not
-      // to a broken filter.
+      // Flat condition construction: this drizzle version's `and()` takes its conditions as
+      // direct arguments, and a spread array among them silently degrades the whole
+      // predicate — an optional-end window must degrade to "no bound", not to a broken filter.
       const conditions = [];
       const ownerScope = ownerScopeCondition(scope);
       if (ownerScope) conditions.push(ownerScope);
