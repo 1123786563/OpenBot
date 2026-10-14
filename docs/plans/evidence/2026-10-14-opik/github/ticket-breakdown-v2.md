@@ -23,7 +23,7 @@ Parent Spec: https://github.com/1123786563/OpenBot/issues/4
 
 | 共享文件 | 触碰顺序 | 处置 |
 | --- | --- | --- |
-| `server/src/index.ts` | T01 建立 `registerAiObservabilityRoutes()` 单行注册 | T11 依赖 T01，因此 T01 是所有路由类 Ticket 的祖先；之后只有 T24 加 worker 启动行（T24 亦为 T01 后代） |
+| `server/src/app.ts` + `server/src/index.ts` | T01 在 `createApp` 加一个 deps 字段与一行 `app.route("/api/ai-observability", …)`，index.ts 只加一行构造 | 挂载点实际在 app.ts 的 `createApp`（`app.route` 全在此），index.ts 只装配 deps；T11 依赖 T01，故 T01 是所有路由类 Ticket 的祖先；之后只有 T24 在 index.ts 加 worker 启动行（T24 亦为 T01 后代） |
 | `server/src/copilot.ts` | T10 → T14 | 串行，不并行派发 |
 | `server/src/ai-observability/routes/*` | T01 建骨架；每个后续 Ticket 只加自己的文件 | 无争用 |
 | `app/src/locales/*` | T02 建四个子命名空间 `-runs` / `-datasets` / `-evaluations` / `-admin` | 运行链（T12→T13→T18）写 `-runs`；T21 写 `-datasets`；T30→T31 写 `-evaluations`；T36 写 `-admin`。四条链文件不相交，可并行；均不碰 `agents.json`/`errors.json` |
@@ -40,26 +40,26 @@ Parent Spec: https://github.com/1123786563/OpenBot/issues/4
 **T01 观测后端模块骨架与路由注册 seam**
 - Blocked by: None
 - Delivers: 建立 `server/src/ai-observability/` 目录约定与单一 `registerAiObservabilityRoutes()`，使后续每个 Ticket 只新增自己的 route module 文件，不再编辑 `server/src/index.ts`。
-- Owned: `server/src/ai-observability/routes/index.ts`、`server/src/ai-observability/context.ts`、`server/src/index.ts`、`server/tests/opik-module-skeleton.test.ts`
+- Owned: `server/src/ai-observability/routes/index.ts`、`server/src/ai-observability/context.ts`、`server/src/app.ts`、`server/src/index.ts`、`server/tests/opik-module-skeleton.test.ts`
 - Handoff: 路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式
 - Covers: A5（骨架层）
-- Size: ~4 files / 单 agent
+- Size: ~5 files / 单 agent
 
 **T02 观测 UI 独立 i18n 子命名空间与路由约定**
 - Blocked by: None
 - Delivers: 新增 `ai-observability-runs` / `-datasets` / `-evaluations` / `-admin` 四个双子语命名空间与 `bots.$agentId.runs` / `.evaluations` 路由约定，使四条前端链（运行、评测集、实验、管理）各自独占文案文件，既不争用 `agents.json`、`errors.json`，也不彼此争用。
-- Owned: `app/src/locales/en/ai-observability-runs.json`、`app/src/locales/en/ai-observability-datasets.json`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/en/ai-observability-admin.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-datasets.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-admin.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`
+- Owned: `app/src/locales/en/ai-observability-runs.json`、`app/src/locales/en/ai-observability-datasets.json`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/en/ai-observability-admin.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-datasets.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-admin.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`、`app/src/lib/i18n/ai-observability.test.ts`
 - Handoff: 四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定
 - Covers: A5、状态文案（disabled/empty/forbidden/basic/omitted/truncated/syncing/unavailable）
-- Size: ~10 files / 单 agent（均为极小 JSON stub 与注册行，见 manifest 的 documented_deviations）
+- Size: ~11 files / 单 agent（8 个极小 JSON + 2 个注册文件 + 1 个 parity 测试，见 manifest 的 documented_deviations）
 
 **T03 Opik 可选部署与版本锁定清单**
 - Blocked by: None
 - Delivers: 平台运维可用可选 compose 启动真实自托管 Opik，服务与 SDK 版本被锁定为实际验证过的值；关闭集成时现有执行与 tracing 行为不变。
-- Owned: `docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`
-- Handoff: `versions.json`（非浮动版本清单）+ 启动/关闭步骤
+- Owned: `docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`、`docker-compose.yml`、`server/tests/opik-deployment.test.ts`
+- Handoff: `versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名
 - Covers: A1
-- Size: ~4 files / 单 agent
+- Size: ~6 files / 单 agent
 
 **T04 上游契约冒烟与 VerifiedOpikContract manifest**
 - Blocked by: T03

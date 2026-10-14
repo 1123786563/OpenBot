@@ -99,7 +99,7 @@
    "covers": [
     "A5"
    ],
-   "owned": "`server/src/ai-observability/routes/index.ts`、`server/src/ai-observability/context.ts`、`server/src/index.ts`、`server/tests/opik-module-skeleton.test.ts`",
+   "owned": "`server/src/ai-observability/routes/index.ts`、`server/src/ai-observability/context.ts`、`server/src/app.ts`、`server/src/index.ts`、`server/tests/opik-module-skeleton.test.ts`",
    "handoff": "路由注册约定 + 请求上下文（认证用户、scope、bot 归属）注入方式",
    "delivers": "建立 `server/src/ai-observability/` 目录约定与单一 `registerAiObservabilityRoutes()`，使后续每个 Ticket 只新增自己的 route module 文件，不再编辑 `server/src/index.ts`。",
    "estimated_files": 4,
@@ -111,7 +111,7 @@
    "status": "published_ready_for_agent",
    "issue_title": "[Opik T01] 观测后端模块骨架与路由注册 seam",
    "blocked_by_issues": [],
-   "size": "~4 files / 单 agent"
+   "size": "~5 files / 单 agent"
   },
   {
    "id": "T02",
@@ -120,7 +120,7 @@
    "covers": [
     "A5"
    ],
-   "owned": "`app/src/locales/en/ai-observability-runs.json`、`app/src/locales/en/ai-observability-datasets.json`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/en/ai-observability-admin.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-datasets.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-admin.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`",
+   "owned": "`app/src/locales/en/ai-observability-runs.json`、`app/src/locales/en/ai-observability-datasets.json`、`app/src/locales/en/ai-observability-evaluations.json`、`app/src/locales/en/ai-observability-admin.json`、`app/src/locales/zh-CN/ai-observability-runs.json`、`app/src/locales/zh-CN/ai-observability-datasets.json`、`app/src/locales/zh-CN/ai-observability-evaluations.json`、`app/src/locales/zh-CN/ai-observability-admin.json`、`app/src/lib/i18n/index.ts`、`app/src/lib/i18n/i18next.d.ts`、`app/src/lib/i18n/ai-observability.test.ts`",
    "handoff": "四个子命名空间的 key 约定与归属矩阵（哪条前端链写哪个文件）+ 路由命名约定",
    "delivers": "新增 `ai-observability-runs` / `-datasets` / `-evaluations` / `-admin` 四个双子语命名空间与 `bots.$agentId.runs` / `.evaluations` 路由约定，使四条前端链（运行、评测集、实验、管理）各自独占文案文件，既不争用 `agents.json`、`errors.json`，也不彼此争用。",
    "estimated_files": 4,
@@ -132,7 +132,7 @@
    "status": "published_ready_for_agent",
    "issue_title": "[Opik T02] 观测 UI 独立 i18n 子命名空间与路由约定",
    "blocked_by_issues": [],
-   "size": "~10 files / 单 agent（均为极小 JSON stub 与注册行，见 manifest 的 documented_deviations）"
+   "size": "~11 files / 单 agent（8 个极小 JSON + 2 个注册文件 + 1 个 parity 测试，见 manifest 的 documented_deviations）"
   },
   {
    "id": "T03",
@@ -141,8 +141,8 @@
    "covers": [
     "A1"
    ],
-   "owned": "`docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`",
-   "handoff": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤",
+   "owned": "`docker/compose/opik.yml`、`docker/opik/versions.json`、`docs/opik.md`、`.env.example`、`docker-compose.yml`、`server/tests/opik-deployment.test.ts`",
+   "handoff": "`versions.json`（非浮动版本清单）+ 启动/关闭步骤 + 下游要消费的环境变量名",
    "delivers": "平台运维可用可选 compose 启动真实自托管 Opik，服务与 SDK 版本被锁定为实际验证过的值；关闭集成时现有执行与 tracing 行为不变。",
    "estimated_files": 4,
    "github_issue": {
@@ -153,7 +153,7 @@
    "status": "published_ready_for_agent",
    "issue_title": "[Opik T03] Opik 可选部署与版本锁定清单",
    "blocked_by_issues": [],
-   "size": "~4 files / 单 agent"
+   "size": "~6 files / 单 agent"
   },
   {
    "id": "T04",

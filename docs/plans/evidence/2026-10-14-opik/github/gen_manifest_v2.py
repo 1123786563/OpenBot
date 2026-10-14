@@ -116,6 +116,13 @@ def verification(tid):
     return out
 
 tickets = []
+PLANS = {
+    "T01": "docs/superpowers/plans/2026-10-15-opik-t01-observability-module-seam.md",
+    "T02": "docs/superpowers/plans/2026-10-15-opik-t02-observability-ui-i18n-seam.md",
+    "T03": "docs/superpowers/plans/2026-10-15-opik-t03-opik-optional-deployment.md",
+    "T05": "docs/superpowers/plans/2026-10-15-opik-t05-redaction-projection.md",
+    "T06": "docs/superpowers/plans/2026-10-15-opik-t06-trusted-scope-seam.md",
+}
 for t in proposal["tickets"]:
     tid = t["id"]
     g, gs, gt = group_of[tid]
@@ -131,6 +138,7 @@ for t in proposal["tickets"]:
     )
     tickets.append({
         "id": tid,
+        "plan_file": PLANS.get(tid, ""),
         "group": g, "group_slug": gs, "group_title": gt,
         "title": t["title"],
         "github_issue": num[tid],
@@ -174,7 +182,8 @@ manifest = {
         "T01(#7) 与 T02(#8) 是 prefactor，按 to-tickets「Make the change easy, then make the easy change」先行，其验证以结构性回归为主而非端到端业务行为：T01 的可观察面是未认证/无归属请求在进入业务逻辑前被拒绝、且模块未启用时现有接口与 tracing 零变化；T02 的可观察面是八类可用性状态的双语文案与命名空间隔离。",
         "T02(#8) 的验收标准第 3 条提到「直接输入路由时仍执行权限校验」，但对应路由要到 T12(#18) 才存在，因此该条在 T02 阶段只能验证路由约定本身，不能端到端验证；实施 T02 时不得把该条记为通过，应留到 T12(#18) 验证。",
         "T37(#43) 依赖全部 36 张，是协调与验收性质，不引入新功能；其 blocked_by 边在 GitHub 上为 36 条。",
-        "T02(#8) owned files = 10，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON stub，另 2 个是 i18n 注册文件，总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
+        "T02(#8) owned files = 11，超过 O1 的 ≤8 上限：8 个是四个子命名空间 × 两种语言的极小 JSON、2 个是 i18n 注册文件、1 个是 parity 测试。总内容量远小于一个 4 文件的逻辑 Ticket；拆成两张会人为割裂命名空间归属矩阵。这是记录在案的例外，不是遗漏。",
+        "owned_scope 在 writing-plans 阶段按真实代码结构校正过三处：T01(#7) 补 server/src/app.ts（挂载点实际在 createApp 的 app.route，不在 index.ts）；T02(#8) 补 parity 测试文件；T03(#9) 补 docker-compose.yml 的可选栈清单注释与 server/tests/opik-deployment.test.ts（无 Docker 也能跑的静态约束测试）。",
         "T11(#17) 增加 T01(#7) 为前置：原草案里 T01 没有任何后继，属于孤儿 prefactor，路由 seam 可能被跳过或与需要它的 Ticket 并行；补边后 T01 成为全部路由类 Ticket 的祖先。",
         "T02(#8) 由单一 ai-observability 命名空间改为 -runs/-datasets/-evaluations/-admin 四个子命名空间：图分析发现 6 个前端 Ticket 共享同两个 locale JSON，其中 10 对在依赖图上不可比较，并行派发必然冲突；拆分后四条前端链文件不相交。",
     ],
