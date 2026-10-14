@@ -345,3 +345,51 @@ above it.
 **Rule:** a finding is not actionable until reproduced from the committed state. Adding imports
 shifts every line number below them, so "line N is a violation" must always be paired with "line N
 is inside this diff hunk".
+
+## E15 — T03 plan: two security guard tests pass vacuously against the delivered compose
+
+Found by T03's reviewer, then confirmed by the coordinator with a mutation test.
+
+**What I wrote:**
+```ts
+const PUBLISHED = /^\s*-\s*["']?([^\s"']+:\d+:\d+|\d+:\d+)/gm;
+```
+used by two guards: "every published port is loopback-only" and "the OTLP host ports do not
+collide with the existing Tempo stack".
+
+**Why it is wrong:** the pattern requires the trailing two segments to be literal digits, but the
+compose file the same plan prescribes uses `${VAR:-default}` — and `:-` contains a colon, so the
+value is not `\d+`. Measured against the real deliverable:
+
+| compose under test | matches |
+| --- | --- |
+| the delivered `docker/compose/opik.yml` (`127.0.0.1:${OPIK_PORT:-5174}:…`) | **0** |
+| a mutated copy using `0.0.0.0:4318:4318` and `0.0.0.0:4317:4317` | 2 |
+
+So both guards iterate an empty array over the shipped file and pass without asserting anything
+about it. They are **not universally dead** — a naive literal-digit violation would be caught — but
+they are blind to the exact form the plan itself told the implementer to write, so they provide
+zero assurance about the delivered artifact. The deliverable happens to be compliant; the
+coordinator verified that independently with a corrected parser (6 mappings, all `127.0.0.1` or
+`[::1]`, host OTLP ports 5418/5417).
+
+**Corrected pattern** (verified: 6 matches on the real file, and it identifies both `0.0.0.0`
+mappings in the mutated copy):
+```ts
+const PUBLISHED = /^\s*-\s*["']?([^\s"'#]+(?::\$\{[^}]+\}|\:\d+)+)/gm;
+```
+
+**The general rule this establishes, and it applies to every ticket in this project:**
+
+> A guard test that asserts over a *parsed collection* must also assert the collection is
+> non-empty. Otherwise any regression in the parser silently converts the guard into a vacuous
+> pass — the test still reports green while verifying nothing.
+
+Both T03 guards, and any similar guard elsewhere, need `expect(mappings.length).toBeGreaterThan(0)`
+before the per-item assertions. The mutation test used here (break the artifact, confirm the test
+goes red) is the cheap way to prove a guard is real; T02's reviewer applied the same technique with
+four mutation groups and is the reason its approval carries weight.
+
+This is the second defect in the wave where a test asserted nothing (E12 was a deny pattern with no
+canary). Both are the same failure mode: a check whose input set can be empty without the check
+noticing.

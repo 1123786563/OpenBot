@@ -1,11 +1,12 @@
-# Frontier wave — coordinator adjudication brief (reviews 1–4 of 5)
+# Frontier wave — coordinator adjudication brief (all 5 reviews)
 
 Prepared for the human coordinator's ruling. Every row below was re-verified by the coordinator
 against the **committed** state; reviewer verdicts were not taken at face value, and neither were
 implementer self-reports. Two of the four reviews changed verdict under verification — one in each
 direction.
 
-Run `run_5f5dfacf3715`. Reviewer terminals retained pending adjudication.
+Run `run_5f5dfacf3715`. All five reviews are in; all ten tasks completed and the final
+whole-branch review task is ready. Reviewer terminals retained pending adjudication.
 
 ## Verdicts
 
@@ -16,7 +17,9 @@ Run `run_5f5dfacf3715`. Reviewer terminals retained pending adjudication.
 | **T05** #11 | request-changes (1 high, 2 medium, 4 low) | **Confirmed, and the high is worse than reported.** The PEM deny pattern `/\b-----BEGIN [A-Z ]*PRIVATE KEY-----/` is effectively **dead**: `\b` needs a word/non-word transition, `-` is a non-word char, so it only matches when a PEM header is glued to a word character. Empirically MISSED on bare PEM, PEM after a space, PEM after a colon, and PEM inside JSON metadata; DETECTED only on `abc-----BEGIN…`. Also confirmed F3: the plan's test `CANARIES` dict contains **no PEM and no Slack entry**, while the plan's Self-Review claimed both were covered. | **request-changes** |
 | **T06** #12 | request-changes (1 medium) | **Confirmed.** Committed branch (`8b231692`) fails `biome format`: `contracts.ts:71` union type not split → exit 1. The implementer's worktree reports exit 0 only because it ran `biome format --write` and **never committed the result** (`git status` shows ` M server/src/ai-observability/contracts.ts`). So the checkpoint's `FMT_EXIT=0` was true of a dirty working tree and false of the delivered branch. | **request-changes** |
 
-T03 #9 review still running. T05's reviewer independently confirmed all five of the implementer's
+| **T03** #9 | approve (1 high, against the plan not the deliverable) | Confirmed by mutation test. The delivered compose is compliant — 6 published mappings, all `127.0.0.1`/`[::1]`, host OTLP ports 5418/5417, no LGTM collision, 9/9 images pinned by digest, all six `${VAR:?}` guards firing, `compatibility.status` correctly `unverified`. The high finding is E15: the plan's own `PUBLISHED` regex matches **zero** lines of the delivered file, so both port guards pass vacuously. A mutated compose using `0.0.0.0:4318:4318` proves the guards are blind to the shipped `${VAR:-default}` form rather than universally dead. Its reviewer also ruled the five files beyond owned_scope as legitimate drift (upstream compose mounts those paths), independently agreeing with the coordinator's read. | **approve** (deliverable); plan test needs E15 fix |
+
+T05's reviewer independently confirmed all five of the implementer's
 plan-contradiction adjudications and the `SECRET_CANARIES` non-export decision as correct.
 
 ## Systemic findings (these matter more than any single ticket)
@@ -51,6 +54,15 @@ unsatisfiable repo-wide biome gate (E1), a baseline measured on the wrong branch
 digest-retrieval method that hangs (E9), reviewer placement that cannot see coordinator artifacts
 (E10), and now a dead security regex plus a false canary-coverage claim (E11/E12).
 
+### S4 — A check whose input set can be empty is not a check
+
+Two defects in this wave are the same failure mode: a deny pattern with no canary exercising it
+(E12), and two port guards iterating a zero-match parse (E15). Both reported green while asserting
+nothing. Any guard over a parsed collection must assert the collection is non-empty first, and the
+cheap proof that a guard is real is the mutation test — break the artifact, confirm the test goes
+red. T02's reviewer did exactly that with four mutation groups, which is why its approval carries
+more weight than a clean gate run.
+
 **Rule:** stop treating Self-Review as a gate. It stays useful as a checklist of what to attack, and
 executors found every one of these.
 
@@ -68,7 +80,9 @@ the retained implementer terminals:
    the refutation is durable.
 4. **T02.** No code change. Its checkpoint was written but never committed — fold it in at
    integration.
-5. **Manifest (all 37 tickets).** Change biome commands to the locked binary
+5. **T03 (high, test quality).** Replace the `PUBLISHED` regex with the corrected pattern from E15
+   and add a non-empty assertion to both port guards, then prove it with the mutation test.
+6. **Manifest (all 37 tickets).** Change biome commands to the locked binary
    (`node_modules/.bin/biome`, 2.5.10 per `package.json`) rather than `bunx biome`, and add the S1
    rule that gate evidence must come from the delivered commit.
 

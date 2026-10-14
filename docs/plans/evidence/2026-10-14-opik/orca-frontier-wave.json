@@ -110,7 +110,13 @@
      "effort": null
     },
     "coordinates_message": "msg_11571501380b",
-    "briefing_addendum": "msg_47bef76ba71c"
+    "briefing_addendum": "msg_47bef76ba71c",
+    "terminal_state": "retained",
+    "verdict": "approve",
+    "worker_done": {
+     "outcome": "succeeded",
+     "handle_validated": true
+    }
    },
    "T05": {
     "task_id": "task_76fad057e67e",
