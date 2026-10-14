@@ -220,6 +220,7 @@ function RouteComponent() {
             {t("creditsPage.rewardsSummary", {
               count: summary.data?.rewards.grantCount ?? 0,
               remaining: formatCredits(summary.data?.rewards.remaining ?? 0),
+              held: formatCredits(summary.data?.rewards.held ?? 0),
             })}
           </p>
         </div>

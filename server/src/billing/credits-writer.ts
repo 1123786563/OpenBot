@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingCustomers } from "../db/schema/billing";
 import {
@@ -8,6 +8,14 @@ import {
   creditReservations,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger as ledger } from "../db/schema/credits";
+import {
+  type GrantCapacity,
+  carriedRemainder,
+  liveGrants,
+  readCapacity,
+  type Reader,
+  type Tx,
+} from "./capacity";
 import type { CreditGrantSource } from "./types";
 
 /**
@@ -266,11 +274,11 @@ export function createCreditWriter(database: Database): CreditWriter {
     },
 
     async readBalance(externalCustomerId) {
-      return availableOf(database, externalCustomerId);
+      return (await readCapacity(database, externalCustomerId)).spendableUnits;
     },
 
     async availableBalance(externalCustomerId) {
-      return availableOf(database, externalCustomerId);
+      return (await readCapacity(database, externalCustomerId)).spendableUnits;
     },
 
     async reserveCredits(input) {
@@ -288,6 +296,7 @@ export function createCreditWriter(database: Database): CreditWriter {
       }
       await ensureCustomer(database, input.externalCustomerId);
 
+      const at = new Date();
       return database.transaction(async (tx) => {
         await lockCustomer(tx, input.externalCustomerId);
 
@@ -316,8 +325,8 @@ export function createCreditWriter(database: Database): CreditWriter {
           return { reserved: true as const, reservationId: existing.id };
         }
 
-        const grants = await freeGrants(tx, input.externalCustomerId, true);
-        const owed = await remainderOf(tx, input.externalCustomerId);
+        const grants = await liveGrants(tx, input.externalCustomerId, at, true);
+        const owed = await carriedRemainder(tx, input.externalCustomerId);
         const owedUnit = owed.numerator > 0n ? 1 : 0;
         const free = grants.reduce((sum, grant) => sum + grant.free, 0);
         const available = Math.max(free - owedUnit, 0);
@@ -405,7 +414,7 @@ export function createCreditWriter(database: Database): CreditWriter {
           return settledResultOf(reservation);
         }
 
-        const owed = await remainderOf(tx, reservation.externalCustomerId);
+        const owed = await carriedRemainder(tx, reservation.externalCustomerId);
         const total = addAmounts(owed, actual);
         const whole = total.numerator / total.denominator;
         const fraction = reduce(
@@ -581,6 +590,7 @@ export function createCreditWriter(database: Database): CreditWriter {
       if (known)
         return { inserted: false, applied: known.applied, remaining: 0 };
 
+      const at = new Date();
       return database.transaction(async (tx) => {
         await lockCustomer(tx, input.externalCustomerId);
 
@@ -618,12 +628,12 @@ export function createCreditWriter(database: Database): CreditWriter {
 
         /*
          * The customer lock serializes this draw with reservations and settlements. Grant
-         * locks then let freeGrants subtract active holds before this post-paid path uses only
+         * locks then let liveGrants subtract active holds before this post-paid path uses only
          * unreserved capacity; expired allowance is excluded and the remaining grants stay in
          * soonest-to-lapse order. A fractional carried charge keeps one additional unit free.
          */
-        const grants = await freeGrants(tx, input.externalCustomerId, true);
-        const owed = await remainderOf(tx, input.externalCustomerId);
+        const grants = await liveGrants(tx, input.externalCustomerId, at, true);
+        const owed = await carriedRemainder(tx, input.externalCustomerId);
         if (owed.numerator > 0n) {
           const lastAvailable = grants.reduce(
             (last, grant, index) => (grant.free > 0 ? index : last),
@@ -659,15 +669,12 @@ export function createCreditWriter(database: Database): CreditWriter {
 
         // The balance after this draw, inside the same transaction: the caller's "remaining"
         // is consistent with the rows this draw just moved.
-        const after = await availableOf(tx, input.externalCustomerId);
+        const after = (await readCapacity(tx, input.externalCustomerId, at)).spendableUnits;
         return { inserted: true, applied, remaining: after };
       });
     },
   };
 }
-
-type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
-type Reader = Pick<Database, "select"> | Tx;
 
 async function ensureCustomer(
   db: Pick<Database, "insert">,
@@ -686,78 +693,6 @@ async function lockCustomer(tx: Tx, externalId: string) {
     .from(billingCustomers)
     .where(eq(billingCustomers.externalId, externalId))
     .for("update");
-}
-
-/**
- * Live grants, soonest expiry first, with capacity left after used units and active holds.
- *
- * An "active" hold is reserved AND not yet expired (audit F4): a hold whose expiry has passed
- * no longer occupies capacity — the work it was admitted for either finished or never will,
- * and reconciliation reports the stuck row for an operator. A late settlement of an expired
- * hold still charges honestly; the settle path's own `min(allocation.amount, total - used)`
- * clamp keeps the grants from going negative exactly the way a post-paid overdraw is kept
- * honest.
- *
- * One clock per computation: the grant-liveness filter and the hold-expiry filter below are
- * bound to the SAME app-side instant (a parameter), never the database's `now()` — app and
- * database clocks skew, and a skewed pair would let a reservation be admitted against
- * capacity an expired hold already vacated (or refuse one that is still live).
- */
-async function freeGrants(db: Reader, externalId: string, lock: boolean) {
-  const at = new Date();
-  const query = db
-    .select({
-      id: creditGrants.id,
-      total: creditGrants.total,
-      used: creditGrants.used,
-      held: sql<number>`coalesce((
-        select sum(a.amount)::int
-        from credit_reservation_allocations a
-        join credit_reservations r on r.id = a.reservation_id
-        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > ${at}
-      ), 0)`,
-    })
-    .from(creditGrants)
-    .where(
-      and(
-        eq(creditGrants.externalCustomerId, externalId),
-        gt(creditGrants.expiresAt, at),
-      ),
-    )
-    .orderBy(
-      asc(creditGrants.expiresAt),
-      asc(creditGrants.grantedAt),
-      asc(creditGrants.id),
-    );
-  const rows = await (lock ? query.for("update", { of: creditGrants }) : query);
-  return rows.map((row) => ({
-    id: row.id,
-    free: Math.max(row.total - row.used - Number(row.held), 0),
-  }));
-}
-
-async function availableOf(db: Reader, externalId: string): Promise<number> {
-  const grants = await freeGrants(db, externalId, false);
-  const owed = await remainderOf(db, externalId);
-  const free = grants.reduce((sum, grant) => sum + grant.free, 0);
-  return Math.max(free - (owed.numerator > 0n ? 1 : 0), 0);
-}
-
-async function remainderOf(
-  db: Reader,
-  externalId: string,
-): Promise<CreditAmount> {
-  const [row] = await db
-    .select({
-      numerator: creditChargeRemainders.numerator,
-      denominator: creditChargeRemainders.denominator,
-    })
-    .from(creditChargeRemainders)
-    .where(eq(creditChargeRemainders.externalCustomerId, externalId))
-    .limit(1);
-  return row
-    ? { numerator: BigInt(row.numerator), denominator: BigInt(row.denominator) }
-    : { numerator: 0n, denominator: 1n };
 }
 
 function gcd(a: bigint, b: bigint): bigint {

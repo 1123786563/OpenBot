@@ -337,7 +337,7 @@
     "expiringSoon": "Expires within 24h",
     "expiresAt": "Expires: {{time}}",
     "reason": "Granted for: {{reason}}",
-    "rewardsSummary": "{{count}} active · {{remaining}} credits left",
+    "rewardsSummary": "{{count}} rewards, {{remaining}} available ({{held}} held by in-progress calls)",
     "viewAll": "View all",
     "range": {
       "today": "Today",

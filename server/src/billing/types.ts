@@ -405,16 +405,25 @@ export type CreditConsumptionPage = {
 };
 
 /**
- * The whole "套餐与积分" answer, split the way the page splits it: the plan's own base allowance
- * (the 套餐卡's "套餐基础积分") and the platform reward grants (the "平台奖励积分" block's summary
- * line "可用 N 个 · 剩余 X 积分").
+ * The 套餐与积分 page's balance answer, over LIVE grants only (unexpired), in credits (×100
+ * scaled units on the wire). `remaining` is what a draw or a new hold could take per grant, so it
+ * already excludes `held`; `total`/`used` are the same live grants' lifetime figures, which is why
+ * `remaining` is not `total - used`. Expired grants drop out of this answer entirely and stay
+ * visible, with their derived `expired` status, in the grant list.
+ *
+ * Computed by `summarizeCapacity` in ./credits.ts over the SAME `liveGrants` read the credit
+ * writer admits against (./capacity.ts) — one口径, so the page can no longer show a balance the
+ * gate would refuse. The one deliberate difference: the writer also occupies a single extra unit
+ * while a fractional remainder is owed (`owedUnit`, at most 0.01 credit), which this answer does
+ * not subtract.
  */
 export type CreditSummary = {
-  plan: { total: number; used: number; remaining: number };
+  plan: { total: number; used: number; remaining: number; held: number };
   rewards: {
     total: number;
     used: number;
     remaining: number;
+    held: number;
     /** How many reward grants still have something to spend ("可用 N 个"). */
     grantCount: number;
   };
