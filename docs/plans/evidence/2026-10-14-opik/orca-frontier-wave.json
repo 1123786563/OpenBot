@@ -85,7 +85,19 @@
    },
    "T03": {
     "task_id": "task_78a502a23cd6",
-    "depends_on": "task_894ec9805947"
+    "depends_on": "task_894ec9805947",
+    "dispatch_id": "ctx_2496e5d72e30",
+    "terminal": "structworker_7f9b526e-5062-4084-b583-14e9b998f610",
+    "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-review-t03",
+    "audits_branch": "1123786563/opik-t03-deployment",
+    "diff_base": "ef58d94654df9cbaa565474acf75d6193a0f6ddf",
+    "launch_effective": {
+     "agent": "claude",
+     "model": null,
+     "effort": null
+    },
+    "coordinates_message": "msg_11571501380b",
+    "briefing_addendum": "msg_47bef76ba71c"
    },
    "T05": {
     "task_id": "task_76fad057e67e",
@@ -210,6 +222,11 @@
     "agent": "claude",
     "model": null,
     "effort": null
+   },
+   "terminal_state": "retained",
+   "worker_done": {
+    "outcome": "succeeded",
+    "handle_validated": true
    }
   },
   "T05": {
