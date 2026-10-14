@@ -730,6 +730,8 @@ export function createApp(
     };
     activity?: Hono<{ Variables: AppVariables }>;
     opsSignals?: Hono<{ Variables: AppVariables }>;
+    /** Observation surfaces (ticket #7). Absent = the integration is not mounted at all. */
+    aiObservability?: Hono<{ Variables: AppVariables }>;
   },
   /** A person's own linked accounts. Absent answers 503 on /api/identity. */
   identity?: IdentityStore,
@@ -763,6 +765,7 @@ export function createApp(
     deletionAdmin: openMuseDeletionAdmin,
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
+    aiObservability,
   } = openMuseSeams ?? {};
 
   const app = new Hono<{ Variables: AppVariables }>();
@@ -1817,6 +1820,12 @@ export function createApp(
    */
   if (workshopRoutes)
     app.route("/api/workshop", workshopRoutes({ requireUser, canUseBot }));
+
+  /*
+   * Observation, mounted as one unit. Every later observation ticket adds a sub-router
+   * inside ai-observability/routes/index.ts, so this stays the only observation line here.
+   */
+  if (aiObservability) app.route("/api/ai-observability", aiObservability);
 
   // The anonymous sibling, beside the owner surface it shares a vocabulary with: same
   // /api/public/workshop prefix the share page fetches, no session, no canUseBot — the
