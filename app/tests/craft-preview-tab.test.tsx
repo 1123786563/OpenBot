@@ -1,7 +1,19 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, type RenderResult, render } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  type RenderResult,
+  render,
+} from "@testing-library/react";
 import {
   PreviewTab,
   previewPollInterval,
@@ -77,10 +89,106 @@ function t(
     | "preview.title"
     | "preview.downTitle"
     | "preview.downHint"
-    | "preview.emptyTitle",
+    | "preview.emptyTitle"
+    | "preview.expand"
+    | "preview.collapse"
+    | "preview.openInNewTab",
 ) {
   return i18n.t(key, { ns: "craft" });
 }
+
+/**
+ * THE EXPAND, AND THE ONE PROPERTY THAT IS NOT COSMETIC.
+ *
+ * A 420px pane is too small to actually drive an app, so the serving state can go
+ * full-viewport. The property worth pinning is that the iframe ELEMENT SURVIVES THE
+ * CHANGE: an expand that remounted the frame would reload the app and throw away
+ * whatever state the person was in the middle of testing — the exact thing they
+ * expanded to do. One frame also means one HMR socket, not two racing the dev server.
+ */
+describe("expanding the preview", () => {
+  function drawServing() {
+    serving({
+      has_webapp: true,
+      webapp_url: URL,
+      status: "running",
+      ready: true,
+    });
+    return draw();
+  }
+
+  test("the serving state offers an expand control", async () => {
+    const view = drawServing();
+    await view.findByTitle(t("preview.title"));
+    expect(view.getByLabelText(t("preview.expand"))).toBeTruthy();
+  });
+
+  test("no expand control while nothing is serving", async () => {
+    serving({
+      has_webapp: true,
+      webapp_url: URL,
+      status: "stopped",
+      ready: false,
+    });
+    const view = draw();
+    await view.findByText(t("preview.downTitle"));
+    expect(view.queryByLabelText(t("preview.expand"))).toBeNull();
+  });
+
+  test("expanding goes full-viewport as a modal, and collapse returns", async () => {
+    const view = drawServing();
+    await view.findByTitle(t("preview.title"));
+
+    fireEvent.click(view.getByLabelText(t("preview.expand")));
+    const dialog = view.getByRole("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    // The control becomes its own inverse, so the way out is where the way in was.
+    expect(view.getByLabelText(t("preview.collapse"))).toBeTruthy();
+
+    fireEvent.click(view.getByLabelText(t("preview.collapse")));
+    expect(view.queryByRole("dialog")).toBeNull();
+    expect(view.getByLabelText(t("preview.expand"))).toBeTruthy();
+  });
+
+  test("Escape collapses, and focus returns to the trigger", async () => {
+    const view = drawServing();
+    await view.findByTitle(t("preview.title"));
+    const trigger = view.getByLabelText(t("preview.expand"));
+
+    fireEvent.click(trigger);
+    expect(view.getByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(view.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  test("THE IFRAME NODE SURVIVES THE EXPAND — no reload, one HMR socket", async () => {
+    const view = drawServing();
+    await view.findByTitle(t("preview.title"));
+    const before = view.container.querySelector("iframe");
+    expect(before).toBeTruthy();
+
+    fireEvent.click(view.getByLabelText(t("preview.expand")));
+    // Identity, not equality of attributes: a remount would produce a new node
+    // and a fresh navigation of the same URL.
+    expect(view.container.querySelector("iframe")).toBe(before);
+
+    fireEvent.click(view.getByLabelText(t("preview.collapse")));
+    expect(view.container.querySelector("iframe")).toBe(before);
+  });
+
+  test("a serving preview also offers the proxy URL in a new tab", async () => {
+    const view = drawServing();
+    await view.findByTitle(t("preview.title"));
+    const link = view.getByLabelText(t("preview.openInNewTab"));
+    expect(link.getAttribute("href")).toBe(URL);
+    expect(link.getAttribute("target")).toBe("_blank");
+    // A new tab is a new browsing context: without this the opened app keeps a
+    // handle on its opener, which is the coupling a separate tab exists to avoid.
+    expect(link.getAttribute("rel")).toContain("noopener");
+  });
+});
 
 test("a scaffold whose dev server is down renders the down state, never an iframe", async () => {
   serving({

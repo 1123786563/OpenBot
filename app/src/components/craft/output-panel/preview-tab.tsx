@@ -1,8 +1,15 @@
+import {
+  IconArrowsMaximize,
+  IconArrowsMinimize,
+  IconExternalLink,
+} from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { craftWebappQueryOptions } from "@/lib/craft/queries";
 import type { CraftWebappInfo } from "@/lib/craft/types";
+import { cn } from "@/lib/utils";
 
 /**
  * The running web app, if the agent scaffolded one. The server answers `webapp_info` with the URL
@@ -20,6 +27,15 @@ import type { CraftWebappInfo } from "@/lib/craft/types";
  * The pane keeps polling while an app exists but is not serving, so the preview comes alive on its
  * own the moment the agent does start it — no reload, no hunting for a refresh. A serving app stops
  * polling: the iframe's own HMR socket is the live surface from there.
+ *
+ * THE EXPAND KEEPS THE SAME IFRAME. A 420px pane is too small to actually drive an app, so the
+ * serving state can go full-viewport — but it does that by changing the WRAPPER's positioning, not
+ * by mounting a second frame or moving this one through a portal. Both alternatives unmount the
+ * iframe, which reloads the app and throws away whatever the person was mid-way through testing:
+ * the exact thing they expanded for. One frame also means one HMR socket against the dev server
+ * instead of two racing it. `fixed inset-0` is safe here because no ancestor of this pane carries
+ * a transform/filter/backdrop-filter — checked, and the reason the repo's own lightbox had to
+ * flatten its dialog card (chat-transcript's DialogContent comment) does not apply.
  *
  * Both empty states are the browser-chrome motif (this pane's own future, drawn small): hairline
  * window, muted dots, a dashed inner frame. Waiting-for-the-first-app and app-is-down share the
@@ -45,10 +61,31 @@ export function previewPollInterval(
 
 export function PreviewTab({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
+  const [expanded, setExpanded] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
   const info = useQuery({
     ...craftWebappQueryOptions(sessionId),
     refetchInterval: (query) => previewPollInterval(query.state.data),
   });
+
+  /*
+   * Escape is the way out of a full-viewport surface that has swallowed the window, and focus
+   * returns to the control that opened it — which is the SAME button node in both states (only
+   * its icon and label flip), so the person's cursor lands back where they left it rather than
+   * at the top of the document.
+   */
+  useEffect(() => {
+    if (!expanded) return;
+    toggleRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setExpanded(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [expanded]);
 
   if (info.isPending) {
     return (
@@ -60,21 +97,87 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
 
   const hasWebapp = info.data?.has_webapp === true;
   const serving = hasWebapp && info.data?.ready === true;
+  const webappUrl = serving ? info.data?.webapp_url : null;
 
-  if (serving && info.data?.webapp_url) {
+  if (webappUrl) {
     return (
-      <iframe
-        title={t("preview.title")}
-        src={info.data.webapp_url}
-        className="h-full w-full border-0"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      />
+      <div
+        // The modal contract, on the wrapper rather than on a portal: the frame
+        // inside must not move, so the surface that grows is the one already here.
+        {...(expanded
+          ? {
+              role: "dialog",
+              "aria-modal": true,
+              "aria-label": t("preview.title"),
+            }
+          : {})}
+        className={cn(
+          // The app's own chrome sits under the corner cluster, so the cluster
+          // floats on a blur chip rather than hiding what it covers.
+          "relative h-full w-full",
+          expanded && "fixed inset-0 z-50 bg-background",
+        )}
+      >
+        <iframe
+          title={t("preview.title")}
+          src={webappUrl}
+          className="h-full w-full border-0"
+          // `allow-same-origin` is STILL HERE, and that is a known open risk, not an
+          // oversight. The preview is served from the main app's own origin
+          // (`/api/craft/sessions/<id>/webapp`, relative paths, dev proxied through
+          // vite), and auth is a COOKIE (`lib/client.ts` sends `credentials: "include"`).
+          // So LLM-authored code in this frame can `fetch("/api/bots", {credentials:
+          // "include"})` and the browser attaches the user's session — read anything the
+          // user can read, act as the user. Dropping the token is not enough to fix it.
+          //
+          // It cannot simply be removed: without it the frame gets an OPAQUE origin, its
+          // own fetches to the app's API routes and Server Actions become cross-origin
+          // and are blocked for want of CORS headers the app never sends, and
+          // localStorage/indexedDB throw — which would undo the all-methods proxy this
+          // pane depends on. The real fix is to serve the preview from a DISTINCT origin
+          // (then `allow-same-origin` means the preview's own origin: full interactivity,
+          // and the main app's cookies are never in scope). That needs a preview origin
+          // plus a scoped, short-lived ticket in place of the cookie — escalated, not
+          // smuggled in here.
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+        />
+        {/*
+         * The corner cluster: expand/collapse as one button (its node identity is what keeps
+         * focus and the un-remounted iframe honest), plus the same URL in a real tab for when
+         * testing wants devtools, a true viewport, or its own storage.
+         */}
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-border bg-background/85 p-0.5 shadow-card supports-backdrop-filter:bg-background/60 supports-backdrop-filter:backdrop-blur-sm">
+          <a
+            aria-label={t("preview.openInNewTab")}
+            href={webappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <IconExternalLink className="size-3.5" />
+          </a>
+          <button
+            ref={toggleRef}
+            type="button"
+            aria-label={expanded ? t("preview.collapse") : t("preview.expand")}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {expanded ? (
+              <IconArrowsMinimize className="size-3.5" />
+            ) : (
+              <IconArrowsMaximize className="size-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
     );
   }
 
   // An app exists but its dev server is down: the honest middle state, and the one the
   // iframe used to swallow whole.
-  const down = hasWebapp && !serving;
+  const down = hasWebapp;
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 px-8 text-center">
