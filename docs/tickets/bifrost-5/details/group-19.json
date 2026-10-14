@@ -1,0 +1,130 @@
+{
+ "group": "19",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07/AC16）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（Q20 第一版覆盖视频能力、Q11 未定价规格不可用、Q26 异步任务预留完整上限）",
+  "CONTEXT.md（视频规格、异步任务、待结算术语）"
+ ],
+ "anchors": {
+  "bifrost-video": "bifrost/framework/jobaccounting/video.go（VideoSettler、VideoRetriever、VideoPayload、Poll、Settle、SupportsProvider、Backoff、ProviderJobKindVideo、videoLogNamespace）、video_test.go",
+  "async-core": "组 17 的任务身份、提交预留、终态结算、取消与 unknown；组 18 的逐条归因模式",
+  "openbot-price": "组 03 的 PriceSnapshot（视频维度：时长、分辨率、生成/编辑类型）与 03.3 的 known/free/unknown",
+  "openbot-credit": "组 06 的 Reserve/Settle/Release 与 06.8 unknown",
+  "test-harness": "provider 视频 fake（queued → processing → completed/failed）+ 真实持久化；go test ./framework/jobaccounting/..."
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "cd bifrost/framework/jobaccounting && go test ./...",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "19.1": {
+   "slug": "video-spec-pricing-and-reservation",
+   "contracts": {
+    "consumes": ["17.2 的提交前完整上限预留", "03.2 的价格快照"],
+    "produces": [
+     "视频计费维度映射：时长、分辨率、帧率/质量档、生成或编辑类型等上游实际收费维度",
+     "规格上限换算：按请求规格的最坏情况成本一次性预留",
+     "启用判定：任一规格维度缺价 → unknown 并拒绝"
+    ]
+   },
+   "steps": [
+    "核对上游视频定价维度，逐一映射到 PriceSnapshot（含不同分辨率与时长档位）",
+    "实现规格上限换算纯函数，足额方向取整",
+    "接入提交预留，规格不可确定或缺价时拒绝",
+    "先写失败测试：多档位规格换算正确；缺档位价格时拒绝"
+   ],
+   "criteria": [
+    "视频的全部上游计费维度进入价格快照",
+    "按请求规格的最坏情况成本完成一次性预留",
+    "缺任一规格维度价格时标记 unknown 并拒绝",
+    "预留锁定当时价格快照与比例版本"
+   ],
+   "tests": ["多档位换算单元测试", "缺价拒绝测试", "版本锁定断言"],
+   "verification": ["bun test server/tests/video-pricing.test.ts"],
+   "owned_scope": ["视频维度映射与上限换算", "对应测试与 fixture"],
+   "resume_hint": "视频常按“每秒 × 分辨率档”计价；只按秒或只按次都会系统性偏差，接手用多档位 fixture 断言。"
+  },
+  "19.2": {
+   "slug": "unpriced-video-specs-unavailable",
+   "contracts": {
+    "consumes": ["19.1 的启用判定", "03.11 的发现接口", "07.3 的短路拒绝"],
+    "produces": [
+     "未定价规格的不可用标记与原因（指向缺失维度），在发现接口与界面可见",
+     "强制调用未定价规格时短路拒绝，供应商派发数为 0",
+     "补齐定价后可启用，无需改动其他能力"
+    ]
+   },
+   "steps": [
+    "把规格级可用性接入发现接口与选择界面，未定价规格不出现在可选列表",
+    "在入口对未定价规格短路拒绝，原因指向缺失维度",
+    "确认拒绝不产生预留、承诺或结算",
+    "先写失败测试：未定价规格不可见且强制调用被拒绝"
+   ],
+   "criteria": [
+    "未定价的视频规格不可选择、不可调用，供应商派发数为 0",
+    "不可用原因指向缺失的具体维度",
+    "拒绝不产生任何账务写入",
+    "补齐定价后该规格可启用"
+   ],
+   "tests": ["未定价规格不可见断言", "强制调用拒绝测试", "补价后启用测试"],
+   "verification": ["cd bifrost/plugins/governance && go test -run VideoSpecAvailability ./...", "bun test server/tests/capability-availability.test.ts"],
+   "owned_scope": ["规格可用性判定与拒绝接线", "对应测试"],
+   "resume_hint": "可用性要精确到“模型 + 规格 + 调用方式”，不是整族开关；接手用同模型不同规格的组合断言。"
+  },
+  "19.3": {
+   "slug": "video-edit-variant-pricing",
+   "contracts": {
+    "consumes": ["19.1 的维度映射与换算"],
+    "produces": [
+     "视频编辑与变体的规格计价：包含输入视频成本（若上游收费）与输出规格成本",
+     "输入不可确定（时长/规格未知）时判证据不足并拒绝",
+     "编辑、变体与生成共用同一预留与结算语义"
+    ]
+   },
+   "steps": [
+    "核对上游编辑/变体定价是否对输入视频收费，映射到快照",
+    "扩展上限换算，把输入成本与输出规格成本合并",
+    "输入规格不可确定时拒绝，不用估算代替",
+    "先写失败测试：带输入视频的编辑请求上限包含输入成本；输入不可确定时拒绝"
+   ],
+   "criteria": [
+    "编辑与变体的上限包含输入成本（当上游收费时）",
+    "输入规格不可确定时拒绝该请求",
+    "编辑、变体与生成共用同一预留与结算语义",
+    "缺输入定价时标记 unknown 并拒绝"
+   ],
+   "tests": ["输入成本纳入换算测试", "输入不可确定拒绝测试", "语义一致性断言"],
+   "verification": ["bun test server/tests/video-edit-pricing.test.ts"],
+   "owned_scope": ["视频编辑/变体维度映射与换算", "对应测试"],
+   "resume_hint": "上游不收输入费用时要记为明确 free 并留证据；留空会被判 unknown 而整条路径不可用。"
+  },
+  "19.4": {
+   "slug": "video-async-settlement-recovery",
+   "contracts": {
+    "consumes": ["19.1–19.3 的预留", "17.3 的 providerJobID 丢失恢复", "17.6 的终态结算", "17.7 的取消语义"],
+    "produces": [
+     "视频任务按终态真实 usage 结算，未使用额度释放，超上限部分记录异常",
+     "产物查询只读且重复查询不重复扣费",
+     "恢复语义与组 17 一致：响应丢失、取消未知、终态不可查都保持预留；组 19 缝合点"
+    ]
+   },
+   "steps": [
+    "复用 VideoSettler/Poll 取得终态与真实 usage，换算并结算",
+    "确认产物查询为只读授权操作，不触发结算",
+    "把恢复分支接到组 17 的 unknown 流程，验证重启后不重复派发或重复扣费",
+    "先写失败测试：完成结算正确；重复查询不扣费；派发响应丢失后重启不建第二任务"
+   ],
+   "criteria": [
+    "视频任务按真实终态 usage 结算，未使用额度释放",
+    "重复查询产物不触发第二次结算",
+    "响应丢失或终态不可查时保持预留并可恢复",
+    "重启后不重复派发、不重复扣费"
+   ],
+   "tests": ["终态结算集成测试", "重复查询只读断言", "跨进程重启恢复测试"],
+   "verification": ["TEST_DATABASE_URL=... bun test server/tests/video-settlement-recovery.integration.test.ts", "cd bifrost/framework/jobaccounting && go test -run Video ./..."],
+   "owned_scope": ["视频结算与恢复接线", "对应测试与验收记录"],
+   "resume_hint": "本 Ticket 是组 19 缝合点：视频任务耗时长，重启恢复与重复查询是最容易出问题的两处，必须各有测试。"
+  }
+ }
+}
