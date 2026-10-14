@@ -556,6 +556,50 @@ export class CreditGateError extends Error {
 }
 
 /**
+ * This deployment has no credit PRICES (audit A4). Distinct from `CreditGateError`: the balance is
+ * not the problem, `BILLING_MODEL_CREDIT_RATES` / `BILLING_MODEL_MAX_RESERVATION_TOKENS` /
+ * `BILLING_CODE_RUN_*` are. Telling an administrator to buy credits would send them to the wrong
+ * fix; the `issues` field carries the config keys to the log, never to a person-facing message.
+ */
+export class CreditPolicyUnconfiguredError extends Error {
+  override name = "CreditPolicyUnconfiguredError";
+  readonly code = "credit_policy_unconfigured";
+  constructor(
+    readonly issues: readonly { key: string; reason: string }[] = [],
+  ) {
+    super(
+      "Billing credit prices are not configured on this deployment, so no metered call can be admitted. An administrator must supply the BILLING_* rate and maximum-reservation keys.",
+    );
+  }
+}
+
+/** This model has no price in an otherwise configured policy. */
+export class ModelNotPricedError extends Error {
+  override name = "ModelNotPricedError";
+  readonly code = "model_not_priced";
+  constructor(readonly modelId: string) {
+    super(
+      `This model has no configured credit price, so calls to it cannot be admitted. An administrator must add it to BILLING_MODEL_CREDIT_RATES and BILLING_MODEL_MAX_RESERVATION_TOKENS.`,
+    );
+  }
+}
+
+/**
+ * The gate itself failed for a reason no sentinel names (a store error, a driver timeout).
+ * Fail-closed like every other refusal, but under its own name: "the balance could not be read"
+ * is a different repair from "the balance is empty", and the raw cause is logged, never rethrown.
+ */
+export class CreditGateFailureError extends Error {
+  override name = "CreditGateFailureError";
+  readonly code = "credit_gate_failed";
+  constructor() {
+    super(
+      "Credit admission could not be completed. Try again; if it persists an administrator must check the billing ledger connection.",
+    );
+  }
+}
+
+/**
  * A model this billed deployment cannot meter in its current form: the runtime resolves
  * string-form models itself, where the admission wrapper — and with it any provable bound —
  * cannot reach. Deliberately NOT `CreditGateError`: the balance is not the problem, the
@@ -616,7 +660,14 @@ function meteredModel<T>(model: T): T {
             client: currentUsageOrigin(),
           });
         } catch (error) {
-          if (error instanceof CreditGateError) throw error;
+          if (
+            error instanceof CreditGateError ||
+            error instanceof CreditPolicyUnconfiguredError ||
+            error instanceof ModelNotPricedError ||
+            error instanceof CreditGateFailureError
+          ) {
+            throw error;
+          }
           // The gate's own failure reason stays out of the person-facing sentinel; the
           // name alone is logged (a message could carry connection details from a store).
           log.error(
@@ -627,7 +678,7 @@ function meteredModel<T>(model: T): T {
             },
             "billing-model-gate-failed",
           );
-          throw new CreditGateError();
+          throw new CreditGateFailureError();
         }
       }
       /*

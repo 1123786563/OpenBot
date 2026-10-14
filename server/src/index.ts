@@ -185,8 +185,11 @@ import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig } from "./config";
 import {
   CreditGateError,
+  CreditGateFailureError,
+  CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
+  ModelNotPricedError,
   ModelUsageSettlementError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
@@ -3528,6 +3531,23 @@ const selfHostBannerIntelligence = createIntelligenceClient(
  * `assertTarget` is required, so no assembly can construct one that skips it).
  */
 const billingSettings = config.billing;
+/*
+ * A deployment that configured the billing provider but not the hard-cap price block refuses
+ * every metered call (index.ts's model gate). Say so at boot, with the offending keys, instead of
+ * letting it surface as a user-facing "no credits left" on the first request (audit A4/C2).
+ */
+if (
+  billingSettings !== undefined &&
+  billingSettings.creditPolicy.configured === false
+) {
+  log.error(
+    {
+      type: "billing-credit-policy-unconfigured",
+      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
+    },
+    "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
+  );
+}
 const billing =
   billingSettings === undefined
     ? undefined
@@ -3615,10 +3635,17 @@ if (billing !== undefined && usageOutbox !== undefined) {
     log.warn(message),
   );
   setModelUsageGate(async (input) => {
-    if (!creditPolicy?.configured) throw new CreditGateError();
+    if (!creditPolicy?.configured) {
+      // `configured === false` narrows the union to the variant that carries `issues`, so the
+      // offending keys reach the error (and the log) without a cast. `creditPolicy === undefined`
+      // cannot happen inside this block, but the guard is on `?.` so answer it as "no issues known".
+      throw new CreditPolicyUnconfiguredError(
+        creditPolicy?.configured === false ? creditPolicy.issues : [],
+      );
+    }
     const modelId = input.modelId ?? runtimeModel.defaultModel;
     const modelPolicy = creditPolicy.models.get(modelId);
-    if (!modelPolicy) throw new CreditGateError();
+    if (!modelPolicy) throw new ModelNotPricedError(modelId);
 
     let reservation: Awaited<
       ReturnType<typeof billing.creditWriter.reserveCredits>
@@ -3632,10 +3659,37 @@ if (billing !== undefined && usageOutbox !== undefined) {
           input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
         ),
       });
-    } catch {
+    } catch (error) {
+      log.error(
+        {
+          type: "billing-credit-gate-failed",
+          eventId: input.eventId,
+          model: modelId,
+          name: (error as Error | null)?.name,
+        },
+        "billing-credit-gate-failed",
+      );
+      throw new CreditGateFailureError();
+    }
+    if (!reservation.reserved) {
+      /*
+       * The hold is the WORST-CASE ceiling (config.ts derives it from the configured token maxima),
+       * so this refusal has two very different causes and the log is the only place they are
+       * distinguishable: a balance that is genuinely empty, and a balance that is fine but smaller
+       * than one call's maximum (decision gate G3). `available` and `required` in scaled units.
+       */
+      log.warn(
+        {
+          type: "billing-credit-reservation-refused",
+          eventId: input.eventId,
+          model: modelId,
+          available: reservation.availableCents,
+          required: Number(modelPolicy.maximumReservationUnits),
+        },
+        "billing-credit-reservation-refused",
+      );
       throw new CreditGateError();
     }
-    if (!reservation.reserved) throw new CreditGateError();
 
     return {
       /*
