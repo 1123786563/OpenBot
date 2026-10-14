@@ -3856,6 +3856,14 @@ if (billing !== undefined && usageOutbox !== undefined) {
   setModelUsageGate(undefined);
 }
 
+/*
+ * The billing sweepers' stop handles (audit C3): both assemble only when their seam exists, and
+ * both are stopped in the SIGINT/SIGTERM handler below so a shutdown cannot land mid-batch. The
+ * locks make each sweeper single-instance across replicas — advisory-lock keys 4_192_005 (usage
+ * delivery) and 4_192_006 (payments), reserved alongside audit-retention's 4_192_004.
+ */
+const billingSweepStops: (() => void)[] = [];
+
 if (billing !== undefined && usageOutbox !== undefined) {
   const usageDelivery = createUsageDelivery({
     outbox: usageOutbox,
@@ -3863,9 +3871,11 @@ if (billing !== undefined && usageOutbox !== undefined) {
     chargeCredits: createCreditUsageTarget(billing.creditWriter),
     log: (message) => log.warn(message),
   });
-  startUsageDeliverySweeps(usageDelivery, {
+  const usageSweeps = startUsageDeliverySweeps(usageDelivery, {
     log: (message) => log.warn(message),
+    lock: { databaseUrl: config.databaseUrl, key: 4_192_005 },
   });
+  billingSweepStops.push(usageSweeps.stop);
 }
 
 /*
@@ -4029,7 +4039,10 @@ const payments =
             return live ? live.planCode : null;
           },
         });
-        startPaymentSweeps(paymentService);
+        const paymentSweeps = startPaymentSweeps(paymentService, {
+          lock: { databaseUrl: config.databaseUrl, key: 4_192_006 },
+        });
+        billingSweepStops.push(paymentSweeps.stop);
         return {
           service: paymentService,
           // The statement read's other half: a bill is a stored order, so the ledger is the only
@@ -5617,6 +5630,15 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // The billing sweepers (audit C3): stopped before the listeners below, so a shutdown cannot
+    // land mid-batch. Each stop is its own try/catch — one that throws must not block the rest.
+    for (const stop of billingSweepStops) {
+      try {
+        stop();
+      } catch {
+        // Deliberately swallowed: the remaining stops and the listener shutdown still run.
+      }
+    }
     // Craft's idle reaper (started by the craft route assembly, held at that module's scope).
     stopCraftIdleReaper();
     void Promise.allSettled([

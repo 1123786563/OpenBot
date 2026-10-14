@@ -1262,3 +1262,46 @@ describe("overdraw is reported exactly (audit D1)", () => {
     ).toBe(false);
   });
 });
+
+describe("reconciliation pages its table walks (audit C3)", () => {
+  test("a table larger than one page still audits every row", async () => {
+    const customer = `${prefix}-paged`;
+    const ROWS = 1200; // > RECONCILE_PAGE_SIZE (500), so the keyset loop must walk three pages
+    await database
+      .insert(billingCustomers)
+      .values({ externalId: customer, name: null })
+      .onConflictDoNothing({ target: billingCustomers.externalId });
+    // Seeded server-side in one round trip, the way this file's precision suite does it: a
+    // client-side row-by-row loop would turn a paging test into a load test.
+    await database.execute(sql`
+      INSERT INTO credit_ledger
+        (id, external_customer_id, title, idempotency_key, credits, applied)
+      SELECT
+        ${customer} || '-l-' || g::text, ${customer}, 'paging-audit',
+        ${customer} || '-lk-' || g::text, 1, 1
+      FROM generate_series(1, ${ROWS}) g
+    `);
+    await database.insert(creditGrants).values({
+      id: `${customer}-g1`,
+      externalCustomerId: customer,
+      source: "promo",
+      reason: "paging-audit",
+      total: ROWS,
+      // One unit short of the ledger's sum: the divergence is exactly 1, which is only detectable
+      // if the LAST page was read.
+      used: ROWS - 1,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `${customer}-gk1`,
+    });
+
+    const report = await reconciler.reconcile();
+
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "grants_ledger_divergence" && item.subject === customer,
+    );
+    expect(finding?.detail).toContain("off by 1");
+    expect(report.checked.scanned.pageSize).toBe(500);
+  });
+});

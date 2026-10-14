@@ -7,6 +7,7 @@ import {
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
+import type { PaymentOrderRecord } from "./payments/types";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
 
@@ -65,6 +66,51 @@ import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
  */
 export type ExpectedPlanCredits = (planCode: string) => number | null;
 
+/**
+ * How many rows each keyset page of the four table walks reads (audit C3). The whole-table
+ * shape is the point — a reconciliation that sampled would be an estimate wearing an audit's
+ * clothes — so the walks read EVERY row, one bounded page at a time: a long-lived deployment
+ * must be able to audit years of orders without the pass loading years of orders into one
+ * statement's result. The size lands in the report as `checked.scanned.pageSize`, so a reader
+ * can tell a complete scan from a truncated one.
+ */
+const RECONCILE_PAGE_SIZE = 500;
+
+/**
+ * The four walks' row shapes, named here so the keyset loops stay readable (the page's inferred
+ * drizzle type would be an `Awaited<ReturnType<...>>` mouthful on every accumulator).
+ */
+type PaidOrderRow = {
+  id: string;
+  planCode: string;
+  amountCents: number;
+  channelTransactionId: string | null;
+  activationState: PaymentOrderRecord["activationState"];
+  paidAt: Date | null;
+  terminalAt: Date | null;
+};
+type PaidFactRow = {
+  id: string;
+  orderId: string;
+  channelTransactionId: string | null;
+  amountCents: number | null;
+};
+type DuplicateAnomalyRow = {
+  id: string;
+  orderId: string;
+  amountCents: number | null;
+  detail: string;
+};
+type ReservedRow = {
+  reservationId: string;
+  idempotencyKey: string;
+  expiresAt: Date;
+  maximum: number;
+  expired: boolean;
+  allocationId: string | null;
+  allocationAmount: number | null;
+};
+
 export function createReconciler(
   database: Database,
   externalCustomerKey: string,
@@ -122,33 +168,60 @@ export function createReconciler(
       };
 
       /*
-       * ── Invariant 1, sides one and two: paid orders ↔ their paid facts. One query each
-       *    (the whole-table shape is the point — a reconciliation that sampled would be an
-       *    estimate wearing an audit's clothes) and the join in memory, where the mismatch's
-       *    shape decides the finding's code.
+       * ── Invariant 1, sides one and two: paid orders ↔ their paid facts. One walk each,
+       *    every row, one bounded page at a time (audit C3 — the whole-table shape is the
+       *    point, a reconciliation that sampled would be an estimate wearing an audit's
+       *    clothes; the pages only bound the statement, never the scope) and the join in
+       *    memory, where the mismatch's shape decides the finding's code.
        */
-      const paidOrders = await database
-        .select({
-          id: paymentOrders.id,
-          planCode: paymentOrders.planCode,
-          amountCents: paymentOrders.amountCents,
-          channelTransactionId: paymentOrders.channelTransactionId,
-          activationState: paymentOrders.activationState,
-          paidAt: paymentOrders.paidAt,
-          terminalAt: paymentOrders.terminalAt,
-        })
-        .from(paymentOrders)
-        .where(eq(paymentOrders.status, "paid"));
-      const paidFacts = await database
-        .select({
-          orderId: paymentEvents.orderId,
-          channelTransactionId: paymentEvents.channelTransactionId,
-          amountCents: paymentEvents.amountCents,
-        })
-        .from(paymentEvents)
-        .where(
-          and(eq(paymentEvents.kind, "fact"), eq(paymentEvents.state, "paid")),
-        );
+      const paidOrders: PaidOrderRow[] = [];
+      for (;;) {
+        const lastId = paidOrders.at(-1)?.id ?? "";
+        const page = await database
+          .select({
+            id: paymentOrders.id,
+            planCode: paymentOrders.planCode,
+            amountCents: paymentOrders.amountCents,
+            channelTransactionId: paymentOrders.channelTransactionId,
+            activationState: paymentOrders.activationState,
+            paidAt: paymentOrders.paidAt,
+            terminalAt: paymentOrders.terminalAt,
+          })
+          .from(paymentOrders)
+          .where(
+            and(
+              eq(paymentOrders.status, "paid"),
+              sql`${paymentOrders.id} > ${lastId}`,
+            ),
+          )
+          .orderBy(asc(paymentOrders.id))
+          .limit(RECONCILE_PAGE_SIZE);
+        paidOrders.push(...page);
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
+      const paidFacts: PaidFactRow[] = [];
+      for (;;) {
+        const lastId = paidFacts.at(-1)?.id ?? "";
+        const page = await database
+          .select({
+            id: paymentEvents.id,
+            orderId: paymentEvents.orderId,
+            channelTransactionId: paymentEvents.channelTransactionId,
+            amountCents: paymentEvents.amountCents,
+          })
+          .from(paymentEvents)
+          .where(
+            and(
+              eq(paymentEvents.kind, "fact"),
+              eq(paymentEvents.state, "paid"),
+              sql`${paymentEvents.id} > ${lastId}`,
+            ),
+          )
+          .orderBy(asc(paymentEvents.id))
+          .limit(RECONCILE_PAGE_SIZE);
+        paidFacts.push(...page);
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
       const factByOrder = new Map(
         paidFacts.map((fact) => [fact.orderId, fact]),
       );
@@ -277,19 +350,29 @@ export function createReconciler(
        *    the anomaly — not counting paid orders per plan — keeps legitimate sequential
        *    repurchases (expire, then buy the same plan again) out of the findings.
        */
-      const duplicateAnomalies = await database
-        .select({
-          orderId: paymentEvents.orderId,
-          amountCents: paymentEvents.amountCents,
-          detail: paymentEvents.detail,
-        })
-        .from(paymentEvents)
-        .where(
-          and(
-            eq(paymentEvents.kind, "anomaly"),
-            eq(paymentEvents.code, "duplicate_paid"),
-          ),
-        );
+      const duplicateAnomalies: DuplicateAnomalyRow[] = [];
+      for (;;) {
+        const lastId = duplicateAnomalies.at(-1)?.id ?? "";
+        const page = await database
+          .select({
+            id: paymentEvents.id,
+            orderId: paymentEvents.orderId,
+            amountCents: paymentEvents.amountCents,
+            detail: paymentEvents.detail,
+          })
+          .from(paymentEvents)
+          .where(
+            and(
+              eq(paymentEvents.kind, "anomaly"),
+              eq(paymentEvents.code, "duplicate_paid"),
+              sql`${paymentEvents.id} > ${lastId}`,
+            ),
+          )
+          .orderBy(asc(paymentEvents.id))
+          .limit(RECONCILE_PAGE_SIZE);
+        duplicateAnomalies.push(...page);
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
       for (const anomaly of duplicateAnomalies) {
         findings.push({
           category: "payment",
@@ -433,26 +516,56 @@ export function createReconciler(
        *    allocation sum that no longer equals the reservation's maximum is manual-surgery
        *    drift that needs an operator, not a writer hidden inside the audit.
        */
-      const reservedRows = await database
-        .select({
-          reservationId: creditReservations.id,
-          idempotencyKey: creditReservations.idempotencyKey,
-          expiresAt: creditReservations.expiresAt,
-          maximum: creditReservations.maximum,
-          expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
-          allocationId: creditReservationAllocations.id,
-          allocationAmount: creditReservationAllocations.amount,
-        })
-        .from(creditReservations)
-        .leftJoin(
-          creditReservationAllocations,
-          eq(creditReservationAllocations.reservationId, creditReservations.id),
-        )
-        .where(eq(creditReservations.status, "reserved"))
-        .orderBy(
-          asc(creditReservations.id),
-          asc(creditReservationAllocations.id),
-        );
+      /*
+       * The join is walked with a keyset over its full (reservationId, allocationId) order —
+       * not over the reservation id alone — so a reservation split across a page boundary
+       * keeps its tail allocations: the grouping below accumulates in memory across pages, and
+       * a lost tail would fabricate an allocation-imbalance finding. The empty-string cursor
+       * after a null allocation (a reservation with no allocations) sorts before every id,
+       * which is exactly "nothing more for this reservation".
+       */
+      const reservedRows: ReservedRow[] = [];
+      let lastReservationId = "";
+      let lastAllocationId = "";
+      for (;;) {
+        const page = await database
+          .select({
+            reservationId: creditReservations.id,
+            idempotencyKey: creditReservations.idempotencyKey,
+            expiresAt: creditReservations.expiresAt,
+            maximum: creditReservations.maximum,
+            expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
+            allocationId: creditReservationAllocations.id,
+            allocationAmount: creditReservationAllocations.amount,
+          })
+          .from(creditReservations)
+          .leftJoin(
+            creditReservationAllocations,
+            eq(
+              creditReservationAllocations.reservationId,
+              creditReservations.id,
+            ),
+          )
+          .where(
+            and(
+              eq(creditReservations.status, "reserved"),
+              sql`(${creditReservations.id} > ${lastReservationId}
+                   or (${creditReservations.id} = ${lastReservationId}
+                       and ${creditReservationAllocations.id} > ${lastAllocationId}))`,
+            ),
+          )
+          .orderBy(
+            asc(creditReservations.id),
+            asc(creditReservationAllocations.id),
+          )
+          .limit(RECONCILE_PAGE_SIZE);
+        if (page.length === 0) break;
+        reservedRows.push(...page);
+        const last = page[page.length - 1];
+        lastReservationId = last.reservationId;
+        lastAllocationId = last.allocationId ?? "";
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
 
       const reservedById = new Map<
         string,
@@ -689,8 +802,9 @@ export function createReconciler(
       const replayedBodies = await database.execute(sql<{
         bodyHash: string;
         deliveries: string;
+        totalHashes: string;
       }>`
-        SELECT body_hash AS "bodyHash", COUNT(*)::bigint AS deliveries
+        SELECT body_hash AS "bodyHash", COUNT(*)::bigint AS deliveries, COUNT(*) OVER ()::bigint AS "totalHashes"
         FROM billing_webhook_events
         WHERE body_hash IS NOT NULL
         GROUP BY body_hash
@@ -704,6 +818,25 @@ export function createReconciler(
           code: "webhook_body_replay",
           subject: row.bodyHash,
           detail: `deliveries=${row.deliveries} distinct event ids carried this exact body — either the provider retried with fresh identity or somebody is replaying a captured delivery`,
+        });
+      }
+      // The evidence rows cap at the finding limit, so the window total (`COUNT(*) OVER ()`,
+      // every qualifying group before the LIMIT) carries the "there were N more" clue the
+      // usage block already reports via `usage_findings_omitted` — a replay-flooded deployment
+      // must not silently lose its tail (audit C3, closing A7's deferred marker).
+      const replayedHashCount = Number(replayedBodies[0]?.totalHashes ?? "0");
+      if (!Number.isSafeInteger(replayedHashCount)) {
+        throw new RangeError(
+          `billing_webhook_events replayed-hash count is not a safe integer (${replayedBodies[0]?.totalHashes}); the report refuses to round a backlog it cannot represent`,
+        );
+      }
+      const omittedReplayedHashes = replayedHashCount - replayedBodies.length;
+      if (omittedReplayedHashes > 0) {
+        findings.push({
+          category: "payment",
+          code: "webhook_replays_omitted",
+          subject: "billing_webhook_events",
+          detail: `omitted=${omittedReplayedHashes} replayed body hashes beyond the evidence limit=${usageFindingLimit} — a replay flood larger than the report's evidence window; widen the window or drain the inbox`,
         });
       }
 
@@ -722,6 +855,17 @@ export function createReconciler(
             limit: usageFindingLimit,
             emitted: usageRows.length,
             omitted: omittedUsageFindings,
+          },
+          scanned: {
+            paidOrders: paidOrders.length,
+            paidFacts: paidFacts.length,
+            reservedRows: reservedRows.length,
+            pageSize: RECONCILE_PAGE_SIZE,
+          },
+          webhookReplays: {
+            limit: usageFindingLimit,
+            emitted: replayedBodies.length,
+            omitted: omittedReplayedHashes,
           },
         },
         findings,

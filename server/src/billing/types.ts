@@ -176,7 +176,8 @@ export type ReconcileFinding = {
     | "usage_target_pending"
     | "usage_target_blocked"
     | "usage_findings_omitted"
-    | "webhook_body_replay";
+    | "webhook_body_replay"
+    | "webhook_replays_omitted";
   /**
    * The row the finding is about: an order id, a customer key, a reservation id, or a usage
    * event id.
@@ -207,6 +208,19 @@ export type ReconcileReport = {
       blocked: { lago: number; credits: number };
     };
     usageFindings: {
+      limit: number;
+      emitted: number;
+      omitted: number;
+    };
+    /** How many rows the pass walked, and the page size it walked them in (audit C3). */
+    scanned: {
+      paidOrders: number;
+      paidFacts: number;
+      reservedRows: number;
+      pageSize: number;
+    };
+    /** The replay-evidence window, in the usage findings' shape (audit C3, closing A7's marker). */
+    webhookReplays: {
       limit: number;
       emitted: number;
       omitted: number;
