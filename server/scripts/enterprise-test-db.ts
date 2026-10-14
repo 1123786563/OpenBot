@@ -118,7 +118,14 @@ if ((mode === "migrate" && exitCode === 0) || mode === "provision") {
   // `provision` is the re-entry point: if provisioning ever failed after a
   // successful migration left the database non-fresh, this mode repairs the
   // logins without re-running (and being refused by) the fresh-schema guard.
-  await provisionRuntimeTestLogins(databaseUrl, parsedLogins);
+  try {
+    await provisionRuntimeTestLogins(databaseUrl, parsedLogins);
+  } catch (error) {
+    // Single readable line like every other refusal here, instead of a
+    // bare unhandled-rejection stack in CI logs.
+    console.error(reasonWithoutStatement(error));
+    process.exit(1);
+  }
 }
 process.exit(exitCode);
 

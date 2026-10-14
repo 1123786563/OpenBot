@@ -30,10 +30,10 @@
   // let a test pass an options object where a connection string belongs and hear nothing back. Its
   // own change, because it is a sweep and not a fix.
   //
-  // THAT GAP NOW DELIBERATELY INCLUDES `tests/enterprise/**` AND THE UNIMPORTED REST OF
-  // `../shared/enterprise/**` (`shared/enterprise/contracts.ts` stays covered
-  // transitively — src imports it, and imports are checked even when absent
-  // from `include`): the
+  // THAT GAP NOW DELIBERATELY INCLUDES `tests/enterprise/**` ONLY. The frozen cross-package
+  // zod contracts keep a DIRECT type gate instead: `../shared/enterprise` is included in full
+  // below, so nothing under `shared/enterprise` is a gap any more (app and server tests both
+  // consume these schemas; dropping the include would leave them unchecked everywhere): the
   // dedicated `tsconfig.enterprise-tests.json` that used to check them belonged to main's enterprise
   // stack, and this merge deletes that stack wholesale in favor of the delivery lineage's. The
   // surviving enterprise tests are the delivery lineage's own, which were never written against
@@ -45,6 +45,7 @@
     "src",
     "scripts",
     "tests/support/enterprise-database.ts",
+    "../shared/enterprise",
     "../scripts/composio-smoke.ts"
   ]
 }
