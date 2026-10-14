@@ -153,3 +153,4 @@
 {"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:29:08+0800"}
 {"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:31:07+0800"}
 {"action": "backoff", "ok": false, "note": "retry 2 in 30s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:31:32+0800"}
+{"action": "native-probe", "ok": true, "note": "GET supported", "ts": "2026-10-15T02:39:10+0800"}
