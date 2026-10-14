@@ -87,10 +87,9 @@
   "T01": {
    "dispatch_id": "ctx_ae959c2a4e7b",
    "task_id": "task_1e2b04977281",
-   "terminal": null,
-   "worktree_id": null,
-   "worktree_path": null,
-   "branch": null,
+   "terminal": "structworker_997570b1-abc8-4575-b126-bd22a5686d4d",
+   "worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/opik-t01-module-seam",
+   "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-t01-module-seam",
    "launch_requested": {
     "agent": "claude",
     "model": null,
@@ -101,29 +100,105 @@
     "model": null,
     "effort": null
    },
-   "setup": {
-    "requested": "run",
-    "effective": "run",
-    "source": "explicit_request",
-    "hookFound": true,
-    "startupPolicy": "wait-for-setup",
-    "state": "succeeded"
+   "status": "dispatched",
+   "worker_state": "ready",
+   "worker_stage": "input_accepted",
+   "setup_state": "succeeded",
+   "setup_hook_found": true,
+   "setup_startup_policy": "wait-for-setup",
+   "note": "backfilled from worker-show; the first launch used a receipt parser whose field guesses were wrong"
+  },
+  "T02": {
+   "dispatch_id": "ctx_9f7a06774b6b",
+   "task_id": "task_35bafd362a24",
+   "status": "dispatched",
+   "worker_state": "ready",
+   "worker_stage": "input_accepted",
+   "terminal": "structworker_4aba58e1-93a5-4e49-930c-d5e8128dfcd0",
+   "worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/opik-t02-ui-i18n",
+   "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-t02-ui-i18n",
+   "setup_state": "succeeded",
+   "setup_hook_found": true,
+   "setup_startup_policy": "wait-for-setup",
+   "launch_requested": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
    },
-   "receipt_keys": [
-    "dispatchId",
-    "effects",
-    "launch",
-    "mode",
-    "mutation",
-    "residualResources",
-    "runId",
-    "setup",
-    "stage",
-    "state",
-    "taskId",
-    "timeoutMs",
-    "turnStart"
-   ]
+   "launch_effective": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   }
+  },
+  "T03": {
+   "dispatch_id": "ctx_dacef8a7d36e",
+   "task_id": "task_894ec9805947",
+   "status": "dispatched",
+   "worker_state": "ready",
+   "worker_stage": "input_accepted",
+   "terminal": "structworker_7132ddc0-e726-401e-a932-c68547d03324",
+   "worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/opik-t03-deployment",
+   "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-t03-deployment",
+   "setup_state": "succeeded",
+   "setup_hook_found": true,
+   "setup_startup_policy": "wait-for-setup",
+   "launch_requested": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   },
+   "launch_effective": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   }
+  },
+  "T05": {
+   "dispatch_id": "ctx_25bdd099e5e0",
+   "task_id": "task_1aac79b79517",
+   "status": "dispatched",
+   "worker_state": "ready",
+   "worker_stage": "input_accepted",
+   "terminal": "structworker_40f4ef64-1be5-4881-b758-f0c8cc331aa7",
+   "worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/opik-t05-redaction",
+   "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-t05-redaction",
+   "setup_state": "succeeded",
+   "setup_hook_found": true,
+   "setup_startup_policy": "wait-for-setup",
+   "launch_requested": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   },
+   "launch_effective": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   }
+  },
+  "T06": {
+   "dispatch_id": "ctx_996350cd8662",
+   "task_id": "task_7d5dec524ab4",
+   "status": "dispatched",
+   "worker_state": "ready",
+   "worker_stage": "input_accepted",
+   "terminal": "structworker_11ed8de2-7557-4510-aceb-05108115d8f5",
+   "worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/opik-t06-scope-seam",
+   "worktree_path": "/Users/wuyongjun/orca/workspaces/OpenBot/opik-t06-scope-seam",
+   "setup_state": "succeeded",
+   "setup_hook_found": true,
+   "setup_startup_policy": "wait-for-setup",
+   "launch_requested": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   },
+   "launch_effective": {
+    "agent": "claude",
+    "model": null,
+    "effort": null
+   }
   }
  },
  "baseline_evidence": "docs/plans/evidence/2026-10-14-opik/baseline-gates-2026-10-15.md",
