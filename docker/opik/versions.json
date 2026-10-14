@@ -1,0 +1,63 @@
+{
+  "opik": {
+    "version": "2.2.100",
+    "upstreamCommit": "c8231ef8cdabb6fc5223c8dece17959e8af461ce",
+    "verifiedAt": "2026-10-14T19:24:24Z",
+    "images": {
+      "backend": {
+        "repository": "ghcr.io/comet-ml/opik/opik-backend",
+        "tag": "2.2.100",
+        "digest": "sha256:cd57f4010b2aa3327dbfd9924cb2a232f861bf183849cab709b89021c9372a5c"
+      },
+      "frontend": {
+        "repository": "ghcr.io/comet-ml/opik/opik-frontend",
+        "tag": "2.2.100",
+        "digest": "sha256:7ba67f40363302a37271ba61969336359f05549e9c5096b96828beeb0c6577c4"
+      },
+      "python-backend": {
+        "repository": "ghcr.io/comet-ml/opik/opik-python-backend",
+        "tag": "2.2.100",
+        "digest": "sha256:fd9af5357815bb4f3bcfba07d586fabaea7ad1a0d961728f0f00814fa9a7ebda"
+      },
+      "mysql": {
+        "repository": "mysql",
+        "tag": "8.4.2",
+        "digest": "sha256:ac80b6e09e5b12b4f9d5cd4f6425e43464247aa4ba4f6169da5daf59e5877f7d"
+      },
+      "redis": {
+        "repository": "redis",
+        "tag": "7.2.4-alpine3.19",
+        "digest": "sha256:c8bb255c3559b3e458766db810aa7b3c7af1235b204cfdb304e79ff388fe1a5a"
+      },
+      "clickhouse": {
+        "repository": "clickhouse/clickhouse-server",
+        "tag": "26.3.16.16-alpine",
+        "digest": "sha256:b45ab149f0d331b944b4aa2ccdd47d0242238fd39e68ec524ad63338e4b9d8f8"
+      },
+      "zookeeper": {
+        "repository": "zookeeper",
+        "tag": "3.9.4",
+        "digest": "sha256:dfa9ba46d14bd52bcb3c1dac3ba91f179cf4cebf7ee576e1c2df09c68fc1d30d"
+      },
+      "minio": {
+        "repository": "docker.io/cloudpirates/image-minio",
+        "tag": "RELEASE.2025-10-15T17-29-55Z-hardened",
+        "digest": "sha256:8dc02a7e509336c8bbb67962086d691bdcde20a2c9327ed68e5081a681f6dbfc"
+      },
+      "otel-collector": {
+        "repository": "otel/opentelemetry-collector-contrib",
+        "tag": "0.139.0",
+        "digest": "sha256:faf125d656fa47cea568b2f3b4494efd2525083bc75c1e96038bc23f05cd68fd"
+      }
+    }
+  },
+  "sdk": {
+    "typescript": "2.2.100",
+    "python": null
+  },
+  "compatibility": {
+    "status": "unverified",
+    "verifiedBy": "#10",
+    "note": "T03 pins and deploys. T04 (#10) proves ingest, query, evaluation, id mapping and deletion against a real instance and is the only ticket allowed to flip status to verified. sdk.typescript is the exact version #10 will install (npm dist-tag latest at pin time, matching the Opik 2.2.100 release); the SDK is not installed by T03."
+  }
+}
