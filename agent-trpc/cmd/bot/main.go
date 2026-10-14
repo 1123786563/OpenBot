@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"openbot/runtime-go/internal/bot"
+	"openbot/agent-trpc/internal/bot"
 )
 
 func main() {
