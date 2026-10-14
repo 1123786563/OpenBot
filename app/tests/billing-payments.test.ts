@@ -1,14 +1,14 @@
-import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, test } from "bun:test";
+import { QueryClient } from "@tanstack/react-query";
 import {
   cancelPurchase,
   createPurchase,
   PaymentsUnavailableError,
+  type PurchaseOrderView,
+  PurchaseRequestError,
   purchaseCatalogQueryOptions,
   purchaseKeys,
   purchaseOrderQueryOptions,
-  PurchaseRequestError,
-  type PurchaseOrderView,
 } from "../src/lib/billing/payments";
 
 /**
@@ -50,8 +50,16 @@ const order = {
 } satisfies PurchaseOrderView;
 
 test("purchase keys nest under the billing purchases family", () => {
-  expect([...purchaseKeys.catalog]).toEqual(["billing", "purchases", "catalog"]);
-  expect([...purchaseKeys.current]).toEqual(["billing", "purchases", "current"]);
+  expect([...purchaseKeys.catalog]).toEqual([
+    "billing",
+    "purchases",
+    "catalog",
+  ]);
+  expect([...purchaseKeys.current]).toEqual([
+    "billing",
+    "purchases",
+    "current",
+  ]);
   expect([...purchaseKeys.order("po-1")]).toEqual([
     "billing",
     "purchases",
@@ -63,9 +71,7 @@ test("createPurchase returns the created order", async () => {
   serve(200, { order });
   await expect(
     createPurchase({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
-  ).resolves.toEqual(
-    order,
-  );
+  ).resolves.toEqual(order);
 });
 
 test("the one-subscription refusal keeps the server's activePlanCode", async () => {
@@ -84,6 +90,24 @@ test("the one-subscription refusal keeps the server's activePlanCode", async () 
   expect(error).toBeInstanceOf(PurchaseRequestError);
   expect((error as PurchaseRequestError).status).toBe(409);
   expect((error as PurchaseRequestError).activePlanCode).toBe("starter");
+});
+
+test("the pending-purchase refusal keeps the server's pendingPlanCode", async () => {
+  serve(409, {
+    error: "Another purchase is already pending for this deployment.",
+    pendingPlanCode: "standard",
+  });
+  const error = await createPurchase({
+    planCode: "pro",
+    provider: "alipay",
+    cycle: "monthly",
+  }).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(error).toBeInstanceOf(PurchaseRequestError);
+  expect((error as PurchaseRequestError).status).toBe(409);
+  expect((error as PurchaseRequestError).pendingPlanCode).toBe("standard");
 });
 
 test("a plan the catalog does not know carries no activePlanCode", async () => {
@@ -125,7 +149,12 @@ describe("purchaseCatalogQueryOptions", () => {
   test("passes the server's catalog answer through untouched", async () => {
     serve(200, {
       plans: [
-        { planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 },
+        {
+          planCode: "pro",
+          amountCents: 8800,
+          currency: "CNY",
+          periodMonths: 1,
+        },
       ],
       canPurchase: true,
       activePlanCode: null,
@@ -136,7 +165,12 @@ describe("purchaseCatalogQueryOptions", () => {
       queryClient.fetchQuery(purchaseCatalogQueryOptions),
     ).resolves.toEqual({
       plans: [
-        { planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 },
+        {
+          planCode: "pro",
+          amountCents: 8800,
+          currency: "CNY",
+          periodMonths: 1,
+        },
       ],
       canPurchase: true,
       activePlanCode: null,

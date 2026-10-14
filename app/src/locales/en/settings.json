@@ -357,7 +357,8 @@
     "badge": "Bonus until 10/31",
     "message": "Welcome to WorkBuddy. Your first month includes the standard plan's base credits — claim them now!",
     "claim": "Claim",
-    "claimed": "Claimed {{date}}"
+    "claimed": "Claimed {{date}}",
+    "claimUnavailable": "Claiming opens soon"
   },
   "planCard": {
     "redeem": "Redeem a code",
@@ -389,11 +390,18 @@
     "validUntil": "Valid until {{date}}",
     "autoRenew": "To continue after this period ends, purchase again (auto-renewal is not available yet)",
     "agreement": "I have read and agree to the Terms of Service",
-    "pay": "Agree",
+    "pay": "Agree & pay",
     "payWith": "Pay with",
     "provider": {
       "alipay": "Alipay",
       "wechat": "WeChat Pay"
+    },
+    "cancelOrder": "Cancel order",
+    "canceling": "Cancelling…",
+    "loadingOptions": "Loading payment options…",
+    "errors": {
+      "pendingPurchase": "Another purchase is already pending. Finish or cancel it before buying again.",
+      "cancelFailed": "The order could not be cancelled. Try again shortly."
     }
   }
 }
