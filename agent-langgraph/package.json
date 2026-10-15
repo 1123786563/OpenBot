@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts"
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ag-ui/core": "0.0.57",
@@ -14,6 +15,10 @@
     "@langchain/core": "^1.2.8",
     "@langchain/google-genai": "^2.2.0",
     "@langchain/langgraph": "^1.4.10",
-    "@langchain/openai": "^1.5.8"
+    "@langchain/openai": "^1.5.8",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-trace-node": "^2.12.0"
   }
 }
