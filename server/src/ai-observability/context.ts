@@ -25,18 +25,19 @@ export type BotManagementCheck = (
   botId: string,
 ) => Promise<AgentProfile | null>;
 
-export const OBSERVATION_ACCESS_DENIED =
-  "Observation access requires management rights on this Bot.";
+export const OBSERVATION_BOT_NOT_FOUND = "Bot not found.";
 export const OBSERVATION_BOT_REQUIRED = "A Bot id is required.";
 
 export type ObservationBotAccess =
   | { ok: true; botId: string; profile: AgentProfile }
-  | { ok: false; status: 403 | 404; error: string };
+  | { ok: false; status: 404; error: string };
 
 /**
  * The one place observation authorization happens. A missing Bot id is refused before
- * any lookup; an unknown Bot and a Bot the caller may not manage answer identically, so
- * probing ids cannot tell the two apart.
+ * any lookup; an unknown Bot and a Bot the caller may not manage answer identically —
+ * not found rather than forbidden, as the agents store answers everywhere else and the
+ * parent Spec §7 requires ("统一不存在语义") — so probing ids cannot tell the two
+ * apart and learns nothing about which Bots exist.
  */
 export async function resolveObservationBot(
   check: BotManagementCheck,
@@ -47,6 +48,6 @@ export async function resolveObservationBot(
     return { ok: false, status: 404, error: OBSERVATION_BOT_REQUIRED };
   const profile = await check(actor, botId);
   if (!profile)
-    return { ok: false, status: 403, error: OBSERVATION_ACCESS_DENIED };
+    return { ok: false, status: 404, error: OBSERVATION_BOT_NOT_FOUND };
   return { ok: true, botId, profile };
 }
