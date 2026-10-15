@@ -26,6 +26,7 @@ import {
   fromEvent,
   switchMap,
   takeUntil,
+  tap,
   throwError,
 } from "rxjs";
 import { z } from "zod";
@@ -55,7 +56,10 @@ import {
   type StoredAttachment,
 } from "./channels/attachment-parts";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
-import { HeadlessToolsMiddleware } from "./computer/headless-tools";
+import {
+  HeadlessToolsMiddleware,
+  HeadlessToolSuspension,
+} from "./computer/headless-tools";
 import type { DeploymentConfig } from "./config";
 import { observeModelConnection } from "./desktop-connection-failure";
 import { desktopTelemetryProperties } from "./desktop-telemetry";
@@ -482,9 +486,16 @@ export type BuiltinModelSpanFact = {
     | { kind: "failed"; code: "provider_error" | "stream_error" }
     | { kind: "canceled" }
     | { kind: "usage_missing" };
-  /** The serialized provider request prompt; raw here, projected at the recorder. */
+  /**
+   * The serialized provider request prompt, BEFORE any projection: the raw fact the
+   * observation bypass saw. Projection (deny patterns, byte caps) happens ONLY at the
+   * recorder — this value is never trusted, never stored, never logged.
+   */
   input: string | null;
-  /** The accumulated output text; raw here, projected at the recorder. */
+  /**
+   * The accumulated output text, BEFORE any projection: the raw fact the observation
+   * bypass saw. Projection happens ONLY at the recorder (see `input`).
+   */
   output: string | null;
 };
 
@@ -501,6 +512,247 @@ export function setBuiltinModelSpanObserver(
 ) {
   builtinModelSpanObserver = observer;
 }
+
+/**
+ * What one built-in tool step's observation bypass saw (Issue #21): the proposal the run's
+ * event stream emitted, whether an execute callback in THIS process actually ran, and
+ * whether a result receipt ever arrived — three separately observed facts, never collapsed.
+ * `window` is how the observation window closed: only an interrupted run (the answer may
+ * still arrive) may honestly leave a step merely proposed; every terminal close without a
+ * real execution is unobserved, never success. Structural on purpose — `copilot.ts` must
+ * not depend on the observability module; `index.ts` adapts this fact into the recorder's
+ * observation at assembly.
+ */
+export type BuiltinToolStepFact = {
+  toolCallId: string;
+  toolName: string | null;
+  /** When the proposal was observed; null when only the execution was. */
+  proposedAt: Date | null;
+  endedAt: Date;
+  proposalObserved: boolean;
+  executionObserved: boolean;
+  receiptObserved: boolean;
+  /** What the real execute settled to; present only when executionObserved. */
+  execution: {
+    kind: "succeeded" | "failed" | "canceled";
+    output: string | null;
+  } | null;
+  window: "interrupted" | "terminal";
+  /** The raw accumulated call arguments — BEFORE projection; the recorder projects. */
+  input: string | null;
+  /** The raw execution output or error text — BEFORE projection; the recorder projects. */
+  output: string | null;
+};
+
+/**
+ * The tool-step observer, wired at assembly exactly like the model-span one: absent means
+ * no step observation happens at all — no argument accumulation, no execute bookkeeping.
+ */
+let builtinToolStepObserver: ((fact: BuiltinToolStepFact) => void) | undefined;
+
+export function setBuiltinToolStepObserver(
+  observer: ((fact: BuiltinToolStepFact) => void) | undefined,
+) {
+  builtinToolStepObserver = observer;
+}
+
+/**
+ * One open tool step, shared by the two observation points that can see it: the run's
+ * event stream (the proposal, any receipt) and the execute wrapper (the real execution).
+ * Correlated by toolCallId in a module-level registry because the wrapper is built once
+ * per agent configuration while the stream is per run — the runtime emits the call before
+ * it executes it, which is what makes the correlation sound.
+ */
+type BuiltinToolStepCell = {
+  toolCallId: string;
+  toolName: string | null;
+  proposedAt: Date | null;
+  proposalObserved: boolean;
+  executionObserved: boolean;
+  receiptObserved: boolean;
+  execution: BuiltinToolStepFact["execution"];
+  /** Argument deltas, joined once at close — linear, never quadratic. */
+  args: string[];
+  closed: boolean;
+};
+
+const builtinToolStepCells = new Map<string, BuiltinToolStepCell>();
+
+function builtinToolStepCell(
+  toolCallId: string,
+  toolName: string | null,
+): BuiltinToolStepCell {
+  const existing = builtinToolStepCells.get(toolCallId);
+  if (existing) return existing;
+  const cell: BuiltinToolStepCell = {
+    toolCallId,
+    toolName,
+    proposedAt: null,
+    proposalObserved: false,
+    executionObserved: false,
+    receiptObserved: false,
+    execution: null,
+    args: [],
+    closed: false,
+  };
+  builtinToolStepCells.set(toolCallId, cell);
+  return cell;
+}
+
+/** Emits one fact and retires the cell; every creation path has exactly one of these. */
+function settleBuiltinToolStep(
+  cell: BuiltinToolStepCell,
+  window: "interrupted" | "terminal",
+): void {
+  if (cell.closed) return;
+  cell.closed = true;
+  builtinToolStepCells.delete(cell.toolCallId);
+  const observer = builtinToolStepObserver;
+  if (observer === undefined) return;
+  try {
+    observer({
+      toolCallId: cell.toolCallId,
+      toolName: cell.toolName,
+      proposedAt: cell.proposedAt,
+      endedAt: new Date(),
+      proposalObserved: cell.proposalObserved,
+      executionObserved: cell.executionObserved,
+      receiptObserved: cell.receiptObserved,
+      execution: cell.execution,
+      window,
+      input: cell.args.length > 0 ? cell.args.join("") : null,
+      output: cell.execution?.output ?? null,
+    });
+  } catch {
+    // Observation never takes the product path down.
+  }
+}
+
+/**
+ * The tool-step observation bypass on the built-in run's event stream: reads ONLY the
+ * public event semantics (type + payload fields), never a framework internal. A proposal
+ * opens a cell; a TOOL_CALL_RESULT marks the receipt without ever impersonating an
+ * execution; the run's terminal event closes whatever is still open — an interrupt leaves
+ * steps proposed, every other ending leaves them unobserved.
+ */
+function observeBuiltinToolSteps(
+  stream: Observable<BaseEvent>,
+): Observable<BaseEvent> {
+  const observer = builtinToolStepObserver;
+  if (observer === undefined) return stream;
+  const owned: BuiltinToolStepCell[] = [];
+  const close = (window: "interrupted" | "terminal") => {
+    for (const cell of owned) settleBuiltinToolStep(cell, window);
+    owned.length = 0;
+  };
+  return stream.pipe(
+    tap({
+      next: (event) => {
+        switch (event.type) {
+          case "TOOL_CALL_START": {
+            const cell = builtinToolStepCell(
+              String(event.toolCallId),
+              typeof event.toolCallName === "string"
+                ? event.toolCallName
+                : null,
+            );
+            if (!cell.proposalObserved) {
+              cell.proposalObserved = true;
+              cell.proposedAt = new Date();
+            }
+            if (!owned.includes(cell)) owned.push(cell);
+            break;
+          }
+          case "TOOL_CALL_ARGS": {
+            const cell = builtinToolStepCells.get(String(event.toolCallId));
+            if (cell && !cell.closed && typeof event.delta === "string")
+              cell.args.push(event.delta);
+            break;
+          }
+          case "TOOL_CALL_RESULT": {
+            const cell = builtinToolStepCells.get(String(event.toolCallId));
+            if (cell && !cell.closed) cell.receiptObserved = true;
+            break;
+          }
+          case "RUN_ERROR":
+            close("terminal");
+            break;
+          case "RUN_FINISHED": {
+            const outcome = (event as { outcome?: { type?: unknown } }).outcome
+              ?.type;
+            close(outcome === "interrupt" ? "interrupted" : "terminal");
+            break;
+          }
+          default:
+            break;
+        }
+      },
+      error: () => close("terminal"),
+      complete: () => close("terminal"),
+    }),
+  );
+}
+
+/**
+ * Observes one REAL execute: the callback this process runs for a tool call. The
+ * settlement IS the receipt for a server-side execution. A suspension (the tool is
+ * waiting on a person or the browser) is not an ending — the cell stays open and the
+ * run's interrupt outcome settles it as proposed. An AbortError is a cancellation;
+ * anything else thrown is a failure. `toolCallId` absent (the runtime passed none) or
+ * the cell already closed means nothing is recorded — the run() always happens bare.
+ */
+async function observeBuiltinToolExecution<T>(
+  toolName: string,
+  toolCallId: string | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const observer = builtinToolStepObserver;
+  if (observer === undefined || toolCallId === undefined) return run();
+  const cell = builtinToolStepCell(toolCallId, toolName);
+  const outputOf = (value: unknown): string | null => {
+    if (typeof value === "string") return value;
+    try {
+      return JSON.stringify(value) ?? null;
+    } catch {
+      // A result that cannot serialize carries no observation payload.
+      return null;
+    }
+  };
+  try {
+    const value = await run();
+    cell.executionObserved = true;
+    cell.receiptObserved = true;
+    cell.execution = { kind: "succeeded", output: outputOf(value) };
+    settleBuiltinToolStep(cell, "terminal");
+    return value;
+  } catch (error) {
+    if (error instanceof HeadlessToolSuspension) {
+      // Not an ending: the run's interrupt outcome settles this cell proposed.
+      throw error;
+    }
+    cell.executionObserved = true;
+    cell.receiptObserved = true;
+    const canceled = (error as { name?: unknown })?.name === "AbortError";
+    cell.execution = {
+      kind: canceled ? "canceled" : "failed",
+      // A cancellation needs no payload — the kind says everything. A failure keeps
+      // its bounded message for the recorder to project.
+      output: canceled
+        ? null
+        : error instanceof Error
+          ? error.message.slice(0, 2_000)
+          : null,
+    };
+    settleBuiltinToolStep(cell, "terminal");
+    throw error;
+  }
+}
+
+/** Test-only surface for the T15 observation bypass, on the T14 `meteredModelForTests` pattern. */
+export const toolStepObservationForTests = {
+  observeStream: observeBuiltinToolSteps,
+  observeExecution: observeBuiltinToolExecution,
+};
 
 /**
  * How the input side of one billed call is provably bounded BEFORE the provider is called.
@@ -747,7 +999,12 @@ function meteredModel<T>(model: T): T {
        */
       const spanObserver = builtinModelSpanObserver;
       let spanInput: string | null = null;
-      let spanOutput = "";
+      /*
+       * Output deltas accumulate into an array joined once at report time — linear,
+       * where repeated string concatenation would re-copy on every delta (T14 review
+       * minor b).
+       */
+      const spanOutputDeltas: string[] = [];
       if (spanObserver !== undefined) {
         try {
           spanInput = JSON.stringify(
@@ -769,7 +1026,8 @@ function meteredModel<T>(model: T): T {
             modelId: typeof inner.modelId === "string" ? inner.modelId : null,
             ending,
             input: spanInput,
-            output: spanOutput === "" ? null : spanOutput,
+            output:
+              spanOutputDeltas.length === 0 ? null : spanOutputDeltas.join(""),
           });
         } catch {
           // Observation never takes the product path down.
@@ -1043,7 +1301,7 @@ function meteredModel<T>(model: T): T {
             part?.type === "text-delta" &&
             typeof (part as { delta?: unknown }).delta === "string"
           ) {
-            spanOutput += (part as { delta: string }).delta;
+            spanOutputDeltas.push((part as { delta: string }).delta);
           }
           /**
            * The one settlement-failure exit: mark settled, log by eventId, tear the
@@ -1347,13 +1605,15 @@ export function builtInAgentConfiguration(
             tools: allTools.map((tool) => ({
               ...tool,
               execute: (args: unknown, execution?: { toolCallId?: string }) =>
-                executeNativeApprovalTool(
-                  tool.name,
-                  args,
-                  execution?.toolCallId,
-                  tools.find((granted) => granted.name === tool.name)
-                    ?.initiator,
-                  () => tool.execute(args),
+                observeBuiltinToolExecution(tool.name, execution?.toolCallId, () =>
+                  executeNativeApprovalTool(
+                    tool.name,
+                    args,
+                    execution?.toolCallId,
+                    tools.find((granted) => granted.name === tool.name)
+                      ?.initiator,
+                    () => tool.execute(args),
+                  ),
                 ),
             })),
             maxSteps: TOOL_STEPS,
@@ -1426,12 +1686,14 @@ export function builtInAgentConfiguration(
           tools: allTools.map((tool) => ({
             ...tool,
             execute: (args: unknown, execution?: { toolCallId?: string }) =>
-              executeNativeApprovalTool(
-                tool.name,
-                args,
-                execution?.toolCallId,
-                tools.find((granted) => granted.name === tool.name)?.initiator,
-                () => tool.execute(args),
+              observeBuiltinToolExecution(tool.name, execution?.toolCallId, () =>
+                executeNativeApprovalTool(
+                  tool.name,
+                  args,
+                  execution?.toolCallId,
+                  tools.find((granted) => granted.name === tool.name)?.initiator,
+                  () => tool.execute(args),
+                ),
               ),
           })),
           maxSteps: TOOL_STEPS,
@@ -2613,7 +2875,9 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
      */
     if (!load)
       return nativeApprovalRun({ ...input, messages: history }, () =>
-        observeModelConnection(super.run({ ...input, messages: history })),
+        observeModelConnection(
+          observeBuiltinToolSteps(super.run({ ...input, messages: history })),
+        ),
       );
     /*
      * Deferred, because `run` has to answer with a stream straight away and reading the bytes is a
@@ -2632,7 +2896,9 @@ class BuiltInAgentWithSaneHistory extends BuiltInAgent {
       ).pipe(
         switchMap((messages) =>
           nativeApprovalRun({ ...input, messages }, () =>
-            observeModelConnection(super.run({ ...input, messages })),
+            observeModelConnection(
+              observeBuiltinToolSteps(super.run({ ...input, messages })),
+            ),
           ),
         ),
       ),

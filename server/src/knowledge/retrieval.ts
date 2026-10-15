@@ -122,6 +122,35 @@ export type KnowledgeRetriever = {
   ): Promise<RetrievalOutcome>;
 };
 
+/**
+ * 一次检索的可观测事实（Opik T15 检索步骤旁路）：实际发出的卫生化 query、实际
+ * 扫描的 kb 列表与检索结局（含命中片段的定位符）。结构化事实，投影发生在
+ * 观测模块（tool-steps.ts 记录器），这里只报告、绝不存储。
+ */
+export type KnowledgeRetrievalObservation = {
+  /** 实际发往上游的卫生化 query（trim/折叠空白/截断后）。 */
+  query: string;
+  /** 本次实际扫描的 kb 列表（override 优先）。 */
+  kbIds: readonly string[];
+  outcome: RetrievalOutcome;
+  startedAt: Date;
+  endedAt: Date;
+};
+
+/**
+ * 检索观测旁路，沿 copilot.ts setBuiltinModelSpanObserver 同一 setter 先例：未注册
+ * （Opik 未启用）时零开销；观测抛错被吞，绝不影响检索本身。
+ */
+let knowledgeRetrievalObserver:
+  | ((observation: KnowledgeRetrievalObservation) => void)
+  | undefined;
+
+export function setKnowledgeRetrievalObserver(
+  observer: ((observation: KnowledgeRetrievalObservation) => void) | undefined,
+) {
+  knowledgeRetrievalObserver = observer;
+}
+
 /** 归一化片段用于去重：去空白与标点后比较，避免同一 chunk 因空格差异重复注入。 */
 function normalizeForDedup(content: string): string {
   return content
@@ -174,183 +203,205 @@ export function createKnowledgeRetriever(
   options: RetrievalOptions,
   circuit: KnowledgeCircuit,
 ): KnowledgeRetriever {
-  return {
-    async retrieve(
-      query: string,
-      overrides?: RetrieveOverrides,
-    ): Promise<RetrievalOutcome> {
-      const startedAt = Date.now();
-      const cleanQuery = sanitizeQuery(query);
-      if (cleanQuery === "") return { status: "miss" };
+  // 检索本体：观测旁路包在外面（T15），本体逻辑一行未改（仅整体缩进一层）。
+  const performRetrieve = async (
+    query: string,
+    overrides?: RetrieveOverrides,
+  ): Promise<RetrievalOutcome> => {
+    const startedAt = Date.now();
+    const cleanQuery = sanitizeQuery(query);
+    if (cleanQuery === "") return { status: "miss" };
 
-      const kbIds =
-        overrides?.kbIds && overrides.kbIds.length > 0
-          ? overrides.kbIds
-          : options.kbIds;
-      const topK =
-        overrides?.topK !== undefined
-          ? Math.min(MAX_TOP_K, Math.max(MIN_TOP_K, overrides.topK))
-          : options.topK;
-      const timeoutMs = overrides?.timeoutMs ?? options.timeoutMs;
-      // 派生 config 覆盖超时：Bearer 注入与非 2xx→KnowledgeServiceError 全部复用
-      // client.ts，本层不自起 fetch（§7.6 单点约束）。
-      const requestConfig = { ...config, timeoutMs };
+    const kbIds =
+      overrides?.kbIds && overrides.kbIds.length > 0
+        ? overrides.kbIds
+        : options.kbIds;
+    const topK =
+      overrides?.topK !== undefined
+        ? Math.min(MAX_TOP_K, Math.max(MIN_TOP_K, overrides.topK))
+        : options.topK;
+    const timeoutMs = overrides?.timeoutMs ?? options.timeoutMs;
+    // 派生 config 覆盖超时：Bearer 注入与非 2xx→KnowledgeServiceError 全部复用
+    // client.ts，本层不自起 fetch（§7.6 单点约束）。
+    const requestConfig = { ...config, timeoutMs };
 
-      if (!circuit.allow()) {
-        // 熔断 open：不发起请求。reason 记 circuit-open 而非 unavailable，日志里
-        // 把“我们主动拒绝”与“上游确实不可达”区分开。
-        log.warn(
-          {
-            type: "knowledge-retrieval-degraded",
-            reason: "circuit-open",
-            kbIds,
-            queryChars: cleanQuery.length,
-          },
-          "knowledge-retrieval-degraded",
-        );
-        return { status: "degraded", reason: "circuit-open" };
-      }
-
-      const settled = await Promise.allSettled(
-        kbIds.map((kbId) =>
-          knowledgeRequest(
-            requestConfig,
-            `/kb/${encodeURIComponent(kbId)}/retrieve`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              // hybrid 固定 true、rerank 不传：与上游默认一致，减少配置面（A9）。
-              body: JSON.stringify({
-                query: cleanQuery,
-                top_k: topK,
-                score_threshold: options.scoreThreshold,
-                hybrid: true,
-              }),
-            },
-          ).then((response) => response.json() as Promise<RetrieveResponse>),
-        ),
-      );
-
-      const tookMs = Date.now() - startedAt;
-      const collected: { kbId: string; result: KnowledgeSearchResult }[] = [];
-      let anySuccess = false;
-
-      settled.forEach((outcome, position) => {
-        const kbId = kbIds[position] as string;
-        if (outcome.status === "fulfilled") {
-          anySuccess = true;
-          for (const result of outcome.value.results ?? []) {
-            collected.push({ kbId, result });
-          }
-          return;
-        }
-        // 拒绝分类（§5 降级矩阵）：5xx/429 是上游压力信号，计熔断；4xx 是配置类
-        // 错误（kb 删除/key 错），不计——误熔断会让一个坏配置拖垮全部 kb 的检索。
-        const error = outcome.reason;
-        const status =
-          error instanceof KnowledgeServiceError ? error.status : 0;
-        const countsTowardCircuit = status >= 500 || status === 429;
-        if (countsTowardCircuit) circuit.recordFailure();
-        log[countsTowardCircuit ? "warn" : "error"](
-          {
-            type: "knowledge-retrieval-degraded",
-            // client 把超时与网络错误都折成 503，用耗时近似区分（A5，仅日志语义）。
-            reason: status === 503 && tookMs >= timeoutMs ? "timeout" : "error",
-            status,
-            kbId,
-            kbIds,
-            tookMs,
-            queryChars: cleanQuery.length,
-          },
-          "knowledge-retrieval-degraded",
-        );
-      });
-
-      // 有任一 kb 成功即记成功：半开探测通过则回 closed，计数清零。
-      if (anySuccess) circuit.recordSuccess();
-
-      if (!anySuccess) {
-        // 全部失败 → 整体降级。客户端已把超时/网络错误折成 503，用耗时区分语义。
-        const reason: "timeout" | "unavailable" =
-          tookMs >= timeoutMs ? "timeout" : "unavailable";
-        log.warn(
-          {
-            type: "knowledge-retrieval-degraded",
-            reason,
-            kbIds,
-            tookMs,
-            queryChars: cleanQuery.length,
-          },
-          "knowledge-retrieval-degraded",
-        );
-        return { status: "degraded", reason };
-      }
-
-      // 合并：score 降序 → 归一化去重（保留首个=最高分）→ top_k 全局截断。
-      collected.sort((a, b) => b.result.score - a.result.score);
-      const seen = new Set<string>();
-      const merged: RetrievedChunk[] = [];
-      for (const { kbId, result } of collected) {
-        const content = contentOf(result);
-        if (content === "") continue;
-        const key = normalizeForDedup(content);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        merged.push({
-          index: merged.length + 1,
-          kbId,
-          chunkId: result.chunk_id,
-          docId: result.doc_id,
-          title: titleOf(result),
-          source: result.source,
-          score: result.score,
-          content: content.slice(0, CHUNK_MAX_CHARS),
-        });
-        if (merged.length >= topK) break;
-      }
-
-      // 总预算：超出丢整条尾部，不切半条；至少保住第一条（最高分）。
-      const budgeted: RetrievedChunk[] = [];
-      let used = 0;
-      for (const chunk of merged) {
-        if (
-          budgeted.length > 0 &&
-          used + chunk.content.length > CONTEXT_MAX_CHARS
-        )
-          break;
-        budgeted.push(chunk);
-        used += chunk.content.length;
-      }
-      const chunks = budgeted.map((chunk, position) => ({
-        ...chunk,
-        index: position + 1,
-      }));
-
-      if (chunks.length === 0) {
-        // 上游有应答但过滤后为空：miss 不计熔断（调用本身成功）。
-        log.info(
-          {
-            type: "knowledge-retrieval-miss",
-            kbIds,
-            tookMs,
-            queryChars: cleanQuery.length,
-          },
-          "knowledge-retrieval-miss",
-        );
-        return { status: "miss" };
-      }
-
-      log.info(
+    if (!circuit.allow()) {
+      // 熔断 open：不发起请求。reason 记 circuit-open 而非 unavailable，日志里
+      // 把“我们主动拒绝”与“上游确实不可达”区分开。
+      log.warn(
         {
-          type: "knowledge-retrieval-hit",
+          type: "knowledge-retrieval-degraded",
+          reason: "circuit-open",
           kbIds,
-          count: chunks.length,
+          queryChars: cleanQuery.length,
+        },
+        "knowledge-retrieval-degraded",
+      );
+      return { status: "degraded", reason: "circuit-open" };
+    }
+
+    const settled = await Promise.allSettled(
+      kbIds.map((kbId) =>
+        knowledgeRequest(
+          requestConfig,
+          `/kb/${encodeURIComponent(kbId)}/retrieve`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            // hybrid 固定 true、rerank 不传：与上游默认一致，减少配置面（A9）。
+            body: JSON.stringify({
+              query: cleanQuery,
+              top_k: topK,
+              score_threshold: options.scoreThreshold,
+              hybrid: true,
+            }),
+          },
+        ).then((response) => response.json() as Promise<RetrieveResponse>),
+      ),
+    );
+
+    const tookMs = Date.now() - startedAt;
+    const collected: { kbId: string; result: KnowledgeSearchResult }[] = [];
+    let anySuccess = false;
+
+    settled.forEach((outcome, position) => {
+      const kbId = kbIds[position] as string;
+      if (outcome.status === "fulfilled") {
+        anySuccess = true;
+        for (const result of outcome.value.results ?? []) {
+          collected.push({ kbId, result });
+        }
+        return;
+      }
+      // 拒绝分类（§5 降级矩阵）：5xx/429 是上游压力信号，计熔断；4xx 是配置类
+      // 错误（kb 删除/key 错），不计——误熔断会让一个坏配置拖垮全部 kb 的检索。
+      const error = outcome.reason;
+      const status = error instanceof KnowledgeServiceError ? error.status : 0;
+      const countsTowardCircuit = status >= 500 || status === 429;
+      if (countsTowardCircuit) circuit.recordFailure();
+      log[countsTowardCircuit ? "warn" : "error"](
+        {
+          type: "knowledge-retrieval-degraded",
+          // client 把超时与网络错误都折成 503，用耗时近似区分（A5，仅日志语义）。
+          reason: status === 503 && tookMs >= timeoutMs ? "timeout" : "error",
+          status,
+          kbId,
+          kbIds,
           tookMs,
           queryChars: cleanQuery.length,
         },
-        "knowledge-retrieval-hit",
+        "knowledge-retrieval-degraded",
       );
-      return { status: "hit", chunks, block: buildBlock(chunks) };
+    });
+
+    // 有任一 kb 成功即记成功：半开探测通过则回 closed，计数清零。
+    if (anySuccess) circuit.recordSuccess();
+
+    if (!anySuccess) {
+      // 全部失败 → 整体降级。客户端已把超时/网络错误折成 503，用耗时区分语义。
+      const reason: "timeout" | "unavailable" =
+        tookMs >= timeoutMs ? "timeout" : "unavailable";
+      log.warn(
+        {
+          type: "knowledge-retrieval-degraded",
+          reason,
+          kbIds,
+          tookMs,
+          queryChars: cleanQuery.length,
+        },
+        "knowledge-retrieval-degraded",
+      );
+      return { status: "degraded", reason };
+    }
+
+    // 合并：score 降序 → 归一化去重（保留首个=最高分）→ top_k 全局截断。
+    collected.sort((a, b) => b.result.score - a.result.score);
+    const seen = new Set<string>();
+    const merged: RetrievedChunk[] = [];
+    for (const { kbId, result } of collected) {
+      const content = contentOf(result);
+      if (content === "") continue;
+      const key = normalizeForDedup(content);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({
+        index: merged.length + 1,
+        kbId,
+        chunkId: result.chunk_id,
+        docId: result.doc_id,
+        title: titleOf(result),
+        source: result.source,
+        score: result.score,
+        content: content.slice(0, CHUNK_MAX_CHARS),
+      });
+      if (merged.length >= topK) break;
+    }
+
+    // 总预算：超出丢整条尾部，不切半条；至少保住第一条（最高分）。
+    const budgeted: RetrievedChunk[] = [];
+    let used = 0;
+    for (const chunk of merged) {
+      if (
+        budgeted.length > 0 &&
+        used + chunk.content.length > CONTEXT_MAX_CHARS
+      )
+        break;
+      budgeted.push(chunk);
+      used += chunk.content.length;
+    }
+    const chunks = budgeted.map((chunk, position) => ({
+      ...chunk,
+      index: position + 1,
+    }));
+
+    if (chunks.length === 0) {
+      // 上游有应答但过滤后为空：miss 不计熔断（调用本身成功）。
+      log.info(
+        {
+          type: "knowledge-retrieval-miss",
+          kbIds,
+          tookMs,
+          queryChars: cleanQuery.length,
+        },
+        "knowledge-retrieval-miss",
+      );
+      return { status: "miss" };
+    }
+
+    log.info(
+      {
+        type: "knowledge-retrieval-hit",
+        kbIds,
+        count: chunks.length,
+        tookMs,
+        queryChars: cleanQuery.length,
+      },
+      "knowledge-retrieval-hit",
+    );
+    return { status: "hit", chunks, block: buildBlock(chunks) };
+  };
+
+  return {
+    async retrieve(query, overrides) {
+      const observer = knowledgeRetrievalObserver;
+      if (observer === undefined) return performRetrieve(query, overrides);
+      const startedAt = new Date();
+      const outcome = await performRetrieve(query, overrides);
+      try {
+        observer({
+          query: sanitizeQuery(query),
+          kbIds:
+            overrides?.kbIds && overrides.kbIds.length > 0
+              ? overrides.kbIds
+              : options.kbIds,
+          outcome,
+          startedAt,
+          endedAt: new Date(),
+        });
+      } catch {
+        // 观测旁路绝不影响检索结果。
+      }
+      return outcome;
     },
   };
 }

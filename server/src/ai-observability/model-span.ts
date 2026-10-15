@@ -58,9 +58,16 @@ export type ModelSpanObservation = Readonly<{
   provider?: string;
   modelId?: string | null;
   ending: ModelSpanEnding;
-  /** The serialized provider request prompt; projected, never trusted raw. */
+  /**
+   * The serialized provider request prompt, BEFORE any projection: the raw fact the
+   * observation bypass saw. Projection happens only inside this recorder, so this value
+   * is never trusted, never stored, never logged as-is.
+   */
   input?: string | null;
-  /** The accumulated output text; projected, never trusted raw. */
+  /**
+   * The accumulated output text, BEFORE any projection (see `input`): projected only
+   * inside this recorder.
+   */
   output?: string | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
@@ -105,6 +112,12 @@ export function modelSpanTerminalState(
     case "settlement_failed":
     case "failed":
       return "failed";
+    default: {
+      // Compile-time exhaustive guard (T14 review minor c): a new ending kind fails
+      // the build here instead of silently falling through as undefined.
+      const exhausted: never = ending;
+      return exhausted;
+    }
   }
 }
 
