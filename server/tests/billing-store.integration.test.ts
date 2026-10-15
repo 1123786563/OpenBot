@@ -108,13 +108,18 @@ test("ensureCustomerRow inserts only: a placeholder never overwrites a landed na
   } catch (error) {
     failure = error;
   }
-  expect(failure).toBeInstanceOf(DrizzleQueryError);
-  expect((failure as DrizzleQueryError).cause).toBeInstanceOf(
-    Bun.SQL.PostgresError,
-  );
-  expect((failure as DrizzleQueryError).cause).toMatchObject({
-    errno: "23503",
-  });
+  expect(failure).toBeInstanceOf(BillingPersistenceError);
+  expect(failure).toMatchObject({ retryable: false });
+  // The driver's own error survives under `cause`, through whatever wrapped it on the way out.
+  let driver = (failure as { cause?: unknown }).cause;
+  while (
+    driver instanceof BillingPersistenceError ||
+    driver instanceof DrizzleQueryError
+  ) {
+    driver = (driver as { cause?: unknown }).cause;
+  }
+  expect(driver).toBeInstanceOf(Bun.SQL.PostgresError);
+  expect(driver).toMatchObject({ errno: "23503" });
 });
 
 test("deleting a customer cascades to its subscriptions", async () => {
@@ -189,13 +194,19 @@ test("a final inbox failure rolls back staged customer and subscription projecti
   } catch (error) {
     failure = error;
   }
-  expect(failure).toBeInstanceOf(DrizzleQueryError);
-  expect((failure as DrizzleQueryError).cause).toBeInstanceOf(
-    Bun.SQL.PostgresError,
-  );
-  expect((failure as DrizzleQueryError).cause).toMatchObject({
-    errno: "23502",
-  });
+  expect(failure).toBeInstanceOf(BillingPersistenceError);
+  expect(failure).toMatchObject({ retryable: false });
+  // The graded sentinel nests: the failing inner operation is wrapped by the apply, with the
+  // driver's own error preserved at the bottom of the `cause` chain.
+  let driver = (failure as { cause?: unknown }).cause;
+  while (
+    driver instanceof BillingPersistenceError ||
+    driver instanceof DrizzleQueryError
+  ) {
+    driver = (driver as { cause?: unknown }).cause;
+  }
+  expect(driver).toBeInstanceOf(Bun.SQL.PostgresError);
+  expect(driver).toMatchObject({ errno: "23502" });
   expect(await store.hasWebhookEvent(event.provider, event.eventId)).toBe(
     false,
   );
@@ -241,9 +252,12 @@ test("an atomic webhook rolls back existing projection updates on inbox failure"
       webhookType: null as unknown as string,
     },
   };
-  await expect(store.applyWebhookProjection(input)).rejects.toBeInstanceOf(
-    DrizzleQueryError,
+  const rejection = await store.applyWebhookProjection(input).then(
+    () => null,
+    (thrown: unknown) => thrown,
   );
+  expect(rejection).toBeInstanceOf(BillingPersistenceError);
+  expect(rejection).toMatchObject({ retryable: false });
   expect(await store.readSubscriptions(externalId)).toEqual(before);
   const rows = await database
     .select({ name: billingCustomers.name })
@@ -367,6 +381,134 @@ test("a real transaction-scoped lock timeout is retryable and leaves the deliver
   expect(await store.applyWebhookProjection(input)).toBe("duplicate");
   expect(await store.hasWebhookEvent("test", input.event.eventId)).toBe(true);
   expect(await store.readSubscriptions(externalId)).toHaveLength(1);
+});
+
+test("a subscription the provider no longer lists is retired, not left active", async () => {
+  const customer = `${prefix}-retire`;
+  await store.upsertCustomer({ externalId: customer, name: null });
+  await store.upsertSubscription({
+    externalCustomerId: customer,
+    externalSubscriptionId: `${prefix}-s-old`,
+    planCode: "standard",
+    status: "active",
+  });
+  await store.upsertSubscription({
+    externalCustomerId: customer,
+    externalSubscriptionId: `${prefix}-s-new`,
+    planCode: "pro",
+    status: "active",
+  });
+
+  const retired = await store.retireAbsentSubscriptions(customer, [
+    `${prefix}-s-new`,
+  ]);
+
+  expect(retired).toBe(1);
+  const rows = await store.readSubscriptions(customer);
+  expect(
+    rows.find((row) => row.externalSubscriptionId === `${prefix}-s-old`)
+      ?.status,
+  ).toBe("terminated");
+  expect(
+    rows.find((row) => row.externalSubscriptionId === `${prefix}-s-new`)
+      ?.status,
+  ).toBe("active");
+});
+
+test("retiring is idempotent and never touches another customer", async () => {
+  const customer = `${prefix}-retire-a`;
+  const other = `${prefix}-retire-b`;
+  await store.upsertCustomer({ externalId: customer, name: null });
+  await store.upsertCustomer({ externalId: other, name: null });
+  await store.upsertSubscription({
+    externalCustomerId: customer,
+    externalSubscriptionId: `${prefix}-s-a`,
+    planCode: "standard",
+    status: "active",
+  });
+  await store.upsertSubscription({
+    externalCustomerId: other,
+    externalSubscriptionId: `${prefix}-s-b`,
+    planCode: "standard",
+    status: "active",
+  });
+
+  expect(await store.retireAbsentSubscriptions(customer, [])).toBe(1);
+  expect(await store.retireAbsentSubscriptions(customer, [])).toBe(0);
+  expect((await store.readSubscriptions(other))[0]?.status).toBe("active");
+});
+
+test("onRetired reports only what a committed transaction moved (audit B6 review r1)", async () => {
+  const externalId = `${prefix}-onretired`;
+  await store.upsertCustomer({ externalId, name: null });
+  await store.upsertSubscription({
+    externalCustomerId: externalId,
+    externalSubscriptionId: `${prefix}-onretired-a`,
+    planCode: "pro",
+    status: "active" as const,
+  });
+  await store.upsertSubscription({
+    externalCustomerId: externalId,
+    externalSubscriptionId: `${prefix}-onretired-b`,
+    planCode: "base",
+    status: "active" as const,
+  });
+  const retired: { externalCustomerId: string; count: number }[] = [];
+
+  // A rolled-back apply: the retirement stages inside the transaction, then the inbox write
+  // fails (the null webhook_type violates its constraint) and everything rolls back — the
+  // buffered notification must go with it, never escape a delivery that moved nothing durable.
+  const rejection = await store
+    .applyWebhookProjection({
+      customer: { externalId, name: null },
+      subscriptionsPresentFor: externalId,
+      onRetired: (info) => retired.push(info),
+      event: {
+        provider: "test",
+        eventId: `${prefix}-onretired-rollback`,
+        webhookType: null as unknown as string,
+      },
+    })
+    .then(
+      () => null,
+      (thrown: unknown) => thrown,
+    );
+  expect(rejection).toBeInstanceOf(BillingPersistenceError);
+  expect(rejection).toMatchObject({ retryable: false });
+  expect(retired).toEqual([]);
+  expect(
+    (await store.readSubscriptions(externalId)).every(
+      (row) => row.status === "active",
+    ),
+  ).toBe(true);
+
+  // A committed apply: the count is what the transaction itself moved, from the transaction.
+  expect(
+    await store.applyWebhookProjection({
+      customer: { externalId },
+      subscriptions: [
+        {
+          externalCustomerId: externalId,
+          externalSubscriptionId: `${prefix}-onretired-b`,
+          planCode: "base",
+          status: "active" as const,
+        },
+      ],
+      subscriptionsPresentFor: externalId,
+      onRetired: (info) => retired.push(info),
+      event: {
+        provider: "test",
+        eventId: `${prefix}-onretired-commit`,
+        webhookType: "subscription.updated",
+      },
+    }),
+  ).toBe("processed");
+  expect(retired).toEqual([{ externalCustomerId: externalId, count: 1 }]);
+  expect(
+    (await store.readSubscriptions(externalId)).find(
+      (row) => row.externalSubscriptionId === `${prefix}-onretired-a`,
+    )?.status,
+  ).toBe("terminated");
 });
 
 test("snapshot counts customers, subscriptions and the latest sync", async () => {

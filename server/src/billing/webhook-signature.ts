@@ -1,4 +1,5 @@
 import {
+  createHash,
   createHmac,
   createSign,
   createVerify,
@@ -40,6 +41,15 @@ import type { VerifiedWebhook, WebhookVerifier } from "./types";
  * The token's `iss` is deliberately not checked. The self-hosted issuer value has no documented
  * guarantee, so a check would either always pass (matching nothing) or reject honest deliveries;
  * signature + algorithm whitelist + `data`-equals-body is the complete boundary here.
+ *
+ * The replay window (audit A7): the delivery's identity rides in an UNSIGNED header, so the
+ * signature alone cannot stop one captured delivery from being replayed under fresh unique keys
+ * forever. The token's own time claims bound that window WHEN THE PROVIDER SIGNS THEM; a
+ * self-hosted provider that signs no time claim at all must keep delivering, and for that case
+ * the body hash the verifier returns (sha256 of the verified raw body) plus the
+ * `webhook_body_replay` reconciliation finding are the whole defense — evidence, not a refusal.
+ * An operator who has confirmed their provider's tokens DO carry time claims may tighten
+ * "when present" into "required"; nobody has observed the deployed provider's claim set yet.
  */
 export type WebhookKeyConfig =
   | { mode: "jwt"; publicKeyPem: string }
@@ -104,7 +114,10 @@ function nonEmptyString(value: unknown): string | undefined {
  * both carry `lago_id`. A delivery about an object this deployment does not project (an invoice,
  * a wallet) simply yields no customer: that is finished work, not a refusal.
  */
-function deliveryOf(headers: Headers, data: unknown): VerifiedWebhook | null {
+function deliveryOf(
+  headers: Headers,
+  data: unknown,
+): Omit<VerifiedWebhook, "bodyHash"> | null {
   const eventId = nonEmptyString(headers.get("x-lago-unique-key")?.trim());
   if (eventId === undefined) return null;
 
@@ -137,10 +150,18 @@ function deliveryOf(headers: Headers, data: unknown): VerifiedWebhook | null {
 
 export function createWebhookVerifier(config: {
   key: WebhookKeyConfig;
+  /** Injectable clock, in Unix seconds. */
+  now?: () => number;
+  /** How far a signed `iat` may sit in the past. Defaults to 300, the WeChat adapter's skew. */
+  maxSkewSeconds?: number;
 }): WebhookVerifier {
   const key = config.key;
+  const nowSeconds = config.now ?? (() => Math.floor(Date.now() / 1000));
+  const maxSkewSeconds = config.maxSkewSeconds ?? 300;
   const pem = key.mode === "jwt" ? normalisePem(key.publicKeyPem) : null;
   const hmacKey = key.mode === "hmac" ? key.key : null;
+  const bodyHashOf = (rawBody: string) =>
+    createHash("sha256").update(rawBody).digest("hex");
 
   return {
     async verify(headers, rawBody) {
@@ -194,8 +215,41 @@ export function createWebhookVerifier(config: {
         if (!jsonEqual(payload, parseJson(rawBody))) {
           return { ok: false };
         }
+        /*
+         * The replay window (audit A7). The event identity rides in an UNSIGNED header, so the
+         * signature alone cannot stop one captured delivery from being replayed under fresh
+         * unique keys forever. The token's own time claims can: enforce them when the provider
+         * signs them, and leave a body hash behind as evidence when it does not. Enforced
+         * "when present" on purpose — a self-hosted provider that signs no time claim must keep
+         * delivering, and the hash plus the reconcile finding is what bounds that case.
+         */
+        const claims = signedData as {
+          exp?: unknown;
+          iat?: unknown;
+          nbf?: unknown;
+        };
+        const seconds = (value: unknown): number | undefined =>
+          typeof value === "number" && Number.isFinite(value)
+            ? value
+            : undefined;
+        const exp = seconds(claims.exp);
+        const iat = seconds(claims.iat);
+        const nbf = seconds(claims.nbf);
+        const now = nowSeconds();
+        if (exp !== undefined && now > exp) return { ok: false };
+        if (nbf !== undefined && now + maxSkewSeconds < nbf)
+          return { ok: false };
+        if (iat !== undefined && now - iat > maxSkewSeconds)
+          return { ok: false };
+        if (iat !== undefined && iat - now > maxSkewSeconds)
+          return { ok: false };
         const delivery = deliveryOf(headers, payload);
-        return delivery ? { ok: true, delivery } : { ok: false };
+        return delivery
+          ? {
+              ok: true,
+              delivery: { ...delivery, bodyHash: bodyHashOf(rawBody) },
+            }
+          : { ok: false };
       }
 
       if (key.mode === "hmac" && hmacKey !== null) {
@@ -209,7 +263,12 @@ export function createWebhookVerifier(config: {
         if (given.length !== wanted.length) return { ok: false };
         if (!timingSafeEqual(given, wanted)) return { ok: false };
         const delivery = deliveryOf(headers, parseJson(rawBody));
-        return delivery ? { ok: true, delivery } : { ok: false };
+        return delivery
+          ? {
+              ok: true,
+              delivery: { ...delivery, bodyHash: bodyHashOf(rawBody) },
+            }
+          : { ok: false };
       }
 
       return { ok: false };
@@ -228,8 +287,11 @@ export function signDeliveryLikeProvider(
   payload: unknown,
   privateKeyPem: string,
   header: { alg: string } = { alg: "RS256" },
+  timeClaims: { iat?: number; exp?: number; nbf?: number } = {},
 ): string {
-  const claims = { data: JSON.stringify(payload) };
+  // `data` last is not required — the verifier reads the claim by name — but keeping it last makes
+  // a test token's shape readable: time claims, then the double-encoded payload.
+  const claims = { ...timeClaims, data: JSON.stringify(payload) };
   const encodedHeader = Buffer.from(JSON.stringify(header)).toString(
     "base64url",
   );

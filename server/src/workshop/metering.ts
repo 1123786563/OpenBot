@@ -132,10 +132,40 @@ export const CODE_RUN_METRIC = "code_run_tokens";
  */
 export async function reportCodeRunUsage(
   outbox: Pick<UsageOutbox, "record"> | null | undefined,
-  input: CodeRunUsageInput & { externalCustomerId: string },
+  input: CodeRunUsageInput & {
+    externalCustomerId: string;
+    /**
+     * The reservation facts a billed code run must carry. Absent while the sandbox contract
+     * cannot enforce a token budget — and then no row is written at all, because a code-run
+     * row without reservation facts is a permanently blocked credits target.
+     */
+    reservation?: {
+      reservationId: string;
+      actualCostNumerator: string;
+      actualCostDenominator: string;
+    };
+    /** True when this deployment meters code runs to credits at all. */
+    creditMeteringEnabled?: boolean;
+  },
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
+  log: (message: string) => void = (message) => console.warn(message),
 ): Promise<boolean> {
   if (!outbox) return false; // Unconfigured: silent, and the code_runs row already stands.
   if (input.inputTokens <= 0 && input.outputTokens <= 0) return false; // Nothing meterable.
+  /*
+   * A code-run row without reservation facts is a permanently blocked credits target: the
+   * delivery worker's credit effect needs the hold and the exact cost to settle against, and
+   * `missing_reservation` is terminal by design (audit B3). Writing it anyway would meter the run
+   * to the provider while silently never charging it — so while the sandbox contract cannot
+   * enforce a token budget (the gateway refuses billed runs for the same reason), the honest
+   * answer is no row at all, loudly.
+   */
+  if (input.creditMeteringEnabled === true && input.reservation === undefined) {
+    log(
+      `billing: billing-code-run-reservation-missing run=${input.runId} tokens=${input.inputTokens}+${input.outputTokens} — no credit hold exists for this run, so no usage row is written`,
+    );
+    return false;
+  }
   await outbox.record({
     eventId: `code-run:${input.runId}`,
     source: "code_run",
@@ -146,6 +176,9 @@ export async function reportCodeRunUsage(
     model: input.modelId,
     client: currentUsageOrigin(),
     occurredAt: input.occurredAt,
+    reservationId: input.reservation?.reservationId ?? null,
+    actualCostNumerator: input.reservation?.actualCostNumerator ?? null,
+    actualCostDenominator: input.reservation?.actualCostDenominator ?? null,
     runId: input.runId,
     botId: input.botId,
     ownerUserId: input.ownerUserId,

@@ -390,6 +390,9 @@ export function setModelUsageMeter(
 export type ModelUsageFailureReason =
   | "provider_error"
   | "stream_error"
+  /** The stream ended before any finish part: we never learned the cost. Retained, not free. */
+  | "usage_missing"
+  /** The provider reported a finish with zero tokens: a confirmed no-cost. Released. */
   | "no_usage"
   | "cancelled"
   | "bound_refused";
@@ -445,10 +448,24 @@ export type ModelUsageProviderBounds = {
 export type ModelUsageGateLifecycle = {
   bounds?: ModelUsageProviderBounds;
   finish?: (usage: ModelUsageReport) => Promise<void> | void;
+  /**
+   * Durable evidence for work the provider produced that this deployment will not charge:
+   * usage above a configured bound, or a charge the pricing refused. The hold is retained.
+   */
+  recordUnsettled?: (input: {
+    eventId: string;
+    occurredAt: Date;
+    inputTokens: number;
+    outputTokens: number;
+    reason: string;
+  }) => Promise<void> | void;
   fail?: (input: {
     eventId: string;
     occurredAt: Date;
     reason: ModelUsageFailureReason;
+    /** What the stream had learned by the time it failed, when it had learned anything. */
+    inputTokens?: number;
+    outputTokens?: number;
   }) => Promise<void> | void;
 };
 
@@ -539,6 +556,50 @@ export class CreditGateError extends Error {
 }
 
 /**
+ * This deployment has no credit PRICES (audit A4). Distinct from `CreditGateError`: the balance is
+ * not the problem, `BILLING_MODEL_CREDIT_RATES` / `BILLING_MODEL_MAX_RESERVATION_TOKENS` /
+ * `BILLING_CODE_RUN_*` are. Telling an administrator to buy credits would send them to the wrong
+ * fix; the `issues` field carries the config keys to the log, never to a person-facing message.
+ */
+export class CreditPolicyUnconfiguredError extends Error {
+  override name = "CreditPolicyUnconfiguredError";
+  readonly code = "credit_policy_unconfigured";
+  constructor(
+    readonly issues: readonly { key: string; reason: string }[] = [],
+  ) {
+    super(
+      "Billing credit prices are not configured on this deployment, so no metered call can be admitted. An administrator must supply the BILLING_* rate and maximum-reservation keys.",
+    );
+  }
+}
+
+/** This model has no price in an otherwise configured policy. */
+export class ModelNotPricedError extends Error {
+  override name = "ModelNotPricedError";
+  readonly code = "model_not_priced";
+  constructor(readonly modelId: string) {
+    super(
+      `This model has no configured credit price, so calls to it cannot be admitted. An administrator must add it to BILLING_MODEL_CREDIT_RATES and BILLING_MODEL_MAX_RESERVATION_TOKENS.`,
+    );
+  }
+}
+
+/**
+ * The gate itself failed for a reason no sentinel names (a store error, a driver timeout).
+ * Fail-closed like every other refusal, but under its own name: "the balance could not be read"
+ * is a different repair from "the balance is empty", and the raw cause is logged, never rethrown.
+ */
+export class CreditGateFailureError extends Error {
+  override name = "CreditGateFailureError";
+  readonly code = "credit_gate_failed";
+  constructor() {
+    super(
+      "Credit admission could not be completed. Try again; if it persists an administrator must check the billing ledger connection.",
+    );
+  }
+}
+
+/**
  * A model this billed deployment cannot meter in its current form: the runtime resolves
  * string-form models itself, where the admission wrapper — and with it any provable bound —
  * cannot reach. Deliberately NOT `CreditGateError`: the balance is not the problem, the
@@ -599,7 +660,14 @@ function meteredModel<T>(model: T): T {
             client: currentUsageOrigin(),
           });
         } catch (error) {
-          if (error instanceof CreditGateError) throw error;
+          if (
+            error instanceof CreditGateError ||
+            error instanceof CreditPolicyUnconfiguredError ||
+            error instanceof ModelNotPricedError ||
+            error instanceof CreditGateFailureError
+          ) {
+            throw error;
+          }
           // The gate's own failure reason stays out of the person-facing sentinel; the
           // name alone is logged (a message could carry connection details from a store).
           log.error(
@@ -610,7 +678,7 @@ function meteredModel<T>(model: T): T {
             },
             "billing-model-gate-failed",
           );
-          throw new CreditGateError();
+          throw new CreditGateFailureError();
         }
       }
       /*
@@ -718,6 +786,15 @@ function meteredModel<T>(model: T): T {
 
       const reader = result.stream.getReader();
       let settled = false;
+      /*
+       * Set the moment `settleFinish` hands the usage to the lifecycle's finish. That path's
+       * owner has the REAL token counts and records its evidence before it rethrows, so a
+       * second record from the failure path below could only be less accurate — a 0/0
+       * duplicate the outbox's immutable-facts check rejects with a warn, or, when the outbox
+       * write itself is what failed, a 0/0 row contradicting a real-but-unwritten fact the
+       * `billing-usage-outbox-write-failed` log already names (final review, Minor 1).
+       */
+      let finishAttempted = false;
       const settleFinish = async (usage: {
         inputTokens: number;
         outputTokens: number;
@@ -730,6 +807,7 @@ function meteredModel<T>(model: T): T {
          * here — it propagates to the pull below, which errors the stream instead of
          * reporting a successful answer whose usage was never durably recorded.
          */
+        finishAttempted = true;
         await lifecycle?.finish?.({
           eventId,
           occurredAt,
@@ -747,7 +825,10 @@ function meteredModel<T>(model: T): T {
           // A meter that throws (or rejects) must not take the run's last chunk down with it.
         }
       };
-      const settleFail = async (reason: ModelUsageFailureReason) => {
+      const settleFail = async (
+        reason: ModelUsageFailureReason,
+        reported?: { inputTokens?: number; outputTokens?: number },
+      ) => {
         if (settled) return;
         settled = true;
         try {
@@ -755,6 +836,7 @@ function meteredModel<T>(model: T): T {
             eventId,
             occurredAt,
             reason,
+            ...reported,
           });
         } catch {
           // Release failures stay contained: the hold's own expiry is the backstop.
@@ -774,7 +856,7 @@ function meteredModel<T>(model: T): T {
           }
 
           if (chunk.done) {
-            await settleFail("no_usage");
+            await settleFail("usage_missing");
             reader.releaseLock();
             controller.close();
             return;
@@ -786,13 +868,44 @@ function meteredModel<T>(model: T): T {
            * upstream down, error the stream. Cancel — not just `releaseLock` — so the
            * provider's HTTP body is torn down instead of holding its connection open.
            */
-          const failSettlement = (
+          const failSettlement = async (
             logType: string,
-            error: Error,
+            error: ModelUsageSettlementError,
             detail?: Record<string, unknown>,
           ) => {
             settled = true;
             log.error({ type: logType, eventId, ...detail }, logType);
+            /*
+             * Evidence before the tear-down (audit A3): the provider already produced this work,
+             * the hold is retained, and without a durable row the token counts existed only in
+             * this log line — reconciliation would find an expired hold with no usage to reconcile.
+             * Awaited, not fire-and-forget: a record a crash can drop is the exact defect class
+             * this closes. Best-effort by contract: a failed evidence write must not mask the
+             * settlement error.
+             */
+            const tokens = detail as
+              | { inputTokens?: number; outputTokens?: number }
+              | undefined;
+            /*
+             * Evidence before the tear-down (audit A3) — but not when the gate's own finish
+             * was attempted: that path already recorded (or already failed to record) the
+             * real tokens, so a second write here is the 0/0 duplicate `finishAttempted`
+             * exists to skip. The over-bound and malformed-usage paths below never set the
+             * flag, so their real tokens still leave as evidence.
+             */
+            if (!finishAttempted) {
+              try {
+                await lifecycle?.recordUnsettled?.({
+                  eventId,
+                  occurredAt,
+                  inputTokens: tokens?.inputTokens ?? 0,
+                  outputTokens: tokens?.outputTokens ?? 0,
+                  reason: error.code,
+                });
+              } catch {
+                // The settlement error stays the product failure; evidence is best-effort.
+              }
+            }
             reader.cancel("settlement_failed").catch(() => {
               // The upstream is already gone; nothing to recover.
             });
@@ -805,14 +918,35 @@ function meteredModel<T>(model: T): T {
                   outputTokens?: { total?: number };
                 }
               | undefined;
-            const inputTokens = usage?.inputTokens?.total;
-            const outputTokens = usage?.outputTokens?.total;
+            const reportedInput = usage?.inputTokens?.total;
+            const reportedOutput = usage?.outputTokens?.total;
+            /*
+             * Absent usage numbers are NOT zero usage (audit A2): an OpenAI-compatible gateway
+             * that ignores `stream_options.include_usage` reports nothing at all, and treating
+             * that as a confirmed no-cost released the hold, metered nothing and charged nothing
+             * — silently free. A HALF-reported usage is the same unknown: billing the number the
+             * provider did name and treating the missing one as zero is a silent under-charge.
+             * `CONTEXT.md` Pending Settlement: the hold stays until settlement or a confirmed
+             * no-cost, so an incomplete report settles as an unknown outcome and the gate retains.
+             */
+            if (reportedInput === undefined || reportedOutput === undefined) {
+              // No return: the person still sees this finish part, exactly as the old no_usage
+              // path let it through (decision gate G4 owns any change to that). settleFail
+              // claimed `settled`, so every settlement branch below is inert and the part
+              // flows to the enqueue at the bottom. The half the provider DID name travels
+              // with the failure, so the evidence row records what arrived, not zeros — with
+              // keys only for what did arrive, absent like every other settleFail site.
+              await settleFail("usage_missing", {
+                ...(reportedInput !== undefined && { inputTokens: reportedInput }),
+                ...(reportedOutput !== undefined && { outputTokens: reportedOutput }),
+              });
+            }
             const validInput =
-              inputTokens === undefined ||
-              (Number.isSafeInteger(inputTokens) && inputTokens >= 0);
+              reportedInput === undefined ||
+              (Number.isSafeInteger(reportedInput) && reportedInput >= 0);
             const validOutput =
-              outputTokens === undefined ||
-              (Number.isSafeInteger(outputTokens) && outputTokens >= 0);
+              reportedOutput === undefined ||
+              (Number.isSafeInteger(reportedOutput) && reportedOutput >= 0);
 
             /*
              * Malformed or over-bound usage is a DISTINCT settlement failure: no charge is
@@ -820,12 +954,13 @@ function meteredModel<T>(model: T): T {
              * below — the reservation is NOT released. The provider already produced the
              * work; the hold stays visible for operator reconciliation.
              */
-            const billedInput = inputTokens ?? 0;
-            const billedOutput = outputTokens ?? 0;
+            const billedInput = reportedInput ?? 0;
+            const billedOutput = reportedOutput ?? 0;
             if (!validInput || !validOutput) {
-              failSettlement(
+              await failSettlement(
                 "billing-model-usage-invalid",
                 new ModelUsageSettlementError("usage_invalid"),
+                { inputTokens: billedInput, outputTokens: billedOutput },
               );
               return;
             }
@@ -837,7 +972,7 @@ function meteredModel<T>(model: T): T {
               (outputBound?.enforced === "provider_cap" &&
                 BigInt(billedOutput) > outputBound.maximumTokens);
             if (overBound) {
-              failSettlement(
+              await failSettlement(
                 "billing-model-usage-over-bound",
                 new ModelUsageSettlementError("usage_over_bound"),
                 { inputTokens: billedInput, outputTokens: billedOutput },
@@ -860,7 +995,7 @@ function meteredModel<T>(model: T): T {
                   typeof (error as { code?: unknown })?.code === "string"
                     ? (error as { code: string }).code
                     : undefined;
-                failSettlement(
+                await failSettlement(
                   "billing-model-finish-failed",
                   error instanceof ModelUsageSettlementError
                     ? error

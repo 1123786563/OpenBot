@@ -6,18 +6,22 @@ import {
   expect,
   test,
 } from "bun:test";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createReconciler } from "../src/billing/reconcile";
 import { createUsageOutbox } from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
-import { billingCustomers, billingSubscriptions } from "../src/db/schema/billing";
-import { creditGrants, creditLedger } from "../src/db/schema/credits";
+import {
+  billingCustomers,
+  billingSubscriptions,
+  billingWebhookEvents,
+} from "../src/db/schema/billing";
 import {
   creditReservationAllocations,
   creditReservations,
 } from "../src/db/schema/credit-reservations";
+import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -372,9 +376,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
       subject: reservationId,
     });
     expect(finding?.detail).toContain("state=reserved");
-    expect(finding?.detail).toContain(
-      "remediation=operator_recovery_required",
-    );
+    expect(finding?.detail).toContain("remediation=operator_recovery_required");
 
     const after = await reservationSnapshot(reservationId);
     expect(after).toEqual(before);
@@ -431,9 +433,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(finding?.detail).toContain(`idempotency_key=usage:${eventId}`);
     expect(finding?.detail).toContain(`usage_event_id=${eventId}`);
     expect(finding?.detail).toMatch(/expired_age_ms=\d+/);
-    expect(finding?.detail).toContain(
-      "remediation=operator_recovery_required",
-    );
+    expect(finding?.detail).toContain("remediation=operator_recovery_required");
     // It must not claim knowledge of usage that was never durably recorded.
     expect(finding?.detail).not.toContain("input_tokens");
     expect(finding?.detail).not.toContain("output_tokens");
@@ -442,7 +442,8 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(after).toEqual(before);
   });
 
-  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {    const customer = `${prefix}-stuck-boundary`;
+  test("a reserved hold expiring at the reconciliation instant is still reported as expired", async () => {
+    const customer = `${prefix}-stuck-boundary`;
     await creditWriter.grantCredits({
       externalCustomerId: customer,
       source: "promo",
@@ -523,9 +524,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(finding?.detail).toContain("maximum=550");
     expect(finding?.detail).toContain("allocated=500");
     expect(finding?.detail).toContain("delta=-50");
-    expect(finding?.detail).toContain(
-      "remediation=operator_recovery_required",
-    );
+    expect(finding?.detail).toContain("remediation=operator_recovery_required");
 
     const after = await reservationSnapshot(reservationId);
     expect(after).toEqual(before);
@@ -628,11 +627,7 @@ describe("reconcile (the skeleton, over real tables)", () => {
     const event = usageEvent(`${prefix}-usage-blocked`);
     await outbox.record(event);
     await outbox.markLagoDelivered(event.eventId);
-    await outbox.blockDelivery(
-      event.eventId,
-      "credits",
-      "missing_reservation",
-    );
+    await outbox.blockDelivery(event.eventId, "credits", "missing_reservation");
     await database.execute(
       sql`UPDATE usage_outbox SET updated_at = now() - interval '2 hours' WHERE event_id = ${event.eventId}`,
     );
@@ -667,7 +662,8 @@ describe("reconcile (the skeleton, over real tables)", () => {
     expect(
       report.findings.some(
         (item) =>
-          item.subject === event.eventId && item.code === "usage_target_pending",
+          item.subject === event.eventId &&
+          item.code === "usage_target_pending",
       ),
     ).toBe(false);
 
@@ -763,6 +759,62 @@ describe("reconcile (the skeleton, over real tables)", () => {
     ).toBe(false);
     expect(usageFindings.at(-1)?.detail).toContain("omitted=2");
   });
+
+  test("two inbox rows with the same body hash are webhook_body_replay; one row is silence (audit A7)", async () => {
+    // Rows written directly (the pass audits the table, not the writer): two distinct event ids
+    // carrying one body hash are the replay shape, one id alone is a normal delivery. The
+    // finding's subject is the hash itself, so the assertions match on hashes this test owns.
+    const replayedHash = createHash("sha256")
+      .update(`${prefix}-replayed-body`)
+      .digest("hex");
+    const singleHash = createHash("sha256")
+      .update(`${prefix}-single-body`)
+      .digest("hex");
+    await database.insert(billingWebhookEvents).values([
+      {
+        provider: "lago",
+        eventId: `${prefix}-replay-1`,
+        webhookType: "subscription.updated",
+        bodyHash: replayedHash,
+      },
+      {
+        provider: "lago",
+        eventId: `${prefix}-replay-2`,
+        webhookType: "subscription.updated",
+        bodyHash: replayedHash,
+      },
+      {
+        provider: "lago",
+        eventId: `${prefix}-replay-3`,
+        webhookType: "customer.updated",
+        bodyHash: singleHash,
+      },
+    ]);
+    try {
+      const report = await reconciler.reconcile();
+      const replayed = report.findings.find(
+        (finding) =>
+          finding.code === "webhook_body_replay" &&
+          finding.subject === replayedHash,
+      );
+      expect(replayed).toMatchObject({
+        category: "payment",
+        subject: replayedHash,
+      });
+      expect(replayed?.detail).toContain("deliveries=2");
+      expect(
+        report.findings.some(
+          (finding) =>
+            finding.code === "webhook_body_replay" &&
+            finding.subject === singleHash,
+        ),
+      ).toBe(false);
+    } finally {
+      await database
+        .delete(billingWebhookEvents)
+        .where(like(billingWebhookEvents.eventId, `${prefix}-replay-%`));
+    }
+  });
 });
 
 /*
@@ -807,57 +859,65 @@ describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () =
     `);
   }, SLOW);
 
-  test("a one-unit split at 2^53 magnitude fires the finding with exact decimal strings", async () => {
-    // Grants sum to exactly 2^53 = 9007199254740992; the ledger's make-up row carries one more
-    // unit, so its sum is 9007199254740993 — beyond MAX_SAFE_INTEGER by exactly the split.
-    await database.insert(creditGrants).values({
-      id: `${huge}-g-makeup`,
-      externalCustomerId: huge,
-      source: "promo",
-      reason: "precision-audit",
-      total: MAKE_UP,
-      used: MAKE_UP,
-      expiresAt: new Date(Date.now() + 24 * 3600_000),
-      status: "active",
-      idempotencyKey: `${huge}-gk-makeup`,
-    });
-    await database.insert(creditLedger).values({
-      id: `${huge}-l-makeup`,
-      externalCustomerId: huge,
-      title: "precision-audit",
-      requestId: null,
-      idempotencyKey: `${huge}-lk-makeup`,
-      credits: MAKE_UP + 1,
-      applied: MAKE_UP + 1,
-    });
+  test(
+    "a one-unit split at 2^53 magnitude fires the finding with exact decimal strings",
+    async () => {
+      // Grants sum to exactly 2^53 = 9007199254740992; the ledger's make-up row carries one more
+      // unit, so its sum is 9007199254740993 — beyond MAX_SAFE_INTEGER by exactly the split.
+      await database.insert(creditGrants).values({
+        id: `${huge}-g-makeup`,
+        externalCustomerId: huge,
+        source: "promo",
+        reason: "precision-audit",
+        total: MAKE_UP,
+        used: MAKE_UP,
+        expiresAt: new Date(Date.now() + 24 * 3600_000),
+        status: "active",
+        idempotencyKey: `${huge}-gk-makeup`,
+      });
+      await database.insert(creditLedger).values({
+        id: `${huge}-l-makeup`,
+        externalCustomerId: huge,
+        title: "precision-audit",
+        requestId: null,
+        idempotencyKey: `${huge}-lk-makeup`,
+        credits: MAKE_UP + 1,
+        applied: MAKE_UP + 1,
+      });
 
-    const report = await reconciler.reconcile();
-    const finding = report.findings.find(
-      (item) =>
-        item.code === "grants_ledger_divergence" && item.subject === huge,
-    );
-    expect(finding).toBeDefined();
-    // The exact decimal strings, not a float's idea of them (9007199254740992 loses the split).
-    expect(finding?.detail).toContain("9007199254740992");
-    expect(finding?.detail).toContain("9007199254740993");
-    expect(finding?.detail).toContain("off by 1");
-  }, SLOW);
-
-  test("the identity agrees at 2^53 magnitude and stays silent", async () => {
-    // The make-up ledger row loses the one extra unit: both sums are exactly 2^53.
-    await database
-      .update(creditLedger)
-      .set({ applied: MAKE_UP, credits: MAKE_UP })
-      .where(eq(creditLedger.id, `${huge}-l-makeup`));
-
-    const report = await reconciler.reconcile();
-    expect(
-      report.findings.find(
+      const report = await reconciler.reconcile();
+      const finding = report.findings.find(
         (item) =>
           item.code === "grants_ledger_divergence" && item.subject === huge,
-      ),
-    ).toBeUndefined();
-  }, SLOW);
+      );
+      expect(finding).toBeDefined();
+      // The exact decimal strings, not a float's idea of them (9007199254740992 loses the split).
+      expect(finding?.detail).toContain("9007199254740992");
+      expect(finding?.detail).toContain("9007199254740993");
+      expect(finding?.detail).toContain("off by 1");
+    },
+    SLOW,
+  );
+
+  test(
+    "the identity agrees at 2^53 magnitude and stays silent",
+    async () => {
+      // The make-up ledger row loses the one extra unit: both sums are exactly 2^53.
+      await database
+        .update(creditLedger)
+        .set({ applied: MAKE_UP, credits: MAKE_UP })
+        .where(eq(creditLedger.id, `${huge}-l-makeup`));
+
+      const report = await reconciler.reconcile();
+      expect(
+        report.findings.find(
+          (item) =>
+            item.code === "grants_ledger_divergence" && item.subject === huge,
+        ),
+      ).toBeUndefined();
+    },
+    SLOW,
+  );
 
   test("usage delivery target counts report exact values (F2)", async () => {
     // The counts are whole-table (an estimate is not an audit), so the assertion is on the
@@ -880,18 +940,14 @@ describe("exact credit-identity arithmetic beyond Number.MAX_SAFE_INTEGER", () =
     const report = await reconciler.reconcile();
     const beforeTargets = before.checked.usageDeliveryTargets;
     const afterTargets = report.checked.usageDeliveryTargets;
-    expect(
-      afterTargets.pending.credits - beforeTargets.pending.credits,
-    ).toBe(2);
-    expect(
-      afterTargets.blocked.lago - beforeTargets.blocked.lago,
-    ).toBe(1);
-    expect(
-      afterTargets.pending.lago - beforeTargets.pending.lago,
-    ).toBe(0);
-    expect(
-      afterTargets.blocked.credits - beforeTargets.blocked.credits,
-    ).toBe(0);
+    expect(afterTargets.pending.credits - beforeTargets.pending.credits).toBe(
+      2,
+    );
+    expect(afterTargets.blocked.lago - beforeTargets.blocked.lago).toBe(1);
+    expect(afterTargets.pending.lago - beforeTargets.pending.lago).toBe(0);
+    expect(afterTargets.blocked.credits - beforeTargets.blocked.credits).toBe(
+      0,
+    );
   });
 });
 
@@ -956,7 +1012,11 @@ describe("plan payout and payment evidence reconciliation", () => {
 
   test("a paid order whose plan allowance never landed is plan_grant_missing, named by order and the plan:<orderId> key", async () => {
     const orderId = await seedPaidOrder(`${prefix}-grant-missing`);
-    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+    const catalogReconciler = createReconciler(
+      database,
+      prefix,
+      planCreditsFor,
+    );
 
     const report = await catalogReconciler.reconcile();
     const finding = report.findings.find(
@@ -984,7 +1044,11 @@ describe("plan payout and payment evidence reconciliation", () => {
       status: "active",
       idempotencyKey: `plan:${orderId}`,
     });
-    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+    const catalogReconciler = createReconciler(
+      database,
+      prefix,
+      planCreditsFor,
+    );
 
     const report = await catalogReconciler.reconcile();
     const finding = report.findings.find(
@@ -1016,7 +1080,11 @@ describe("plan payout and payment evidence reconciliation", () => {
     });
     // "basic" is not in the test catalog: it grants nothing, so there is nothing to reconcile.
     await seedPaidOrder(`${prefix}-grant-none`, { planCode: "basic" });
-    const catalogReconciler = createReconciler(database, prefix, planCreditsFor);
+    const catalogReconciler = createReconciler(
+      database,
+      prefix,
+      planCreditsFor,
+    );
 
     const report = await catalogReconciler.reconcile();
     expect(
@@ -1064,8 +1132,7 @@ describe("plan payout and payment evidence reconciliation", () => {
     expect(
       patientReport.findings.some(
         (item) =>
-          item.code === "activation_backlog" &&
-          item.subject.startsWith(prefix),
+          item.code === "activation_backlog" && item.subject.startsWith(prefix),
       ),
     ).toBe(false);
   });
@@ -1135,4 +1202,234 @@ describe("plan payout and payment evidence reconciliation", () => {
       ),
     ).toBe(false);
   });
+});
+
+describe("overdraw is reported exactly (audit D1)", () => {
+  const customer = `${prefix}-overdraw`;
+
+  test("a ledger the grants could not fund totals the shortfall in exact scaled units", async () => {
+    await database
+      .insert(billingCustomers)
+      .values({ externalId: customer, name: null })
+      .onConflictDoNothing({ target: billingCustomers.externalId });
+    await database.insert(creditGrants).values({
+      id: `${customer}-g1`,
+      externalCustomerId: customer,
+      source: "promo",
+      reason: "overdraw-audit",
+      total: 100,
+      used: 100,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `${customer}-gk1`,
+    });
+    // credits > applied is the overdraw shape the settle path writes when a charge exceeds the
+    // capacity behind its hold. The grant identity still holds: used 100 == applied 100.
+    await database.insert(creditLedger).values({
+      id: `${customer}-l1`,
+      externalCustomerId: customer,
+      title: "over-bound settlement",
+      requestId: null,
+      idempotencyKey: `${customer}-lk1`,
+      credits: 250,
+      applied: 100,
+    });
+
+    const report = await reconciler.reconcile();
+
+    expect(report.checked.overdraw.units).not.toBe("0");
+    const finding = report.findings.find(
+      (item) => item.code === "credit_overdraw" && item.subject === customer,
+    );
+    expect(finding?.category).toBe("credits");
+    expect(finding?.detail).toContain("entries=1");
+    expect(finding?.detail).toContain("units=150");
+    // The identity invariant must NOT fire for this customer: overdraw is not divergence.
+    expect(
+      report.findings.some(
+        (item) =>
+          item.code === "grants_ledger_divergence" && item.subject === customer,
+      ),
+    ).toBe(false);
+  });
+
+  test("a customer that never overdraws produces no credit_overdraw finding", async () => {
+    const report = await reconciler.reconcile();
+    expect(
+      report.findings.some(
+        (item) => item.code === "credit_overdraw" && item.subject === prefix,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("reconciliation pages its table walks (audit C3)", () => {
+  test("a table larger than one page still audits every row", async () => {
+    const customer = `${prefix}-paged`;
+    const ROWS = 1200; // > RECONCILE_PAGE_SIZE (500), so the keyset loop must walk three pages
+    await database
+      .insert(billingCustomers)
+      .values({ externalId: customer, name: null })
+      .onConflictDoNothing({ target: billingCustomers.externalId });
+    // Seeded server-side in one round trip, the way this file's precision suite does it: a
+    // client-side row-by-row loop would turn a paging test into a load test.
+    await database.execute(sql`
+      INSERT INTO credit_ledger
+        (id, external_customer_id, title, idempotency_key, credits, applied)
+      SELECT
+        ${customer} || '-l-' || g::text, ${customer}, 'paging-audit',
+        ${customer} || '-lk-' || g::text, 1, 1
+      FROM generate_series(1, ${ROWS}) g
+    `);
+    await database.insert(creditGrants).values({
+      id: `${customer}-g1`,
+      externalCustomerId: customer,
+      source: "promo",
+      reason: "paging-audit",
+      total: ROWS,
+      // One unit short of the ledger's sum: the divergence is exactly 1, which is only detectable
+      // if the LAST page was read.
+      used: ROWS - 1,
+      expiresAt: new Date(Date.now() + 24 * 3600_000),
+      status: "active",
+      idempotencyKey: `${customer}-gk1`,
+    });
+
+    const report = await reconciler.reconcile();
+
+    const finding = report.findings.find(
+      (item) =>
+        item.code === "grants_ledger_divergence" && item.subject === customer,
+    );
+    expect(finding?.detail).toContain("off by 1");
+    expect(report.checked.scanned.pageSize).toBe(500);
+  });
+});
+
+/*
+ * The keyset walks themselves (final review, Important 1): the case above proves the AGGREGATE
+ * side read its last page, but nothing exercised the four paged walks past a page boundary —
+ * and paging is this plan's riskiest change. Two seeds, each larger than RECONCILE_PAGE_SIZE
+ * (500). The whole-table counters are asserted as before/after deltas, the way the F2 case
+ * above asserts its whole-table counts: the pass reads every neighbour's rows too.
+ */
+describe("the paged walks cross page boundaries (audit C3, final review)", () => {
+  // Seeded server-side in one round trip each (generate_series, the precision suite's way): a
+  // client-side row-by-row loop would turn a paging test into a load test. These cases also
+  // walk the precision suite's millions of residue rows, so they carry the same slow-case
+  // timeout those do.
+  const SLOW = 240_000;
+
+  test(
+    "1200 agreeing paid orders are all walked across three pages, with zero paid_without_fact",
+    async () => {
+      const ROWS = 1200; // > 2 × RECONCILE_PAGE_SIZE: the paidOrders walk must cross three pages
+      const before = await reconciler.reconcile();
+      await database.execute(sql`
+        INSERT INTO payment_orders
+          (id, plan_code, provider, amount_cents, currency, status, activation_state,
+           channel_transaction_id, checkout_payload, expires_at, paid_at, version)
+        SELECT
+          ${prefix} || '-pg-' || g::text, 'pro', 'alipay', 8800, 'CNY', 'paid', 'pending',
+          ${prefix} || '-pg-tx-' || g::text, null, now() + interval '15 minutes', now(), 2
+        FROM generate_series(1, ${ROWS}) g
+      `);
+      // Each order's matching paid fact: the three-way agreement holds row for row, so the
+      // only finding a dropped page on either walk could produce here is paid_without_fact.
+      await database.execute(sql`
+        INSERT INTO payment_events
+          (id, order_id, kind, code, state, channel_transaction_id, amount_cents)
+        SELECT
+          ${prefix} || '-pg-' || g::text || '-fact', ${prefix} || '-pg-' || g::text,
+          'fact', 'paid', 'paid', ${prefix} || '-pg-tx-' || g::text, 8800
+        FROM generate_series(1, ${ROWS}) g
+      `);
+
+      const report = await reconciler.reconcile();
+
+      expect(report.checked.scanned.pageSize).toBe(500);
+      // The paidOrders walk crossed three pages and kept every row this test added…
+      expect(
+        report.checked.scanned.paidOrders - before.checked.scanned.paidOrders,
+      ).toBe(ROWS);
+      // …and the paidFacts walk kept pace — the two counters move together only if neither
+      // loop dropped a page.
+      expect(
+        report.checked.scanned.paidFacts - before.checked.scanned.paidFacts,
+      ).toBe(ROWS);
+      expect(
+        report.findings.filter(
+          (finding) =>
+            finding.code === "paid_without_fact" &&
+            finding.subject.startsWith(`${prefix}-pg-`),
+        ),
+      ).toEqual([]);
+    },
+    SLOW,
+  );
+
+  test(
+    "a reservation split across a page boundary keeps its tail allocations",
+    async () => {
+      const customer = `${prefix}-pgsplit`;
+      const ALLOCATIONS = 600; // > RECONCILE_PAGE_SIZE: the walk must split this reservation
+      const reservationId = `${customer}-r1`;
+      const before = await reconciler.reconcile();
+      await database
+        .insert(billingCustomers)
+        .values({ externalId: customer, name: null })
+        .onConflictDoNothing({ target: billingCustomers.externalId });
+      // One grant per allocation — the (reservationId, grantId) unique index forbids two
+      // allocations of one reservation on the same grant, so a 600-allocation hold needs 600
+      // grants, which is also the realistic shape: a hold drawing on many small grants.
+      await database.execute(sql`
+        INSERT INTO credit_grants
+          (id, external_customer_id, source, total, used, expires_at, status, idempotency_key)
+        SELECT
+          ${customer} || '-g-' || g::text, ${customer}, 'promo', 1, 0,
+          now() + interval '1 day', 'active', ${customer} || '-gk-' || g::text
+        FROM generate_series(1, ${ALLOCATIONS}) g
+      `);
+      await database.execute(sql`
+        INSERT INTO credit_reservations
+          (id, external_customer_id, idempotency_key, maximum, status, expires_at)
+        VALUES
+          (${reservationId}, ${customer}, ${customer} || '-rk1', ${ALLOCATIONS},
+           'reserved', now() + interval '1 hour')
+      `);
+      // 600 allocations of 1 unit each: the sum is exactly the reservation's maximum, so any
+      // reservation_allocation_imbalance finding naming this reservation is fabricated by the
+      // walk — the false finding a reservation-id-only cursor would produce, because the page
+      // that ends mid-reservation would never read this hold's tail.
+      await database.execute(sql`
+        INSERT INTO credit_reservation_allocations
+          (id, reservation_id, grant_id, amount)
+        SELECT
+          ${customer} || '-a-' || g::text, ${reservationId}, ${customer} || '-g-' || g::text, 1
+        FROM generate_series(1, ${ALLOCATIONS}) g
+      `);
+
+      const report = await reconciler.reconcile();
+      expect(report.checked.scanned.pageSize).toBe(500);
+      // The reservation's allocations are all counted: the join walked every one of this
+      // hold's 600 rows (at least — the whole table's reserved rows are in this counter).
+      expect(report.checked.scanned.reservedRows).toBeGreaterThanOrEqual(
+        ALLOCATIONS,
+      );
+      expect(
+        report.checked.scanned.reservedRows -
+          before.checked.scanned.reservedRows,
+      ).toBe(ALLOCATIONS);
+      // The compound (reservationId, allocationId) cursor's whole job: no fabricated
+      // imbalance for a healthy hold the walk happened to split across a page boundary.
+      expect(
+        report.findings.find(
+          (item) =>
+            item.code === "reservation_allocation_imbalance" &&
+            item.subject === reservationId,
+        ),
+      ).toBeUndefined();
+    },
+    SLOW,
+  );
 });

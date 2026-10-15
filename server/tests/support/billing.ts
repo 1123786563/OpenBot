@@ -16,14 +16,24 @@ export function memoryBillingStore(): BillingStore & {
   subscriptions: Map<string, BillingSubscriptionRow>;
   inbox: Map<
     string,
-    { uniqueKey?: string; webhookType: string; objectId?: string }
+    {
+      uniqueKey?: string;
+      webhookType: string;
+      objectId?: string;
+      bodyHash?: string;
+    }
   >;
 } {
   const customers = new Map<string, { name: string | null }>();
   const subscriptions = new Map<string, BillingSubscriptionRow>();
   const inbox = new Map<
     string,
-    { uniqueKey?: string; webhookType: string; objectId?: string }
+    {
+      uniqueKey?: string;
+      webhookType: string;
+      objectId?: string;
+      bodyHash?: string;
+    }
   >();
   let pending = Promise.resolve();
   return {
@@ -56,6 +66,10 @@ export function memoryBillingStore(): BillingStore & {
             subscriptions.set(key, value);
           for (const [key, value] of before.inbox) inbox.set(key, value);
         };
+        // Same commit gate as the real store's transaction: the count is buffered inside the
+        // staged apply and flushed only once the inbox write commits, so a failed or duplicate
+        // apply cannot have already told the world a retirement happened (audit B6 review r1).
+        let retired: { externalCustomerId: string; count: number } | undefined;
         try {
           if (input.customer) {
             if (input.customer.name === undefined) {
@@ -70,9 +84,28 @@ export function memoryBillingStore(): BillingStore & {
           for (const subscription of input.subscriptions ?? []) {
             await this.upsertSubscription(subscription);
           }
+          if (input.subscriptionsPresentFor !== undefined) {
+            // Same contract as the real store's transaction: retire inside the staged apply, so
+            // the restore() above rolls back a failed projection's retirement too.
+            const moved = await this.retireAbsentSubscriptions(
+              input.subscriptionsPresentFor,
+              (input.subscriptions ?? []).map(
+                (subscription) => subscription.externalSubscriptionId,
+              ),
+            );
+            if (moved > 0) {
+              retired = {
+                externalCustomerId: input.subscriptionsPresentFor,
+                count: moved,
+              };
+            }
+          }
           if (!(await this.recordWebhookEvent(input.event))) {
             restore();
             return "duplicate";
+          }
+          if (retired !== undefined && input.onRetired !== undefined) {
+            input.onRetired(retired);
           }
           return "processed";
         } catch (error) {
@@ -99,6 +132,27 @@ export function memoryBillingStore(): BillingStore & {
       }
       subscriptions.set(input.externalSubscriptionId, { ...input });
     },
+    async retireAbsentSubscriptions(
+      externalCustomerId,
+      presentExternalSubscriptionIds,
+    ) {
+      const present = new Set(presentExternalSubscriptionIds);
+      let retired = 0;
+      for (const [id, row] of subscriptions) {
+        // Same semantics as the real store: one customer only, already-terminated rows are not
+        // "moved" so they are not counted, and the row is retired, never deleted.
+        if (
+          row.externalCustomerId !== externalCustomerId ||
+          row.status === "terminated" ||
+          present.has(id)
+        ) {
+          continue;
+        }
+        subscriptions.set(id, { ...row, status: "terminated" });
+        retired += 1;
+      }
+      return retired;
+    },
     async readSubscriptions(externalCustomerId) {
       return [...subscriptions.values()].filter(
         (row) => row.externalCustomerId === externalCustomerId,
@@ -114,8 +168,16 @@ export function memoryBillingStore(): BillingStore & {
         ...(input.uniqueKey ? { uniqueKey: input.uniqueKey } : {}),
         webhookType: input.webhookType,
         ...(input.objectId ? { objectId: input.objectId } : {}),
+        ...(input.bodyHash ? { bodyHash: input.bodyHash } : {}),
       });
       return true;
+    },
+    async countDeliveriesOfBody(bodyHash) {
+      let deliveries = 0;
+      for (const row of inbox.values()) {
+        if (row.bodyHash === bodyHash) deliveries += 1;
+      }
+      return deliveries;
     },
     async snapshot() {
       const times = [...customers.keys()];

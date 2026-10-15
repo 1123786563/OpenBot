@@ -138,7 +138,7 @@ function wechatFact(record: Record<string, unknown>): PaymentFact {
     state,
     channelTransactionId: stringField(record, "transaction_id"),
     ...(amountCents !== undefined ? { amountCents } : {}),
-    ...(currency === "CNY" ? { currency: "CNY" as const } : {}),
+    ...(currency !== undefined ? { currency } : {}),
   };
 }
 

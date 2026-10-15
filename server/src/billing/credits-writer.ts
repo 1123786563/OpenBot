@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingCustomers } from "../db/schema/billing";
 import {
@@ -8,27 +8,35 @@ import {
   creditReservations,
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger as ledger } from "../db/schema/credits";
+import {
+  carriedRemainder,
+  liveGrants,
+  readCapacity,
+  type Tx,
+} from "./capacity";
 import type { CreditGrantSource } from "./types";
 
 /**
- * The local credit ledger's WRITE side — both halves. The deposit (grantCredits) is the only
- * writer `credit_grants` has ever had; the withdrawal (consumeCredits) is the only writer that
- * moves `used` or writes `credit_ledger`, so every invariant about the ledger is decided here,
- * once. The reads live in ./credits.ts and stay untouched.
+ * The local credit ledger's WRITE side. The deposit (grantCredits) is the only writer
+ * `credit_grants` has ever had; the reserve/settle/release trio (reserveCredits,
+ * settleReservation, releaseReservation) is the only writer that moves `used` or writes
+ * `credit_ledger`, so every invariant about the ledger is decided here, once. The reads live
+ * in ./credits.ts and stay untouched.
  *
  * Discipline carried over from the payments module: credits stay integers scaled by
  * `CREDIT_SCALE` (×100) from input to storage — a grant of "23.63 credits" is the integer 2363
  * and never a binary float — timestamps are timestamptz, and failures answer with the billing
  * seam's sentinel codes rather than raw messages.
  *
- * Idempotency (both halves): every grant AND every draw carries an idempotency key, and the
- * unique indexes on `credit_grants.idempotency_key` / `credit_ledger.idempotency_key` are the
+ * Idempotency: every grant AND every reservation carries an idempotency key, and the unique
+ * indexes on `credit_grants.idempotency_key` / `credit_ledger.idempotency_key` are the
  * authorities — the insert-or-nothing against them turns a retry into a read of the row that
  * already exists. A caller with no natural key (an operator pressing the promo button, where
  * two presses MEAN two grants) gets a random one derived here, which keeps the insert
  * always-fresh while holding the columns NOT NULL — that is what lets both indexes be plain
  * unique, so ON CONFLICT can infer them (Postgres cannot infer a partial index without its
- * WHERE spelled in-statement).
+ * WHERE spelled in-statement). A settled hold's ledger row carries the derived key
+ * `reservation:<id>`, so the ledger's own index fences a double settle.
  *
  * A grant row is born `active` and is never status-flipped afterwards: the read side derives
  * `exhausted`/`expired` from the clock and the balance (credits.ts `deriveGrantStatus`), so the
@@ -64,6 +72,8 @@ export type CreditReservationState = "reserved" | "settled" | "released";
 
 /** A reservation call that conflicts with the reservation's recorded identity or terminal state. */
 export class CreditReservationConflictError extends Error {
+  /** Stable, snake_case, matched by the delivery worker's non-retryable set (audit C1). */
+  readonly code = "reservation_conflict";
   constructor(message: string) {
     super(message);
     this.name = "CreditReservationConflictError";
@@ -99,13 +109,6 @@ export type CreditWriter = {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<{ inserted: boolean; grant: CreditGrantResult }>;
-
-  /**
-   * The currently spendable balance, in scaled units (×100): live grant capacity after active
-   * reservations and any carried fractional charge are accounted for. This is a read-only
-   * pre-call signal; reserveCredits remains the atomic admission authority.
-   */
-  readBalance(externalCustomerId: string): Promise<number>;
 
   /**
    * The capacity a new hold could take now: live grant capacity minus every active hold, and one
@@ -158,58 +161,23 @@ export type CreditWriter = {
    * changes nothing (the first terminal result stands).
    */
   releaseReservation(reservationId: string, reason: string): Promise<void>;
-
-  /**
-   * Record one withdrawal, drawn across the customer's live grants.
-   *
-   * POST-PAID semantics: the amount is what the call ACTUALLY cost (tokens ×100, decided after
-   * the model answered), and the ledger row always records it in full — the ledger is the truth
-   * about what was consumed. The grants only ever absorb what they can: if the balance was
-   * smaller than the cost (the pre-call gate missed, or a concurrent call drained it between
-   * gate and finish), the grants are drawn to zero and `applied < amountCents` reports the
-   * shortfall — the account reads as overdrawn-but-honest rather than quietly rounded down.
-   *
-   * Idempotent on `idempotencyKey`: a retried report of the same consumption is the FIRST
-   * report's answer (`inserted: false`), never a second deduction — the unique index on
-   * `credit_ledger.idempotency_key` is the authority, claimed inside the transaction before any
-   * grant moves.
-   *
-   * `insufficient` is NOT this method's answer: a zero-balance draw is still recorded (a free
-   * deployment's calls are real consumption facts). The pre-call gate (readBalance + the model
-   * wrapper copilot.ts wires) is where "no credits" refuses the call.
-   */
-  consumeCredits(input: {
-    externalCustomerId: string;
-    /** Scaled units (×100). The actual cost; may exceed the balance (see above). */
-    amountCents: number;
-    /** The consumption's stable id — the same id the Lago meter reports under, when it does. */
-    idempotencyKey: string;
-    /** The consumption table's two lines. */
-    title: string;
-    requestId?: string | null;
-    model?: string | null;
-    client?: string | null;
-  }): Promise<{
-    inserted: boolean;
-    /** How much the grants actually absorbed; < amountCents when the balance came up short. */
-    applied: number;
-    /** The balance after this draw, before any concurrent one. */
-    remaining: number;
-  }>;
 };
 
 export function createCreditWriter(database: Database): CreditWriter {
   return {
     async grantCredits(input) {
       // Integer discipline enforced at the seam: a fractional or negative amount is a caller's
-      // bug, and storing it rounded would silently corrupt the ledger it lands in.
+      // bug, and storing it rounded would silently corrupt the ledger it lands in. The upper
+      // bound is the column's: an amount the 32-bit ledger cannot hold is refused here, before
+      // the insert strands a paid activation in a permanent retry (audit A6).
       if (
         !Number.isInteger(input.totalCents) ||
         input.totalCents < 0 ||
+        input.totalCents > MAX_STORED_UNITS ||
         !Number.isFinite(input.expiresAt.getTime())
       ) {
         throw new TypeError(
-          "grantCredits needs a whole non-negative scaled amount and a real expiry.",
+          "grantCredits needs a whole non-negative scaled amount that fits the 32-bit credit column, and a real expiry.",
         );
       }
 
@@ -265,12 +233,8 @@ export function createCreditWriter(database: Database): CreditWriter {
       return { inserted: false, grant: resultOf(existing) };
     },
 
-    async readBalance(externalCustomerId) {
-      return availableOf(database, externalCustomerId);
-    },
-
     async availableBalance(externalCustomerId) {
-      return availableOf(database, externalCustomerId);
+      return (await readCapacity(database, externalCustomerId)).spendableUnits;
     },
 
     async reserveCredits(input) {
@@ -288,6 +252,7 @@ export function createCreditWriter(database: Database): CreditWriter {
       }
       await ensureCustomer(database, input.externalCustomerId);
 
+      const at = new Date();
       return database.transaction(async (tx) => {
         await lockCustomer(tx, input.externalCustomerId);
 
@@ -316,8 +281,8 @@ export function createCreditWriter(database: Database): CreditWriter {
           return { reserved: true as const, reservationId: existing.id };
         }
 
-        const grants = await freeGrants(tx, input.externalCustomerId, true);
-        const owed = await remainderOf(tx, input.externalCustomerId);
+        const grants = await liveGrants(tx, input.externalCustomerId, at, true);
+        const owed = await carriedRemainder(tx, input.externalCustomerId);
         const owedUnit = owed.numerator > 0n ? 1 : 0;
         const free = grants.reduce((sum, grant) => sum + grant.free, 0);
         const available = Math.max(free - owedUnit, 0);
@@ -405,7 +370,7 @@ export function createCreditWriter(database: Database): CreditWriter {
           return settledResultOf(reservation);
         }
 
-        const owed = await remainderOf(tx, reservation.externalCustomerId);
+        const owed = await carriedRemainder(tx, reservation.externalCustomerId);
         const total = addAmounts(owed, actual);
         const whole = total.numerator / total.denominator;
         const fraction = reduce(
@@ -552,122 +517,8 @@ export function createCreditWriter(database: Database): CreditWriter {
           .where(eq(creditReservations.id, reservationId));
       });
     },
-
-    async consumeCredits(input) {
-      // The same integer discipline the deposit enforces: a fractional or negative cost is a
-      // caller's bug, and the ledger it lands in must never inherit it.
-      if (!Number.isInteger(input.amountCents) || input.amountCents < 0) {
-        throw new TypeError(
-          "consumeCredits needs a whole non-negative scaled amount.",
-        );
-      }
-
-      // The same customer floor the deposit lays: a zero-balance customer's FIRST ledger row
-      // must not discover the missing billing_customers row as a foreign-key violation — a
-      // deployment that never granted anything still records what it consumed.
-      await database
-        .insert(billingCustomers)
-        .values({ externalId: input.externalCustomerId, name: null })
-        .onConflictDoNothing({ target: billingCustomers.externalId });
-
-      // The idempotency pre-check outside the transaction is a fast path (the payment store's
-      // confirmPaid uses the same shape): a retried report is answered from the unique index's
-      // contents without opening a transaction, and the insert inside re-checks it.
-      const [known] = await database
-        .select({ applied: ledger.applied })
-        .from(ledger)
-        .where(eq(ledger.idempotencyKey, input.idempotencyKey))
-        .limit(1);
-      if (known)
-        return { inserted: false, applied: known.applied, remaining: 0 };
-
-      return database.transaction(async (tx) => {
-        await lockCustomer(tx, input.externalCustomerId);
-
-        // Insert the ledger row FIRST, inside the transaction: the unique index is the
-        // idempotency, and claiming it before any grant moves means a concurrent report of
-        // the same key loses HERE (inserted nothing) rather than after having drawn grants.
-        const insertedRows = await tx
-          .insert(ledger)
-          .values({
-            id: generateGrantId(),
-            externalCustomerId: input.externalCustomerId,
-            grantId: null, // Attributed below, to the grant the draw started on.
-            title: input.title,
-            requestId: input.requestId ?? null,
-            idempotencyKey: input.idempotencyKey,
-            credits: input.amountCents,
-            model: input.model ?? null,
-            client: input.client ?? null,
-          })
-          .onConflictDoNothing({ target: ledger.idempotencyKey })
-          .returning({ id: ledger.id });
-        if (insertedRows.length === 0) {
-          // Another report of this key won the race: its answer is this one's.
-          const [existing] = await tx
-            .select({ applied: ledger.applied })
-            .from(ledger)
-            .where(eq(ledger.idempotencyKey, input.idempotencyKey))
-            .limit(1);
-          return {
-            inserted: false,
-            applied: existing?.applied ?? 0,
-            remaining: 0,
-          };
-        }
-
-        /*
-         * The customer lock serializes this draw with reservations and settlements. Grant
-         * locks then let freeGrants subtract active holds before this post-paid path uses only
-         * unreserved capacity; expired allowance is excluded and the remaining grants stay in
-         * soonest-to-lapse order. A fractional carried charge keeps one additional unit free.
-         */
-        const grants = await freeGrants(tx, input.externalCustomerId, true);
-        const owed = await remainderOf(tx, input.externalCustomerId);
-        if (owed.numerator > 0n) {
-          const lastAvailable = grants.reduce(
-            (last, grant, index) => (grant.free > 0 ? index : last),
-            -1,
-          );
-          const remainderGrant = grants[lastAvailable];
-          if (remainderGrant) remainderGrant.free -= 1;
-        }
-
-        let toApply = input.amountCents;
-        let applied = 0;
-        let firstGrantId: string | null = null;
-        for (const grant of grants) {
-          if (toApply === 0) break;
-          const drew = Math.min(toApply, grant.free);
-          if (drew === 0) continue;
-          await tx
-            .update(creditGrants)
-            .set({ used: sql`${creditGrants.used} + ${drew}` })
-            .where(eq(creditGrants.id, grant.id));
-          applied += drew;
-          toApply -= drew;
-          if (firstGrantId === null) firstGrantId = grant.id;
-        }
-
-        // Attribute the draw to its first grant (the display copy the consumption table
-        // joins on); a multi-grant draw names where it started, and `applied` records what
-        // the balance could fund of the full cost the ledger row already holds.
-        await tx
-          .update(ledger)
-          .set({ grantId: firstGrantId, applied })
-          .where(eq(ledger.id, insertedRows[0]!.id));
-
-        // The balance after this draw, inside the same transaction: the caller's "remaining"
-        // is consistent with the rows this draw just moved.
-        const after = await availableOf(tx, input.externalCustomerId);
-        return { inserted: true, applied, remaining: after };
-      });
-    },
   };
 }
-
-type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
-type Reader = Pick<Database, "select"> | Tx;
 
 async function ensureCustomer(
   db: Pick<Database, "insert">,
@@ -686,78 +537,6 @@ async function lockCustomer(tx: Tx, externalId: string) {
     .from(billingCustomers)
     .where(eq(billingCustomers.externalId, externalId))
     .for("update");
-}
-
-/**
- * Live grants, soonest expiry first, with capacity left after used units and active holds.
- *
- * An "active" hold is reserved AND not yet expired (audit F4): a hold whose expiry has passed
- * no longer occupies capacity — the work it was admitted for either finished or never will,
- * and reconciliation reports the stuck row for an operator. A late settlement of an expired
- * hold still charges honestly; the settle path's own `min(allocation.amount, total - used)`
- * clamp keeps the grants from going negative exactly the way a post-paid overdraw is kept
- * honest.
- *
- * One clock per computation: the grant-liveness filter and the hold-expiry filter below are
- * bound to the SAME app-side instant (a parameter), never the database's `now()` — app and
- * database clocks skew, and a skewed pair would let a reservation be admitted against
- * capacity an expired hold already vacated (or refuse one that is still live).
- */
-async function freeGrants(db: Reader, externalId: string, lock: boolean) {
-  const at = new Date();
-  const query = db
-    .select({
-      id: creditGrants.id,
-      total: creditGrants.total,
-      used: creditGrants.used,
-      held: sql<number>`coalesce((
-        select sum(a.amount)::int
-        from credit_reservation_allocations a
-        join credit_reservations r on r.id = a.reservation_id
-        where a.grant_id = credit_grants.id and r.status = 'reserved' and r.expires_at > ${at}
-      ), 0)`,
-    })
-    .from(creditGrants)
-    .where(
-      and(
-        eq(creditGrants.externalCustomerId, externalId),
-        gt(creditGrants.expiresAt, at),
-      ),
-    )
-    .orderBy(
-      asc(creditGrants.expiresAt),
-      asc(creditGrants.grantedAt),
-      asc(creditGrants.id),
-    );
-  const rows = await (lock ? query.for("update", { of: creditGrants }) : query);
-  return rows.map((row) => ({
-    id: row.id,
-    free: Math.max(row.total - row.used - Number(row.held), 0),
-  }));
-}
-
-async function availableOf(db: Reader, externalId: string): Promise<number> {
-  const grants = await freeGrants(db, externalId, false);
-  const owed = await remainderOf(db, externalId);
-  const free = grants.reduce((sum, grant) => sum + grant.free, 0);
-  return Math.max(free - (owed.numerator > 0n ? 1 : 0), 0);
-}
-
-async function remainderOf(
-  db: Reader,
-  externalId: string,
-): Promise<CreditAmount> {
-  const [row] = await db
-    .select({
-      numerator: creditChargeRemainders.numerator,
-      denominator: creditChargeRemainders.denominator,
-    })
-    .from(creditChargeRemainders)
-    .where(eq(creditChargeRemainders.externalCustomerId, externalId))
-    .limit(1);
-  return row
-    ? { numerator: BigInt(row.numerator), denominator: BigInt(row.denominator) }
-    : { numerator: 0n, denominator: 1n };
 }
 
 function gcd(a: bigint, b: bigint): bigint {

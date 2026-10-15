@@ -1,12 +1,13 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingSubscriptions } from "../db/schema/billing";
-import { creditGrants, creditLedger } from "../db/schema/credits";
 import {
   creditReservationAllocations,
   creditReservations,
 } from "../db/schema/credit-reservations";
+import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
+import type { PaymentOrderRecord } from "./payments/types";
 import type { ReconcileFinding, ReconcileReport } from "./types";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
 
@@ -34,7 +35,7 @@ import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
  *        Σ credit_grants.used  ==  Σ credit_ledger.applied
  *
  *    Both sides are the same coin seen from its two tables: `used` is what the grants were
- *    drawn for, `applied` is what the draws recorded absorbing. consumeCredits moves them in
+ *    drawn for, `applied` is what the draws recorded absorbing. settleReservation moves them in
  *    ONE transaction, so a live system cannot split them — but a crashed migration, a manual
  *    `UPDATE`, or a future writer that forgets the pair can. The grants' CHECK(used <= total)
  *    is the RUNTIME fence (an overdraw can never commit); this identity is the AFTER-THE-FACT
@@ -65,6 +66,51 @@ import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./types";
  */
 export type ExpectedPlanCredits = (planCode: string) => number | null;
 
+/**
+ * How many rows each keyset page of the four table walks reads (audit C3). The whole-table
+ * shape is the point — a reconciliation that sampled would be an estimate wearing an audit's
+ * clothes — so the walks read EVERY row, one bounded page at a time: a long-lived deployment
+ * must be able to audit years of orders without the pass loading years of orders into one
+ * statement's result. The size lands in the report as `checked.scanned.pageSize`, so a reader
+ * can tell a complete scan from a truncated one.
+ */
+const RECONCILE_PAGE_SIZE = 500;
+
+/**
+ * The four walks' row shapes, named here so the keyset loops stay readable (the page's inferred
+ * drizzle type would be an `Awaited<ReturnType<...>>` mouthful on every accumulator).
+ */
+type PaidOrderRow = {
+  id: string;
+  planCode: string;
+  amountCents: number;
+  channelTransactionId: string | null;
+  activationState: PaymentOrderRecord["activationState"];
+  paidAt: Date | null;
+  terminalAt: Date | null;
+};
+type PaidFactRow = {
+  id: string;
+  orderId: string;
+  channelTransactionId: string | null;
+  amountCents: number | null;
+};
+type DuplicateAnomalyRow = {
+  id: string;
+  orderId: string;
+  amountCents: number | null;
+  detail: string;
+};
+type ReservedRow = {
+  reservationId: string;
+  idempotencyKey: string;
+  expiresAt: Date;
+  maximum: number;
+  expired: boolean;
+  allocationId: string | null;
+  allocationAmount: number | null;
+};
+
 export function createReconciler(
   database: Database,
   externalCustomerKey: string,
@@ -82,9 +128,7 @@ export function createReconciler(
   const activationBacklogAgeMs = options?.activationBacklogAgeMs ?? 15 * 60_000;
   const allocationSampleLimit = 3;
   if (!Number.isSafeInteger(usageFindingLimit) || usageFindingLimit <= 0) {
-    throw new RangeError(
-      "Usage finding limit must be a positive safe integer",
-    );
+    throw new RangeError("Usage finding limit must be a positive safe integer");
   }
   if (
     !Number.isSafeInteger(activationBacklogAgeMs) ||
@@ -95,16 +139,11 @@ export function createReconciler(
     );
   }
 
-  function usageFailureCode(
-    code: string | null,
-  ): string {
+  function usageFailureCode(code: string | null): string {
     return code ?? "none";
   }
 
-  function usageAgeSeconds(
-    now: number,
-    updatedAt: Date,
-  ): number {
+  function usageAgeSeconds(now: number, updatedAt: Date): number {
     return Math.max(0, Math.floor((now - updatedAt.getTime()) / 1000));
   }
 
@@ -129,36 +168,60 @@ export function createReconciler(
       };
 
       /*
-       * ── Invariant 1, sides one and two: paid orders ↔ their paid facts. One query each
-       *    (the whole-table shape is the point — a reconciliation that sampled would be an
-       *    estimate wearing an audit's clothes) and the join in memory, where the mismatch's
-       *    shape decides the finding's code.
+       * ── Invariant 1, sides one and two: paid orders ↔ their paid facts. One walk each,
+       *    every row, one bounded page at a time (audit C3 — the whole-table shape is the
+       *    point, a reconciliation that sampled would be an estimate wearing an audit's
+       *    clothes; the pages only bound the statement, never the scope) and the join in
+       *    memory, where the mismatch's shape decides the finding's code.
        */
-      const paidOrders = await database
-        .select({
-          id: paymentOrders.id,
-          planCode: paymentOrders.planCode,
-          amountCents: paymentOrders.amountCents,
-          channelTransactionId: paymentOrders.channelTransactionId,
-          activationState: paymentOrders.activationState,
-          paidAt: paymentOrders.paidAt,
-          terminalAt: paymentOrders.terminalAt,
-        })
-        .from(paymentOrders)
-        .where(eq(paymentOrders.status, "paid"));
-      const paidFacts = await database
-        .select({
-          orderId: paymentEvents.orderId,
-          channelTransactionId: paymentEvents.channelTransactionId,
-          amountCents: paymentEvents.amountCents,
-        })
-        .from(paymentEvents)
-        .where(
-          and(
-            eq(paymentEvents.kind, "fact"),
-            eq(paymentEvents.state, "paid"),
-          ),
-        );
+      const paidOrders: PaidOrderRow[] = [];
+      for (;;) {
+        const lastId = paidOrders.at(-1)?.id ?? "";
+        const page = await database
+          .select({
+            id: paymentOrders.id,
+            planCode: paymentOrders.planCode,
+            amountCents: paymentOrders.amountCents,
+            channelTransactionId: paymentOrders.channelTransactionId,
+            activationState: paymentOrders.activationState,
+            paidAt: paymentOrders.paidAt,
+            terminalAt: paymentOrders.terminalAt,
+          })
+          .from(paymentOrders)
+          .where(
+            and(
+              eq(paymentOrders.status, "paid"),
+              sql`${paymentOrders.id} > ${lastId}`,
+            ),
+          )
+          .orderBy(asc(paymentOrders.id))
+          .limit(RECONCILE_PAGE_SIZE);
+        paidOrders.push(...page);
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
+      const paidFacts: PaidFactRow[] = [];
+      for (;;) {
+        const lastId = paidFacts.at(-1)?.id ?? "";
+        const page = await database
+          .select({
+            id: paymentEvents.id,
+            orderId: paymentEvents.orderId,
+            channelTransactionId: paymentEvents.channelTransactionId,
+            amountCents: paymentEvents.amountCents,
+          })
+          .from(paymentEvents)
+          .where(
+            and(
+              eq(paymentEvents.kind, "fact"),
+              eq(paymentEvents.state, "paid"),
+              sql`${paymentEvents.id} > ${lastId}`,
+            ),
+          )
+          .orderBy(asc(paymentEvents.id))
+          .limit(RECONCILE_PAGE_SIZE);
+        paidFacts.push(...page);
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
       const factByOrder = new Map(
         paidFacts.map((fact) => [fact.orderId, fact]),
       );
@@ -203,7 +266,7 @@ export function createReconciler(
             category: "payment",
             code: "fact_amount_mismatch",
             subject: order.id,
-            detail: `the paid fact records order=${order.amountCents} fact=${fact.amountCents} — the channel settled a different sum than the order snapshot; keep both facts, needs an operator (currency is database-enforced CNY on both sides, only the amount can drift)`,
+            detail: `the paid fact records order=${order.amountCents} fact=${fact.amountCents} — the channel settled a different sum than the order snapshot; keep both facts, needs an operator (the order's currency is database-enforced CNY; the channel's stated currency is compared at settlement and a disagreement is recorded as a \`currency_mismatch\` anomaly)`,
           });
         }
       }
@@ -287,19 +350,29 @@ export function createReconciler(
        *    the anomaly — not counting paid orders per plan — keeps legitimate sequential
        *    repurchases (expire, then buy the same plan again) out of the findings.
        */
-      const duplicateAnomalies = await database
-        .select({
-          orderId: paymentEvents.orderId,
-          amountCents: paymentEvents.amountCents,
-          detail: paymentEvents.detail,
-        })
-        .from(paymentEvents)
-        .where(
-          and(
-            eq(paymentEvents.kind, "anomaly"),
-            eq(paymentEvents.code, "duplicate_paid"),
-          ),
-        );
+      const duplicateAnomalies: DuplicateAnomalyRow[] = [];
+      for (;;) {
+        const lastId = duplicateAnomalies.at(-1)?.id ?? "";
+        const page = await database
+          .select({
+            id: paymentEvents.id,
+            orderId: paymentEvents.orderId,
+            amountCents: paymentEvents.amountCents,
+            detail: paymentEvents.detail,
+          })
+          .from(paymentEvents)
+          .where(
+            and(
+              eq(paymentEvents.kind, "anomaly"),
+              eq(paymentEvents.code, "duplicate_paid"),
+              sql`${paymentEvents.id} > ${lastId}`,
+            ),
+          )
+          .orderBy(asc(paymentEvents.id))
+          .limit(RECONCILE_PAGE_SIZE);
+        duplicateAnomalies.push(...page);
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
       for (const anomaly of duplicateAnomalies) {
         findings.push({
           category: "payment",
@@ -381,10 +454,7 @@ export function createReconciler(
       const appliedMap = new Map(
         appliedByCustomer.map((row) => [row.customer, BigInt(row.total)]),
       );
-      const customers = new Set([
-        ...usedMap.keys(),
-        ...appliedMap.keys(),
-      ]);
+      const customers = new Set([...usedMap.keys(), ...appliedMap.keys()]);
       for (const customer of customers) {
         const used = usedMap.get(customer) ?? 0n;
         const applied = appliedMap.get(customer) ?? 0n;
@@ -399,6 +469,46 @@ export function createReconciler(
       }
 
       /*
+       * The shortfall the ledger already records per row (`credits - applied`): what the grants
+       * could not fund. Exact decimal strings and BigInt, the same discipline as the identity sums
+       * above — an overdraw total is a money figure and must not be rounded on the way into a
+       * report that audits somebody else's arithmetic (audit D1).
+       */
+      const overdrawByCustomer = await database
+        .select({
+          customer: creditLedger.externalCustomerId,
+          entries: sql<string>`COUNT(*)::bigint`,
+          units: sql<string>`COALESCE(SUM(${creditLedger.credits} - ${creditLedger.applied}), 0)::bigint`,
+        })
+        .from(creditLedger)
+        .where(sql`${creditLedger.credits} > ${creditLedger.applied}`)
+        .groupBy(creditLedger.externalCustomerId);
+
+      let overdrawEntries = 0n;
+      let overdrawUnits = 0n;
+      for (const row of overdrawByCustomer) {
+        const entries = BigInt(row.entries);
+        const units = BigInt(row.units);
+        overdrawEntries += entries;
+        overdrawUnits += units;
+        findings.push({
+          category: "credits",
+          code: "credit_overdraw",
+          subject: row.customer,
+          detail: `entries=${entries} units=${units} — consumption the grants could not fund; the ledger recorded the full cost and applied what the balance allowed. Remediation is an operator decision (grant, invoice, or accept)`,
+        });
+      }
+      // The total's entry count: a count of rows, not money, so it stays a number for the admin
+      // route's shape — but guarded the way the usage-outbox counts are, because it too was read
+      // as a ::bigint string: a total the report cannot represent exactly, it refuses.
+      const overdrawEntryCount = Number(overdrawEntries);
+      if (!Number.isSafeInteger(overdrawEntryCount)) {
+        throw new RangeError(
+          `credit_ledger overdraw entry count is not a safe integer (${overdrawEntries}); the report refuses to round a backlog it cannot represent`,
+        );
+      }
+
+      /*
        * ── Hard-cap reservation evidence: active holds are intentionally OUTSIDE the
        *    grants.used ↔ ledger.applied identity until a settlement converts them into a
        *    ledger fact, so reconciliation inspects reserved rows on their own terms.
@@ -406,29 +516,56 @@ export function createReconciler(
        *    allocation sum that no longer equals the reservation's maximum is manual-surgery
        *    drift that needs an operator, not a writer hidden inside the audit.
        */
-      const reservedRows = await database
-        .select({
-          reservationId: creditReservations.id,
-          idempotencyKey: creditReservations.idempotencyKey,
-          expiresAt: creditReservations.expiresAt,
-          maximum: creditReservations.maximum,
-          expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
-          allocationId: creditReservationAllocations.id,
-          allocationAmount: creditReservationAllocations.amount,
-        })
-        .from(creditReservations)
-        .leftJoin(
-          creditReservationAllocations,
-          eq(
-            creditReservationAllocations.reservationId,
-            creditReservations.id,
-          ),
-        )
-        .where(eq(creditReservations.status, "reserved"))
-        .orderBy(
-          asc(creditReservations.id),
-          asc(creditReservationAllocations.id),
-        );
+      /*
+       * The join is walked with a keyset over its full (reservationId, allocationId) order —
+       * not over the reservation id alone — so a reservation split across a page boundary
+       * keeps its tail allocations: the grouping below accumulates in memory across pages, and
+       * a lost tail would fabricate an allocation-imbalance finding. The empty-string cursor
+       * after a null allocation (a reservation with no allocations) sorts before every id,
+       * which is exactly "nothing more for this reservation".
+       */
+      const reservedRows: ReservedRow[] = [];
+      let lastReservationId = "";
+      let lastAllocationId = "";
+      for (;;) {
+        const page = await database
+          .select({
+            reservationId: creditReservations.id,
+            idempotencyKey: creditReservations.idempotencyKey,
+            expiresAt: creditReservations.expiresAt,
+            maximum: creditReservations.maximum,
+            expired: sql<boolean>`${creditReservations.expiresAt} <= now()`,
+            allocationId: creditReservationAllocations.id,
+            allocationAmount: creditReservationAllocations.amount,
+          })
+          .from(creditReservations)
+          .leftJoin(
+            creditReservationAllocations,
+            eq(
+              creditReservationAllocations.reservationId,
+              creditReservations.id,
+            ),
+          )
+          .where(
+            and(
+              eq(creditReservations.status, "reserved"),
+              sql`(${creditReservations.id} > ${lastReservationId}
+                   or (${creditReservations.id} = ${lastReservationId}
+                       and ${creditReservationAllocations.id} > ${lastAllocationId}))`,
+            ),
+          )
+          .orderBy(
+            asc(creditReservations.id),
+            asc(creditReservationAllocations.id),
+          )
+          .limit(RECONCILE_PAGE_SIZE);
+        if (page.length === 0) break;
+        reservedRows.push(...page);
+        const last = page[page.length - 1];
+        lastReservationId = last.reservationId;
+        lastAllocationId = last.allocationId ?? "";
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+      }
 
       const reservedById = new Map<
         string,
@@ -467,8 +604,7 @@ export function createReconciler(
           reservation.allocationIds.length > allocationSampleLimit
             ? "yes"
             : "no";
-        const allocationMetadata =
-          `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
+        const allocationMetadata = `allocation_count=${reservation.allocationIds.length} allocation_ids_sample=${allocationIdsSample} allocation_ids_truncated=${allocationIdsTruncated}`;
         if (reservation.expired) {
           /*
            * The hold is named by BOTH ids it can prove: its own reservation id, and — when the
@@ -493,10 +629,10 @@ export function createReconciler(
             code: "expired_reserved_reservation",
             subject: reservationId,
             detail:
-              `state=reserved expires_at=${reservation.expiresAt.toISOString()} expired_age_ms=${expiredAgeMs} `
-              + `idempotency_key=${reservation.idempotencyKey}`
-              + (usageEventId ? ` usage_event_id=${usageEventId}` : "")
-              + ` maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
+              `state=reserved expires_at=${reservation.expiresAt.toISOString()} expired_age_ms=${expiredAgeMs} ` +
+              `idempotency_key=${reservation.idempotencyKey}` +
+              (usageEventId ? ` usage_event_id=${usageEventId}` : "") +
+              ` maximum=${reservation.maximum} allocated=${reservation.allocated} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
 
@@ -505,8 +641,7 @@ export function createReconciler(
             category: "credits",
             code: "reservation_allocation_imbalance",
             subject: reservationId,
-            detail:
-              `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} ${allocationMetadata} remediation=operator_recovery_required`,
+            detail: `maximum=${reservation.maximum} allocated=${reservation.allocated} delta=${reservation.allocated - reservation.maximum} ${allocationMetadata} remediation=operator_recovery_required`,
           });
         }
       }
@@ -569,13 +704,15 @@ export function createReconciler(
               target: "lago" | "credits";
               status: "pending" | "blocked";
               lastErrorCode: string | null;
+              attempts: number;
             }>`
               SELECT
                 usage_targets.event_id AS "eventId",
                 usage_targets.updated_at AS "updatedAt",
                 usage_targets.target AS "target",
                 usage_targets.status AS "status",
-                usage_targets.last_error_code AS "lastErrorCode"
+                usage_targets.last_error_code AS "lastErrorCode",
+                usage_targets.attempts AS "attempts"
               FROM (
                 SELECT
                   event_id,
@@ -583,6 +720,7 @@ export function createReconciler(
                   'lago'::text AS target,
                   lago_status::text AS status,
                   lago_last_error_code AS last_error_code,
+                  lago_attempts AS attempts,
                   1 AS target_rank
                 FROM usage_outbox
                 WHERE lago_status IN ('pending', 'blocked')
@@ -595,6 +733,7 @@ export function createReconciler(
                   'credits'::text AS target,
                   credits_status::text AS status,
                   credits_last_error_code AS last_error_code,
+                  credits_attempts AS attempts,
                   2 AS target_rank
                 FROM usage_outbox
                 WHERE credits_status IN ('pending', 'blocked')
@@ -623,20 +762,22 @@ export function createReconciler(
               ? "usage_target_pending"
               : "usage_target_blocked",
           subject: row.eventId,
-          detail: `target=${target} state=${status} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
+          detail: `target=${target} state=${status} attempts=${row.attempts} attempt_age_seconds=${ageSeconds} last_failure_code=${failureCode}`,
         });
       }
       const omittedUsageTargets = {
         pending: {
           lago:
-            usageDeliveryTargets.pending.lago - emittedUsageTargets.pending.lago,
+            usageDeliveryTargets.pending.lago -
+            emittedUsageTargets.pending.lago,
           credits:
             usageDeliveryTargets.pending.credits -
             emittedUsageTargets.pending.credits,
         },
         blocked: {
           lago:
-            usageDeliveryTargets.blocked.lago - emittedUsageTargets.blocked.lago,
+            usageDeliveryTargets.blocked.lago -
+            emittedUsageTargets.blocked.lago,
           credits:
             usageDeliveryTargets.blocked.credits -
             emittedUsageTargets.blocked.credits,
@@ -652,17 +793,79 @@ export function createReconciler(
         });
       }
 
+      /*
+       * ── Replay evidence (audit A7): the delivery's identity rides in an unsigned header, so
+       *    the body hash is what ties "same content, different event id" together. Read-only,
+       *    like every block here — it counts and reports; what to do about a replayed delivery
+       *    is an operator's decision.
+       */
+      const replayedBodies = await database.execute(sql<{
+        bodyHash: string;
+        deliveries: string;
+        totalHashes: string;
+      }>`
+        SELECT body_hash AS "bodyHash", COUNT(*)::bigint AS deliveries, COUNT(*) OVER ()::bigint AS "totalHashes"
+        FROM billing_webhook_events
+        WHERE body_hash IS NOT NULL
+        GROUP BY body_hash
+        HAVING COUNT(*) > 1
+        ORDER BY COUNT(*) DESC
+        LIMIT ${usageFindingLimit}
+      `);
+      for (const row of replayedBodies) {
+        findings.push({
+          category: "payment",
+          code: "webhook_body_replay",
+          subject: row.bodyHash,
+          detail: `deliveries=${row.deliveries} distinct event ids carried this exact body — either the provider retried with fresh identity or somebody is replaying a captured delivery`,
+        });
+      }
+      // The evidence rows cap at the finding limit, so the window total (`COUNT(*) OVER ()`,
+      // every qualifying group before the LIMIT) carries the "there were N more" clue the
+      // usage block already reports via `usage_findings_omitted` — a replay-flooded deployment
+      // must not silently lose its tail (audit C3, closing A7's deferred marker).
+      const replayedHashCount = Number(replayedBodies[0]?.totalHashes ?? "0");
+      if (!Number.isSafeInteger(replayedHashCount)) {
+        throw new RangeError(
+          `billing_webhook_events replayed-hash count is not a safe integer (${replayedBodies[0]?.totalHashes}); the report refuses to round a backlog it cannot represent`,
+        );
+      }
+      const omittedReplayedHashes = replayedHashCount - replayedBodies.length;
+      if (omittedReplayedHashes > 0) {
+        findings.push({
+          category: "payment",
+          code: "webhook_replays_omitted",
+          subject: "billing_webhook_events",
+          detail: `omitted=${omittedReplayedHashes} replayed body hashes beyond the evidence limit=${usageFindingLimit} — a replay flood larger than the report's evidence window; widen the window or drain the inbox`,
+        });
+      }
+
       return {
         ranAt: new Date().toISOString(),
         checked: {
           paidOrders: paidOrders.length,
           appliedOrders: appliedOrders.length,
           creditCustomers: customers.size,
+          overdraw: {
+            entries: overdrawEntryCount,
+            units: overdrawUnits.toString(),
+          },
           usageDeliveryTargets,
           usageFindings: {
             limit: usageFindingLimit,
             emitted: usageRows.length,
             omitted: omittedUsageFindings,
+          },
+          scanned: {
+            paidOrders: paidOrders.length,
+            paidFacts: paidFacts.length,
+            reservedRows: reservedRows.length,
+            pageSize: RECONCILE_PAGE_SIZE,
+          },
+          webhookReplays: {
+            limit: usageFindingLimit,
+            emitted: replayedBodies.length,
+            omitted: omittedReplayedHashes,
           },
         },
         findings,

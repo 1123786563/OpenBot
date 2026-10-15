@@ -3,11 +3,52 @@
  * first pass, then an interval, timers unref'd so housekeeping never holds the process open. Passes
  * never overlap, and a failed pass is logged by error name only and retried on the next tick.
  *
+ * One server sweeps at a time, across replicas (audit C3). Every replica runs the same interval,
+ * and although the delivery targets are idempotent, N replicas means N times the provider calls
+ * and N times the row contention for the same work — so each pass runs under the Postgres
+ * session-scoped advisory lock `withSweepLock` takes below, on the pattern
+ * ../../audit-retention.ts already proves with its SWEEP_LOCK = 4_192_004. The keys 4_192_004
+ * (audit retention, audit-retention.ts), 4_192_005 (usage delivery, this file) and 4_192_006
+ * (payments, ./payments/maintenance.ts) are reserved and must not be reused: two sweepers sharing
+ * a key would silently skip each other's passes.
+ *
  * Started in production by the billing assembly (server/src/index.ts wires
  * `startUsageDeliverySweeps` whenever the usage outbox exists) — the delivery targets it
  * sweeps are the Lago and credits targets that same assembly builds.
  */
+import postgres from "postgres";
 import type { UsageDelivery } from "./usage-delivery";
+
+/** Where a sweep's single-instance guard runs: one dedicated connection, one advisory lock key. */
+export type SweepLock = { databaseUrl: string; key: number };
+
+/**
+ * Run one sweep pass under an advisory lock, or skip it when another replica holds the lock.
+ * Absent lock config, the pass runs unguarded — a single-replica deployment and the tests do
+ * not need a second database connection to work.
+ */
+export async function withSweepLock<T>(
+  lock: SweepLock | undefined,
+  work: () => Promise<T>,
+): Promise<T | undefined> {
+  if (!lock) return await work();
+
+  // Session-scoped, on a connection this pass owns for its length. It cannot go through the
+  // shared pool: a session lock belongs to one connection, so a pool would happily take it on
+  // one and try to release it on another, and the lock would leak until that connection died.
+  const connection = postgres(lock.databaseUrl, { max: 1 });
+
+  try {
+    const [row] =
+      await connection`select pg_try_advisory_lock(${lock.key}) as held`;
+    if (!row?.held) return undefined;
+    return await work();
+  } finally {
+    // Ending the connection releases the lock with it, so a pass that threw halfway (or a
+    // process that died mid-pass) does not leave the lock held and every later sweep skipped.
+    await connection.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
 
 export function startUsageDeliverySweeps(
   delivery: UsageDelivery,
@@ -16,11 +57,13 @@ export function startUsageDeliverySweeps(
     firstRunMs?: number;
     limit?: number;
     log?: (message: string) => void;
+    lock?: SweepLock;
   } = {},
 ): { stop(): void } {
   const intervalMs = options.intervalMs ?? 30_000;
   const firstRunMs = options.firstRunMs ?? 30_000;
   const limit = options.limit ?? 100;
+  const lock = options.lock;
   // biome-ignore lint/suspicious/noConsole: stable-code operational log
   const log = options.log ?? ((message: string) => console.warn(message));
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -29,8 +72,7 @@ export function startUsageDeliverySweeps(
   const run = () => {
     if (running) return;
     running = true;
-    void delivery
-      .runBatch(limit)
+    void withSweepLock(lock, () => delivery.runBatch(limit))
       .catch((error: unknown) => {
         log(
           `billing: usage delivery pass failed error=${

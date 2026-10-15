@@ -51,6 +51,7 @@ export type BillingPersistenceOperation =
   | "customer_upsert"
   | "customer_ensure"
   | "subscription_upsert"
+  | "subscription_retire"
   | "subscription_read"
   | "webhook_lookup"
   | "webhook_record"
@@ -60,11 +61,24 @@ export type BillingPersistenceOperation =
 /** A database operation failed after the request reached the billing store. */
 export class BillingPersistenceError extends Error {
   override name = "BillingPersistenceError";
-  readonly code = "persistence_failure";
-  readonly retryable = true;
-
-  constructor(readonly operation: BillingPersistenceOperation) {
+  /**
+   * Whether the same delivery could succeed a moment later (a deadlock, a failover, a refused
+   * connection) or is a fact about the data (a constraint violation, a value too long). Both are
+   * OURS, so both are answered 5xx and the provider retries: a 4xx would tell the provider its
+   * delivery was bad and lose the projection permanently (audit A8). The flag only grades the log
+   * line and the operator's expectation.
+   */
+  readonly retryable: boolean;
+  constructor(
+    readonly operation: BillingPersistenceOperation,
+    retryable = true,
+    options?: { cause?: unknown },
+  ) {
     super(`Billing persistence failed (${operation}).`);
+    this.retryable = retryable;
+    // The driver's own error, kept for a debugger. It is never serialised into a response or into
+    // a log message: a driver error can quote a connection string.
+    if (options?.cause !== undefined) this.cause = options.cause;
   }
 }
 
@@ -152,6 +166,7 @@ export type ReconcileFinding = {
     | "fact_amount_mismatch"
     | "applied_without_subscription"
     | "grants_ledger_divergence"
+    | "credit_overdraw"
     | "expired_reserved_reservation"
     | "reservation_allocation_imbalance"
     | "plan_grant_missing"
@@ -160,7 +175,9 @@ export type ReconcileFinding = {
     | "duplicate_paid_order"
     | "usage_target_pending"
     | "usage_target_blocked"
-    | "usage_findings_omitted";
+    | "usage_findings_omitted"
+    | "webhook_body_replay"
+    | "webhook_replays_omitted";
   /**
    * The row the finding is about: an order id, a customer key, a reservation id, or a usage
    * event id.
@@ -179,11 +196,31 @@ export type ReconcileReport = {
     paidOrders: number;
     appliedOrders: number;
     creditCustomers: number;
+    /**
+     * The whole-report overdraw total (audit D1): what consumption the grants could not fund,
+     * summed from `credits - applied` across the ledger. `units` is an exact decimal string (the
+     * reconciler's BigInt discipline — a money figure is never rounded on its way into a report
+     * that audits somebody else's arithmetic); `entries` counts the shortfall-carrying rows.
+     */
+    overdraw: { entries: number; units: string };
     usageDeliveryTargets: {
       pending: { lago: number; credits: number };
       blocked: { lago: number; credits: number };
     };
     usageFindings: {
+      limit: number;
+      emitted: number;
+      omitted: number;
+    };
+    /** How many rows the pass walked, and the page size it walked them in (audit C3). */
+    scanned: {
+      paidOrders: number;
+      paidFacts: number;
+      reservedRows: number;
+      pageSize: number;
+    };
+    /** The replay-evidence window, in the usage findings' shape (audit C3, closing A7's marker). */
+    webhookReplays: {
       limit: number;
       emitted: number;
       omitted: number;
@@ -308,7 +345,7 @@ export type BillingInvoice = {
   periodStart: string | null;
   periodEnd: string | null;
   amountCents: number;
-  currency: "CNY";
+  currency: string;
   status: "pending" | "paid" | "blocked" | "canceled" | "expired";
   method: "alipay" | "wechat";
   /** When the bill was raised: the order's creation. */
@@ -384,8 +421,13 @@ export type CreditConsumptionEntry = {
   title: string;
   /** The request id shown under the title, to be truncated by the client. */
   requestId: string | null;
-  /** How many credits this call cost. */
+  /** How many credits this call cost, in full. */
   credits: number;
+  /**
+   * How much of that cost the grants absorbed. Equal to `credits` except when the balance came up
+   * short; `credits - applied` is the shortfall the reconciler totals as `overdraw`.
+   */
+  applied: number;
   model: string | null;
   /** The surface that made the call (web/api/cli). */
   client: string | null;
@@ -405,16 +447,25 @@ export type CreditConsumptionPage = {
 };
 
 /**
- * The whole "套餐与积分" answer, split the way the page splits it: the plan's own base allowance
- * (the 套餐卡's "套餐基础积分") and the platform reward grants (the "平台奖励积分" block's summary
- * line "可用 N 个 · 剩余 X 积分").
+ * The 套餐与积分 page's balance answer, over LIVE grants only (unexpired), in credits (×100
+ * scaled units on the wire). `remaining` is what a draw or a new hold could take per grant, so it
+ * already excludes `held`; `total`/`used` are the same live grants' lifetime figures, which is why
+ * `remaining` is not `total - used`. Expired grants drop out of this answer entirely and stay
+ * visible, with their derived `expired` status, in the grant list.
+ *
+ * Computed by `summarizeCapacity` in ./credits.ts over the SAME `liveGrants` read the credit
+ * writer admits against (./capacity.ts) — one standard, so the page can no longer show a balance the
+ * gate would refuse. The one deliberate difference: the writer also occupies a single extra unit
+ * while a fractional remainder is owed (`owedUnit`, at most 0.01 credit), which this answer does
+ * not subtract.
  */
 export type CreditSummary = {
-  plan: { total: number; used: number; remaining: number };
+  plan: { total: number; used: number; remaining: number; held: number };
   rewards: {
     total: number;
     used: number;
     remaining: number;
+    held: number;
     /** How many reward grants still have something to spend ("可用 N 个"). */
     grantCount: number;
   };
@@ -446,12 +497,33 @@ export type BillingWebhookProjection = {
   /** An authoritative customer refresh, or an insert-only floor when the name is absent. */
   customer?: { externalId: string; name?: string | null };
   subscriptions?: readonly BillingSubscriptionRow[];
+  /**
+   * The customer whose FULL present list `subscriptions` is, straight from the provider's own
+   * read: set only by a `subscription.*` delivery, and the scope its apply retires absent rows
+   * inside the same transaction (audit B6). Absent means the delivery says nothing about
+   * subscriptions — a `customer.*` event, an unprojected type — so nothing retires. The field
+   * exists because an empty list names no customer of its own: the delivery's customer is the
+   * only thing left to scope an everything-retires answer to.
+   */
+  subscriptionsPresentFor?: string;
+  /**
+   * Retirement evidence (audit B6 review r1): the count is captured at the retirement UPDATE
+   * inside the apply transaction — the rows that transaction actually moved — because a number
+   * read before the transaction can describe a retirement another delivery performed, or miss
+   * one this delivery performs. The callback runs only once the transaction committed, so a
+   * rolled-back apply (a duplicate loser) cannot have already told the world a retirement
+   * happened. It is synchronous and must only log — I/O here would be a defect inside a
+   * transaction.
+   */
+  onRetired?: (info: { externalCustomerId: string; count: number }) => void;
   event: {
     provider: string;
     eventId: string;
     uniqueKey?: string;
     webhookType: string;
     objectId?: string;
+    /** sha256 of the raw body; the replay-evidence trail (audit A7). */
+    bodyHash?: string;
   };
 };
 
@@ -472,6 +544,15 @@ export type BillingStore = {
    */
   ensureCustomerRow(input: { externalId: string }): Promise<void>;
   upsertSubscription(input: BillingSubscriptionRow): Promise<void>;
+  /**
+   * Retire the local rows for one customer that the provider's own list no longer contains:
+   * status → `terminated`, `updatedAt` → now. Returns how many rows moved. Never deletes —
+   * the row is the audit of what this deployment believed.
+   */
+  retireAbsentSubscriptions(
+    externalCustomerId: string,
+    presentExternalSubscriptionIds: readonly string[],
+  ): Promise<number>;
   readSubscriptions(
     externalCustomerId: string,
   ): Promise<readonly BillingSubscriptionRow[]>;
@@ -482,7 +563,11 @@ export type BillingStore = {
     uniqueKey?: string;
     webhookType: string;
     objectId?: string;
+    /** sha256 of the raw body; absent on rows written before it existed (audit A7). */
+    bodyHash?: string;
   }): Promise<boolean>;
+  /** How many distinct event ids carried this exact body; >1 is replay evidence (audit A7). */
+  countDeliveriesOfBody(bodyHash: string): Promise<number>;
   snapshot(): Promise<{
     customers: number;
     subscriptions: number;
@@ -502,6 +587,13 @@ export type VerifiedWebhook = {
   webhookType: string;
   objectId?: string;
   externalCustomerId?: string;
+  /**
+   * sha256 of the raw body, lowercase hex. The signature does not cover the delivery's identity
+   * header, so this is the evidence that ties "same content, different event id" together for
+   * reconciliation (audit A7). Not a dedupe key: identical bodies under distinct event ids are
+   * legitimate, if rare.
+   */
+  bodyHash: string;
 };
 
 export type WebhookVerifier = {
@@ -550,24 +642,9 @@ export type BillingService = {
   /** The active subscription's current-period usage bucketed by day, 60s-cached. */
   usageDaily(externalCustomerId?: string): Promise<BillingUsageDaily>;
   /**
-   * Meter one consumption event against the active subscription. Fire-and-forget by design: the
-   * caller is a model call's epilogue, and billing must never sit in front of a token stream.
-   * The transaction id makes a retried report free — the provider stores it once.
-   */
-  recordUsage(input: {
-    metricCode: string;
-    properties: Record<string, number | string>;
-    /** Stable per-occurrence id; the same value twice is one event at the provider. */
-    transactionId: string;
-    timestamp?: Date;
-    /** Absent means this deployment's own customer key. */
-    externalCustomerId?: string;
-  }): Promise<void>;
-  /**
    * Delivery-grade usage metering for the durable outbox: resolves only once the provider accepted
    * or deduplicated the event, and rejects with a `UsageDeliveryError` (no active subscription,
    * provider refusal) or the provider's `BillingError` (transient) so the caller can retry.
-   * `recordUsage` above stays the best-effort, never-throwing variant.
    */
   deliverUsage(input: {
     metricCode: string;

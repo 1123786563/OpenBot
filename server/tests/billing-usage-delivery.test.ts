@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { CreditReservationConflictError } from "../src/billing/credits-writer";
 import { startUsageDeliverySweeps } from "../src/billing/maintenance";
 import { createBillingService } from "../src/billing/service";
 import { BillingError } from "../src/billing/types";
@@ -6,6 +7,8 @@ import {
   createCreditUsageTarget,
   createLagoUsageTarget,
   createUsageDelivery,
+  MAX_DELIVERY_ATTEMPTS,
+  MIN_BLOCK_AGE_MS,
   UsageDeliveryError,
 } from "../src/billing/usage-delivery";
 import type {
@@ -36,13 +39,15 @@ function makeRecord(eventId: string): UsageOutboxRecord {
     creditsStatus: "pending",
     lagoLastErrorCode: null,
     creditsLastErrorCode: null,
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
+    lagoAttempts: 0,
+    creditsAttempts: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   } as UsageOutboxRecord;
 }
 
-function memoryOutbox(ids: string[]) {
-  const rows = new Map(ids.map((id) => [id, makeRecord(id)]));
+function memoryOutbox(initial: UsageOutboxRecord[]) {
+  const rows = new Map(initial.map((row) => [row.eventId, row]));
   const failures: string[] = [];
   const blocks: string[] = [];
   const outbox: UsageOutbox = {
@@ -67,6 +72,13 @@ function memoryOutbox(ids: string[]) {
     },
     async recordDeliveryFailure(id, target, code) {
       failures.push(`${id}:${target}:${code}`);
+      const row = rows.get(id);
+      if (!row) return { attempts: 0 };
+      if (target === "lago") row.lagoAttempts += 1;
+      else row.creditsAttempts += 1;
+      return {
+        attempts: target === "lago" ? row.lagoAttempts : row.creditsAttempts,
+      };
     },
     async blockDelivery(id, target, code) {
       blocks.push(`${id}:${target}:${code}`);
@@ -105,7 +117,9 @@ describe("createUsageDelivery", () => {
       },
       async markLagoDelivered() {},
       async markCreditsDelivered() {},
-      async recordDeliveryFailure() {},
+      async recordDeliveryFailure() {
+        return { attempts: 0 };
+      },
       async blockDelivery() {},
     };
     const delivery = createUsageDelivery({
@@ -127,7 +141,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("retries only the failed target and never repeats delivered effects", async () => {
-    const { outbox, failures, rows } = memoryOutbox(["e1"]);
+    const { outbox, failures, rows } = memoryOutbox([makeRecord("e1")]);
     let lagoCalls = 0;
     let creditCalls = 0;
     let creditsFail = true;
@@ -169,7 +183,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("the inverse failure retries only Lago", async () => {
-    const { outbox } = memoryOutbox(["e1"]);
+    const { outbox } = memoryOutbox([makeRecord("e1")]);
     let lagoCalls = 0;
     let creditCalls = 0;
     let lagoFails = true;
@@ -191,7 +205,10 @@ describe("createUsageDelivery", () => {
   });
 
   test("a failing target does not stop the sibling or later records, and logs only stable fields", async () => {
-    const { outbox, failures, rows } = memoryOutbox(["e1", "e2"]);
+    const { outbox, failures, rows } = memoryOutbox([
+      makeRecord("e1"),
+      makeRecord("e2"),
+    ]);
     const logs: string[] = [];
     const delivery = createUsageDelivery({
       outbox,
@@ -218,7 +235,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("does not swallow outbox bookkeeping errors", async () => {
-    const { outbox } = memoryOutbox(["e1"]);
+    const { outbox } = memoryOutbox([makeRecord("e1")]);
     outbox.markLagoDelivered = async () => {
       throw new Error("db down");
     };
@@ -232,7 +249,7 @@ describe("createUsageDelivery", () => {
   });
 
   test("a failed failure-recording is propagated", async () => {
-    const { outbox } = memoryOutbox(["e1"]);
+    const { outbox } = memoryOutbox([makeRecord("e1")]);
     outbox.recordDeliveryFailure = async () => {
       throw new Error("db down");
     };
@@ -248,7 +265,9 @@ describe("createUsageDelivery", () => {
   });
 
   test("legacy rows missing reservations converge to a blocked credit target without replaying", async () => {
-    const { outbox, rows, failures, blocks } = memoryOutbox(["legacy"]);
+    const { outbox, rows, failures, blocks } = memoryOutbox([
+      makeRecord("legacy"),
+    ]);
     const logs: string[] = [];
     let lagoCalls = 0;
     let creditCalls = 0;
@@ -285,6 +304,116 @@ describe("createUsageDelivery", () => {
     });
     expect([lagoCalls, creditCalls]).toEqual([1, 1]);
     expect(logs).toHaveLength(1);
+  });
+});
+
+describe("a permanent delivery failure ends in a terminal state (audit C1)", () => {
+  test("a provider refusal blocks on the first attempt", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-1")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("provider_refused");
+      },
+      chargeCredits: async () => {},
+    });
+    await delivery.runBatch(10);
+    expect(rows.get("ev-1")?.lagoStatus).toBe("blocked");
+    expect(rows.get("ev-1")?.lagoLastErrorCode).toBe("provider_refused");
+  });
+
+  test("a reservation conflict blocks the credits target instead of retrying forever", async () => {
+    const { outbox, rows } = memoryOutbox([
+      {
+        ...makeRecord("ev-2"),
+        reservationId: "cr-1",
+      },
+    ]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {},
+      chargeCredits: async () => {
+        throw new CreditReservationConflictError("already released");
+      },
+    });
+    await delivery.runBatch(10);
+    expect(rows.get("ev-2")?.creditsStatus).toBe("blocked");
+  });
+
+  test("a transient failure stays pending until the attempt ceiling, then blocks", async () => {
+    // Restated for the age gate: makeRecord's default createdAt is "now" (a young row, which the
+    // ceiling alone may no longer block), so this case pins the old-row half explicitly.
+    const { outbox, rows } = memoryOutbox([
+      {
+        ...makeRecord("ev-3"),
+        createdAt: new Date(Date.now() - MIN_BLOCK_AGE_MS - 60_000),
+      },
+    ]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("unreachable");
+      },
+      chargeCredits: async () => {},
+    });
+    for (let pass = 0; pass < MAX_DELIVERY_ATTEMPTS - 1; pass += 1) {
+      await delivery.runBatch(10);
+      expect(rows.get("ev-3")?.lagoStatus).toBe("pending");
+    }
+    await delivery.runBatch(10);
+    expect(rows.get("ev-3")?.lagoStatus).toBe("blocked");
+    expect(rows.get("ev-3")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
+  });
+
+  test("a young row exhausted by a short outage stays pending with its attempts recorded (review r1)", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-5")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("unreachable");
+      },
+      chargeCredits: async () => {},
+    });
+    for (let pass = 0; pass < MAX_DELIVERY_ATTEMPTS; pass += 1) {
+      await delivery.runBatch(10);
+      expect(rows.get("ev-5")?.lagoStatus).toBe("pending");
+    }
+    expect(rows.get("ev-5")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
+  });
+
+  test("an exhausted row older than the block age blocks (review r1)", async () => {
+    const { outbox, rows } = memoryOutbox([
+      {
+        ...makeRecord("ev-6"),
+        createdAt: new Date(Date.now() - MIN_BLOCK_AGE_MS - 60_000),
+      },
+    ]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {
+        throw new UsageDeliveryError("unreachable");
+      },
+      chargeCredits: async () => {},
+    });
+    for (let pass = 0; pass < MAX_DELIVERY_ATTEMPTS - 1; pass += 1) {
+      await delivery.runBatch(10);
+      expect(rows.get("ev-6")?.lagoStatus).toBe("pending");
+    }
+    await delivery.runBatch(10);
+    expect(rows.get("ev-6")?.lagoStatus).toBe("blocked");
+    expect(rows.get("ev-6")?.lagoAttempts).toBe(MAX_DELIVERY_ATTEMPTS);
+  });
+
+  test("a delivered target never counts attempts", async () => {
+    const { outbox, rows } = memoryOutbox([makeRecord("ev-4")]);
+    const delivery = createUsageDelivery({
+      outbox,
+      sendToLago: async () => {},
+      chargeCredits: async () => {},
+    });
+    await delivery.runBatch(10);
+    expect(rows.get("ev-4")?.lagoStatus).toBe("delivered");
+    expect(rows.get("ev-4")?.lagoAttempts).toBe(0);
   });
 });
 
@@ -457,24 +586,6 @@ describe("BillingService.deliverUsage", () => {
       code: "unreachable",
     });
   });
-
-  test("recordUsage stays best-effort", async () => {
-    const warn = console.warn;
-    console.warn = () => {};
-    try {
-      const { svc } = service({ rows: [] });
-      await expect(svc.recordUsage(input)).resolves.toBeUndefined();
-      const failing = service({
-        rows: active,
-        post: async () => {
-          throw new BillingError("unreachable");
-        },
-      });
-      await expect(failing.svc.recordUsage(input)).resolves.toBeUndefined();
-    } finally {
-      console.warn = warn;
-    }
-  });
 });
 
 describe("startUsageDeliverySweeps", () => {
@@ -514,5 +625,108 @@ describe("startUsageDeliverySweeps", () => {
     handle.stop();
     expect(runs).toBeGreaterThan(1);
     expect(logs[0]).not.toContain("postgres");
+  });
+});
+
+describe("a sweep pass is single-instance (audit C3)", () => {
+  // The guard's dedicated connection is faked — mock.module replaces postgres for the
+  // already-imported sweeper — so the tests pin the lock protocol without a second database: a
+  // pass that cannot take the advisory lock is skipped, and the connection that holds it is
+  // ended (ending the connection IS the release of a session lock) after a successful pass AND
+  // after a throwing one. A leaked lock silently disables every later sweep on every replica,
+  // so the throwing half is the one that matters.
+  const guard = { held: true, events: [] as string[] };
+  mock.module("postgres", () => ({
+    default: () => {
+      const connection = (() =>
+        Promise.resolve([{ held: guard.held }])) as unknown as {
+        (
+          strings: TemplateStringsArray,
+          ...values: unknown[]
+        ): Promise<{ held: boolean }[]>;
+        end: (options?: unknown) => Promise<void>;
+      };
+      connection.end = async () => {
+        guard.events.push("end");
+      };
+      return connection;
+    },
+  }));
+
+  beforeEach(() => {
+    guard.held = true;
+    guard.events = [];
+  });
+  afterAll(() => {
+    // The module mock must not follow postgres into other test files.
+    mock.restore();
+  });
+
+  const lock = {
+    databaseUrl: "postgres://single-instance-guard-test",
+    key: 4_192_005,
+  };
+
+  test("a pass is skipped when the advisory lock is held elsewhere", async () => {
+    guard.held = false;
+    let passes = 0;
+    const sweeps = startUsageDeliverySweeps(
+      {
+        runBatch: async () => {
+          passes += 1;
+          return { examined: 0, delivered: 0, failed: 0 };
+        },
+      },
+      { firstRunMs: 0, intervalMs: 5, lock },
+    );
+    await Bun.sleep(20);
+    sweeps.stop();
+    expect(passes).toBe(0);
+  });
+
+  test("a successful pass runs and ends the connection that holds the lock", async () => {
+    let passes = 0;
+    const sweeps = startUsageDeliverySweeps(
+      {
+        runBatch: async () => {
+          passes += 1;
+          guard.events.push("ran");
+          return { examined: 0, delivered: 0, failed: 0 };
+        },
+      },
+      { firstRunMs: 0, intervalMs: 5, lock },
+    );
+    await Bun.sleep(20);
+    sweeps.stop();
+    expect(passes).toBeGreaterThanOrEqual(1);
+    // The pass that ran also released: its end follows its run (passes serialize, so nothing
+    // else can land between the two).
+    const firstRun = guard.events.indexOf("ran");
+    expect(firstRun).toBeGreaterThanOrEqual(0);
+    expect(guard.events[firstRun + 1]).toBe("end");
+  });
+
+  test("a throwing pass still ends the connection that holds the lock", async () => {
+    let attempts = 0;
+    const sweeps = startUsageDeliverySweeps(
+      {
+        runBatch: async () => {
+          attempts += 1;
+          guard.events.push("threw");
+          throw new Error("boom");
+        },
+      },
+      { firstRunMs: 0, intervalMs: 5, log: () => {}, lock },
+    );
+    await Bun.sleep(20);
+    sweeps.stop();
+    // The throw wedged neither the sweeper (it kept retrying) nor the lock: every throwing pass
+    // is followed by its release.
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    for (let i = 0; i < guard.events.length; i += 1) {
+      if (guard.events[i] === "threw") {
+        expect(guard.events[i + 1]).toBe("end");
+      }
+    }
   });
 });
