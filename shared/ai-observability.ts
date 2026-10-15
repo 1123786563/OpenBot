@@ -10,8 +10,13 @@
  * reason without inventing wording per surface.
  */
 
-/** Bump this whenever the semantics below change. Frozen into dataset versions by ticket #25. */
-export const REDACTION_POLICY_VERSION = "opik-redaction/1";
+/**
+ * Bump this whenever the semantics below change. Frozen into dataset versions by ticket #25.
+ * v2: PEM blocks are denied wherever they sit; an AWS secret is denied with its label before the
+ * value; record caps report `truncated` instead of silently dropping; the byte cut never strands a
+ * lone surrogate; record projection is prototype-safe.
+ */
+export const REDACTION_POLICY_VERSION = "opik-redaction/2";
 
 export type SafeContentState = "projected" | "omitted" | "truncated";
 
@@ -32,7 +37,15 @@ export type SafeText =
 export type SafeValue =
   | { state: "projected"; value: unknown }
   | { state: "omitted"; reason: OmitReason }
-  | { state: "truncated"; value: string; originalBytes: number };
+  | {
+      state: "truncated";
+      /** For string leaves the cut text; for records/arrays the partial projection. */
+      value: unknown;
+      /** UTF-8 byte size of the original value; -1 when it cannot be measured (e.g. BigInt). */
+      originalBytes: number;
+      /** Items removed by a record/array cap; absent for string cuts. */
+      dropped?: number;
+    };
 
 /**
  * Reason -> the i18n key that explains it. Keys live in the `ai-observability-*` namespaces

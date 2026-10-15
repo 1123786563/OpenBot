@@ -35,10 +35,24 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
   { reason: "credential", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { reason: "credential", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
   { reason: "credential", pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
-  { reason: "credential", pattern: /\b-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  // A PEM header is five dashes and BEGIN: it needs no word-character anchor. Real PEM sits at a
+  // line start, after a newline, space or quote — exactly where a \b anchor never fires.
   {
     reason: "credential",
-    pattern: /\b[A-Za-z0-9/+=]{40}\b(?=.*(?:secret|password|passwd|pwd))/i,
+    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  },
+  // A 40-char base64 token is only a secret in credential context, but that context can be on
+  // either side: config files and env dumps put the label before the value. An unlabeled token
+  // stays projectable in reviewed text — it is indistinguishable from any other base64 run.
+  {
+    reason: "credential",
+    pattern:
+      /\b[A-Za-z0-9/+=]{40}\b(?=[\s\S]*(?:secret|password|passwd|pwd))/i,
+  },
+  {
+    reason: "credential",
+    pattern:
+      /(?:secret|password|passwd|pwd)[\s\S]{0,64}\b[A-Za-z0-9/+=]{40}\b/i,
   },
   { reason: "account_identifier", pattern: /\bacct_[A-Za-z0-9]{12,}\b/ },
   { reason: "account_identifier", pattern: /\bcus_[A-Za-z0-9]{12,}\b/ },

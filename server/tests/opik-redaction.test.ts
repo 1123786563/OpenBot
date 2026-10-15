@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_METADATA_ALLOWLIST,
   MAX_SAFE_RECORD_DEPTH,
+  MAX_SAFE_RECORD_KEYS,
   MAX_SAFE_TEXT_BYTES,
   projectSafeException,
   projectSafeMetadata,
@@ -29,6 +30,9 @@ const CANARIES = {
   awsAccessKey: "AKIAIOSFODNN7EXAMPLE",
   awsSecret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
   githubToken: "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+  slackToken: "xoxb-2143456789-2143456789012-AbCdEfGhIjKlMnOpQrStUvWx",
+  pemKey:
+    "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAAAbW9wNTJz\r\n-----END OPENSSH PRIVATE KEY-----",
   postgresDsn: "postgresql://opik:s3cr3t@10.0.0.5:5432/openbot",
   mysqlDsn: "mysql://root:rootpw@db.internal:3306/opik",
   redisUrl: "redis://:redispass@cache.internal:6379/0",
@@ -51,7 +55,7 @@ const REASONS: OmitReason[] = [
 
 describe("safe content contract", () => {
   test("the policy version is namespaced and exact", () => {
-    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/1");
+    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/2");
   });
 
   test("every omit reason maps to a copy key the UI already has", () => {
@@ -133,6 +137,76 @@ describe("projectSafeText", () => {
     const result = projectSafeText(input, { allowFreeText: true });
     expect(result.state).toBe("truncated");
     if (result.state === "truncated") expect(result.text).not.toMatch(/�$/);
+  });
+
+  test("truncation never strands a lone surrogate at the cut", () => {
+    // The byte budget can land between a surrogate pair: the lone half encodes to U+FFFD bytes,
+    // so a character-level guard never sees it. Every padding has to stay well-formed.
+    for (const pad of [0, 1, 2, 3]) {
+      const input = "a".repeat(pad) + "😀".repeat(3000);
+      const result = projectSafeText(input, { allowFreeText: true });
+      expect(result.state).toBe("truncated");
+      if (result.state === "truncated") {
+        expect(result.text, `pad=${pad}`).not.toMatch(/[\uD800-\uDBFF]$/);
+        const bytes = new TextEncoder().encode(result.text);
+        expect(bytes.length, `pad=${pad}`).toBeLessThanOrEqual(
+          MAX_SAFE_TEXT_BYTES,
+        );
+        // A well-formed string round-trips through its own UTF-8 bytes unchanged.
+        expect(new TextDecoder().decode(bytes), `pad=${pad}`).toBe(result.text);
+      }
+    }
+  });
+});
+
+describe("deny patterns hold on the reviewed-free-text path", () => {
+  test("a PEM block is denied wherever it sits", () => {
+    const pem = CANARIES.pemKey;
+    const placements = [
+      pem, // string start
+      `config:\n${pem}`, // after a newline
+      `value="${pem}"`, // after a quote
+      `key${pem}`, // glued to a word character (the only form the old anchor caught)
+    ];
+    for (const text of placements) {
+      const result = projectSafeText(text, { allowFreeText: true });
+      expect(result.state).toBe("omitted");
+      expect(JSON.stringify(result)).not.toContain("OPENSSH PRIVATE KEY");
+    }
+  });
+
+  test("a Slack token is denied", () => {
+    const result = projectSafeText(`notify ${CANARIES.slackToken}`, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(CANARIES.slackToken);
+  });
+
+  test("an AWS secret is denied with its label before the value", () => {
+    // Config files and env dumps put the label first; a forward-only context
+    // lookahead never sees that form.
+    const labelled = projectSafeText(
+      `aws_secret_access_key=${CANARIES.awsSecret}`,
+      { allowFreeText: true },
+    );
+    expect(labelled.state).toBe("omitted");
+    expect(JSON.stringify(labelled)).not.toContain(CANARIES.awsSecret);
+  });
+
+  test("an AWS secret is still denied with its label after the value", () => {
+    const labelled = projectSafeText(
+      `${CANARIES.awsSecret} is the aws secret`,
+      { allowFreeText: true },
+    );
+    expect(labelled.state).toBe("omitted");
+    expect(JSON.stringify(labelled)).not.toContain(CANARIES.awsSecret);
+  });
+
+  test("a PEM block never reaches the default metadata path", () => {
+    const result = projectSafeMetadata({ model: CANARIES.pemKey });
+    expect(result.model?.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("OPENSSH PRIVATE KEY");
   });
 });
 
@@ -245,6 +319,70 @@ describe("projectSafeRecord", () => {
     const value = result.tools;
     expect(value.state).toBe("projected");
     expect(values(result)).not.toContain("computer-control");
+  });
+
+  test("a __proto__ key from parsed JSON is an own key, never a prototype hijack", () => {
+    const parsed = JSON.parse(
+      '{"__proto__": {"injected": "payload"}, "model": "gpt-4o"}',
+    );
+    const result = projectSafeRecord(parsed, ["__proto__", "model"]);
+    // The value is recorded under its own key instead of routing through
+    // Object.prototype's __proto__ setter.
+    expect(Object.keys(result).sort()).toEqual(["__proto__", "model"]);
+    expect(JSON.stringify(result)).toContain("payload");
+    expect(({} as Record<string, unknown>).injected).toBeUndefined();
+  });
+
+  test("an allowlist entry naming an Object.prototype member fabricates no key", () => {
+    const result = projectSafeRecord({ model: "gpt-4o" }, ["toString", "model"]);
+    expect(Object.keys(result).sort()).toEqual(["model"]);
+  });
+
+  test("nested record projection does not pollute prototypes either", () => {
+    const parsed = JSON.parse('{"nested": {"__proto__": {"injected": "p"}}}');
+    const result = projectSafeRecord(parsed, ["nested"]);
+    expect(result.nested?.state).toBe("projected");
+    expect(values(result)).not.toContain("payload");
+    expect(({} as Record<string, unknown>).injected).toBeUndefined();
+  });
+
+  test("an array over the key cap reports truncation instead of silently dropping", () => {
+    const items = Array.from({ length: 100 }, (_, i) => `item-${i}`);
+    const result = projectSafeRecord({ tools: items }, ["tools"]);
+    const value = result.tools;
+    expect(value.state).toBe("truncated");
+    if (value.state === "truncated") {
+      expect(value.dropped).toBe(36);
+      expect(value.originalBytes).toBeGreaterThan(0);
+      expect((value.value as unknown[]).length).toBe(64);
+      expect(JSON.stringify(value)).toContain("item-63");
+      expect(JSON.stringify(value)).not.toContain("item-64");
+      expect(JSON.stringify(value)).not.toContain("item-99");
+    }
+  });
+
+  test("a record with more than 64 own keys reports truncation", () => {
+    const obj: Record<string, unknown> = {};
+    for (let i = 0; i < 100; i += 1) obj[`k${i}`] = i;
+    const result = projectSafeRecord({ meta: obj }, ["meta"]);
+    const value = result.meta;
+    expect(value.state).toBe("truncated");
+    if (value.state === "truncated") {
+      expect(value.dropped).toBe(36);
+      expect(Object.keys(value.value as object).length).toBe(64);
+      expect(JSON.stringify(value)).toContain("k63");
+      expect(JSON.stringify(value)).not.toContain("k99");
+    }
+  });
+
+  test("an allowlist longer than the key cap is refused, not silently sliced", () => {
+    const oversized = Array.from({ length: 65 }, (_, i) => `k${i}`);
+    expect(() => projectSafeRecord({ k0: 1 }, oversized)).toThrow(
+      /MAX_SAFE_RECORD_KEYS/,
+    );
+    expect(DEFAULT_METADATA_ALLOWLIST.length).toBeLessThanOrEqual(
+      MAX_SAFE_RECORD_KEYS,
+    );
   });
 });
 
