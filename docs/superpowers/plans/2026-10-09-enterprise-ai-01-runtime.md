@@ -32,8 +32,8 @@
 
 2026-10-09 复核：runtime-go module、identity/adapter/callback/server 组件已存在；`cmd/runtime/main.go` 仍仅挂健康服务。R1/R2 的历史 `[x]` 保留，R3旧版勾选合并为R3历史记录；均不代表修订后合同已实现，也不重写历史执行授权。以下是新增待完成差量：
 
-- [x] 对齐 §R2 的企业信封与 R2-B 真实进程装配，不仅测试 Handler。（2026-10-10 R4-A 验证收口：R2-B①②③ 全部实证——契约测试构建并启动实际 `cmd/runtime` 二进制，经真实 middleware 链（gate→auth→TrackExecutions→RequireVerifiedInput→RouteByExpert）与框架 Runner，由 TS HttpAgent 消费真实 `/internal/enterprise/v1/runtime/execution` 路由，16/16 通过）
-- [x] 将 R3 遗留回调替换为企业 prepare/execute＋操作回执契约。
+- [ ] 对齐 §R2 的企业信封与 R2-B 真实进程装配，不仅测试 Handler。
+- [ ] 将 R3 遗留回调替换为企业 prepare/execute＋操作回执契约。
 - [ ] 补可信输入、事件语义、故障恢复/取消、依赖风险复核与 R4 证据。
 
 代码块除明确完整的测试外均为接口/算法片段，须由所属步骤补齐导入、Schema、装配与故障测试；不能仅复制片段标记整步通过。现有文件优先局部修改，路径存在时禁止重新初始化或覆盖。
@@ -185,9 +185,9 @@ func ResolveUser(ctx context.Context, in *adapter.RunAgentInput) (string, error)
 
 `New(a agent.Agent) (http.Handler, func() error, error)` 为adapter内部构造合同；不是可跳过启动接线的“完整实现”。在锁定SDK上将同一可信UserIDResolver、空StateResolver、输入校验Hook装配到真实Runner/AG-UI Handler；显式关闭ReasoningContent/EventSourceMetadata，清空客户端forwardedProps。构造失败清理已经创建的session/runner资源。
 
-- [x] 实际main加载严格配置→建立固定TS验证/模型代理客户端→构建固定专家/工具目录→构建adapter.New→装配服务认证及请求上限middleware→挂内部执行/cancel路由→监听成功后ready。未配置能力/专家/可信端点则503，不回退固定user。
-- [x] 监听及非付费依赖预检成功才能ready；liveness只检查进程。SIGTERM先draining/ready=false，再停止新Run、限时取消/排空，确认退出并关闭adapter；超时上报未退出/未知而非成功。
-- [x] 实际二进制通过TS HttpAgent验证，不能只直接调用handler。所有具体HTTP路径/限额/错误Schema由R/E合同冻结，无配置禁止启动企业模式。（2026-10-10 验证：`bun test server/tests/enterprise/runtime-contract.test.ts` 16/16 通过——探针协调器现直接 `go build ./cmd/runtime` 启动真实二进制（严格配置、专家目录、gate、企业执行/取消路由），HttpAgent 打真实 `/internal/enterprise/v1/runtime/execution`；合成 launcher 已删除。既有 `/agui/` 合成路径不再存在，无需保留 fixture 场景）
+- [ ] 实际main加载严格配置→建立固定TS验证/模型代理客户端→构建固定专家/工具目录→构建adapter.New→装配服务认证及请求上限middleware→挂内部执行/cancel路由→监听成功后ready。未配置能力/专家/可信端点则503，不回退固定user。
+- [ ] 监听及非付费依赖预检成功才能ready；liveness只检查进程。SIGTERM先draining/ready=false，再停止新Run、限时取消/排空，确认退出并关闭adapter；超时上报未退出/未知而非成功。
+- [ ] 实际二进制通过TS HttpAgent验证，不能只直接调用handler。所有具体HTTP路径/限额/错误Schema由R/E合同冻结，无配置禁止启动企业模式。
 
 | 输入字段 | 权威来源与验证 |
 |---|---|
@@ -207,17 +207,17 @@ func ResolveUser(ctx context.Context, in *adapter.RunAgentInput) (string, error)
 
 ### R3-A：调用合同与单写边界
 
-- [x] Go `Prepare(ctx, ToolPreparation)` 与 `Execute(ctx, ToolExecution)` 使用总计划§4.2的strict wire Schema；服务身份/短期能力来自私有context，不能由模型args提供。prepare固定调用内部 `tool-invocations/prepare`，execute固定调用 `tool-invocations/{operation_id}/execute`。旧 `/api/agent-tools/call` 不挂企业入口，也不是故障回退。（2026-10-09 验证：runtime-go/internal/callback 严格编解码＋两端点固定路径＋凭证仅取自 identity 私有 context；TS 侧 fake 端点 server/src/enterprise/runtime/tool-invocations.ts；Go 回调不再引用旧入口，遗留 /api/agent-tools/call 拒绝语义回归保留在 runtime-callback.test.ts）
-- [x] 平台以 `(tenant,run,tool_call_id)` 去重分配operation_id并绑定step、目标、参数摘要、安装版本；执行attempt另建。模型重复提议已提交/未知操作时进入核对，不通过新tool_call_id绕过；真正新意图需新的用户/确定性工作流决策及授权。（G1a fake 语义＋测试：复用 operation、异参数409、新 tool_call_id 同内容撞已冻结操作→409 reconciliation_required；G1b/P3 持久账本仍按 R3-C 矩阵另行验收）
-- [x] prepare返回操作引用、是否需审批与安全预览，不执行外部操作；execute复核当前成员/ACL、专家安装授权、ActionPolicy、审批参数/期限、预算、lease/fencing。身份、目标、摘要冲突拒绝，不从调用方补全可信字段。（fake 以单一可观测 recheck 边界表达成员/ACL/安装/ActionPolicy/预算＋审批期限/参数与 fencing 断言，测试逐一断言；正式授权库属 P3 未复制。可信字段（tenant 等）仅来自 capability，body 冲突一律拒绝）
-- [x] 回执至少含 `operation_id,execution_attempt_id,status,receipt_ref,error_code,reconciliation_required`；status限定not_submitted/submitted/succeeded/failed/unknown。`submitted/unknown`不可当一般工具错误传给Agent任意重试，必须持久化并将Run置为suspended/待核对。只有可信回执证明结果后再推进业务状态。（运行时侧验证：GovernedTool 对 submitted/unknown/冻结/需审批以 StopError 终止 Run，模型不再被询问、无重试面；回执字段与状态枚举两侧 strict；业务 Run suspended 状态机属 E 域，G1a 以 fake 冻结操作＋回执表达，G1b 账本另验）
+- [ ] Go `Prepare(ctx, ToolPreparation)` 与 `Execute(ctx, ToolExecution)` 使用总计划§4.2的strict wire Schema；服务身份/短期能力来自私有context，不能由模型args提供。prepare固定调用内部 `tool-invocations/prepare`，execute固定调用 `tool-invocations/{operation_id}/execute`。旧 `/api/agent-tools/call` 不挂企业入口，也不是故障回退。
+- [ ] 平台以 `(tenant,run,tool_call_id)` 去重分配operation_id并绑定step、目标、参数摘要、安装版本；执行attempt另建。模型重复提议已提交/未知操作时进入核对，不通过新tool_call_id绕过；真正新意图需新的用户/确定性工作流决策及授权。
+- [ ] prepare返回操作引用、是否需审批与安全预览，不执行外部操作；execute复核当前成员/ACL、专家安装授权、ActionPolicy、审批参数/期限、预算、lease/fencing。身份、目标、摘要冲突拒绝，不从调用方补全可信字段。
+- [ ] 回执至少含 `operation_id,execution_attempt_id,status,receipt_ref,error_code,reconciliation_required`；status限定not_submitted/submitted/succeeded/failed/unknown。`submitted/unknown`不可当一般工具错误传给Agent任意重试，必须持久化并将Run置为suspended/待核对。只有可信回执证明结果后再推进业务状态。
 
 ### R3-B：传输、失效与取消
 
-- [x] HTTP标准库编码strict请求，NewRequestWithContext绑定取消；服务凭证单独注入，固定地址、禁重定向、有界body/response和总超时。验证响应Schema与operation绑定；上限是测试配置，需容量验证。日志不记录秘密/参数正文/原始错误body。（2026-10-09 验证：callback.Client 新增总超时（无配置客户端也受界，`TestTotalTimeoutBoundsThePlaneCall`）、execute 回执 operation_id 必须与请求一致（`TestExecuteBindsTheReceiptToItsOperation`）、上下文取消直达调用（`TestContextCancellationReachesThePlaneCall`）、错误文本不携带凭证对（`TestErrorsNeverCarryTheCredentials`）；strict 编码/固定地址/禁重定向/有界响应/凭证仅私有 context 为既有测试继承复验。2026-10-09 二轮补齐有界请求 body：`MaxRequestBytes`（1 MiB 测试配置）在 dial 前拒绝超限序列化请求，RED→GREEN 见 `TestOversizedRequestsAreRefusedBeforeDial`（ErrInvalidWire 本地决定性拒绝、plane 零调用，非 unknown）
-- [x] execute一旦开始发送而未得到可信回执，传输错误/解析失败/异常状态保守记unknown；只有能够证明请求未提交或服务端明确拒绝且未执行时可记not_submitted。无自动HTTP重试仍不等于业务幂等，P3的持久账本才阻断跨调用/跨进程重放。（2026-10-09 验证：HTTP 超时（既有 `TestExecuteDoesNotRetryUnknownOutcome`）、响应破损（`TestBrokenAnswerIsOneAttempt`，单次尝试）、回执 ACK 丢失（`TestLostReceiptAckIsNotResubmitted`，plane 已花费+连接中断，不重发）均不自动重试且 errors.Is(ErrOutcomeUnknown) 可机器判定；unknown 可查询＝TS fake 冻结操作后 re-prepare 报 reconciliation_required、二次 execute 409（runtime-callback.test.ts「an unknown receipt freezes the operation and the freeze stays queryable」）；404/400/422/401/403/409 分类为既有测试复验）
-- [x] 取消按已验证 `{tenant_id,principal_id,run_id,attempt_id}` 查执行上下文，验证当前fencing；响应只为cancel_requested。实际模型/子进程退出才确认cancelled，已提交工具继续保留reconciliation，不承诺撤销外部业务。（2026-10-09 验证：新增 internal/server/executions.go 执行上下文注册表（进程内、按全元组记 fencing、TrackExecutions 随响应结束释放）；Cancel(canceler, executions) 全元组未命中 404 且不触 canceler（`TestCancelLooksUpTheExecutionContextByTheVerifiedTuple` 覆盖别 attempt/别租户/别主体）、fencing 不符 403 不动执行（`TestCancelRefusesStaleFencing`）、仅答 cancel_requested 与模型不响应取消保持/清理语义为既有测试复验；main.go 与探针 launcher 已接线）
-- [x] Go重启清空本机执行态，不伪报旧Run继续运行；E2/D2收回lease并对账已确认checkpoint/receipt，再签新attempt。审批后更新短期能力必须重鉴权，禁止ignoreExpiry。（2026-10-09 G1a 范围验证：`TestRestartClearsLocalExecutionState` 证明新进程注册表为空、旧 Run 取消 404 不伪报；E2/D2 lease 回收对账属 E 域、G1b 另验；能力重鉴权＝每次调用重新验证 capability（fake `authenticate` 拒过期、无 ignoreExpiry），重签能力即刻可用且过期原件持续 401（runtime-callback.test.ts「a re-issued capability re-authenticates per call」），Go auth 中间件逐请求验证+本地期限复查为既有测试复验）
+- [ ] HTTP标准库编码strict请求，NewRequestWithContext绑定取消；服务凭证单独注入，固定地址、禁重定向、有界body/response和总超时。验证响应Schema与operation绑定；上限是测试配置，需容量验证。日志不记录秘密/参数正文/原始错误body。
+- [ ] execute一旦开始发送而未得到可信回执，传输错误/解析失败/异常状态保守记unknown；只有能够证明请求未提交或服务端明确拒绝且未执行时可记not_submitted。无自动HTTP重试仍不等于业务幂等，P3的持久账本才阻断跨调用/跨进程重放。
+- [ ] 取消按已验证 `{tenant_id,principal_id,run_id,attempt_id}` 查执行上下文，验证当前fencing；响应只为cancel_requested。实际模型/子进程退出才确认cancelled，已提交工具继续保留reconciliation，不承诺撤销外部业务。
+- [ ] Go重启清空本机执行态，不伪报旧Run继续运行；E2/D2收回lease并对账已确认checkpoint/receipt，再签新attempt。审批后更新短期能力必须重鉴权，禁止ignoreExpiry。
 
 ### R3-C：验收矩阵
 
@@ -286,15 +286,6 @@ test("empty stream cannot count as a successful run",()=>{
 | 慢消费者 | 有界队列和背压；终态/审批/回执不可丢，不无限缓存内存 |
 | 重启/旧租约 | G1a只证明进程丢失时不伪报继续；G1b必须实际注入E2/D2/P3故障，旧fencing提交拒绝 |
 | 真二进制 | 启动实际main、真实middleware、框架Runner及TS HttpAgent；fixture模型不是SSE echo |
-
-2026-10-10 R4-A 逐行核对记录（G1a 行已具备可执行断言；G1b 行登记为依赖）：
-
-- 文本/工具生命周期：`runtime-contract.test.ts` 生命周期测试断言 TEXT_MESSAGE_CONTENT/END 全部携带其 START 的 messageId、TOOL_CALL_ARGS/END 携带其 START 的 toolCallId、start→content→end 顺序、TOOL_CALL_END 之后仍有 RUN_FINISHED（非业务成功）；Go 侧 `agui_test.go` 既有 TOOL_CALL_START/END 计数与文本信封断言保留。
-- 等待输入/审批：以锁定协议（@ag-ui/core 1.0.1 zod schema 与冻结 Go SDK 均含）的 `RUN_FINISHED.outcome{type:"interrupt",interrupts[]}` 为唯一映射载体——`internal/adapter/waitmapping.go` 将治理挂起（需审批/回执未决）从 RUN_ERROR 改写为 interrupt 终态，reason 冻结为 `tool_approval`/`operation_receipt_pending`，interrupt.id=平台 operation_id、toolCallId=线上工具调用 id；`runWaitState` 是平台侧冻结映射（interrupt≠succeeded 的可执行证明）。Go 单测先 RED（当时终态为无 outcome 的 RUN_ERROR）后 GREEN。
-- 慢消费者：机制证明＝`internal/adapter/backpressure_test.go`（进程内全链路：消费端停读→provider 写阻塞、帧计数停滞、追读后 16MiB 字节级无损、唯一终态收尾）；探针 checks.backpressure＝对真实二进制的 2MiB 慢读者 harness（工具回执事件+全量 delta+终态不丢、停滞期 RSS 有界测量）。
-- 重启/旧租约：G1a 半（进程丢失不伪报）由探针 checks.restart 与 `TestRestartClearsLocalExecutionState` 覆盖；E2/D2/P3 实际故障注入与旧 fencing 提交拒绝属 G1b，已写入报告 limitations 与探针 evidence。
-- 真二进制：见 R2-B③ 勾选记录——真实 `cmd/runtime` 构建、真实路由、HttpAgent 消费、确定性 fixture 模型（非 SSE echo）。
-- 断流/重连（G1b 行）：本探针无 E3 持久事件账本可续流，仅覆盖"传输结束≠取消"半边（cancel/restart checks）；seq 重建/去重/快照随 E1–E3 验收，已记入报告 limitations。
 
 ### R4-B：依赖风险修订与证据
 

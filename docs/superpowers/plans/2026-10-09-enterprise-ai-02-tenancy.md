@@ -110,9 +110,9 @@ export type ResourceView = { id: string; workspaceId: string; kind: string; revi
 ### 4.2 `server/src/enterprise/contracts.ts`
 
 ```ts
+import type { Database } from "../db/client";
 import type { ResourceView, TenantRole } from "../../../shared/enterprise/contracts";
-import type { TxClient } from "./tenancy/transaction";
-export type Tx = TxClient;
+export type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export type Membership = {
   tenantId: string; principalId: string; tenantName: string;
   role: TenantRole; epoch: number;
@@ -139,7 +139,7 @@ export interface ResourceReader {
 }
 ```
 
-业务库事务类型从现有 Database 派生，不新造不同驱动的事务：`Tx` 即 Bun SQL 事务客户端 `TxClient`（`tenancy/transaction.ts` 导出）——drizzle bun-sql 适配器自身包装的那个驱动，`db.transaction` 底层就是 `client.begin`。生产文件语句一律用模块常量文本 + `$n` 占位符 + 参数数组（`tx.unsafe(text, values)`，drizzle 内部同为 `client.unsafe(query, params)`），不写带运行时插值的 drizzle sql 模板。`Scope` 的 TypeScript readonly 不构成可信边界；T2 用 WeakSet 记录本进程合法 Scope，并在真实事务中重新检查数据库 epoch。
+业务库事务类型从现有 Database 派生，不新造不同驱动的事务。`Scope` 的 TypeScript readonly 不构成可信边界；T2 用 WeakSet 记录本进程合法 Scope，并在真实事务中重新检查数据库 epoch。
 
 ### 4.3 `server/src/enterprise/errors.ts`
 
@@ -676,27 +676,27 @@ export async function lockExclusive(tx:Tx,key:string):Promise<void> {
 - [ ] **3. 实现作用域事务。**
 
 ```ts
+import { sql } from "drizzle-orm";
 import type { Database } from "../../db/client";
 import type { Scope, Tx } from "../contracts";
 import { EnterpriseError } from "../errors";
 import { assertScope } from "./scope";
-const READ_CONTEXT="select set_config('app.tenant_id', $1, true), set_config('app.principal_id', $2, true), set_config('app.user_id', $3, true)";
-const RECHECK="select m.epoch as epoch, m.role as role from enterprise_memberships m \
- join enterprise_principals p on p.id=m.principal_id \
- join enterprise_tenants t on t.id=m.tenant_id \
- where m.tenant_id = $1 and m.principal_id = $2 and p.user_id = $3 \
-  and m.status='active' and p.status='active' and t.status='active'";
 export async function withTenant<T>(db:Database,scope:Scope,fn:(tx:Tx)=>Promise<T>):Promise<T> {
  assertScope(scope);
- return beginOperation(db,async tx=>{          // READ COMMITTED，见 tenancy/transaction.ts
-  await tx.unsafe(READ_CONTEXT,[scope.tenantId,scope.principalId,scope.userId]);
-  await tx.unsafe("set local lock_timeout='2s'");
-  await tx.unsafe("set local statement_timeout='5s'");
+ return db.transaction(async tx=>{
+   await tx.execute(sql`set transaction isolation level read committed`);
+   await tx.execute(sql`select set_config('app.tenant_id',${scope.tenantId},true),
+    set_config('app.principal_id',${scope.principalId},true),set_config('app.user_id',${scope.userId},true)`);
+  await tx.execute(sql`set local lock_timeout='2s'`);
+  await tx.execute(sql`set local statement_timeout='5s'`);
   await lockShared(tx,lockKey("tenant",scope.tenantId));
   await lockShared(tx,lockKey("principal",scope.principalId));
   await lockShared(tx,lockKey("membership",scope.tenantId,scope.principalId));
-  const rows=await tx.unsafe<{epoch:number;role:string}[]>(RECHECK,
-   [scope.tenantId,scope.principalId,scope.userId]);
+  const rows=await tx.execute(sql`select m.epoch,m.role from enterprise_memberships m
+   join enterprise_principals p on p.id=m.principal_id
+   join enterprise_tenants t on t.id=m.tenant_id
+   where m.tenant_id=${scope.tenantId} and m.principal_id=${scope.principalId}
+    and p.user_id=${scope.userId} and m.status='active' and p.status='active' and t.status='active'`);
   const current=rows[0];
   if (!current || current.epoch!==scope.epoch || current.role!==scope.role) {
    throw new EnterpriseError("SCOPE_REVOKED",403);
@@ -725,14 +725,13 @@ await lockExclusive(tx,lockKey("membership",tenantId,principalId));
 `createResourceReader(db,authz)` 的 `readAuthorizedResource` 在单一 `READ COMMITTED` 的 withTenant 事务中取得 resource 共享锁，查询资源和当前 principal 的 grant，执行本地 Authz，并仅返回受限 `ResourceView`；缺资源、已删除或无 grant 返回404。具体查询：
 
 ```ts
-const SELECT_RESOURCE=`select r.id as id,r.tenant_id as "tenantId",r.workspace_id as "workspaceId",
- r.kind as kind,r.revision as revision,r.acl_epoch as "aclEpoch",t.policy_revision as "policyRevision",
+const rows=await tx.execute(sql`select r.id,r.tenant_id as "tenantId",r.workspace_id as "workspaceId",
+ r.kind,r.revision,r.acl_epoch as "aclEpoch",t.policy_revision as "policyRevision",
  (r.status='active') as active,exists(select 1 from enterprise_resource_grants g
   where g.tenant_id=r.tenant_id and g.resource_id=r.id
-   and g.principal_id=$3 and g.action='read') as "locallyAllowed"
+   and g.principal_id=${scope.principalId} and g.action='read') as "locallyAllowed"
  from enterprise_resources r join enterprise_tenants t on t.id=r.tenant_id
- where r.tenant_id=$1 and r.id=$2`;
-const rows=await tx.unsafe(SELECT_RESOURCE,[scope.tenantId,resourceId,scope.principalId]);
+ where r.tenant_id=${scope.tenantId} and r.id=${resourceId}`);
 ```
 
 使用Zod验证查询结果，与 contracts 精确一致。事务中先复核成员 epoch/状态，再锁 resource；锁内查询必须同时要求 active、locallyAllowed 和当前 policyRevision。不得把客户端输入或旧快照传入授权判断。
@@ -752,7 +751,7 @@ const ResourceSchema=z.object({id:z.string(),tenantId:z.string(),workspaceId:z.s
  active:z.boolean(),locallyAllowed:z.boolean()});
 ```
 
-`readResourceRows(tx:Tx,scope:Scope,id:string)`为repository.ts私有辅助函数，执行上面的固定参数化SQL并返回原始行；resourceId参数取id。查询结果用ResourceSchema在锁内解析（safeParse，失败即AUTHORIZATION_STATE_INVALID/503，不用 `as` 断言）；缺行404，不暴露原始DB结果。工厂接线如下：
+`readResourceRows(tx:Tx,scope:Scope,id:string)`为repository.ts私有辅助函数，执行上面的固定参数化SQL并返回原始行；resourceId参数取id。查询结果用ResourceSchema在锁内解析；缺行404，Schema损坏映射AUTHORIZATION_STATE_INVALID/503，不暴露原始DB结果。工厂接线如下：
 
 ```ts
 export function createResourceReader(db:Database,authz:Authz):ResourceReader {
@@ -760,9 +759,7 @@ export function createResourceReader(db:Database,authz:Authz):ResourceReader {
   readAuthorizedResource:(scope,id)=>withTenant(db,scope,async tx=>{
    await lockShared(tx,lockKey("resource",scope.tenantId,id));
    const rows=await readResourceRows(tx,scope,id);
-   const parsed=rows[0]?ResourceSchema.safeParse(rows[0]):null;
-   if(parsed&&!parsed.success)throw new EnterpriseError("AUTHORIZATION_STATE_INVALID",503);
-   const resource=parsed?.data??null;
+   const resource=rows[0] ? ResourceSchema.parse(rows[0]) : null;
    if(!resource||!resource.active||!resource.locallyAllowed)throw new EnterpriseError("RESOURCE_NOT_FOUND",404);
    if(!await authz.check({scope,resource,action:"read"}))throw new EnterpriseError("RESOURCE_NOT_FOUND",404);
    return {id:resource.id,workspaceId:resource.workspaceId,kind:resource.kind,revision:resource.revision};
@@ -776,7 +773,7 @@ ResourceReader 在同一事务内完成成员 epoch、资源共享锁、当前 A
 
 - [ ] **6. 跑授权后撤权的双连接屏障竞态测试。**
 
-使用两个真实连接和可控制屏障（仅测试依赖注入钩子，不由HTTP开放；实现为 `revokeRead` 的可选 `hooks.afterLocks`——在五把advisory锁全部取得后、读事件前调用，生产调用方一律不传）：读方取得resource共享锁并暂停，启动撤权事务，确认其无法完成锁获取，再释放读方，读事务可返回已授权数据，撤权随后提交；第二路径撤权先持独占锁（钩子触发即证明锁已持有），读方等待，撤权提交后读方读取新事实并404。设置测试总deadline，不靠固定sleep判断顺序。另测两方异常回滚、成员epoch改变403；策略切到已实现兼容版本按新规则判断，只有未知版本503。先证明非空可读fixture，不能靠空.every()通过。
+使用两个真实连接和可控制屏障（仅测试依赖注入钩子，不由HTTP开放）：读方取得resource共享锁并暂停，启动撤权事务，确认其无法完成锁获取，再释放读方，读事务可返回已授权数据，撤权随后提交；第二路径撤权先持独占锁，读方等待，撤权提交后读方读取新事实并404。设置测试总deadline，不靠固定sleep判断顺序。另测两方异常回滚、成员epoch改变403；策略切到已实现兼容版本按新规则判断，只有未知版本503。先证明非空可读fixture，不能靠空.every()通过。
 
 ### T2-C：本地 TypeScript 授权服务
 
@@ -1313,7 +1310,7 @@ server/package.json仅追加：
 }
 ```
 
-测试直接导入的既有文件由编译器追踪，不把全部旧测试的历史类型错误纳入本次重构：实施修订（2026-10-09，T3-C 第 1 轮）——已完成的运行时任务测试 `tests/enterprise/runtime-contract.test.ts`、`tests/enterprise/runtime-invocation.test.ts` 与 T1-C 的 `tests/enterprise/tenancy/provision.test.ts` 携带先于本 tsconfig 的历史类型错误（负向用例字面量、枚举字符串赋值），且属并行/已完成任务文件不可修改，故在 tsconfig `exclude` 中按文件名显式排除并在文件内注释说明；移除任一排除项前必须先清零该文件的类型错误。新增脚本中的顶层await必须具备import或export，不能形成全局脚本污染。
+测试直接导入的既有文件由编译器追踪，不把全部旧测试的历史类型错误纳入本次重构。新增脚本中的顶层await必须具备import或export，不能形成全局脚本污染。
 
 - [ ] **6. 在清除所有Intelligence与模型配置的隔离进程中启动，完成真实HTTP验收。**
 
@@ -1418,7 +1415,6 @@ Scope不能写进队列后直接恢复为可信对象。后续Runtime/Worker请�
 
 | 评审问题 | 本册修订章节 |
 |---|---|
-| T2-B实施 | §4.2、§6 T2-B：`Tx` 落定为 Bun SQL 事务客户端 `TxClient`（drizzle bun-sql 底层驱动，非新驱动），§4.2 与 T2-B 步骤3/5 示例代码统一为模块常量文本 + `$n` 占位符 + 参数数组风格（生产文件禁带运行时插值的 drizzle sql 模板）；步骤6 明确屏障钩子形态为 `revokeRead` 可选 `hooks.afterLocks` |
 | T-01 | §1、T1-C、§9：补齐 workspace/resource/grant/revoke 的受控 CLI、operationId、epoch 与审计闭环 |
 | T-02 | §1、T1-A、§10：移除 Project 表/SQL/测试，固定 Tenant→Workspace→Resource，MVP 无继承/共享，read 显式 ACL |
 | T-03 | T2-C：由单常量改为确定性支持版本集合，tenancy-v1 初始，旧新规则兼容窗口，未知拒绝 |

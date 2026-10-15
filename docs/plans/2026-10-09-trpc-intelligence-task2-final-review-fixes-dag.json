@@ -1,0 +1,33 @@
+{
+  "root": "T02-FR01",
+  "source_issues": ["Task 2 final review finding T02-FR01 (Medium)"],
+  "source_of_requirements": "Approved enterprise tenancy plan T1-C and independent parent Task 2 review; no GitHub Issue was provided.",
+  "depends_on": ["T02 integrated checkpoint reviewed"],
+  "dependency_evidence": "The 22-path T02 package passed integrated backend validation; the independent whole-task review found only the receipt replay defect addressed here.",
+  "base": "dce86f89d6263b7c6630023ae90c1394cc71cb03",
+  "worktree": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
+  "commit_policy": "uncommitted checkpoint; no commit or stash",
+  "nodes": [
+    {
+      "id": "T02-FR01",
+      "source_issues": ["T02-FR01"],
+      "acceptance": [
+        "Suspension audit event stores the original changed and epoch result in the same transaction as mutation.",
+        "Same operation ID and exact payload replay returns the original receipt exactly and does not increment epoch or duplicate the event.",
+        "Malformed or missing stored receipt fails closed; different payload/type still conflicts.",
+        "Restricted-operator fresh PostgreSQL integration test fails on baseline and passes after the implementation.",
+        "Scoped strict TypeScript, Biome, diff check, backend validation, and independent review pass."
+      ],
+      "depends_on": [],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "reviewer_role": "reviewer",
+      "owned_files": ["server/src/enterprise/tenancy/provision.ts", "server/tests/enterprise/tenancy.integration.test.ts"],
+      "interfaces": ["suspendMembership(OperatorDatabase, SuspendMembershipInput) receipt", "enterpriseSecurityEvents.details JSON object"],
+      "verification": ["fresh reserved DB migration through 0055", "bun --no-env-file test tests/enterprise/tenancy.integration.test.ts", "scoped strict TypeScript, Biome, git diff --check"],
+      "status": "pending"
+    }
+  ],
+  "topological_order": ["T02-FR01"],
+  "isolated_checks": {"unique_node_ids": true, "dependencies_resolve": true, "no_self_edges": true, "acyclic": true, "no_orphan_nodes": true, "all_acceptance_mapped": true}
+}
