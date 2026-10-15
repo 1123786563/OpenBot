@@ -27,6 +27,13 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
     pattern:
       /\b(?:postgresql|postgres|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?):\/\/\S+/i,
   },
+  // scheme://user:pass@host is a credential at every entrance, not just the URL one: an https
+  // basic-auth endpoint pasted into prose, a span name or a metadata leaf used to leak as-is,
+  // because it was not on the DB/MQ scheme list above (review finding F1).
+  {
+    reason: "credential",
+    pattern: /\b[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s/:@]*:[^\s/@]+@/,
+  },
   { reason: "credential", pattern: /\bBearer\s+[A-Za-z0-9._-]{16,}/i },
   {
     reason: "credential",
@@ -36,33 +43,44 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
   { reason: "credential", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
   { reason: "credential", pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
   // A PEM header is five dashes and BEGIN: it needs no word-character anchor. Real PEM sits at a
-  // line start, after a newline, space or quote — exactly where a \b anchor never fires.
+  // line start, after a newline, space or quote — exactly where a \b anchor never fires. Match
+  // case-insensitively: some tools emit the lowercase form RFC 7468 forbids (review finding F7).
   {
     reason: "credential",
-    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-  },
-  // A 40-char base64 token is only a secret in credential context, but that context can be on
-  // either side: config files and env dumps put the label before the value. An unlabeled token
-  // stays projectable in reviewed text — it is indistinguishable from any other base64 run.
-  {
-    reason: "credential",
-    pattern: /\b[A-Za-z0-9/+=]{40}\b(?=[\s\S]*(?:secret|password|passwd|pwd))/i,
-  },
-  {
-    reason: "credential",
-    pattern:
-      /(?:secret|password|passwd|pwd)[\s\S]{0,64}\b[A-Za-z0-9/+=]{40}\b/i,
+    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
   },
   { reason: "account_identifier", pattern: /\bacct_[A-Za-z0-9]{12,}\b/ },
   { reason: "account_identifier", pattern: /\bcus_[A-Za-z0-9]{12,}\b/ },
   { reason: "internal_capability", pattern: /\bopenbot\.internal\.[\w./-]+/i },
-  { reason: "reasoning_content", pattern: /<\s*reasoning\s*>/i },
+  // Chain-of-thought markers: <reasoning> and the <think>/<thinking> family open models emit
+  // inline. A lone close tag means the head was cut off, which is still reasoning content
+  // (review finding F3).
+  {
+    reason: "reasoning_content",
+    pattern: /<\s*\/?\s*(?:reasoning|think(?:ing)?)\s*>/i,
+  },
 ];
+
+// A 40-char base64 run is only a secret in credential context, but that context can be on either
+// side at any distance: config files and env dumps put the label before the value with arbitrary
+// filler between. A single regex can only look one direction, and the unbounded lookahead that
+// looked forward was quadratic on adversarial input — one '=' every 41 characters manufactures a
+// word-boundary candidate per chunk (review findings F2 and F5). Two single-pass tests instead:
+// deny when a labelled context and a candidate run coexist in the same string. An unlabeled run
+// stays projectable in reviewed text — it is indistinguishable from any other base64 run.
+const SECRET_LABEL =
+  /(?:secret|password|passwd|pwd|token|api[_-]?key|access[_-]?key)/i;
+const SECRET_RUN = /\b[A-Za-z0-9/+=]{40}\b/;
+
+function hasLabelledSecret(input: string): boolean {
+  return SECRET_RUN.test(input) && SECRET_LABEL.test(input);
+}
 
 function denyReason(input: string): OmitReason | undefined {
   for (const { reason, pattern } of DENY) {
     if (pattern.test(input)) return reason;
   }
+  if (hasLabelledSecret(input)) return "credential";
   return undefined;
 }
 
@@ -136,10 +154,19 @@ export function projectSafeUrl(input: string | null | undefined): SafeText {
     return { state: "omitted", reason: "unhandled_free_text" };
   }
   const isRawFile = /\/(?:files|attachments|download)\//i.test(url.pathname);
-  const isLoopback = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(
-    url.hostname,
-  );
-  if (isRawFile || isLoopback)
+  const isLoopback = [
+    "127.0.0.1",
+    "localhost",
+    "[::1]",
+    "::1",
+    "0.0.0.0",
+    // The URL parser normalizes the IPv4-mapped loopback to its canonical hex spelling.
+    "[::ffff:7f00:1]",
+  ].includes(url.hostname);
+  // The link-local block: 169.254.169.254 answers anyone who asks with cloud credentials, and
+  // following it hands the reader exactly what this projection refuses to carry (review finding F4).
+  const isLinkLocal = /^169\.254\.\d{1,3}\.\d{1,3}$/.test(url.hostname);
+  if (isRawFile || isLoopback || isLinkLocal)
     return { state: "omitted", reason: "raw_attachment" };
   return project(
     `${url.protocol}//${url.host}${url.pathname}`,
@@ -206,6 +233,22 @@ function hasOwn(source: object, key: string): boolean {
   return Object.hasOwn(source, key);
 }
 
+/**
+ * Read an own property defensively: an accessor or Proxy trap that throws must degrade to an
+ * omitted value, not abort the export loop — SDK auto-captured records are the least trusted
+ * input in the system (review finding F6).
+ */
+function readOwn(
+  source: Record<string, unknown>,
+  key: string,
+): { threw: boolean; value?: unknown } {
+  try {
+    return { threw: false, value: source[key] };
+  } catch {
+    return { threw: true };
+  }
+}
+
 /** UTF-8 byte size of the JSON form; -1 when the value cannot be serialized (e.g. BigInt). */
 function jsonBytes(value: unknown): number {
   try {
@@ -261,7 +304,14 @@ function projectDeep(value: unknown, depth: number): SafeValue {
     const keys = Object.keys(source);
     const out: Record<string, SafeValue> = {};
     for (const key of keys.slice(0, MAX_SAFE_RECORD_KEYS)) {
-      defineOwn(out, key, projectDeep(source[key], depth + 1));
+      const read = readOwn(source, key);
+      defineOwn(
+        out,
+        key,
+        read.threw
+          ? { state: "omitted", reason: "unhandled_free_text" }
+          : projectDeep(read.value, depth + 1),
+      );
     }
     if (keys.length > MAX_SAFE_RECORD_KEYS) {
       return {
@@ -294,12 +344,16 @@ export function projectSafeRecord(
   for (const key of allowlist) {
     // Own keys only: `in` would let an allowlist entry naming "toString" fabricate a key.
     if (!hasOwn(source, key)) continue;
-    const value = source[key];
-    if (typeof value === "string") {
-      defineOwn(out, key, projectLeaf(value));
+    const read = readOwn(source, key);
+    if (read.threw) {
+      defineOwn(out, key, { state: "omitted", reason: "unhandled_free_text" });
       continue;
     }
-    defineOwn(out, key, projectDeep(value, 1));
+    if (typeof read.value === "string") {
+      defineOwn(out, key, projectLeaf(read.value));
+      continue;
+    }
+    defineOwn(out, key, projectDeep(read.value, 1));
   }
   return out;
 }

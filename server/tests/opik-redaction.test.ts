@@ -41,6 +41,11 @@ const CANARIES = {
   reasoning:
     "<reasoning>the user probably wants to bypass the budget check</reasoning>",
   privateFileUrl: "http://127.0.0.1:8080/files/raw/att_01HXYZ?sig=abc123def456",
+  // T05 review repair canaries (F1/F3/F7): userinfo URLs, <think> chains, lowercase PEM.
+  urlUserinfo: "https://alice:s3cr3t@api.example.com/v1",
+  thinkBlock: "<think>internal chain of thought about the budget</think>",
+  pemLowercase:
+    "-----begin openssh private key-----\nb3BlbnNzaC1rZXktdjEAAAAAAbW9wNTJz\r\n-----end openssh private key-----",
 };
 
 const REASONS: OmitReason[] = [
@@ -55,7 +60,9 @@ const REASONS: OmitReason[] = [
 
 describe("safe content contract", () => {
   test("the policy version is namespaced and exact", () => {
-    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/2");
+    // v3: the T05 review deny-gap repairs change what is denied, so frozen dataset
+    // references must not silently keep resolving to the old policy.
+    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/3");
   });
 
   test("every omit reason maps to a copy key the UI already has", () => {
@@ -493,5 +500,151 @@ describe("projectSafeException", () => {
       state: "projected",
       text: "UpstreamTimeout: timed out",
     });
+  });
+});
+
+/**
+ * T05 review repair suite (review-report.md F1–F7). Each test names the finding it pins: the
+ * deny shape the independent review demonstrated leaking on the /2 policy.
+ */
+describe("T05 review repair: deny gaps", () => {
+  const userinfoUrl = "https://alice:s3cr3t@api.example.com/v1";
+  const forty = CANARIES.awsSecret;
+
+  test("F1: URL userinfo credentials are denied in reviewed free text", () => {
+    const result = projectSafeText(`endpoint ${userinfoUrl} ready`, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("s3cr3t");
+  });
+
+  test("F1: URL userinfo credentials are denied in record leaves", () => {
+    const result = projectSafeMetadata({ environment: userinfoUrl });
+    expect(result.environment?.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("s3cr3t");
+  });
+
+  test("F1: URL userinfo credentials are denied in names", () => {
+    const result = projectSafeName(userinfoUrl);
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("s3cr3t");
+  });
+
+  test("F2: api_key= labels a 40-char value as a secret", () => {
+    const result = projectSafeText(`api_key=${forty}`, { allowFreeText: true });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(forty);
+  });
+
+  test("F2: access_token= labels a 40-char value as a secret", () => {
+    const result = projectSafeText(`access_token=${forty}`, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(forty);
+  });
+
+  test("F2: a label before the value denies beyond the old 64-char window", () => {
+    const input = `password:\n${"#".repeat(200)}\n${forty}`;
+    const result = projectSafeText(input, { allowFreeText: true });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(forty);
+  });
+
+  test("F2: labelled secrets are denied in record leaves too", () => {
+    const result = projectSafeMetadata({ environment: `api_key=${forty}` });
+    expect(result.environment?.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(forty);
+  });
+
+  test("F3: <think> chains are denied as reasoning content", () => {
+    const result = projectSafeText(
+      "<think>internal chain of thought about the budget</think>",
+      { allowFreeText: true },
+    );
+    expect(result.state).toBe("omitted");
+    if (result.state === "omitted")
+      expect(result.reason).toBe("reasoning_content");
+  });
+
+  test("F3: a lone </think> close tag is still reasoning content", () => {
+    const result = projectSafeText("budget check</think> done", {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+  });
+
+  test("F4: the cloud metadata endpoint is omitted as a raw attachment", () => {
+    const result = projectSafeUrl("http://169.254.169.254/latest/meta-data/");
+    expect(result.state).toBe("omitted");
+    if (result.state === "omitted")
+      expect(result.reason).toBe("raw_attachment");
+  });
+
+  test("F4: link-local, 0.0.0.0 and IPv4-mapped loopback hosts are omitted", () => {
+    for (const url of [
+      "http://169.254.0.1/",
+      "http://0.0.0.0/",
+      "http://[::ffff:127.0.0.1]/",
+    ]) {
+      expect(projectSafeUrl(url).state, url).toBe("omitted");
+    }
+  });
+
+  test("F5: adversarial '=' padding scans in bounded time", () => {
+    // One '=' every 41 characters manufactures a word-boundary candidate per chunk. With no
+    // label present, the old per-candidate lookahead walked the whole tail for every candidate
+    // (quadratic; the review measured 4.6s at 512KB). The label prefilter plus two single-pass
+    // tests are linear, so ~1MB has to stay far under the budget.
+    const hostile = `${"a".repeat(40)}=`.repeat(24_000);
+    const withLabel = `password${hostile}`;
+    for (const input of [hostile, withLabel]) {
+      const start = performance.now();
+      const result = projectSafeText(input, { allowFreeText: true });
+      const elapsed = performance.now() - start;
+      expect(elapsed, `${input.length} bytes`).toBeLessThan(2_000);
+      expect(result).toBeDefined();
+    }
+  });
+
+  test("F6: a throwing getter is omitted, never propagated", () => {
+    const hostile: Record<string, unknown> = {};
+    Object.defineProperty(hostile, "environment", {
+      enumerable: true,
+      get() {
+        throw new Error("hostile accessor");
+      },
+    });
+    const result = projectSafeMetadata(hostile);
+    expect(result.environment).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
+  });
+
+  test("F6: a throwing getter nested in a record is omitted too", () => {
+    const leaf: Record<string, unknown> = {};
+    Object.defineProperty(leaf, "boom", {
+      enumerable: true,
+      get() {
+        throw new Error("hostile accessor");
+      },
+    });
+    const result = projectSafeRecord({ nested: leaf }, ["nested"]);
+    const nested = result.nested;
+    expect(nested?.state).toBe("projected");
+    if (nested?.state === "projected") {
+      const boom = (nested.value as Record<string, SafeValue>).boom;
+      expect(boom).toEqual({ state: "omitted", reason: "unhandled_free_text" });
+    }
+  });
+
+  test("F7: a lowercase PEM header is denied", () => {
+    const result = projectSafeText(CANARIES.pemLowercase, {
+      allowFreeText: true,
+    });
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain("b3BlbnNzaC1rZXktdjE");
   });
 });
