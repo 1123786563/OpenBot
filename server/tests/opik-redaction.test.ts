@@ -334,7 +334,10 @@ describe("projectSafeRecord", () => {
   });
 
   test("an allowlist entry naming an Object.prototype member fabricates no key", () => {
-    const result = projectSafeRecord({ model: "gpt-4o" }, ["toString", "model"]);
+    const result = projectSafeRecord({ model: "gpt-4o" }, [
+      "toString",
+      "model",
+    ]);
     expect(Object.keys(result).sort()).toEqual(["model"]);
   });
 

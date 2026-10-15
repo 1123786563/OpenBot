@@ -46,8 +46,7 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
   // stays projectable in reviewed text — it is indistinguishable from any other base64 run.
   {
     reason: "credential",
-    pattern:
-      /\b[A-Za-z0-9/+=]{40}\b(?=[\s\S]*(?:secret|password|passwd|pwd))/i,
+    pattern: /\b[A-Za-z0-9/+=]{40}\b(?=[\s\S]*(?:secret|password|passwd|pwd))/i,
   },
   {
     reason: "credential",
@@ -185,6 +184,37 @@ export const DEFAULT_METADATA_ALLOWLIST: readonly string[] = [
 
 export type SafeRecord = Record<string, SafeValue>;
 
+/**
+ * Define an own enumerable property. A plain `out[key] = value` routes a `__proto__` key through
+ * Object.prototype's setter and hijacks the accumulator's prototype instead of recording the key
+ * (review finding T05-F5).
+ */
+function defineOwn(
+  out: Record<string, SafeValue>,
+  key: string,
+  value: SafeValue,
+): void {
+  Object.defineProperty(out, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+function hasOwn(source: object, key: string): boolean {
+  return Object.hasOwn(source, key);
+}
+
+/** UTF-8 byte size of the JSON form; -1 when the value cannot be serialized (e.g. BigInt). */
+function jsonBytes(value: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  } catch {
+    return -1;
+  }
+}
+
 function projectLeaf(value: unknown): SafeValue {
   if (value === null || value === undefined)
     return { state: "projected", value: null };
@@ -212,18 +242,34 @@ function projectDeep(value: unknown, depth: number): SafeValue {
   if (depth > MAX_SAFE_RECORD_DEPTH)
     return { state: "omitted", reason: "unhandled_free_text" };
   if (Array.isArray(value)) {
-    return {
-      state: "projected",
-      value: value
-        .slice(0, MAX_SAFE_RECORD_KEYS)
-        .map((item) => projectDeep(item, depth + 1)),
-    };
+    const kept = value
+      .slice(0, MAX_SAFE_RECORD_KEYS)
+      .map((item) => projectDeep(item, depth + 1));
+    // A cap that drops items silently is a lie told as `projected` (review finding T05-F6).
+    if (value.length > MAX_SAFE_RECORD_KEYS) {
+      return {
+        state: "truncated",
+        value: kept,
+        originalBytes: jsonBytes(value),
+        dropped: value.length - MAX_SAFE_RECORD_KEYS,
+      };
+    }
+    return { state: "projected", value: kept };
   }
   if (value && typeof value === "object") {
     const source = value as Record<string, unknown>;
+    const keys = Object.keys(source);
     const out: Record<string, SafeValue> = {};
-    for (const key of Object.keys(source).slice(0, MAX_SAFE_RECORD_KEYS)) {
-      out[key] = projectDeep(source[key], depth + 1);
+    for (const key of keys.slice(0, MAX_SAFE_RECORD_KEYS)) {
+      defineOwn(out, key, projectDeep(source[key], depth + 1));
+    }
+    if (keys.length > MAX_SAFE_RECORD_KEYS) {
+      return {
+        state: "truncated",
+        value: out,
+        originalBytes: jsonBytes(value),
+        dropped: keys.length - MAX_SAFE_RECORD_KEYS,
+      };
     }
     return { state: "projected", value: out };
   }
@@ -236,16 +282,24 @@ export function projectSafeRecord(
   allowlist: readonly string[],
 ): SafeRecord {
   if (!record || typeof record !== "object" || Array.isArray(record)) return {};
+  // The allowlist is caller code, not data: a list longer than the cap is a defect to fix at the
+  // call site, and silently slicing it would drop keys without a trace (review finding T05-F6).
+  if (allowlist.length > MAX_SAFE_RECORD_KEYS) {
+    throw new TypeError(
+      `allowlist has ${allowlist.length} keys, more than MAX_SAFE_RECORD_KEYS (${MAX_SAFE_RECORD_KEYS}); refusing to silently drop the rest`,
+    );
+  }
   const source = record as Record<string, unknown>;
   const out: SafeRecord = {};
-  for (const key of allowlist.slice(0, MAX_SAFE_RECORD_KEYS)) {
-    if (!(key in source)) continue;
+  for (const key of allowlist) {
+    // Own keys only: `in` would let an allowlist entry naming "toString" fabricate a key.
+    if (!hasOwn(source, key)) continue;
     const value = source[key];
     if (typeof value === "string") {
-      out[key] = projectLeaf(value);
+      defineOwn(out, key, projectLeaf(value));
       continue;
     }
-    out[key] = projectDeep(value, 1);
+    defineOwn(out, key, projectDeep(value, 1));
   }
   return out;
 }
