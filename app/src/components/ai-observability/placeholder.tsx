@@ -8,7 +8,11 @@ import type { Namespace } from "@/lib/i18n";
  * which answer they got — a placeholder that rendered `unavailable` would be claiming a fault
  * that never happened.
  */
-export function ObservabilityPlaceholder({ namespace }: { namespace: Namespace }) {
+export function ObservabilityPlaceholder({
+  namespace,
+}: {
+  namespace: Namespace;
+}) {
   const { t } = useTranslation(namespace);
   return (
     <p className="mt-6 text-muted-foreground text-sm" role="status">

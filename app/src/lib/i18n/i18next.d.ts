@@ -1,9 +1,9 @@
 import type admin from "../../locales/en/admin.json";
+import type agents from "../../locales/en/agents.json";
 import type aiObservabilityAdmin from "../../locales/en/ai-observability-admin.json";
 import type aiObservabilityDatasets from "../../locales/en/ai-observability-datasets.json";
 import type aiObservabilityEvaluations from "../../locales/en/ai-observability-evaluations.json";
 import type aiObservabilityRuns from "../../locales/en/ai-observability-runs.json";
-import type agents from "../../locales/en/agents.json";
 import type approvals from "../../locales/en/approvals.json";
 import type channels from "../../locales/en/channels.json";
 import type common from "../../locales/en/common.json";

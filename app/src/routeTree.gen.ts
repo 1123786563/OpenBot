@@ -26,6 +26,7 @@ import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/rou
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAppTeamBotsRouteImport } from './routes/_authed/_app/team-bots'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
+import { Route as AuthedAdminAiObservabilityRouteImport } from './routes/_authed/admin/ai-observability'
 import { Route as AuthedAdminApprovalsRouteImport } from './routes/_authed/admin/approvals'
 import { Route as AuthedAdminAuditRouteImport } from './routes/_authed/admin/audit'
 import { Route as AuthedAdminBoundariesRouteImport } from './routes/_authed/admin/boundaries'
@@ -71,12 +72,15 @@ import { Route as AuthedSettingsConnectedAccountsKeyRouteImport } from './routes
 import { Route as AuthedAppBotsAgentIdIndexRouteImport } from './routes/_authed/_app/bots.$agentId.index'
 import { Route as AuthedAppBotsAgentIdAccessRouteImport } from './routes/_authed/_app/bots.$agentId.access'
 import { Route as AuthedAppBotsAgentIdApprovalsRouteImport } from './routes/_authed/_app/bots.$agentId.approvals'
+import { Route as AuthedAppBotsAgentIdEvaluationsRouteImport } from './routes/_authed/_app/bots.$agentId.evaluations'
 import { Route as AuthedAppBotsAgentIdMemoryRouteImport } from './routes/_authed/_app/bots.$agentId.memory'
 import { Route as AuthedAppBotsAgentIdReachRouteImport } from './routes/_authed/_app/bots.$agentId.reach'
 import { Route as AuthedAppBotsAgentIdResponsibilitiesRouteImport } from './routes/_authed/_app/bots.$agentId.responsibilities'
 import { Route as AuthedAppBotsAgentIdRoutinesRouteImport } from './routes/_authed/_app/bots.$agentId.routines'
+import { Route as AuthedAppBotsAgentIdRunsRouteImport } from './routes/_authed/_app/bots.$agentId.runs'
 import { Route as AuthedAppBotsAgentIdSetupRouteImport } from './routes/_authed/_app/bots.$agentId.setup'
 import { Route as AuthedAppBotsAgentIdSharingRouteImport } from './routes/_authed/_app/bots.$agentId.sharing'
+import { Route as AuthedAppBotsAgentIdRunsBindingIdRouteImport } from './routes/_authed/_app/bots.$agentId.runs.$bindingId'
 import { Route as AuthedAdminPluginsKeyBotsAgentIdRouteImport } from './routes/_authed/admin/plugins/$key_.bots.$agentId'
 import { Route as AuthedAdminPluginsKeyToolsToolRouteImport } from './routes/_authed/admin/plugins/$key_.tools.$tool'
 
@@ -164,6 +168,12 @@ const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedAdminRouteRoute,
 } as any)
+const AuthedAdminAiObservabilityRoute =
+  AuthedAdminAiObservabilityRouteImport.update({
+    id: '/ai-observability',
+    path: '/ai-observability',
+    getParentRoute: () => AuthedAdminRouteRoute,
+  } as any)
 const AuthedAdminApprovalsRoute = AuthedAdminApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
@@ -405,6 +415,12 @@ const AuthedAppBotsAgentIdApprovalsRoute =
     path: '/bots/$agentId/approvals',
     getParentRoute: () => AuthedAppRoute,
   } as any)
+const AuthedAppBotsAgentIdEvaluationsRoute =
+  AuthedAppBotsAgentIdEvaluationsRouteImport.update({
+    id: '/bots/$agentId/evaluations',
+    path: '/bots/$agentId/evaluations',
+    getParentRoute: () => AuthedAppRoute,
+  } as any)
 const AuthedAppBotsAgentIdMemoryRoute =
   AuthedAppBotsAgentIdMemoryRouteImport.update({
     id: '/bots/$agentId/memory',
@@ -429,6 +445,12 @@ const AuthedAppBotsAgentIdRoutinesRoute =
     path: '/bots/$agentId/routines',
     getParentRoute: () => AuthedAppRoute,
   } as any)
+const AuthedAppBotsAgentIdRunsRoute =
+  AuthedAppBotsAgentIdRunsRouteImport.update({
+    id: '/bots/$agentId/runs',
+    path: '/bots/$agentId/runs',
+    getParentRoute: () => AuthedAppRoute,
+  } as any)
 const AuthedAppBotsAgentIdSetupRoute =
   AuthedAppBotsAgentIdSetupRouteImport.update({
     id: '/bots/$agentId/setup',
@@ -440,6 +462,12 @@ const AuthedAppBotsAgentIdSharingRoute =
     id: '/bots/$agentId/sharing',
     path: '/bots/$agentId/sharing',
     getParentRoute: () => AuthedAppRoute,
+  } as any)
+const AuthedAppBotsAgentIdRunsBindingIdRoute =
+  AuthedAppBotsAgentIdRunsBindingIdRouteImport.update({
+    id: '/$bindingId',
+    path: '/$bindingId',
+    getParentRoute: () => AuthedAppBotsAgentIdRunsRoute,
   } as any)
 const AuthedAdminPluginsKeyBotsAgentIdRoute =
   AuthedAdminPluginsKeyBotsAgentIdRouteImport.update({
@@ -469,6 +497,7 @@ export interface FileRoutesByFullPath {
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/team-bots': typeof AuthedAppTeamBotsRoute
+  '/admin/ai-observability': typeof AuthedAdminAiObservabilityRoute
   '/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
@@ -514,13 +543,16 @@ export interface FileRoutesByFullPath {
   '/settings/connected-accounts/': typeof AuthedSettingsConnectedAccountsIndexRoute
   '/bots/$agentId/access': typeof AuthedAppBotsAgentIdAccessRoute
   '/bots/$agentId/approvals': typeof AuthedAppBotsAgentIdApprovalsRoute
+  '/bots/$agentId/evaluations': typeof AuthedAppBotsAgentIdEvaluationsRoute
   '/bots/$agentId/memory': typeof AuthedAppBotsAgentIdMemoryRoute
   '/bots/$agentId/reach': typeof AuthedAppBotsAgentIdReachRoute
   '/bots/$agentId/responsibilities': typeof AuthedAppBotsAgentIdResponsibilitiesRoute
   '/bots/$agentId/routines': typeof AuthedAppBotsAgentIdRoutinesRoute
+  '/bots/$agentId/runs': typeof AuthedAppBotsAgentIdRunsRouteWithChildren
   '/bots/$agentId/setup': typeof AuthedAppBotsAgentIdSetupRoute
   '/bots/$agentId/sharing': typeof AuthedAppBotsAgentIdSharingRoute
   '/bots/$agentId/': typeof AuthedAppBotsAgentIdIndexRoute
+  '/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/admin/plugins/$key/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/admin/plugins/$key/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
 }
@@ -537,6 +569,7 @@ export interface FileRoutesByTo {
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/team-bots': typeof AuthedAppTeamBotsRoute
+  '/admin/ai-observability': typeof AuthedAdminAiObservabilityRoute
   '/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
   '/admin/boundaries': typeof AuthedAdminBoundariesRoute
@@ -582,13 +615,16 @@ export interface FileRoutesByTo {
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsIndexRoute
   '/bots/$agentId/access': typeof AuthedAppBotsAgentIdAccessRoute
   '/bots/$agentId/approvals': typeof AuthedAppBotsAgentIdApprovalsRoute
+  '/bots/$agentId/evaluations': typeof AuthedAppBotsAgentIdEvaluationsRoute
   '/bots/$agentId/memory': typeof AuthedAppBotsAgentIdMemoryRoute
   '/bots/$agentId/reach': typeof AuthedAppBotsAgentIdReachRoute
   '/bots/$agentId/responsibilities': typeof AuthedAppBotsAgentIdResponsibilitiesRoute
   '/bots/$agentId/routines': typeof AuthedAppBotsAgentIdRoutinesRoute
+  '/bots/$agentId/runs': typeof AuthedAppBotsAgentIdRunsRouteWithChildren
   '/bots/$agentId/setup': typeof AuthedAppBotsAgentIdSetupRoute
   '/bots/$agentId/sharing': typeof AuthedAppBotsAgentIdSharingRoute
   '/bots/$agentId': typeof AuthedAppBotsAgentIdIndexRoute
+  '/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/admin/plugins/$key/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/admin/plugins/$key/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
 }
@@ -609,6 +645,7 @@ export interface FileRoutesById {
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/_app/team-bots': typeof AuthedAppTeamBotsRoute
+  '/_authed/admin/ai-observability': typeof AuthedAdminAiObservabilityRoute
   '/_authed/admin/approvals': typeof AuthedAdminApprovalsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
   '/_authed/admin/boundaries': typeof AuthedAdminBoundariesRoute
@@ -655,13 +692,16 @@ export interface FileRoutesById {
   '/_authed/settings/connected-accounts/': typeof AuthedSettingsConnectedAccountsIndexRoute
   '/_authed/_app/bots/$agentId/access': typeof AuthedAppBotsAgentIdAccessRoute
   '/_authed/_app/bots/$agentId/approvals': typeof AuthedAppBotsAgentIdApprovalsRoute
+  '/_authed/_app/bots/$agentId/evaluations': typeof AuthedAppBotsAgentIdEvaluationsRoute
   '/_authed/_app/bots/$agentId/memory': typeof AuthedAppBotsAgentIdMemoryRoute
   '/_authed/_app/bots/$agentId/reach': typeof AuthedAppBotsAgentIdReachRoute
   '/_authed/_app/bots/$agentId/responsibilities': typeof AuthedAppBotsAgentIdResponsibilitiesRoute
   '/_authed/_app/bots/$agentId/routines': typeof AuthedAppBotsAgentIdRoutinesRoute
+  '/_authed/_app/bots/$agentId/runs': typeof AuthedAppBotsAgentIdRunsRouteWithChildren
   '/_authed/_app/bots/$agentId/setup': typeof AuthedAppBotsAgentIdSetupRoute
   '/_authed/_app/bots/$agentId/sharing': typeof AuthedAppBotsAgentIdSharingRoute
   '/_authed/_app/bots/$agentId/': typeof AuthedAppBotsAgentIdIndexRoute
+  '/_authed/_app/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/_authed/admin/plugins/$key_/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/_authed/admin/plugins/$key_/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
 }
@@ -682,6 +722,7 @@ export interface FileRouteTypes {
     | '/routines'
     | '/skills'
     | '/team-bots'
+    | '/admin/ai-observability'
     | '/admin/approvals'
     | '/admin/audit'
     | '/admin/boundaries'
@@ -727,13 +768,16 @@ export interface FileRouteTypes {
     | '/settings/connected-accounts/'
     | '/bots/$agentId/access'
     | '/bots/$agentId/approvals'
+    | '/bots/$agentId/evaluations'
     | '/bots/$agentId/memory'
     | '/bots/$agentId/reach'
     | '/bots/$agentId/responsibilities'
     | '/bots/$agentId/routines'
+    | '/bots/$agentId/runs'
     | '/bots/$agentId/setup'
     | '/bots/$agentId/sharing'
     | '/bots/$agentId/'
+    | '/bots/$agentId/runs/$bindingId'
     | '/admin/plugins/$key/bots/$agentId'
     | '/admin/plugins/$key/tools/$tool'
   fileRoutesByTo: FileRoutesByTo
@@ -750,6 +794,7 @@ export interface FileRouteTypes {
     | '/routines'
     | '/skills'
     | '/team-bots'
+    | '/admin/ai-observability'
     | '/admin/approvals'
     | '/admin/audit'
     | '/admin/boundaries'
@@ -795,13 +840,16 @@ export interface FileRouteTypes {
     | '/settings/connected-accounts'
     | '/bots/$agentId/access'
     | '/bots/$agentId/approvals'
+    | '/bots/$agentId/evaluations'
     | '/bots/$agentId/memory'
     | '/bots/$agentId/reach'
     | '/bots/$agentId/responsibilities'
     | '/bots/$agentId/routines'
+    | '/bots/$agentId/runs'
     | '/bots/$agentId/setup'
     | '/bots/$agentId/sharing'
     | '/bots/$agentId'
+    | '/bots/$agentId/runs/$bindingId'
     | '/admin/plugins/$key/bots/$agentId'
     | '/admin/plugins/$key/tools/$tool'
   id:
@@ -821,6 +869,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/_app/team-bots'
+    | '/_authed/admin/ai-observability'
     | '/_authed/admin/approvals'
     | '/_authed/admin/audit'
     | '/_authed/admin/boundaries'
@@ -867,13 +916,16 @@ export interface FileRouteTypes {
     | '/_authed/settings/connected-accounts/'
     | '/_authed/_app/bots/$agentId/access'
     | '/_authed/_app/bots/$agentId/approvals'
+    | '/_authed/_app/bots/$agentId/evaluations'
     | '/_authed/_app/bots/$agentId/memory'
     | '/_authed/_app/bots/$agentId/reach'
     | '/_authed/_app/bots/$agentId/responsibilities'
     | '/_authed/_app/bots/$agentId/routines'
+    | '/_authed/_app/bots/$agentId/runs'
     | '/_authed/_app/bots/$agentId/setup'
     | '/_authed/_app/bots/$agentId/sharing'
     | '/_authed/_app/bots/$agentId/'
+    | '/_authed/_app/bots/$agentId/runs/$bindingId'
     | '/_authed/admin/plugins/$key_/bots/$agentId'
     | '/_authed/admin/plugins/$key_/tools/$tool'
   fileRoutesById: FileRoutesById
@@ -1003,6 +1055,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthedAdminIndexRouteImport
+      parentRoute: typeof AuthedAdminRouteRoute
+    }
+    '/_authed/admin/ai-observability': {
+      id: '/_authed/admin/ai-observability'
+      path: '/ai-observability'
+      fullPath: '/admin/ai-observability'
+      preLoaderRoute: typeof AuthedAdminAiObservabilityRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
     }
     '/_authed/admin/approvals': {
@@ -1320,6 +1379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppBotsAgentIdApprovalsRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/bots/$agentId/evaluations': {
+      id: '/_authed/_app/bots/$agentId/evaluations'
+      path: '/bots/$agentId/evaluations'
+      fullPath: '/bots/$agentId/evaluations'
+      preLoaderRoute: typeof AuthedAppBotsAgentIdEvaluationsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/bots/$agentId/memory': {
       id: '/_authed/_app/bots/$agentId/memory'
       path: '/bots/$agentId/memory'
@@ -1348,6 +1414,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppBotsAgentIdRoutinesRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/bots/$agentId/runs': {
+      id: '/_authed/_app/bots/$agentId/runs'
+      path: '/bots/$agentId/runs'
+      fullPath: '/bots/$agentId/runs'
+      preLoaderRoute: typeof AuthedAppBotsAgentIdRunsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
     '/_authed/_app/bots/$agentId/setup': {
       id: '/_authed/_app/bots/$agentId/setup'
       path: '/bots/$agentId/setup'
@@ -1361,6 +1434,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/bots/$agentId/sharing'
       preLoaderRoute: typeof AuthedAppBotsAgentIdSharingRouteImport
       parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/bots/$agentId/runs/$bindingId': {
+      id: '/_authed/_app/bots/$agentId/runs/$bindingId'
+      path: '/$bindingId'
+      fullPath: '/bots/$agentId/runs/$bindingId'
+      preLoaderRoute: typeof AuthedAppBotsAgentIdRunsBindingIdRouteImport
+      parentRoute: typeof AuthedAppBotsAgentIdRunsRoute
     }
     '/_authed/admin/plugins/$key_/bots/$agentId': {
       id: '/_authed/admin/plugins/$key_/bots/$agentId'
@@ -1380,6 +1460,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedAdminRouteRouteChildren {
+  AuthedAdminAiObservabilityRoute: typeof AuthedAdminAiObservabilityRoute
   AuthedAdminApprovalsRoute: typeof AuthedAdminApprovalsRoute
   AuthedAdminAuditRoute: typeof AuthedAdminAuditRoute
   AuthedAdminBoundariesRoute: typeof AuthedAdminBoundariesRoute
@@ -1406,6 +1487,7 @@ interface AuthedAdminRouteRouteChildren {
 }
 
 const AuthedAdminRouteRouteChildren: AuthedAdminRouteRouteChildren = {
+  AuthedAdminAiObservabilityRoute: AuthedAdminAiObservabilityRoute,
   AuthedAdminApprovalsRoute: AuthedAdminApprovalsRoute,
   AuthedAdminAuditRoute: AuthedAdminAuditRoute,
   AuthedAdminBoundariesRoute: AuthedAdminBoundariesRoute,
@@ -1469,6 +1551,21 @@ const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
 const AuthedSettingsRouteRouteWithChildren =
   AuthedSettingsRouteRoute._addFileChildren(AuthedSettingsRouteRouteChildren)
 
+interface AuthedAppBotsAgentIdRunsRouteChildren {
+  AuthedAppBotsAgentIdRunsBindingIdRoute: typeof AuthedAppBotsAgentIdRunsBindingIdRoute
+}
+
+const AuthedAppBotsAgentIdRunsRouteChildren: AuthedAppBotsAgentIdRunsRouteChildren =
+  {
+    AuthedAppBotsAgentIdRunsBindingIdRoute:
+      AuthedAppBotsAgentIdRunsBindingIdRoute,
+  }
+
+const AuthedAppBotsAgentIdRunsRouteWithChildren =
+  AuthedAppBotsAgentIdRunsRoute._addFileChildren(
+    AuthedAppBotsAgentIdRunsRouteChildren,
+  )
+
 interface AuthedAppRouteChildren {
   AuthedAppApprovalsRoute: typeof AuthedAppApprovalsRoute
   AuthedAppBotRoute: typeof AuthedAppBotRoute
@@ -1490,10 +1587,12 @@ interface AuthedAppRouteChildren {
   AuthedAppCraftIndexRoute: typeof AuthedAppCraftIndexRoute
   AuthedAppBotsAgentIdAccessRoute: typeof AuthedAppBotsAgentIdAccessRoute
   AuthedAppBotsAgentIdApprovalsRoute: typeof AuthedAppBotsAgentIdApprovalsRoute
+  AuthedAppBotsAgentIdEvaluationsRoute: typeof AuthedAppBotsAgentIdEvaluationsRoute
   AuthedAppBotsAgentIdMemoryRoute: typeof AuthedAppBotsAgentIdMemoryRoute
   AuthedAppBotsAgentIdReachRoute: typeof AuthedAppBotsAgentIdReachRoute
   AuthedAppBotsAgentIdResponsibilitiesRoute: typeof AuthedAppBotsAgentIdResponsibilitiesRoute
   AuthedAppBotsAgentIdRoutinesRoute: typeof AuthedAppBotsAgentIdRoutinesRoute
+  AuthedAppBotsAgentIdRunsRoute: typeof AuthedAppBotsAgentIdRunsRouteWithChildren
   AuthedAppBotsAgentIdSetupRoute: typeof AuthedAppBotsAgentIdSetupRoute
   AuthedAppBotsAgentIdSharingRoute: typeof AuthedAppBotsAgentIdSharingRoute
   AuthedAppBotsAgentIdIndexRoute: typeof AuthedAppBotsAgentIdIndexRoute
@@ -1520,11 +1619,13 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppCraftIndexRoute: AuthedAppCraftIndexRoute,
   AuthedAppBotsAgentIdAccessRoute: AuthedAppBotsAgentIdAccessRoute,
   AuthedAppBotsAgentIdApprovalsRoute: AuthedAppBotsAgentIdApprovalsRoute,
+  AuthedAppBotsAgentIdEvaluationsRoute: AuthedAppBotsAgentIdEvaluationsRoute,
   AuthedAppBotsAgentIdMemoryRoute: AuthedAppBotsAgentIdMemoryRoute,
   AuthedAppBotsAgentIdReachRoute: AuthedAppBotsAgentIdReachRoute,
   AuthedAppBotsAgentIdResponsibilitiesRoute:
     AuthedAppBotsAgentIdResponsibilitiesRoute,
   AuthedAppBotsAgentIdRoutinesRoute: AuthedAppBotsAgentIdRoutinesRoute,
+  AuthedAppBotsAgentIdRunsRoute: AuthedAppBotsAgentIdRunsRouteWithChildren,
   AuthedAppBotsAgentIdSetupRoute: AuthedAppBotsAgentIdSetupRoute,
   AuthedAppBotsAgentIdSharingRoute: AuthedAppBotsAgentIdSharingRoute,
   AuthedAppBotsAgentIdIndexRoute: AuthedAppBotsAgentIdIndexRoute,

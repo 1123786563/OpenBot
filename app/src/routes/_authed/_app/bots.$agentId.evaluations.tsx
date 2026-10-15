@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 import { ObservabilityPlaceholder } from "@/components/ai-observability/placeholder";
+import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 
 /**
  * Placeholder for the dataset (#27) and experiment (#36) chains: one page covering both, as the
@@ -17,8 +17,14 @@ function EvaluationsPage() {
   const { t } = useTranslation("ai-observability-evaluations");
   const { agentId } = Route.useParams();
   return (
-    <BotSubpage agentId={agentId} title={t("placeholder.title")}>
-      <ObservabilityPlaceholder namespace="ai-observability-evaluations" />
+    <BotSubpage
+      agentId={agentId}
+      description={t("placeholder.description")}
+      title={t("placeholder.title")}
+    >
+      {() => (
+        <ObservabilityPlaceholder namespace="ai-observability-evaluations" />
+      )}
     </BotSubpage>
   );
 }

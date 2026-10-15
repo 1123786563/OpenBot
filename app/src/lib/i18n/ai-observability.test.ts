@@ -34,13 +34,14 @@ const BUNDLES = [
 ] as const;
 
 /**
- * The namespaces whose placeholder routes exist today. The datasets chain (#27) builds its
- * section inside the evaluations page, so it has no route — and no placeholder copy — yet.
+ * The bundles whose placeholder routes exist today, named separately so TypeScript keeps each
+ * entry its own bundle type. The datasets chain (#27) builds its section inside the evaluations
+ * page, so it has no route — and no placeholder copy — yet.
  */
-const ROUTE_NAMESPACES = [
-  "ai-observability-runs",
-  "ai-observability-evaluations",
-  "ai-observability-admin",
+const PLACEHOLDER_BUNDLES = [
+  { ns: "ai-observability-runs", en: enRuns, zh: zhRuns },
+  { ns: "ai-observability-evaluations", en: enEvaluations, zh: zhEvaluations },
+  { ns: "ai-observability-admin", en: enAdmin, zh: zhAdmin },
 ] as const;
 
 function flatKeys(value: unknown, prefix = ""): string[] {
@@ -90,13 +91,23 @@ describe("observation i18n sub-namespaces", () => {
   });
 
   test("every routed namespace carries non-empty placeholder copy in both languages", () => {
-    for (const { ns, en, zh } of BUNDLES) {
-      if (!ROUTE_NAMESPACES.includes(ns as (typeof ROUTE_NAMESPACES)[number]))
-        continue;
-      expect(en.placeholder.title.trim().length, `${ns} en title`).toBeGreaterThan(0);
-      expect(zh.placeholder.title.trim().length, `${ns} zh title`).toBeGreaterThan(0);
-      expect(en.placeholder.description.trim().length, `${ns} en description`).toBeGreaterThan(0);
-      expect(zh.placeholder.description.trim().length, `${ns} zh description`).toBeGreaterThan(0);
+    for (const { ns, en, zh } of PLACEHOLDER_BUNDLES) {
+      expect(
+        en.placeholder.title.trim().length,
+        `${ns} en title`,
+      ).toBeGreaterThan(0);
+      expect(
+        zh.placeholder.title.trim().length,
+        `${ns} zh title`,
+      ).toBeGreaterThan(0);
+      expect(
+        en.placeholder.description.trim().length,
+        `${ns} en description`,
+      ).toBeGreaterThan(0);
+      expect(
+        zh.placeholder.description.trim().length,
+        `${ns} zh description`,
+      ).toBeGreaterThan(0);
     }
   });
 
