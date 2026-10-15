@@ -84,10 +84,17 @@ afterEach(async () => {
     .delete(aiObservationBindings)
     .where(sql`${aiObservationBindings.runId} LIKE ${`${prefix}%`}`);
   // Dataset versions cascade with their subject; without this, a previous run's
-  // synced opik dataset id collides with the next run's markSynced.
-  await database
-    .delete(aiObservationDatasets)
-    .where(sql`${aiObservationDatasets.name} LIKE ${`${prefix}%`}`);
+  // synced opik dataset id collides with the next run's markSynced. The 0124
+  // delete guard (T20, integrated after T17 branched) refuses version rows
+  // leaving any way but dataset cleanup — the transaction-local flag is the one
+  // sanctioned path (datasets suite's afterEach precedent).
+  await database.$client.begin(async (tx) => {
+    await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
+    await tx`DELETE FROM ai_observation_datasets WHERE name LIKE ${`${prefix}%`}`;
+  });
+  // Return the pooled connection to a known session state (case-review suite
+  // precedent: residue here once masked a guard hole).
+  await database.$client`RESET ai_observation.dataset_cleanup`;
 });
 
 afterAll(async () => {
