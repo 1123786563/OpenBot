@@ -1,3 +1,10 @@
+/*
+ * Terminal states (audit C1): a target whose failure a retry cannot fix ends in `blocked` on the
+ * first attempt; a retryable failure ends in `blocked` only once the row is both exhausted
+ * (MAX_DELIVERY_ATTEMPTS) and older than MIN_BLOCK_AGE_MS. `blocked` is TERMINAL either way.
+ * Nothing in this module (or the sweeper that drives it) ever un-blocks a row: recovery is a
+ * manual operator act against the reconciler's report.
+ */
 import type { BillingService } from "./types";
 import type { CreditWriter } from "./credits-writer";
 import type { UsageOutbox, UsageOutboxRecord } from "./usage-outbox";
@@ -18,6 +25,32 @@ export type UsageDelivery = {
 };
 
 const STABLE_CODE = /^[a-z0-9_]{1,64}$/;
+
+/** A target gives up after this many attempts: the row becomes evidence, not a hot loop. */
+export const MAX_DELIVERY_ATTEMPTS = 8;
+
+/**
+ * How old a row must be before the attempt ceiling may end it. The ceiling alone is a trap:
+ * eight attempts at the sweeper's 30-second interval is about four minutes, so one Lago outage
+ * or one database failover would block a whole batch of chargeable events into a terminal state
+ * that nothing in this codebase can undo. Attempts say "we keep failing"; age says "this is not
+ * a blip". A row needs both before it stops being retried.
+ */
+export const MIN_BLOCK_AGE_MS = 24 * 3600_000;
+
+/**
+ * Failures a retry cannot fix (audit C1): no reservation facts to settle, a provider that says the
+ * metric or subscription does not exist, a hold that is already terminal or was settled with a
+ * different cost, and an event whose recorded facts contradict this one. Each ends the target in
+ * `blocked` — the manual-review state reconciliation already reports — instead of retrying every
+ * 30 seconds until somebody notices the pending count.
+ */
+export const NON_RETRYABLE_CODES: ReadonlySet<string> = new Set([
+  "missing_reservation",
+  "provider_refused",
+  "reservation_conflict",
+  "usage_outbox_conflict",
+]);
 
 /** Only a short snake_case code survives; anything else could carry payload or credentials. */
 function failureCodeOf(error: unknown): string {
@@ -173,14 +206,24 @@ export function createUsageDelivery(deps: {
             log(
               `billing: usage delivery failed event=${record.eventId} target=${target.name} code=${code}`,
             );
-            if (code === "missing_reservation") {
+            if (NON_RETRYABLE_CODES.has(code)) {
               await target.block(code);
             } else {
-              await outbox.recordDeliveryFailure(
+              const { attempts } = await outbox.recordDeliveryFailure(
                 record.eventId,
                 target.name,
                 code,
               );
+              const ageMs = Date.now() - record.createdAt.getTime();
+              if (
+                attempts >= MAX_DELIVERY_ATTEMPTS &&
+                ageMs > MIN_BLOCK_AGE_MS
+              ) {
+                log(
+                  `billing: usage delivery exhausted event=${record.eventId} target=${target.name} attempts=${attempts} age_seconds=${Math.floor(ageMs / 1000)} code=${code}`,
+                );
+                await target.block(code);
+              }
             }
           } catch (error) {
             allDelivered = false;

@@ -33,7 +33,7 @@
 
 import { AlipaySdk } from "alipay-sdk";
 import { BillingError } from "../types";
-import { amountStringToCents, rsaVerify } from "./crypto";
+import { amountStringToCents, centsToAmountString, rsaVerify } from "./crypto";
 import type {
   PaymentFact,
   PaymentProvider,
@@ -194,7 +194,10 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
         "alipay.trade.precreate",
         {
           out_trade_no: input.outTradeNo,
-          total_amount: (input.amountCents / 100).toFixed(2),
+          // Exact digit-wise conversion (./crypto), never a float division: this is the amount the
+          // channel is asked to collect, and `toFixed` on a binary double is the one place a
+          // rounding error is theft (audit C4). A non-integer cent value throws instead of rounding.
+          total_amount: centsToAmountString(input.amountCents),
           subject: input.description,
           timeout_express: `${Math.max(
             1,
@@ -298,6 +301,10 @@ function alipayFact(
   const totalAmount = anyField(record, "total_amount");
   const amountCents =
     totalAmount === undefined ? undefined : amountStringToCents(totalAmount);
+  // Read the wire's own word rather than asserting ours: a cross-border trade can state a
+  // settlement currency, and a fact that claims CNY without reading it is a fact nobody checked.
+  const wireCurrency =
+    anyField(record, "currency") ?? anyField(record, "trans_currency");
   return {
     outTradeNo,
     state,
@@ -305,6 +312,6 @@ function alipayFact(
     ...(amountCents !== null && amountCents !== undefined
       ? { amountCents }
       : {}),
-    currency: "CNY",
+    ...(wireCurrency ? { currency: wireCurrency } : {}),
   };
 }

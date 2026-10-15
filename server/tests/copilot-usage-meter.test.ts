@@ -6,8 +6,10 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   builtInAgentConfiguration,
   CreditGateError,
+  CreditPolicyUnconfiguredError,
   type ModelUsageGateLifecycle,
   meteredModelForTests,
+  ModelNotPricedError,
   ModelUsageSettlementError,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
@@ -1047,6 +1049,56 @@ describe("the model usage bound contract (pre-call admission)", () => {
     }
   });
 
+  test("a refusing finish is not re-recorded as unsettled evidence", async () => {
+    const { calls, model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
+    const phases: Array<{ phase: string; reason?: string }> = [];
+    const unsettled: Array<{ inputTokens: number; outputTokens: number; reason: string }> = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        // The finish path's owner (index.ts) writes the evidence row carrying the REAL token
+        // counts before it rethrows, so a second record from the failure path could only be a
+        // 0/0 duplicate the outbox rejects with a usage_evidence_superseded warn (final review,
+        // Minor 1). The failure path stays silent; the hold stays held for reconciliation.
+        finish: async () => {
+          phases.push({ phase: "finish" });
+          throw new ModelUsageSettlementError("usage_pricing_refused");
+        },
+        fail: async (failure) => {
+          phases.push({ phase: "fail", reason: failure.reason });
+        },
+        recordUnsettled: async (input) => {
+          unsettled.push({
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+            reason: input.reason,
+          });
+        },
+      }));
+      const wrapped = meteredModelForTests(model) as WrappedModel;
+      const result = await wrapped.doStream({ prompt: [] });
+      let failure: unknown;
+      try {
+        for await (const _part of result.stream) {
+        }
+      } catch (error) {
+        failure = error;
+      }
+      // The stream still errors with the settlement error the finish threw.
+      expect(calls).toHaveLength(1);
+      expect(failure).toMatchObject({
+        name: "ModelUsageSettlementError",
+        code: "usage_pricing_refused",
+      });
+      // The finish ran and threw, and the reservation is still not released: no fail call,
+      // so nothing can hand the hold back.
+      expect(phases).toEqual([{ phase: "finish" }]);
+      expect(unsettled).toEqual([]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
   test("a retried finish for the identical event succeeds once", async () => {
     const { model } = recordingModel({ inputTokens: 3, outputTokens: 2 });
     const phases: string[] = [];
@@ -1207,6 +1259,315 @@ describe("model usage origin", () => {
       if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = originalBase;
       await recorder.stop();
+    }
+  });
+});
+
+describe("an unknown usage outcome keeps the hold (audit A2)", () => {
+  type WrappedModel = {
+    doStream: (params: unknown) => Promise<{
+      stream: ReadableStream<Record<string, unknown>>;
+    }>;
+  };
+
+  /** A wrapped model whose upstream emits exactly these parts, then closes. */
+  function modelEmitting(parts: Record<string, unknown>[]) {
+    return meteredModelForTests({
+      modelId: "GLM-5.3",
+      async doStream() {
+        return {
+          stream: new ReadableStream<Record<string, unknown>>({
+            start(controller) {
+              for (const part of parts) controller.enqueue(part);
+              controller.close();
+            },
+          }),
+        };
+      },
+    }) as WrappedModel;
+  }
+
+  test("a stream that ends with no finish part reports usage_missing, not no_usage", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (input) => {
+          reasons.push(input.reason);
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        async doStream() {
+          return { stream: new ReadableStream({ start(c) { c.close(); } }) };
+        },
+      }) as WrappedModel;
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["usage_missing"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish part with no usage numbers reports usage_missing", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (i) => {
+          reasons.push(i.reason);
+        },
+      }));
+      const model = modelEmitting([
+        { type: "finish", usage: { inputTokens: {}, outputTokens: {} } },
+      ]);
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["usage_missing"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish part that reports only half its usage is unknown, not a half-billable fact", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (i) => {
+          reasons.push(i.reason);
+        },
+      }));
+      const model = modelEmitting([
+        { type: "finish", usage: { inputTokens: { total: 12 }, outputTokens: {} } },
+      ]);
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["usage_missing"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a finish part that reports zero tokens is a confirmed no-cost and stays no_usage", async () => {
+    const reasons: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (i) => {
+          reasons.push(i.reason);
+        },
+      }));
+      const model = modelEmitting([
+        {
+          type: "finish",
+          usage: { inputTokens: { total: 0 }, outputTokens: { total: 0 } },
+        },
+      ]);
+      for await (const _part of (await model.doStream({})).stream) {
+      }
+      expect(reasons).toEqual(["no_usage"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+});
+
+/*
+ * Audit A3: an over-bound finish is work the provider produced and this deployment refuses to
+ * charge. The tokens must not die with the stream error — they leave as durable evidence the
+ * gate can hand to the outbox, with the hold retained.
+ */
+describe("an over-bound finish leaves its tokens behind (audit A3)", () => {
+  /** An upstream that emits exactly these parts, then closes. */
+  function streamOf(parts: Record<string, unknown>[]) {
+    return new ReadableStream<Record<string, unknown>>({
+      start(controller) {
+        for (const part of parts) controller.enqueue(part);
+        controller.close();
+      },
+    });
+  }
+
+  /** Drain a stream to its end (or its error). */
+  async function consume(stream: ReadableStream<Record<string, unknown>>) {
+    for await (const _part of stream) {
+    }
+  }
+
+  test("the settlement failure records the real usage before the stream errors", async () => {
+    const evidence: { inputTokens: number; outputTokens: number; reason: string }[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: {
+          input: {
+            enforced: "counted" as const,
+            maximumTokens: 100n,
+            countInputTokens: async () => 10,
+          },
+          output: { enforced: "provider_cap" as const, maximumTokens: 100n },
+        },
+        recordUnsettled: (input) => {
+          evidence.push({
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+            reason: input.reason,
+          });
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({
+          stream: streamOf([
+            { type: "finish", usage: { inputTokens: { total: 900 }, outputTokens: { total: 10 } } },
+          ]),
+        }),
+      });
+
+      const stream = (await model.doStream({} as never)).stream;
+      await expect(consume(stream)).rejects.toThrow(/usage_over_bound/);
+      expect(evidence).toEqual([
+        { inputTokens: 900, outputTokens: 10, reason: "usage_over_bound" },
+      ]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("malformed usage records what arrived and names the reason", async () => {
+    const evidence: string[] = [];
+    try {
+      setModelUsageGate(async () => ({
+        // The brief's sketch omitted bounds; without them admission refuses
+        // model_bounds_missing before the provider is called and this finish is never reached.
+        bounds: admittingBounds(),
+        recordUnsettled: (input) => {
+          evidence.push(input.reason);
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({
+          stream: streamOf([
+            { type: "finish", usage: { inputTokens: { total: -1 }, outputTokens: { total: 5 } } },
+          ]),
+        }),
+      });
+      await expect(consume((await model.doStream({} as never)).stream)).rejects.toThrow(/usage_invalid/);
+      expect(evidence).toEqual(["usage_invalid"]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a half-reported usage carries the reported half to the fail path's evidence", async () => {
+    const seen: Array<{ reason: string; inputTokens?: number; outputTokens?: number }> = [];
+    try {
+      setModelUsageGate(async () => ({
+        bounds: admittingBounds(),
+        fail: (input) => {
+          seen.push({
+            reason: input.reason,
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+          });
+        },
+      }));
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({
+          stream: streamOf([
+            { type: "finish", usage: { inputTokens: { total: 12 }, outputTokens: {} } },
+          ]),
+        }),
+      });
+      await consume((await model.doStream({} as never)).stream);
+      // index.ts writes failure.inputTokens ?? 0 into the evidence row: the reported half
+      // survives, the unreported half stays an honest zero rather than a guessed one.
+      expect(seen).toEqual([
+        { reason: "usage_missing", inputTokens: 12, outputTokens: undefined },
+      ]);
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+});
+
+/*
+ * Audit A4: a refusal must name its real cause. "No credits left" was the one sentence for
+ * three different failures — prices never configured, this model never priced, and a balance
+ * that cannot fund the hold — and each of them sends an administrator to a different fix.
+ */
+describe("a refusal names its real cause (audit A4)", () => {
+  /** An upstream that emits exactly these parts, then closes. */
+  function streamOf(parts: Record<string, unknown>[]) {
+    return new ReadableStream<Record<string, unknown>>({
+      start(controller) {
+        for (const part of parts) controller.enqueue(part);
+        controller.close();
+      },
+    });
+  }
+
+  test("an unconfigured credit policy is not 'no credits left'", async () => {
+    try {
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({ stream: streamOf([]) }),
+      });
+      setModelUsageGate(async () => {
+        throw new CreditPolicyUnconfiguredError([
+          { key: "BILLING_MODEL_CREDIT_RATES", reason: "missing" },
+        ]);
+      });
+      await expect(model.doStream({} as never)).rejects.toMatchObject({
+        name: "CreditPolicyUnconfiguredError",
+        code: "credit_policy_unconfigured",
+      });
+      await expect(model.doStream({} as never)).rejects.not.toMatchObject({
+        code: "credits_exhausted",
+      });
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("an unpriced model names the model, not the balance", async () => {
+    try {
+      const model = meteredModelForTests({
+        modelId: "gpt-4o-mini",
+        doStream: async () => ({ stream: streamOf([]) }),
+      });
+      setModelUsageGate(async () => {
+        throw new ModelNotPricedError("gpt-4o-mini");
+      });
+      await expect(model.doStream({} as never)).rejects.toMatchObject({
+        code: "model_not_priced",
+        modelId: "gpt-4o-mini",
+      });
+    } finally {
+      setModelUsageGate(undefined);
+    }
+  });
+
+  test("a gate that broke for an unknown reason stays fail-closed under its own name", async () => {
+    try {
+      const model = meteredModelForTests({
+        modelId: "GLM-5.3",
+        doStream: async () => ({ stream: streamOf([]) }),
+      });
+      setModelUsageGate(async () => {
+        throw new Error("select 1: connection reset by peer");
+      });
+      await expect(model.doStream({} as never)).rejects.toMatchObject({
+        code: "credit_gate_failed",
+      });
+      await expect(model.doStream({} as never)).rejects.toThrow(
+        /^(?!.*connection reset).*$/,
+      );
+    } finally {
+      setModelUsageGate(undefined);
     }
   });
 });

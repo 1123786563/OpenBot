@@ -1,0 +1,57 @@
+{
+  "root": "T03-review-fixes",
+  "source_issues": [],
+  "source": "Independent T03 review findings T03-R01..R04, 2026-10-10; user-approved end-to-end implementation context",
+  "nodes": [
+    {
+      "id": "R3-1",
+      "source_issues": ["T03-R01", "T03-R02", "T03-R03", "T03-R04"],
+      "acceptance": [
+        "Unknown supplied thread IDs cannot create a second platform transcript after group mapping deletion.",
+        "Legacy enterprise conversation operations require an active channel resource and current principal read grant; list filters inaccessible rows.",
+        "Read/revoke/delete operations serialize through shared/exclusive transaction-scoped channel advisory locks in a documented global order without added table UPDATE grants.",
+        "Empty normalized content without attachments is INVALID_MESSAGE; attachment-only messages remain valid.",
+        "Fresh guarded PostgreSQL test run proves behavior and cleanup; static checks, independent backend validation and independent review pass exact checkpoint."
+      ],
+      "depends_on": [],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "reviewer_role": "reviewer",
+      "owned_files": [
+        "server/src/enterprise/conversations/service.ts",
+        "server/src/enterprise/conversations/store.ts",
+        "server/tests/enterprise/conversations.integration.test.ts",
+        "server/src/channels/group.ts",
+        "server/src/channels/routes.ts",
+        "server/src/channels/attachments.ts"
+      ],
+      "interfaces": {
+        "consumes": ["T02 assertTrustedScope", "T02 enterprise resource advisory lock namespace", "T03 ConversationService", "guarded PostgreSQL test harness"],
+        "produces": ["lookup-only supplied thread IDs", "same-transaction resource grant gate", "shared/exclusive legacy channel advisory protocol", "validated empty-message boundary"]
+      },
+      "verification": [
+        "fresh guarded PostgreSQL RED and GREEN evidence",
+        "bun tests/enterprise/conversations.integration.test.ts",
+        "relevant channel and thread route suites",
+        "scoped strict TypeScript and Biome",
+        "drizzle consistency and git diff --check",
+        "independent exact-checkpoint backend validation and Spec/quality review"
+      ],
+      "status": "ready"
+    }
+  ],
+  "topological_order": ["R3-1"],
+  "validation": {
+    "unique_ids": true,
+    "dependencies_exist": true,
+    "no_self_edges": true,
+    "acyclic": true,
+    "isolated_nodes_reviewed": true,
+    "coverage": {
+      "T03-R01": "R3-1 acceptance 1 and PostgreSQL regression",
+      "T03-R02": "R3-1 acceptance 2 and PostgreSQL revoke/absence cases",
+      "T03-R03": "R3-1 acceptance 3 and deterministic concurrent transactions",
+      "T03-R04": "R3-1 acceptance 4 boundary tests"
+    }
+  }
+}

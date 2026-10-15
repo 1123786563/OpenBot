@@ -58,8 +58,8 @@ describe("credit routes", () => {
   const credits: Credits = {
     catalog: new Map([["advanced", CATALOG]]),
     summary: async () => ({
-      plan: { total: 500, used: 100, remaining: 400 },
-      rewards: { total: 100, used: 23.63, remaining: 76.37, grantCount: 2 },
+      plan: { total: 500, used: 100, remaining: 400, held: 0 },
+      rewards: { total: 100, used: 23.63, remaining: 76.37, held: 0, grantCount: 2 },
     }),
     grants: async () => [
       {

@@ -185,7 +185,9 @@ describe("createBillingService.handleWebhook", () => {
     expect(store.inbox.size).toBe(0);
     expect(store.customers.size).toBe(0);
     expect(store.subscriptions.size).toBe(0);
-    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+    expect(logged).toEqual([
+      "billing: webhook failed — webhook_apply (retryable)",
+    ]);
     const retry = await service.handleWebhook(deliver());
     expect(retry.status).toBe(200);
     expect(stub.state.reads).toBe(2);
@@ -429,7 +431,9 @@ describe("createBillingService.handleWebhook", () => {
     expect(stub.state.reads).toBe(2);
     expect(store.subscriptions.size).toBe(1);
     expect(store.inbox.size).toBe(1);
-    expect(logged).toEqual(["billing: webhook failed — persistence_failure"]);
+    expect(logged).toEqual([
+      "billing: webhook failed — webhook_record (retryable)",
+    ]);
   });
 
   test("an unknown store error is not classified as retryable", async () => {
@@ -749,5 +753,287 @@ describe("createBillingService.handleWebhook", () => {
       code: "unsupported",
       retryable: false,
     });
+  });
+
+  test("a non-retryable storage failure is answered 500 so the provider retries, and nothing is recorded", async () => {
+    const store = memoryBillingStore();
+    const { service } = webhookFixture(store);
+    store.applyWebhookProjection = async () => {
+      // What the real store now throws for a constraint violation or a value-too-long: our data
+      // problem, graded non-retryable. It is still not the provider's fault, so it is still 5xx.
+      throw new BillingPersistenceError("webhook_apply", false);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-data-failure", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "Billing webhook could not be applied.",
+    });
+    expect(store.inbox.size).toBe(0);
+  });
+
+  test("a retryable storage failure stays 503", async () => {
+    const store = memoryBillingStore();
+    const { service } = webhookFixture(store);
+    store.applyWebhookProjection = async () => {
+      throw new BillingPersistenceError("webhook_apply", true);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-transient", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(store.inbox.size).toBe(0);
+  });
+
+  test("the 500 carries no detail from the failure", async () => {
+    const store = memoryBillingStore();
+    const { service } = webhookFixture(store);
+    store.applyWebhookProjection = async () => {
+      throw new BillingPersistenceError("webhook_apply", false);
+    };
+    const response = await service.handleWebhook(
+      signedDelivery("evt-leak", "subscription.created", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    const body = await response.text();
+    expect(body).not.toContain("webhook_apply");
+    expect(body).not.toContain("BillingPersistenceError");
+  });
+
+  test("a second delivery of the same body under a fresh unique key logs webhook_body_replay (audit A7)", async () => {
+    const logged: string[] = [];
+    const { store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => {
+        logged.push(message);
+      },
+    );
+    // The event id rides in the header, so the same (webhookType, object) pair is a
+    // byte-identical body under a second identity — the replay shape the audit proved.
+    const object = {
+      external_customer_id: "deployment-1",
+      external_id: "deployment-1-sub",
+      plan_code: "pro",
+      status: "active",
+    };
+    const first = await service.handleWebhook(
+      signedDelivery("evt-replay-1", "subscription.updated", object),
+    );
+    expect(first.status).toBe(200);
+    expect(store.inbox.size).toBe(1);
+    expect(logged).toEqual([]); // one delivery of a body is not evidence
+
+    const second = await service.handleWebhook(
+      signedDelivery("evt-replay-2", "subscription.updated", object),
+    );
+    expect(second.status).toBe(200);
+    expect(store.inbox.size).toBe(2); // the inbox grew: a fresh identity is fresh work
+    expect(logged).toContain(
+      "billing: webhook_body_replay event=evt-replay-2 deliveries=2",
+    );
+  });
+
+  test("a subscription delivery whose re-read no longer names a local row retires it (audit B6)", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    stub.state.list = [
+      {
+        externalCustomerId: "deployment-1",
+        externalSubscriptionId: "deployment-1-sub",
+        planCode: "pro",
+        status: "active",
+      },
+    ];
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    // The provider deleted (or hid) this one: it is absent from the re-read but active locally —
+    // the exact stale row the audit found, which used to stay active forever.
+    store.subscriptions.set("deployment-1-old", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old",
+      planCode: "base",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-retire", "subscription.updated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(store.subscriptions.get("deployment-1-old")?.status).toBe(
+      "terminated",
+    );
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
+    expect(logged).toContain(
+      "billing: retired 1 subscription projection(s) the provider no longer lists for deployment-1",
+    );
+    // A retirement is a move, never a delete: the row stays as the record.
+    expect(store.subscriptions.has("deployment-1-old")).toBe(true);
+  });
+
+  test("an empty present-list retires everything for that customer — it is a real answer (audit B6)", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    // The provider holds nothing: readSubscriptions throws on a malformed body, so an empty list
+    // reaching the projection is a successful read of an empty truth, not a failed one.
+    stub.state.list = [];
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-sub", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-sub",
+      planCode: "pro",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-retire-all", "subscription.terminated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe(
+      "terminated",
+    );
+    expect(logged).toContain(
+      "billing: retired 1 subscription projection(s) the provider no longer lists for deployment-1",
+    );
+    // The audit's headline consequence: the entitlement read stops answering active.
+    await expect(service.entitlements()).resolves.toEqual({
+      active: false,
+      codes: [],
+      subscription: null,
+    });
+  });
+
+  test("a customer delivery says nothing about subscriptions: nothing retires", async () => {
+    const { stub, store, service } = webhookFixture();
+    stub.state.customers.set("deployment-1", "Renamed Deployment");
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-sub", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-sub",
+      planCode: "pro",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-customer-only", "customer.updated", {
+        external_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(store.customers.get("deployment-1")).toEqual({
+      name: "Renamed Deployment",
+    });
+    expect(store.subscriptions.get("deployment-1-sub")?.status).toBe("active");
+  });
+
+  test("the retirement log counts what the committed transaction moved, and nothing else (audit B6 review r1)", async () => {
+    const logged: string[] = [];
+    const { stub, store, service } = webhookFixture(
+      memoryBillingStore(),
+      (message) => logged.push(message),
+    );
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    // The provider holds nothing, so both local rows are stale — the count on the evidence
+    // line is the transaction's own, and a delivery that retires nothing says nothing.
+    stub.state.list = [];
+    store.subscriptions.set("deployment-1-old-1", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-1",
+      planCode: "base",
+      status: "active",
+    });
+    store.subscriptions.set("deployment-1-old-2", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-2",
+      planCode: "base",
+      status: "active",
+    });
+    const response = await service.handleWebhook(
+      signedDelivery("evt-count-2", "subscription.terminated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(logged).toContain(
+      "billing: retired 2 subscription projection(s) the provider no longer lists for deployment-1",
+    );
+    // A delivery with nothing left to retire logs nothing: no phantom, no noise.
+    const quiet = await service.handleWebhook(
+      signedDelivery("evt-count-0", "subscription.terminated", {
+        external_customer_id: "deployment-1",
+      }),
+    );
+    expect(quiet.status).toBe(200);
+    expect(logged.filter((line) => line.includes("retired"))).toHaveLength(1);
+  });
+
+  test("the memory twin's onRetired is buffered inside the apply and flushed only on commit (audit B6 review r1)", async () => {
+    const store = memoryBillingStore();
+    store.customers.set("deployment-1", { name: "Deployment 1" });
+    store.subscriptions.set("deployment-1-old-1", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-1",
+      planCode: "base",
+      status: "active",
+    });
+    store.subscriptions.set("deployment-1-old-2", {
+      externalCustomerId: "deployment-1",
+      externalSubscriptionId: "deployment-1-old-2",
+      planCode: "base",
+      status: "active",
+    });
+    const retired: { externalCustomerId: string; count: number }[] = [];
+    const recordWebhookEvent = store.recordWebhookEvent.bind(store);
+    let failNext = true;
+    store.recordWebhookEvent = async (input) => {
+      if (failNext) {
+        failNext = false;
+        throw new BillingPersistenceError("webhook_record");
+      }
+      return recordWebhookEvent(input);
+    };
+    // The staged apply retires both rows, then the inbox write fails and everything rolls
+    // back: the buffered notification must go with it, not escape a moved-nothing delivery.
+    await expect(
+      store.applyWebhookProjection({
+        customer: { externalId: "deployment-1" },
+        subscriptionsPresentFor: "deployment-1",
+        onRetired: (info) => retired.push(info),
+        event: {
+          provider: "test",
+          eventId: "evt-twin-commit-gate",
+          webhookType: "subscription.terminated",
+        },
+      }),
+    ).rejects.toBeInstanceOf(BillingPersistenceError);
+    expect(retired).toEqual([]);
+    expect(store.subscriptions.get("deployment-1-old-1")?.status).toBe(
+      "active",
+    );
+    // The retry commits: the line carries the transaction's own count, both rows.
+    expect(
+      await store.applyWebhookProjection({
+        customer: { externalId: "deployment-1" },
+        subscriptionsPresentFor: "deployment-1",
+        onRetired: (info) => retired.push(info),
+        event: {
+          provider: "test",
+          eventId: "evt-twin-commit-gate",
+          webhookType: "subscription.terminated",
+        },
+      }),
+    ).toBe("processed");
+    expect(retired).toEqual([{ externalCustomerId: "deployment-1", count: 2 }]);
   });
 });

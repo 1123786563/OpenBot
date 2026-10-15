@@ -36,6 +36,12 @@ const deploymentKey = `${prefix}-deployment`;
 
 afterAll(async () => {
   await database.execute(
+    sql`DELETE FROM credit_reservations WHERE external_customer_id LIKE ${`${prefix}%`}`,
+  );
+  await database.execute(
+    sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`${prefix}%`}`,
+  );
+  await database.execute(
     sql`DELETE FROM credit_ledger WHERE external_customer_id LIKE ${`${prefix}%`}`,
   );
   await database.execute(
@@ -200,7 +206,7 @@ describe("probe a: the reconcile admin route", () => {
 describe("probe b: the pass is read-only — findings do not repair themselves", () => {
   test("a broken identity stays broken after N passes; no money row appears or changes", async () => {
     const customer = `${prefix}-ro`;
-    // Seed an agreeing pair first (grant + a matching draw).
+    // Seed an agreeing pair first (grant + a settled hold of the same size).
     await creditWriter.grantCredits({
       externalCustomerId: customer,
       source: "promo",
@@ -209,10 +215,16 @@ describe("probe b: the pass is read-only — findings do not repair themselves",
       reason: "ro-seed",
       idempotencyKey: `${prefix}-ro-grant`,
     });
-    await creditWriter.consumeCredits({
+    const hold = await creditWriter.reserveCredits({
       externalCustomerId: customer,
-      amountCents: 400,
-      idempotencyKey: `${prefix}-ro-draw`,
+      idempotencyKey: `${prefix}-ro-hold`,
+      maximumCents: 400,
+      expiresAt: new Date(Date.now() + 3600_000),
+    });
+    if (!hold.reserved) throw new Error("expected the seed hold to reserve");
+    await creditWriter.settleReservation({
+      reservationId: hold.reservationId,
+      actual: { numerator: 400n, denominator: 1n },
       title: "模型调用",
     });
 
@@ -281,7 +293,7 @@ describe("probe c: the identity is per-customer — no cross-customer leak", () 
       .set({ used: 250 })
       .where(eq(creditGrants.idempotencyKey, `${prefix}-a-g1`));
 
-    // B: 2 grants, 3 draws, all through the writer — the identity holds by construction.
+    // B: 2 grants, 3 settled holds, all through the writer — the identity holds by construction.
     await creditWriter.grantCredits({
       externalCustomerId: clean,
       source: "promo",
@@ -299,10 +311,16 @@ describe("probe c: the identity is per-customer — no cross-customer leak", () 
       idempotencyKey: `${prefix}-b-g2`,
     });
     for (const [n, amount] of [100, 250, 300].entries()) {
-      await creditWriter.consumeCredits({
+      const hold = await creditWriter.reserveCredits({
         externalCustomerId: clean,
-        amountCents: amount,
-        idempotencyKey: `${prefix}-b-d${n}`,
+        idempotencyKey: `${prefix}-b-h${n}`,
+        maximumCents: amount,
+        expiresAt: new Date(Date.now() + 3600_000),
+      });
+      if (!hold.reserved) throw new Error("expected a clean hold to reserve");
+      await creditWriter.settleReservation({
+        reservationId: hold.reservationId,
+        actual: { numerator: BigInt(amount), denominator: 1n },
         title: "模型调用",
       });
     }
@@ -313,7 +331,7 @@ describe("probe c: the identity is per-customer — no cross-customer leak", () 
     expect(forBroken).toHaveLength(1);
     expect(forClean).toHaveLength(0); // B stays silent: no leak from A's break
 
-    // And B's arithmetic: Σused == Σapplied == 650 exactly (the draws split across grants).
+    // And B's arithmetic: Σused == Σapplied == 650 exactly (the holds span both grants).
     const grants = await database
       .select({ used: creditGrants.used })
       .from(creditGrants)

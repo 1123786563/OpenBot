@@ -132,10 +132,10 @@ export const creditLedger = pgTable(
     /** Cost of this call, in scaled credit units (×100). Always the ACTUAL cost in full. */
     credits: integer("credits").notNull(),
     /**
-     * What the grants actually absorbed of `credits`. Equal except when the balance came up
-     * short (a post-paid draw the pre-call gate missed): the ledger keeps the whole truth,
-     * this column records how much of it the balance could fund — `credits - applied` is the
-     * overdraw, visible instead of rounded away.
+     * `applied` is what the grants absorbed of `credits`. Equal except when the charge exceeded the
+     * capacity behind it (an over-bound settlement clamped to its hold, or a hold whose grants
+     * lapsed): the ledger keeps the whole truth, this column records how much of it the grants
+     * could fund, and `credits - applied` is the shortfall.
      */
     applied: integer("applied").notNull().default(0),
     model: text("model"),

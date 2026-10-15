@@ -12,11 +12,12 @@ import { BillingUnavailableError } from "./invoices";
 
 /** The whole "套餐与积分" answer, split the way the page splits it. */
 export type CreditSummary = {
-  plan: { total: number; used: number; remaining: number };
+  plan: { total: number; used: number; remaining: number; held: number };
   rewards: {
     total: number;
     used: number;
     remaining: number;
+    held: number;
     grantCount: number;
   };
 };
@@ -41,6 +42,8 @@ export type CreditConsumptionEntry = {
   title: string;
   requestId: string | null;
   credits: number;
+  /** What the grants absorbed of that cost; `credits - applied` is the unfunded shortfall. */
+  applied: number;
   model: string | null;
   client: string | null;
   timestamp: string;

@@ -142,6 +142,54 @@ describe("createAlipayProvider over the SDK transport", () => {
     expect((error as BillingError).code).toBe("unreachable");
     expect((error as BillingError).retryable).toBe(true);
   });
+
+  test("the precreate amount is the exact decimal, not a float division", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const provider = providerWith(async (_method, params) => {
+      calls.push(params.bizContent as Record<string, unknown>);
+      return { code: "10000", qr_code: "https://qr.alipay.com/x" };
+    });
+    for (const [cents] of [
+      [1, "0.01"],
+      [1099, "10.99"],
+      [12850, "128.50"],
+      [4900, "49.00"],
+      [2147483647, "21474836.47"],
+    ] as const) {
+      await provider.createSession({
+        outTradeNo: `po-${cents}`,
+        description: "test",
+        amountCents: cents,
+        currency: "CNY",
+        notifyUrl: "https://example.test/cb",
+        expiresAt: new Date(Date.now() + 900_000),
+      });
+    }
+    expect(calls.map((call) => call.total_amount)).toEqual([
+      "0.01",
+      "10.99",
+      "128.50",
+      "49.00",
+      "21474836.47",
+    ]);
+  });
+
+  test("a non-integer cent amount is refused rather than rounded onto the wire", async () => {
+    const provider = providerWith(async () => ({
+      code: "10000",
+      qr_code: "x",
+    }));
+    await expect(
+      provider.createSession({
+        outTradeNo: "po-1",
+        description: "test",
+        amountCents: 10.5,
+        currency: "CNY",
+        notifyUrl: "https://example.test/cb",
+        expiresAt: new Date(Date.now() + 900_000),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_response" });
+  });
 });
 
 describe("the notification verifier", () => {
@@ -176,6 +224,23 @@ describe("the notification verifier", () => {
       expect(result.fact.amountCents).toBe(100);
       expect(result.fact.outTradeNo).toBe("po-abc");
     }
+  });
+
+  test("a notification naming a settlement currency carries it verbatim; silence stays silent", async () => {
+    // The wire's own word, both spellings (audit A5): a cross-border trade states its currency
+    // directly or as trans_currency, and a notification naming neither states none — the adapter
+    // must not launder that silence into a CNY the wire never claimed.
+    const stated = await verifierOver(signedBody({ currency: "USD" }));
+    expect(stated.ok).toBe(true);
+    if (stated.ok) expect(stated.fact.currency).toBe("USD");
+    const crossBorder = await verifierOver(
+      signedBody({ trans_currency: "USD" }),
+    );
+    expect(crossBorder.ok).toBe(true);
+    if (crossBorder.ok) expect(crossBorder.fact.currency).toBe("USD");
+    const silent = await verifierOver(signedBody());
+    expect(silent.ok).toBe(true);
+    if (silent.ok) expect(silent.fact.currency).toBeUndefined();
   });
 
   test("a tampered amount breaks the signature and is refused", async () => {

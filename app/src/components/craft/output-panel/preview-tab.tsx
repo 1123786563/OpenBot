@@ -1,26 +1,95 @@
+import {
+  IconArrowsMaximize,
+  IconArrowsMinimize,
+  IconExternalLink,
+} from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
 import { craftWebappQueryOptions } from "@/lib/craft/queries";
+import type { CraftWebappInfo } from "@/lib/craft/types";
+import { cn } from "@/lib/utils";
 
 /**
  * The running web app, if the agent scaffolded one. The server answers `webapp_info` with the URL
- * the proxy serves; the iframe's first fetch starts the sandbox dev server lazily, so an empty slot
- * (rather than a spinner that never resolves) is the honest state before the first build.
+ * the proxy serves AND with `ready` — the probe of the session's reserved port — so the pane can
+ * tell "an app exists" from "an app is serving".
  *
- * The empty slot is a browser-chrome motif (this pane's own future, drawn small): hairline window,
- * muted dots, a dashed inner frame waiting for the first build — plus one sentence each for what
- * renders here and where files/downloads live. It teaches the pane's job without illustration
- * theater, in the app's quiet card idiom.
+ * THE GATE IS `ready`, NOT `has_webapp`. `has_webapp` is true the moment `outputs/web/package.json`
+ * exists, which is long before (and can outlive) the dev server behind it: a `webapp start` the turn
+ * watchdog cancelled, a sandbox that restarted, an app that crashed on boot — all leave a scaffold
+ * with nothing listening on the reserved port. Gating the iframe on `has_webapp` alone pointed the
+ * frame at the proxy's 503, and what rendered in the pane was that response's raw body:
+ * `{"error":"The web app is not running. Ask the agent to call the webapp tool with action
+ * 'start'."}`. A down server is its own state here, in the product's own voice.
  *
- * The iframe gate is `has_webapp`, NOT `webapp_url`: the server answers the URL for every
- * interactive session (the proxy route exists per session, port reserved at creation), so gating
- * on the URL alone renders the proxy's error page inside the frame for a workspace that never
- * built one. `has_webapp` is the honest "an app exists" fact; null (no sandbox) degrades to the
- * same empty state.
+ * The pane keeps polling while an app exists but is not serving, so the preview comes alive on its
+ * own the moment the agent does start it — no reload, no hunting for a refresh. A serving app stops
+ * polling: the iframe's own HMR socket is the live surface from there.
+ *
+ * THE EXPAND KEEPS THE SAME IFRAME. A 420px pane is too small to actually drive an app, so the
+ * serving state can go full-viewport — but it does that by changing the WRAPPER's positioning, not
+ * by mounting a second frame or moving this one through a portal. Both alternatives unmount the
+ * iframe, which reloads the app and throws away whatever the person was mid-way through testing:
+ * the exact thing they expanded for. One frame also means one HMR socket against the dev server
+ * instead of two racing it. `fixed inset-0` is safe here because no ancestor of this pane carries
+ * a transform/filter/backdrop-filter — checked, and the reason the repo's own lightbox had to
+ * flatten its dialog card (chat-transcript's DialogContent comment) does not apply.
+ *
+ * Both empty states are the browser-chrome motif (this pane's own future, drawn small): hairline
+ * window, muted dots, a dashed inner frame. Waiting-for-the-first-app and app-is-down share the
+ * chrome and differ in the sentence, so the pane teaches its job without illustration theater.
  */
+
+/** The not-yet-serving poll. Only while the pane is mounted, i.e. only while it's being looked at. */
+const NOT_READY_POLL_MS = 5000;
+
+/**
+ * The pane's poll decision, as a fact of its own: an app that exists but is NOT serving is a
+ * transient the agent can end at any moment, so it is watched; every other state — no app yet,
+ * serving, no sandbox — settles and waits to be invalidated (a turn's end does that, see
+ * chat-panel's handleSend). Exported because the decision is the interesting half: whether
+ * react-query honors an interval is the library's business, and its own environment sniffing
+ * (`typeof window` at import time) makes that unobservable under happy-dom.
+ */
+export function previewPollInterval(
+  info: CraftWebappInfo | undefined,
+): number | false {
+  return info?.has_webapp && !info.ready ? NOT_READY_POLL_MS : false;
+}
+
 export function PreviewTab({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation("craft");
-  const info = useQuery(craftWebappQueryOptions(sessionId));
+  const [expanded, setExpanded] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  const info = useQuery({
+    ...craftWebappQueryOptions(sessionId),
+    refetchInterval: (query) => previewPollInterval(query.state.data),
+  });
+
+  /*
+   * Escape is a convenience, not the contract — and the limit is worth stating because it
+   * looks like a bug from the inside. A keydown goes to the focused DOCUMENT, and once the
+   * person has clicked into the app to test it, focus is inside the iframe, so the parent
+   * never hears the key. No listener on this side can change that; it is what an iframe is.
+   * The corner control is therefore the real way out and stays visible the whole time,
+   * and Escape works whenever focus is in our chrome (measured both ways in the browser).
+   * Focus returns to that control rather than to the top of the document, because it is the
+   * same button node in both states — only its icon and label flip.
+   */
+  useEffect(() => {
+    if (!expanded) return;
+    toggleRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setExpanded(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [expanded]);
 
   if (info.isPending) {
     return (
@@ -29,16 +98,91 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
       </p>
     );
   }
-  if (info.data?.has_webapp && info.data.webapp_url) {
+
+  const hasWebapp = info.data?.has_webapp === true;
+  const serving = hasWebapp && info.data?.ready === true;
+  const webappUrl = serving ? info.data?.webapp_url : null;
+
+  if (webappUrl) {
     return (
-      <iframe
-        title={t("preview.title")}
-        src={info.data.webapp_url}
-        className="h-full w-full border-0"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      />
+      <div
+        // The modal contract, on the wrapper rather than on a portal: the frame
+        // inside must not move, so the surface that grows is the one already here.
+        {...(expanded
+          ? {
+              role: "dialog",
+              "aria-modal": true,
+              "aria-label": t("preview.title"),
+            }
+          : {})}
+        className={cn(
+          // The app's own chrome sits under the corner cluster, so the cluster
+          // floats on a blur chip rather than hiding what it covers.
+          "relative h-full w-full",
+          expanded && "fixed inset-0 z-50 bg-background",
+        )}
+      >
+        <iframe
+          title={t("preview.title")}
+          src={webappUrl}
+          className="h-full w-full border-0"
+          // `allow-same-origin` is STILL HERE, and that is a known open risk, not an
+          // oversight. The preview is served from the main app's own origin
+          // (`/api/craft/sessions/<id>/webapp`, relative paths, dev proxied through
+          // vite), and auth is a COOKIE (`lib/client.ts` sends `credentials: "include"`).
+          // So LLM-authored code in this frame can `fetch("/api/bots", {credentials:
+          // "include"})` and the browser attaches the user's session — read anything the
+          // user can read, act as the user. Dropping the token is not enough to fix it.
+          //
+          // It cannot simply be removed: without it the frame gets an OPAQUE origin, its
+          // own fetches to the app's API routes and Server Actions become cross-origin
+          // and are blocked for want of CORS headers the app never sends, and
+          // localStorage/indexedDB throw — which would undo the all-methods proxy this
+          // pane depends on. The real fix is to serve the preview from a DISTINCT origin
+          // (then `allow-same-origin` means the preview's own origin: full interactivity,
+          // and the main app's cookies are never in scope). That needs a preview origin
+          // plus a scoped, short-lived ticket in place of the cookie — escalated, not
+          // smuggled in here.
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+        />
+        {/*
+         * The corner cluster: expand/collapse as one button (its node identity is what keeps
+         * focus and the un-remounted iframe honest), plus the same URL in a real tab for when
+         * testing wants devtools, a true viewport, or its own storage.
+         */}
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-border bg-background/85 p-0.5 shadow-card supports-backdrop-filter:bg-background/60 supports-backdrop-filter:backdrop-blur-sm">
+          <a
+            aria-label={t("preview.openInNewTab")}
+            href={webappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <IconExternalLink className="size-3.5" />
+          </a>
+          <button
+            ref={toggleRef}
+            type="button"
+            aria-label={expanded ? t("preview.collapse") : t("preview.expand")}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {expanded ? (
+              <IconArrowsMinimize className="size-3.5" />
+            ) : (
+              <IconArrowsMaximize className="size-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
     );
   }
+
+  // An app exists but its dev server is down: the honest middle state, and the one the
+  // iframe used to swallow whole.
+  const down = hasWebapp;
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 px-8 text-center">
       <div className="w-full max-w-[300px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -51,19 +195,30 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
         <div className="p-4">
           <div className="flex min-h-[104px] items-center justify-center rounded-lg border border-dashed border-input px-4 py-8">
             <p className="text-xs text-muted-foreground">
-              {t("preview.emptyTitle")}
+              {down ? t("preview.downTitle") : t("preview.emptyTitle")}
             </p>
           </div>
         </div>
       </div>
       <div className="space-y-1.5">
         <p className="mx-auto max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
-          {t("preview.emptyHint")}
+          {down ? t("preview.downHint") : t("preview.emptyHint")}
         </p>
         <p className="text-xs text-muted-foreground/80">
           {t("preview.emptyTabs")}
         </p>
       </div>
+      {down ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void info.refetch()}
+          disabled={info.isFetching}
+        >
+          {t("preview.downRetry")}
+        </Button>
+      ) : null}
     </div>
   );
 }

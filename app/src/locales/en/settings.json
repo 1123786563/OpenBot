@@ -337,7 +337,7 @@
     "expiringSoon": "Expires within 24h",
     "expiresAt": "Expires: {{time}}",
     "reason": "Granted for: {{reason}}",
-    "rewardsSummary": "{{count}} active · {{remaining}} credits left",
+    "rewardsSummary": "{{count}} rewards, {{remaining}} available ({{held}} held by in-progress calls)",
     "viewAll": "View all",
     "range": {
       "today": "Today",
@@ -350,6 +350,8 @@
     "columnCredits": "Credits",
     "columnModel": "Model",
     "columnClient": "Client",
+    "overdrawBadge": "({{shortfall}} unfunded)",
+    "overdrawHint": "This call cost more than the balance could fund. The ledger records the full cost; {{shortfall}} was not covered by any grant.",
     "pagerStatus": "Page {{page}} of {{totalPages}} · {{total}} entries",
     "consumptionTable": "Usage details"
   },

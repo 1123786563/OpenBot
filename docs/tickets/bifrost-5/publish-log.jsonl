@@ -1,0 +1,383 @@
+{"action": "create", "ticket": "01.1", "ok": true, "note": "#207 https://github.com/1123786563/OpenBot/issues/207", "ts": "2026-10-15T02:03:21+0800"}
+{"action": "body-update", "ticket": "01.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/207", "ts": "2026-10-15T02:03:24+0800"}
+{"action": "sub-issue", "ticket": "01.1", "ok": false, "note": "gh: Invalid request.\n\nInvalid property /sub_issue_id: `\"I_kwDOVCA0Ss8AAAABXN0zlg\"` is not of type `integer`. (HTTP 422)\n{\"message\":\"Invalid request.\\n\\nInvalid property /sub_issue_id: `\\\"I_kwDOVCA0Ss8", "ts": "2026-10-15T02:03:27+0800"}
+{"action": "create", "ticket": "01.2", "ok": true, "note": "#208 dbid=5852992397 https://github.com/1123786563/OpenBot/issues/208", "ts": "2026-10-15T02:05:07+0800"}
+{"action": "body-update", "ticket": "01.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/207", "ts": "2026-10-15T02:05:10+0800"}
+{"action": "body-update", "ticket": "01.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/208", "ts": "2026-10-15T02:05:13+0800"}
+{"action": "native-probe", "ok": true, "note": "GET supported", "ts": "2026-10-15T02:05:17+0800"}
+{"action": "create", "ticket": "01.3", "ok": true, "note": "#209 dbid=5853003242 https://github.com/1123786563/OpenBot/issues/209", "ts": "2026-10-15T02:05:51+0800"}
+{"action": "create", "ticket": "01.4", "ok": true, "note": "#210 dbid=5853004569 https://github.com/1123786563/OpenBot/issues/210", "ts": "2026-10-15T02:05:56+0800"}
+{"action": "create", "ticket": "01.5", "ok": true, "note": "#211 dbid=5853005820 https://github.com/1123786563/OpenBot/issues/211", "ts": "2026-10-15T02:06:02+0800"}
+{"action": "create", "ticket": "01.6", "ok": true, "note": "#212 dbid=5853007006 https://github.com/1123786563/OpenBot/issues/212", "ts": "2026-10-15T02:06:07+0800"}
+{"action": "create", "ticket": "01.7", "ok": true, "note": "#213 dbid=5853008218 https://github.com/1123786563/OpenBot/issues/213", "ts": "2026-10-15T02:06:12+0800"}
+{"action": "create", "ticket": "01.8", "ok": true, "note": "#214 dbid=5853009664 https://github.com/1123786563/OpenBot/issues/214", "ts": "2026-10-15T02:06:18+0800"}
+{"action": "create", "ticket": "02.1", "ok": true, "note": "#215 dbid=5853010877 https://github.com/1123786563/OpenBot/issues/215", "ts": "2026-10-15T02:06:24+0800"}
+{"action": "create", "ticket": "02.2", "ok": true, "note": "#216 dbid=5853012287 https://github.com/1123786563/OpenBot/issues/216", "ts": "2026-10-15T02:06:28+0800"}
+{"action": "create", "ticket": "02.3", "ok": true, "note": "#217 dbid=5853014601 https://github.com/1123786563/OpenBot/issues/217", "ts": "2026-10-15T02:06:38+0800"}
+{"action": "create", "ticket": "02.4", "ok": true, "note": "#218 dbid=5853015752 https://github.com/1123786563/OpenBot/issues/218", "ts": "2026-10-15T02:06:43+0800"}
+{"action": "create", "ticket": "02.5", "ok": true, "note": "#219 dbid=5853016997 https://github.com/1123786563/OpenBot/issues/219", "ts": "2026-10-15T02:06:49+0800"}
+{"action": "create", "ticket": "02.6", "ok": true, "note": "#220 dbid=5853018315 https://github.com/1123786563/OpenBot/issues/220", "ts": "2026-10-15T02:06:53+0800"}
+{"action": "create", "ticket": "02.7", "ok": true, "note": "#221 dbid=5853019553 https://github.com/1123786563/OpenBot/issues/221", "ts": "2026-10-15T02:06:59+0800"}
+{"action": "create", "ticket": "02.8", "ok": true, "note": "#222 dbid=5853020768 https://github.com/1123786563/OpenBot/issues/222", "ts": "2026-10-15T02:07:03+0800"}
+{"action": "create", "ticket": "03.1", "ok": true, "note": "#223 dbid=5853021949 https://github.com/1123786563/OpenBot/issues/223", "ts": "2026-10-15T02:07:08+0800"}
+{"action": "create", "ticket": "03.2", "ok": true, "note": "#224 dbid=5853023276 https://github.com/1123786563/OpenBot/issues/224", "ts": "2026-10-15T02:07:13+0800"}
+{"action": "create", "ticket": "03.3", "ok": true, "note": "#225 dbid=5853024458 https://github.com/1123786563/OpenBot/issues/225", "ts": "2026-10-15T02:07:19+0800"}
+{"action": "create", "ticket": "03.4", "ok": true, "note": "#226 dbid=5853025701 https://github.com/1123786563/OpenBot/issues/226", "ts": "2026-10-15T02:07:24+0800"}
+{"action": "create", "ticket": "03.5", "ok": true, "note": "#227 dbid=5853026907 https://github.com/1123786563/OpenBot/issues/227", "ts": "2026-10-15T02:07:29+0800"}
+{"action": "create", "ticket": "03.6", "ok": true, "note": "#228 dbid=5853028104 https://github.com/1123786563/OpenBot/issues/228", "ts": "2026-10-15T02:07:34+0800"}
+{"action": "create", "ticket": "03.7", "ok": true, "note": "#229 dbid=5853029247 https://github.com/1123786563/OpenBot/issues/229", "ts": "2026-10-15T02:07:40+0800"}
+{"action": "create", "ticket": "03.8", "ok": true, "note": "#230 dbid=5853030672 https://github.com/1123786563/OpenBot/issues/230", "ts": "2026-10-15T02:07:45+0800"}
+{"action": "create", "ticket": "03.9", "ok": true, "note": "#231 dbid=5853031947 https://github.com/1123786563/OpenBot/issues/231", "ts": "2026-10-15T02:07:49+0800"}
+{"action": "create", "ticket": "03.10", "ok": true, "note": "#232 dbid=5853033265 https://github.com/1123786563/OpenBot/issues/232", "ts": "2026-10-15T02:07:54+0800"}
+{"action": "create", "ticket": "03.11", "ok": true, "note": "#233 dbid=5853034494 https://github.com/1123786563/OpenBot/issues/233", "ts": "2026-10-15T02:08:00+0800"}
+{"action": "create", "ticket": "04.1", "ok": true, "note": "#234 dbid=5853035820 https://github.com/1123786563/OpenBot/issues/234", "ts": "2026-10-15T02:08:07+0800"}
+{"action": "create", "ticket": "04.2", "ok": true, "note": "#235 dbid=5853038073 https://github.com/1123786563/OpenBot/issues/235", "ts": "2026-10-15T02:08:16+0800"}
+{"action": "create", "ticket": "04.3", "ok": true, "note": "#236 dbid=5853040341 https://github.com/1123786563/OpenBot/issues/236", "ts": "2026-10-15T02:08:25+0800"}
+{"action": "create", "ticket": "04.4", "ok": true, "note": "#237 dbid=5853043004 https://github.com/1123786563/OpenBot/issues/237", "ts": "2026-10-15T02:08:36+0800"}
+{"action": "create", "ticket": "04.5", "ok": true, "note": "#238 dbid=5853045965 https://github.com/1123786563/OpenBot/issues/238", "ts": "2026-10-15T02:08:45+0800"}
+{"action": "create", "ticket": "04.6", "ok": true, "note": "#239 dbid=5853048512 https://github.com/1123786563/OpenBot/issues/239", "ts": "2026-10-15T02:09:03+0800"}
+{"action": "create", "ticket": "04.7", "ok": true, "note": "#240 dbid=5853053071 https://github.com/1123786563/OpenBot/issues/240", "ts": "2026-10-15T02:09:21+0800"}
+{"action": "create", "ticket": "04.8", "ok": true, "note": "#241 dbid=5853057164 https://github.com/1123786563/OpenBot/issues/241", "ts": "2026-10-15T02:09:46+0800"}
+{"action": "create", "ticket": "05.1", "ok": true, "note": "#242 dbid=5853062901 https://github.com/1123786563/OpenBot/issues/242", "ts": "2026-10-15T02:09:55+0800"}
+{"action": "create", "ticket": "05.2", "ok": true, "note": "#243 dbid=5853065251 https://github.com/1123786563/OpenBot/issues/243", "ts": "2026-10-15T02:10:03+0800"}
+{"action": "create", "ticket": "05.3", "ok": true, "note": "#244 dbid=5853067321 https://github.com/1123786563/OpenBot/issues/244", "ts": "2026-10-15T02:10:12+0800"}
+{"action": "create", "ticket": "05.4", "ok": true, "note": "#245 dbid=5853069539 https://github.com/1123786563/OpenBot/issues/245", "ts": "2026-10-15T02:10:20+0800"}
+{"action": "create", "ticket": "05.5", "ok": true, "note": "#246 dbid=5853071602 https://github.com/1123786563/OpenBot/issues/246", "ts": "2026-10-15T02:10:29+0800"}
+{"action": "create", "ticket": "05.6", "ok": true, "note": "#247 dbid=5853074234 https://github.com/1123786563/OpenBot/issues/247", "ts": "2026-10-15T02:10:37+0800"}
+{"action": "create", "ticket": "05.7", "ok": true, "note": "#248 dbid=5853076463 https://github.com/1123786563/OpenBot/issues/248", "ts": "2026-10-15T02:10:45+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:10:59+0800"}
+{"action": "backoff", "ok": false, "note": "retry 2 in 30s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:11:24+0800"}
+{"action": "create", "ticket": "05.8", "ok": true, "note": "#249 dbid=5853078447 https://github.com/1123786563/OpenBot/issues/249", "ts": "2026-10-15T02:12:08+0800"}
+{"action": "create", "ticket": "05.9", "ok": true, "note": "#250 dbid=5853101902 https://github.com/1123786563/OpenBot/issues/250", "ts": "2026-10-15T02:12:31+0800"}
+{"action": "create", "ticket": "05.10", "ok": true, "note": "#251 dbid=5853107999 https://github.com/1123786563/OpenBot/issues/251", "ts": "2026-10-15T02:12:55+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:13:06+0800"}
+{"action": "create", "ticket": "06.1", "ok": true, "note": "#252 dbid=5853122131 https://github.com/1123786563/OpenBot/issues/252", "ts": "2026-10-15T02:13:50+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:14:10+0800"}
+{"action": "create", "ticket": "06.2", "ok": true, "note": "#253 dbid=5853129519 https://github.com/1123786563/OpenBot/issues/253", "ts": "2026-10-15T02:14:30+0800"}
+{"action": "create", "ticket": "06.3", "ok": true, "note": "#254 dbid=5853138867 https://github.com/1123786563/OpenBot/issues/254", "ts": "2026-10-15T02:14:43+0800"}
+{"action": "create", "ticket": "06.4", "ok": true, "note": "#255 dbid=5853142297 https://github.com/1123786563/OpenBot/issues/255", "ts": "2026-10-15T02:14:56+0800"}
+{"action": "create", "ticket": "06.5", "ok": true, "note": "#256 dbid=5853145641 https://github.com/1123786563/OpenBot/issues/256", "ts": "2026-10-15T02:15:07+0800"}
+{"action": "create", "ticket": "06.6", "ok": true, "note": "#257 dbid=5853148883 https://github.com/1123786563/OpenBot/issues/257", "ts": "2026-10-15T02:15:21+0800"}
+{"action": "create", "ticket": "06.7", "ok": true, "note": "#258 dbid=5853152296 https://github.com/1123786563/OpenBot/issues/258", "ts": "2026-10-15T02:15:36+0800"}
+{"action": "create", "ticket": "06.8", "ok": true, "note": "#259 dbid=5853155832 https://github.com/1123786563/OpenBot/issues/259", "ts": "2026-10-15T02:15:49+0800"}
+{"action": "create", "ticket": "06.9", "ok": true, "note": "#260 dbid=5853159199 https://github.com/1123786563/OpenBot/issues/260", "ts": "2026-10-15T02:16:02+0800"}
+{"action": "create", "ticket": "06.10", "ok": true, "note": "#261 dbid=5853162710 https://github.com/1123786563/OpenBot/issues/261", "ts": "2026-10-15T02:16:12+0800"}
+{"action": "create", "ticket": "06.11", "ok": true, "note": "#262 dbid=5853165331 https://github.com/1123786563/OpenBot/issues/262", "ts": "2026-10-15T02:16:21+0800"}
+{"action": "create", "ticket": "06.12", "ok": true, "note": "#263 dbid=5853167505 https://github.com/1123786563/OpenBot/issues/263", "ts": "2026-10-15T02:16:30+0800"}
+{"action": "create", "ticket": "07.1", "ok": true, "note": "#264 dbid=5853169773 https://github.com/1123786563/OpenBot/issues/264", "ts": "2026-10-15T02:16:41+0800"}
+{"action": "create", "ticket": "07.2", "ok": true, "note": "#265 dbid=5853172354 https://github.com/1123786563/OpenBot/issues/265", "ts": "2026-10-15T02:16:52+0800"}
+{"action": "create", "ticket": "07.3", "ok": true, "note": "#266 dbid=5853175171 https://github.com/1123786563/OpenBot/issues/266", "ts": "2026-10-15T02:17:03+0800"}
+{"action": "create", "ticket": "07.4", "ok": true, "note": "#267 dbid=5853177642 https://github.com/1123786563/OpenBot/issues/267", "ts": "2026-10-15T02:17:08+0800"}
+{"action": "create", "ticket": "07.5", "ok": true, "note": "#268 dbid=5853178886 https://github.com/1123786563/OpenBot/issues/268", "ts": "2026-10-15T02:17:13+0800"}
+{"action": "create", "ticket": "07.6", "ok": true, "note": "#269 dbid=5853180115 https://github.com/1123786563/OpenBot/issues/269", "ts": "2026-10-15T02:17:19+0800"}
+{"action": "create", "ticket": "07.7", "ok": true, "note": "#270 dbid=5853181494 https://github.com/1123786563/OpenBot/issues/270", "ts": "2026-10-15T02:17:24+0800"}
+{"action": "create", "ticket": "07.8", "ok": true, "note": "#271 dbid=5853182585 https://github.com/1123786563/OpenBot/issues/271", "ts": "2026-10-15T02:17:29+0800"}
+{"action": "create", "ticket": "07.9", "ok": true, "note": "#272 dbid=5853183896 https://github.com/1123786563/OpenBot/issues/272", "ts": "2026-10-15T02:17:33+0800"}
+{"action": "create", "ticket": "07.10", "ok": true, "note": "#273 dbid=5853185107 https://github.com/1123786563/OpenBot/issues/273", "ts": "2026-10-15T02:17:38+0800"}
+{"action": "create", "ticket": "07.11", "ok": true, "note": "#274 dbid=5853186481 https://github.com/1123786563/OpenBot/issues/274", "ts": "2026-10-15T02:17:44+0800"}
+{"action": "create", "ticket": "07.12", "ok": true, "note": "#275 dbid=5853187936 https://github.com/1123786563/OpenBot/issues/275", "ts": "2026-10-15T02:17:49+0800"}
+{"action": "body-update", "ticket": "01.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/207", "ts": "2026-10-15T02:17:52+0800"}
+{"action": "body-update", "ticket": "01.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/208", "ts": "2026-10-15T02:17:55+0800"}
+{"action": "body-update", "ticket": "01.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/209", "ts": "2026-10-15T02:17:58+0800"}
+{"action": "body-update", "ticket": "01.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/210", "ts": "2026-10-15T02:18:01+0800"}
+{"action": "body-update", "ticket": "01.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/211", "ts": "2026-10-15T02:18:03+0800"}
+{"action": "body-update", "ticket": "01.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/212", "ts": "2026-10-15T02:18:07+0800"}
+{"action": "body-update", "ticket": "01.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/213", "ts": "2026-10-15T02:18:10+0800"}
+{"action": "body-update", "ticket": "01.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/214", "ts": "2026-10-15T02:18:12+0800"}
+{"action": "body-update", "ticket": "02.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/215", "ts": "2026-10-15T02:18:14+0800"}
+{"action": "body-update", "ticket": "02.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/216", "ts": "2026-10-15T02:18:17+0800"}
+{"action": "body-update", "ticket": "02.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/217", "ts": "2026-10-15T02:18:20+0800"}
+{"action": "body-update", "ticket": "02.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/218", "ts": "2026-10-15T02:18:23+0800"}
+{"action": "body-update", "ticket": "02.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/219", "ts": "2026-10-15T02:18:26+0800"}
+{"action": "body-update", "ticket": "02.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/220", "ts": "2026-10-15T02:18:29+0800"}
+{"action": "body-update", "ticket": "02.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/221", "ts": "2026-10-15T02:18:32+0800"}
+{"action": "body-update", "ticket": "02.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/222", "ts": "2026-10-15T02:18:35+0800"}
+{"action": "body-update", "ticket": "03.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/223", "ts": "2026-10-15T02:18:37+0800"}
+{"action": "body-update", "ticket": "03.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/224", "ts": "2026-10-15T02:18:40+0800"}
+{"action": "body-update", "ticket": "03.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/225", "ts": "2026-10-15T02:18:43+0800"}
+{"action": "body-update", "ticket": "03.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/226", "ts": "2026-10-15T02:18:45+0800"}
+{"action": "body-update", "ticket": "03.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/227", "ts": "2026-10-15T02:18:48+0800"}
+{"action": "body-update", "ticket": "03.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/228", "ts": "2026-10-15T02:18:50+0800"}
+{"action": "body-update", "ticket": "03.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/229", "ts": "2026-10-15T02:18:53+0800"}
+{"action": "body-update", "ticket": "03.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/230", "ts": "2026-10-15T02:18:56+0800"}
+{"action": "body-update", "ticket": "03.9", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/231", "ts": "2026-10-15T02:19:00+0800"}
+{"action": "body-update", "ticket": "03.10", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/232", "ts": "2026-10-15T02:19:03+0800"}
+{"action": "body-update", "ticket": "03.11", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/233", "ts": "2026-10-15T02:19:06+0800"}
+{"action": "body-update", "ticket": "04.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/234", "ts": "2026-10-15T02:19:09+0800"}
+{"action": "body-update", "ticket": "04.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/235", "ts": "2026-10-15T02:19:11+0800"}
+{"action": "body-update", "ticket": "04.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/236", "ts": "2026-10-15T02:19:14+0800"}
+{"action": "body-update", "ticket": "04.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/237", "ts": "2026-10-15T02:19:16+0800"}
+{"action": "body-update", "ticket": "04.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/238", "ts": "2026-10-15T02:19:19+0800"}
+{"action": "body-update", "ticket": "04.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/239", "ts": "2026-10-15T02:19:22+0800"}
+{"action": "body-update", "ticket": "04.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/240", "ts": "2026-10-15T02:19:25+0800"}
+{"action": "body-update", "ticket": "04.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/241", "ts": "2026-10-15T02:19:27+0800"}
+{"action": "body-update", "ticket": "05.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/242", "ts": "2026-10-15T02:19:30+0800"}
+{"action": "body-update", "ticket": "05.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/243", "ts": "2026-10-15T02:19:33+0800"}
+{"action": "body-update", "ticket": "05.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/244", "ts": "2026-10-15T02:19:35+0800"}
+{"action": "body-update", "ticket": "05.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/245", "ts": "2026-10-15T02:19:38+0800"}
+{"action": "body-update", "ticket": "05.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/246", "ts": "2026-10-15T02:19:41+0800"}
+{"action": "body-update", "ticket": "05.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/247", "ts": "2026-10-15T02:19:43+0800"}
+{"action": "body-update", "ticket": "05.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/248", "ts": "2026-10-15T02:19:46+0800"}
+{"action": "body-update", "ticket": "05.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/249", "ts": "2026-10-15T02:19:49+0800"}
+{"action": "body-update", "ticket": "05.9", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/250", "ts": "2026-10-15T02:19:53+0800"}
+{"action": "body-update", "ticket": "05.10", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/251", "ts": "2026-10-15T02:19:56+0800"}
+{"action": "body-update", "ticket": "06.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/252", "ts": "2026-10-15T02:19:58+0800"}
+{"action": "body-update", "ticket": "06.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/253", "ts": "2026-10-15T02:20:01+0800"}
+{"action": "body-update", "ticket": "06.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/254", "ts": "2026-10-15T02:20:04+0800"}
+{"action": "body-update", "ticket": "06.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/255", "ts": "2026-10-15T02:20:09+0800"}
+{"action": "body-update", "ticket": "06.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/256", "ts": "2026-10-15T02:20:12+0800"}
+{"action": "body-update", "ticket": "06.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/257", "ts": "2026-10-15T02:20:14+0800"}
+{"action": "body-update", "ticket": "06.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/258", "ts": "2026-10-15T02:20:17+0800"}
+{"action": "body-update", "ticket": "06.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/259", "ts": "2026-10-15T02:20:19+0800"}
+{"action": "body-update", "ticket": "06.9", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/260", "ts": "2026-10-15T02:20:22+0800"}
+{"action": "body-update", "ticket": "06.10", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/261", "ts": "2026-10-15T02:20:25+0800"}
+{"action": "body-update", "ticket": "06.11", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/262", "ts": "2026-10-15T02:20:27+0800"}
+{"action": "body-update", "ticket": "06.12", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/263", "ts": "2026-10-15T02:20:30+0800"}
+{"action": "body-update", "ticket": "07.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/264", "ts": "2026-10-15T02:20:33+0800"}
+{"action": "body-update", "ticket": "07.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/265", "ts": "2026-10-15T02:20:35+0800"}
+{"action": "body-update", "ticket": "07.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/266", "ts": "2026-10-15T02:20:38+0800"}
+{"action": "body-update", "ticket": "07.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/267", "ts": "2026-10-15T02:20:41+0800"}
+{"action": "body-update", "ticket": "07.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/268", "ts": "2026-10-15T02:20:44+0800"}
+{"action": "body-update", "ticket": "07.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/269", "ts": "2026-10-15T02:20:47+0800"}
+{"action": "body-update", "ticket": "07.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/270", "ts": "2026-10-15T02:20:50+0800"}
+{"action": "body-update", "ticket": "07.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/271", "ts": "2026-10-15T02:20:53+0800"}
+{"action": "body-update", "ticket": "07.9", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/272", "ts": "2026-10-15T02:20:57+0800"}
+{"action": "body-update", "ticket": "07.10", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/273", "ts": "2026-10-15T02:20:59+0800"}
+{"action": "body-update", "ticket": "07.11", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/274", "ts": "2026-10-15T02:21:03+0800"}
+{"action": "body-update", "ticket": "07.12", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/275", "ts": "2026-10-15T02:21:06+0800"}
+{"action": "native-probe", "ok": true, "note": "GET supported", "ts": "2026-10-15T02:21:12+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/244/dependencies/blocked_by\": net/http: TLS handshake timeo", "ts": "2026-10-15T02:23:57+0800"}
+{"action": "backoff", "ok": false, "note": "retry 2 in 30s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/244/dependencies/blocked_by\": net/http: TLS handshake timeo", "ts": "2026-10-15T02:24:22+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:27:12+0800"}
+{"action": "backoff", "ok": false, "note": "retry 2 in 30s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:27:38+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:29:08+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:31:07+0800"}
+{"action": "backoff", "ok": false, "note": "retry 2 in 30s: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T02:31:32+0800"}
+{"action": "native-probe", "ok": true, "note": "GET supported", "ts": "2026-10-15T02:39:10+0800"}
+{"action": "create", "ticket": "08.1", "ok": true, "note": "#276 dbid=5858371224 https://github.com/1123786563/OpenBot/issues/276", "ts": "2026-10-15T09:18:56+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Get \"https://api.github.com/repos/1123786563/OpenBot/issues/277\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:19:15+0800"}
+{"action": "create", "ticket": "08.2", "ok": true, "note": "#277 dbid=5858373299 https://github.com/1123786563/OpenBot/issues/277", "ts": "2026-10-15T09:19:33+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:19:45+0800"}
+{"action": "create", "ticket": "08.3", "ok": true, "note": "#278 dbid=5858383870 https://github.com/1123786563/OpenBot/issues/278", "ts": "2026-10-15T09:20:18+0800"}
+{"action": "create", "ticket": "08.4", "ok": true, "note": "#279 dbid=5858385696 https://github.com/1123786563/OpenBot/issues/279", "ts": "2026-10-15T09:20:28+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Get \"https://api.github.com/repos/1123786563/OpenBot/issues/280\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:20:52+0800"}
+{"action": "create", "ticket": "08.5", "ok": true, "note": "#280 dbid=5858387110 https://github.com/1123786563/OpenBot/issues/280", "ts": "2026-10-15T09:21:08+0800"}
+{"action": "create", "ticket": "08.6", "ok": true, "note": "#281 dbid=5858392737 https://github.com/1123786563/OpenBot/issues/281", "ts": "2026-10-15T09:21:22+0800"}
+{"action": "create", "ticket": "08.7", "ok": true, "note": "#282 dbid=5858394668 https://github.com/1123786563/OpenBot/issues/282", "ts": "2026-10-15T09:21:36+0800"}
+{"action": "create", "ticket": "08.8", "ok": true, "note": "#283 dbid=5858396240 https://github.com/1123786563/OpenBot/issues/283", "ts": "2026-10-15T09:21:45+0800"}
+{"action": "create", "ticket": "08.9", "ok": true, "note": "#284 dbid=5858397816 https://github.com/1123786563/OpenBot/issues/284", "ts": "2026-10-15T09:21:56+0800"}
+{"action": "create", "ticket": "08.10", "ok": true, "note": "#285 dbid=5858399340 https://github.com/1123786563/OpenBot/issues/285", "ts": "2026-10-15T09:22:10+0800"}
+{"action": "create", "ticket": "09.1", "ok": true, "note": "#286 dbid=5858401384 https://github.com/1123786563/OpenBot/issues/286", "ts": "2026-10-15T09:22:23+0800"}
+{"action": "create", "ticket": "09.2", "ok": true, "note": "#287 dbid=5858403111 https://github.com/1123786563/OpenBot/issues/287", "ts": "2026-10-15T09:22:32+0800"}
+{"action": "create", "ticket": "09.3", "ok": true, "note": "#288 dbid=5858404459 https://github.com/1123786563/OpenBot/issues/288", "ts": "2026-10-15T09:22:51+0800"}
+{"action": "create", "ticket": "09.4", "ok": true, "note": "#289 dbid=5858406515 https://github.com/1123786563/OpenBot/issues/289", "ts": "2026-10-15T09:22:59+0800"}
+{"action": "create", "ticket": "10.1", "ok": true, "note": "#290 dbid=5858407800 https://github.com/1123786563/OpenBot/issues/290", "ts": "2026-10-15T09:23:10+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:23:28+0800"}
+{"action": "create", "ticket": "10.2", "ok": true, "note": "#291 dbid=5858409562 https://github.com/1123786563/OpenBot/issues/291", "ts": "2026-10-15T09:23:47+0800"}
+{"action": "create", "ticket": "10.3", "ok": true, "note": "#292 dbid=5858415292 https://github.com/1123786563/OpenBot/issues/292", "ts": "2026-10-15T09:24:02+0800"}
+{"action": "create", "ticket": "10.4", "ok": true, "note": "#293 dbid=5858417902 https://github.com/1123786563/OpenBot/issues/293", "ts": "2026-10-15T09:24:18+0800"}
+{"action": "create", "ticket": "10.5", "ok": true, "note": "#294 dbid=5858420332 https://github.com/1123786563/OpenBot/issues/294", "ts": "2026-10-15T09:24:31+0800"}
+{"action": "create", "ticket": "10.6", "ok": true, "note": "#295 dbid=5858422867 https://github.com/1123786563/OpenBot/issues/295", "ts": "2026-10-15T09:24:40+0800"}
+{"action": "create", "ticket": "11.1", "ok": true, "note": "#296 dbid=5858425241 https://github.com/1123786563/OpenBot/issues/296", "ts": "2026-10-15T09:24:58+0800"}
+{"action": "create", "ticket": "11.2", "ok": true, "note": "#297 dbid=5858427073 https://github.com/1123786563/OpenBot/issues/297", "ts": "2026-10-15T09:25:09+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:25:24+0800"}
+{"action": "create", "ticket": "11.3", "ok": true, "note": "#298 dbid=5858429090 https://github.com/1123786563/OpenBot/issues/298", "ts": "2026-10-15T09:25:48+0800"}
+{"action": "create", "ticket": "11.4", "ok": true, "note": "#299 dbid=5858435978 https://github.com/1123786563/OpenBot/issues/299", "ts": "2026-10-15T09:25:59+0800"}
+{"action": "create", "ticket": "11.5", "ok": true, "note": "#300 dbid=5858437849 https://github.com/1123786563/OpenBot/issues/300", "ts": "2026-10-15T09:26:11+0800"}
+{"action": "create", "ticket": "11.6", "ok": true, "note": "#301 dbid=5858439667 https://github.com/1123786563/OpenBot/issues/301", "ts": "2026-10-15T09:26:21+0800"}
+{"action": "create", "ticket": "12.1", "ok": true, "note": "#302 dbid=5858441419 https://github.com/1123786563/OpenBot/issues/302", "ts": "2026-10-15T09:26:30+0800"}
+{"action": "create", "ticket": "12.2", "ok": true, "note": "#303 dbid=5858442671 https://github.com/1123786563/OpenBot/issues/303", "ts": "2026-10-15T09:26:43+0800"}
+{"action": "create", "ticket": "12.3", "ok": true, "note": "#304 dbid=5858445103 https://github.com/1123786563/OpenBot/issues/304", "ts": "2026-10-15T09:26:55+0800"}
+{"action": "create", "ticket": "12.4", "ok": true, "note": "#305 dbid=5858446341 https://github.com/1123786563/OpenBot/issues/305", "ts": "2026-10-15T09:27:05+0800"}
+{"action": "create", "ticket": "13.1", "ok": true, "note": "#306 dbid=5858447734 https://github.com/1123786563/OpenBot/issues/306", "ts": "2026-10-15T09:27:16+0800"}
+{"action": "create", "ticket": "13.2", "ok": true, "note": "#307 dbid=5858449855 https://github.com/1123786563/OpenBot/issues/307", "ts": "2026-10-15T09:27:29+0800"}
+{"action": "create", "ticket": "13.3", "ok": true, "note": "#308 dbid=5858451403 https://github.com/1123786563/OpenBot/issues/308", "ts": "2026-10-15T09:27:39+0800"}
+{"action": "create", "ticket": "13.4", "ok": true, "note": "#309 dbid=5858453291 https://github.com/1123786563/OpenBot/issues/309", "ts": "2026-10-15T09:27:49+0800"}
+{"action": "create", "ticket": "14.1", "ok": true, "note": "#310 dbid=5858454529 https://github.com/1123786563/OpenBot/issues/310", "ts": "2026-10-15T09:27:59+0800"}
+{"action": "create", "ticket": "14.2", "ok": true, "note": "#311 dbid=5858456646 https://github.com/1123786563/OpenBot/issues/311", "ts": "2026-10-15T09:28:20+0800"}
+{"action": "create", "ticket": "14.3", "ok": true, "note": "#312 dbid=5858459752 https://github.com/1123786563/OpenBot/issues/312", "ts": "2026-10-15T09:28:39+0800"}
+{"action": "create", "ticket": "14.4", "ok": true, "note": "#313 dbid=5858463010 https://github.com/1123786563/OpenBot/issues/313", "ts": "2026-10-15T09:28:54+0800"}
+{"action": "create", "ticket": "15.1", "ok": true, "note": "#314 dbid=5858464745 https://github.com/1123786563/OpenBot/issues/314", "ts": "2026-10-15T09:29:03+0800"}
+{"action": "create", "ticket": "15.2", "ok": true, "note": "#315 dbid=5858466383 https://github.com/1123786563/OpenBot/issues/315", "ts": "2026-10-15T09:29:17+0800"}
+{"action": "create", "ticket": "15.3", "ok": true, "note": "#316 dbid=5858468575 https://github.com/1123786563/OpenBot/issues/316", "ts": "2026-10-15T09:29:32+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:29:44+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Get \"https://api.github.com/repos/1123786563/OpenBot/issues/317\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:30:21+0800"}
+{"action": "create", "ticket": "15.4", "ok": true, "note": "#317 dbid=5858475162 https://github.com/1123786563/OpenBot/issues/317", "ts": "2026-10-15T09:30:38+0800"}
+{"action": "create", "ticket": "15.5", "ok": true, "note": "#318 dbid=5858480933 https://github.com/1123786563/OpenBot/issues/318", "ts": "2026-10-15T09:30:56+0800"}
+{"action": "create", "ticket": "15.6", "ok": true, "note": "#319 dbid=5858483077 https://github.com/1123786563/OpenBot/issues/319", "ts": "2026-10-15T09:31:06+0800"}
+{"action": "create", "ticket": "15.7", "ok": true, "note": "#320 dbid=5858485368 https://github.com/1123786563/OpenBot/issues/320", "ts": "2026-10-15T09:31:23+0800"}
+{"action": "backoff", "ok": false, "note": "retry 1 in 15s: Get \"https://api.github.com/repos/1123786563/OpenBot/issues/321\": net/http: TLS handshake timeout\n", "ts": "2026-10-15T09:31:43+0800"}
+{"action": "create", "ticket": "15.8", "ok": true, "note": "#321 dbid=5858487379 https://github.com/1123786563/OpenBot/issues/321", "ts": "2026-10-15T09:32:02+0800"}
+{"action": "create", "ticket": "16.1", "ok": true, "note": "#322 dbid=5858493004 https://github.com/1123786563/OpenBot/issues/322", "ts": "2026-10-15T09:32:13+0800"}
+{"action": "create", "ticket": "16.2", "ok": true, "note": "#323 dbid=5858494492 https://github.com/1123786563/OpenBot/issues/323", "ts": "2026-10-15T09:32:24+0800"}
+{"action": "create", "ticket": "16.3", "ok": true, "note": "#324 dbid=5858495940 https://github.com/1123786563/OpenBot/issues/324", "ts": "2026-10-15T09:32:38+0800"}
+{"action": "create", "ticket": "17.1", "ok": true, "note": "#325 dbid=5858497585 https://github.com/1123786563/OpenBot/issues/325", "ts": "2026-10-15T09:32:44+0800"}
+{"action": "create", "ticket": "17.2", "ok": true, "note": "#326 dbid=5858498331 https://github.com/1123786563/OpenBot/issues/326", "ts": "2026-10-15T09:32:54+0800"}
+{"action": "create", "ticket": "17.3", "ok": true, "note": "#327 dbid=5858499920 https://github.com/1123786563/OpenBot/issues/327", "ts": "2026-10-15T09:33:09+0800"}
+{"action": "create", "ticket": "17.4", "ok": true, "note": "#328 dbid=5858502257 https://github.com/1123786563/OpenBot/issues/328", "ts": "2026-10-15T09:33:21+0800"}
+{"action": "create", "ticket": "17.5", "ok": true, "note": "#329 dbid=5858504936 https://github.com/1123786563/OpenBot/issues/329", "ts": "2026-10-15T09:33:37+0800"}
+{"action": "create", "ticket": "17.6", "ok": true, "note": "#330 dbid=5858506133 https://github.com/1123786563/OpenBot/issues/330", "ts": "2026-10-15T09:33:45+0800"}
+{"action": "create", "ticket": "17.7", "ok": true, "note": "#331 dbid=5858507711 https://github.com/1123786563/OpenBot/issues/331", "ts": "2026-10-15T09:33:55+0800"}
+{"action": "create", "ticket": "17.8", "ok": true, "note": "#332 dbid=5858509164 https://github.com/1123786563/OpenBot/issues/332", "ts": "2026-10-15T09:34:14+0800"}
+{"action": "create", "ticket": "18.1", "ok": true, "note": "#333 dbid=5858512116 https://github.com/1123786563/OpenBot/issues/333", "ts": "2026-10-15T09:34:25+0800"}
+{"action": "create", "ticket": "18.2", "ok": true, "note": "#334 dbid=5858513347 https://github.com/1123786563/OpenBot/issues/334", "ts": "2026-10-15T09:34:39+0800"}
+{"action": "create", "ticket": "18.3", "ok": true, "note": "#335 dbid=5858515800 https://github.com/1123786563/OpenBot/issues/335", "ts": "2026-10-15T09:34:55+0800"}
+{"action": "create", "ticket": "18.4", "ok": true, "note": "#336 dbid=5858517857 https://github.com/1123786563/OpenBot/issues/336", "ts": "2026-10-15T09:35:05+0800"}
+{"action": "create", "ticket": "19.1", "ok": true, "note": "#337 dbid=5858519271 https://github.com/1123786563/OpenBot/issues/337", "ts": "2026-10-15T09:35:19+0800"}
+{"action": "create", "ticket": "19.2", "ok": true, "note": "#338 dbid=5858521675 https://github.com/1123786563/OpenBot/issues/338", "ts": "2026-10-15T09:35:30+0800"}
+{"action": "create", "ticket": "19.3", "ok": true, "note": "#339 dbid=5858523358 https://github.com/1123786563/OpenBot/issues/339", "ts": "2026-10-15T09:35:41+0800"}
+{"action": "create", "ticket": "19.4", "ok": true, "note": "#340 dbid=5858525030 https://github.com/1123786563/OpenBot/issues/340", "ts": "2026-10-15T09:35:54+0800"}
+{"action": "create", "ticket": "20.1", "ok": true, "note": "#341 dbid=5858526646 https://github.com/1123786563/OpenBot/issues/341", "ts": "2026-10-15T09:36:03+0800"}
+{"action": "create", "ticket": "20.2", "ok": true, "note": "#342 dbid=5858528231 https://github.com/1123786563/OpenBot/issues/342", "ts": "2026-10-15T09:36:12+0800"}
+{"action": "create", "ticket": "20.3", "ok": true, "note": "#343 dbid=5858529815 https://github.com/1123786563/OpenBot/issues/343", "ts": "2026-10-15T09:36:19+0800"}
+{"action": "create", "ticket": "20.4", "ok": true, "note": "#344 dbid=5858531307 https://github.com/1123786563/OpenBot/issues/344", "ts": "2026-10-15T09:36:32+0800"}
+{"action": "create", "ticket": "21.1", "ok": true, "note": "#345 dbid=5858533016 https://github.com/1123786563/OpenBot/issues/345", "ts": "2026-10-15T09:36:42+0800"}
+{"action": "create", "ticket": "21.2", "ok": true, "note": "#346 dbid=5858534421 https://github.com/1123786563/OpenBot/issues/346", "ts": "2026-10-15T09:36:52+0800"}
+{"action": "create", "ticket": "21.3", "ok": true, "note": "#347 dbid=5858535573 https://github.com/1123786563/OpenBot/issues/347", "ts": "2026-10-15T09:37:02+0800"}
+{"action": "create", "ticket": "21.4", "ok": true, "note": "#348 dbid=5858537316 https://github.com/1123786563/OpenBot/issues/348", "ts": "2026-10-15T09:37:12+0800"}
+{"action": "create", "ticket": "21.5", "ok": true, "note": "#349 dbid=5858538705 https://github.com/1123786563/OpenBot/issues/349", "ts": "2026-10-15T09:37:25+0800"}
+{"action": "create", "ticket": "21.6", "ok": true, "note": "#350 dbid=5858540407 https://github.com/1123786563/OpenBot/issues/350", "ts": "2026-10-15T09:37:33+0800"}
+{"action": "create", "ticket": "21.7", "ok": true, "note": "#351 dbid=5858541550 https://github.com/1123786563/OpenBot/issues/351", "ts": "2026-10-15T09:37:44+0800"}
+{"action": "create", "ticket": "22.1", "ok": true, "note": "#352 dbid=5858543391 https://github.com/1123786563/OpenBot/issues/352", "ts": "2026-10-15T09:37:57+0800"}
+{"action": "create", "ticket": "22.2", "ok": true, "note": "#353 dbid=5858545186 https://github.com/1123786563/OpenBot/issues/353", "ts": "2026-10-15T09:38:08+0800"}
+{"action": "create", "ticket": "22.3", "ok": true, "note": "#354 dbid=5858546267 https://github.com/1123786563/OpenBot/issues/354", "ts": "2026-10-15T09:38:18+0800"}
+{"action": "create", "ticket": "22.4", "ok": true, "note": "#355 dbid=5858547670 https://github.com/1123786563/OpenBot/issues/355", "ts": "2026-10-15T09:38:27+0800"}
+{"action": "create", "ticket": "22.5", "ok": true, "note": "#356 dbid=5858549009 https://github.com/1123786563/OpenBot/issues/356", "ts": "2026-10-15T09:38:33+0800"}
+{"action": "create", "ticket": "22.6", "ok": true, "note": "#357 dbid=5858550024 https://github.com/1123786563/OpenBot/issues/357", "ts": "2026-10-15T09:38:43+0800"}
+{"action": "body-update", "ticket": "08.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/276", "ts": "2026-10-15T09:38:46+0800"}
+{"action": "body-update", "ticket": "08.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/277", "ts": "2026-10-15T09:38:49+0800"}
+{"action": "body-update", "ticket": "08.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/278", "ts": "2026-10-15T09:38:51+0800"}
+{"action": "body-update", "ticket": "08.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/279", "ts": "2026-10-15T09:38:54+0800"}
+{"action": "body-update", "ticket": "08.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/280", "ts": "2026-10-15T09:38:56+0800"}
+{"action": "body-update", "ticket": "08.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/281", "ts": "2026-10-15T09:39:02+0800"}
+{"action": "body-update", "ticket": "08.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/282", "ts": "2026-10-15T09:39:08+0800"}
+{"action": "body-update", "ticket": "08.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/283", "ts": "2026-10-15T09:39:10+0800"}
+{"action": "body-update", "ticket": "08.9", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/284", "ts": "2026-10-15T09:39:16+0800"}
+{"action": "body-update", "ticket": "08.10", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/285", "ts": "2026-10-15T09:39:22+0800"}
+{"action": "body-update", "ticket": "09.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/286", "ts": "2026-10-15T09:39:27+0800"}
+{"action": "body-update", "ticket": "09.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/287", "ts": "2026-10-15T09:39:30+0800"}
+{"action": "body-update", "ticket": "09.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/288", "ts": "2026-10-15T09:39:36+0800"}
+{"action": "body-update", "ticket": "09.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/289", "ts": "2026-10-15T09:39:45+0800"}
+{"action": "body-update", "ticket": "10.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/290", "ts": "2026-10-15T09:39:50+0800"}
+{"action": "body-update", "ticket": "10.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/291", "ts": "2026-10-15T09:39:53+0800"}
+{"action": "body-update", "ticket": "10.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/292", "ts": "2026-10-15T09:39:58+0800"}
+{"action": "body-update", "ticket": "10.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/293", "ts": "2026-10-15T09:40:05+0800"}
+{"action": "body-update", "ticket": "10.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/294", "ts": "2026-10-15T09:40:10+0800"}
+{"action": "body-update", "ticket": "10.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/295", "ts": "2026-10-15T09:40:13+0800"}
+{"action": "body-update", "ticket": "11.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/296", "ts": "2026-10-15T09:40:18+0800"}
+{"action": "body-update", "ticket": "11.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/297", "ts": "2026-10-15T09:40:20+0800"}
+{"action": "body-update", "ticket": "11.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/298", "ts": "2026-10-15T09:40:23+0800"}
+{"action": "body-update", "ticket": "11.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/299", "ts": "2026-10-15T09:40:26+0800"}
+{"action": "body-update", "ticket": "11.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/300", "ts": "2026-10-15T09:40:28+0800"}
+{"action": "body-update", "ticket": "11.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/301", "ts": "2026-10-15T09:40:31+0800"}
+{"action": "body-update", "ticket": "12.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/302", "ts": "2026-10-15T09:40:36+0800"}
+{"action": "body-update", "ticket": "12.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/303", "ts": "2026-10-15T09:40:42+0800"}
+{"action": "body-update", "ticket": "12.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/304", "ts": "2026-10-15T09:40:48+0800"}
+{"action": "body-update", "ticket": "12.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/305", "ts": "2026-10-15T09:40:53+0800"}
+{"action": "body-update", "ticket": "13.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/306", "ts": "2026-10-15T09:40:55+0800"}
+{"action": "body-update", "ticket": "13.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/307", "ts": "2026-10-15T09:41:02+0800"}
+{"action": "body-update", "ticket": "13.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/308", "ts": "2026-10-15T09:41:07+0800"}
+{"action": "body-update", "ticket": "13.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/309", "ts": "2026-10-15T09:41:14+0800"}
+{"action": "body-update", "ticket": "14.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/310", "ts": "2026-10-15T09:41:20+0800"}
+{"action": "body-update", "ticket": "14.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/311", "ts": "2026-10-15T09:41:25+0800"}
+{"action": "body-update", "ticket": "14.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/312", "ts": "2026-10-15T09:41:30+0800"}
+{"action": "body-update", "ticket": "14.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/313", "ts": "2026-10-15T09:41:35+0800"}
+{"action": "body-update", "ticket": "15.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/314", "ts": "2026-10-15T09:41:38+0800"}
+{"action": "body-update", "ticket": "15.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/315", "ts": "2026-10-15T09:41:43+0800"}
+{"action": "body-update", "ticket": "15.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/316", "ts": "2026-10-15T09:41:46+0800"}
+{"action": "body-update", "ticket": "15.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/317", "ts": "2026-10-15T09:41:53+0800"}
+{"action": "body-update", "ticket": "15.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/318", "ts": "2026-10-15T09:41:58+0800"}
+{"action": "body-update", "ticket": "15.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/319", "ts": "2026-10-15T09:42:03+0800"}
+{"action": "body-update", "ticket": "15.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/320", "ts": "2026-10-15T09:42:08+0800"}
+{"action": "body-update", "ticket": "15.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/321", "ts": "2026-10-15T09:42:14+0800"}
+{"action": "body-update", "ticket": "16.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/322", "ts": "2026-10-15T09:42:20+0800"}
+{"action": "body-update", "ticket": "16.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/323", "ts": "2026-10-15T09:42:25+0800"}
+{"action": "body-update", "ticket": "16.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/324", "ts": "2026-10-15T09:42:28+0800"}
+{"action": "body-update", "ticket": "17.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/325", "ts": "2026-10-15T09:42:33+0800"}
+{"action": "body-update", "ticket": "17.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/326", "ts": "2026-10-15T09:42:39+0800"}
+{"action": "body-update", "ticket": "17.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/327", "ts": "2026-10-15T09:42:45+0800"}
+{"action": "body-update", "ticket": "17.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/328", "ts": "2026-10-15T09:42:51+0800"}
+{"action": "body-update", "ticket": "17.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/329", "ts": "2026-10-15T09:42:53+0800"}
+{"action": "body-update", "ticket": "17.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/330", "ts": "2026-10-15T09:42:56+0800"}
+{"action": "body-update", "ticket": "17.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/331", "ts": "2026-10-15T09:43:01+0800"}
+{"action": "body-update", "ticket": "17.8", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/332", "ts": "2026-10-15T09:43:06+0800"}
+{"action": "body-update", "ticket": "18.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/333", "ts": "2026-10-15T09:43:11+0800"}
+{"action": "body-update", "ticket": "18.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/334", "ts": "2026-10-15T09:43:15+0800"}
+{"action": "body-update", "ticket": "18.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/335", "ts": "2026-10-15T09:43:17+0800"}
+{"action": "body-update", "ticket": "18.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/336", "ts": "2026-10-15T09:43:22+0800"}
+{"action": "body-update", "ticket": "19.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/337", "ts": "2026-10-15T09:43:27+0800"}
+{"action": "body-update", "ticket": "19.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/338", "ts": "2026-10-15T09:43:30+0800"}
+{"action": "body-update", "ticket": "19.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/339", "ts": "2026-10-15T09:43:37+0800"}
+{"action": "body-update", "ticket": "19.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/340", "ts": "2026-10-15T09:43:43+0800"}
+{"action": "body-update", "ticket": "20.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/341", "ts": "2026-10-15T09:43:48+0800"}
+{"action": "body-update", "ticket": "20.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/342", "ts": "2026-10-15T09:43:51+0800"}
+{"action": "body-update", "ticket": "20.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/343", "ts": "2026-10-15T09:43:56+0800"}
+{"action": "body-update", "ticket": "20.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/344", "ts": "2026-10-15T09:43:59+0800"}
+{"action": "body-update", "ticket": "21.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/345", "ts": "2026-10-15T09:44:04+0800"}
+{"action": "body-update", "ticket": "21.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/346", "ts": "2026-10-15T09:44:07+0800"}
+{"action": "body-update", "ticket": "21.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/347", "ts": "2026-10-15T09:44:09+0800"}
+{"action": "body-update", "ticket": "21.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/348", "ts": "2026-10-15T09:44:15+0800"}
+{"action": "body-update", "ticket": "21.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/349", "ts": "2026-10-15T09:44:18+0800"}
+{"action": "body-update", "ticket": "21.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/350", "ts": "2026-10-15T09:44:23+0800"}
+{"action": "body-update", "ticket": "21.7", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/351", "ts": "2026-10-15T09:44:25+0800"}
+{"action": "body-update", "ticket": "22.1", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/352", "ts": "2026-10-15T09:44:30+0800"}
+{"action": "body-update", "ticket": "22.2", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/353", "ts": "2026-10-15T09:44:33+0800"}
+{"action": "body-update", "ticket": "22.3", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/354", "ts": "2026-10-15T09:44:35+0800"}
+{"action": "body-update", "ticket": "22.4", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/355", "ts": "2026-10-15T09:44:39+0800"}
+{"action": "body-update", "ticket": "22.5", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/356", "ts": "2026-10-15T09:44:44+0800"}
+{"action": "body-update", "ticket": "22.6", "ok": true, "note": "https://github.com/1123786563/OpenBot/issues/357", "ts": "2026-10-15T09:44:49+0800"}
+{"action": "native-probe", "ok": true, "note": "GET supported", "ts": "2026-10-15T09:45:00+0800"}
+{"action": "sub-issue", "ticket": "13.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:49:17+0800"}
+{"action": "sub-issue", "ticket": "13.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:49:25+0800"}
+{"action": "sub-issue", "ticket": "13.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:49:33+0800"}
+{"action": "sub-issue", "ticket": "14.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:49:41+0800"}
+{"action": "sub-issue", "ticket": "14.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:49:52+0800"}
+{"action": "sub-issue", "ticket": "14.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:00+0800"}
+{"action": "sub-issue", "ticket": "14.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:09+0800"}
+{"action": "sub-issue", "ticket": "15.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:17+0800"}
+{"action": "sub-issue", "ticket": "15.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:33+0800"}
+{"action": "sub-issue", "ticket": "15.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:41+0800"}
+{"action": "sub-issue", "ticket": "15.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:47+0800"}
+{"action": "sub-issue", "ticket": "15.5", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:50:56+0800"}
+{"action": "sub-issue", "ticket": "15.6", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:02+0800"}
+{"action": "sub-issue", "ticket": "15.7", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:13+0800"}
+{"action": "sub-issue", "ticket": "15.8", "ok": false, "note": "Post \"https://api.github.com/repos/1123786563/OpenBot/issues/5/sub_issues\": read tcp 172.19.0.0:51472->198.18.0.17:443: read: connection reset by peer", "ts": "2026-10-15T09:51:17+0800"}
+{"action": "blocked_by", "ticket": "15.8", "ok": false, "note": "15.7: Post \"https://api.github.com/repos/1123786563/OpenBot/issues/321/dependencies/blocked_by\": read tcp 172.19.0.0:51500->198.18.0.17:443: read: connection reset by peer", "ts": "2026-10-15T09:51:21+0800"}
+{"action": "sub-issue", "ticket": "16.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:25+0800"}
+{"action": "sub-issue", "ticket": "16.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:31+0800"}
+{"action": "sub-issue", "ticket": "16.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:37+0800"}
+{"action": "sub-issue", "ticket": "17.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:42+0800"}
+{"action": "sub-issue", "ticket": "17.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:47+0800"}
+{"action": "sub-issue", "ticket": "17.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:53+0800"}
+{"action": "sub-issue", "ticket": "17.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:51:59+0800"}
+{"action": "sub-issue", "ticket": "17.5", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:04+0800"}
+{"action": "sub-issue", "ticket": "17.6", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:09+0800"}
+{"action": "sub-issue", "ticket": "17.7", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:14+0800"}
+{"action": "sub-issue", "ticket": "17.8", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:21+0800"}
+{"action": "sub-issue", "ticket": "18.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:26+0800"}
+{"action": "sub-issue", "ticket": "18.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:32+0800"}
+{"action": "sub-issue", "ticket": "18.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:42+0800"}
+{"action": "sub-issue", "ticket": "18.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:47+0800"}
+{"action": "sub-issue", "ticket": "19.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:52:53+0800"}
+{"action": "sub-issue", "ticket": "19.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:02+0800"}
+{"action": "sub-issue", "ticket": "19.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:08+0800"}
+{"action": "sub-issue", "ticket": "19.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:15+0800"}
+{"action": "sub-issue", "ticket": "20.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:26+0800"}
+{"action": "sub-issue", "ticket": "20.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:37+0800"}
+{"action": "sub-issue", "ticket": "20.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:42+0800"}
+{"action": "sub-issue", "ticket": "20.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:50+0800"}
+{"action": "sub-issue", "ticket": "21.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:53:56+0800"}
+{"action": "sub-issue", "ticket": "21.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:01+0800"}
+{"action": "sub-issue", "ticket": "21.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:07+0800"}
+{"action": "sub-issue", "ticket": "21.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:13+0800"}
+{"action": "sub-issue", "ticket": "21.5", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:20+0800"}
+{"action": "sub-issue", "ticket": "21.6", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:31+0800"}
+{"action": "sub-issue", "ticket": "21.7", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:38+0800"}
+{"action": "sub-issue", "ticket": "22.1", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:54:43+0800"}
+{"action": "sub-issue", "ticket": "22.2", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:55:21+0800"}
+{"action": "sub-issue", "ticket": "22.3", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:55:25+0800"}
+{"action": "sub-issue", "ticket": "22.4", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:55:29+0800"}
+{"action": "sub-issue", "ticket": "22.5", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:55:32+0800"}
+{"action": "sub-issue", "ticket": "22.6", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T09:55:37+0800"}
+{"action": "sub-issue", "ticket": "15.8", "ok": false, "note": "gh: An error occurred while adding the sub-issue to the parent issue. Parent cannot have more than 100 sub-issues (HTTP 422)\n{\"message\":\"An error occurred while adding the sub-issue to the parent issue. Parent cannot hav", "ts": "2026-10-15T10:00:36+0800"}
+{"action": "native-probe", "ok": true, "note": "GET supported", "ts": "2026-10-15T10:00:37+0800"}

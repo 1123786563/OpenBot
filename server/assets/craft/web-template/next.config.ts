@@ -41,6 +41,16 @@ if (webappBasePath) {
   ];
 }
 
+// basePath prefixes <Link>, router pushes and assets — and NOTHING else. A raw
+// fetch("/api/tasks") in a client component is not prefixed, so it resolves against the HOST
+// origin and lands in OpenBot's own /api/** (authenticated with the person's cookie), while
+// the relative fetch("api/tasks") drops the /webapp segment because the document URL has no
+// trailing slash. Measured live: neither reaches the app the agent just built, so the preview
+// renders but nothing in it can be operated. `env` is the one mechanism Next inlines into both
+// the server and the client bundle, which is what lets the app build correct URLs at all —
+// lib/base-path.ts reads it and AGENTS.md tells the agent to route its API calls through it.
+nextConfig.env = { NEXT_PUBLIC_BASE_PATH: webappBasePath ?? "" };
+
 if (allowedDevOrigins.length > 0) {
   nextConfig.allowedDevOrigins = allowedDevOrigins;
 }

@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues and specs for this repository are tracked in GitHub Issues at `1123786563/openmuse`. See `docs/agents/issue-tracker.md`.
+Issues and specs for this repository are tracked in GitHub Issues at `1123786563/OpenBot`. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
