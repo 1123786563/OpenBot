@@ -235,7 +235,14 @@ function defineOwn(
 }
 
 function hasOwn(source: object, key: string): boolean {
-  return Object.hasOwn(source, key);
+  // The descriptor trap is attacker code as well: a throw reads as "not an own key" and the
+  // entry is skipped, never propagated — the export loop must not crash on hostile records
+  // (T05 review residual O2, closed in policy v5).
+  try {
+    return Object.hasOwn(source, key);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -290,16 +297,26 @@ function projectDeep(value: unknown, depth: number): SafeValue {
   if (depth > MAX_SAFE_RECORD_DEPTH)
     return { state: "omitted", reason: "unhandled_free_text" };
   if (Array.isArray(value)) {
-    const kept = value
-      .slice(0, MAX_SAFE_RECORD_KEYS)
-      .map((item) => projectDeep(item, depth + 1));
+    // An array is attacker code's surface too: slice and length run Proxy get traps the
+    // readOwn guard below never sees, so a throw degrades to omitted instead of aborting
+    // the caller's export loop (T05 review residual O1, closed in policy v5).
+    let kept: SafeValue[];
+    let length: number;
+    try {
+      kept = value
+        .slice(0, MAX_SAFE_RECORD_KEYS)
+        .map((item) => projectDeep(item, depth + 1));
+      length = value.length;
+    } catch {
+      return { state: "omitted", reason: "unhandled_free_text" };
+    }
     // A cap that drops items silently is a lie told as `projected` (review finding T05-F6).
-    if (value.length > MAX_SAFE_RECORD_KEYS) {
+    if (length > MAX_SAFE_RECORD_KEYS) {
       return {
         state: "truncated",
         value: kept,
         originalBytes: jsonBytes(value),
-        dropped: value.length - MAX_SAFE_RECORD_KEYS,
+        dropped: length - MAX_SAFE_RECORD_KEYS,
       };
     }
     return { state: "projected", value: kept };

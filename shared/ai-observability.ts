@@ -22,8 +22,11 @@
  * v4: endpoint host matching strips the DNS root-label trailing dot (`localhost.` is the
  * loopback host); record enumeration survives throwing ownKeys/getOwnPropertyDescriptor traps
  * and drops deny-matching Proxy key names.
+ * v5: the array branch survives throwing array traps (slice/length) and the allowlist loop
+ * survives a throwing own-key read — a hostile record degrades to omitted/skipped, never a
+ * crash out of the projection.
  */
-export const REDACTION_POLICY_VERSION = "opik-redaction/4";
+export const REDACTION_POLICY_VERSION = "opik-redaction/5";
 
 export type SafeContentState = "projected" | "omitted" | "truncated";
 
