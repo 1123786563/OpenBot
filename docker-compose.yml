@@ -361,6 +361,10 @@ services:
       - "127.0.0.1:${LANGGRAPH_PORT:-4201}:4201"
       - "[::1]:${LANGGRAPH_PORT:-4201}:4201"
     environment:
+      # Traces flow to Tempo only when the observability stack is up and this points at it;
+      # empty keeps the service recording locally without exporting (see shared/trace.ts). The
+      # framework's callbacks ride this same path — never an Opik SDK auto-upload of their own.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${CONTAINER_OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # The selected provider reads its own key. Models requiring the Responses API use
       # BOT_RESPONSES_API instead of changing the streaming loop here.
       BOT_PROVIDER: ${BOT_PROVIDER:-openai}

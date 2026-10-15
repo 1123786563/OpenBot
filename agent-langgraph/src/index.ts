@@ -10,6 +10,7 @@ import {
   StateGraph,
 } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
+import { context, trace } from "@opentelemetry/api";
 import { serve } from "bun";
 import { hasManagedAgentToken } from "../../shared/agent-authorisation";
 import { listenPort } from "../../shared/listen-port";
@@ -21,6 +22,12 @@ import {
   keyVariableFor,
   requiresResponsesApi,
 } from "../../shared/model-providers";
+import { initProcessTracing, withTraceFetch } from "../../shared/trace";
+import {
+  GovernedCallbackHandler,
+  governedRunSpan,
+  traceDeploymentToolCall,
+} from "./governed-tracing";
 import { toLangChainMessages } from "./history";
 import { readReasoningEffort } from "./model-options";
 import { streamRun } from "./stream";
@@ -351,10 +358,14 @@ function buildGraph(input: RunAgentInput) {
         (last.tool_calls ?? [])
           .filter((call) => ours.has(call.name))
           .map(async (call) => {
-            const text = await callTool(
-              run,
-              call.name,
-              (call.args ?? {}) as Record<string, unknown>,
+            // The governed tool span: the deployment's tools run here by hand, so no framework
+            // callback fires for them and this is the tool half of the parent-child shape.
+            const text = await traceDeploymentToolCall(call.name, call.id, () =>
+              callTool(
+                run,
+                call.name,
+                (call.args ?? {}) as Record<string, unknown>,
+              ),
             );
             return new ToolMessage({
               content: text,
@@ -392,6 +403,15 @@ function buildGraph(input: RunAgentInput) {
 
 async function runAgent(input: RunAgentInput): Promise<Response> {
   const encoder = new EventEncoder();
+  /*
+   * The run's governed span tree, opened before the stream so the framework's model, tool and
+   * retrieval spans hang from it through the ambient context. One handler per run: its run-id →
+   * span map must never outlive the run that built it. The span's capability attribute is
+   * `basic` today, because the internal step shape is not verified on a real instance yet —
+   * `FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE` flips only when T37 has verified it.
+   */
+  const callbacks = new GovernedCallbackHandler();
+  const governedRun = governedRunSpan(input);
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const utf8 = new TextEncoder();
@@ -405,16 +425,28 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
       } as BaseEvent);
 
       // The graph is built and its event stream opened inside `streamRun`, so a failure doing either
-      // is reported as RUN_ERROR through the same path as a failure mid-stream.
-      await streamRun(
-        async () =>
-          buildGraph(input).streamEvents(
-            { messages: toLangChainMessages(input, PROVIDER) },
-            { version: "v2" },
-          ),
-        input,
-        send,
-      );
+      // is reported as RUN_ERROR through the same path as a failure mid-stream. The run span ends on
+      // `streamRun`'s verdict — the actual outcome, not the moment bytes started leaving.
+      let outcome: "completed" | "failed";
+      try {
+        outcome = await context.with(
+          trace.setSpan(context.active(), governedRun.span),
+          () =>
+            streamRun(
+              async () =>
+                buildGraph(input).streamEvents(
+                  { messages: toLangChainMessages(input, PROVIDER) },
+                  { version: "v2", callbacks: [callbacks] },
+                ),
+              input,
+              send,
+            ),
+        );
+      } catch (error) {
+        governedRun.finish("failed");
+        throw error;
+      }
+      governedRun.finish(outcome);
 
       controller.close();
     },
@@ -429,10 +461,17 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
   });
 }
 
+// Trace context propagation and, when a collector is configured, trace export — the same one
+// provider every other process in this deployment rides (shared/trace.ts). Installed before the
+// listener so the first request already runs inside a span.
+initProcessTracing("agent-langgraph", process.env);
+
 serve({
   port: PORT,
   idleTimeout: 120,
-  async fetch(request) {
+  // Wrapped so an inbound `traceparent` continues the deployment's trace rather than rooting a
+  // fresh one, and so the run's spans carry the request's trace id out with them.
+  fetch: withTraceFetch(async (request) => {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
@@ -454,7 +493,7 @@ serve({
     }
 
     return Response.json({ error: "Not found." }, { status: 404 });
-  },
+  }),
 });
 
 console.info(`agent-langgraph listening on http://127.0.0.1:${PORT}/ag-ui`);
