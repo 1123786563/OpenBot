@@ -352,6 +352,38 @@ test("the state vocabulary is fail-closed at the database: no word but draft and
     }),
   );
   expect(refusedIncoherent.code).toBe("23514");
+
+  // The same lie in the other direction: a draft row carrying a config hash already claims
+  // the identity only a freeze may mint (L-2).
+  const refusedPrematureHash = await rejectionOf(() =>
+    database.insert(aiObservationExperiments).values({
+      id: randomUUID(),
+      scopeKey: scopeA.key,
+      actorId: scopeA.actorId,
+      botId: scopeA.botId,
+      name: `${prefix}-premature-hash`,
+      datasetVersionId: version.id,
+      datasetContentHash: version.contentHash,
+      config: freezeExperimentConfig(config),
+      state: "draft",
+      configHash: "premature",
+    }),
+  );
+  expect(refusedPrematureHash.code).toBe("23514");
+
+  // And the guard holds on UPDATE too: a live draft cannot quietly mint its identity.
+  const draft = await store.saveDraft(scopeA, {
+    name: `${prefix}-draft-hash`,
+    datasetVersionId: version.id,
+    config,
+  });
+  const refusedDraftUpdate = await rejectionOf(() =>
+    database
+      .update(aiObservationExperiments)
+      .set({ configHash: "premature" })
+      .where(eq(aiObservationExperiments.id, draft.id)),
+  );
+  expect(refusedDraftUpdate.code).toBe("23514");
 });
 
 test("a draft is mutable, then freezes once — and the frozen name refuses different content", async () => {

@@ -32,13 +32,12 @@ import { assertObservationScope } from "./scope";
  *
  * The state vocabulary is two words, fail-closed: `draft` rows are mutable while the
  * configuration is being composed, and the one legal transition is draft → frozen at submit.
- * A frozen row is immutable as a database fact (migration 0125's trigger), so submitting a
+ * A frozen row is immutable as a database fact (migration 0126's trigger), so submitting a
  * different configuration under a frozen experiment's name is refused, not merged.
  */
 
 export type ExperimentErrorCode =
   | "EXPERIMENT_INPUT_INVALID"
-  | "EXPERIMENT_NOT_FOUND"
   | "EXPERIMENT_DATASET_VERSION_NOT_FOUND"
   | "EXPERIMENT_STATE_INVALID";
 
