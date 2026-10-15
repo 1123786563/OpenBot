@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
@@ -64,6 +64,15 @@ export type RunBindingStore = {
   ): Promise<{ binding: RunBinding; adopted: boolean }>;
   /** Read one binding inside the caller's scope. Another scope's id is simply not found. */
   get(scope: ObservationScope, id: string): Promise<RunBinding | null>;
+  /**
+   * The most recent attempt of one run inside the caller's scope (T11's ownership
+   * seam for reads). Another scope's run — same run id, different scope key — is
+   * simply not found.
+   */
+  latestAttempt(
+    scope: ObservationScope,
+    runId: string,
+  ): Promise<RunBinding | null>;
 };
 
 const capabilities: readonly AiObservationBindingCapability[] = [
@@ -203,6 +212,23 @@ export function createRunBindingStore(db: Database): RunBindingStore {
             eq(aiObservationBindings.scopeKey, scope.key),
           ),
         );
+      return rows[0] ?? null;
+    },
+
+    async latestAttempt(scope, runId) {
+      assertObservationScope(scope);
+      reference(runId);
+      const rows = await db
+        .select()
+        .from(aiObservationBindings)
+        .where(
+          and(
+            eq(aiObservationBindings.scopeKey, scope.key),
+            eq(aiObservationBindings.runId, runId),
+          ),
+        )
+        .orderBy(desc(aiObservationBindings.updatedAt))
+        .limit(1);
       return rows[0] ?? null;
     },
   };
