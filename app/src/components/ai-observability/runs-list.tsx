@@ -47,7 +47,8 @@ import type { SafeValue } from "../../../../shared/ai-observability";
 /** One screenful; the window the server is willing to serve is 100, this asks for less. */
 const PAGE_LIMIT = 20;
 
-const STATE_ICONS: Record<
+/** The state's own icon, shared with the detail page — one vocabulary, two pages. */
+export const STATE_ICONS: Record<
   RunState,
   React.ComponentType<{ className?: string }>
 > = {
@@ -78,7 +79,8 @@ const TIME_FILTERS = [
 
 type TimeFilterId = (typeof TIME_FILTERS)[number]["id"];
 
-function formatDuration(ms: number): string {
+/** Duration as display text; the detail page renders the same words for the same number. */
+export function formatDuration(ms: number): string {
   if (ms < 1_000) return `${ms} ms`;
   const seconds = ms / 1_000;
   if (seconds < 60) return `${seconds.toFixed(1)} s`;
@@ -290,7 +292,7 @@ function FilterChip({
 }
 
 /** One availability sentence: a title and the description that qualifies it. */
-function StateNotice({
+export function StateNotice({
   className,
   description,
   title,

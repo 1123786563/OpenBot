@@ -257,6 +257,15 @@ describe("the five screen conditions stay five different sentences (acceptance 2
     expect(view.queryByText("No runs yet")).toBeNull();
   });
 
+  test("a malformed success body is the unavailable fault, never a rendered page (L-2)", async () => {
+    // A 200 whose body is not the list contract: key fields missing means the store
+    // failed to answer — an explicit fault, not rows of undefined.
+    runsHandler = () => Response.json({ runs: "no", pagination: null });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("No runs yet")).toBeNull();
+  });
+
   test("a still-syncing store says so beside the rows it does have", async () => {
     runsHandler = () => Response.json(listBody([summary()], { syncing: true }));
     const view = draw();

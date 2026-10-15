@@ -3,11 +3,11 @@
     "namespace": "ai-observability-runs",
     "ownedBy": "#18 #19 #24 (run list, run detail, step tree)"
   },
-  "placeholder": {
-    "title": "运行观测",
-    "description": "观测存储接入后，这里会列出该 Bot 的运行记录。Bot 本身没有缺失任何东西。"
-  },
   "availability": {
+    "notFound": {
+      "title": "没有这条运行",
+      "description": "这条运行不在你可管理的 Bot 记录中，或从未存在。已移交或移除的运行不再于此可见。"
+    },
     "disabled": {
       "title": "运行追踪未开启",
       "description": "该部署未启用观测，因此不会记录运行。Bot 的既有执行不受影响。"
@@ -49,6 +49,42 @@
     "title": "运行记录",
     "description": "该 Bot 的运行记录，以观测存储持有的内容为准。"
   },
+  "detail": {
+    "title": "运行详情",
+    "description": "该 Bot 的一次运行记录，以观测存储持有的内容为准。",
+    "backToList": "返回运行记录",
+    "section": {
+      "overview": "概览",
+      "availability": "可用性",
+      "references": "引用",
+      "metadata": "元数据",
+      "steps": "步骤"
+    },
+    "facts": {
+      "state": "状态",
+      "started": "开始时间",
+      "duration": "耗时",
+      "usage": "Token 用量",
+      "usageDetail": "提示 {{prompt}} · 补全 {{completion}}",
+      "recorded": "记录时间",
+      "expires": "保留至",
+      "coverage": "覆盖",
+      "upstreamLink": "上游记录",
+      "updated": "最近更新",
+      "run": "运行",
+      "attempt": "尝试",
+      "trace": "追踪",
+      "opikTrace": "上游追踪",
+      "notLinked": "尚未关联"
+    },
+    "upstream": {
+      "present": "已关联——观测存储持有该运行的上游记录。",
+      "absentTitle": "记录在可服务窗口之外",
+      "absentDescription": "该运行已在上游对账，但存储只服务最近的运行，因此其上游详情无法展示。运行本身不受影响。"
+    },
+    "metadataEmpty": "该运行没有可投影的元数据。",
+    "stepsPlaceholder": "步骤记录功能落地后，步骤时间线将在此渲染。在那之前，本页只展示整次运行的事实。"
+  },
   "states": {
     "running": "运行中",
     "completed": "已完成",
@@ -74,9 +110,7 @@
     "truncated": "已截断"
   },
   "filter": {
-    "state": "状态",
     "stateAll": "全部状态",
-    "time": "时间",
     "timeAll": "任意时间",
     "timeHour": "最近 1 小时",
     "timeDay": "最近 24 小时",

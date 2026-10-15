@@ -3,11 +3,11 @@
     "namespace": "ai-observability-runs",
     "ownedBy": "#18 #19 #24 (run list, run detail, step tree)"
   },
-  "placeholder": {
-    "title": "Run observability",
-    "description": "Recorded runs of this Bot will be listed here once the observability store is connected. Nothing is missing from the Bot itself."
-  },
   "availability": {
+    "notFound": {
+      "title": "No such run",
+      "description": "This run is not recorded for a Bot you manage, or it never existed. A transferred or removed run is no longer visible here."
+    },
     "disabled": {
       "title": "Run tracing is off",
       "description": "Observability is disabled for this deployment, so no runs are recorded. Existing Bot execution is unaffected."
@@ -49,6 +49,42 @@
     "title": "Run history",
     "description": "Recorded runs of this Bot, as the observability store holds them."
   },
+  "detail": {
+    "title": "Run detail",
+    "description": "One recorded run of this Bot, as the observability store holds it.",
+    "backToList": "Back to run history",
+    "section": {
+      "overview": "Overview",
+      "availability": "Availability",
+      "references": "References",
+      "metadata": "Metadata",
+      "steps": "Steps"
+    },
+    "facts": {
+      "state": "State",
+      "started": "Started",
+      "duration": "Duration",
+      "usage": "Token usage",
+      "usageDetail": "Prompt {{prompt}} · Completion {{completion}}",
+      "recorded": "Recorded",
+      "expires": "Retained until",
+      "coverage": "Coverage",
+      "upstreamLink": "Upstream record",
+      "updated": "Last update",
+      "run": "Run",
+      "attempt": "Attempt",
+      "trace": "Trace",
+      "opikTrace": "Upstream trace",
+      "notLinked": "Not linked yet"
+    },
+    "upstream": {
+      "present": "Linked — the store holds this run's upstream record.",
+      "absentTitle": "Record outside the recent window",
+      "absentDescription": "This run reconciled upstream, but the store only serves the most recent runs, so its upstream detail cannot be shown. The run itself is unaffected."
+    },
+    "metadataEmpty": "No metadata was projected for this run.",
+    "stepsPlaceholder": "The step timeline will render here once step recording ships. Until then this page shows whole-run facts only."
+  },
   "states": {
     "running": "Running",
     "completed": "Completed",
@@ -74,9 +110,7 @@
     "truncated": "Truncated"
   },
   "filter": {
-    "state": "State",
     "stateAll": "All states",
-    "time": "Time",
     "timeAll": "Any time",
     "timeHour": "Last hour",
     "timeDay": "Last 24 hours",
