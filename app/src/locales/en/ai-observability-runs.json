@@ -39,6 +39,10 @@
     "unavailable": {
       "title": "Upstream unavailable",
       "description": "The observability store did not answer. Your conversation result was not affected. This is a fault, not an empty list."
+    },
+    "tokenUnavailable": {
+      "title": "Token usage unavailable",
+      "description": "Token usage could not be read for this run. Unavailable is not zero — the run is not counted as 0 tokens."
     }
   }
 }

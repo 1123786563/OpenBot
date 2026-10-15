@@ -20,7 +20,7 @@
       "title": "You cannot run this experiment",
       "description": "Experiments follow the Bot's management rights and are re-checked before every sample."
     },
-    "basic": {
+    "unscored": {
       "title": "Score unavailable for this sample",
       "description": "The sample produced no score. A missing score is not a zero, and it is excluded from the average rather than counted as a failure."
     },
