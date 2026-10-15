@@ -12,7 +12,7 @@
  */
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../../auth/guards";
-import { resolveObservationBot, type BotManagementCheck } from "../context";
+import { type BotManagementCheck, resolveObservationBot } from "../context";
 
 export type AiObservabilityDeps = {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;

@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
-import { createApp } from "../src/app";
-import { loadConfig } from "../src/config";
-import { testEnvironment } from "./support/environment";
-import {
-  OBSERVATION_ACCESS_DENIED,
-  OBSERVATION_BOT_REQUIRED,
-  resolveObservationBot,
-  type BotManagementCheck,
-} from "../src/ai-observability/context";
-import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { canManageAgent } from "../src/agents/profile-policy";
 import type { AgentProfile } from "../src/agents/profile-types";
+import {
+  type BotManagementCheck,
+  OBSERVATION_BOT_NOT_FOUND,
+  OBSERVATION_BOT_REQUIRED,
+  resolveObservationBot,
+} from "../src/ai-observability/context";
+import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
+import { createApp } from "../src/app";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import { loadConfig } from "../src/config";
+import { testEnvironment } from "./support/environment";
 
 const owner = { id: "user-owner", role: "user" } as const;
 const stranger = { id: "user-stranger", role: "user" } as const;
@@ -94,8 +94,8 @@ describe("resolveObservationBot", () => {
     );
     expect(result).toEqual({
       ok: false,
-      status: 403,
-      error: OBSERVATION_ACCESS_DENIED,
+      status: 404,
+      error: OBSERVATION_BOT_NOT_FOUND,
     });
   });
 
@@ -108,8 +108,8 @@ describe("resolveObservationBot", () => {
     );
     expect(result).toEqual({
       ok: false,
-      status: 403,
-      error: OBSERVATION_ACCESS_DENIED,
+      status: 404,
+      error: OBSERVATION_BOT_NOT_FOUND,
     });
   });
 
@@ -121,8 +121,8 @@ describe("resolveObservationBot", () => {
     );
     expect(result).toEqual({
       ok: false,
-      status: 403,
-      error: OBSERVATION_ACCESS_DENIED,
+      status: 404,
+      error: OBSERVATION_BOT_NOT_FOUND,
     });
   });
 
@@ -193,7 +193,7 @@ describe("GET /bots/:botId/access", () => {
     });
   });
 
-  test("a stranger is refused with 403 and the store is never asked for runs", async () => {
+  test("a stranger is refused with 404 and the store is never asked for runs", async () => {
     const app = appFor(
       [profile()],
       actorVariables(stranger as unknown as AuthenticatedActor),
@@ -201,8 +201,8 @@ describe("GET /bots/:botId/access", () => {
     const response = await app.request(
       "http://openbot.test/bots/agent-1/access",
     );
-    expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe(OBSERVATION_ACCESS_DENIED);
+    expect(response.status).toBe(404);
+    expect((await response.json()).error).toBe(OBSERVATION_BOT_NOT_FOUND);
   });
 
   test("a public Bot the caller cannot manage is still refused", async () => {
@@ -212,7 +212,7 @@ describe("GET /bots/:botId/access", () => {
     );
     expect(
       (await app.request("http://openbot.test/bots/agent-1/access")).status,
-    ).toBe(403);
+    ).toBe(404);
   });
 
   test("a missing bot id answers 404 with an explainable error", async () => {
@@ -234,19 +234,76 @@ describe("mount seam", () => {
     expect(response.status).toBe(404);
   });
 
-  test("the module is reachable under /api/ai-observability when supplied", async () => {
-    const app = new Hono<{ Variables: AppVariables }>();
-    app.route(
-      "/api/ai-observability",
-      createAiObservabilityRoutes({
-        requireUser: actorVariables(owner as unknown as AuthenticatedActor),
-        canManageBot: managementCheck([profile()]),
-      }),
+  test("the module is reachable through a real createApp when supplied", async () => {
+    // The actual mount line, not a bare Hono: app.ts routes the module under
+    // /api/ai-observability exactly when `aiObservability` is present. The seam
+    // tail is one named object 44 positionals past the config, spelled out the
+    // way request-tracking.test.ts spells it — if a parameter is ever inserted
+    // before the seam, typecheck moves this object onto the wrong slot and
+    // fails here, the protection ready.test.ts's createApp.length offset no
+    // longer has (identity and identityGithubCallback trail openMuseSeams).
+    const app = createApp(
+      loadConfig(testEnvironment()),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        aiObservability: createAiObservabilityRoutes({
+          requireUser: actorVariables(owner as unknown as AuthenticatedActor),
+          canManageBot: managementCheck([profile()]),
+        }),
+      },
     );
     const response = await app.request(
       "http://openbot.test/api/ai-observability/bots/agent-1/access",
     );
     expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      botId: "agent-1",
+      observationAccess: true,
+      capability: "none",
+    });
   });
 
   test("canManageBot refuses a public Bot the caller does not own", async () => {
