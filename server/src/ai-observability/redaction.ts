@@ -398,6 +398,16 @@ export function projectSafeMetadata(
 }
 
 /**
+ * Structured fixtures whose shape the case author defines (Issue #25). A dataset case's tool
+ * fixture is not SDK metadata — its keys are not on any allowlist — but it is still content on
+ * its way into a frozen, exportable snapshot, so it gets the deep projection: keys and values
+ * through the deny scan, the record caps, and no assumption about what the author's shape is.
+ */
+export function projectSafeFixture(fixture: unknown): SafeValue {
+  return projectDeep(fixture, 1);
+}
+
+/**
  * Exceptions. The stack trace never leaves the process: it is full of file paths, connection
  * strings and occasionally the argument values that caused the failure. A non-Error answers with
  * its class name, because "what kind of thing failed" is safe and its content is not.
