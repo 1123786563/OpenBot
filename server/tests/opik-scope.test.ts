@@ -235,6 +235,12 @@ describe("two trusted scopes over identical resource ids", () => {
     expect(a.project).not.toBe(b.project);
   });
 
+  test("the storage fingerprint is 16 hex chars of the scope key hash", () => {
+    const { workspace, project } = resolveStorageLocator(scopeAlpha);
+    expect(workspace).toMatch(/-[0-9a-f]{16}$/);
+    expect(project).toMatch(/-[0-9a-f]{16}-\d+$/);
+  });
+
   test("a cursor minted under one scope is refused by the other", () => {
     const cursor = bindCursor(scopeAlpha, "page-2");
     expect(readCursor(scopeAlpha, cursor)).toBe("page-2");
@@ -248,6 +254,14 @@ describe("two trusted scopes over identical resource ids", () => {
     const after = workbench({ epoch: 2 });
     const cursor = bindCursor(before, "page-2");
     expect(() => readCursor(after, cursor)).toThrow();
+  });
+
+  test("a trailing garbage segment is refused, not silently dropped", () => {
+    const cursor = bindCursor(scopeAlpha, "page-2");
+    expect(readCursor(scopeAlpha, cursor)).toBe("page-2");
+    expect(() => readCursor(scopeAlpha, `${cursor}.extra`)).toThrow(
+      new ObservationScopeError("OWNERSHIP_REQUIRED", 403),
+    );
   });
 
   test("a tampered cursor payload is refused", () => {
