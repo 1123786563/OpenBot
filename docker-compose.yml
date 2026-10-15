@@ -45,9 +45,10 @@ services:
     # is what `pull_policy` decides here (and what it does not guarantee).
     image: ${SERVER_IMAGE:-openbot-server:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-build}
-    command: ["bun", "x", "drizzle-kit", "migrate", "--config=drizzle.config.ts"]
+    command: ["bun", "scripts/migrate.ts"]
     environment:
       DATABASE_URL: postgres://openbot:openbot@postgres:5432/openbot
+      OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES: "on"
     depends_on:
       postgres:
         condition: service_healthy

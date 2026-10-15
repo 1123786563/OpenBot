@@ -1,6 +1,6 @@
 {
-  "id": "7a7b8a8d-64a9-4765-be7e-84f5a668cfbb",
-  "prevId": "b7f7e962-36d1-4295-92ec-af8e374bde67",
+  "id": "b0449c77-369a-4b45-bef0-b46bce7058c8",
+  "prevId": "61a1e4ce-66c4-46bc-a4cd-c67886291198",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1918,12 +1918,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "template_key": {
-          "name": "template_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp with time zone",
@@ -1963,27 +1957,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_profiles_owner_template_uq": {
-          "name": "agent_profiles_owner_template_uq",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "template_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2414,330 +2387,6 @@
         "craft_messages_type_check": {
           "name": "craft_messages_type_check",
           "value": "\"craft_messages\".\"type\" IN ('system', 'user', 'assistant', 'tool_call_response', 'user_reminder')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.craft_scheduled_task_runs": {
-      "name": "craft_scheduled_task_runs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
-        },
-        "trigger_source": {
-          "name": "trigger_source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "skip_reason": {
-          "name": "skip_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error_class": {
-          "name": "error_class",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error_detail": {
-          "name": "error_detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "craft_scheduled_task_runs_task_started_idx": {
-          "name": "craft_scheduled_task_runs_task_started_idx",
-          "columns": [
-            {
-              "expression": "task_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "craft_scheduled_task_runs_status_idx": {
-          "name": "craft_scheduled_task_runs_status_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "craft_scheduled_task_runs_session_idx": {
-          "name": "craft_scheduled_task_runs_session_idx",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "craft_scheduled_task_runs_task_id_craft_scheduled_tasks_id_fk": {
-          "name": "craft_scheduled_task_runs_task_id_craft_scheduled_tasks_id_fk",
-          "tableFrom": "craft_scheduled_task_runs",
-          "tableTo": "craft_scheduled_tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "craft_scheduled_task_runs_session_id_craft_sessions_id_fk": {
-          "name": "craft_scheduled_task_runs_session_id_craft_sessions_id_fk",
-          "tableFrom": "craft_scheduled_task_runs",
-          "tableTo": "craft_sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "craft_scheduled_task_runs_status_check": {
-          "name": "craft_scheduled_task_runs_status_check",
-          "value": "\"craft_scheduled_task_runs\".\"status\" IN ('queued', 'running', 'succeeded', 'failed', 'skipped', 'awaiting_approval')"
-        },
-        "craft_scheduled_task_runs_trigger_check": {
-          "name": "craft_scheduled_task_runs_trigger_check",
-          "value": "\"craft_scheduled_task_runs\".\"trigger_source\" IN ('scheduled', 'manual_run_now')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.craft_scheduled_tasks": {
-      "name": "craft_scheduled_tasks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cron_expression": {
-          "name": "cron_expression",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "editor_mode": {
-          "name": "editor_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "next_run_at": {
-          "name": "next_run_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted": {
-          "name": "deleted",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "craft_scheduled_tasks_dispatch_idx": {
-          "name": "craft_scheduled_tasks_dispatch_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "deleted",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_run_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "craft_scheduled_tasks_user_created_idx": {
-          "name": "craft_scheduled_tasks_user_created_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "craft_scheduled_tasks_user_id_users_id_fk": {
-          "name": "craft_scheduled_tasks_user_id_users_id_fk",
-          "tableFrom": "craft_scheduled_tasks",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "craft_scheduled_tasks_status_check": {
-          "name": "craft_scheduled_tasks_status_check",
-          "value": "\"craft_scheduled_tasks\".\"status\" IN ('active', 'paused')"
-        },
-        "craft_scheduled_tasks_editor_mode_check": {
-          "name": "craft_scheduled_tasks_editor_mode_check",
-          "value": "\"craft_scheduled_tasks\".\"editor_mode\" IN ('interval', 'daily_weekly', 'advanced')"
         }
       },
       "isRLSEnabled": false
@@ -6121,252 +5770,6 @@
           "tableTo": "agents",
           "columnsFrom": [
             "formed_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.openmuse_file_owner_disables": {
-      "name": "openmuse_file_owner_disables",
-      "schema": "",
-      "columns": {
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "disabled_at": {
-          "name": "disabled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "openmuse_file_owner_disables_owner_user_id_users_id_fk": {
-          "name": "openmuse_file_owner_disables_owner_user_id_users_id_fk",
-          "tableFrom": "openmuse_file_owner_disables",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.openmuse_file_versions": {
-      "name": "openmuse_file_versions",
-      "schema": "",
-      "columns": {
-        "version_id": {
-          "name": "version_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "file_id": {
-          "name": "file_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "byte_path": {
-          "name": "byte_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "openmuse_file_versions_file_idx": {
-          "name": "openmuse_file_versions_file_idx",
-          "columns": [
-            {
-              "expression": "file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "openmuse_file_versions_file_id_openmuse_files_id_fk": {
-          "name": "openmuse_file_versions_file_id_openmuse_files_id_fk",
-          "tableFrom": "openmuse_file_versions",
-          "tableTo": "openmuse_files",
-          "columnsFrom": [
-            "file_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.openmuse_files": {
-      "name": "openmuse_files",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mime_type": {
-          "name": "mime_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "size": {
-          "name": "size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "openmuse_files_owner_list_idx": {
-          "name": "openmuse_files_owner_list_idx",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "openmuse_files_owner_idem_uq": {
-          "name": "openmuse_files_owner_idem_uq",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"openmuse_files\".\"deleted_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "openmuse_files_owner_user_id_users_id_fk": {
-          "name": "openmuse_files_owner_user_id_users_id_fk",
-          "tableFrom": "openmuse_files",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
           ],
           "columnsTo": [
             "id"
@@ -10476,8 +9879,8 @@
         }
       },
       "foreignKeys": {
-        "billing_subscriptions_external_customer_id_billing_customers_external_id_fk": {
-          "name": "billing_subscriptions_external_customer_id_billing_customers_external_id_fk",
+        "billing_subscriptions_ext_customer_id_fk": {
+          "name": "billing_subscriptions_ext_customer_id_fk",
           "tableFrom": "billing_subscriptions",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -10833,8 +10236,8 @@
         }
       },
       "foreignKeys": {
-        "credit_grants_external_customer_id_billing_customers_external_id_fk": {
-          "name": "credit_grants_external_customer_id_billing_customers_external_id_fk",
+        "credit_grants_ext_customer_id_fk": {
+          "name": "credit_grants_ext_customer_id_fk",
           "tableFrom": "credit_grants",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -10997,8 +10400,8 @@
         }
       },
       "foreignKeys": {
-        "credit_ledger_external_customer_id_billing_customers_external_id_fk": {
-          "name": "credit_ledger_external_customer_id_billing_customers_external_id_fk",
+        "credit_ledger_ext_customer_id_fk": {
+          "name": "credit_ledger_ext_customer_id_fk",
           "tableFrom": "credit_ledger",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -11035,6 +10438,399 @@
         "credit_ledger_applied_check": {
           "name": "credit_ledger_applied_check",
           "value": "\"credit_ledger\".\"applied\" >= 0 AND \"credit_ledger\".\"applied\" <= \"credit_ledger\".\"credits\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.credit_charge_remainders": {
+      "name": "credit_charge_remainders",
+      "schema": "",
+      "columns": {
+        "external_customer_id": {
+          "name": "external_customer_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "numerator": {
+          "name": "numerator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "denominator": {
+          "name": "denominator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "credit_charge_remainders_ext_customer_id_fk": {
+          "name": "credit_charge_remainders_ext_customer_id_fk",
+          "tableFrom": "credit_charge_remainders",
+          "tableTo": "billing_customers",
+          "columnsFrom": [
+            "external_customer_id"
+          ],
+          "columnsTo": [
+            "external_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "credit_charge_remainders_shape_check": {
+          "name": "credit_charge_remainders_shape_check",
+          "value": "\"credit_charge_remainders\".\"numerator\" ~ '^[0-9]+$' AND \"credit_charge_remainders\".\"denominator\" ~ '^[1-9][0-9]*$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.credit_reservation_allocations": {
+      "name": "credit_reservation_allocations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "reservation_id": {
+          "name": "reservation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed": {
+          "name": "consumed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "credit_reservation_allocations_reservation_grant_idx": {
+          "name": "credit_reservation_allocations_reservation_grant_idx",
+          "columns": [
+            {
+              "expression": "reservation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "grant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "credit_reservation_allocations_grant_idx": {
+          "name": "credit_reservation_allocations_grant_idx",
+          "columns": [
+            {
+              "expression": "grant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "credit_charge_alloc_res_id_fk": {
+          "name": "credit_charge_alloc_res_id_fk",
+          "tableFrom": "credit_reservation_allocations",
+          "tableTo": "credit_reservations",
+          "columnsFrom": [
+            "reservation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "credit_reservation_allocations_grant_id_credit_grants_id_fk": {
+          "name": "credit_reservation_allocations_grant_id_credit_grants_id_fk",
+          "tableFrom": "credit_reservation_allocations",
+          "tableTo": "credit_grants",
+          "columnsFrom": [
+            "grant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "credit_reservation_allocations_amount_check": {
+          "name": "credit_reservation_allocations_amount_check",
+          "value": "\"credit_reservation_allocations\".\"amount\" > 0"
+        },
+        "credit_reservation_allocations_consumed_check": {
+          "name": "credit_reservation_allocations_consumed_check",
+          "value": "\"credit_reservation_allocations\".\"consumed\" >= 0 AND \"credit_reservation_allocations\".\"consumed\" <= \"credit_reservation_allocations\".\"amount\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.credit_reservations": {
+      "name": "credit_reservations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "external_customer_id": {
+          "name": "external_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "maximum": {
+          "name": "maximum",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'reserved'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actual_numerator": {
+          "name": "actual_numerator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actual_denominator": {
+          "name": "actual_denominator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "charged": {
+          "name": "charged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "remainder_numerator": {
+          "name": "remainder_numerator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "remainder_denominator": {
+          "name": "remainder_denominator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied": {
+          "name": "applied",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "released": {
+          "name": "released",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "release_reason": {
+          "name": "release_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ledger_id": {
+          "name": "ledger_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "terminal_at": {
+          "name": "terminal_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "credit_reservations_idempotency_key_unique_idx": {
+          "name": "credit_reservations_idempotency_key_unique_idx",
+          "columns": [
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "credit_reservations_customer_status_idx": {
+          "name": "credit_reservations_customer_status_idx",
+          "columns": [
+            {
+              "expression": "external_customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "credit_reservations_status_expires_idx": {
+          "name": "credit_reservations_status_expires_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "credit_reservations_ext_customer_id_fk": {
+          "name": "credit_reservations_ext_customer_id_fk",
+          "tableFrom": "credit_reservations",
+          "tableTo": "billing_customers",
+          "columnsFrom": [
+            "external_customer_id"
+          ],
+          "columnsTo": [
+            "external_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "credit_reservations_ledger_id_credit_ledger_id_fk": {
+          "name": "credit_reservations_ledger_id_credit_ledger_id_fk",
+          "tableFrom": "credit_reservations",
+          "tableTo": "credit_ledger",
+          "columnsFrom": [
+            "ledger_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "credit_reservations_status_check": {
+          "name": "credit_reservations_status_check",
+          "value": "\"credit_reservations\".\"status\" IN ('reserved', 'settled', 'released')"
+        },
+        "credit_reservations_maximum_check": {
+          "name": "credit_reservations_maximum_check",
+          "value": "\"credit_reservations\".\"maximum\" > 0"
+        },
+        "credit_reservations_terminal_check": {
+          "name": "credit_reservations_terminal_check",
+          "value": "(\"credit_reservations\".\"status\" = 'reserved' AND \"credit_reservations\".\"terminal_at\" IS NULL) OR (\"credit_reservations\".\"status\" <> 'reserved' AND \"credit_reservations\".\"terminal_at\" IS NOT NULL)"
+        },
+        "credit_reservations_settled_check": {
+          "name": "credit_reservations_settled_check",
+          "value": "\"credit_reservations\".\"status\" <> 'settled' OR (\"credit_reservations\".\"actual_numerator\" ~ '^[0-9]+$' AND \"credit_reservations\".\"actual_denominator\" ~ '^[0-9]+$' AND \"credit_reservations\".\"actual_denominator\" !~ '^0+$' AND \"credit_reservations\".\"charged\" >= 0 AND \"credit_reservations\".\"applied\" >= 0 AND \"credit_reservations\".\"applied\" <= \"credit_reservations\".\"maximum\" AND \"credit_reservations\".\"released\" = \"credit_reservations\".\"maximum\" - \"credit_reservations\".\"applied\")"
         }
       },
       "isRLSEnabled": false
@@ -12254,6 +12050,13 @@
           "primaryKey": true,
           "notNull": true
         },
+        "deployment_scope": {
+          "name": "deployment_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
         "plan_code": {
           "name": "plan_code",
           "type": "text",
@@ -12377,17 +12180,11 @@
           "method": "btree",
           "with": {}
         },
-        "payment_orders_pending_pair_unique_idx": {
-          "name": "payment_orders_pending_pair_unique_idx",
+        "payment_orders_pending_scope_unique_idx": {
+          "name": "payment_orders_pending_scope_unique_idx",
           "columns": [
             {
-              "expression": "plan_code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider",
+              "expression": "deployment_scope",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -12445,6 +12242,192 @@
         "payment_orders_currency_check": {
           "name": "payment_orders_currency_check",
           "value": "\"payment_orders\".\"currency\" = 'CNY'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.usage_outbox": {
+      "name": "usage_outbox",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_customer_id": {
+          "name": "external_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transaction_id": {
+          "name": "transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client": {
+          "name": "client",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lago_status": {
+          "name": "lago_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "credits_status": {
+          "name": "credits_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "lago_last_error_code": {
+          "name": "lago_last_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credits_last_error_code": {
+          "name": "credits_last_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "usage_outbox_transaction_id_unique_idx": {
+          "name": "usage_outbox_transaction_id_unique_idx",
+          "columns": [
+            {
+              "expression": "transaction_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "usage_outbox_lago_pending_created_idx": {
+          "name": "usage_outbox_lago_pending_created_idx",
+          "columns": [
+            {
+              "expression": "lago_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "usage_outbox_credits_pending_created_idx": {
+          "name": "usage_outbox_credits_pending_created_idx",
+          "columns": [
+            {
+              "expression": "credits_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "usage_outbox_source_check": {
+          "name": "usage_outbox_source_check",
+          "value": "\"usage_outbox\".\"source\" IN ('llm', 'code_run')"
+        },
+        "usage_outbox_input_tokens_check": {
+          "name": "usage_outbox_input_tokens_check",
+          "value": "\"usage_outbox\".\"input_tokens\" >= 0"
+        },
+        "usage_outbox_output_tokens_check": {
+          "name": "usage_outbox_output_tokens_check",
+          "value": "\"usage_outbox\".\"output_tokens\" >= 0"
+        },
+        "usage_outbox_lago_status_check": {
+          "name": "usage_outbox_lago_status_check",
+          "value": "\"usage_outbox\".\"lago_status\" IN ('pending', 'delivered')"
+        },
+        "usage_outbox_credits_status_check": {
+          "name": "usage_outbox_credits_status_check",
+          "value": "\"usage_outbox\".\"credits_status\" IN ('pending', 'delivered')"
         }
       },
       "isRLSEnabled": false
