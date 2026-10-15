@@ -65,6 +65,7 @@ import {
 import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
 import { createOpikHealthService } from "./ai-observability/health";
+import { createModelSpanRecorder } from "./ai-observability/model-span";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
@@ -199,6 +200,7 @@ import {
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
+  setBuiltinModelSpanObserver,
   setModelUsageGate,
   type ToolSelection,
 } from "./copilot";
@@ -5090,18 +5092,46 @@ const aiObservabilityCanManageBot: BotManagementCheck = async (
   return profile && canManageAgent(actor, profile) ? profile : null;
 };
 
+// Review F-1: without a health service the enabled state is invisible over
+// HTTP. The port stays null until a manifest-verified adapter is wired into
+// this deployment, so an enabled configuration honestly answers
+// capability_missing — and with no port there is no transport at all.
+const opikHealthService = createOpikHealthService({
+  config: () => opikConfigFromEnv(process.env),
+  port: null,
+});
 const aiObservability = createAiObservabilityRoutes({
   requireUser: createDeploymentRequireUser(config, auth, roleRepository),
   canManageBot: aiObservabilityCanManageBot,
-  // Review F-1: without a health service the enabled state is invisible over
-  // HTTP. The port stays null until a manifest-verified adapter is wired into
-  // this deployment, so an enabled configuration honestly answers
-  // capability_missing — and with no port there is no transport at all.
-  healthService: createOpikHealthService({
-    config: () => opikConfigFromEnv(process.env),
-    port: null,
-  }),
+  healthService: opikHealthService,
 });
+
+/*
+ * Built-in model-span recording (Issue #20 / T14), on the same inert-until-proven
+ * footing as the health service above: one recorder whose only egress is the shared
+ * bounded write queue. The observer is registered only when the boot-time config
+ * snapshot says enabled — a disabled deployment keeps the product path untouched (no
+ * prompt serialization, no delta accumulation). The built-in path carries no trusted
+ * observation scope yet, so facts arrive scope-less and the recorder submits nothing
+ * upstream; the run-association ticket owns threading the scope, after which these
+ * spans flow through the queue unchanged.
+ */
+const opikModelSpans = createModelSpanRecorder({
+  healthService: opikHealthService,
+});
+if (opikConfigFromEnv(process.env).enabled) {
+  setBuiltinModelSpanObserver((fact) =>
+    opikModelSpans.record({
+      occurredAt: fact.startedAt,
+      endedAt: fact.endedAt,
+      provider: fact.provider,
+      modelId: fact.modelId,
+      ending: fact.ending,
+      input: fact.input,
+      output: fact.output,
+    }),
+  );
+}
 
 /*
  * The OpenMuse private Goal seam (P01, contracts §7): owner CRUD at
