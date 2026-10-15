@@ -39,6 +39,10 @@
     "unavailable": {
       "title": "上游不可用",
       "description": "可观测性存储没有响应。你的对话结果未受影响。这是故障，不是空列表。"
+    },
+    "tokenUnavailable": {
+      "title": "用量不可用（不计为 0）",
+      "description": "无法读取这次运行的 token 用量。不可用不是 0，不按 0 token 计入。"
     }
   }
 }

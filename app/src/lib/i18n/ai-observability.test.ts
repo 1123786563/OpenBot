@@ -26,6 +26,26 @@ const STATES = [
   "unavailable",
 ] as const;
 
+/**
+ * Two deliberate per-namespace deviations:
+ * - evaluations' fourth slot is `unscored` — the sample produced no score (Spec §8), and a
+ *   missing score is not a zero. `basic` keeps its capability meaning ("only what OpenBot
+ *   itself observed") in every namespace that has it, so the word is never overloaded.
+ * - runs additionally carries `tokenUnavailable` (Spec §9 "token 不可用"): usage that could
+ *   not be read must not be reported as 0.
+ */
+const STATES_BY_NS: Record<string, readonly string[]> = {
+  "ai-observability-runs": [...STATES, "tokenUnavailable"],
+  "ai-observability-datasets": STATES,
+  "ai-observability-evaluations": [
+    ...STATES.filter((state) => state !== "basic"),
+    "unscored",
+  ],
+  "ai-observability-admin": STATES,
+};
+
+type Availability = Record<string, { title: string; description: string }>;
+
 const BUNDLES = [
   { ns: "ai-observability-runs", en: enRuns, zh: zhRuns },
   { ns: "ai-observability-datasets", en: enDatasets, zh: zhDatasets },
@@ -65,25 +85,28 @@ describe("observation i18n sub-namespaces", () => {
     }
   });
 
-  test("every bundle carries all eight availability states", () => {
+  test("every bundle carries its full availability state set", () => {
     for (const { ns, en, zh } of BUNDLES) {
-      expect(Object.keys(en.availability).sort()).toEqual([...STATES].sort());
-      expect(Object.keys(zh.availability).sort()).toEqual([...STATES].sort());
-      for (const state of STATES) {
+      const states = STATES_BY_NS[ns];
+      expect(Object.keys(en.availability).sort()).toEqual([...states].sort());
+      expect(Object.keys(zh.availability).sort()).toEqual([...states].sort());
+      const enAvailability = en.availability as Availability;
+      const zhAvailability = zh.availability as Availability;
+      for (const state of states) {
         expect(
-          en.availability[state].title.trim().length,
+          enAvailability[state].title.trim().length,
           `${ns}/${state} en title`,
         ).toBeGreaterThan(0);
         expect(
-          zh.availability[state].title.trim().length,
+          zhAvailability[state].title.trim().length,
           `${ns}/${state} zh title`,
         ).toBeGreaterThan(0);
         expect(
-          en.availability[state].description.trim().length,
+          enAvailability[state].description.trim().length,
           `${ns}/${state} en description`,
         ).toBeGreaterThan(0);
         expect(
-          zh.availability[state].description.trim().length,
+          zhAvailability[state].description.trim().length,
           `${ns}/${state} zh description`,
         ).toBeGreaterThan(0);
       }
@@ -119,11 +142,12 @@ describe("observation i18n sub-namespaces", () => {
     }
   });
 
-  test("the eight states are not copy-paste collisions within a namespace", () => {
+  test("the availability states are not copy-paste collisions within a namespace", () => {
     for (const { ns, en } of BUNDLES) {
-      const titles = STATES.map((state) => en.availability[state].title);
+      const availability = en.availability as Availability;
+      const titles = STATES_BY_NS[ns].map((state) => availability[state].title);
       expect(new Set(titles).size, `${ns} titles must be distinct`).toBe(
-        STATES.length,
+        titles.length,
       );
     }
   });
