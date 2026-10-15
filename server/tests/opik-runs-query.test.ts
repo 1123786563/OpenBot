@@ -223,6 +223,10 @@ function appFor(
     windowSize?: number;
     cacheTtlMs?: number;
     now?: () => Date;
+    /** Issue #18: the row-level capability join, when the wiring provides it. */
+    capabilities?: ReadonlyMap<string, string>;
+    /** Issue #18: unreconciled bindings this scope holds, for the list-level syncing flag. */
+    unreconciled?: number;
   } = {},
 ) {
   const port = setup.port ?? fakePort();
@@ -241,6 +245,13 @@ function appFor(
           (setup.bindings ?? [bindingRow(scopeA)]).find(
             (row) => row.scopeKey === scope.key && row.runId === runId,
           ) ?? null,
+        capabilitiesByOpikTraceIds: async (_scope, ids) =>
+          new Map(
+            [...(setup.capabilities ?? new Map())].filter(([id]) =>
+              ids.includes(id),
+            ),
+          ),
+        countUnreconciled: async () => setup.unreconciled ?? 0,
       },
       config: setup.config ?? (() => enabledConfig),
       port: port.port,
@@ -553,6 +564,7 @@ describe("runs query — acceptance 5: honest empty vs upstream failure", () => 
         limit: 20,
         nextCursor: null,
       },
+      syncing: false,
     });
     expect(port.calls.filter((call) => call.op === "listTraces")).toHaveLength(
       0,
@@ -631,6 +643,7 @@ describe("runs query — acceptance 2: honest projection of what upstream holds"
     expect(body.runs[0]).toEqual({
       opikTraceId: "trace-1",
       state: "completed",
+      createdAt: "unavailable",
       durationMs: 21_860,
       usage: {
         source: "provider",
@@ -638,6 +651,7 @@ describe("runs query — acceptance 2: honest projection of what upstream holds"
         completionTokens: 20,
         totalTokens: 30,
       },
+      capability: "unavailable",
       metadata: projectedMetadata,
     });
   });
@@ -713,6 +727,117 @@ describe("runs query — acceptance 2: honest projection of what upstream holds"
   });
 });
 
+describe("runs query — Issue #18 list fields: time, capability, syncing, filters", () => {
+  test("an upstream start time is projected as ISO; missing or garbage is an explicit unavailable", async () => {
+    const rows = [
+      traceRow({
+        id: "t1",
+        start_time: "2026-10-16T09:30:00.000Z",
+      }),
+      traceRow({ id: "t2" }),
+      traceRow({ id: "t3", start_time: "not a date" }),
+      traceRow({ id: "t4", start_time: 1760616600000 }),
+    ];
+    const { app } = appFor({ port: fakePort({ rows }) });
+    const body = await (await list(app, "?limit=4")).json();
+    expect(
+      body.runs.map((run: { createdAt: unknown }) => run.createdAt),
+    ).toEqual([
+      "2026-10-16T09:30:00.000Z",
+      "unavailable",
+      "unavailable",
+      "unavailable",
+    ]);
+  });
+
+  test("row capability is the binding's verdict; an unbound trace is an honest unavailable", async () => {
+    const { app } = appFor({
+      port: fakePort({ rows: fiveRows }),
+      capabilities: new Map([
+        ["t1", "detailed"],
+        ["t2", "basic"],
+      ]),
+    });
+    const body = await (await list(app, "?limit=5")).json();
+    expect(
+      body.runs.map((run: { capability: string }) => run.capability),
+    ).toEqual([
+      "detailed",
+      "basic",
+      "unavailable",
+      "unavailable",
+      "unavailable",
+    ]);
+  });
+
+  test("a wiring without the join seam answers capability unavailable, never a guess", async () => {
+    // The parallel-stream shape: only latestAttempt is injected. The optional
+    // seams must degrade to the honest verdict rather than throwing.
+    const port = fakePort({ rows: [traceRow()] });
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.use("*", actorVariables(owner as unknown as AuthenticatedActor));
+    app.route(
+      "/bots/:botId/runs",
+      createRunsQueryRoutes({
+        canManageBot: managementCheck([profile()]),
+        scopeEpoch: async () => EPOCH,
+        bindings: {
+          latestAttempt: async () => bindingRow(scopeA),
+        },
+        config: () => enabledConfig,
+        port: port.port,
+        windowSize: WINDOW,
+        cacheTtlMs: 5,
+      }),
+    );
+    const body = await (
+      await app.request("http://openbot.test/bots/agent-1/runs")
+    ).json();
+    expect(body.runs[0].capability).toBe("unavailable");
+    expect(body.syncing).toBe(false);
+  });
+
+  test("unreconciled bindings turn the list-level syncing flag on, and only that", async () => {
+    const { app } = appFor({
+      port: fakePort({ rows: fiveRows }),
+      unreconciled: 2,
+    });
+    const body = await (await list(app)).json();
+    expect(body.syncing).toBe(true);
+    // The rows themselves stay ordinary rows; syncing is a page fact, not a row state.
+    expect(
+      body.runs.every((run: { state: string }) => run.state !== "syncing"),
+    ).toBeTrue();
+  });
+
+  test("filter params are named in the contract and refused with 422, never silently ignored", async () => {
+    const { app, port } = appFor({ port: fakePort({ rows: fiveRows }) });
+    for (const query of [
+      "?state=failed",
+      "?timeFrom=2026-10-15T00:00:00.000Z",
+      "?timeTo=2026-10-16T00:00:00.000Z",
+      "?state=completed&timeFrom=2026-10-15T00:00:00.000Z",
+    ]) {
+      const response = await list(app, query);
+      expect(response.status).toBe(422);
+      expect((await response.json()).error).toBe(
+        "RUNS_QUERY_FILTER_UNSUPPORTED",
+      );
+    }
+    // And nothing reached upstream while refusing.
+    expect(reads(port.calls)).toBe(0);
+  });
+
+  test("detail's upstream projection carries the binding's capability verdict", async () => {
+    const { app } = appFor({
+      port: fakePort({ rows: [traceRow()] }),
+      bindings: [bindingRow(scopeA, { capability: "detailed" })],
+    });
+    const body = await (await detail(app)).json();
+    expect(body.upstream.capability).toBe("detailed");
+  });
+});
+
 describe("runs query — detail", () => {
   test("a reconciled run returns local authority facts plus the upstream projection", async () => {
     const { app } = appFor({ port: fakePort({ rows: [traceRow()] }) });
@@ -734,6 +859,7 @@ describe("runs query — detail", () => {
         status: "present",
         opikTraceId: "trace-1",
         state: "completed",
+        createdAt: "unavailable",
         durationMs: 21_860,
         usage: {
           source: "provider",
@@ -741,6 +867,7 @@ describe("runs query — detail", () => {
           completionTokens: 20,
           totalTokens: 30,
         },
+        capability: "basic",
         metadata: projectedMetadata,
       },
     });
