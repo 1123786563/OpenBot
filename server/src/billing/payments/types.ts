@@ -38,7 +38,7 @@ export type PaymentSettlementResult =
   | { kind: "duplicate" }
   | {
       kind: "refused";
-      reason: "amount-mismatch" | "blocked" | "late";
+      reason: "amount-mismatch" | "currency-mismatch" | "blocked" | "late";
     }
   | { kind: "retryable-failure" };
 
@@ -49,7 +49,12 @@ export type PaymentOrder = {
   provider: PaymentProviderId;
   /** Integer cents, the catalog price at order time. Never re-derived from a callback. */
   amountCents: number;
-  currency: "CNY";
+  /**
+   * The currency the order snapshotted. The database CHECK keeps every row 'CNY' (no migration
+   * widened it); the type is `string` so the code states the column's word instead of a hardcoded
+   * one — the settlement gate compares against it (audit A5).
+   */
+  currency: string;
   status: PaymentOrderStatus;
   activationState: PaymentActivationState;
   /** The channel's transaction id, once seen; the idempotency key across replays. */
@@ -90,7 +95,7 @@ export type PaymentOrderView = {
   planCode: string;
   provider: PaymentProviderId;
   amountCents: number;
-  currency: "CNY";
+  currency: string;
   status: PaymentOrderStatus;
   activationState: PaymentActivationState;
   checkout: PaymentCheckout | null;
@@ -145,8 +150,9 @@ export type PaymentEventKind = "fact" | "anomaly";
  * order's snapshot (`amount_mismatch`), a payment arriving after the order was already blocked
  * (`paid_after_blocked`), a second channel transaction on an already-paid order (`over_paid`),
  * a payment re-activating a plan that a newer paid order already covers (`duplicate_paid`), a
- * payment outside the late-fulfilment window (`late_payment`), and a paid fact whose amount the
- * channel did not state (`amount_unreadable`).
+ * payment outside the late-fulfilment window (`late_payment`), a paid fact whose amount the
+ * channel did not state (`amount_unreadable`), and a paid fact whose stated currency disagrees
+ * with the order snapshot (`currency_mismatch`).
  */
 export type PaymentAnomalyCode =
   | "amount_mismatch"
@@ -155,6 +161,7 @@ export type PaymentAnomalyCode =
   | "duplicate_paid"
   | "late_payment"
   | "amount_unreadable"
+  | "currency_mismatch"
   | "activation_retry_exhausted";
 
 /**
@@ -208,18 +215,6 @@ export type PaymentStore = {
   readPendingOrder(
     planCode: string,
     provider: PaymentProviderId,
-  ): Promise<PaymentOrderRecord | null>;
-  /**
-   * The newest paid order for one plan, any provider — the duplicate-payment check.
-   *
-   * `excludeOrderId` takes the caller's own order out of the answer: the check runs after that
-   * order's own confirm (which stamped it the newest paid row), so without the exclusion the
-   * read can only ever answer the caller itself and the duplicate it is looking for is the one
-   * row it cannot see. Optional, so callers that want the plain "newest paid" keep the old call.
-   */
-  readLatestPaidOrder(
-    planCode: string,
-    excludeOrderId?: string,
   ): Promise<PaymentOrderRecord | null>;
   /** The newest order still live (pending or paid) — what "current purchase" means. */
   readLatestLiveOrder(

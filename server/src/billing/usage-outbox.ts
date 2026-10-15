@@ -1,4 +1,4 @@
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type UsageOutboxDeliveryStatus,
@@ -42,7 +42,7 @@ export type UsageOutbox = {
     eventId: string,
     target: "lago" | "credits",
     failureCode: string,
-  ): Promise<void>;
+  ): Promise<{ attempts: number }>;
 };
 
 export class UsageOutboxConflictError extends Error {
@@ -186,17 +186,19 @@ export function createUsageOutbox(database: Database): UsageOutbox {
     eventId: string,
     target: "lago" | "credits",
     failureCode: string,
-  ) {
+  ): Promise<{ attempts: number }> {
     const rows = await database
       .update(usageOutbox)
       .set(
         target === "lago"
           ? {
               lagoLastErrorCode: failureCode,
+              lagoAttempts: sql`${usageOutbox.lagoAttempts} + 1`,
               updatedAt: new Date(),
             }
           : {
               creditsLastErrorCode: failureCode,
+              creditsAttempts: sql`${usageOutbox.creditsAttempts} + 1`,
               updatedAt: new Date(),
             },
       )
@@ -211,11 +213,19 @@ export function createUsageOutbox(database: Database): UsageOutbox {
           ),
         ),
       )
-      .returning({ eventId: usageOutbox.eventId });
+      .returning({
+        eventId: usageOutbox.eventId,
+        attempts:
+          target === "lago"
+            ? usageOutbox.lagoAttempts
+            : usageOutbox.creditsAttempts,
+      });
 
     if (rows.length === 0) {
       await assertRecordExists(eventId);
+      return { attempts: 0 };
     }
+    return { attempts: rows[0]?.attempts ?? 0 };
   }
 
   async function blockDelivery(

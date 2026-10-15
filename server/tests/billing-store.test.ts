@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createBillingStore } from "../src/billing/store";
+import { BillingPersistenceError } from "../src/billing/types";
 import type { Database } from "../src/db/client";
 
 test("a synchronous programming error from query construction is not retryable", async () => {
@@ -45,6 +46,7 @@ test("Drizzle-wrapped transient PostgreSQL errno values are retryable", async ()
     ).rejects.toMatchObject({
       name: "BillingPersistenceError",
       operation: "webhook_apply",
+      retryable: true,
     });
   }
 });
@@ -68,10 +70,13 @@ test("Drizzle-wrapped connection errors remain retryable", async () => {
         webhookType: "invoice.created",
       },
     }),
-  ).rejects.toMatchObject({ name: "BillingPersistenceError" });
+  ).rejects.toMatchObject({
+    name: "BillingPersistenceError",
+    retryable: true,
+  });
 });
 
-test("wrapped constraints and unknown errors retain their original identity", async () => {
+test("a non-retryable failure becomes the typed sentinel, graded, with the cause preserved", async () => {
   const cyclic = new DrizzleQueryError("select 1", [], undefined);
   cyclic.cause = cyclic;
   const failures = [
@@ -110,15 +115,24 @@ test("wrapped constraints and unknown errors retain their original identity", as
         return Promise.reject(failure);
       },
     } as unknown as Database;
-    await expect(
-      createBillingStore(database).applyWebhookProjection({
+    const error = await createBillingStore(database)
+      .applyWebhookProjection({
         event: {
           provider: "test",
           eventId: "event-1",
           webhookType: "invoice.created",
         },
-      }),
-    ).rejects.toBe(failure);
+      })
+      .then(
+        () => null,
+        (thrown: unknown) => thrown,
+      );
+    expect(error).toBeInstanceOf(BillingPersistenceError);
+    expect(error).toMatchObject({
+      operation: "webhook_apply",
+      retryable: false,
+    });
+    expect((error as { cause?: unknown }).cause).toBe(failure);
   }
 });
 
@@ -148,7 +162,10 @@ test("direct errno and nested Drizzle PostgreSQL failures are retryable", async 
           webhookType: "invoice.created",
         },
       }),
-    ).rejects.toMatchObject({ name: "BillingPersistenceError" });
+    ).rejects.toMatchObject({
+      name: "BillingPersistenceError",
+      retryable: true,
+    });
   }
 });
 
@@ -178,10 +195,11 @@ test("a transient PostgreSQL connection failure is marked retryable", async () =
   ).rejects.toMatchObject({
     name: "BillingPersistenceError",
     operation: "customer_upsert",
+    retryable: true,
   });
 });
 
-test("a PostgreSQL constraint violation is not classified as retryable", async () => {
+test("a PostgreSQL constraint violation is graded non-retryable and wrapped", async () => {
   const failure = new Bun.SQL.PostgresError("foreign key violation", {
     code: "23503",
   });
@@ -199,12 +217,21 @@ test("a PostgreSQL constraint violation is not classified as retryable", async (
     },
   } as unknown as Database;
 
-  await expect(
-    createBillingStore(database).upsertCustomer({
+  const error = await createBillingStore(database)
+    .upsertCustomer({
       externalId: "customer-1",
       name: null,
-    }),
-  ).rejects.toBe(failure);
+    })
+    .then(
+      () => null,
+      (thrown: unknown) => thrown,
+    );
+  expect(error).toBeInstanceOf(BillingPersistenceError);
+  expect(error).toMatchObject({
+    operation: "customer_upsert",
+    retryable: false,
+  });
+  expect((error as { cause?: unknown }).cause).toBe(failure);
 });
 
 test("a transient transaction boundary failure is marked retryable", async () => {
@@ -227,10 +254,11 @@ test("a transient transaction boundary failure is marked retryable", async () =>
   ).rejects.toMatchObject({
     name: "BillingPersistenceError",
     operation: "webhook_apply",
+    retryable: true,
   });
 });
 
-test("unknown and non-retryable transaction failures are rethrown unchanged", async () => {
+test("unknown and non-retryable transaction failures become the graded sentinel with the cause preserved", async () => {
   for (const failure of [
     new TypeError("invalid transaction construction"),
     new Bun.SQL.PostgresError("constraint violation", { code: "23503" }),
@@ -240,14 +268,23 @@ test("unknown and non-retryable transaction failures are rethrown unchanged", as
         return Promise.reject(failure);
       },
     } as unknown as Database;
-    await expect(
-      createBillingStore(database).applyWebhookProjection({
+    const error = await createBillingStore(database)
+      .applyWebhookProjection({
         event: {
           provider: "test",
           eventId: "event-1",
           webhookType: "invoice.created",
         },
-      }),
-    ).rejects.toBe(failure);
+      })
+      .then(
+        () => null,
+        (thrown: unknown) => thrown,
+      );
+    expect(error).toBeInstanceOf(BillingPersistenceError);
+    expect(error).toMatchObject({
+      operation: "webhook_apply",
+      retryable: false,
+    });
+    expect((error as { cause?: unknown }).cause).toBe(failure);
   }
 });

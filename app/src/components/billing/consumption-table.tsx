@@ -119,6 +119,24 @@ export function ConsumptionTable({
                     <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
                       {credits(entry.credits)}
                       {t("creditsPage.creditUnit")}
+                      {/*
+                       * The unfunded suffix (audit D1): a settlement that cost more than the
+                       * balance could fund records the full cost with `applied` clamped to the
+                       * hold. Only a shortfall row says so — a fully funded row looks exactly as
+                       * it always has.
+                       */}
+                      {entry.applied < entry.credits ? (
+                        <span
+                          className="text-muted-foreground ml-1 text-xs"
+                          title={t("creditsPage.overdrawHint", {
+                            shortfall: credits(entry.credits - entry.applied),
+                          })}
+                        >
+                          {t("creditsPage.overdrawBadge", {
+                            shortfall: credits(entry.credits - entry.applied),
+                          })}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="text-muted-foreground hidden px-4 py-2 sm:table-cell">
                       {entry.model ?? "–"}

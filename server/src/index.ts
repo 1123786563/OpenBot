@@ -128,6 +128,10 @@ import {
   createLagoUsageTarget,
   createUsageDelivery,
 } from "./billing/usage-delivery";
+import {
+  createUsageEvidenceRecorder,
+  isConfirmedNoCost,
+} from "./billing/usage-evidence";
 import { createUsageOutbox, UsageOutboxConflictError } from "./billing/usage-outbox";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "./billing/types";
 import { createWebhookVerifier } from "./billing/webhook-signature";
@@ -181,8 +185,11 @@ import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig } from "./config";
 import {
   CreditGateError,
+  CreditGateFailureError,
+  CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
+  ModelNotPricedError,
   ModelUsageSettlementError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
@@ -3524,6 +3531,23 @@ const selfHostBannerIntelligence = createIntelligenceClient(
  * `assertTarget` is required, so no assembly can construct one that skips it).
  */
 const billingSettings = config.billing;
+/*
+ * A deployment that configured the billing provider but not the hard-cap price block refuses
+ * every metered call (index.ts's model gate). Say so at boot, with the offending keys, instead of
+ * letting it surface as a user-facing "no credits left" on the first request (audit A4/C2).
+ */
+if (
+  billingSettings !== undefined &&
+  billingSettings.creditPolicy.configured === false
+) {
+  log.error(
+    {
+      type: "billing-credit-policy-unconfigured",
+      issues: billingSettings.creditPolicy.issues.map((issue) => `${issue.key}:${issue.reason}`),
+    },
+    "billing-credit-policy-unconfigured: metered work will refuse until these keys are fixed",
+  );
+}
 const billing =
   billingSettings === undefined
     ? undefined
@@ -3607,11 +3631,21 @@ const usageOutbox =
  */
 if (billing !== undefined && usageOutbox !== undefined) {
   const creditPolicy = billingSettings?.creditPolicy;
+  const recordUnsettledUsage = createUsageEvidenceRecorder(usageOutbox, (message) =>
+    log.warn(message),
+  );
   setModelUsageGate(async (input) => {
-    if (!creditPolicy?.configured) throw new CreditGateError();
+    if (!creditPolicy?.configured) {
+      // `configured === false` narrows the union to the variant that carries `issues`, so the
+      // offending keys reach the error (and the log) without a cast. `creditPolicy === undefined`
+      // cannot happen inside this block, but the guard is on `?.` so answer it as "no issues known".
+      throw new CreditPolicyUnconfiguredError(
+        creditPolicy?.configured === false ? creditPolicy.issues : [],
+      );
+    }
     const modelId = input.modelId ?? runtimeModel.defaultModel;
     const modelPolicy = creditPolicy.models.get(modelId);
-    if (!modelPolicy) throw new CreditGateError();
+    if (!modelPolicy) throw new ModelNotPricedError(modelId);
 
     let reservation: Awaited<
       ReturnType<typeof billing.creditWriter.reserveCredits>
@@ -3625,10 +3659,37 @@ if (billing !== undefined && usageOutbox !== undefined) {
           input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
         ),
       });
-    } catch {
+    } catch (error) {
+      log.error(
+        {
+          type: "billing-credit-gate-failed",
+          eventId: input.eventId,
+          model: modelId,
+          name: (error as Error | null)?.name,
+        },
+        "billing-credit-gate-failed",
+      );
+      throw new CreditGateFailureError();
+    }
+    if (!reservation.reserved) {
+      /*
+       * The hold is the WORST-CASE ceiling (config.ts derives it from the configured token maxima),
+       * so this refusal has two very different causes and the log is the only place they are
+       * distinguishable: a balance that is genuinely empty, and a balance that is fine but smaller
+       * than one call's maximum (decision gate G3). `available` and `required` in scaled units.
+       */
+      log.warn(
+        {
+          type: "billing-credit-reservation-refused",
+          eventId: input.eventId,
+          model: modelId,
+          available: reservation.availableCents,
+          required: Number(modelPolicy.maximumReservationUnits),
+        },
+        "billing-credit-reservation-refused",
+      );
       throw new CreditGateError();
     }
-    if (!reservation.reserved) throw new CreditGateError();
 
     return {
       /*
@@ -3640,7 +3701,11 @@ if (billing !== undefined && usageOutbox !== undefined) {
        * a typical tokenizer, and a fit that drops the oldest non-system messages until the
        * count fits the configured ceiling — the provider cannot be SENT more than the
        * reservation prices by our own measure, and a tokenizer that beats the calibration
-       * surfaces at settlement as usage_over_bound for reconciliation.
+       * surfaces at settlement as usage_over_bound: the stream fails, the hold is retained,
+       * and billing/usage-evidence.ts keeps the provider's real token counts — the credits
+       * target blocks the row in manual review (`missing_reservation`) while the Lago
+       * target still meters the tokens the provider did report.
+       * （G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
        */
       bounds: {
         input: {
@@ -3687,6 +3752,22 @@ if (billing !== undefined && usageOutbox !== undefined) {
             },
             "billing-usage-charge-refused",
           );
+          // Audit A3: the tokens are real work this deployment will not price — a durable
+          // evidence row (no reservation facts, hold retained) instead of numbers that die
+          // with the stream error. The settlement-failure exit in copilot.ts may record the
+          // same event again with zero tokens; the outbox keeps these real facts and logs the
+          // second write as superseded.
+          await recordUnsettledUsage({
+            eventId: input.eventId,
+            source: "llm",
+            externalCustomerId: billing.externalCustomerKey,
+            model: modelId,
+            client: input.client,
+            occurredAt: input.occurredAt,
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            reason: code,
+          });
           throw new ModelUsageSettlementError(code);
         }
         try {
@@ -3716,27 +3797,72 @@ if (billing !== undefined && usageOutbox !== undefined) {
           throw new ModelUsageSettlementError(failureCode);
         }
       },
+      recordUnsettled: async (unsettled) => {
+        await recordUnsettledUsage({
+          eventId: unsettled.eventId,
+          source: "llm",
+          externalCustomerId: billing.externalCustomerKey,
+          model: modelId,
+          client: input.client,
+          occurredAt: unsettled.occurredAt,
+          inputTokens: unsettled.inputTokens,
+          outputTokens: unsettled.outputTokens,
+          reason: unsettled.reason,
+        });
+      },
       fail: async (failure) => {
-        try {
-          await billing.creditWriter.releaseReservation(
-            reservation.reservationId,
-            failure.reason,
-          );
-        } catch (error) {
-          logReservationReleaseFailure({
-            source: "llm",
-            eventId: input.eventId,
-            reservationId: reservation.reservationId,
-            reason: failure.reason,
-            error,
-          });
+        /*
+         * Release only on a CONFIRMED no-cost (audit A2 / CONTEXT.md Pending Settlement /
+         * ADR-0003): the provider refused before any token (`provider_error`), admission refused
+         * before the provider (`bound_refused`), or the provider reported zero usage (`no_usage`).
+         * Everything else is an unknown outcome — `usage_missing`, `stream_error`, `cancelled`:
+         * the provider may have produced billable work we never learned about. Those keep the
+         * hold (it expires on its own clock and reconciliation reports it) and leave a durable
+         * evidence row naming the event, the reason, and whatever token counts the stream had
+         * learned by the time it failed.
+         */
+        if (isConfirmedNoCost(failure.reason)) {
+          try {
+            await billing.creditWriter.releaseReservation(
+              reservation.reservationId,
+              failure.reason,
+            );
+          } catch (error) {
+            logReservationReleaseFailure({
+              source: "llm",
+              eventId: input.eventId,
+              reservationId: reservation.reservationId,
+              reason: failure.reason,
+              error,
+            });
+          }
+          return;
         }
+        await recordUnsettledUsage({
+          eventId: input.eventId,
+          source: "llm",
+          externalCustomerId: billing.externalCustomerKey,
+          model: modelId,
+          client: input.client,
+          occurredAt: input.occurredAt,
+          inputTokens: failure.inputTokens ?? 0,
+          outputTokens: failure.outputTokens ?? 0,
+          reason: failure.reason,
+        });
       },
     };
   });
 } else {
   setModelUsageGate(undefined);
 }
+
+/*
+ * The billing sweepers' stop handles (audit C3): both assemble only when their seam exists, and
+ * both are stopped in the SIGINT/SIGTERM handler below so a shutdown cannot land mid-batch. The
+ * locks make each sweeper single-instance across replicas — advisory-lock keys 4_192_005 (usage
+ * delivery) and 4_192_006 (payments), reserved alongside audit-retention's 4_192_004.
+ */
+const billingSweepStops: (() => void)[] = [];
 
 if (billing !== undefined && usageOutbox !== undefined) {
   const usageDelivery = createUsageDelivery({
@@ -3745,9 +3871,11 @@ if (billing !== undefined && usageOutbox !== undefined) {
     chargeCredits: createCreditUsageTarget(billing.creditWriter),
     log: (message) => log.warn(message),
   });
-  startUsageDeliverySweeps(usageDelivery, {
+  const usageSweeps = startUsageDeliverySweeps(usageDelivery, {
     log: (message) => log.warn(message),
+    lock: { databaseUrl: config.databaseUrl, key: 4_192_005 },
   });
+  billingSweepStops.push(usageSweeps.stop);
 }
 
 /*
@@ -3911,7 +4039,10 @@ const payments =
             return live ? live.planCode : null;
           },
         });
-        startPaymentSweeps(paymentService);
+        const paymentSweeps = startPaymentSweeps(paymentService, {
+          lock: { databaseUrl: config.databaseUrl, key: 4_192_006 },
+        });
+        billingSweepStops.push(paymentSweeps.stop);
         return {
           service: paymentService,
           // The statement read's other half: a bill is a stored order, so the ledger is the only
@@ -3984,10 +4115,18 @@ const codeRunStore = createCodeRunStore(database);
 const codeRunUsageReporter = billing && usageOutbox
   ? async (input: import("./workshop/metering").CodeRunUsageInput): Promise<void> => {
       try {
-        await reportCodeRunUsage(usageOutbox, {
-          ...input,
-          externalCustomerId: billing.externalCustomerKey,
-        });
+        await reportCodeRunUsage(
+          usageOutbox,
+          {
+            ...input,
+            externalCustomerId: billing.externalCustomerKey,
+            // True only when the hard-cap policy actually prices code runs; the gateway refuses
+            // billed runs until the sandbox can enforce a budget, so this stays false today and
+            // the guard inside reportCodeRunUsage is what makes flipping it safe.
+            creditMeteringEnabled: billingSettings?.creditPolicy.configured === true,
+          },
+          (message) => log.warn(message),
+        );
       } catch (error) {
         logUsageOutboxWriteFailure("code_run", `code-run:${input.runId}`, error);
       }
@@ -5494,6 +5633,15 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // The billing sweepers (audit C3): stopped before the listeners below, so a shutdown cannot
+    // land mid-batch. Each stop is its own try/catch — one that throws must not block the rest.
+    for (const stop of billingSweepStops) {
+      try {
+        stop();
+      } catch {
+        // Deliberately swallowed: the remaining stops and the listener shutdown still run.
+      }
+    }
     // Craft's idle reaper (started by the craft route assembly, held at that module's scope).
     stopCraftIdleReaper();
     void Promise.allSettled([
