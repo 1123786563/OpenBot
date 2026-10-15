@@ -66,6 +66,7 @@ import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
 import { createOpikHealthService } from "./ai-observability/health";
 import { createModelSpanRecorder } from "./ai-observability/model-span";
+import { createToolStepRecorder } from "./ai-observability/tool-steps";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
@@ -201,6 +202,7 @@ import {
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
+  setBuiltinToolStepObserver,
   setModelUsageGate,
   type ToolSelection,
 } from "./copilot";
@@ -285,6 +287,7 @@ import type { KnowledgeSearchResult } from "./knowledge/types";
 import {
   createKnowledgeRuntime,
   knowledgeRetrievalOptionsFromEnv,
+  setKnowledgeRetrievalObserver,
 } from "./knowledge/retrieval";
 import { knowledgeTools } from "./knowledge/tools";
 import { clearLearningRevisionFallback } from "./learning/runtime";
@@ -5129,6 +5132,59 @@ if (opikConfigFromEnv(process.env).enabled) {
       ending: fact.ending,
       input: fact.input,
       output: fact.output,
+    }),
+  );
+}
+
+/*
+ * Tool- and retrieval-step recording (Issue #21 / T15), on the same footing as the
+ * model spans above: the built-in path's step facts (proposal / real execute / receipt,
+ * correlated by toolCallId) and the retriever's observations (query, kb list, fragments)
+ * adapt into one recorder whose only egress is the same bounded write queue. Disabled
+ * deployments register no observer, so no argument accumulation or step bookkeeping
+ * happens at all. As with T14, the facts carry no trusted scope yet — the recorder
+ * submits nothing upstream until the run-association ticket threads one through.
+ */
+const opikToolSteps = createToolStepRecorder({
+  healthService: opikHealthService,
+});
+if (opikConfigFromEnv(process.env).enabled) {
+  setBuiltinToolStepObserver((fact) =>
+    opikToolSteps.record({
+      toolCallId: fact.toolCallId,
+      toolName: fact.toolName ?? undefined,
+      proposedAt: fact.proposedAt ?? undefined,
+      endedAt: fact.endedAt,
+      proposalObserved: fact.proposalObserved,
+      executionObserved: fact.executionObserved,
+      receiptObserved: fact.receiptObserved,
+      execution: fact.execution,
+      window: fact.window,
+      input: fact.input,
+      output: fact.output,
+    }),
+  );
+  setKnowledgeRetrievalObserver((observed) =>
+    opikToolSteps.recordRetrieval({
+      occurredAt: observed.startedAt,
+      endedAt: observed.endedAt,
+      query: observed.query,
+      kbIds: observed.kbIds,
+      outcome:
+        observed.outcome.status === "hit"
+          ? {
+              kind: "hit",
+              fragments: observed.outcome.chunks.map((chunk) => ({
+                kbId: chunk.kbId,
+                chunkId: chunk.chunkId,
+                docId: chunk.docId,
+                source: chunk.source,
+                score: chunk.score,
+              })),
+            }
+          : observed.outcome.status === "miss"
+            ? { kind: "miss" }
+            : { kind: "degraded", reason: observed.outcome.reason },
     }),
   );
 }
