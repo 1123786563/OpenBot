@@ -62,7 +62,9 @@ import {
   createWakeUpStore,
   wakeUpTools,
 } from "./agents/wake-up";
+import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
+import { createOpikHealthService } from "./ai-observability/health";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
@@ -5091,6 +5093,14 @@ const aiObservabilityCanManageBot: BotManagementCheck = async (
 const aiObservability = createAiObservabilityRoutes({
   requireUser: createDeploymentRequireUser(config, auth, roleRepository),
   canManageBot: aiObservabilityCanManageBot,
+  // Review F-1: without a health service the enabled state is invisible over
+  // HTTP. The port stays null until a manifest-verified adapter is wired into
+  // this deployment, so an enabled configuration honestly answers
+  // capability_missing — and with no port there is no transport at all.
+  healthService: createOpikHealthService({
+    config: () => opikConfigFromEnv(process.env),
+    port: null,
+  }),
 });
 
 /*

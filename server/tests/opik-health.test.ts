@@ -741,6 +741,50 @@ describe("integrated health route mount", () => {
     expect(response.status).toBe(401);
     expect(snapshotCalls).toBe(0);
   });
+
+  test("the assembly wiring (port: null) is HTTP-observable: 401 first, then an honest capability_missing", async () => {
+    // The exact construction the index.ts seam performs: env-read config plus
+    // port null, because no manifest-verified adapter backs this deployment.
+    // With no port there is no transport at all, so the enabled state is
+    // honestly capability_missing and zero network can happen.
+    const svc = service({
+      config: () =>
+        opikConfigFromEnv({
+          OPIK_ENABLED: "true",
+          OPIK_BASE_URL: enabledConfig.baseUrl,
+          OPIK_API_KEY: enabledConfig.apiKey,
+        }),
+      port: null,
+    });
+    const app = new Hono();
+    app.route(
+      "/api/ai-observability",
+      createAiObservabilityRoutes({
+        requireUser: async (context, next) => {
+          if (context.req.header("authorization") === undefined)
+            return context.json({ error: "Authentication required." }, 401);
+          await next();
+        },
+        canManageBot: async () => null,
+        healthService: svc,
+      }),
+    );
+    const unauthenticated = await app.request(
+      "http://openbot.test/api/ai-observability/health",
+    );
+    expect(unauthenticated.status).toBe(401);
+    const authenticated = await app.request(
+      "http://openbot.test/api/ai-observability/health",
+      { headers: { authorization: "Bearer test-token" } },
+    );
+    expect(authenticated.status).toBe(200);
+    const text = await authenticated.text();
+    expect(text).not.toContain("secret-host.test");
+    expect(text).not.toContain("secret-opik-key");
+    expect(JSON.parse(text)).toMatchObject({
+      opik: { ready: false, reason: "capability_missing" },
+    });
+  });
 });
 
 describe("the write entry contract stays bounded and observable", () => {
