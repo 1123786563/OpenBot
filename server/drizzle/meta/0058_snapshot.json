@@ -1,6 +1,6 @@
 {
-  "id": "cd0f913f-2233-4078-be20-ffd5e71f41de",
-  "prevId": "53504607-01a2-4466-ac3b-0df79cdfa60d",
+  "id": "53504607-01a2-4466-ac3b-0df79cdfa60d",
+  "prevId": "52eb3831-7b10-4a47-a16e-00807f025c74",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8459,12 +8459,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "expert_version_ref": {
-          "name": "expert_version_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "model_route_ref": {
           "name": "model_route_ref",
           "type": "text",
@@ -11481,8 +11475,8 @@
         }
       },
       "foreignKeys": {
-        "billing_subscriptions_external_customer_id_billing_customers_external_id_fk": {
-          "name": "billing_subscriptions_external_customer_id_billing_customers_external_id_fk",
+        "billing_subscriptions_ext_customer_id_fk": {
+          "name": "billing_subscriptions_ext_customer_id_fk",
           "tableFrom": "billing_subscriptions",
           "tableTo": "billing_customers",
           "columnsFrom": [

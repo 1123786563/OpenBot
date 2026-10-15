@@ -1,97 +1,57 @@
-/**
- * The local TypeScript authorization service, per plan 02 §6 T2-C.
- *
- * `createAuthz` is the only authorization engine: a deterministic rule map shipped with the
- * application. It makes no HTTP call, reads no environment variable, keeps no second copy of any
- * ACL and never caches a positive decision — every check re-evaluates the resource facts the
- * ResourceReader read inside the same transaction. `Authz.check` stays a Promise so the call
- * contract survives, but the resolution is local and synchronous underneath.
- *
- * MVP rules: explicit resource grants only, over the two actions the grants table admits (`read`
- * and `run`, spec §6.2). A tenant_admin, an auditor or a deployment admin never skips the grant —
- * membership roles feed explicit administrative-domain rules only, never implicit content access.
- * Booleans are compared to `true`, never coerced, and a scope this process did not issue fails
- * closed in `assertScope` before any rule runs.
- *
- * `policyRules` is the deterministic revision → rule map shipped with the build. It holds exactly
- * tenancy-v1 and conversations-v1; SUPPORTED_POLICY_REVISIONS is its frozen read-only derivation,
- * so a new revision cannot be appended at runtime — it takes an independent function, its own
- * tests, and a build that implements old and new rules together before any tenant's
- * policy_revision switches inside its exclusive lock. An unknown revision is a closed
- * POLICY_REVISION_UNSUPPORTED (503), an identifier of authorization unavailability, never a
- * silent allow.
- */
-import type { AuthorizationInput, Authz } from "../contracts";
-import { EnterpriseError } from "../errors";
-import { assertScope } from "../tenancy/scope";
+import type { PlatformScope } from "../contracts";
 
-type LocalRule = (input: AuthorizationInput) => boolean;
+export interface AuthorizedResourceFacts {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly workspaceId: string;
+  readonly principalId: string;
+  readonly revision: number;
+  readonly aclEpoch: number;
+  readonly policyRevision: string;
+  readonly active: boolean;
+  readonly locallyAllowed: boolean;
+}
 
-/*
- * tenancy-v1: a same-tenant read of an active resource the transaction's own grant query marked
- * allowed. Every comparison is an identity check against the literal — a truthy string, a non-one
- * number or a missing value can never satisfy it. Deliberately unchanged by the conversations
- * work: a tenant still on tenancy-v1 refuses `run` here (default deny below).
- */
-const tenancyV1: LocalRule = ({ scope, resource, action }) =>
-  action === "read" &&
-  scope.tenantId === resource.tenantId &&
-  resource.active === true &&
-  resource.locallyAllowed === true;
+export interface AuthorizationInput {
+  readonly scope: PlatformScope;
+  readonly resource: AuthorizedResourceFacts;
+  readonly action: "read";
+}
 
-/*
- * conversations-v1 (spec §6.2): the same same-tenant active-and-locally-allowed decision,
- * widened to `run`. `locallyAllowed` is the per-request-action grant fact the same-transaction
- * reader matched (the authz/repository.ts grant-exists pattern), so read and run remain two
- * independent grant rows that never imply each other.
- */
-const conversationsV1: LocalRule = ({ scope, resource, action }) =>
-  (action === "read" || action === "run") &&
-  scope.tenantId === resource.tenantId &&
-  resource.active === true &&
-  resource.locallyAllowed === true;
-
-const policyRules: ReadonlyMap<string, LocalRule> = new Map<string, LocalRule>([
-  ["tenancy-v1", tenancyV1],
-  ["conversations-v1", conversationsV1],
-]);
+export interface Authz {
+  check(input: AuthorizationInput): Promise<boolean>;
+}
 
 export const SUPPORTED_POLICY_REVISIONS: readonly string[] = Object.freeze([
-  ...policyRules.keys(),
+  "tenancy-v1",
 ]);
 
+/** Local, deterministic resource-read policy. Roles never imply content access. */
 export function createAuthz(): Authz {
   return {
     async check({ scope, resource, action }) {
-      assertScope(scope);
-      /* Default deny first: anything not an exact same-tenant active granted read/run is false;
-       * which of the two a revision admits is the revision rule's own decision. */
       if (
-        (action !== "read" && action !== "run") ||
-        scope.tenantId !== resource.tenantId ||
+        action !== "read" ||
         resource.active !== true ||
-        resource.locallyAllowed !== true
+        resource.locallyAllowed !== true ||
+        scope.tenantId !== resource.tenantId ||
+        scope.workspaceId !== resource.workspaceId ||
+        scope.principalId !== resource.principalId
       ) {
         return false;
       }
-      /*
-       * Authorization state the rules cannot judge: a non-positive revision or ACL epoch is a
-       * corrupted fact, and answering either way on it would be a decision made on garbage. This
-       * is the same closed 503 the ResourceReader raises for an unparsable row.
-       */
       if (
         !Number.isSafeInteger(resource.revision) ||
         resource.revision < 1 ||
         !Number.isSafeInteger(resource.aclEpoch) ||
         resource.aclEpoch < 1
       ) {
-        throw new EnterpriseError("AUTHORIZATION_STATE_INVALID", 503);
+        return false;
       }
-      const rule = policyRules.get(resource.policyRevision);
-      if (!rule) {
-        throw new EnterpriseError("POLICY_REVISION_UNSUPPORTED", 503);
+      if (!SUPPORTED_POLICY_REVISIONS.includes(resource.policyRevision)) {
+        throw new Error("POLICY_REVISION_UNSUPPORTED");
       }
-      return rule({ scope, resource, action });
+      return true;
     },
   };
 }

@@ -1,5 +1,4 @@
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
-import { teamBotAccess } from "../team-bots/access";
 import type { ManagedAgentConfig } from "../config";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
@@ -10,7 +9,9 @@ import {
   channelAgents,
   channelMemberships,
   channels,
+  teamBotPublications,
 } from "../db/schema";
+import { teamBotAccess } from "../team-bots/access";
 import { agentAuthHeaders, authFromConfiguration } from "./auth-header";
 import type { AgentActor } from "./profile-types";
 
@@ -40,6 +41,25 @@ export function createRuntimeAgentLoader(
     for (const row of active) {
       const agent = registeredAgentFromRow(row);
       if (!agent) continue;
+      if (agent.type === "built_in") {
+        try {
+          agent.expertSource = classifyExpertSource({
+            packageId: row.packageId,
+            ownerUserId: row.ownerUserId,
+            published: row.publicationAgentId !== null,
+          });
+        } catch (cause) {
+          // Existing runtime resolution remains available, while the Expert bridge fails closed.
+          console.error({
+            error: "EXPERT_SOURCE_CLASSIFICATION_FAILED",
+            context: { agentId: agent.id },
+            cause: cause instanceof Error ? cause.message : String(cause),
+          });
+          // registeredAgentFromRow never presets expertSource: a failed
+          // classification leaves it undefined, which IS the fail-closed
+          // state (R8-L11) — no delete needed.
+        }
+      }
       const isRemoteAgent =
         agent.type === "remote_ag_ui" || agent.type === "remote_mastra";
       // The key is resolved per load, rather than being cached on the row: revoking a
@@ -92,6 +112,31 @@ export function createRuntimeAgentLoader(
   };
 }
 
+export type ExpertSourceFacts = {
+  packageId: string | null;
+  ownerUserId: string | null;
+  published: boolean;
+};
+
+/** Classifies only a single trusted provenance fact; overlapping origins fail closed. */
+export function classifyExpertSource(
+  facts: ExpertSourceFacts,
+): "tenant_package" | "user_profile" | "team_bot" {
+  if (facts.packageId !== null && !facts.published) {
+    if (facts.ownerUserId !== null) throw new Error("EXPERT_SOURCE_AMBIGUOUS");
+    return "tenant_package";
+  }
+  if (facts.packageId === null && facts.published) return "team_bot";
+  if (
+    facts.packageId === null &&
+    !facts.published &&
+    facts.ownerUserId !== null
+  ) {
+    return "user_profile";
+  }
+  throw new Error("EXPERT_SOURCE_UNCLASSIFIED");
+}
+
 /** Keep the existing pathname slash tolerance without erasing query or fragment differences. */
 function managedEndpointIdentity(value: string | URL): string | undefined {
   try {
@@ -111,11 +156,15 @@ function selectActiveAgents(database: Database, actor: AgentActor) {
       name: agents.name,
       type: agents.type,
       configuration: agents.configuration,
+      packageId: agents.packageId,
+      ownerUserId: agentProfiles.ownerUserId,
+      publicationAgentId: teamBotPublications.agentId,
       title: agentProfiles.title,
       roleDescription: agentProfiles.roleDescription,
     })
     .from(agents)
     .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+    .leftJoin(teamBotPublications, eq(teamBotPublications.agentId, agents.id))
     .where(
       and(
         isNull(agentProfiles.deletedAt),

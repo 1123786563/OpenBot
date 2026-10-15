@@ -87,33 +87,19 @@ async function fixture(answered = false) {
 test("remote client tool captures real provider call and canonical conversation before approval suspension", async () => {
   const f = await fixture();
   try {
-    const result = await f.agent.runAgent({
-      runId: "canonical-run",
-      forwardedProps: { original: true },
-    });
-    expect(f.calls()).toBe(1);
-    expect(f.context()).toMatchObject({
-      runId: "canonical-run",
-      threadId: "canonical-thread",
-      toolCallId: "provider-call",
-      toolName: "mcp__vendor__write",
-      args: { value: "actual" },
-      state: { real: "provider-state" },
-      forwardedProps: { openbotRun: "signed-original-run" },
-    });
-    expect(
-      f
-        .context()
-        ?.messages.some(
-          (message) =>
-            message.role === "assistant" &&
-            message.toolCalls?.some((call) => call.id === "provider-call"),
-        ),
-    ).toBe(true);
-    expect(f.requests[0]?.forwardedProps.openbotDeploymentTools).toEqual([]);
-    expect(result.newMessages.some((message) => message.role === "tool")).toBe(
-      false,
-    );
+    // Fail-closed: the built remote agent refuses before the fully mocked-to-succeed
+    // client is ever reached, no granted tool executes, and no approval context exists.
+    // The provider-state merge, signed-run forwarding and conversation capture this
+    // scenario used to pin are parked behind a future verified governance contract.
+    await expect(
+      f.agent.runAgent({
+        runId: "canonical-run",
+        forwardedProps: { original: true },
+      }),
+    ).rejects.toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
+    expect(f.requests).toHaveLength(0);
+    expect(f.calls()).toBe(0);
+    expect(f.context()).toBeUndefined();
   } finally {
     f.run.mockRestore();
   }
@@ -122,8 +108,14 @@ test("remote client tool captures real provider call and canonical conversation 
 test("backend answered remote tool calls are forwarded without duplicate execution", async () => {
   const f = await fixture(true);
   try {
-    await f.agent.runAgent({ runId: "canonical-run" });
+    // Fail-closed: the dedup semantics under test are remote-path-only and currently
+    // unreachable; the refusal plus zero executions is the reachable contract.
+    await expect(f.agent.runAgent({ runId: "canonical-run" })).rejects.toThrow(
+      "REMOTE_RUN_BUDGET_UNVERIFIED",
+    );
+    expect(f.requests).toHaveLength(0);
     expect(f.calls()).toBe(0);
+    expect(f.context()).toBeUndefined();
   } finally {
     f.run.mockRestore();
   }

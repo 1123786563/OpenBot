@@ -1,6 +1,6 @@
 {
-  "id": "a7b72443-f49d-4c73-9ac1-4ff921bc7ea2",
-  "prevId": "f98250a6-871d-431e-a44e-634242c68051",
+  "id": "e75c9077-9763-4c3f-81f3-fb553b64a483",
+  "prevId": "2a8f8634-d67a-485b-b7bf-f1c7a34059fe",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2669,7 +2669,7 @@
         },
         "brokered_connections_provider_check": {
           "name": "brokered_connections_provider_check",
-          "value": "\"brokered_connections\".\"provider\" IN ('composio', 'open-connector')"
+          "value": "\"brokered_connections\".\"provider\" IN ('composio')"
         }
       },
       "isRLSEnabled": false
@@ -6680,6 +6680,586 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.enterprise_memberships": {
+      "name": "enterprise_memberships",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "epoch": {
+          "name": "epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enterprise_memberships_principal_tenant": {
+          "name": "enterprise_memberships_principal_tenant",
+          "columns": [
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enterprise_memberships_tenant_id_enterprise_tenants_id_fk": {
+          "name": "enterprise_memberships_tenant_id_enterprise_tenants_id_fk",
+          "tableFrom": "enterprise_memberships",
+          "tableTo": "enterprise_tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "enterprise_memberships_principal_id_enterprise_principals_id_fk": {
+          "name": "enterprise_memberships_principal_id_enterprise_principals_id_fk",
+          "tableFrom": "enterprise_memberships",
+          "tableTo": "enterprise_principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "enterprise_memberships_tenant_id_principal_id_pk": {
+          "name": "enterprise_memberships_tenant_id_principal_id_pk",
+          "columns": [
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "enterprise_member_role": {
+          "name": "enterprise_member_role",
+          "value": "\"enterprise_memberships\".\"role\" in ('tenant_admin','member','auditor')"
+        },
+        "enterprise_member_status": {
+          "name": "enterprise_member_status",
+          "value": "\"enterprise_memberships\".\"status\" in ('active','suspended')"
+        },
+        "enterprise_member_epoch": {
+          "name": "enterprise_member_epoch",
+          "value": "\"enterprise_memberships\".\"epoch\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.enterprise_principals": {
+      "name": "enterprise_principals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "enterprise_principal_user": {
+          "name": "enterprise_principal_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "enterprise_principals_user_id_users_id_fk": {
+          "name": "enterprise_principals_user_id_users_id_fk",
+          "tableFrom": "enterprise_principals",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "enterprise_principal_status": {
+          "name": "enterprise_principal_status",
+          "value": "\"enterprise_principals\".\"status\" in ('active','suspended')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.enterprise_resource_grants": {
+      "name": "enterprise_resource_grants",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'read'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "enterprise_resource_grants_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk": {
+          "name": "enterprise_resource_grants_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk",
+          "tableFrom": "enterprise_resource_grants",
+          "tableTo": "enterprise_resources",
+          "columnsFrom": [
+            "tenant_id",
+            "resource_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "enterprise_resource_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk": {
+          "name": "enterprise_resource_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk",
+          "tableFrom": "enterprise_resource_grants",
+          "tableTo": "enterprise_memberships",
+          "columnsFrom": [
+            "tenant_id",
+            "principal_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "principal_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "enterprise_resource_grants_tenant_id_resource_id_principal_id_action_pk": {
+          "name": "enterprise_resource_grants_tenant_id_resource_id_principal_id_action_pk",
+          "columns": [
+            "tenant_id",
+            "resource_id",
+            "principal_id",
+            "action"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "enterprise_grant_action": {
+          "name": "enterprise_grant_action",
+          "value": "\"enterprise_resource_grants\".\"action\" = 'read'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.enterprise_resources": {
+      "name": "enterprise_resources",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "acl_epoch": {
+          "name": "acl_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "enterprise_resources_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk": {
+          "name": "enterprise_resources_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk",
+          "tableFrom": "enterprise_resources",
+          "tableTo": "enterprise_workspaces",
+          "columnsFrom": [
+            "tenant_id",
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "enterprise_resources_tenant_id_id_pk": {
+          "name": "enterprise_resources_tenant_id_id_pk",
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "enterprise_resource_status": {
+          "name": "enterprise_resource_status",
+          "value": "\"enterprise_resources\".\"status\" in ('active','deleted')"
+        },
+        "enterprise_resource_versions": {
+          "name": "enterprise_resource_versions",
+          "value": "\"enterprise_resources\".\"revision\" > 0 and \"enterprise_resources\".\"acl_epoch\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.enterprise_security_events": {
+      "name": "enterprise_security_events",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "enterprise_security_events_tenant_id_enterprise_tenants_id_fk": {
+          "name": "enterprise_security_events_tenant_id_enterprise_tenants_id_fk",
+          "tableFrom": "enterprise_security_events",
+          "tableTo": "enterprise_tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "enterprise_security_events_tenant_id_id_pk": {
+          "name": "enterprise_security_events_tenant_id_id_pk",
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.enterprise_tenants": {
+      "name": "enterprise_tenants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "policy_revision": {
+          "name": "policy_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'tenancy-v1'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "enterprise_tenant_status": {
+          "name": "enterprise_tenant_status",
+          "value": "\"enterprise_tenants\".\"status\" in ('active','suspended')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.enterprise_workspaces": {
+      "name": "enterprise_workspaces",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "enterprise_workspaces_tenant_id_enterprise_tenants_id_fk": {
+          "name": "enterprise_workspaces_tenant_id_enterprise_tenants_id_fk",
+          "tableFrom": "enterprise_workspaces",
+          "tableTo": "enterprise_tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "enterprise_workspaces_tenant_id_id_pk": {
+          "name": "enterprise_workspaces_tenant_id_id_pk",
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.group_bot_threads": {
       "name": "group_bot_threads",
       "schema": "",
@@ -9495,8 +10075,8 @@
         }
       },
       "foreignKeys": {
-        "billing_subscriptions_external_customer_id_billing_customers_external_id_fk": {
-          "name": "billing_subscriptions_external_customer_id_billing_customers_external_id_fk",
+        "billing_subscriptions_ext_customer_id_fk": {
+          "name": "billing_subscriptions_ext_customer_id_fk",
           "tableFrom": "billing_subscriptions",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -9609,649 +10189,6 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.enterprise_memberships": {
-      "name": "enterprise_memberships",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_id": {
-          "name": "principal_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "epoch": {
-          "name": "epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "enterprise_memberships_principal_tenant_idx": {
-          "name": "enterprise_memberships_principal_tenant_idx",
-          "columns": [
-            {
-              "expression": "principal_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "enterprise_memberships_tenant_id_enterprise_tenants_id_fk": {
-          "name": "enterprise_memberships_tenant_id_enterprise_tenants_id_fk",
-          "tableFrom": "enterprise_memberships",
-          "tableTo": "enterprise_tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "enterprise_memberships_principal_id_enterprise_principals_id_fk": {
-          "name": "enterprise_memberships_principal_id_enterprise_principals_id_fk",
-          "tableFrom": "enterprise_memberships",
-          "tableTo": "enterprise_principals",
-          "columnsFrom": [
-            "principal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "enterprise_memberships_tenant_id_principal_id_pk": {
-          "name": "enterprise_memberships_tenant_id_principal_id_pk",
-          "columns": [
-            "tenant_id",
-            "principal_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_member_role": {
-          "name": "enterprise_member_role",
-          "value": "\"enterprise_memberships\".\"role\" in ('tenant_admin','member','auditor')"
-        },
-        "enterprise_member_status": {
-          "name": "enterprise_member_status",
-          "value": "\"enterprise_memberships\".\"status\" in ('active','suspended')"
-        },
-        "enterprise_member_epoch": {
-          "name": "enterprise_member_epoch",
-          "value": "\"enterprise_memberships\".\"epoch\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.enterprise_principals": {
-      "name": "enterprise_principals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "enterprise_principal_user": {
-          "name": "enterprise_principal_user",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "enterprise_principals_user_id_users_id_fk": {
-          "name": "enterprise_principals_user_id_users_id_fk",
-          "tableFrom": "enterprise_principals",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_principal_status": {
-          "name": "enterprise_principal_status",
-          "value": "\"enterprise_principals\".\"status\" in ('active','suspended')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.enterprise_tenants": {
-      "name": "enterprise_tenants",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "policy_revision": {
-          "name": "policy_revision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'tenancy-v1'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_tenant_status": {
-          "name": "enterprise_tenant_status",
-          "value": "\"enterprise_tenants\".\"status\" in ('active','suspended')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.enterprise_workspaces": {
-      "name": "enterprise_workspaces",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "enterprise_workspaces_tenant_id_enterprise_tenants_id_fk": {
-          "name": "enterprise_workspaces_tenant_id_enterprise_tenants_id_fk",
-          "tableFrom": "enterprise_workspaces",
-          "tableTo": "enterprise_tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "enterprise_workspaces_tenant_id_id_pk": {
-          "name": "enterprise_workspaces_tenant_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.enterprise_identity_events": {
-      "name": "enterprise_identity_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor": {
-          "name": "actor",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_id": {
-          "name": "principal_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "details": {
-          "name": "details",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.enterprise_resource_grants": {
-      "name": "enterprise_resource_grants",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_id": {
-          "name": "resource_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "principal_id": {
-          "name": "principal_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "enterprise_resource_grants_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk": {
-          "name": "enterprise_resource_grants_tenant_id_resource_id_enterprise_resources_tenant_id_id_fk",
-          "tableFrom": "enterprise_resource_grants",
-          "tableTo": "enterprise_resources",
-          "columnsFrom": [
-            "tenant_id",
-            "resource_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "enterprise_resource_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk": {
-          "name": "enterprise_resource_grants_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk",
-          "tableFrom": "enterprise_resource_grants",
-          "tableTo": "enterprise_memberships",
-          "columnsFrom": [
-            "tenant_id",
-            "principal_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "principal_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "enterprise_resource_grants_tenant_id_resource_id_principal_id_action_pk": {
-          "name": "enterprise_resource_grants_tenant_id_resource_id_principal_id_action_pk",
-          "columns": [
-            "tenant_id",
-            "resource_id",
-            "principal_id",
-            "action"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_grant_action": {
-          "name": "enterprise_grant_action",
-          "value": "\"enterprise_resource_grants\".\"action\"='read'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.enterprise_resources": {
-      "name": "enterprise_resources",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "acl_epoch": {
-          "name": "acl_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "enterprise_resources_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk": {
-          "name": "enterprise_resources_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk",
-          "tableFrom": "enterprise_resources",
-          "tableTo": "enterprise_workspaces",
-          "columnsFrom": [
-            "tenant_id",
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "enterprise_resources_tenant_id_id_pk": {
-          "name": "enterprise_resources_tenant_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "enterprise_resource_status": {
-          "name": "enterprise_resource_status",
-          "value": "\"enterprise_resources\".\"status\" in ('active','deleted')"
-        },
-        "enterprise_resource_versions": {
-          "name": "enterprise_resource_versions",
-          "value": "\"enterprise_resources\".\"revision\">0 and \"enterprise_resources\".\"acl_epoch\">0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.enterprise_security_events": {
-      "name": "enterprise_security_events",
-      "schema": "",
-      "columns": {
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation_id": {
-          "name": "operation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor": {
-          "name": "actor",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "details": {
-          "name": "details",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "enterprise_security_events_tenant_created_idx": {
-          "name": "enterprise_security_events_tenant_created_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "enterprise_security_events_tenant_id_enterprise_tenants_id_fk": {
-          "name": "enterprise_security_events_tenant_id_enterprise_tenants_id_fk",
-          "tableFrom": "enterprise_security_events",
-          "tableTo": "enterprise_tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "enterprise_security_events_tenant_id_id_pk": {
-          "name": "enterprise_security_events_tenant_id_id_pk",
-          "columns": [
-            "tenant_id",
-            "id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -1,69 +1,90 @@
--- Enterprise capability roles, per plan 02 §5 T1-B "角色合同".
---
--- Executed by the DBA on a dedicated instance BEFORE the migrations run. These are passwordless
--- NOLOGIN group roles: no secret ever appears in this file. Human/ service LOGIN users are created
--- separately through the environment-approved account system, and each LOGIN user is a member of
--- EXACTLY ONE capability role — an API login must never be the migration owner, an operator, or a
--- role administrator.
---
--- Idempotency contract: when a role already exists, COMPARE ITS ATTRIBUTES against this file
--- (rolsuper/rolcreaterole/rolcreatedb/rolcanlogin/rolbypassrls/rolinherit must all be false/false/
--- false/false/false/true) and treat any difference as a failure to investigate — do not drop and
--- recreate it, and do not swallow the exception:
---
---   SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolbypassrls, rolinherit
---   FROM pg_roles
---   WHERE rolname IN ('ob_ent_directory','ob_ent_data','ob_ent_operator',
---                     'ob_ent_identity_operator','ob_ent_identity');
---
--- Privileges granted here are only schema access. TABLE privileges (GRANT SELECT/INSERT/UPDATE per
--- role contract) live exclusively in the RLS custom migration — server/drizzle/00XX_*_enterprise_
--- tenancy_rls.sql — which is the single executable source of policy and grants. This file never
--- duplicates them; a second policies.sql does not exist on purpose.
---
--- After applying the migrations, verify PUBLIC holds no bypass on any enterprise table:
---
---   SELECT grantee, table_name, privilege_type
---   FROM information_schema.role_table_grants
---   WHERE table_schema = 'public' AND table_name LIKE 'enterprise_%' AND grantee = 'PUBLIC';
---   -- must return zero rows
+-- DBA-managed capability roles. This file contains no LOGIN identities or passwords.
+DO $identity$
+BEGIN
+  IF session_user <> current_user OR NOT COALESCE(
+    (SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false
+  ) THEN
+    RAISE EXCEPTION 'Enterprise role bootstrap requires a direct PostgreSQL superuser session (session_user must equal current_user)';
+  END IF;
+END
+$identity$;
 
-CREATE ROLE ob_ent_directory NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_data NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_identity_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
--- Identity database role for the standalone Better Auth connection. Its per-table grants over the
--- existing identity tables (users/sessions/accounts/verifications/user_roles/…) are enumerated by
--- T3-B from the auth factory's actual access and granted there; it receives NOTHING on the
--- enterprise business tables.
-CREATE ROLE ob_ent_identity NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+DO $roles$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_directory') THEN
+    CREATE ROLE ob_ent_directory NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_data') THEN
+    CREATE ROLE ob_ent_data NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_operator') THEN
+    CREATE ROLE ob_ent_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ob_ent_identity_operator') THEN
+    CREATE ROLE ob_ent_identity_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+  END IF;
+END
+$roles$;
 
--- Runs ledger capability roles, per plan 03 §4.2. Same NOLOGIN/non-owner/no-BYPASSRLS contract
--- as above; per-table GRANTs and RLS policies live exclusively in the runs custom migration
--- (server/drizzle/*_enterprise_runs_rls.sql):
---   ob_ent_run_writer       business create/command path: own threads, runs, commands, outbox;
---                           binds its own budget. Read-only on members/resources/grants.
---   ob_ent_runtime_writer   internal callbacks: events, checkpoints, attempts, steps, model
---                           metering; authenticated per service + capability, scoped to the run.
---   ob_ent_dispatcher       the redacted outbox ONLY: polls and claims across tenants by explicit
---                           limited system grant; no resource, run body, message or capability
---                           access whatsoever.
---   ob_ent_run_operator     offline approved provisioning: releases, run grants, routes/grants,
---                           budget accounts. Never issues a model request.
---   ob_ent_run_maintenance  liveness convergence and settlement: fence invalidation, lost marking,
---                           cancel confirmation, money reconciliation, audit. Column-limited on
---                           enterprise_runs so the input body is unreadable by construction.
-CREATE ROLE ob_ent_run_writer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_runtime_writer NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_dispatcher NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_run_operator NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-CREATE ROLE ob_ent_run_maintenance NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+-- Existing roles are accepted only with the exact non-login, non-escalating attributes.
+DO $validate$
+DECLARE
+  capability_name text;
+  capability_oid oid;
+  safe_attributes boolean;
+  has_parent_role boolean;
+  has_protected_ownership boolean;
+  has_password boolean;
+BEGIN
+  FOREACH capability_name IN ARRAY ARRAY[
+    'ob_ent_directory', 'ob_ent_data', 'ob_ent_operator', 'ob_ent_identity_operator'
+  ] LOOP
+    SELECT oid,
+      NOT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls
+        AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication
+    INTO capability_oid, safe_attributes
+    FROM pg_roles
+    WHERE rolname = capability_name;
 
-GRANT USAGE ON SCHEMA public TO ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator, ob_ent_identity,
-  ob_ent_run_writer, ob_ent_runtime_writer, ob_ent_dispatcher, ob_ent_run_operator, ob_ent_run_maintenance;
+    IF capability_oid IS NULL OR NOT safe_attributes THEN
+      RAISE EXCEPTION 'Capability role % has unsafe or missing attributes', capability_name;
+    END IF;
 
--- Post-migration spot checks the DBA runs on the migrated database (informational; the same checks
--- are asserted against a live restricted login by server/tests/enterprise/tenancy/rls.test.ts):
---   * every enterprise_* table: relrowsecurity = t AND relforcerowsecurity = t
---   * no LOGIN user is a member of the table owner or of another capability role
---   * ob_ent_operator is NOT a member of ob_ent_identity_operator and vice versa (TEN-21)
+    SELECT EXISTS (
+      SELECT 1 FROM pg_auth_members WHERE member = capability_oid
+    ) INTO has_parent_role;
+    IF has_parent_role THEN
+      RAISE EXCEPTION 'Capability role % inherits another role', capability_name;
+    END IF;
+
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_class relation
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+      WHERE namespace.nspname = 'public'
+        AND relation.relname LIKE 'enterprise_%'
+        AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+        AND relation.relowner = capability_oid
+    ) OR EXISTS (
+      SELECT 1 FROM pg_namespace namespace
+      WHERE namespace.nspname = 'public'
+        AND namespace.nspowner = capability_oid
+    ) OR EXISTS (
+      SELECT 1 FROM pg_database target_database
+      WHERE target_database.datname = current_database()
+        AND target_database.datdba = capability_oid
+    ) INTO has_protected_ownership;
+    IF has_protected_ownership THEN
+      RAISE EXCEPTION 'Capability role % owns a protected enterprise relation, public schema, or current database', capability_name;
+    END IF;
+
+    SELECT rolpassword IS NOT NULL
+      INTO has_password
+      FROM pg_authid
+      WHERE oid = capability_oid;
+    IF has_password THEN
+      RAISE EXCEPTION 'Capability role % must not have a password', capability_name;
+    END IF;
+  END LOOP;
+END
+$validate$;
