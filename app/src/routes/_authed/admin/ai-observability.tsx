@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { PageShell } from "@/components/layout/page-shell";
 import { ObservabilityPlaceholder } from "@/components/ai-observability/placeholder";
+import { PageShell } from "@/components/layout/page-shell";
 
 /**
  * Placeholder for the admin chain (#42): collection summary, ingest health and export status.
