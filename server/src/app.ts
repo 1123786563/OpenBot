@@ -68,6 +68,7 @@ import {
 } from "./billing/routes";
 import type { BillingStatements } from "./billing/statements";
 import type { BillingService } from "./billing/types";
+import { createBotAdminRoutes } from "./bots/admin-routes";
 import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
@@ -733,6 +734,11 @@ export function createApp(
   identity?: IdentityStore,
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
+  /**
+   * The bot service registry's database. Present mounts `/api/admin/bots` (register, list,
+   * status); absent mounts nothing — the same absent-means-unmounted contract as billing.
+   */
+  botServiceDatabase?: Database,
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -993,6 +999,22 @@ export function createApp(
    */
   app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
+  /*
+   * The bot-service registry: an administrator's door, mounted only where the assembly wired a
+   * database for it. Registration grants no credentials and no credit authority (04.2/04.5) —
+   * this is the identity list, and its audit rows are the only side effect.
+   */
+  if (botServiceDatabase) {
+    app.route(
+      "/api/admin/bots",
+      createBotAdminRoutes({
+        database: botServiceDatabase,
+        requireUser,
+        requireAdmin,
+        audit: auditStore,
+      }),
+    );
+  }
   if (openMuseTemplateRevisions) {
     /*
      * Template revision preview/apply: administrator-only (requireUser + requireAdmin inside the
