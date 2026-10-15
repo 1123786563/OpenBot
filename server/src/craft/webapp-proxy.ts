@@ -531,16 +531,29 @@ export function webappHmrQueryString(query: string): string {
 }
 
 /**
- * onyx `_webapp_hmr_websocket_url`, minus the base-path join: OpenBot's scaffold serves on the
- * port root (the HTTP proxy above forwards paths verbatim), so the HMR endpoint is the dev
- * server's own `/_next/webpack-hmr`.
+ * onyx `_webapp_hmr_websocket_url`, and the one place this port had it wrong.
+ *
+ * The upstream path is the inbound path VERBATIM, for the same reason the HTTP proxy
+ * forwards `context.req.path` rather than the bare suffix: the scaffold's `basePath`
+ * (web-template/next.config.ts) IS this route's mount, so a Next dev server serves
+ * `/_next/webpack-hmr` UNDER that basePath and not at the port root. This function used
+ * to hardcode the port root — measured live against a running session, that socket timed
+ * out with zero frames while the basePath-joined one opened and streamed. Turbopack's dev
+ * client gates its chunk loading on the HMR channel, so a silent socket left the preview
+ * permanently un-hydrated: 17 scripts and then nothing for 90s, where the same page loaded
+ * straight from the dev server pulls 187 and hydrates. The HTML was byte-identical either
+ * way, which is why nothing on the response side ever showed it.
+ *
+ * Not an open relay: `path` only ever arrives from a pathname WEBAPP_HMR_PATH matched,
+ * which pins it to exactly this endpoint.
  */
 export function webappHmrUpstreamUrl(input: {
   host: string;
   port: number;
+  path: string;
   query: string;
 }): string {
-  return `ws://${input.host}:${input.port}/_next/webpack-hmr${webappHmrQueryString(input.query)}`;
+  return `ws://${input.host}:${input.port}${input.path}${webappHmrQueryString(input.query)}`;
 }
 
 export type WebappHmrDeps = Pick<
@@ -559,7 +572,13 @@ export type WebappHmrResolution =
  */
 export async function resolveWebappHmrUpgrade(
   deps: WebappHmrDeps,
-  input: { sessionId: string; actor: { id: string } | null; query: string },
+  input: {
+    sessionId: string;
+    actor: { id: string } | null;
+    /** The inbound upgrade's pathname — forwarded verbatim, see webappHmrUpstreamUrl. */
+    path: string;
+    query: string;
+  },
 ): Promise<WebappHmrResolution> {
   if (!input.actor) {
     return { ok: false, status: 401, error: "Sign in first." };
@@ -584,6 +603,7 @@ export async function resolveWebappHmrUpgrade(
         deps.config.sandboxGatewayBaseUrl || conn.baseUrl,
       ),
       port: session.nextjsPort,
+      path: input.path,
       query: input.query,
     }),
   };

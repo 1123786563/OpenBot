@@ -1920,17 +1920,23 @@ async function withPersistenceError<T>(
 }
 ```
 
-`server/src/billing/service.ts` — the `handleWebhook` catch becomes:
+`server/src/billing/service.ts` — the `handleWebhook` catch becomes (**corrected 2026-10-15 during execution**: the first draft of this step answered 500 for *every* persistence failure, which contradicted Step 1's "a retryable storage failure stays 503" test and would have forced three established assertions in `billing-webhook.test.ts` to be restated for no reliability gain. The grade now reaches the status code, which is what makes the new `retryable` field load-bearing rather than a log word):
 
 ```ts
       } catch (error) {
         if (error instanceof BillingPersistenceError) {
           (deps.log ?? console.warn)(
-            `billing: webhook failed — ${error.code ?? error.operation}${error.retryable ? " (retryable)" : " (non-retryable data failure)"}`,
+            `billing: webhook failed — ${error.operation}${error.retryable ? " (retryable)" : " (non-retryable data failure)"}`,
           );
-          // 500, not 400: this is our storage, not the provider's delivery. Nothing recorded, so
-          // the retry re-reads and re-applies the whole projection.
-          return json(500, { error: "Billing webhook could not be applied." });
+          // 5xx either way, never 400: this is our storage, not the provider's delivery, and a 4xx
+          // would tell the provider to stop retrying a projection we simply failed to write. The
+          // grade still reaches the status code, because 503 (transient, will converge on its own)
+          // and 500 (our data needs a human) are different facts for whoever reads the provider's
+          // delivery dashboard. Nothing is recorded either way, so the retry re-reads and
+          // re-applies the whole projection.
+          return json(error.retryable ? 503 : 500, {
+            error: "Billing webhook could not be applied.",
+          });
         }
         if (error instanceof BillingError && error.retryable) {
           (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
@@ -1940,20 +1946,16 @@ async function withPersistenceError<T>(
       }
 ```
 
-Note `BillingPersistenceError` has no `code` member — use `error.operation` alone:
-
-```ts
-          (deps.log ?? console.warn)(
-            `billing: webhook failed — ${error.operation}${error.retryable ? " (retryable)" : " (non-retryable data failure)"}`,
-          );
-```
+Note `BillingPersistenceError` has no `code` member — the log line uses `error.operation` alone.
 
 Also update the `handleWebhook` docblock in `service.ts` (the paragraph beginning "Retryable provider and typed persistence failures answer 503") to:
 
 ```
- * Retryable provider failures answer 503 and typed persistence failures answer 500 — both without
- * writing the inbox, so the provider retries the whole delivery. A 4xx is reserved for a delivery
- * we verified and then could not make sense of; our own storage is never the provider's fault.
+ * Retryable provider failures and retryable persistence failures answer 503; a non-retryable
+ * persistence failure — our own data, a constraint violation or a value too long — answers 500.
+ * Both are ours and both are 5xx, so the provider retries the whole delivery and a manual fix
+ * later still converges. A 4xx is reserved for a delivery we verified and then could not make
+ * sense of; our own storage is never the provider's fault.
 ```
 
 - [ ] **Step 4: Restate the one store test that pinned the old contract**
@@ -3861,4 +3863,4 @@ The whole plan is done only when all of this is true, run in this order, with th
 - **G4** whether an over-bound finish should still tear down a completed answer — product decision; T3 preserves the current behavior and only adds the durable record.
 - Webhook inbound rate limiting (no general limiter exists in this server today); A7's fix bounds the replay window and records evidence instead.
 - Display-layer float division (audit D3: `app/src/lib/billing/format.ts` `money`/`credits`, `server/src/billing/credits.ts` `scaleDown`). Every use is presentation-only and none feeds a comparison, so this plan leaves the arithmetic alone; T1 and T14 keep it that way by never routing a scaled-down number back into a decision.
-- Adding Lago's `pending` subscription status to the projection vocabulary (needs a status-CHECK migration and a `BillingSubscriptionStatus` widening) — documented as a known gap in T11 Step 5.
+- Adding Lago's `pending` subscription status to the projection vocabulary (needs a `billing_subscriptions_status_check` migration and a `BillingSubscriptionStatus` widening) — documented as a known gap in T11 Step 5. **Escalated 2026-10-15 after T11's fix round:** the early fold makes this gap slightly sharper, because a provider list that omits a `pending` subscription is now empty for a single-subscription customer, and an empty list retires. Judged acceptable and left to a follow-up decision: Lago's own lifecycle reports `canceled`/`terminated` (both requested), so the ordinary cancellation path upserts correctly without needing retirement at all; the ambiguous case is only a record that vanishes from the list entirely. Retiring on that signal catches a real revenue leak, while refusing to would risk nothing new — the same `pending` invisibility already made `ensureSubscription` liable to create a duplicate subscription before this task existed. The trade is recorded here rather than re-litigated in code.

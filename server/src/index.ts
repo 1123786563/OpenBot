@@ -5329,6 +5329,9 @@ serve<SocketData>({
       const decision = await resolveWebappHmrUpgrade(craftWebappHmrDeps, {
         sessionId: hmrSessionId,
         actor,
+        // Verbatim, not a rebuilt "/_next/webpack-hmr": the scaffold's basePath IS
+        // this mount, so the dev server serves HMR under it. See webappHmrUpstreamUrl.
+        path: url.pathname,
         query: url.search,
       });
       if (!decision.ok) {

@@ -5077,7 +5077,15 @@
     "对应测试"
    ],
    "resume_hint": "扫描只做“发现 + 认领”，任何释放或重派发都属于后续 Ticket；接手先确认扫描没有副作用写入账务。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 276,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/276",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXS-mmA",
+   "issue_db_id": 5858371224,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.8": true
+   }
   },
   {
    "id": "08.2",
@@ -5139,7 +5147,15 @@
     "对应测试"
    ],
    "resume_hint": "重放必须复用原幂等键；若实现里重新生成键，会造成重复扣费，接手先检查键来源。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 277,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/277",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXS-usw",
+   "issue_db_id": 5858373299,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.1": true
+   }
   },
   {
    "id": "08.3",
@@ -5201,7 +5217,15 @@
     "对应测试"
    ],
    "resume_hint": "这一分支只补 ack、不补账；接手先断言 Settle 调用次数为 0。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 278,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/278",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXS_X_g",
+   "issue_db_id": 5858383870,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.2": true
+   }
   },
   {
    "id": "08.4",
@@ -5262,7 +5286,15 @@
     "对应测试"
    ],
    "resume_hint": "重试间隔与阈值必须可配置；接手检查是否存在“重试即释放预留”的隐含逻辑，有则移除。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 279,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/279",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXS_fIA",
+   "issue_db_id": 5858385696,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.1": true
+   }
   },
   {
    "id": "08.5",
@@ -5327,7 +5359,15 @@
     "对应测试"
    ],
    "resume_hint": "“查不到”不等于“没发生”；接手先跑无记录用例，确认结果是保持 unknown 而不是释放。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 280,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/280",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXS_kpg",
+   "issue_db_id": 5858387110,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.4": true
+   }
   },
   {
    "id": "08.6",
@@ -5390,7 +5430,15 @@
     "对应测试"
    ],
    "resume_hint": "告警只是通知，不得顺带释放或结算；接手检查告警处理函数没有账务副作用。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 281,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/281",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXS_6oQ",
+   "issue_db_id": 5858392737,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.5": true
+   }
   },
   {
    "id": "08.7",
@@ -5454,7 +5502,15 @@
     "对应 app/tests 测试"
    ],
    "resume_hint": "原因码到文案的映射要与 08.5/08.6 的码表一致；接手先核对码表，避免出现“未知错误”这类无信息文案。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 282,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/282",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTACLA",
+   "issue_db_id": 5858394668,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.6": true
+   }
   },
   {
    "id": "08.8",
@@ -5518,7 +5574,15 @@
     "对应测试"
    ],
    "resume_hint": "把“核查”和“处置”分开是本组的关键设计；若页面里出现结算按钮，移到 08.9 的独立授权动作。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 283,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/283",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAIUA",
+   "issue_db_id": 5858396240,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.5": true
+   }
   },
   {
    "id": "08.9",
@@ -5583,7 +5647,15 @@
     "对应测试"
    ],
    "resume_hint": "处置命令必须与核查视图分离并单独授权；接手先确认权限判定不是复用只读视图的守卫。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 284,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/284",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAOeA",
+   "issue_db_id": 5858397816,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.8": true
+   }
   },
   {
    "id": "08.10",
@@ -5648,7 +5720,15 @@
     "对应测试"
    ],
    "resume_hint": "把未知结果改成“没有费用”是本组最严重的错误；接手检查补偿与释放是两条独立路径且审计类型不同。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 285,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/285",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAUbA",
+   "issue_db_id": 5858399340,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_08.9": true
+   }
   },
   {
    "id": "09.1",
@@ -5713,7 +5793,16 @@
     "对应测试"
    ],
    "resume_hint": "改道时不要顺手改门禁语义；若发现旧路径仍有直连分支（含 fallback base URL），逐一收敛并加断言，避免留下旁路。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 286,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/286",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAcaA",
+   "issue_db_id": 5858401384,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.8": true,
+    "dep_03.9": true
+   }
   },
   {
    "id": "09.2",
@@ -5778,7 +5867,16 @@
     "对应测试"
    ],
    "resume_hint": "用量归因（团队/使用人）与付款账户是两件事；接手确认二者都被记录，且归因维度不会反过来改变 payer。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 287,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/287",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAjJw",
+   "issue_db_id": 5858403111,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_09.1": true,
+    "dep_02.5": true
+   }
   },
   {
    "id": "09.3",
@@ -5842,7 +5940,15 @@
     "对应测试"
    ],
    "resume_hint": "重点是“不泄露存在性”：拒绝响应不能暴露公司资源是否存在；接手用统一拒绝文案断言。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 288,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/288",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAoaw",
+   "issue_db_id": 5858404459,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_09.2": true
+   }
   },
   {
    "id": "09.4",
@@ -5906,7 +6012,15 @@
     "对应测试"
    ],
    "resume_hint": "任何“积分不足就用订阅凭据继续”的隐式回退都必须删除并留回归测试；这是 AC13 的明确要求。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 289,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/289",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTAwcw",
+   "issue_db_id": 5858406515,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_09.1": true
+   }
   },
   {
    "id": "10.1",
@@ -5970,7 +6084,15 @@
     "对应测试"
    ],
    "resume_hint": "现有 PaymentOrderReadScope 已有作用域概念；接手先确认它是否按归属过滤，若按部署过滤则收敛到 PayerRef。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 290,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/290",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTA1eA",
+   "issue_db_id": 5858407800,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_02.1": true
+   }
   },
   {
    "id": "10.2",
@@ -6032,7 +6154,15 @@
     "对应测试"
    ],
    "resume_hint": "回调是外部输入，任何“信任负载字段”的分支都要删除；接手先跑伪造负载用例。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 291,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/291",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTA8Wg",
+   "issue_db_id": 5858409562,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_10.1": true
+   }
   },
   {
    "id": "10.3",
@@ -6095,7 +6225,15 @@
     "对应测试"
    ],
    "resume_hint": "幂等键必须包含周期标识，否则跨周期续期会被误判为重复；接手先检查键构成。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 292,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/292",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTBSvA",
+   "issue_db_id": 5858415292,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_10.2": true
+   }
   },
   {
    "id": "10.4",
@@ -6157,7 +6295,15 @@
     "对应测试"
    ],
    "resume_hint": "若仓库暂无签到发放实现，本 Ticket 只交付“奖励类发放统一归个人 + 幂等”的通用路径，并用一个最小奖励类型验证，不要新建活动体系。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 293,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/293",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTBc7g",
+   "issue_db_id": 5858417902,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_02.8": true
+   }
   },
   {
    "id": "10.5",
@@ -6220,7 +6366,15 @@
     "对应测试"
    ],
    "resume_hint": "ExpectedPlanCredits 现有规则可复用；本 Ticket 的重点是账户维度，不要改套餐额度数值。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 294,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/294",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTBmbA",
+   "issue_db_id": 5858420332,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_10.3": true
+   }
   },
   {
    "id": "10.6",
@@ -6285,7 +6439,15 @@
     "对应 app/tests 测试"
    ],
    "resume_hint": "接口若仍按部署级作用域返回数据，先接 10.1 的归属过滤再改页面，避免把他人记录渲染出来。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 295,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/295",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTBwUw",
+   "issue_db_id": 5858422867,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_10.5": true
+   }
   },
   {
    "id": "11.1",
@@ -6349,7 +6511,16 @@
     "对应测试与 fixture"
    ],
    "resume_hint": "批量 embedding 常漏“条目数”维度；接手先构造多条目的 fixture 断言计数。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 296,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/296",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTB5mQ",
+   "issue_db_id": 5858425241,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.12": true,
+    "dep_03.3": true
+   }
   },
   {
    "id": "11.2",
@@ -6412,7 +6583,15 @@
     "对应测试"
    ],
    "resume_hint": "拒绝必须发生在派发之前；接手用 provider spy 断言调用数为 0。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 297,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/297",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTCAwQ",
+   "issue_db_id": 5858427073,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_11.1": true
+   }
   },
   {
    "id": "11.3",
@@ -6474,7 +6653,15 @@
     "对应测试"
    ],
    "resume_hint": "rerank 的计费常按文档数或 token 数，两者都要核对上游文档；只按其一实现会系统性低估上限。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 298,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/298",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTCIog",
+   "issue_db_id": 5858429090,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_11.1": true
+   }
   },
   {
    "id": "11.4",
@@ -6537,7 +6724,15 @@
     "对应测试"
    ],
    "resume_hint": "原因要具体到维度名，否则管理员无法补价；接手断言原因文本包含缺失维度。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 299,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/299",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTCjig",
+   "issue_db_id": 5858435978,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_11.3": true
+   }
   },
   {
    "id": "11.5",
@@ -6599,7 +6794,15 @@
     "对应测试"
    ],
    "resume_hint": "页数在派发前不可知时（如流式解析），必须判为证据不足而不是按估算预留。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 300,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/300",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTCq2Q",
+   "issue_db_id": 5858437849,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_11.1": true
+   }
   },
   {
    "id": "11.6",
@@ -6663,7 +6866,15 @@
     "对应测试"
    ],
    "resume_hint": "本 Ticket 是组 11 的缝合点：除拒绝路径外，还要确认三类能力状态在发现接口一致可见。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 301,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/301",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTCx8w",
+   "issue_db_id": 5858439667,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_11.5": true
+   }
   },
   {
    "id": "12.1",
@@ -6727,7 +6938,16 @@
     "对应测试与 fixture"
    ],
    "resume_hint": "常见错误是只按“每张固定价”换算，忽略尺寸/质量档位；接手先用多档位 fixture 断言换算结果。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 302,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/302",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTC4yw",
+   "issue_db_id": 5858441419,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.12": true,
+    "dep_03.2": true
+   }
   },
   {
    "id": "12.2",
@@ -6790,7 +7010,15 @@
     "对应测试"
    ],
    "resume_hint": "释放未生成部分必须有未计费证据；无证据时进入 unknown，不要为了余额好看而直接释放。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 303,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/303",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTC9rw",
+   "issue_db_id": 5858442671,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_12.1": true
+   }
   },
   {
    "id": "12.3",
@@ -6853,7 +7081,15 @@
     "对应测试"
    ],
    "resume_hint": "上游若不收输入费用，要在快照里记为明确 free 并留证据，而不是留空——留空会被判 unknown。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 304,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/304",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDHLw",
+   "issue_db_id": 5858445103,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_12.1": true
+   }
   },
   {
    "id": "12.4",
@@ -6916,7 +7152,15 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 12 缝合点：先把入口枚举完整，再逐个断言准入；漏掉一个入口就等于留下旁路。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 305,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/305",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDMBQ",
+   "issue_db_id": 5858446341,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_12.3": true
+   }
   },
   {
    "id": "13.1",
@@ -6980,7 +7224,16 @@
     "对应测试与 fixture"
    ],
    "resume_hint": "只按输入字符计价会漏掉输出音频费用；接手先确认快照同时含输入与输出两侧维度。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 306,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/306",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDRdg",
+   "issue_db_id": 5858447734,
+   "sub_issue_linked": true,
+   "_linked": {
+    "dep_07.12": true,
+    "dep_03.2": true
+   }
   },
   {
    "id": "13.2",
@@ -7043,7 +7296,14 @@
     "对应测试"
    ],
    "resume_hint": "拿不到真实 usage 时进入 unknown（06.8），不要用输入字符估算输出时长来结算。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 307,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/307",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDZvw",
+   "issue_db_id": 5858449855,
+   "_linked": {
+    "dep_13.1": true
+   }
   },
   {
    "id": "13.3",
@@ -7107,7 +7367,14 @@
     "对应测试"
    ],
    "resume_hint": "“客户端断开=无费用”是错误默认；接手先跑中断用例，确认已发生费用进入结算或 unknown。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 308,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/308",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDfyw",
+   "issue_db_id": 5858451403,
+   "_linked": {
+    "dep_13.2": true
+   }
   },
   {
    "id": "13.4",
@@ -7172,7 +7439,14 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 13 缝合点：宁可少开放一个模型，也不要开放无法约束尾部的路径——那是系统性超支来源。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 309,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/309",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDnKw",
+   "issue_db_id": 5858453291,
+   "_linked": {
+    "dep_13.3": true
+   }
   },
   {
    "id": "14.1",
@@ -7235,7 +7509,15 @@
     "对应测试与音频 fixture"
    ],
    "resume_hint": "音频 fixture 用极短时长的合成文件即可，重点是时长可验证；不要引入大体积媒体到仓库。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 310,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/310",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTDsAQ",
+   "issue_db_id": 5858454529,
+   "_linked": {
+    "dep_07.12": true,
+    "dep_03.2": true
+   }
   },
   {
    "id": "14.2",
@@ -7298,7 +7580,14 @@
     "对应测试"
    ],
    "resume_hint": "不要取 min(声明, 测量) 作为“保守”做法——那是低报；必须取可信测量并在冲突时进入 unknown。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 311,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/311",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTD0Rg",
+   "issue_db_id": 5858456646,
+   "_linked": {
+    "dep_14.1": true
+   }
   },
   {
    "id": "14.3",
@@ -7360,7 +7649,14 @@
     "对应测试"
    ],
    "resume_hint": "缺真实供应商环境时用 fake 完成本地确定性验证，并把该路径标为“未验证/不可启用”，不要编造证据。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 312,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/312",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTEAaA",
+   "issue_db_id": 5858459752,
+   "_linked": {
+    "dep_14.1": true
+   }
   },
   {
    "id": "14.4",
@@ -7426,7 +7722,14 @@
     "对应测试"
    ],
    "resume_hint": "本 Ticket 是组 14 缝合点：除拒绝路径外，确认原因在用户界面可见，否则用户只知道“失败”而无法自助。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 313,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/313",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTENIg",
+   "issue_db_id": 5858463010,
+   "_linked": {
+    "dep_14.3": true
+   }
   },
   {
    "id": "15.1",
@@ -7492,7 +7795,16 @@
     "对应测试"
    ],
    "resume_hint": "会话身份必须在建立时锁定；若实现成每单元重新解析 payer，撤销与价格变更语义会漂移，接手先断言版本不变。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 314,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/314",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTET6Q",
+   "issue_db_id": 5858464745,
+   "_linked": {
+    "dep_08.1": true,
+    "dep_13.3": true,
+    "dep_14.2": true
+   }
   },
   {
    "id": "15.2",
@@ -7555,7 +7867,14 @@
     "对应测试"
    ],
    "resume_hint": "单元粒度必须与供应商实际计费粒度一致；粒度过粗会高估占用，过细会漏计费，接手先核对上游计费文档。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 315,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/315",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTEaTw",
+   "issue_db_id": 5858466383,
+   "_linked": {
+    "dep_15.1": true
+   }
   },
   {
    "id": "15.3",
@@ -7618,7 +7937,14 @@
     "对应 Go 测试"
    ],
    "resume_hint": "门控必须在转发之前；若实现成“转发后检查”，供应商已产生费用，接手用 provider spy 验证顺序。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 316,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/316",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTEi3w",
+   "issue_db_id": 5858468575,
+   "_linked": {
+    "dep_15.2": true
+   }
   },
   {
    "id": "15.4",
@@ -7680,7 +8006,14 @@
     "对应 Go 测试"
    ],
    "resume_hint": "客户端可用新 unitId 制造并发；接手先跑并发用例，确认没有“新 ID 即放行”的分支。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 317,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/317",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTE8mg",
+   "issue_db_id": 5858475162,
+   "_linked": {
+    "dep_15.3": true
+   }
   },
   {
    "id": "15.5",
@@ -7744,7 +8077,14 @@
     "对应测试"
    ],
    "resume_hint": "停止不等于关闭会话（关闭见 15.6/15.7）；接手确认停止后仍能完成既有单元的结算。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 318,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/318",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTFTJQ",
+   "issue_db_id": 5858480933,
+   "_linked": {
+    "dep_15.3": true
+   }
   },
   {
    "id": "15.6",
@@ -7809,7 +8149,15 @@
     "对应测试"
    ],
    "resume_hint": "关停要覆盖上游连接与本地转发两侧；只停一侧会继续产生费用，接手用 provider spy 双向断言。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 319,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/319",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTFbhQ",
+   "issue_db_id": 5858483077,
+   "_linked": {
+    "dep_15.5": true,
+    "dep_05.7": true
+   }
   },
   {
    "id": "15.7",
@@ -7875,7 +8223,14 @@
     "对应测试"
    ],
    "resume_hint": "尾部超过预留上限时不要静默追加扣费；进入 unknown 并由 08.x 处置，这是 Q26 的硬约束。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 320,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/320",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTFkeA",
+   "issue_db_id": 5858485368,
+   "_linked": {
+    "dep_15.6": true
+   }
   },
   {
    "id": "15.8",
@@ -7942,7 +8297,11 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 15 缝合点：完成后应能演示“连续实时对话 → 耗尽停止 → 撤销关停 → 断线恢复 → 明细可见”全流程。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 321,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/321",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTFsUw",
+   "issue_db_id": 5858487379
   },
   {
    "id": "16.1",
@@ -8006,7 +8365,14 @@
     "对应 Go 测试"
    ],
    "resume_hint": "不要为 WebRTC 复制一套会话/单元模型；接手确认它复用组 15 的存储与状态机。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 322,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/322",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGCTA",
+   "issue_db_id": 5858493004,
+   "_linked": {
+    "dep_15.5": true
+   }
   },
   {
    "id": "16.2",
@@ -8071,7 +8437,14 @@
     "对应测试"
    ],
    "resume_hint": "一致性最容易在“关停顺序”上出现差异；接手用同一用例跑两入口并对比 provider spy 计数。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 323,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/323",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGIHA",
+   "issue_db_id": 5858494492,
+   "_linked": {
+    "dep_16.1": true
+   }
   },
   {
    "id": "16.3",
@@ -8137,7 +8510,14 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 16 缝合点：重点不是新增功能，而是证明没有第二条路；把入口枚举结果写入验收记录供 22.1 引用。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 324,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/324",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGNxA",
+   "issue_db_id": 5858495940,
+   "_linked": {
+    "dep_16.2": true
+   }
   },
   {
    "id": "17.1",
@@ -8200,7 +8580,14 @@
     "对应测试"
    ],
    "resume_hint": "复用 Bifrost 既有 provider job 表而不是新建平行体系；接手先确认映射关系落在哪一侧，避免两套 ID 漂移。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 325,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/325",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGUMQ",
+   "issue_db_id": 5858497585,
+   "_linked": {
+    "dep_08.1": true
+   }
   },
   {
    "id": "17.2",
@@ -8264,7 +8651,14 @@
     "对应测试"
    ],
    "resume_hint": "幂等键必须来自提交请求的稳定标识（而非时间戳）；接手先检查重放是否产生第二个任务。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 326,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/326",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGXGw",
+   "issue_db_id": 5858498331,
+   "_linked": {
+    "dep_17.1": true
+   }
   },
   {
    "id": "17.3",
@@ -8328,7 +8722,14 @@
     "对应测试"
    ],
    "resume_hint": "“响应丢失=提交失败=释放预留”是错误默认；远端可能已在运行，必须进入 unknown。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 327,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/327",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGdUA",
+   "issue_db_id": 5858499920,
+   "_linked": {
+    "dep_17.2": true
+   }
   },
   {
    "id": "17.4",
@@ -8390,7 +8791,14 @@
     "对应测试"
    ],
    "resume_hint": "结果里可能含敏感输出；接手确认越权拒绝不返回部分内容或长度差异。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 328,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/328",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGmcQ",
+   "issue_db_id": 5858502257,
+   "_linked": {
+    "dep_17.2": true
+   }
   },
   {
    "id": "17.5",
@@ -8454,7 +8862,14 @@
     "对应测试"
    ],
    "resume_hint": "若现状是“查询时顺便结算”，必须移到后台；否则重复轮询会重复扣费或产生竞争。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 329,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/329",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTGw6A",
+   "issue_db_id": 5858504936,
+   "_linked": {
+    "dep_17.4": true
+   }
   },
   {
    "id": "17.6",
@@ -8518,7 +8933,14 @@
     "对应测试"
    ],
    "resume_hint": "超上限属于真实风险，必须有异常记录与处置入口；不要为了余额一致而悄悄按上限截断。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 330,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/330",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTG1lQ",
+   "issue_db_id": 5858506133,
+   "_linked": {
+    "dep_17.5": true
+   }
   },
   {
    "id": "17.7",
@@ -8583,7 +9005,14 @@
     "对应测试"
    ],
    "resume_hint": "供应商“取消已接受”不等于“未产生费用”；必须有明确证据才释放，否则保持 unknown。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 331,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/331",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTG7vw",
+   "issue_db_id": 5858507711,
+   "_linked": {
+    "dep_17.6": true
+   }
   },
   {
    "id": "17.8",
@@ -8648,7 +9077,11 @@
     "对应 app/tests 测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 17 缝合点：状态码表要与 17.1–17.7 的实现一致，接手先核对码表再写界面。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 332,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/332",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHBbA",
+   "issue_db_id": 5858509164
   },
   {
    "id": "18.1",
@@ -8711,7 +9144,11 @@
     "对应测试"
    ],
    "resume_hint": "条目模型不同则单价不同；接手先用混合模型 fixture 断言求和，避免按单一单价估算整批。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 333,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/333",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHM9A",
+   "issue_db_id": 5858512116
   },
   {
    "id": "18.2",
@@ -8774,7 +9211,11 @@
     "对应测试"
    ],
    "resume_hint": "聚合结算要保证与逐条记录一致（同一笔台账或可核对的分录）；接手先断言两者金额相等。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 334,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/334",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHRww",
+   "issue_db_id": 5858513347
   },
   {
    "id": "18.3",
@@ -8837,7 +9278,11 @@
     "对应测试"
    ],
    "resume_hint": "整体释放是最常见的错误捷径；接手先跑“1 条未派发 + 4 条已计费”的用例，确认只释放有证据的部分。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 335,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/335",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHbWA",
+   "issue_db_id": 5858515800
   },
   {
    "id": "18.4",
@@ -8901,7 +9346,11 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 18 缝合点：验证时同时断言“不丢账”和“不重扣”，只测一侧会漏掉真实缺陷。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 336,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/336",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHjYQ",
+   "issue_db_id": 5858517857
   },
   {
    "id": "19.1",
@@ -8966,7 +9415,11 @@
     "对应测试与 fixture"
    ],
    "resume_hint": "视频常按“每秒 × 分辨率档”计价；只按秒或只按次都会系统性偏差，接手用多档位 fixture 断言。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 337,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/337",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHo5w",
+   "issue_db_id": 5858519271
   },
   {
    "id": "19.2",
@@ -9030,7 +9483,11 @@
     "对应测试"
    ],
    "resume_hint": "可用性要精确到“模型 + 规格 + 调用方式”，不是整族开关；接手用同模型不同规格的组合断言。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 338,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/338",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHySw",
+   "issue_db_id": 5858521675
   },
   {
    "id": "19.3",
@@ -9092,7 +9549,11 @@
     "对应测试"
    ],
    "resume_hint": "上游不收输入费用时要记为明确 free 并留证据；留空会被判 unknown 而整条路径不可用。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 339,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/339",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTH43g",
+   "issue_db_id": 5858523358
   },
   {
    "id": "19.4",
@@ -9159,7 +9620,11 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 19 缝合点：视频任务耗时长，重启恢复与重复查询是最容易出问题的两处，必须各有测试。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 340,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/340",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTH_Zg",
+   "issue_db_id": 5858525030
   },
   {
    "id": "20.1",
@@ -9223,7 +9688,11 @@
     "对应测试"
    ],
    "resume_hint": "枚举要基于实际路由与 hook，而不是工具名称清单；接手用 hook 调用点反推枚举完整性。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 341,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/341",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIFtg",
+   "issue_db_id": 5858526646
   },
   {
    "id": "20.2",
@@ -9288,7 +9757,11 @@
     "对应 Go 测试"
    ],
    "resume_hint": "Q20 的默认是禁用；接手确认不存在“未定价但先放行、事后补账”的分支。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 342,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/342",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIL5w",
+   "issue_db_id": 5858528231
   },
   {
    "id": "20.3",
@@ -9351,7 +9824,11 @@
     "对应测试"
    ],
    "resume_hint": "合计不一致通常来自附加费用既进模型行又进附加行；接手先断言台账总额与明细合计相等。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 343,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/343",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTISFw",
+   "issue_db_id": 5858529815
   },
   {
    "id": "20.4",
@@ -9416,7 +9893,11 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "本 Ticket 是组 20 缝合点：入口枚举结果要写入验收记录，供 22.1 直接引用，不要只留在测试里。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 344,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/344",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIX6w",
+   "issue_db_id": 5858531307
   },
   {
    "id": "21.1",
@@ -9478,7 +9959,11 @@
     "对应测试"
    ],
    "resume_hint": "枚举遗漏会导致后续清理不彻底或误删；接手先核对 fixture 中每类记录是否都出现在 manifest 中。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 345,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/345",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIemA",
+   "issue_db_id": 5858533016
   },
   {
    "id": "21.2",
@@ -9541,7 +10026,11 @@
     "对应测试"
    ],
    "resume_hint": "“看起来像测试数据”不是证据；接手检查每条候选记录是否有可指向的归属来源与特征字段。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 346,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/346",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIkFQ",
+   "issue_db_id": 5858534421
   },
   {
    "id": "21.3",
@@ -9602,7 +10091,11 @@
     "对应测试"
    ],
    "resume_hint": "schema 声明的外键可能与实际数据不一致（历史遗留）；接手用真实数据反查引用，不要只信迁移文件。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 347,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/347",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIolQ",
+   "issue_db_id": 5858535573
   },
   {
    "id": "21.4",
@@ -9665,7 +10158,11 @@
     "对应测试"
    ],
    "resume_hint": "hash 必须覆盖 manifest 内容而不只是时间戳；否则改范围后可复用旧确认，等于绕过审查。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 348,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/348",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIvZA",
+   "issue_db_id": 5858537316
   },
   {
    "id": "21.5",
@@ -9729,7 +10226,11 @@
     "对应测试"
    ],
    "resume_hint": "约束要写在程序里（白名单/断言），不能只写在文档；接手尝试构造一次“误删公司记录”的调用，确认被拒绝。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 349,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/349",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTI00Q",
+   "issue_db_id": 5858538705
   },
   {
    "id": "21.6",
@@ -9793,7 +10294,11 @@
     "对应测试"
    ],
    "resume_hint": "演练只在专用测试库进行；若 TEST_DATABASE_URL 缺失，测试必须失败而不是回退到开发库。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 350,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/350",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTI7dw",
+   "issue_db_id": 5858540407
   },
   {
    "id": "21.7",
@@ -9860,7 +10365,11 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "真实环境执行属于破坏性操作：必须先取得用户对具体 manifest 版本的明确授权，未授权时只交付演练与报告，不得执行。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 351,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/351",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTI_7g",
+   "issue_db_id": 5858541550
   },
   {
    "id": "22.1",
@@ -9944,7 +10453,11 @@
     "验收记录文档"
    ],
    "resume_hint": "别按 Ticket 标题推定覆盖：以 hook 注册点和 provider 调用点为准反向枚举，漏一个入口就等于留一条免费通道。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 352,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/352",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJHHw",
+   "issue_db_id": 5858543391
   },
   {
    "id": "22.2",
@@ -10008,7 +10521,11 @@
     "对应测试与验收记录"
    ],
    "resume_hint": "核查失败不要就地放宽语义：开修复项回到对应 Ticket，否则会破坏已批准的 AC 映射。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 353,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/353",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJOIg",
+   "issue_db_id": 5858545186
   },
   {
    "id": "22.3",
@@ -10073,7 +10590,11 @@
     "验收记录文档"
    ],
    "resume_hint": "证据不是“测试 exit 0”，而是具体上限/usage/尾部行为的可复现结果；接手检查每条证据是否含环境与数值。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 354,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/354",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJSWw",
+   "issue_db_id": 5858546267
   },
   {
    "id": "22.4",
@@ -10138,7 +10659,11 @@
     "验收记录文档"
    ],
    "resume_hint": "与 22.3 共用同一证据结构与存储；不要为这几族另建一套格式，否则 22.5 无法统一核验。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 355,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/355",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJX1g",
+   "issue_db_id": 5858547670
   },
   {
    "id": "22.5",
@@ -10222,7 +10747,11 @@
     "验收记录文档"
    ],
    "resume_hint": "矩阵里出现 skip 就是未完成；接手先补齐可执行性，再谈通过率。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 356,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/356",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJdEQ",
+   "issue_db_id": 5858549009
   },
   {
    "id": "22.6",
@@ -10288,7 +10817,11 @@
     "部署就绪结论文档"
    ],
    "resume_hint": "OCR exit 0 不等于覆盖完整：核对报告覆盖的文件范围与跳过项；覆盖不足时补跑，不能据此宣布完成。",
-   "detail_status": "complete"
+   "detail_status": "complete",
+   "issue_number": 357,
+   "issue_url": "https://github.com/1123786563/OpenBot/issues/357",
+   "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJhCA",
+   "issue_db_id": 5858550024
   }
  ],
  "edge_relaxations": [
