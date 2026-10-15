@@ -60,9 +60,10 @@ const REASONS: OmitReason[] = [
 
 describe("safe content contract", () => {
   test("the policy version is namespaced and exact", () => {
-    // v4: the polish-round host normalization and Proxy enumeration repairs change what is
-    // denied, so frozen dataset references must not silently keep resolving to the old policy.
-    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/4");
+    // v5: the O1/O2 repairs close the crash-not-leak residuals (throwing array traps,
+    // throwing own-key reads), so frozen dataset references must not silently keep
+    // resolving to the old policy.
+    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/5");
   });
 
   test("every omit reason maps to a copy key the UI already has", () => {
@@ -750,5 +751,38 @@ describe("T05 polish 2: pre-existing low gaps", () => {
       state: "omitted",
       reason: "unhandled_free_text",
     });
+  });
+});
+
+describe("O1/O2: v5 closes the crash-not-leak residuals", () => {
+  test("O1: a Proxy array whose traps throw degrades to omitted, never crashes the caller", () => {
+    // Array.isArray says yes, but slice/length run attacker code (get traps) that the
+    // readOwn guard never sees — pre-v5 this threw out of projectSafeRecord entirely.
+    const hostile = new Proxy([1, 2, 3], {
+      get(target, prop) {
+        if (prop === "slice") throw new Error("hostile array trap");
+        return Reflect.get(target, prop);
+      },
+    });
+    const result = projectSafeRecord({ nested: hostile }, ["nested"]);
+    expect(result.nested).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
+  });
+
+  test("O2: a throwing descriptor trap on a top-level allowlist key skips that key", () => {
+    // projectSafeRecord reads own-ness with Object.hasOwn before readOwn ever runs, so a
+    // throwing getOwnPropertyDescriptor aborts the whole allowlist loop pre-v5.
+    const hostile = new Proxy(
+      { model: "gpt-x" },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error("hostile descriptor");
+        },
+      },
+    );
+    const result = projectSafeRecord(hostile, ["model"]);
+    expect(result).toEqual({});
   });
 });
