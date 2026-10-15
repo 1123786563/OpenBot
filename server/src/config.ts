@@ -23,6 +23,10 @@ import {
   type TranscriptionConfig,
   transcriptionConfig,
 } from "./dictation/config";
+import {
+  type ConversionRate,
+  parseConversionRateInput,
+} from "./gateway/conversion-rate";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
@@ -414,6 +418,13 @@ export type DeploymentConfig = {
    * environment and in the request headers the client sends — never in a log line or a response.
    */
   billing?: LagoBillingConfig;
+  /**
+   * The Bifrost USD→credits conversion rate (1 USD = numerator/denominator credits, exact). Read at
+   * start-up only to refuse an invalid value at the boot boundary; absent means billing is not
+   * enabled — no implicit default exists, and the authoritative runtime value is the admin-saved
+   * versioned row (gateway/conversion-rate-store.ts), validated by the same pure parser.
+   */
+  bifrostConversionRate?: ConversionRate;
   /**
    * The direct-collection channels, beside the billing projection above. Same absent-means-
    * unmounted contract: a deployment that configured no channel mounts no payment surface at all.
@@ -2746,6 +2757,11 @@ export function loadConfig(
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
   // Read once so the payments block can refuse a channel configured without its projection.
   const billing = billingConfig(environment);
+  const conversionRateRaw = optional(environment, "BIFROST_CONVERSION_RATE_PER_USD");
+  const conversionRate = conversionRateRaw === undefined ? undefined : parseConversionRateInput(conversionRateRaw);
+  if (conversionRateRaw !== undefined && conversionRate && !conversionRate.ok) {
+    throw new Error(`BIFROST_CONVERSION_RATE_PER_USD: ${conversionRate.error}`);
+  }
   const deploymentKey = keyEncryptionKey(environment);
   const webBotAuth = webBotAuthFromEnv(environment, {
     publicUrl,
@@ -2758,6 +2774,7 @@ export function loadConfig(
     voice: voiceConfig(environment),
     databaseUrl: required(environment, "DATABASE_URL"),
     keyEncryptionKey: deploymentKey,
+    ...(conversionRate?.ok ? { bifrostConversionRate: conversionRate.value } : {}),
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
     ...(githubApp ? { githubApp } : {}),
