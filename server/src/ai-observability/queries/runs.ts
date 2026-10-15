@@ -182,7 +182,13 @@ function durationFromUpstream(metadata: unknown): number | "unavailable" {
   return "unavailable";
 }
 
-function projectRow(row: OpikTraceRow): RunSummary {
+/**
+ * One upstream trace row onto what may safely be shown. The one projection the
+ * read paths share: T11's query surface serves it directly, and T34's export
+ * freezes it into artifacts — so an export can never carry anything the query
+ * surface would have refused.
+ */
+export function projectRow(row: OpikTraceRow): RunSummary {
   return {
     opikTraceId: row.id,
     state: runStateFromUpstream(row.status),
