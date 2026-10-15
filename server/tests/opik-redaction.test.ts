@@ -60,9 +60,9 @@ const REASONS: OmitReason[] = [
 
 describe("safe content contract", () => {
   test("the policy version is namespaced and exact", () => {
-    // v3: the T05 review deny-gap repairs change what is denied, so frozen dataset
-    // references must not silently keep resolving to the old policy.
-    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/3");
+    // v4: the polish-round host normalization and Proxy enumeration repairs change what is
+    // denied, so frozen dataset references must not silently keep resolving to the old policy.
+    expect(REDACTION_POLICY_VERSION).toBe("opik-redaction/4");
   });
 
   test("every omit reason maps to a copy key the UI already has", () => {
@@ -646,5 +646,109 @@ describe("T05 review repair: deny gaps", () => {
     });
     expect(result.state).toBe("omitted");
     expect(JSON.stringify(result)).not.toContain("b3BlbnNzaC1rZXktdjE");
+  });
+});
+
+/**
+ * T05 polish round 2 (repair review N1/N3). Two LOW pre-existing gaps: hostname spellings that
+ * walk past the endpoint deny sets, and the record enumeration path a Proxy controls outright.
+ */
+describe("T05 polish 2: pre-existing low gaps", () => {
+  test("N1: a trailing-dot localhost is omitted as a raw attachment", () => {
+    // `localhost.` is the DNS root-label spelling of the same loopback host — it resolves to
+    // 127.0.0.1 but walked past the string-equality loopback check.
+    const result = projectSafeUrl("http://localhost.:3010/api/keys");
+    expect(result.state).toBe("omitted");
+    if (result.state === "omitted")
+      expect(result.reason).toBe("raw_attachment");
+  });
+
+  test("N1: mixed case with a trailing dot is omitted too", () => {
+    // The parser lowercases the host but keeps the dot: normalization has to survive both
+    // shapes at once.
+    expect(projectSafeUrl("http://LocalHost.:3010/x").state).toBe("omitted");
+  });
+
+  test("N1: parser-normalized host spellings stay covered", () => {
+    // Verified against the URL parser: uppercase hosts, hex/octal/decimal IPv4 spellings and
+    // dotted IPv4 hosts are normalized before we see them. These pin the coverage the trailing-
+    // dot fix must not regress.
+    for (const url of [
+      "http://LOCALHOST:3010/api/keys",
+      "http://0x7f.0.0.1/api/keys",
+      "http://2130706433/api/keys",
+      "http://0177.0.0.1/api/keys",
+      "http://127.0.0.01./api/keys",
+      "http://169.254.169.254./latest/meta-data/",
+    ]) {
+      expect(projectSafeUrl(url).state, url).toBe("omitted");
+    }
+  });
+
+  test("N1: a punycode lookalike domain is not the loopback host", () => {
+    // `xn--loalhost-gch` (Cyrillic с) is a *different* domain, not a normalization variant of
+    // localhost — mapping it back would be guessing at attacker intent, and a wrong guess
+    // denies a real registered host. It projects like any other public host.
+    expect(projectSafeUrl("http://xn--loalhost-gch/x")).toEqual({
+      state: "projected",
+      text: "http://xn--loalhost-gch/x",
+    });
+  });
+
+  test("N3: a Proxy key name carrying a credential is dropped, never echoed", () => {
+    // ownKeys/getOwnPropertyDescriptor are attacker code on a Proxy: they can put the
+    // credential in a *key name*, where the value deny scan never looks.
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys: () => ["sk-live-abcdefghijklmnopqrst", "model"],
+        getOwnPropertyDescriptor: () => ({
+          configurable: true,
+          enumerable: true,
+        }),
+        get: () => "gpt-x",
+      },
+    );
+    const result = projectSafeRecord({ nested: hostile }, ["nested"]);
+    const nested = result.nested;
+    expect(nested?.state).toBe("projected");
+    expect(JSON.stringify(result)).not.toContain("sk-live");
+    if (nested?.state === "projected") {
+      expect(Object.keys(nested.value as object)).toEqual(["model"]);
+    }
+  });
+
+  test("N3: a throwing ownKeys trap degrades to omitted, never propagated", () => {
+    // Object.keys itself runs the trap, so F6's readOwn guard never sees this throw.
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys: () => {
+          throw new Error("hostile ownKeys");
+        },
+      },
+    );
+    const result = projectSafeRecord({ nested: hostile }, ["nested"]);
+    expect(result.nested).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
+  });
+
+  test("N3: a throwing getOwnPropertyDescriptor trap degrades the same way", () => {
+    // Object.keys consults the descriptor trap for enumerability before returning a key.
+    const hostile = new Proxy(
+      { model: "gpt-x" },
+      {
+        getOwnPropertyDescriptor: () => {
+          throw new Error("hostile descriptor");
+        },
+      },
+    );
+    const result = projectSafeRecord({ nested: hostile }, ["nested"]);
+    expect(result.nested).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
   });
 });

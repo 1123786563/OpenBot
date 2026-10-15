@@ -154,6 +154,11 @@ export function projectSafeUrl(input: string | null | undefined): SafeText {
     return { state: "omitted", reason: "unhandled_free_text" };
   }
   const isRawFile = /\/(?:files|attachments|download)\//i.test(url.pathname);
+  // Normalize before matching: a trailing dot is the DNS root-label spelling of the same host
+  // (`localhost.` resolves to 127.0.0.1) and walks past a plain string comparison (review
+  // finding N1). Case, punycode and the IPv4 spellings are already normalized by the URL
+  // parser — pinned by test — so stripping trailing dots is all that is ours to do.
+  const hostname = url.hostname.replace(/\.+$/, "");
   const isLoopback = [
     "127.0.0.1",
     "localhost",
@@ -162,10 +167,10 @@ export function projectSafeUrl(input: string | null | undefined): SafeText {
     "0.0.0.0",
     // The URL parser normalizes the IPv4-mapped loopback to its canonical hex spelling.
     "[::ffff:7f00:1]",
-  ].includes(url.hostname);
+  ].includes(hostname);
   // The link-local block: 169.254.169.254 answers anyone who asks with cloud credentials, and
   // following it hands the reader exactly what this projection refuses to carry (review finding F4).
-  const isLinkLocal = /^169\.254\.\d{1,3}\.\d{1,3}$/.test(url.hostname);
+  const isLinkLocal = /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname);
   if (isRawFile || isLoopback || isLinkLocal)
     return { state: "omitted", reason: "raw_attachment" };
   return project(
@@ -301,9 +306,19 @@ function projectDeep(value: unknown, depth: number): SafeValue {
   }
   if (value && typeof value === "object") {
     const source = value as Record<string, unknown>;
-    const keys = Object.keys(source);
+    // Object.keys itself runs Proxy traps (ownKeys, getOwnPropertyDescriptor) — attacker code
+    // that can throw past the readOwn guard or fabricate key names, where the value deny scan
+    // never looks (review finding N3). Read the list defensively and drop deny-matching keys
+    // outright: rendering them as omitted would echo the hostile key name into the output.
+    let keys: string[];
+    try {
+      keys = Object.keys(source);
+    } catch {
+      return { state: "omitted", reason: "unhandled_free_text" };
+    }
     const out: Record<string, SafeValue> = {};
     for (const key of keys.slice(0, MAX_SAFE_RECORD_KEYS)) {
+      if (denyReason(key)) continue;
       const read = readOwn(source, key);
       defineOwn(
         out,
