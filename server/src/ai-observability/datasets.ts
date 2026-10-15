@@ -154,7 +154,7 @@ function reference(value: string): string {
  * order are the same content and hash the same. Everything else is JSON.stringify's own
  * spelling — a number is a number and a string is a string.
  */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(",")}]`;
   }

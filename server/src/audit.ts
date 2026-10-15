@@ -708,6 +708,14 @@ export const auditEventTypes = [
    * and was it the same content as before" from the trail without reading the dataset itself.
    */
   "opik.dataset_version_saved",
+  /**
+   * An experiment configuration was submitted and frozen: the payload names the experiment,
+   * its pinned dataset version and content hash, the canonical configuration hash, how many
+   * places the redaction policy refused (the canary), and whether this submit replayed an
+   * existing experiment — enough to answer "who submitted what, when, and was it the same
+   * configuration as before" from the trail without reading the frozen configuration.
+   */
+  "opik.experiment_submitted",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
