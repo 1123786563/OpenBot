@@ -138,6 +138,14 @@ const serving = {
     },
     "/api": {
       target: `http://localhost:${apiPort.port}`,
+      // Upgrades too. Craft's webapp preview is an iframe whose Next.js dev client
+      // opens `ws://<this origin>/api/craft/sessions/<id>/webapp/_next/webpack-hmr`,
+      // and Turbopack gates its chunk loading on that socket — without it the page
+      // renders its server HTML and then never hydrates (measured: 17 scripts and
+      // silence, where a working socket pulls 187 and hydrates). The URL is chosen
+      // by Next inside the frame, so unlike the channels socket it cannot be aimed
+      // at the server's own port via `__OPENBOT_WS_PORT__`; the proxy has to carry it.
+      ws: true,
     },
   },
 };
