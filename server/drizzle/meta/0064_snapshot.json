@@ -1,6 +1,6 @@
 {
-  "id": "b87c9f99-9c7f-43bd-a488-4c3fec87b463",
-  "prevId": "1f097f3a-c5f4-4c68-9080-c66cb8c25ec8",
+  "id": "1f097f3a-c5f4-4c68-9080-c66cb8c25ec8",
+  "prevId": "1695b654-f6c0-402c-8859-b356f69b8249",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12311,8 +12311,8 @@
         }
       },
       "foreignKeys": {
-        "billing_subscriptions_external_customer_id_billing_customers_external_id_fk": {
-          "name": "billing_subscriptions_external_customer_id_billing_customers_external_id_fk",
+        "billing_subscriptions_ext_customer_id_fk": {
+          "name": "billing_subscriptions_ext_customer_id_fk",
           "tableFrom": "billing_subscriptions",
           "tableTo": "billing_customers",
           "columnsFrom": [

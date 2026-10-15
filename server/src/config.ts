@@ -1,3 +1,10 @@
+function spreadOptional<K extends string, V>(
+  key: K,
+  value: V | undefined,
+): { [_ in K]?: V } {
+  return value === undefined ? {} : ({ [key]: value } as { [_ in K]?: V });
+}
+
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -229,6 +236,9 @@ export type DeploymentConfig = {
   /** The port the API listens on. Named `PORT` or `SERVER_PORT`; see `serverPort`. */
   port: number;
   databaseUrl: string;
+  enterpriseDirectoryDatabaseUrl?: string;
+  enterpriseDataDatabaseUrl?: string;
+  tenantStorageRuntimeDatabaseUrl?: string;
   keyEncryptionKey: string;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
@@ -2757,6 +2767,18 @@ export function loadConfig(
     transcription: transcriptionConfig(environment),
     voice: voiceConfig(environment),
     databaseUrl: required(environment, "DATABASE_URL"),
+    ...spreadOptional(
+      "enterpriseDirectoryDatabaseUrl",
+      optional(environment, "ENTERPRISE_DIRECTORY_DATABASE_URL"),
+    ),
+    ...spreadOptional(
+      "enterpriseDataDatabaseUrl",
+      optional(environment, "ENTERPRISE_DATA_DATABASE_URL"),
+    ),
+    ...spreadOptional(
+      "tenantStorageRuntimeDatabaseUrl",
+      optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
+    ),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),

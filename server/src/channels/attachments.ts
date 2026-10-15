@@ -27,6 +27,7 @@ import {
   channels,
   intelligenceChannelMappings,
 } from "../db/schema";
+import { mastraMessageIntentAttachments } from "../db/schema/mastra-message-intents";
 import { sniffMimeType } from "./attachment-mime";
 import type { StoredAttachment } from "./attachment-parts";
 const log = getLogger("server");
@@ -98,6 +99,38 @@ function isUuidShaped(value: string): boolean {
  * branch only opens for a thread nobody is shown.
  */
 type AttachmentQueries = Pick<Database, "select" | "update">;
+type AttachmentLockQueries = Pick<Database, "select" | "execute">;
+
+/**
+ * Hold every attachment channel stable against legacy membership removal and channel soft-delete
+ * until the enclosing message transaction commits. The ids are read first only to discover the
+ * lock keys; callers repeat authorization after these shared locks have been acquired.
+ */
+export async function lockAttachmentChannelsInTransaction(
+  transaction: AttachmentLockQueries,
+  tenantId: string,
+  ids: readonly string[],
+): Promise<void> {
+  const known = [...new Set(ids.filter(isUuidShaped))];
+  if (known.length === 0) return;
+  const rows = await transaction
+    .select({ channelId: attachments.channelId })
+    .from(attachments)
+    .where(inArray(attachments.id, known));
+  const channelIds = [...new Set(rows.map((row) => row.channelId))].sort();
+  for (const channelId of channelIds) {
+    const key = JSON.stringify(["enterprise", "resource", tenantId, channelId]);
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
+    );
+  }
+  for (const channelId of channelIds) {
+    const key = JSON.stringify(["legacy", "channel", channelId]);
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock_shared(hashtextextended(${key}, 0))`,
+    );
+  }
+}
 
 function inTheTurnsChannel(database: AttachmentQueries, threadId: string) {
   const channelOfThisThread = () =>
@@ -165,29 +198,6 @@ export async function loadAttachmentForTurn(
   turn: { actorId: string; threadId: string },
   id: string,
 ): Promise<StoredAttachment | null> {
-  /*
-   * The same uuid-shape guard as the two routes below, and it belongs here rather than at either
-   * caller because this id is the one nothing shaped. A path param at least came off a route
-   * pattern; this one comes out of `attachmentIdFor` (attachment-parts.ts), which slices whatever
-   * follows `/api/attachments/` in a browser-supplied message part — so a query string, a second
-   * path segment, and the empty string all arrive here as "ids".
-   *
-   * The consequence is worse here than on a route, too. A 500 is one failed request; this throw
-   * lands inside `resolvePart`, which only degrades a NULL into the `onMissing: "note"` text. A
-   * throw goes straight past that degradation, and history is replayed on every turn, so a single
-   * malformed part would fail this channel's every future turn for ever, with no recovery but
-   * starting another channel. An id no `uuid` column could hold is an id no row has: null.
-   */
-  if (!isUuidShaped(id)) return null;
-
-  /*
-   * `channels` is in the join, not only `channelMemberships`, and the difference is a channel that
-   * has been deleted. Deletion here is soft — `channels.deletedAt` — so the channel row and every
-   * membership on it survive it, and a join that asks only "is this actor a member" answers yes for
-   * ever afterwards. This is the path that hands bytes to a MODEL rather than to a browser, so
-   * without the channel term somebody in a deleted channel could name an id out of their own local
-   * transcript on a message they compose themselves and have the file read back to them.
-   */
   return loadAttachmentForTurnInTransaction(database, turn, id);
 }
 
@@ -239,6 +249,41 @@ export async function loadAttachmentForTurnInTransaction(
       ),
     );
   return row ?? null;
+}
+
+/** Check send eligibility without exposing attachment bytes to the enterprise data role. */
+export async function authorizeAttachmentForSendInTransaction(
+  transaction: AttachmentQueries,
+  turn: { actorId: string; threadId: string },
+  id: string,
+): Promise<boolean> {
+  if (!isUuidShaped(id)) return false;
+  const [row] = await transaction
+    .select({ id: attachments.id })
+    .from(attachments)
+    .innerJoin(
+      channels,
+      and(eq(channels.id, attachments.channelId), isNull(channels.deletedAt)),
+    )
+    .innerJoin(
+      channelMemberships,
+      and(
+        eq(channelMemberships.channelId, attachments.channelId),
+        eq(channelMemberships.userId, turn.actorId),
+      ),
+    )
+    .where(
+      and(
+        eq(attachments.id, id),
+        inTheTurnsChannel(transaction, turn.threadId),
+        or(
+          isNotNull(attachments.attachedAt),
+          eq(attachments.uploadedBy, turn.actorId),
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 
 /**
@@ -455,6 +500,7 @@ export async function markAttachmentsSentInTransaction(
         isNull(attachments.attachedAt),
       ),
     );
+
 
   const recorded = await transaction
     .select({ id: attachments.id })
@@ -1727,6 +1773,14 @@ export function createAttachmentRoutes(
           eq(attachments.id, id),
           eq(attachments.uploadedBy, actor.id),
           isNull(attachments.attachedAt),
+          notExists(
+            database
+              .select({ pending: sql`1` })
+              .from(mastraMessageIntentAttachments)
+              .where(
+                eq(mastraMessageIntentAttachments.attachmentId, attachments.id),
+              ),
+          ),
           exists(
             database
               .select({ member: sql`1` })
@@ -1797,7 +1851,17 @@ export function createAttachmentRoutes(
      * ever confirm what the pair of statements has already established.
      */
     const rows = await database
-      .select({ id: attachments.id })
+      .select({
+        id: attachments.id,
+        pending: exists(
+          database
+            .select({ pending: sql`1` })
+            .from(mastraMessageIntentAttachments)
+            .where(
+              eq(mastraMessageIntentAttachments.attachmentId, attachments.id),
+            ),
+        ),
+      })
       .from(attachments)
       .innerJoin(
         channels,
@@ -1836,12 +1900,14 @@ export function createAttachmentRoutes(
       return noSuchAttachment(context);
     }
 
-    // Once an attachment rides in a sent message, it is part of that message's record: pulling it
-    // out from under a message that already claims it would leave the message pointing at nothing.
-    // A staged attachment has made no such promise yet, so only that one may still be withdrawn —
-    // and the delete above is the only thing that decides whether it still is one.
+    // A sent attachment or one reserved by a pending durable intent is spoken for and cannot be
+    // withdrawn. The correlated check on the delete makes this safe against a concurrent prepare.
     return context.json(
-      { error: "This attachment is already part of a sent message." },
+      {
+        error: row.pending
+          ? "This attachment is reserved by a pending message."
+          : "This attachment is already part of a sent message.",
+      },
       409,
     );
   });

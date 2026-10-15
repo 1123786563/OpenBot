@@ -1,765 +1,1182 @@
-/**
- * The atomic run-creation store, per plan 03 §4.3's seven-step algorithm.
- *
- * One `withTenant` transaction on the run-writer login (migration 0064 completed its read
- * catalog, so 02's canonical opener works again) does ALL of: the idempotency lookup and
- * its CURRENT-authorization re-check (a replay never bypasses a revocation), the RunPolicy
- * verdict, the plan's lock order (tenant→principal→membership shared locks, then the
- * release/route resource locks), the frozen version and cap, the queued Run row with its input
- * and initial turn, `budget.reserveInTx` on the SAME transaction (the full-run cap is held on
- * all four layer accounts or the whole transaction rolls back), and the redacted
- * `start_workflow` outbox row whose payload carries IDs only. A unique-conflict loser rolls its
- * ENTIRE transaction back and re-opens a fresh read-only authorization transaction to name the
- * winner — it never keeps using the aborted transaction.
- *
- * RESOLUTION AND RE-READ (plan §8.1 + §4.3): the alias resolves through the models domain's
- * ONE resolver — `resolveRouteInTx` (active default version only, target known to the
- * deployment registry) — never through a local fallback that could retarget a new run onto a
- * non-default revision after the operator disabled the default. The reads that name the
- * resource-lock keys are the plan's untrusted hints; the release and route bindings are
- * RE-READ under those locks and the freeze copies the re-read values, so a disable that
- * commits between the hint and the lock is seen before anything is frozen.
- *
- * Lock-order note (plan §4.3): the run row is INSERTED before `reserveInTx` because the
- * reservation's RLS policy requires the run to exist (migration 0060's
- * `run_reservation_write` WITH CHECK) and the deferred composite FK settles at commit. A fresh
- * run row takes no lock any concurrent transaction can hold or wait on (its id is not known to
- * anyone yet), so the plan's "never lock the run row and then ask for the budget account"
- * prohibition — which targets EXISTING rows — is not violated by the create order: every
- * contended lock is still taken in the plan's order (resources first, then the account rows in
- * ascending id order inside `reserveInTx`). All network calls happen after commit; nothing in
- * this module dials out at all.
- *
- * AUDIT HAND-OFF (plan §4.3 step 6's audit half — explicit, greppable contract): the create
- * transaction does NOT write `enterprise_security_events`, and NO role available to this API
- * path may. `ob_ent_run_writer` holds no grant (verified live, 42501) — correctly, because
- * the acting principal must never write its own audit trail; INSERT is held only by
- * `ob_ent_operator` (the OFFLINE provisioning CLI, plan §4.4) and `ob_ent_run_maintenance`
- * (whose login the API is forbidden from switching to, plan §4.2). The hand-off is therefore
- * TO THE MAINTENANCE/OPERATOR PLANE, with the audit record already persisted in
- * tamper-evident ledger form: the committed run row (owner, actor_user_id, workspace,
- * release + digest, request_key/digest, frozen route/grant revision, admission-time
- * RUNS_ADMISSION_POLICY_REVISION) plus its redacted start_workflow outbox row and the
- * RUN_QUEUED platform event. Any maintenance command that surfaces or exports run-creation
- * audit (E2's maintenance plane / ops inspect-run) reads THOSE committed rows; no further
- * write is pending from this module.
- *
- * Role-contract note: the RUN_QUEUED durable event is appended on the runtime-writer pool
- * right after commit (see `appendQueuedEvent`) because `ob_ent_run_writer` cannot write
- * `enterprise_run_events` (migration 0060, live-probed 42501) — the event is deterministic
- * and idempotent by its platform source id, so the commit-to-append gap is a logged,
- * bounded degradation, never a second truth.
- *
- * Statement texts are module constants with `$n` placeholders; values travel only as
- * parameters. Every row read back is shape-checked — never `as`-cast into the contract.
- */
-
+import { randomUUID } from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
 import {
-  type CreateRun,
-  CreateRunSchema,
-  Decimal,
-  ID,
-  type RunEventView,
-  type RunView,
-  RunViewSchema,
-} from "../../../../shared/enterprise/run-contracts";
-import { getLogger } from "../../../../shared/logger";
-import type { Database } from "../../db/client";
-import type { Scope } from "../contracts";
-import { EnterpriseError } from "../errors";
-import { resolveRouteInTx } from "../models/catalog";
-import type { TargetRegistry } from "../models/contracts";
+  enterpriseConversations,
+  enterpriseMessages,
+} from "../../db/schema/enterprise-conversations";
 import {
-  firstRow,
-  lockExclusive,
-  lockKey,
-  withTenant,
-} from "../tenancy/transaction";
-import type { BudgetPort, RunCommand, RunService } from "./contracts";
-import { runRequestDigest, sha256 } from "./digest";
-import type { RunPolicy } from "./policy";
+  enterpriseModelBudgetReservations,
+  enterpriseRunAttempts,
+  enterpriseRunOutbox,
+  enterpriseRuns,
+} from "../../db/schema/enterprise-runs";
+import { mastraMessageIntents } from "../../db/schema/mastra-message-intents";
+import type {
+  PlatformScope,
+  RunDTO,
+  RunFailureCode,
+  RunnerRequestLease,
+  StartRunInput,
+} from "../contracts";
+import { createConversationStore } from "../conversations/store";
+import type { DataDatabase } from "../tenancy/connections";
+import { assertTrustedScope } from "../tenancy/store";
 
-/** Fault-injection points for the §4.3 rollback tests; production callers never pass them. */
-export type CreateFaultHooks = {
-  afterRunInsert?: () => Promise<void>;
-  afterReserve?: () => Promise<void>;
-  afterOutboxInsert?: () => Promise<void>;
-};
+type Transaction = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
+type RunRow = typeof enterpriseRuns.$inferSelect;
 
-export type RunStoreDeps = {
-  db: Database;
-  policy: RunPolicy;
-  budget: BudgetPort;
-  /**
-   * The deployment's approved target registry (plan §8.1): the alias resolution refuses a
-   * route whose target reference the registry does not know, so an admission can never pin a
-   * run to a target this deployment cannot dial. The composition root names the registry
-   * explicitly — the same discipline the offline provision CLI applies to its own writes.
-   */
-  targets: TargetRegistry;
-  /**
-   * The runtime-writer pool (ob_ent_runtime_writer), when the deployment provides it: the
-   * ONLY role the ledger's role contract allows to write `enterprise_run_events` (migration
-   * 0060). When present, a fresh create appends the initial RUN_QUEUED event on this pool
-   * AFTER the business transaction commits — the run-writer transaction itself cannot write
-   * the events table (live-probed 42501), so plan §4.3 step 6's in-transaction write is
-   * realized as an immediately-following, deterministic, idempotent-by-source append whose
-   * failure degrades to a logged gap, never to a failed create (the run row, reservation and
-   * outbox are the committed truth). Absent → the append is skipped (bare E1 deployments).
-   */
-  eventsDatabase?: Database;
-  hooks?: CreateFaultHooks;
-};
-
-const INVALID_RUN_INPUT = new EnterpriseError("INVALID_RUN_INPUT", 400);
-const IDEMPOTENCY_KEY_REQUIRED = new EnterpriseError(
-  "IDEMPOTENCY_KEY_REQUIRED",
-  400,
-);
-const IDEMPOTENCY_CONFLICT = new EnterpriseError("IDEMPOTENCY_CONFLICT", 409);
-const RUN_NOT_FOUND = new EnterpriseError("RUN_NOT_FOUND", 404);
-const RUN_MODEL_ROUTE_MISSING = new EnterpriseError(
-  "RUN_MODEL_ROUTE_MISSING",
-  404,
-);
-const RUN_RELEASE_DISABLED = new EnterpriseError("RUN_RELEASE_DISABLED", 403);
-const RUN_MODEL_GRANT_MISSING = new EnterpriseError(
-  "RUN_MODEL_GRANT_MISSING",
-  403,
-);
-const RUN_THREAD_NOT_FOUND = new EnterpriseError("RUN_THREAD_NOT_FOUND", 404);
-const RUN_THREAD_ARCHIVED = new EnterpriseError("RUN_THREAD_ARCHIVED", 409);
-const RUN_THREAD_BUSY = new EnterpriseError("RUN_THREAD_BUSY", 409);
-const RUN_STATE_INVALID = new EnterpriseError("RUN_STATE_INVALID", 503);
-const COMMAND_NOT_AVAILABLE = new EnterpriseError("COMMAND_NOT_AVAILABLE", 503);
-const EVENT_STREAM_UNAVAILABLE = new EnterpriseError(
-  "EVENT_STREAM_UNAVAILABLE",
-  503,
-);
-const INVALID_RUN_COMMAND = new EnterpriseError("INVALID_RUN_COMMAND", 400);
+/** The complete fixed taxonomy of admitted leased Run failure codes. */
+const RUN_FAILURE_CODES = [
+  "MODEL_EXECUTION_UNAVAILABLE",
+  "MODEL_EXECUTION_FAILED",
+  "MODEL_SETTLEMENT_FAILED",
+  "MODEL_BUDGET_EXCEEDED",
+] as const satisfies readonly RunFailureCode[];
 
 /**
- * The admission-policy revision frozen onto every run this store creates. The runs admission
- * rules ARE this module + runs/policy.ts; their identity is a module constant that bumps with
- * a rule change (the plan's "冻结...policy" step 4). The run-writer role cannot read the
- * tenants table's tenancy policy revision (migration 0060), and the tenancy chain it governs
- * is re-checked live at every admission anyway.
+ * Runtime membership check for the fixed failure taxonomy. Every leased
+ * failure transition — service validator and store guard — admits only these
+ * literals; arbitrary strings are rejected before any write.
  */
-const RUNS_ADMISSION_POLICY_REVISION = "runs-v1";
+export function isAdmittedRunFailureCode(
+  errorCode: unknown,
+): errorCode is RunFailureCode {
+  return (
+    typeof errorCode === "string" &&
+    (RUN_FAILURE_CODES as readonly string[]).includes(errorCode)
+  );
+}
 
-/* ---------------------------------------------------------------------------
- * Statements (module constants; `$n` placeholders only).
- * ------------------------------------------------------------------------- */
+export function isCurrentRunLeaseSnapshot(
+  lease: RunnerRequestLease,
+  ownerToken: string | null,
+  ownerExpiresAt: Date | null,
+  now = new Date(),
+): boolean {
+  return (
+    ownerToken === lease.ownerToken &&
+    ownerExpiresAt instanceof Date &&
+    ownerExpiresAt.getTime() === lease.expiresAt.getTime() &&
+    ownerExpiresAt > now
+  );
+}
 
-/** Step 2: the caller's existing record for this key — the idempotency anchor. */
-const SELECT_RUN_BY_KEY_TEXT = `
-  select id, request_digest, thread_id, status, revision, latest_seq,
-         reconciliation_required, reason_code, release_id, model_route_ref
-  from enterprise_runs
-  where tenant_id = $1 and owner_principal_id = $2 and request_key = $3
-  limit 1`;
-
-/**
- * The pre-lock hint (§4.3: "先读不可信 hint，再按顺序上锁并复读绑定"): only names the
- * resource whose advisory lock the freeze must serialize on. The frozen facts are re-read
- * under the locks by SELECT_RELEASE_TEXT.
- */
-const SELECT_RELEASE_RESOURCE_TEXT = `
-  select resource_id
-  from enterprise_run_releases
-  where tenant_id = $1 and id = $2`;
-
-/** The binding re-read UNDER the resource locks, and the row the freeze actually copies. */
-const SELECT_RELEASE_TEXT = `
-  select id, resource_id, version_digest, max_run_micros, currency, status
-  from enterprise_run_releases
-  where tenant_id = $1 and id = $2`;
-
-/**
- * The route re-read UNDER the resource locks: a route disabled between the alias resolution
- * and the locks must not be frozen into a new run (E4-A: a disabled route refuses new calls).
- */
-const SELECT_ROUTE_STATUS_TEXT = `
-  select status
-  from enterprise_model_routes
-  where tenant_id = $1 and id = $2`;
-
-/** The frozen model-grant revision: the ACTIVE grant's revision, read under the locks. */
-const SELECT_MODEL_GRANT_REVISION_TEXT = `
-  select revision from enterprise_model_grants
-  where tenant_id = $1 and route_id = $2 and principal_id = $3 and status = 'active'`;
-
-const SELECT_THREAD_TEXT = `
-  select id, owner_principal_id, status
-  from enterprise_threads
-  where tenant_id = $1 and id = $2`;
-
-const INSERT_THREAD_TEXT = `
-  insert into enterprise_threads (tenant_id, id, owner_principal_id, workspace_id)
-  values ($1, $2, $3, $4)`;
-
-/** Belt-and-braces pre-check; the partial unique index is the race-proof guarantee. */
-const SELECT_ACTIVE_RUN_ON_THREAD_TEXT = `
-  select 1 as ok
-  from enterprise_runs
-  where tenant_id = $1 and thread_id = $2
-    and status not in ('succeeded','failed','cancelled','expired')
-  limit 1`;
-
-/**
- * The current budget period: anchored on the tenant-layer account of the release's currency.
- * No active in-window tenant account = no budget to reserve against at all (BUDGET_EXCEEDED).
- */
-const SELECT_TENANT_PERIOD_TEXT = `
-  select period_id
-  from enterprise_budget_accounts
-  where tenant_id = $1 and scope_kind = 'tenant' and scope_ref = $1
-    and currency = $2 and status = 'active'
-    and starts_at <= clock_timestamp() and ends_at > clock_timestamp()
-  order by starts_at desc
-  limit 1`;
-
-/**
- * Step 5: the queued run with its input, initial turn and every frozen fact. attempt/fence
- * columns start at their lifecycle origins; no attempt exists until E2 claims a lease.
- */
-const INSERT_RUN_TEXT = `
-  insert into enterprise_runs (
-    tenant_id, id, owner_principal_id, actor_user_id, workspace_id, thread_id,
-    release_id, initiator_kind, request_key, request_digest, input_text,
-    model_route_ref, model_grant_revision, release_digest, policy_revision,
-    budget_reservation_id, status, revision, latest_seq, current_attempt_id,
-    current_turn_id, current_fence
-  ) values (
-    $1, $2, $3, $4, $5, $6, $7, 'user', $8, $9, $10,
-    $11, $12::bigint, $13, $14, $15, 'queued', 0, 0, null, $16, 1
+export function runFailureRunLeaseFence(
+  scope: PlatformScope,
+  lease: RunnerRequestLease,
+  errorCode: RunFailureCode,
+) {
+  return sql`exists (
+    select 1 from ${enterpriseRuns}
+    where ${enterpriseRuns.tenantId} = ${scope.tenantId}
+      and ${enterpriseRuns.workspaceId} = ${scope.workspaceId}
+      and ${enterpriseRuns.principalId} = ${scope.principalId}
+      and ${enterpriseRuns.id} = ${lease.runId}
+      and ${enterpriseRuns.attemptGeneration} = ${lease.generation}
+      and ${enterpriseRuns.status} = ${"failed"}
+      and ${enterpriseRuns.errorCode} = ${errorCode}
+      and ${enterpriseRuns.leaseExpiresAt} > clock_timestamp()
   )`;
-
-/** Step 6: the plan's exact outbox statement; the payload carries IDs only. */
-const INSERT_OUTBOX_TEXT = `
-  insert into enterprise_run_outbox
-    (tenant_id, id, run_id, kind, payload_digest, payload, status, available_at, attempts, created_at)
-  values ($1, $2, $3, 'start_workflow', $4, $5::jsonb, 'pending', clock_timestamp(), 0, clock_timestamp())`;
-
-const SELECT_RUN_BY_ID_TEXT = `
-  select id, thread_id, status, revision, latest_seq, reconciliation_required,
-         reason_code, owner_principal_id, release_id, workspace_id
-  from enterprise_runs
-  where tenant_id = $1 and id = $2`;
-
-/* ---------------------------------------------------------------------------
- * The initial RUN_QUEUED event (plan §4.3 step 6), appended on the runtime-writer pool right
- * after the create transaction commits. Deterministic: one fixed seq bump (latest_seq 0→1 on
- * a fresh run) and one platform-source event whose source_event_id is derived from the run id,
- * so the platform-source partial unique index (migration 0060) makes any re-append an
- * idempotent refusal rather than a duplicate.
- * ------------------------------------------------------------------------- */
-
-const EVENTS_CONTEXT_TEXT =
-  "select set_config('app.tenant_id', $1, true), set_config('app.run_id', $2, true)";
-
-const EVENTS_NEXT_SEQ_TEXT = `
-  update enterprise_runs set latest_seq = latest_seq + 1
-  where tenant_id = $1 and id = $2
-  returning latest_seq`;
-
-const INSERT_RUN_QUEUED_TEXT = `
-  insert into enterprise_run_events
-    (tenant_id, run_id, event_id, seq, attempt_id, turn_id, source_event_id,
-     source_digest, event_type, schema_version, payload, occurred_at)
-  values ($1, $2, $3, $4::bigint, null, $5, $6, $7, 'RUN_QUEUED', '1', $8::jsonb,
-          clock_timestamp())`;
-
-type Row = Record<string, unknown>;
-
-/** bigint columns arrive as strings; anything else is corrupted ledger state. */
-function decimal(value: unknown): string {
-  const text = typeof value === "string" ? value : String(value);
-  if (!/^(0|[1-9][0-9]*)$/.test(text)) {
-    throw RUN_STATE_INVALID;
-  }
-  return text;
 }
 
-function text(value: unknown): string {
-  if (typeof value !== "string" || value === "") {
-    throw RUN_STATE_INVALID;
-  }
-  return value;
+export function runSuccessRunLeaseFence(
+  scope: PlatformScope,
+  lease: RunnerRequestLease,
+) {
+  return sql`exists (
+    select 1 from ${enterpriseRuns}
+    where ${enterpriseRuns.tenantId} = ${scope.tenantId}
+      and ${enterpriseRuns.workspaceId} = ${scope.workspaceId}
+      and ${enterpriseRuns.principalId} = ${scope.principalId}
+      and ${enterpriseRuns.id} = ${lease.runId}
+      and ${enterpriseRuns.attemptGeneration} = ${lease.generation}
+      and ${enterpriseRuns.status} = ${"succeeded"}
+      and ${enterpriseRuns.errorCode} is null
+      and ${enterpriseRuns.leaseExpiresAt} > clock_timestamp()
+  )`;
 }
 
-function toRunView(row: Row): RunView {
-  const candidate = {
-    run_id: text(row.id),
-    thread_id: text(row.thread_id),
-    status: text(row.status),
-    revision: decimal(row.revision),
-    latest_seq: decimal(row.latest_seq),
-    reconciliation_required: row.reconciliation_required === true,
-    reason_code: (row.reason_code as string | null) ?? null,
-  };
-  const parsed = RunViewSchema.safeParse(candidate);
-  if (!parsed.success) {
-    throw RUN_STATE_INVALID;
-  }
-  return parsed.data;
+// Kept exported for the runner-scope admission tests; production renewal
+// paths fence through the transactional predicates instead.
+export function isRunnerRequestLeaseCurrent(
+  current: RunnerRequestLease,
+  expected: Pick<
+    RunnerRequestLease,
+    "runId" | "attemptId" | "generation" | "ownerToken"
+  >,
+  now = new Date(),
+): boolean {
+  return (
+    current.runId === expected.runId &&
+    current.attemptId === expected.attemptId &&
+    current.generation === expected.generation &&
+    current.ownerToken === expected.ownerToken &&
+    current.expiresAt > now
+  );
 }
 
-/** The redacted dispatch payload: IDs only — never the input, never a secret. */
-function outboxPayload(
-  runId: string,
-  threadId: string,
-): {
-  payload: string;
-  digest: string;
-} {
-  const json = JSON.stringify({ run_id: runId, thread_id: threadId });
-  return { payload: json, digest: sha256(json) };
+export async function hasActiveAttemptLease(
+  tx: Transaction,
+  scope: PlatformScope,
+  input: { runId: string; attemptId: string; generation: number },
+): Promise<boolean> {
+  const [active] = await tx
+    .select({ id: enterpriseRunAttempts.id })
+    .from(enterpriseRuns)
+    .innerJoin(
+      enterpriseRunAttempts,
+      and(
+        eq(enterpriseRunAttempts.tenantId, enterpriseRuns.tenantId),
+        eq(enterpriseRunAttempts.runId, enterpriseRuns.id),
+      ),
+    )
+    .where(
+      and(
+        eq(enterpriseRuns.tenantId, scope.tenantId),
+        eq(enterpriseRuns.workspaceId, scope.workspaceId),
+        eq(enterpriseRuns.principalId, scope.principalId),
+        eq(enterpriseRuns.id, input.runId),
+        sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+        eq(enterpriseRuns.attemptGeneration, input.generation),
+        sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+        eq(enterpriseRunAttempts.id, input.attemptId),
+        eq(enterpriseRunAttempts.generation, input.generation),
+        eq(enterpriseRunAttempts.status, "active"),
+        sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+      ),
+    )
+    .limit(1);
+  return Boolean(active);
+}
+
+export class RunDomainError extends Error {
+  readonly code: string;
+  readonly status: number;
+  constructor(code: string, status: number, message = code) {
+    super(message);
+    this.name = "RunDomainError";
+    this.code = code;
+    this.status = status;
+  }
 }
 
 /**
- * The 23505 winners this module resolves by re-reading; anything else propagates. Bun SQL
- * carries the SQLSTATE in `errno` (with `code` set to a driver-level class), so both fields —
- * and the cause chain a wrapped driver error may hide it behind — are checked.
+ * The hard ceiling on how long a single run may stay alive through lease
+ * renewals; matches the upper bound accepted for leaseMilliseconds.
  */
-function uniqueViolation(error: unknown, constraint: string): boolean {
-  for (
-    let candidate: Record<string, unknown> | undefined | null = error as Record<
-      string,
-      unknown
-    >;
-    candidate !== undefined && candidate !== null;
-    candidate = candidate.cause as Record<string, unknown> | undefined
+const MAXIMUM_RUN_DURATION_MILLISECONDS = 900_000;
+
+export function validateMastraRunIntent(
+  intent:
+    | {
+        tenantId: string;
+        threadId: string;
+        clientMessageKey: string;
+        digest: string;
+        actorId: string;
+        principalId: string;
+        backendVersion: number;
+        attachmentIds: readonly string[];
+        state: string;
+      }
+    | undefined,
+  expected: {
+    tenantId: string;
+    threadId: string;
+    clientMessageKey: string;
+    digest: string;
+    actorId: string;
+    principalId: string;
+    backendVersion: number;
+    attachmentIds: readonly string[];
+  },
+): void {
+  if (
+    intent?.state !== "finalized" ||
+    intent.tenantId !== expected.tenantId ||
+    intent.threadId !== expected.threadId ||
+    intent.clientMessageKey !== expected.clientMessageKey ||
+    intent.digest !== expected.digest ||
+    intent.actorId !== expected.actorId ||
+    intent.principalId !== expected.principalId ||
+    intent.backendVersion !== expected.backendVersion ||
+    JSON.stringify(intent.attachmentIds) !==
+      JSON.stringify(expected.attachmentIds)
   ) {
-    const sqlstate = [candidate.errno, candidate.code].find(
-      (value) => value === "23505",
-    );
-    if (
-      sqlstate === "23505" &&
-      typeof candidate.message === "string" &&
-      candidate.message.includes(constraint)
-    ) {
-      return true;
-    }
+    throw new RunDomainError("RUN_INPUT_NOT_FINALIZED", 409);
   }
-  return false;
 }
 
-function mintId(prefix: string): string {
-  return `${prefix}${crypto.randomUUID().replaceAll("-", "")}`;
-}
-
-export function createRunStore(deps: RunStoreDeps): RunService {
-  const { db, policy, budget, targets, hooks } = deps;
-
-  /**
-   * The step-6 RUN_QUEUED append, on the runtime-writer pool AFTER the create transaction
-   * has committed. Best-effort by design: a failure here is a logged event-plane gap against
-   * an already-committed run (the response must not turn a committed create into a 500, and
-   * the plan's own retry rules forbid re-running committed work). Returns the run's new
-   * latest_seq, or null when the append was skipped or failed.
-   */
-  async function appendQueuedEvent(
-    scope: Scope,
-    run: { runId: string; threadId: string; turnId: string },
-  ): Promise<string | null> {
-    if (deps.eventsDatabase === undefined) {
-      return null;
-    }
-    try {
-      return await deps.eventsDatabase.$client.begin(async (tx) => {
-        await tx.unsafe("set transaction isolation level read committed");
-        await tx.unsafe(EVENTS_CONTEXT_TEXT, [scope.tenantId, run.runId]);
-        const bumped = await tx.unsafe<Row[]>(EVENTS_NEXT_SEQ_TEXT, [
-          scope.tenantId,
-          run.runId,
-        ]);
-        const seq = decimal(bumped[0]?.latest_seq);
-        const payload = JSON.stringify({
-          run_id: run.runId,
-          thread_id: run.threadId,
-          status: "queued",
-        });
-        await tx.unsafe(INSERT_RUN_QUEUED_TEXT, [
-          scope.tenantId,
-          run.runId,
-          mintId("evt"),
-          seq,
-          run.turnId,
-          `platform:run-queued:${run.runId}`,
-          sha256(payload),
-          payload,
-        ]);
-        return seq;
-      });
-    } catch (_error) {
-      getLogger("enterprise").error(
-        {
-          run_id: run.runId,
-          code: "RUN_QUEUED_EVENT_APPEND_FAILED",
-        },
-        "run-queued-event-append-failed",
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Steps 2-6 inside ONE withTenant transaction. Resolves to the created run and whether it
-   * is FRESH (a replay returns the existing row); throws on any refusal (the whole
-   * transaction rolls back with it — no half-written rows ever survive).
-   */
-  async function createInTx(
-    scope: Scope,
-    key: string,
-    request: CreateRun,
-    digest: string,
-  ): Promise<{
-    view: RunView;
-    fresh: boolean;
-    runId?: string;
-    turnId?: string;
-  }> {
-    return withTenant(db, scope, async (tx) => {
-      /* Step 2: the existing record for this key, re-authorized against CURRENT grants. */
-      const existing = await firstRow(tx, SELECT_RUN_BY_KEY_TEXT, [
-        scope.tenantId,
-        scope.principalId,
-        key,
-      ]);
-      if (existing !== undefined) {
-        await policy.assertStart(
-          tx,
-          scope,
-          text(existing.release_id),
-          text(existing.model_route_ref),
-        );
-        if (text(existing.request_digest) !== digest) {
-          throw IDEMPOTENCY_CONFLICT;
-        }
-        return { view: toRunView(existing), fresh: false };
-      }
-
-      /* The alias resolves through the plan's ONE resolver (§8.1: models/catalog.ts's
-       * resolveRouteInTx — the active default version only, target known to the deployment
-       * registry), inside this transaction (migration 0064's read catalog); assertStart below
-       * re-makes the full verdict on the same tx. A disabled default never falls back to a
-       * non-default revision: that would silently retarget a new run onto another
-       * target/price after the operator disabled the default. */
-      const route = await resolveRouteInTx(
-        tx,
-        scope,
-        request.model_alias,
-        targets,
-      );
-      const routeId = route.id;
-      const routeResourceId = route.resource_id;
-
-      /* Step 3: authorization inside the same transaction, then the release/route resource
-       * locks (ascending resource id — the plan's resource order). The reads that name the
-       * lock keys are the plan's untrusted hints; the bindings themselves are re-read under
-       * the locks below, before anything is frozen. */
-      await policy.assertStart(tx, scope, request.expert_release_id, routeId);
-      const releaseHint = await firstRow(tx, SELECT_RELEASE_RESOURCE_TEXT, [
-        scope.tenantId,
-        request.expert_release_id,
-      ]);
-      if (releaseHint === undefined) {
-        /* assertStart just verified it; a vanished row is corrupted state, not a refusal. */
-        throw RUN_STATE_INVALID;
-      }
-      const releaseResourceId = text(releaseHint.resource_id);
-      const resourceLockIds = [releaseResourceId, routeResourceId].sort();
-      for (const resourceId of resourceLockIds) {
-        /* The SAME advisory key family 02's revoke path locks — the create's freeze and a
-         * concurrent grant change serialize on one key. Exclusive: create is a write. */
-        await lockExclusive(
-          tx,
-          lockKey("resource", scope.tenantId, resourceId),
-        );
-      }
-
-      /* The freeze happens on the re-read bindings (§4.3: 先读不可信 hint、上锁后复读绑定).
-       * A release disabled — or a route disabled — in the window between the pre-lock reads
-       * and these locks commits BEFORE create acquires them; freezing the stale hint would
-       * admit a run into a revoked release/target. */
-      const release = await firstRow(tx, SELECT_RELEASE_TEXT, [
-        scope.tenantId,
-        request.expert_release_id,
-      ]);
-      if (release === undefined) {
-        /* The locks just serialized against the disable path; a vanished row is corrupted
-         * state, not a refusal. */
-        throw RUN_STATE_INVALID;
-      }
-      if (release.status !== "published") {
-        throw RUN_RELEASE_DISABLED;
-      }
-      const routeStatus = await firstRow(tx, SELECT_ROUTE_STATUS_TEXT, [
-        scope.tenantId,
-        routeId,
-      ]);
-      if (routeStatus === undefined || routeStatus.status !== "active") {
-        throw RUN_MODEL_ROUTE_MISSING;
-      }
-
-      /* Step 3 (thread): an existing thread must be active and owned by the caller; a new one
-       * is minted and recorded under the same owner. The single-active-run invariant is the
-       * partial unique index's job; the pre-check only upgrades the error from 23505 to a
-       * stable code. */
-      let threadId = request.thread_id;
-      if (threadId === undefined) {
-        threadId = mintId("thr");
-        await tx.unsafe(INSERT_THREAD_TEXT, [
-          scope.tenantId,
-          threadId,
-          scope.principalId,
-          request.workspace_id,
-        ]);
-      } else {
-        const thread = await firstRow(tx, SELECT_THREAD_TEXT, [
-          scope.tenantId,
-          threadId,
-        ]);
-        if (thread === undefined) {
-          throw RUN_THREAD_NOT_FOUND;
-        }
-        if (text(thread.owner_principal_id) !== scope.principalId) {
-          throw RUN_THREAD_NOT_FOUND;
-        }
-        if (thread.status !== "active") {
-          throw RUN_THREAD_ARCHIVED;
-        }
-      }
-      const busy = await firstRow(tx, SELECT_ACTIVE_RUN_ON_THREAD_TEXT, [
-        scope.tenantId,
-        threadId,
-      ]);
-      if (busy !== undefined) {
-        throw RUN_THREAD_BUSY;
-      }
-
-      /* Steps 4-5: server-side ids, the frozen version and cap, the queued run with its input
-       * and initial turn, then the budget hold on the SAME transaction. The frozen model-grant
-       * revision is re-read UNDER the resource locks, in this transaction: a grant that
-       * vanished between assertStart and the freeze fails closed instead of freezing a stale
-       * admission. */
-      const admittedGrant = await firstRow(
-        tx,
-        SELECT_MODEL_GRANT_REVISION_TEXT,
-        [scope.tenantId, routeId, scope.principalId],
-      );
-      if (admittedGrant === undefined) {
-        throw RUN_MODEL_GRANT_MISSING;
-      }
-      const runId = mintId("run");
-      const turnId = mintId("turn");
-      const reservationId = mintId("res");
-      await tx.unsafe(INSERT_RUN_TEXT, [
-        scope.tenantId,
-        runId,
-        scope.principalId,
-        scope.userId,
-        request.workspace_id,
-        threadId,
-        request.expert_release_id,
-        key,
-        digest,
-        request.input.text,
-        routeId,
-        decimal(admittedGrant.revision),
-        text(release.version_digest),
-        RUNS_ADMISSION_POLICY_REVISION,
-        reservationId,
-        turnId,
-      ]);
-      await hooks?.afterRunInsert?.();
-
-      const period = await firstRow(tx, SELECT_TENANT_PERIOD_TEXT, [
-        scope.tenantId,
-        text(release.currency),
-      ]);
-      if (period === undefined || typeof period.period_id !== "string") {
-        /* No live tenant-layer budget period: admission refuses — a clear quota refusal
-         * (plan §9.2 assigns explicit quota/concurrency refusals 429), not a corrupted
-         * ledger. */
-        throw new EnterpriseError("BUDGET_EXCEEDED", 429);
-      }
-      await budget.reserveInTx(tx, {
-        tenantId: scope.tenantId,
-        runId,
-        principalId: scope.principalId,
-        workspaceId: request.workspace_id,
-        expertReleaseId: request.expert_release_id,
-        reservationId,
-        capMicros: decimal(release.max_run_micros),
-        currency: text(release.currency),
-        periodId: period.period_id,
-      });
-      await hooks?.afterReserve?.();
-
-      /* Step 6: the redacted start_workflow dispatch row. */
-      const payload = outboxPayload(runId, threadId);
-      await tx.unsafe(INSERT_OUTBOX_TEXT, [
-        scope.tenantId,
-        mintId("out"),
-        runId,
-        payload.digest,
-        payload.payload,
-      ]);
-      await hooks?.afterOutboxInsert?.();
-
-      return {
-        view: {
-          run_id: runId,
-          thread_id: threadId,
-          status: "queued",
-          revision: "0",
-          latest_seq: "0",
-          reconciliation_required: false,
-          reason_code: null,
-        },
-        fresh: true,
-        runId,
-        turnId,
-      };
-    });
-  }
-
-  /** Step 7's re-check: a fresh READ-ONLY authorization transaction over the winner. */
-  async function recheckWinner(
-    scope: Scope,
-    key: string,
-    digest: string,
-  ): Promise<RunView> {
-    return withTenant(db, scope, async (tx) => {
-      const existing = await firstRow(tx, SELECT_RUN_BY_KEY_TEXT, [
-        scope.tenantId,
-        scope.principalId,
-        key,
-      ]);
-      if (existing === undefined) {
-        throw RUN_NOT_FOUND;
-      }
-      await policy.assertStart(
-        tx,
-        scope,
-        text(existing.release_id),
-        text(existing.model_route_ref),
-      );
-      if (text(existing.request_digest) !== digest) {
-        throw IDEMPOTENCY_CONFLICT;
-      }
-      return toRunView(existing);
-    });
-  }
-
+export function toRunDTO(row: RunRow): RunDTO {
   return {
-    async create(scope, key, request) {
-      if (!ID.safeParse(key).success) {
-        throw IDEMPOTENCY_KEY_REQUIRED;
-      }
-      const parsed = CreateRunSchema.safeParse(request);
-      if (!parsed.success) {
-        throw INVALID_RUN_INPUT;
-      }
-      /* Step 1: the digest is computed SERVER-SIDE over the strictly parsed request (the one
-       * frozen algorithm in digest.ts, shared with the contract tests). */
-      const digest = runRequestDigest(parsed.data);
-      try {
-        const { view, fresh, runId, turnId } = await createInTx(
-          scope,
-          key,
-          parsed.data,
-          digest,
-        );
-        if (!fresh || runId === undefined || turnId === undefined) {
-          return view; /* replay: the queued event was appended at the first create */
-        }
-        /* Step 6's event half: the initial RUN_QUEUED record, appended after commit (the
-         * role contract keeps the events table out of the run-writer transaction; see
-         * deps.eventsDatabase). */
-        const seq = await appendQueuedEvent(scope, {
-          runId,
-          threadId: view.thread_id,
-          turnId,
-        });
-        return seq === null ? view : { ...view, latest_seq: seq };
-      } catch (error) {
-        if (uniqueViolation(error, "enterprise_run_request_key")) {
-          /* Step 7: the whole transaction rolled back; a FRESH read-only authorization
-           * transaction names the winner. The aborted transaction is never touched again. */
-          return recheckWinner(scope, key, digest);
-        }
-        if (uniqueViolation(error, "enterprise_thread_single_active_run")) {
-          throw RUN_THREAD_BUSY;
-        }
-        throw error;
-      }
-    },
+    run_id: row.id,
+    thread_id: row.threadId,
+    status: row.status,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    ...(row.finishedAt
+      ? { finished_at: row.finishedAt.toISOString() }
+      : { finished_at: null }),
+    ...(row.errorCode ? { error_code: row.errorCode } : {}),
+  };
+}
 
-    async get(scope, id) {
-      if (!ID.safeParse(id).success) {
-        throw RUN_NOT_FOUND;
+type ActiveRunLookupRow = {
+  run: RunRow;
+  attemptId: string;
+  attemptGeneration: number;
+  attemptStatus: string;
+  attemptLeaseExpiresAt: Date;
+};
+
+const activeRunStatuses = new Set([
+  "queued",
+  "running",
+  "waiting_approval",
+  "suspended",
+]);
+
+export function resolveActiveRunLookup(
+  scope: PlatformScope,
+  threadId: string,
+  rows: readonly ActiveRunLookupRow[],
+  now = new Date(),
+): { run: RunDTO; attemptId: string; generation: number } | null {
+  const eligible = rows.filter(
+    ({
+      run,
+      attemptId,
+      attemptGeneration,
+      attemptStatus,
+      attemptLeaseExpiresAt,
+    }) =>
+      run.tenantId === scope.tenantId &&
+      run.workspaceId === scope.workspaceId &&
+      run.principalId === scope.principalId &&
+      run.threadId === threadId &&
+      activeRunStatuses.has(run.status) &&
+      run.leaseExpiresAt > now &&
+      Boolean(attemptId) &&
+      attemptStatus === "active" &&
+      attemptGeneration === run.attemptGeneration &&
+      attemptLeaseExpiresAt > now,
+  );
+  if (eligible.length > 1)
+    throw new RunDomainError("RUN_ACTIVE_AMBIGUOUS", 409);
+  const [match] = eligible;
+  return match
+    ? {
+        run: toRunDTO(match.run),
+        attemptId: match.attemptId,
+        generation: match.attemptGeneration,
       }
-      return withTenant(db, scope, async (tx) => {
-        const row = await firstRow(tx, SELECT_RUN_BY_ID_TEXT, [
-          scope.tenantId,
-          id,
-        ]);
+    : null;
+}
+
+export async function createRunInTransaction(
+  tx: Transaction,
+  scope: PlatformScope,
+  input: StartRunInput,
+  expertVersionRef: string,
+  modelRouteRef: string,
+  modelRouteMaximumTokens: number,
+  leaseMs: number,
+): Promise<{
+  run: RunDTO;
+  runId: string;
+  attemptId: string;
+  generation: number;
+  leaseExpiresAt: Date;
+}> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["enterprise-run-start", scope.tenantId, input.threadId])}, 0))`,
+  );
+  const [conversation] = await tx
+    .select({
+      storageBackend: enterpriseConversations.storageBackend,
+      backendVersion: enterpriseConversations.backendVersion,
+    })
+    .from(enterpriseConversations)
+    .where(
+      and(
+        eq(enterpriseConversations.tenantId, scope.tenantId),
+        eq(enterpriseConversations.workspaceId, scope.workspaceId),
+        eq(enterpriseConversations.principalId, scope.principalId),
+        eq(enterpriseConversations.threadId, input.threadId),
+      ),
+    )
+    .limit(1);
+  if (
+    !conversation ||
+    !["platform", "mastra"].includes(conversation.storageBackend)
+  ) {
+    throw new RunDomainError(
+      "CONVERSATION_FORBIDDEN",
+      404,
+      "Conversation was not found.",
+    );
+  }
+  if (conversation.storageBackend === "platform") {
+    const [message] = await tx
+      .select({
+        id: enterpriseMessages.id,
+        attachments: enterpriseMessages.attachments,
+      })
+      .from(enterpriseMessages)
+      .where(
+        and(
+          eq(enterpriseMessages.tenantId, scope.tenantId),
+          eq(enterpriseMessages.threadId, input.threadId),
+          eq(enterpriseMessages.clientMessageKey, input.clientMessageKey),
+        ),
+      )
+      .limit(1);
+    if (!message)
+      throw new RunDomainError(
+        "RUN_INPUT_NOT_FOUND",
+        404,
+        "The submitted message was not found.",
+      );
+    if (
+      JSON.stringify(message.attachments) !==
+      JSON.stringify(input.attachmentRefs)
+    ) {
+      throw new RunDomainError(
+        "RUN_ATTACHMENT_CONFLICT",
+        409,
+        "Run attachment references do not match the submitted message.",
+      );
+    }
+  } else {
+    const [intent] = await tx
+      .select()
+      .from(mastraMessageIntents)
+      .where(
+        and(
+          eq(mastraMessageIntents.tenantId, scope.tenantId),
+          eq(mastraMessageIntents.threadId, input.threadId),
+          eq(mastraMessageIntents.clientMessageKey, input.clientMessageKey),
+        ),
+      )
+      .limit(1);
+    if (!input.messageDigest) {
+      throw new RunDomainError("RUN_INPUT_NOT_FINALIZED", 409);
+    }
+    validateMastraRunIntent(intent, {
+      tenantId: scope.tenantId,
+      threadId: input.threadId,
+      clientMessageKey: input.clientMessageKey,
+      digest: input.messageDigest,
+      actorId: scope.actorId,
+      principalId: scope.principalId,
+      backendVersion: conversation.backendVersion,
+      attachmentIds: input.attachmentRefs,
+    });
+  }
+  const [priorSubmission] = await tx
+    .select({ id: enterpriseRuns.id })
+    .from(enterpriseRuns)
+    .where(
+      and(
+        eq(enterpriseRuns.tenantId, scope.tenantId),
+        eq(enterpriseRuns.threadId, input.threadId),
+        eq(enterpriseRuns.clientMessageKey, input.clientMessageKey),
+      ),
+    )
+    .limit(1);
+  if (priorSubmission) {
+    throw new RunDomainError(
+      "RUN_IDEMPOTENCY_CONFLICT",
+      409,
+      "This submitted message already has a run.",
+    );
+  }
+  const now = new Date();
+  const [existing] = await tx
+    .select()
+    .from(enterpriseRuns)
+    .where(
+      and(
+        eq(enterpriseRuns.tenantId, scope.tenantId),
+        eq(enterpriseRuns.threadId, input.threadId),
+        sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    if (existing.leaseExpiresAt.getTime() > now.getTime())
+      throw new RunDomainError(
+        "ACTIVE_RUN_CONFLICT",
+        409,
+        "This conversation already has an active run.",
+      );
+    // An active-status row whose lease expired belongs to a crashed or
+    // abandoned process: terminalize it truthfully (cancelled with timeout
+    // semantics — its events can no longer settle) in this same
+    // transaction, then reclaim the thread for the new run.
+    await tx
+      .update(enterpriseRuns)
+      .set({
+        status: "cancelled",
+        errorCode: "CANCELLED_TIMEOUT",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(enterpriseRuns.tenantId, scope.tenantId),
+          eq(enterpriseRuns.id, existing.id),
+          eq(enterpriseRuns.attemptGeneration, existing.attemptGeneration),
+          sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+        ),
+      );
+    await tx
+      .update(enterpriseRunAttempts)
+      .set({ status: "cancelled", finishedAt: now })
+      .where(
+        and(
+          eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+          eq(enterpriseRunAttempts.runId, existing.id),
+          eq(enterpriseRunAttempts.generation, existing.attemptGeneration),
+          eq(enterpriseRunAttempts.status, "active"),
+        ),
+      );
+    await tx.insert(enterpriseRunOutbox).values({
+      tenantId: scope.tenantId,
+      runId: existing.id,
+      eventType: "run.cancel",
+      payload: { runId: existing.id, generation: existing.attemptGeneration },
+    });
+  }
+  const leaseExpiresAt = new Date(now.getTime() + leaseMs);
+  const runId = randomUUID();
+  const attemptId = randomUUID();
+  const generation = 1;
+  const [row] = await tx
+    .insert(enterpriseRuns)
+    .values({
+      id: runId,
+      tenantId: scope.tenantId,
+      workspaceId: scope.workspaceId,
+      principalId: scope.principalId,
+      threadId: input.threadId,
+      clientMessageKey: input.clientMessageKey,
+      expertVersionRef,
+      modelRouteRef,
+      modelRouteMaximumTokens,
+      status: "queued",
+      attemptGeneration: generation,
+      leaseExpiresAt,
+    })
+    .returning();
+  if (!row) throw new Error("RUN_CREATE_FAILED");
+  await tx.insert(enterpriseRunAttempts).values({
+    id: attemptId,
+    tenantId: scope.tenantId,
+    runId,
+    generation,
+    fencingToken: generation,
+    leaseExpiresAt,
+  });
+  await tx.insert(enterpriseRunOutbox).values({
+    tenantId: scope.tenantId,
+    runId,
+    eventType: "run.start",
+    payload: { runId, threadId: input.threadId, attemptId, generation },
+  });
+  return { run: toRunDTO(row), runId, attemptId, generation, leaseExpiresAt };
+}
+
+export function createRunStore(
+  data: DataDatabase,
+  options: { leaseMilliseconds?: number } = {},
+) {
+  const leaseMilliseconds = options.leaseMilliseconds ?? 30_000;
+  if (
+    !Number.isSafeInteger(leaseMilliseconds) ||
+    leaseMilliseconds < 1_000 ||
+    leaseMilliseconds > 900_000
+  ) {
+    throw new RangeError("RUN_LEASE_DURATION_INVALID");
+  }
+  const scopeStore = createConversationStore(data);
+  return {
+    transaction<T>(
+      scope: PlatformScope,
+      operation: (tx: Transaction) => Promise<T>,
+    ) {
+      assertTrustedScope(scope);
+      return scopeStore.transaction(scope, operation);
+    },
+    async get(scope: PlatformScope, runId: string): Promise<RunDTO> {
+      const [row] = await this.transaction(scope, (tx) =>
+        tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+            ),
+          )
+          .limit(1),
+      );
+      if (!row)
+        throw new RunDomainError("RUN_NOT_FOUND", 404, "Run was not found.");
+      return toRunDTO(row);
+    },
+    async getActiveForThread(scope: PlatformScope, threadId: string) {
+      assertTrustedScope(scope);
+      if (
+        typeof threadId !== "string" ||
+        !threadId.trim() ||
+        threadId.length > 200
+      ) {
+        throw new RunDomainError("INVALID_THREAD_ID", 400);
+      }
+      const rows = await this.transaction(scope, (tx) =>
+        tx
+          .select({
+            run: enterpriseRuns,
+            attemptId: enterpriseRunAttempts.id,
+            attemptGeneration: enterpriseRunAttempts.generation,
+            attemptStatus: enterpriseRunAttempts.status,
+            attemptLeaseExpiresAt: enterpriseRunAttempts.leaseExpiresAt,
+          })
+          .from(enterpriseRuns)
+          .innerJoin(
+            enterpriseRunAttempts,
+            and(
+              eq(enterpriseRunAttempts.tenantId, enterpriseRuns.tenantId),
+              eq(enterpriseRunAttempts.runId, enterpriseRuns.id),
+              eq(
+                enterpriseRunAttempts.generation,
+                enterpriseRuns.attemptGeneration,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.threadId, threadId),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+            ),
+          )
+          .limit(2),
+      );
+      return resolveActiveRunLookup(scope, threadId, rows);
+    },
+    async cancel(
+      scope: PlatformScope,
+      runId: string,
+      errorCode = "CANCELLED",
+      expectedAttempt?: { attemptId: string; generation: number },
+    ): Promise<RunDTO> {
+      return this.transaction(scope, async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!row)
+          throw new RunDomainError("RUN_NOT_FOUND", 404, "Run was not found.");
         if (
-          row === undefined ||
-          text(row.owner_principal_id) !== scope.principalId
+          expectedAttempt &&
+          row.attemptGeneration !== expectedAttempt.generation
         ) {
-          throw RUN_NOT_FOUND;
+          throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
         }
-        /* read: the owner's own run AND the expert resource read still valid. */
-        await policy.assertOwn(
-          tx,
-          scope,
-          {
-            ownerPrincipalId: text(row.owner_principal_id),
-            releaseId: text(row.release_id),
-            workspaceId: text(row.workspace_id),
-            threadId: text(row.thread_id),
-          },
-          "read",
-        );
-        return toRunView(row);
+        if (expectedAttempt) {
+          const [attempt] = await tx
+            .select({ id: enterpriseRunAttempts.id })
+            .from(enterpriseRunAttempts)
+            .where(
+              and(
+                eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+                eq(enterpriseRunAttempts.runId, runId),
+                eq(enterpriseRunAttempts.id, expectedAttempt.attemptId),
+                eq(
+                  enterpriseRunAttempts.generation,
+                  expectedAttempt.generation,
+                ),
+                eq(enterpriseRunAttempts.status, "active"),
+              ),
+            )
+            .for("update")
+            .limit(1);
+          if (!attempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        }
+        if (["succeeded", "failed", "cancelled"].includes(row.status))
+          return toRunDTO(row);
+        const now = new Date();
+        const [updated] = await tx
+          .update(enterpriseRuns)
+          .set({
+            status: "cancelled",
+            errorCode,
+            finishedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, runId),
+              eq(enterpriseRuns.attemptGeneration, row.attemptGeneration),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+            ),
+          )
+          .returning();
+        if (!updated)
+          throw new RunDomainError(
+            "RUN_STATE_CONFLICT",
+            409,
+            "Run state changed concurrently.",
+          );
+        await tx
+          .update(enterpriseRunAttempts)
+          .set({ status: "cancelled", finishedAt: now })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.generation, row.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+            ),
+          );
+        await tx.insert(enterpriseRunOutbox).values({
+          tenantId: scope.tenantId,
+          runId,
+          eventType: "run.cancel",
+          payload: { runId, generation: row.attemptGeneration },
+        });
+        return toRunDTO(updated);
       });
     },
-
-    async command(_scope, id, command: RunCommand) {
-      if (!ID.safeParse(id).success) {
-        throw RUN_NOT_FOUND;
-      }
-      const kindOk =
-        command.kind === "cancel" ||
-        command.kind === "input" ||
-        command.kind === "resume";
-      const inputOk =
-        command.input === undefined ||
-        (typeof command.input.text === "string" &&
-          command.input.text.length >= 1 &&
-          command.input.text.length <= 32768);
-      if (
-        !kindOk ||
-        !inputOk ||
-        !ID.safeParse(command.command_id).success ||
-        !Decimal.safeParse(command.expected_revision).success
-      ) {
-        throw INVALID_RUN_COMMAND;
-      }
-      /* The command state machine (CAS, receipts, turn creation) is E2's. This package freezes
-       * the CONTRACT — strict shapes above — and refuses closed instead of pretending an
-       * effect happened. */
-      throw COMMAND_NOT_AVAILABLE;
+    async acquireRequestLease(
+      scope: PlatformScope,
+      runId: string,
+    ): Promise<RunnerRequestLease> {
+      assertTrustedScope(scope);
+      if (typeof runId !== "string" || !runId.trim())
+        throw new RunDomainError("INVALID_RUN_ID", 400);
+      return this.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!run) throw new RunDomainError("RUN_NOT_ACTIVE", 409);
+        const [attempt] = await tx
+          .select()
+          .from(enterpriseRunAttempts)
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.generation, run.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!attempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        if (
+          attempt.requestOwnerToken &&
+          attempt.requestOwnerExpiresAt &&
+          attempt.requestOwnerExpiresAt > new Date()
+        ) {
+          throw new RunDomainError("RUN_REQUEST_LEASE_HELD", 409);
+        }
+        const ownerToken = randomUUID();
+        const now = new Date();
+        const expiresAt = new Date(
+          Math.min(
+            now.getTime() + leaseMilliseconds,
+            run.leaseExpiresAt.getTime(),
+          ),
+        );
+        if (expiresAt <= now)
+          throw new RunDomainError("RUN_LEASE_EXPIRED", 409);
+        const [claimed] = await tx
+          .update(enterpriseRunAttempts)
+          .set({
+            requestOwnerToken: ownerToken,
+            requestOwnerExpiresAt: expiresAt,
+          })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.id, attempt.id),
+              eq(enterpriseRunAttempts.generation, run.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+              sql`(${enterpriseRunAttempts.requestOwnerToken} is null or ${enterpriseRunAttempts.requestOwnerExpiresAt} <= ${now})`,
+            ),
+          )
+          .returning();
+        if (!claimed) throw new RunDomainError("RUN_REQUEST_LEASE_HELD", 409);
+        return {
+          runId,
+          attemptId: attempt.id,
+          generation: attempt.generation,
+          ownerToken,
+          expiresAt,
+        };
+      });
     },
-
-    async readEvents(): Promise<RunEventView[]> {
-      /* The durable event stream is E3's (runtime-writer domain; this store's role cannot even
-       * read the events table). Refuse closed rather than serve an empty lie. */
-      throw EVENT_STREAM_UNAVAILABLE;
+    async renewRequestLease(
+      scope: PlatformScope,
+      lease: RunnerRequestLease,
+    ): Promise<RunnerRequestLease> {
+      assertTrustedScope(scope);
+      return this.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, lease.runId),
+              eq(enterpriseRuns.attemptGeneration, lease.generation),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!run) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        const now = new Date();
+        // A stream longer than one lease window must stay live: the renewal
+        // extends the run's main lease (and the active attempt's) alongside
+        // the request claim, capped by the maximum run duration so renewal
+        // cannot keep a run alive forever.
+        const runLeaseExpiresAt = new Date(
+          Math.min(
+            now.getTime() + leaseMilliseconds,
+            run.createdAt.getTime() + MAXIMUM_RUN_DURATION_MILLISECONDS,
+          ),
+        );
+        if (runLeaseExpiresAt <= now)
+          throw new RunDomainError("RUN_LEASE_EXPIRED", 409);
+        await tx
+          .update(enterpriseRuns)
+          .set({ leaseExpiresAt: runLeaseExpiresAt, updatedAt: now })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, lease.runId),
+              eq(enterpriseRuns.attemptGeneration, lease.generation),
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+            ),
+          );
+        const [updated] = await tx
+          .update(enterpriseRunAttempts)
+          .set({
+            requestOwnerExpiresAt: runLeaseExpiresAt,
+            leaseExpiresAt: runLeaseExpiresAt,
+          })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, lease.runId),
+              eq(enterpriseRunAttempts.id, lease.attemptId),
+              eq(enterpriseRunAttempts.generation, lease.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+              eq(enterpriseRunAttempts.requestOwnerToken, lease.ownerToken),
+              sql`${enterpriseRunAttempts.requestOwnerExpiresAt} > now()`,
+            ),
+          )
+          .returning();
+        if (!updated) throw new RunDomainError("RUN_REQUEST_LEASE_STALE", 409);
+        return { ...lease, expiresAt: runLeaseExpiresAt };
+      });
+    },
+    async releaseRequestLease(
+      scope: PlatformScope,
+      lease: RunnerRequestLease,
+    ): Promise<boolean> {
+      assertTrustedScope(scope);
+      return this.transaction(scope, async (tx) => {
+        const [released] = await tx
+          .update(enterpriseRunAttempts)
+          .set({ requestOwnerToken: null, requestOwnerExpiresAt: null })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, lease.runId),
+              eq(enterpriseRunAttempts.id, lease.attemptId),
+              eq(enterpriseRunAttempts.generation, lease.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+              eq(enterpriseRunAttempts.requestOwnerToken, lease.ownerToken),
+            ),
+          )
+          .returning({ id: enterpriseRunAttempts.id });
+        return Boolean(released);
+      });
+    },
+    async currentAttempt(scope: PlatformScope, runId: string) {
+      const [row] = await this.transaction(scope, (tx) =>
+        tx
+          .select({ attempt: enterpriseRunAttempts })
+          .from(enterpriseRunAttempts)
+          .innerJoin(
+            enterpriseRuns,
+            and(
+              eq(enterpriseRuns.tenantId, enterpriseRunAttempts.tenantId),
+              eq(enterpriseRuns.id, enterpriseRunAttempts.runId),
+            ),
+          )
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.status, "active"),
+            ),
+          )
+          .limit(1),
+      );
+      if (!row) throw new RunDomainError("RUN_ATTEMPT_NOT_FOUND", 404);
+      const attempt = row.attempt;
+      return {
+        attemptId: attempt.id,
+        turnId: attempt.turnId,
+        generation: attempt.generation,
+        fencingToken: attempt.fencingToken,
+        leaseExpiresAt: attempt.leaseExpiresAt,
+      };
+    },
+    async expireLease(scope: PlatformScope, runId: string, now = new Date()) {
+      return this.transaction(scope, async (tx) => {
+        const [run] = await tx
+          .select()
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (
+          !run ||
+          !["queued", "running", "waiting_approval", "suspended"].includes(
+            run.status,
+          )
+        )
+          throw new RunDomainError("RUN_NOT_ACTIVE", 409);
+        if (run.leaseExpiresAt > now)
+          throw new RunDomainError("RUN_LEASE_ACTIVE", 409);
+        const [oldAttempt] = await tx
+          .update(enterpriseRunAttempts)
+          .set({ status: "expired", finishedAt: now })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, runId),
+              eq(enterpriseRunAttempts.generation, run.attemptGeneration),
+              eq(enterpriseRunAttempts.status, "active"),
+            ),
+          )
+          .returning();
+        if (!oldAttempt) throw new RunDomainError("RUN_ATTEMPT_STALE", 409);
+        const generation = run.attemptGeneration + 1;
+        const leaseExpiresAt = new Date(now.getTime() + leaseMilliseconds);
+        const [updated] = await tx
+          .update(enterpriseRuns)
+          .set({
+            attemptGeneration: generation,
+            leaseExpiresAt,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, runId),
+              eq(enterpriseRuns.attemptGeneration, run.attemptGeneration),
+            ),
+          )
+          .returning();
+        if (!updated) throw new RunDomainError("RUN_FENCED", 409);
+        const [attempt] = await tx
+          .insert(enterpriseRunAttempts)
+          .values({
+            tenantId: scope.tenantId,
+            runId,
+            generation,
+            fencingToken: generation,
+            leaseExpiresAt,
+          })
+          .returning();
+        if (!attempt) throw new Error("RUN_ATTEMPT_CREATE_FAILED");
+        await tx.insert(enterpriseRunOutbox).values({
+          tenantId: scope.tenantId,
+          runId,
+          eventType: "run.lease_expired",
+          payload: { runId, generation },
+        });
+        return {
+          attemptId: attempt.id,
+          turnId: attempt.turnId,
+          generation,
+          fencingToken: attempt.fencingToken,
+          leaseExpiresAt,
+        };
+      });
+    },
+    async transitionTerminal(
+      scope: PlatformScope,
+      input: {
+        runId: string;
+        attemptId: string;
+        generation: number;
+        status: "succeeded" | "failed";
+        errorCode?: string;
+        requestLease?: RunnerRequestLease;
+      },
+    ): Promise<boolean> {
+      return this.transaction(scope, async (tx) => {
+        const leasedTupleAdmitted =
+          !input.requestLease ||
+          (input.status === "failed" &&
+            isAdmittedRunFailureCode(input.errorCode)) ||
+          (input.status === "succeeded" && input.errorCode === undefined);
+        if (!leasedTupleAdmitted) {
+          return false;
+        }
+        const [run] = await tx
+          .select({ attemptGeneration: enterpriseRuns.attemptGeneration })
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
+              eq(enterpriseRuns.id, input.runId),
+              ...(input.requestLease
+                ? [
+                    sql`${enterpriseRuns.leaseExpiresAt} > clock_timestamp()`,
+                    sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+                  ]
+                : []),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!run || run.attemptGeneration !== input.generation) return false;
+        const [attempt] = await tx
+          .select({
+            id: enterpriseRunAttempts.id,
+            requestOwnerToken: enterpriseRunAttempts.requestOwnerToken,
+            requestOwnerExpiresAt: enterpriseRunAttempts.requestOwnerExpiresAt,
+          })
+          .from(enterpriseRunAttempts)
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.runId, input.runId),
+              eq(enterpriseRunAttempts.id, input.attemptId),
+              eq(enterpriseRunAttempts.generation, input.generation),
+              eq(enterpriseRunAttempts.status, "active"),
+              input.requestLease
+                ? sql`${enterpriseRunAttempts.leaseExpiresAt} > clock_timestamp()`
+                : sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+              ...(input.requestLease
+                ? [
+                    eq(
+                      enterpriseRunAttempts.requestOwnerToken,
+                      input.requestLease.ownerToken,
+                    ),
+                    eq(
+                      enterpriseRunAttempts.requestOwnerExpiresAt,
+                      input.requestLease.expiresAt,
+                    ),
+                    sql`${enterpriseRunAttempts.requestOwnerExpiresAt} > clock_timestamp()`,
+                  ]
+                : []),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!attempt) return false;
+        if (
+          input.requestLease &&
+          !isCurrentRunLeaseSnapshot(
+            input.requestLease,
+            attempt.requestOwnerToken,
+            attempt.requestOwnerExpiresAt,
+          )
+        ) {
+          return false;
+        }
+        const [updated] = await tx
+          .update(enterpriseRuns)
+          .set({
+            status: input.status,
+            errorCode: input.errorCode ?? null,
+            finishedAt: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, input.runId),
+              eq(enterpriseRuns.attemptGeneration, input.generation),
+              input.requestLease
+                ? sql`${enterpriseRuns.leaseExpiresAt} > clock_timestamp()`
+                : sql`${enterpriseRuns.leaseExpiresAt} > now()`,
+              sql`${enterpriseRuns.status} in ('queued', 'running', 'waiting_approval', 'suspended')`,
+              sql`exists (
+                select 1 from enterprise_run_attempts active_attempt
+                where active_attempt.tenant_id = ${scope.tenantId}
+                  and active_attempt.run_id = ${input.runId}
+                  and active_attempt.id = ${input.attemptId}
+                  and active_attempt.generation = ${input.generation}
+                  and active_attempt.status = 'active'
+                  and active_attempt.lease_expires_at > ${input.requestLease ? sql`clock_timestamp()` : sql`now()`}
+                  ${input.requestLease ? sql`and active_attempt.request_owner_token = ${input.requestLease.ownerToken} and active_attempt.request_owner_expires_at = ${input.requestLease.expiresAt} and active_attempt.request_owner_expires_at > clock_timestamp()` : sql``}
+              )`,
+            ),
+          )
+          .returning();
+        if (!updated) return false;
+        const [completedAttempt] = await tx
+          .update(enterpriseRunAttempts)
+          .set({
+            status: "completed",
+            finishedAt: sql`now()`,
+            ...(input.requestLease
+              ? { requestOwnerToken: null, requestOwnerExpiresAt: null }
+              : {}),
+          })
+          .where(
+            and(
+              eq(enterpriseRunAttempts.tenantId, scope.tenantId),
+              eq(enterpriseRunAttempts.id, input.attemptId),
+              eq(enterpriseRunAttempts.status, "active"),
+              input.requestLease
+                ? sql`${enterpriseRunAttempts.leaseExpiresAt} > clock_timestamp()`
+                : sql`${enterpriseRunAttempts.leaseExpiresAt} > now()`,
+              ...(input.requestLease
+                ? [
+                    eq(
+                      enterpriseRunAttempts.requestOwnerToken,
+                      input.requestLease.ownerToken,
+                    ),
+                    eq(
+                      enterpriseRunAttempts.requestOwnerExpiresAt,
+                      input.requestLease.expiresAt,
+                    ),
+                    sql`${enterpriseRunAttempts.requestOwnerExpiresAt} > clock_timestamp()`,
+                    input.status === "succeeded"
+                      ? runSuccessRunLeaseFence(scope, input.requestLease)
+                      : runFailureRunLeaseFence(
+                          scope,
+                          input.requestLease,
+                          // The leased-tuple guard above admitted only fixed
+                          // failure codes, so this is the validated code.
+                          input.errorCode as RunFailureCode,
+                        ),
+                  ]
+                : []),
+            ),
+          )
+          .returning({ id: enterpriseRunAttempts.id });
+        if (!completedAttempt)
+          throw new RunDomainError(
+            "RUN_ATTEMPT_TERMINAL_RACE",
+            409,
+            "Run attempt changed while terminal state was being committed.",
+          );
+        await tx.insert(enterpriseRunOutbox).values({
+          tenantId: scope.tenantId,
+          runId: input.runId,
+          eventType: `run.${input.status}`,
+          payload: { runId: input.runId, generation: input.generation },
+        });
+        return true;
+      });
+    },
+    async countBudgetReservations(
+      scope: PlatformScope,
+      clientMessageKey: string,
+    ): Promise<number> {
+      return this.transaction(scope, async (tx) => {
+        const [row] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(enterpriseModelBudgetReservations)
+          .innerJoin(
+            enterpriseRuns,
+            and(
+              eq(
+                enterpriseRuns.tenantId,
+                enterpriseModelBudgetReservations.tenantId,
+              ),
+              eq(enterpriseRuns.id, enterpriseModelBudgetReservations.runId),
+            ),
+          )
+          .where(
+            and(
+              eq(enterpriseModelBudgetReservations.tenantId, scope.tenantId),
+              eq(enterpriseRuns.clientMessageKey, clientMessageKey),
+            ),
+          );
+        return row?.count ?? 0;
+      });
+    },
+    async countOutboxEvents(
+      scope: PlatformScope,
+      runId: string,
+      eventType: string,
+    ): Promise<number> {
+      return this.transaction(scope, async (tx) => {
+        const [row] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(enterpriseRunOutbox)
+          .where(
+            and(
+              eq(enterpriseRunOutbox.tenantId, scope.tenantId),
+              eq(enterpriseRunOutbox.runId, runId),
+              eq(enterpriseRunOutbox.eventType, eventType),
+            ),
+          );
+        return row?.count ?? 0;
+      });
     },
   };
 }

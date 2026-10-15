@@ -16,9 +16,10 @@
  * that could not be parsed. A staged attachment that is a minute past the window and swept on the
  * next run instead has lost nothing.
  */
-import { and, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, notExists, sql } from "drizzle-orm";
 import { createDatabase, type Database } from "../src/db/client";
 import { attachments } from "../src/db/schema";
+import { mastraMessageIntentAttachments } from "../src/db/schema/mastra-message-intents";
 
 /** How long a staged attachment is kept, absent a CLI argument saying otherwise. */
 const DEFAULT_OLDER_THAN_HOURS = 24;
@@ -122,7 +123,18 @@ export async function cullStagedAttachments(
       .select({ id: attachments.id })
       .from(attachments)
       .where(
-        and(isNull(attachments.attachedAt), lt(attachments.createdAt, cutoff)),
+        and(
+          isNull(attachments.attachedAt),
+          lt(attachments.createdAt, cutoff),
+          notExists(
+            database
+              .select({ pending: sql`1` })
+              .from(mastraMessageIntentAttachments)
+              .where(
+                eq(mastraMessageIntentAttachments.attachmentId, attachments.id),
+              ),
+          ),
+        ),
       )
       // Oldest first, so a sweep that is cut off has reclaimed the rows nobody could still want.
       .orderBy(attachments.createdAt)

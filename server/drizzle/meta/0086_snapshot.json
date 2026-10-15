@@ -9912,8 +9912,8 @@
         }
       },
       "foreignKeys": {
-        "billing_subscriptions_external_customer_id_billing_customers_external_id_fk": {
-          "name": "billing_subscriptions_external_customer_id_billing_customers_external_id_fk",
+        "billing_subscriptions_ext_customer_id_fk": {
+          "name": "billing_subscriptions_ext_customer_id_fk",
           "tableFrom": "billing_subscriptions",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -10269,8 +10269,8 @@
         }
       },
       "foreignKeys": {
-        "credit_grants_external_customer_id_billing_customers_external_id_fk": {
-          "name": "credit_grants_external_customer_id_billing_customers_external_id_fk",
+        "credit_grants_ext_customer_id_fk": {
+          "name": "credit_grants_ext_customer_id_fk",
           "tableFrom": "credit_grants",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -10433,8 +10433,8 @@
         }
       },
       "foreignKeys": {
-        "credit_ledger_external_customer_id_billing_customers_external_id_fk": {
-          "name": "credit_ledger_external_customer_id_billing_customers_external_id_fk",
+        "credit_ledger_ext_customer_id_fk": {
+          "name": "credit_ledger_ext_customer_id_fk",
           "tableFrom": "credit_ledger",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -10507,8 +10507,8 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "credit_charge_remainders_external_customer_id_billing_customers_external_id_fk": {
-          "name": "credit_charge_remainders_external_customer_id_billing_customers_external_id_fk",
+        "credit_charge_remainders_ext_customer_id_fk": {
+          "name": "credit_charge_remainders_ext_customer_id_fk",
           "tableFrom": "credit_charge_remainders",
           "tableTo": "billing_customers",
           "columnsFrom": [
@@ -10818,8 +10818,8 @@
         }
       },
       "foreignKeys": {
-        "credit_reservations_external_customer_id_billing_customers_external_id_fk": {
-          "name": "credit_reservations_external_customer_id_billing_customers_external_id_fk",
+        "credit_reservations_ext_customer_id_fk": {
+          "name": "credit_reservations_ext_customer_id_fk",
           "tableFrom": "credit_reservations",
           "tableTo": "billing_customers",
           "columnsFrom": [

@@ -49,6 +49,7 @@ jobs:
   static:
     name: format, lint, types
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,11 +63,6 @@ jobs:
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck
-      # The enterprise tenancy domain (src/enterprise, its tests and scripts) under its own tsconfig,
-      # per plan 02 §7 T3-C step 5. Separate from `typecheck` so the legacy entry and the standalone
-      # enterprise entry each report their own result.
-      - run: bun run typecheck:enterprise
-        working-directory: server
       - name: Desktop version tracks the release version
         run: bun desktop/scripts/desktop-version.ts check
       # The chart's default image tag is its appVersion, and a release must move both together. They
@@ -79,6 +75,24 @@ jobs:
           chart=$(bun -e 'console.log(require("yaml").parse(require("fs").readFileSync("charts/openbot/Chart.yaml","utf8")).appVersion)')
           if [ "$pkg" != "$chart" ]; then
             echo "::error::package.json is $pkg but charts/openbot/Chart.yaml appVersion is $chart. The release workflow moves them together; bring them back into line."
+            exit 1
+          fi
+      # runtime-go/dependency-review.json is the record G1b security review leans on, and its
+      # go.mod/go.sum digests were entered by hand. A dependency change without a record update is
+      # exactly the rescanTrigger incident mode: stale digests quietly vouch for files that moved.
+      - name: Dependency review record tracks go.mod/go.sum
+        run: |
+          actual_mod=$(shasum -a 256 runtime-go/go.mod | cut -d' ' -f1)
+          actual_sum=$(shasum -a 256 runtime-go/go.sum | cut -d' ' -f1)
+          # The vulnerability scan record must anchor the current go.sum too, or a stale
+          # scan silently vouches for dependencies that moved. Archived history[] digests
+          # are exempt by design.
+          if [ "$(jq -r '.graph.goMod.sha256' runtime-go/dependency-review.json)" != "$actual_mod" ] ||
+             [ "$(jq -r '.graph.goSum.sha256' runtime-go/dependency-review.json)" != "$actual_sum" ] ||
+             [ "$(jq -r '.vulnerabilityScan.scannedGoSumSha256' runtime-go/dependency-review.json)" != "$actual_sum" ] ||
+             [ "$(jq -r '.graph.goMod.lines' runtime-go/dependency-review.json)" != "$(wc -l < runtime-go/go.mod | tr -d ' ')" ] ||
+             [ "$(jq -r '.graph.goSum.lines' runtime-go/dependency-review.json)" != "$(wc -l < runtime-go/go.sum | tr -d ' ')" ]; then
+            echo "::error::runtime-go/go.mod or go.sum moved but dependency-review.json still carries stale digests or line counts. Re-measure the graph facts and re-run govulncheck, then update the record (including vulnerabilityScan.scannedGoSumSha256)."
             exit 1
           fi
 
@@ -96,6 +110,7 @@ jobs:
   deployables:
     name: types (${{ matrix.package }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       # One red package must not hide whether the other is red too.
       fail-fast: false
@@ -122,6 +137,7 @@ jobs:
   mobile:
     name: native types
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -144,6 +160,7 @@ jobs:
   computer-browser:
     name: computer (real browser)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -182,6 +199,7 @@ jobs:
   chart:
     name: chart (${{ matrix.target }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       # One red target must not hide whether another is red too.
       fail-fast: false
@@ -333,6 +351,7 @@ jobs:
   test:
     name: tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # The suite includes a real database integration test. Without a database it fails on every run,
     # including on main, which trains everyone to read a red CI as normal. pgvector rather than plain
     # postgres because the knowledge schema uses the extension.
@@ -350,27 +369,27 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      enterprise-postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: openbot_enterprise_r2_codex_20261009
+          POSTGRES_USER: enterprise_setup
+          POSTGRES_PASSWORD: enterprise-setup-only
+        ports:
+          - "127.0.0.1:5434:5432"
+        options: >-
+          --health-cmd "pg_isready -U enterprise_setup -d openbot_enterprise_r2_codex_20261009"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
       TEST_DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot_test
-      # The enterprise suites dial one database through restricted logins (never the migration
-      # owner): the same names the local workflow env file uses, pointed at this job's throwaway
-      # container. Passwords are for a database that exists only for this job; the roles themselves
-      # are provisioned by the step below. The five runs-ledger logins (plan 03 §4.2) are REQUIRED,
-      # not optional: scripts/enterprise-test-db.ts refuses to provision when any one of the ten
-      # login URLs is missing, so leaving them out turns the runs-ledger role step red and silences
-      # every real-database assertion in server/tests/enterprise/runs and
-      # server/tests/enterprise/models behind its fail-closed probe.
-      ENTERPRISE_TEST_DATA_DATABASE_URL: postgres://ent_data:ci-ent-data@localhost:5432/openbot_test
-      ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://ent_operator:ci-ent-operator@localhost:5432/openbot_test
-      ENTERPRISE_TEST_IDENTITY_OPERATOR_DATABASE_URL: postgres://ent_identity_operator:ci-ent-identity-operator@localhost:5432/openbot_test
-      ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: postgres://ent_directory:ci-ent-directory@localhost:5432/openbot_test
-      ENTERPRISE_TEST_AUTH_DATABASE_URL: postgres://ent_identity:ci-ent-identity@localhost:5432/openbot_test
-      ENTERPRISE_TEST_RUN_WRITER_DATABASE_URL: postgres://ent_run_writer:ci-ent-run-writer@localhost:5432/openbot_test
-      ENTERPRISE_TEST_RUNTIME_WRITER_DATABASE_URL: postgres://ent_runtime_writer:ci-ent-runtime-writer@localhost:5432/openbot_test
-      ENTERPRISE_TEST_DISPATCHER_DATABASE_URL: postgres://ent_dispatcher:ci-ent-dispatcher@localhost:5432/openbot_test
-      ENTERPRISE_TEST_RUN_OPERATOR_DATABASE_URL: postgres://ent_run_operator:ci-ent-run-operator@localhost:5432/openbot_test
-      ENTERPRISE_TEST_RUN_MAINTENANCE_DATABASE_URL: postgres://ent_run_maintenance:ci-ent-run-maintenance@localhost:5432/openbot_test
+      ENTERPRISE_TEST_SETUP_DATABASE_URL: postgres://enterprise_setup:enterprise-setup-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009
+      ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: postgres://enterprise_directory_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_directory
+      ENTERPRISE_TEST_DATA_DATABASE_URL: postgres://enterprise_data_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_data
+      ENTERPRISE_TEST_OPERATOR_DATABASE_URL: postgres://enterprise_operator_login:enterprise-test-only@127.0.0.1:5434/openbot_enterprise_r2_codex_20261009?options=-c%20role%3Dob_ent_operator
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -399,16 +418,20 @@ jobs:
       # pinned by the desktop lockfile rather than the root one.
       - run: bun install --frozen-lockfile
         working-directory: desktop
-      # The enterprise capability roles must exist BEFORE the migrations: the tenancy RLS custom
-      # migration GRANTs to ob_ent_* and fails outright when they are absent (plan 02 §5 T1-B's
-      # role contract; roles.sql is the DBA's production file, this is the throwaway-database
-      # equivalent). Idempotent, so a locally re-used test database runs it just as safely.
-      - name: Provision the enterprise test roles
+      # CI owns this disposable database and opts into the same role bootstrap as local Compose.
+      - run: bun scripts/migrate.ts
         working-directory: server
-        run: bun scripts/enterprise-test-db.ts roles
-      # Not the db:migrate script: that one loads ../.env, which does not exist in CI. DATABASE_URL
-      # comes from the job env instead, which drizzle.config.ts already reads.
-      - run: bunx drizzle-kit migrate --config=drizzle.config.ts
+        env:
+          OPENBOT_BOOTSTRAP_ENTERPRISE_ROLES: "on"
+      # The second service is fresh and isolated from the regular test database. Prove a missing-role
+      # migration fails before DDL, then bootstrap and migrate it through the reserved test wrapper.
+      - name: Enterprise migration preflight and role-safety fixture
+        run: bun test server/tests/enterprise/migration-role-preflight.integration.test.ts
+        env:
+          ENTERPRISE_TEST_PREFLIGHT_MODE: fresh
+      - name: Prepare the enterprise test database
+        run: bun scripts/enterprise-test-db.ts migrate
+
         working-directory: server
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
@@ -417,6 +440,7 @@ jobs:
   startup:
     name: startup (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -434,6 +458,7 @@ jobs:
   python-harness:
     name: python harness regressions
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -530,6 +555,7 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -546,6 +572,7 @@ jobs:
   migrations:
     name: migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       # drizzle.config.ts refuses to load without it. Nothing here connects.
       DATABASE_URL: postgres://openbot:openbot@localhost:5432/openbot
@@ -579,6 +606,7 @@ jobs:
   image:
     name: image
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # The only slow job: it builds the container and boots it, ~14 minutes. The four checks above are
     # seconds and stay on every push, because they catch most things cheaply. This one is the cost, so
     # on a pull request it runs only when an admin adds the `full-ci` label — the point at which the PR
@@ -693,6 +721,7 @@ jobs:
   component-dockerfiles:
     name: component dockerfiles
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The same cost gate as `image` above, and for the same reason: `agent-computer` pulls
     # Playwright's base and `server` builds the app, so this is minutes rather than seconds. On main
     # and through the release's workflow_call it always runs.
@@ -753,6 +782,7 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: always()
     needs: [static, deployables, mobile, computer-browser, chart, test, startup, python-harness, build, migrations, image, component-dockerfiles, submodule]
     steps:

@@ -1,0 +1,1 @@
+ALTER TABLE "enterprise_runs" ADD COLUMN "expert_version_ref" text NOT NULL;

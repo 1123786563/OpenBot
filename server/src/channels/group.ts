@@ -349,6 +349,9 @@ export function createGroupStore(
     },
     async removeMember(channelId, userId) {
       await database.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["legacy", "channel", channelId])}, 0))`,
+        );
         await tx
           .delete(channelMemberships)
           .where(
