@@ -1,5 +1,6 @@
 .worktrees/
 .superpowers/
+.DS_Store
 
 # Claude Code: .claude/skills/ is shared, the rest is local state
 .claude/worktrees/
