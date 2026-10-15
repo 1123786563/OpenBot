@@ -605,7 +605,7 @@ export function createObservationExportWorker(
               );
               return { total: result.total, content: result.content };
             });
-      const artifact = rows.map(projectRow);
+      const artifact = rows.map((row) => projectRow(row));
       // Null when revocation won the row while the fetch ran: the artifact is
       // dropped right here, and the database check would refuse it anyway.
       await store.settleCompleted(job.id, artifact);
