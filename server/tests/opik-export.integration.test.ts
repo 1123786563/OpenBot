@@ -251,7 +251,7 @@ test("a swept job completes with a projected artifact and no canary (AC2)", asyn
   expect(done?.rowCount).toBe(2);
   expect(done?.settledAt).toBeInstanceOf(Date);
   expect(done?.errorCode).toBeNull();
-  expect(done?.artifact).toEqual(rows.map(projectRow));
+  expect(done?.artifact).toEqual(rows.map((row) => projectRow(row)));
   expect(JSON.stringify(done?.artifact)).not.toContain("sk-live-");
 });
 
