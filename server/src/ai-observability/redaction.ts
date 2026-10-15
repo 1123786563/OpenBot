@@ -67,12 +67,11 @@ function denyReason(input: string): OmitReason | undefined {
   return undefined;
 }
 
-/** Cut on a UTF-8 byte budget without splitting a character or emitting U+FFFD. */
+/** Cut on a UTF-8 byte budget without splitting a character or stranding a surrogate. */
 function cutToBytes(input: string, budget: number): string {
   const encoder = new TextEncoder();
   if (encoder.encode(input).length <= budget) return input;
-  let text = input;
-  // Binary-search the longest prefix that fits, then drop a trailing partial code point.
+  // Binary-search the longest prefix that fits the byte budget.
   let low = 0;
   let high = input.length;
   while (low < high) {
@@ -80,8 +79,12 @@ function cutToBytes(input: string, budget: number): string {
     if (encoder.encode(input.slice(0, mid)).length <= budget) low = mid;
     else high = mid - 1;
   }
-  text = input.slice(0, low);
-  return text.replace(/�$/, "");
+  // The cut can land between a surrogate pair: the lone half is not the U+FFFD character, it only
+  // *encodes* to those bytes, so the guard has to run on code units, not on the character.
+  let end = low;
+  const last = input.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return input.slice(0, end);
 }
 
 function project(input: string, budget: number): SafeText {
