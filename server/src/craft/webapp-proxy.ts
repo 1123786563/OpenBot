@@ -37,6 +37,11 @@ import {
   WorkspaceListingError,
 } from "./directory-archive";
 import { webappDevServerReady, webappUpstreamHost } from "./nextjs-dev";
+import {
+  createPreviewTickets,
+  defaultPreviewOrigin,
+  type PreviewTickets,
+} from "./preview-ticket";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
@@ -55,6 +60,15 @@ export type WebappProxyRoutesDeps = {
   sandboxConnectionFor: (
     botId: string,
   ) => { baseUrl: string; token: string | null } | null;
+  /**
+   * The ticket table behind the issuing route below — one per process by
+   * default; injectable so tests drive the TTL clock without sleeping. #361's
+   * host routing redeems against the SAME instance.
+   */
+  previewTickets?: PreviewTickets;
+  /** The preview origin a ticket's host binding is minted against (#361/#362
+   * own the real host decision; D5's dev default until then). */
+  previewOriginFor?: (sessionId: string) => string;
 };
 
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
@@ -306,6 +320,41 @@ export function createWebappProxyRoutes(
     const conn = botId ? deps.sandboxConnectionFor(botId) : null;
     return { session, botId, conn };
   };
+
+  // ── POST /sessions/:id/preview-ticket — the #360 issuing route ─────────────
+  //
+  // The main-site cookie (requireUser above) exchanges for a short-lived,
+  // single-use ticket the preview origin redeems (D4). The binding's host
+  // element is the returned origin's host — a HOST, never a port-only origin
+  // (F2: ports do not isolate cookies). The refusal shapes are this surface's
+  // own: 401 from requireUser, 404 a session that is not the actor's, 503 a
+  // sandbox that cannot back the preview. No sandbox probe runs yet — a ticket
+  // outlives a dev server boot inside its 30s window by design.
+  const previewTickets =
+    deps.previewTickets ?? createPreviewTickets({ store: deps.store });
+  const previewOriginFor =
+    deps.previewOriginFor ?? (() => defaultPreviewOrigin());
+  app.post("/sessions/:sessionId/preview-ticket", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const { session, botId, conn } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!botId || !conn) {
+      return context.json({ error: "The sandbox is not available." }, 503);
+    }
+    const origin = previewOriginFor(sessionId);
+    const { ticket, expiresAt } = previewTickets.issuePreviewTicket({
+      sessionId,
+      userId: actor.id,
+      previewHost: new URL(origin).host,
+    });
+    // A bearer credential's only appearance: this response, never a log line.
+    return context.json({
+      ticket,
+      expiresAt: expiresAt.toISOString(),
+      origin,
+    });
+  });
 
   // ── GET /sessions/:id/webapp-info ───────────────────────────────────────────
   app.get("/sessions/:sessionId/webapp-info", async (context) => {
