@@ -9081,7 +9081,10 @@
    "issue_number": 332,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/332",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHBbA",
-   "issue_db_id": 5858509164
+   "issue_db_id": 5858509164,
+   "_linked": {
+    "dep_17.6": true
+   }
   },
   {
    "id": "18.1",
