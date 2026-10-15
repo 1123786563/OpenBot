@@ -869,6 +869,13 @@
       "when": 1792089727585,
       "tag": "0123_opik_dataset_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1792090982375,
+      "tag": "0124_opik_dataset_version_delete_guard",
+      "breakpoints": true
     }
   ]
 }

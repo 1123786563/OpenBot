@@ -690,6 +690,24 @@ export const auditEventTypes = [
    * decision was asked for and made.
    */
   "craft.connect_app_decided",
+  /**
+   * A creator reviewed candidate cases distilled from one observed run (Issue #26 / T20):
+   * approved or rejected, with how many cases and how many the redaction policy refused.
+   *
+   * This row IS the review record — there is no separate review table to ask. Attribution and
+   * time live in the row's own columns (actor, initiator, created_at), and the payload carries
+   * references and counts, never case content: a decision is a fact about a curation, not a
+   * copy of what was curated. A reviewer's note is the one free-text corner, and it is stored
+   * only after the T05 projection, so a secret typed into a note is refused, not echoed.
+   */
+  "opik.case_reviewed",
+  /**
+   * Reviewed cases were frozen into an immutable dataset version through the T19 pipeline
+   * (Issue #26 / T20). The payload names the dataset, the version id, the content hash and
+   * whether this save replayed an existing version — enough to answer "who froze what, when,
+   * and was it the same content as before" from the trail without reading the dataset itself.
+   */
+  "opik.dataset_version_saved",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
