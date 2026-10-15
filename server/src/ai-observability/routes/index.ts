@@ -13,10 +13,13 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../../auth/guards";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
+import type { OpikHealthService } from "../health";
+import { createAiObservabilityHealthRoutes } from "./health";
 
 export type AiObservabilityDeps = {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   canManageBot: BotManagementCheck;
+  healthService?: OpikHealthService;
 };
 
 export function createAiObservabilityRoutes(
@@ -24,6 +27,12 @@ export function createAiObservabilityRoutes(
 ): Hono<{ Variables: AppVariables }> {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
+  if (deps.healthService) {
+    routes.route(
+      "/health",
+      createAiObservabilityHealthRoutes({ service: deps.healthService }),
+    );
+  }
 
   routes.get("/bots/:botId/access", async (context) => {
     const access = await resolveObservationBot(
