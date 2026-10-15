@@ -24,12 +24,17 @@ export type {
   RunUsageReport,
 } from "../../../../shared/ai-observability-runs";
 
-import type { RunsListResult } from "../../../../shared/ai-observability-runs";
+import type {
+  RunDetailResult,
+  RunsListResult,
+} from "../../../../shared/ai-observability-runs";
 
 export const observationRunKeys = {
   all: ["ai-observability-runs"] as const,
   list: (botId: string, page: { cursor: string | null; limit: number }) =>
     ["ai-observability-runs", "list", botId, page] as const,
+  detail: (botId: string, runId: string) =>
+    ["ai-observability-runs", "detail", botId, runId] as const,
 };
 
 /** What the screen is allowed to conclude: the list itself, or the fault that explains it. */
@@ -40,12 +45,61 @@ export type ObservationRunsScreen =
       fault: "disabled" | "forbidden" | "unavailable";
     };
 
+/** The detail page's own conclusion: the run, or the fault that explains its absence. */
+export type ObservationRunDetailScreen =
+  | { view: "detail"; result: RunDetailResult }
+  | {
+      view: "fault";
+      fault: "disabled" | "forbidden" | "notFound" | "unavailable";
+    };
+
 /** The server's error code, when it sent one in the house `{ error }` envelope. */
 async function refusalCode(response: Response): Promise<string | null> {
   const body = (await response.json().catch(() => null)) as {
     error?: unknown;
   } | null;
   return typeof body?.error === "string" ? body.error : null;
+}
+
+/*
+ * Runtime shape defense on success bodies (the T12 review's L-2, closed here): the server is
+ * the contract's source of truth, but a 200 whose body lost its key fields would otherwise
+ * render a page of undefined. Key fields missing is the store failing to answer — the same
+ * unavailable fault as any other non-answer, never a disguised empty page.
+ */
+function isRunsListBody(body: unknown): body is RunsListResult {
+  if (typeof body !== "object" || body === null) return false;
+  const candidate = body as Partial<RunsListResult>;
+  return (
+    Array.isArray(candidate.runs) &&
+    typeof candidate.pagination === "object" &&
+    candidate.pagination !== null &&
+    typeof candidate.syncing === "boolean"
+  );
+}
+
+function isRunDetailBody(body: unknown): body is RunDetailResult {
+  if (typeof body !== "object" || body === null) return false;
+  const run = (body as { run?: unknown }).run;
+  if (typeof run !== "object" || run === null) return false;
+  const record = run as Record<string, unknown>;
+  for (const field of [
+    "runId",
+    "attemptId",
+    "traceId",
+    "state",
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+  ]) {
+    if (typeof record[field] !== "string") return false;
+  }
+  const upstream = (body as { upstream?: unknown }).upstream;
+  if (typeof upstream !== "object" || upstream === null) return false;
+  const status = (upstream as Record<string, unknown>).status;
+  return (
+    status === "present" || status === "unreconciled" || status === "absent"
+  );
 }
 
 export function observationRunsQueryOptions(
@@ -82,11 +136,50 @@ export function observationRunsQueryOptions(
         return { view: "fault", fault: "unavailable" };
       }
       const body = (await response.json().catch(() => null)) as unknown;
-      if (!body || typeof body !== "object" || Array.isArray(body)) {
+      if (!isRunsListBody(body)) {
         // A malformed success is the store failing to answer, never an empty page.
         return { view: "fault", fault: "unavailable" };
       }
-      return { view: "list", result: body as RunsListResult };
+      return { view: "list", result: body };
+    },
+  });
+}
+
+export function observationRunDetailQueryOptions(botId: string, runId: string) {
+  return queryOptions({
+    queryKey: observationRunKeys.detail(botId, runId),
+    queryFn: async (): Promise<ObservationRunDetailScreen> => {
+      const response = await tryClient(
+        `/api/ai-observability/bots/${encodeURIComponent(botId)}/runs/${encodeURIComponent(runId)}`,
+      );
+      if (
+        response.status === 503 &&
+        (await refusalCode(response)) === "capability_missing"
+      ) {
+        return { view: "fault", fault: "disabled" };
+      }
+      if (response.status === 401 || response.status === 403) {
+        return { view: "fault", fault: "forbidden" };
+      }
+      if (response.status === 404) {
+        /*
+         * Two different 404s, kept different on purpose: RUN_NOT_FOUND is about the run
+         * (this scope did not bind it, so it does not exist for this caller); the manage
+         * gate's OBSERVATION_BOT_* 404 refuses to name a Bot this caller cannot manage —
+         * the same refusal a stranger's probe hears, so it renders as forbidden.
+         */
+        return (await refusalCode(response)) === "RUN_NOT_FOUND"
+          ? { view: "fault", fault: "notFound" }
+          : { view: "fault", fault: "forbidden" };
+      }
+      if (!response.ok) {
+        return { view: "fault", fault: "unavailable" };
+      }
+      const body = (await response.json().catch(() => null)) as unknown;
+      if (!isRunDetailBody(body)) {
+        return { view: "fault", fault: "unavailable" };
+      }
+      return { view: "detail", result: body };
     },
   });
 }

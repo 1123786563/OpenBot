@@ -32,10 +32,11 @@ const STATES = [
  *   missing score is not a zero. `basic` keeps its capability meaning ("only what OpenBot
  *   itself observed") in every namespace that has it, so the word is never overloaded.
  * - runs additionally carries `tokenUnavailable` (Spec §9 "token 不可用"): usage that could
- *   not be read must not be reported as 0.
+ *   not be read must not be reported as 0, and `notFound` (#19 detail): a run this scope did
+ *   not bind is a different answer than a refusal to observe the Bot.
  */
 const STATES_BY_NS: Record<string, readonly string[]> = {
-  "ai-observability-runs": [...STATES, "tokenUnavailable"],
+  "ai-observability-runs": [...STATES, "tokenUnavailable", "notFound"],
   "ai-observability-datasets": STATES,
   "ai-observability-evaluations": [
     ...STATES.filter((state) => state !== "basic"),
@@ -55,11 +56,11 @@ const BUNDLES = [
 
 /**
  * The bundles whose placeholder routes exist today, named separately so TypeScript keeps each
- * entry its own bundle type. The datasets chain (#27) builds its section inside the evaluations
- * page, so it has no route — and no placeholder copy — yet.
+ * entry its own bundle type. The runs chain (#18 list, #19 detail) is fully built, so it left
+ * this list and its placeholder copy was deleted; the datasets chain (#27) builds its section
+ * inside the evaluations page, so it has no route — and no placeholder copy — yet.
  */
 const PLACEHOLDER_BUNDLES = [
-  { ns: "ai-observability-runs", en: enRuns, zh: zhRuns },
   { ns: "ai-observability-evaluations", en: enEvaluations, zh: zhEvaluations },
   { ns: "ai-observability-admin", en: enAdmin, zh: zhAdmin },
 ] as const;
