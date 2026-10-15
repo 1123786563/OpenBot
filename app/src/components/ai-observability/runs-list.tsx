@@ -229,13 +229,17 @@ export function ObservationRunsList({ botId }: { botId: string }) {
       )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-        <p aria-live="polite" className="text-muted-foreground text-xs">
-          {t("pagination.range", {
-            from: pagination.offset + 1,
-            to: pagination.offset + result.runs.length,
-            total: formatNumber(pagination.total),
-          })}
-        </p>
+        {result.runs.length > 0 ? (
+          <p aria-live="polite" className="text-muted-foreground text-xs">
+            {t("pagination.range", {
+              from: pagination.offset + 1,
+              to: pagination.offset + result.runs.length,
+              total: formatNumber(pagination.total),
+            })}
+          </p>
+        ) : (
+          <span />
+        )}
         <div className="flex gap-2">
           <Button
             disabled={cursors.length <= 1 || screen.isFetching}
