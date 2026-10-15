@@ -47,3 +47,18 @@
 ## Write scope
 
 `server/src/craft/webapp-proxy.ts`、`server/src/craft/`（ticket 集成）、`app/src/components/craft/output-panel/preview-tab.tsx`、`app/src/lib/craft/{client,types,queries}.ts`、`server/tests/`。
+
+---
+
+## 来自前置审阅的约束（#360 与 #361 通过时写入，本票设计必须吸收）
+
+### 来自 #361 审阅（直接踩上本票的三项）
+
+1. **M-1 生产形态的 Host 判别**：dev 靠 `127.0.0.1` vs `localhost` 分流；生产必须按配置的 preview 基础域做**后缀匹配**判别，需精确定义并有测试钉住「主站主机绝不被当作 preview」（AC1 的隔离前提）。
+2. **M-2 重启空窗**：#361 的 label→session 反查是**内存 registry，server 重启即清空**。已打开的 preview 标签 reload 会得到 404 "Unknown preview host"，恢复须经主站重新走票重铸。本票的代理入口设计二选一：(a) 接受并文档化为已知约束；(b) 改 store/DB 反查。同时修正 #360 遗留注释的事实错误（"a column would only cache what derivation already knows" 对反向不成立），并把重启行为写明。
+3. **m-5 `webapp-info` 的关闭原因面**：#361 已把这块整块延迟到本票（代码注释已声明）。落地方案 + 测试由本票交付，避免 AC 勾选争议。
+
+### 来自 #360 审阅
+
+4. **端口语义收敛**：`defaultPreviewOrigin` 在 PORT 与 SERVER_PORT 不一致时静默偏好 PORT，而 `server/src/config.ts` 的 `serverPort` 会抛错 —— 本票收敛（#360 审阅 Nit 3/4）。
+5. **消费 #360 交付的接缝**（审阅已确认干净）：`deps.previewTickets` 注入同一实例；`previewSessionCookieHeader` 真正 Set-Cookie 并按 D9 验收；`redeem` 返回 `{userId}`，归属校验在 #360 的 store 重查里，**不要重复实现**；`previewOriginFor` 注入点替换默认实现。
