@@ -1,6 +1,10 @@
 # DAG、验收映射与执行 Ledger
 
-日期2026-10-15。事实源为批准Spec/ADR/CONTEXT/Git与source-manifest。Root Issue：无，source_issues=[]；BASE `c0167c5cf33c441588fa20d3eb5a7e2ade789371`；workspace `/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`。执行授权门禁：计划待审阅，执行方法未选择，尚无生产代码执行。
+日期2026-10-15。事实源为批准Spec/ADR/CONTEXT/Git与source-manifest。Root Issue：无，source_issues=[]；计划BASE `c0167c5cf33c441588fa20d3eb5a7e2ade789371`，已于2026-10-15合并main HEAD `4dd1922d`（merge `094f458a`，三个事实源取main版，见source-manifest.json）。workspace `/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`。
+
+**任务事实源已迁移**：本Ledger的T01–T26为规划期分解，已按用户粒度要求（单个code agent上下文可完成）细化为143张GitHub Ticket（MT001–MT143，Issue #44–#186，20个分组Epic #187–#206，父Spec [Issue #6](https://github.com/1123786563/OpenBot/issues/6)，本地镜像 `docs/tickets/multitenancy/`）。执行以Ticket为准，本文件仅作规划历史与文件级参考。
+
+执行授权门禁：Spec与143张Ticket已发布（2026-10-15）；实现尚未开始，生产代码修改、提交、合并、部署仍需用户逐项授权。
 
 ## DAG与状态
 
