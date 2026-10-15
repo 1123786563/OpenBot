@@ -69,10 +69,14 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
   });
 
   /*
-   * Escape is the way out of a full-viewport surface that has swallowed the window, and focus
-   * returns to the control that opened it — which is the SAME button node in both states (only
-   * its icon and label flip), so the person's cursor lands back where they left it rather than
-   * at the top of the document.
+   * Escape is a convenience, not the contract — and the limit is worth stating because it
+   * looks like a bug from the inside. A keydown goes to the focused DOCUMENT, and once the
+   * person has clicked into the app to test it, focus is inside the iframe, so the parent
+   * never hears the key. No listener on this side can change that; it is what an iframe is.
+   * The corner control is therefore the real way out and stays visible the whole time,
+   * and Escape works whenever focus is in our chrome (measured both ways in the browser).
+   * Focus returns to that control rather than to the top of the document, because it is the
+   * same button node in both states — only its icon and label flip.
    */
   useEffect(() => {
     if (!expanded) return;
