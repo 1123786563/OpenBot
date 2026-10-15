@@ -524,6 +524,12 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         }
         query.set("size", String(input.size));
       }
+      if (input.page !== undefined) {
+        if (!Number.isInteger(input.page) || input.page < 0) {
+          throw new OpikPortError("OPERATION_INPUT_INVALID");
+        }
+        query.set("page", String(input.page));
+      }
       const exchanged = await exchange(
         "listTraces",
         `/v1/private/traces?${query.toString()}`,
