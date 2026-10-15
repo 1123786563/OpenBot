@@ -39,7 +39,7 @@
 - 设计及ADR已于2026-10-14批准；本实施计划编写日期2026-10-15，等待审阅与执行方法选择。
 - 工作区：`/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`；分支：`1123786563/company-team-multitenancy`。
 - BASE（计划编写时）：`c0167c5cf33c441588fa20d3eb5a7e2ade789371`。原目录 `/Users/wuyongjun/trea/OpenBot` 的其他会话改动不集成。
-- 分支同步（2026-10-15）：已合并 main HEAD `4dd1922dd0073c2f349bc8c336ab649eaa9ca804`（merge `094f458a`）；CONTEXT.md、ADR 0002、Bifrost Spec 以 main 版本为准（哈希见 `source-manifest.json` 的 `synced_to_main`）。注意本地 main 与 origin/main（`e01ae5fa`，trpc-intelligence/enterprise 线）已分叉，实施开始前需确认目标 main。
+- 分支同步（2026-10-15 第二次）：main 已与 origin/main 统一为 `f0520524`（两条分叉线已合并），分支已合并 main HEAD（merge `bea61c03`）。合并带来 enterprise 栈重构：`server/src/enterprise/tenancy/scope.ts`、`transaction.ts`、`db/schema/enterprise-authz.ts`、`enterprise/app.ts` 已删除或内联（`resolveScope` 现在在 `server/src/index.ts`）；旧租户测试套件被新企业测试取代（governed-execution、enterprise-role-preflight、schema-migration-r2、mastra-compatibility、model-route-rebind、run-failure-contract 等）。Spec §2「当前代码事实」与 Testing Decisions 的 prior-art 清单按新栈解读；受影响文件引用见 dag-ledger 2026-10-15 同步记录。
 - 提交授权（2026-10-15 用户确认）：本分支允许文档（计划 + 工单）提交并推送；产品代码提交、合并、生产迁移、部署与发布仍无授权。
 - **任务清单以 GitHub Ticket 为准**：本计划的 26 个规划任务已按用户粒度要求细化并发布为 143 张 Ticket（MT001–MT143，Issue #44–#186，分 20 个分组 Epic #187–#206，父 Spec [#6](https://github.com/1123786563/OpenBot/issues/6)）。分册仅作文件级归属与共享接口参考。
 - 已复制7个必要事实源并核对hash，见 `source-manifest.json`。不依赖新worktree自动带入未提交文档。

@@ -1,8 +1,18 @@
 # DAG、验收映射与执行 Ledger
 
-日期2026-10-15。事实源为批准Spec/ADR/CONTEXT/Git与source-manifest。Root Issue：无，source_issues=[]；计划BASE `c0167c5cf33c441588fa20d3eb5a7e2ade789371`，已于2026-10-15合并main HEAD `4dd1922d`（merge `094f458a`，三个事实源取main版，见source-manifest.json）。workspace `/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`。
+日期2026-10-15。事实源为批准Spec/ADR/CONTEXT/Git与source-manifest。Root Issue：无，source_issues=[]；计划BASE `c0167c5cf33c441588fa20d3eb5a7e2ade789371`，先后合并main HEAD `4dd1922d`（merge `094f458a`）与 `f0520524`（merge `bea61c03`，事实源取main版，见source-manifest.json）。workspace `/Users/wuyongjun/orca/workspaces/OpenBot/company-team-multitenancy`。
 
 **任务事实源已迁移**：本Ledger的T01–T26为规划期分解，已按用户粒度要求（单个code agent上下文可完成）细化为143张GitHub Ticket（MT001–MT143，Issue #44–#186，20个分组Epic #187–#206，父Spec [Issue #6](https://github.com/1123786563/OpenBot/issues/6)，本地镜像 `docs/tickets/multitenancy/`）。执行以Ticket为准，本文件仅作规划历史与文件级参考。
+
+## 2026-10-15 第二次同步与代码事实变化
+
+main 已与 origin/main 统一为 `f0520524`，分支 merge `bea61c03` 完成同步。合并引入 enterprise 栈重构，对规划事实的影响有界、需在实施时按新栈解读：
+
+- **Spec §2 引用失效**：`server/src/enterprise/tenancy/scope.ts`、`tenancy/transaction.ts`、`db/schema/enterprise-authz.ts`、`enterprise/app.ts` 已删除或内联（`resolveScope` 现位于 `server/src/index.ts`，`proactive/engine.ts` 亦引用）。`enterprise/tenancy/` 现余 `connections.ts`、`provision.ts`、`store.ts`；企业迁移重编号（0055/0056 tenancy+RLS 等）。
+- **Prior-art 测试更换**：旧 `server/tests/enterprise/tenancy/*` 套件大部分被删，仅余 `auth-config-compat`；新 prior-art 为 `governed-execution`、`enterprise-role-preflight`、`migration-role-preflight.integration`、`schema-migration-r2.integration`、`mastra-compatibility`、`model-route-rebind`、`run-failure-contract`、`legacy-channel-scope` 等。MT002/MT012 的 harness 写法参考新套件。
+- **tasks.json 失效引用（5 任务）**：T01/T25 `enterprise/app.ts`、`enterprise/index.ts`、`enterprise/bootstrap.ts`；T03 `db/schema/enterprise-authz.ts`；T04 `enterprise/config.ts`；T11 `enterprise/runtime/`；T23 `db/schema/enterprise-run-events.ts`。对应 MT Ticket 的 Scope boundary 按新栈文件定位，验收不变。
+- **授权 seam 落点变化**：MT005/MT011/MT012 涉及的「现有授权 seam」在新栈上重新锚定（原 scope/transaction 模块已不在原位）；实施前先做一次新栈 seam 识别（半日内），结论回写本 Ledger。
+
 
 执行授权门禁：Spec与143张Ticket已发布（2026-10-15）；实现尚未开始，生产代码修改、提交、合并、部署仍需用户逐项授权。
 
