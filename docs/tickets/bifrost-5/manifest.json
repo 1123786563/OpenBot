@@ -9151,7 +9151,10 @@
    "issue_number": 333,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/333",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHM9A",
-   "issue_db_id": 5858512116
+   "issue_db_id": 5858512116,
+   "_linked": {
+    "dep_17.6": true
+   }
   },
   {
    "id": "18.2",
@@ -9218,7 +9221,10 @@
    "issue_number": 334,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/334",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHRww",
-   "issue_db_id": 5858513347
+   "issue_db_id": 5858513347,
+   "_linked": {
+    "dep_18.1": true
+   }
   },
   {
    "id": "18.3",
@@ -9285,7 +9291,10 @@
    "issue_number": 335,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/335",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHbWA",
-   "issue_db_id": 5858515800
+   "issue_db_id": 5858515800,
+   "_linked": {
+    "dep_18.2": true
+   }
   },
   {
    "id": "18.4",
@@ -9353,7 +9362,10 @@
    "issue_number": 336,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/336",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTHjYQ",
-   "issue_db_id": 5858517857
+   "issue_db_id": 5858517857,
+   "_linked": {
+    "dep_18.2": true
+   }
   },
   {
    "id": "19.1",
