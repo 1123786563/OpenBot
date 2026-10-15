@@ -193,13 +193,11 @@ export function createIdLinkStore(
             runId,
             observedTraceId,
           })
-          .onConflictDoNothing({
-            target: [
-              aiObservationIdLinks.scopeKey,
-              aiObservationIdLinks.localKind,
-              aiObservationIdLinks.localId,
-            ],
-          })
+          // No conflict target: EITHER unique key firing means "the standing
+          // mapping wins", which the selects below turn into a verdict. Naming
+          // only the local key would let the upstream key surface as a raw
+          // unique_violation instead of the divergent verdict (T17 review L-1a).
+          .onConflictDoNothing()
           .returning();
         if (inserted[0]) {
           return { linked: true, replayed: false };

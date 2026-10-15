@@ -50,12 +50,17 @@ import {
 /** A queue that accepts everything and remembers what was submitted. */
 function fakeQueue() {
   const submitted: OpikObservationWrite[] = [];
+  const countedIdLinks: string[] = [];
   return {
     submitted,
+    countedIdLinks,
     queue: {
       submit(write: OpikObservationWrite) {
         submitted.push(write);
         return "accepted" as const;
+      },
+      countIdLink(outcome: "chain_broken" | "divergent" | "error") {
+        countedIdLinks.push(outcome);
       },
     },
   };
@@ -1013,23 +1018,40 @@ describe("the observation bypass fixes (T15 review)", () => {
   });
 
   test("(a) many torn-down streams leave no cells behind (the leak itself)", async () => {
-    for (let round = 0; round < 50; round += 1) {
-      const subject = new Subject<BaseEvent>();
-      const subscription = toolStepObservationForTests
-        .observeStream(subject)
-        .subscribe();
-      subject.next(
-        ev({
-          type: "TOOL_CALL_START",
-          toolCallId: `leak-${round}`,
-          toolCallName: "host_read",
-        }),
-      );
-      subscription.unsubscribe();
+    // The observer MUST be registered: without it the bypass returns the stream
+    // untouched (copilot.ts `if (observer === undefined) return stream`) and
+    // this loop opens no cells at all — a silent no-op, the fake coverage the
+    // T17 review (L-2) caught.
+    const torn: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => torn.push(fact));
+    try {
+      for (let round = 0; round < 50; round += 1) {
+        const subject = new Subject<BaseEvent>();
+        const subscription = toolStepObservationForTests
+          .observeStream(subject)
+          .subscribe();
+        subject.next(
+          ev({
+            type: "TOOL_CALL_START",
+            toolCallId: `leak-${round}`,
+            toolCallName: "host_read",
+          }),
+        );
+        subscription.unsubscribe();
+      }
+    } finally {
+      setBuiltinToolStepObserver(undefined);
     }
-    // A FRESH stream reusing one of those ids must see a fresh cell, not the
-    // stale one a leak would have left open: the proposal lands and completes.
-    const facts = await runStream([
+    // Every teardown retired its open cell: 50 terminal facts, not a registry
+    // that kept them open forever. Without the finalize hook this is 0.
+    expect(torn).toHaveLength(50);
+    for (const fact of torn) {
+      expect(fact.window).toBe("terminal");
+      expect(toolStepExecutionState(fact)).toBe("unobserved");
+    }
+    // A settled id is a tombstone: a fresh stream reusing it can neither
+    // resurrect the stale cell nor double-settle it — it records nothing new.
+    const resurrected = await runStream([
       ev({
         type: "TOOL_CALL_START",
         toolCallId: "leak-49",
@@ -1037,8 +1059,7 @@ describe("the observation bypass fixes (T15 review)", () => {
       }),
       ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
     ]);
-    expect(facts).toHaveLength(1);
-    expect(facts[0].proposalObserved).toBe(true);
+    expect(resurrected).toHaveLength(0);
   });
 
   test("(b) a late proposal for an already-executed call records exactly once", async () => {

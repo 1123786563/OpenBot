@@ -441,7 +441,7 @@ function buildRetrievalStepSpan(
 
 export function createToolStepRecorder(
   deps: Readonly<{
-    healthService: Pick<OpikHealthService, "submit">;
+    healthService: Pick<OpikHealthService, "submit" | "countIdLink">;
     /**
      * The id-mapping store (Issue #23/T17). When present, a tool step whose span
      * carries an explicit upstream id is linked AFTER the upstream write landed —
@@ -467,9 +467,11 @@ export function createToolStepRecorder(
             // The mapping follows the write, never precedes it. A refused verdict
             // (chain_broken, divergent) is a detected fact, and a link store that
             // throws must not turn a span that already landed into a counted
-            // failure — both are observations here, swallowed by design.
+            // failure — both are observations here, swallowed by design, but
+            // never silently: each lands on one governed counter (safe labels,
+            // no ids, no evidence) so a broken chain is observable in operation.
             try {
-              await idLinks.link(scope, {
+              const verdict = await idLinks.link(scope, {
                 local: { kind: "tool_step", id: observation.toolCallId },
                 upstream: { kind: "span", id: span.opik.spanId },
                 ...(observation.trace?.runRef !== undefined
@@ -477,8 +479,13 @@ export function createToolStepRecorder(
                   : {}),
                 observedTraceId: span.traceId,
               });
+              if (!verdict.linked) {
+                deps.healthService.countIdLink(verdict.reason);
+              }
             } catch {
-              // See above: the span write's own outcome is the queue's truth.
+              // See above: the span write's own outcome is the queue's truth;
+              // the mapping failure is counted, never propagated.
+              deps.healthService.countIdLink("error");
             }
           }
           return result;

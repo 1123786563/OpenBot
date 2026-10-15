@@ -71,12 +71,17 @@ function aScope() {
 
 function fakeQueue() {
   const submitted: OpikObservationWrite[] = [];
+  const countedIdLinks: string[] = [];
   return {
     submitted,
+    countedIdLinks,
     queue: {
       submit(write: OpikObservationWrite) {
         submitted.push(write);
         return "accepted" as const;
+      },
+      countIdLink(outcome: "chain_broken" | "divergent" | "error") {
+        countedIdLinks.push(outcome);
       },
     },
   };
@@ -434,6 +439,27 @@ describe("a step observation with the run's trace context", () => {
     expect(port.writes).toHaveLength(1);
   });
 
+  test("refused verdicts are counted on the governed channel, never silent (T17 review M-1)", async () => {
+    const queue = fakeQueue();
+    const verdicts = [
+      { linked: false as const, reason: "chain_broken" as const },
+      { linked: false as const, reason: "divergent" as const },
+    ];
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      idLinks: {
+        link: async () => verdicts.shift(),
+      },
+    });
+    recorder.record(aToolObservation({ toolCallId: "call-count-1" }));
+    recorder.record(aToolObservation({ toolCallId: "call-count-2" }));
+    const port = okPort();
+    for (const write of queue.submitted) await write.perform(port.port);
+    // Both refusals landed on the counter, in order, and neither failed the span.
+    expect(queue.countedIdLinks).toEqual(["chain_broken", "divergent"]);
+    expect(port.writes).toHaveLength(2);
+  });
+
   test("a link store that throws is contained, never a product failure", async () => {
     const queue = fakeQueue();
     const recorder = createToolStepRecorder({
@@ -450,6 +476,7 @@ describe("a step observation with the run's trace context", () => {
     for (const write of queue.submitted)
       settled = await write.perform(port.port);
     expect(settled).toMatchObject({ outcome: "ok" });
+    expect(queue.countedIdLinks).toEqual(["error"]);
   });
 
   test("no idLinks dependency means no link, and the span is unchanged", async () => {
