@@ -46,3 +46,14 @@ Preview origin 的承载与功能准入。决定 preview origin 与主站是否�
 ## Write scope
 
 `server/src/craft/`（config.ts、新文件 preview-origin.ts）、`server/src/index.ts`（仅 dispatcher 的分支挂接）、`server/tests/craft-preview-origin.test.ts`。
+
+---
+
+## 来自 #360 审阅的约束（2026-10-15，审阅通过时写入）
+
+实现 #360 时已交付并由审阅确认的接缝，本票**必须**按此消费：
+
+1. **实际种 cookie（D9 闭环）**：#360 只交付了 `previewSessionCookieHeader` 形状（会话级、HttpOnly、Path=/、SameSite=Lax、**无 Max-Age/无 Expires**）。本票的兑换路由要真正 `Set-Cookie`，并按 D9 验收「浏览器关闭即失效」—— 断言不得引入 Max-Age/Expires。
+2. **userId 校验藏在 store 重查里**：`redeem` 返回 `{userId}`，其归属校验靠 #360 在兑换时对 store 做 bump-free 重查（`findSession(entry.sessionId, entry.userId)`）。本票消费时不要再假设 redeem 入参带 userId 三元组，也不要重复实现归属校验。
+3. **注入同一实例**：`deps.previewTickets` 必须注入 #360 暴露的同一 `previewTickets` 实例（类型已在 `WebappProxyRoutesDeps` 暴露）；routes.ts 装配处显式传引用，不得新建实例。
+4. **origin 准入接入时替换注入**：`previewOriginFor` 目前默认走 `defaultPreviewOrigin()`（D5 dev 形态读 PORT/SERVER_PORT）；本票接入 origin 准入时替换该注入，并收敛与 `server/src/config.ts` `serverPort` 的端口语义（#360 审阅 Nit 3/4 的跟进项）。
