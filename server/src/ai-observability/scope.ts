@@ -136,10 +136,12 @@ export function bindCursor(scope: ObservationScope, payload: string): string {
  */
 export function readCursor(scope: ObservationScope, cursor: string): string {
   assertObservationScope(scope);
-  const [encodedPayload, encodedMac] = cursor.split(".");
-  if (!encodedPayload || !encodedMac) {
+  const parts = cursor.split(".");
+  // Exactly two segments: a trailing third is structural damage, not a variant reading of it.
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new ObservationScopeError("OWNERSHIP_REQUIRED", 403);
   }
+  const [encodedPayload, encodedMac] = parts;
   let payload: string;
   let offered: Uint8Array;
   try {
@@ -189,9 +191,10 @@ export function exportKey(scope: ObservationScope, exportId: string): string {
  * project name is a storage address, not a permission, and a layout that happens to look like a
  * tenant boundary proves nothing. No function here reconstructs a scope from a locator.
  *
- * The fingerprint carries the key length for readability plus a short hash of the full key: two
- * scopes can hold the same botId and epochs while their keys stay the same length, so length alone
- * does not separate them. The hash is one-way; the key is not recoverable from a locator.
+ * The fingerprint carries the key length for readability plus a 16-hex-char prefix of the full
+ * key's hash: two scopes can hold the same botId and epochs while their keys stay the same length,
+ * so length alone does not separate them. The hash is one-way; the key is not recoverable from a
+ * locator.
  */
 export function resolveStorageLocator(
   scope: ObservationScope,
@@ -200,7 +203,7 @@ export function resolveStorageLocator(
   const digest = createHash("sha256")
     .update(scope.key)
     .digest("hex")
-    .slice(0, 8);
+    .slice(0, 16);
   const fingerprint = `${scope.key.length}-${digest}`;
   return Object.freeze({
     scopeKey: scope.key,
