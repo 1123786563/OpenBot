@@ -8301,7 +8301,10 @@
    "issue_number": 321,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/321",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTFsUw",
-   "issue_db_id": 5858487379
+   "issue_db_id": 5858487379,
+   "_linked": {
+    "dep_15.7": true
+   }
   },
   {
    "id": "16.1",
@@ -9649,7 +9652,11 @@
    "issue_number": 340,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/340",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTH_Zg",
-   "issue_db_id": 5858525030
+   "issue_db_id": 5858525030,
+   "_linked": {
+    "dep_19.3": true,
+    "dep_17.6": true
+   }
   },
   {
    "id": "20.1",
@@ -9717,7 +9724,11 @@
    "issue_number": 341,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/341",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIFtg",
-   "issue_db_id": 5858526646
+   "issue_db_id": 5858526646,
+   "_linked": {
+    "dep_08.1": true,
+    "dep_03.2": true
+   }
   },
   {
    "id": "20.2",
@@ -9786,7 +9797,10 @@
    "issue_number": 342,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/342",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIL5w",
-   "issue_db_id": 5858528231
+   "issue_db_id": 5858528231,
+   "_linked": {
+    "dep_20.1": true
+   }
   },
   {
    "id": "20.3",
@@ -9853,7 +9867,10 @@
    "issue_number": 343,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/343",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTISFw",
-   "issue_db_id": 5858529815
+   "issue_db_id": 5858529815,
+   "_linked": {
+    "dep_20.1": true
+   }
   },
   {
    "id": "20.4",
@@ -9922,7 +9939,10 @@
    "issue_number": 344,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/344",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIX6w",
-   "issue_db_id": 5858531307
+   "issue_db_id": 5858531307,
+   "_linked": {
+    "dep_20.2": true
+   }
   },
   {
    "id": "21.1",
@@ -9988,7 +10008,10 @@
    "issue_number": 345,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/345",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIemA",
-   "issue_db_id": 5858533016
+   "issue_db_id": 5858533016,
+   "_linked": {
+    "dep_02.2": true
+   }
   },
   {
    "id": "21.2",
@@ -10055,7 +10078,10 @@
    "issue_number": 346,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/346",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIkFQ",
-   "issue_db_id": 5858534421
+   "issue_db_id": 5858534421,
+   "_linked": {
+    "dep_21.1": true
+   }
   },
   {
    "id": "21.3",
@@ -10120,7 +10146,10 @@
    "issue_number": 347,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/347",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIolQ",
-   "issue_db_id": 5858535573
+   "issue_db_id": 5858535573,
+   "_linked": {
+    "dep_21.2": true
+   }
   },
   {
    "id": "21.4",
@@ -10187,7 +10216,10 @@
    "issue_number": 348,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/348",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTIvZA",
-   "issue_db_id": 5858537316
+   "issue_db_id": 5858537316,
+   "_linked": {
+    "dep_21.3": true
+   }
   },
   {
    "id": "21.5",
@@ -10255,7 +10287,11 @@
    "issue_number": 349,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/349",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTI00Q",
-   "issue_db_id": 5858538705
+   "issue_db_id": 5858538705,
+   "_linked": {
+    "dep_21.4": true,
+    "dep_06.8": true
+   }
   },
   {
    "id": "21.6",
@@ -10323,7 +10359,10 @@
    "issue_number": 350,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/350",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTI7dw",
-   "issue_db_id": 5858540407
+   "issue_db_id": 5858540407,
+   "_linked": {
+    "dep_21.5": true
+   }
   },
   {
    "id": "21.7",
@@ -10394,7 +10433,11 @@
    "issue_number": 351,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/351",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTI_7g",
-   "issue_db_id": 5858541550
+   "issue_db_id": 5858541550,
+   "_linked": {
+    "dep_21.6": true,
+    "dep_10.6": true
+   }
   },
   {
    "id": "22.1",
@@ -10482,7 +10525,30 @@
    "issue_number": 352,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/352",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJHHw",
-   "issue_db_id": 5858543391
+   "issue_db_id": 5858543391,
+   "_linked": {
+    "dep_01.8": true,
+    "dep_02.8": true,
+    "dep_03.11": true,
+    "dep_04.8": true,
+    "dep_05.10": true,
+    "dep_06.12": true,
+    "dep_07.12": true,
+    "dep_08.10": true,
+    "dep_09.4": true,
+    "dep_10.6": true,
+    "dep_11.6": true,
+    "dep_12.4": true,
+    "dep_13.4": true,
+    "dep_14.4": true,
+    "dep_15.8": true,
+    "dep_16.3": true,
+    "dep_17.8": true,
+    "dep_18.4": true,
+    "dep_19.4": true,
+    "dep_20.4": true,
+    "dep_21.7": true
+   }
   },
   {
    "id": "22.2",
@@ -10550,7 +10616,10 @@
    "issue_number": 353,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/353",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJOIg",
-   "issue_db_id": 5858545186
+   "issue_db_id": 5858545186,
+   "_linked": {
+    "dep_22.1": true
+   }
   },
   {
    "id": "22.3",
@@ -10619,7 +10688,10 @@
    "issue_number": 354,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/354",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJSWw",
-   "issue_db_id": 5858546267
+   "issue_db_id": 5858546267,
+   "_linked": {
+    "dep_22.2": true
+   }
   },
   {
    "id": "22.4",
@@ -10688,7 +10760,10 @@
    "issue_number": 355,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/355",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJX1g",
-   "issue_db_id": 5858547670
+   "issue_db_id": 5858547670,
+   "_linked": {
+    "dep_22.2": true
+   }
   },
   {
    "id": "22.5",
@@ -10776,7 +10851,11 @@
    "issue_number": 356,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/356",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJdEQ",
-   "issue_db_id": 5858549009
+   "issue_db_id": 5858549009,
+   "_linked": {
+    "dep_22.3": true,
+    "dep_22.4": true
+   }
   },
   {
    "id": "22.6",
@@ -10846,7 +10925,10 @@
    "issue_number": 357,
    "issue_url": "https://github.com/1123786563/OpenBot/issues/357",
    "issue_node_id": "I_kwDOVCA0Ss8AAAABXTJhCA",
-   "issue_db_id": 5858550024
+   "issue_db_id": 5858550024,
+   "_linked": {
+    "dep_22.5": true
+   }
   }
  ],
  "edge_relaxations": [
