@@ -79,7 +79,7 @@ export const aiObservationExperiments = pgTable(
     // or a draft carrying them, is a state machine lie and the database refuses it.
     check(
       "ai_observation_experiments_frozen_coherence_check",
-      sql`(${table.state} = 'draft' AND ${table.frozenAt} IS NULL) OR (${table.state} = 'frozen' AND ${table.frozenAt} IS NOT NULL AND ${table.configHash} <> '')`,
+      sql`(${table.state} = 'draft' AND ${table.frozenAt} IS NULL AND ${table.configHash} = '') OR (${table.state} = 'frozen' AND ${table.frozenAt} IS NOT NULL AND ${table.configHash} <> '')`,
     ),
     uniqueIndex("ai_observation_experiments_scope_name_uq").on(
       table.scopeKey,
