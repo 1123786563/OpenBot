@@ -20,6 +20,7 @@ export * from "./enterprise-models";
 export * from "./enterprise-run-events";
 export * from "./enterprise-runs";
 export * from "./enterprise-tenancy";
+export * from "./gateway";
 export * from "./group";
 export * from "./identity";
 export * from "./learning";

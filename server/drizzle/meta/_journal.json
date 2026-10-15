@@ -785,6 +785,13 @@
       "when": 1792008991185,
       "tag": "0111_married_harpoon",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1792035470081,
+      "tag": "0112_silky_living_tribunal",
+      "breakpoints": true
     }
   ]
 }
