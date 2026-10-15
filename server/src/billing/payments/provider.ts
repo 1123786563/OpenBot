@@ -51,7 +51,12 @@ export type PaymentFact = {
   state: "pending" | "paid" | "closed";
   channelTransactionId?: string;
   amountCents?: number;
-  currency?: "CNY";
+  /**
+   * The currency the CHANNEL states, verbatim, when it states one. Absent means the wire was
+   * silent — not "CNY": the service compares this against the order snapshot and silence must
+   * not be laundered into a match (audit A5).
+   */
+  currency?: string;
 };
 
 export type PaymentProvider = {

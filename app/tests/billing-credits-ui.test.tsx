@@ -11,7 +11,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { cloneElement, createContext, useContext } from "react";
-import type { PlanCatalogEntry } from "@/lib/billing/credits";
+import type {
+  CreditConsumptionEntry,
+  CreditGrantEntry,
+  PlanCatalogEntry,
+} from "@/lib/billing/credits";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
 
@@ -147,6 +151,9 @@ const { ConsumptionTable } = await import(
   "@/components/billing/consumption-table"
 );
 const { PlanCard } = await import("@/components/billing/plan-card");
+const { CreditGrantList } = await import(
+  "@/components/billing/credit-grant-list"
+);
 const { WelcomeBanner } = await import("@/components/billing/welcome-banner");
 const { UpgradeDialog } = await import("@/components/billing/upgrade-dialog");
 
@@ -513,6 +520,36 @@ test("WelcomeBanner with a claim write stays clickable", () => {
   expect(onClaim).toHaveBeenCalledTimes(1);
 });
 
+test("CreditGrantList renders the held figure in the rewards summary, with no raw placeholder", async () => {
+  // Review round 1 (Important 1): the shared rewardsSummary copy gained a {{held}}
+  // interpolation and this component's call site was the one left behind, so any reader
+  // WITH reward grants saw the broken sentence — a bare {{held}} or a number-less
+  // "（进行中调用占用 ）". Pinned against both locales the page ships.
+  const grant: CreditGrantEntry = {
+    id: "cg-a",
+    source: "promo",
+    reason: "活动奖励",
+    total: 50,
+    used: 5,
+    remaining: 45,
+    grantedAt: "2026-10-01T00:00:00.000Z",
+    expiresAt: "2026-10-31T00:00:00.000Z",
+    status: "active",
+    expiringSoon: false,
+  };
+  const zh = render(
+    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+  );
+  expect(zh.container.textContent).toContain("（进行中调用占用 21）");
+  expect(zh.container.textContent).not.toContain("{{");
+  await i18n.changeLanguage("en");
+  const en = render(
+    <CreditGrantList grants={[grant]} grantCount={2} remaining={45} held={21} />,
+  );
+  expect(en.container.textContent).toContain("21 held by in-progress calls");
+  expect(en.container.textContent).not.toContain("{{");
+});
+
 /*
  * A plain-setTimeout poll. RTL's waitFor rides MutationObserver paths that do not observe the
  * dialog's fetch-then-setState updates under happy-dom (verified: the DOM updates within
@@ -845,4 +882,37 @@ test("ConsumptionTable keeps the pager for a page walked off the end", () => {
   expect(view.queryByText(/还没有积分消耗记录/)).toBeNull();
   expect(view.getByText(/共 5 条/)).toBeTruthy();
   expect(view.getByRole("table")).toBeTruthy();
+});
+
+test("ConsumptionTable shows the unfunded suffix only on a row the grants could not fully fund", () => {
+  // Audit D1: a settlement that cost more than the balance could fund records the full cost
+  // with `applied` clamped to the hold. The shortfall row says so through the muted badge and
+  // its tooltip; a fully funded row must look exactly as it always has.
+  const entry = (overdrawn: boolean): CreditConsumptionEntry => ({
+    id: overdrawn ? "cl-over" : "cl-ok",
+    title: overdrawn ? "over-bound settlement" : "fully funded",
+    requestId: null,
+    credits: overdrawn ? 2.5 : 0.5,
+    applied: overdrawn ? 1 : 0.5,
+    model: null,
+    client: null,
+    timestamp: "2026-10-15T10:00:00.000Z",
+  });
+  const view = render(
+    <ConsumptionTable
+      entries={[entry(true), entry(false)]}
+      pagination={{ totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null }}
+      range="7d"
+      onRangeChange={() => {}}
+      onPage={() => {}}
+      statusTemplate="第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条"
+    />,
+  );
+  // zh-CN is this suite's per-test language; the badge interpolates the shortfall (2.5 − 1 = 1.5)
+  // and carries the hint as its tooltip. No raw key path in either.
+  const badge = view.getByText(/未覆盖 1.5/);
+  expect(badge.getAttribute("title")).toContain("无积分覆盖");
+  expect(view.container.textContent).not.toContain("{{");
+  // The fully funded row: exactly one badge in the table, and no zero-shortfall one.
+  expect(view.getAllByText(/未覆盖/)).toHaveLength(1);
 });

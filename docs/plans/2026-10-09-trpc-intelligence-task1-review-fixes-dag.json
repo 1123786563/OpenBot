@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-09",
+  "root_issue": null,
+  "requirements_source": "Task 1 fix-round-2 independent review; findings T1-F2-H1, T1-F2-M1, T1-F2-M2, T1-F2-M3, T1-F2-M4",
+  "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
+  "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
+  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-09-trpc-intelligence-task1-review-fixes.md",
+  "nodes": [
+    {
+      "id": "T1-R2-1",
+      "title": "Make locked client wire evidence complete and reproducible",
+      "source_issues": [],
+      "acceptance": [
+        "T1-F2-H1",
+        "T1-F2-M1",
+        "T1-F2-M2",
+        "T1-F2-M3",
+        "T1-F2-M4"
+      ],
+      "depends_on": [],
+      "dependency_evidence": "Only fixes the reviewed Task 1 contract checkpoint; downstream Tasks remain blocked until this is independently verified and reviewed.",
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "reviewer_role": "reviewer",
+      "owned_files": [
+        "server/package.json",
+        "bun.lock",
+        "server/src/enterprise/wire-schema.ts",
+        "shared/runtime-compatibility.ts",
+        "server/tests/enterprise/fixtures/runtime-wire.json",
+        "server/tests/enterprise/contract-schema.test.ts",
+        "server/tests/enterprise/sdk-compatibility.test.ts"
+      ],
+      "interfaces": "Consumes locked @copilotkit/core 1.77.0 and @copilotkit/runtime 1.77.0 behavior. Produces direct dev dependency declarations, stable public imports, codepoint-consistent property cap and request/response/reconnect assertions.",
+      "verification": "focused bun tests; targeted tsc; biome; git diff --check; clean workspace package resolution",
+      "status": "verified",
+      "checkpoint": {
+        "after_snapshot": ".superpowers/sdd/2026-10-09-trpc-intelligence-task1-review-fixes/snapshots/task-1-r2-1-after.json",
+        "review_package": ".superpowers/sdd/2026-10-09-trpc-intelligence-task1-review-fixes/packages/task-1-r2-1-review.md",
+        "review": ".superpowers/sdd/2026-10-09-trpc-intelligence-task1-review-fixes/reports/task-1-r2-1-review.md",
+        "validation": ".superpowers/sdd/2026-10-09-trpc-intelligence-task1-review-fixes/reports/task-1-r2-1-validation.md"
+      },
+      "review": "Spec Compliance PASS; Task Quality PASS"
+    }
+  ]
+}

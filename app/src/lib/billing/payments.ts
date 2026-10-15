@@ -33,7 +33,7 @@ export type PurchaseOrderView = {
   planCode: string;
   provider: PurchaseProvider;
   amountCents: number;
-  currency: "CNY";
+  currency: string;
   status: PurchaseStatus;
   activationState: PurchaseActivationState;
   checkout: PurchaseCheckout | null;

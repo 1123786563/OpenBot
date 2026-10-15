@@ -1,11 +1,11 @@
 import { createBillingEntitlementReader } from "./entitlement";
-import type { ReconcileReport } from "./types";
 import {
   LAGO_PROVIDER_ID,
   type LagoClient,
   type LagoSubscriptionBody,
 } from "./lago";
 import { readBodyCapped } from "./raw-body";
+import type { ReconcileReport } from "./types";
 import {
   type BillingEntitlementEntry,
   type BillingEntitlementSubscriptionContext,
@@ -67,12 +67,15 @@ export function deploymentExternalCustomerId(tenantId: string): string {
  * handleWebhook order, fixed deliberately: verify (401) → inbox check (a known event is already
  * fully applied, 200) → fresh read of the authoritative object → atomically commit the local
  * projections and inbox row → 200. Provider reads stay outside the SQL transaction.
- * Retryable provider and typed persistence failures answer 503 without writing
- * the inbox, so the provider retries the whole delivery. An inbox row therefore always means "the
- * work it names is done", which is the one property that keeps a crash mid-delivery from losing an
- * event. (The Go implementation this descends from wrote the inbox before acting, so a delivery
- * that failed afterwards was never retried; that gap is not inherited, and this comment is the
- * record of the divergence.)
+ * Retryable provider failures and retryable persistence failures answer 503; a non-retryable
+ * persistence failure — our own data, a constraint violation or a value too long — answers 500.
+ * Both are ours and both are 5xx, so the provider retries the whole delivery and a manual fix
+ * later still converges. A 4xx is reserved for a delivery we verified and then could not make
+ * sense of; our own storage is never the provider's fault. An inbox row therefore always means
+ * "the work it names is done", which is the one property that keeps a crash mid-delivery from
+ * losing an event. (The Go implementation this descends from wrote the inbox before acting, so a
+ * delivery that failed afterwards was never retried; that gap is not inherited, and this comment
+ * is the record of the divergence.)
  *
  * Events about objects this deployment does not project (invoices, wallets, …) have nothing to
  * refresh, which is also finished work: they are recorded and answered 200.
@@ -117,6 +120,12 @@ export function createBillingService(deps: {
     return false;
   }
 
+  /**
+   * The provider list is requested for four statuses (`active`, `incomplete`, `canceled`,
+   * `terminated`); a subscription in Lago's `pending` state is therefore invisible to the sync and to
+   * the purchase guard. Adding it needs a `billing_subscriptions_status_check` migration and a
+   * `BillingSubscriptionStatus` widening, and is deliberately not part of this change.
+   */
   async function readSubscriptions(
     externalCustomerId: string,
   ): Promise<readonly LagoSubscriptionBody[]> {
@@ -125,8 +134,24 @@ export function createBillingService(deps: {
     return result.body;
   }
 
+  /**
+   * Fold one provider list into the projections: upsert every row it names, then retire the
+   * customer's rows it does not. The list the provider just returned is the whole truth about
+   * what it holds, so a local row it does not name is stale — and a stale `active` row is an
+   * entitlement that never ends and a purchase guard that never opens (audit B6). Retire rather
+   * than delete: the row stays as the record, and a later delivery can move it back.
+   *
+   * The one retirement rule: the scope is the explicit customer the list was read for, never
+   * customers derived from the list itself. The read is per customer
+   * (`listSubscriptions(externalCustomerId)`), so every row in the list belongs to that customer
+   * and the derived grouping could only ever rediscover it — while an EMPTY list, the answer
+   * that must retire the customer's every row (the provider deleted the only subscription),
+   * names no customer of its own. An empty list reaching here is a real answer, not a failed
+   * read: `readSubscriptions` throws on a malformed or absent body.
+   */
   async function writeSubscriptionProjections(
     subscriptions: readonly LagoSubscriptionBody[],
+    externalCustomerId: string,
   ): Promise<void> {
     for (const subscription of subscriptions) {
       await store.upsertSubscription({
@@ -135,6 +160,15 @@ export function createBillingService(deps: {
         planCode: subscription.planCode,
         status: subscription.status,
       });
+    }
+    const retired = await store.retireAbsentSubscriptions(
+      externalCustomerId,
+      subscriptions.map((subscription) => subscription.externalSubscriptionId),
+    );
+    if (retired > 0) {
+      (deps.log ?? console.warn)(
+        `billing: retired ${retired} subscription projection(s) the provider no longer lists for ${externalCustomerId}`,
+      );
     }
   }
 
@@ -181,6 +215,9 @@ export function createBillingService(deps: {
           planCode: subscription.planCode,
           status: subscription.status,
         })),
+        // The scope the apply retires absent rows under: this delivery's customer, the one an
+        // empty list would otherwise leave unnamed.
+        subscriptionsPresentFor: delivery.externalCustomerId,
       };
     }
     // Every other type names an object this deployment does not project. Nothing to refresh is
@@ -265,6 +302,13 @@ export function createBillingService(deps: {
 
     async ensureSubscription(input) {
       const existing = await readSubscriptions(input.externalCustomerId);
+      // The fold runs immediately, before any branch decision below: whatever the branches then
+      // decide, the projections already hold the provider's newest truth — and a customer whose
+      // only subscription the provider deleted (an empty list, live.length 0 below) has the
+      // stale row retired even though the branch that follows would only create a new one, which
+      // is the B6 headline on a deployment with no webhooks mounted. Folding is a projection
+      // write, never a decision to subscribe; it does not soften the conflicts below.
+      await writeSubscriptionProjections(existing, input.externalCustomerId);
       // Only a LIVE subscription counts anywhere below — active, or incomplete (created, not yet
       // started). The provider keeps one record per subscription lifecycle, so after a terminate
       // and re-buy the list answers with the terminated record AND its active replacement: a
@@ -272,13 +316,13 @@ export function createBillingService(deps: {
       // buys nothing — the exact failure a live sandbox re-purchase exposed.
       const live = existing.filter(
         (subscription) =>
-          subscription.status === "active" || subscription.status === "incomplete",
+          subscription.status === "active" ||
+          subscription.status === "incomplete",
       );
       const onThisPlan = live.find(
         (subscription) => subscription.planCode === input.planCode,
       );
       if (onThisPlan) {
-        await writeSubscriptionProjections(existing);
         return {
           externalCustomerId: input.externalCustomerId,
           externalSubscriptionId: onThisPlan.externalSubscriptionId,
@@ -297,6 +341,8 @@ export function createBillingService(deps: {
       const created = await client.postSubscription(input);
       if (created.status === 422) {
         const reread = await readSubscriptions(input.externalCustomerId);
+        // Same rule as the first read: the newest list is folded before the branch reads it.
+        await writeSubscriptionProjections(reread, input.externalCustomerId);
         const again = reread.find(
           (subscription) =>
             subscription.planCode === input.planCode &&
@@ -304,7 +350,6 @@ export function createBillingService(deps: {
               subscription.status === "incomplete"),
         );
         if (again) {
-          await writeSubscriptionProjections(reread);
           return {
             externalCustomerId: input.externalCustomerId,
             externalSubscriptionId: again.externalSubscriptionId,
@@ -363,19 +408,54 @@ export function createBillingService(deps: {
         const projection = await readProjectionFor(delivery);
         const status = await store.applyWebhookProjection({
           ...projection,
+          // Audit B6's visibility rule: the retirement evidence line comes from the write that
+          // produced it — the apply captures the count at its own UPDATE and calls this only
+          // once that transaction committed, so the line can neither claim a retirement another
+          // delivery performed nor miss one this delivery performed (audit B6 review r1).
+          onRetired: ({ externalCustomerId, count }) => {
+            (deps.log ?? console.warn)(
+              `billing: retired ${count} subscription projection(s) the provider no longer lists for ${externalCustomerId}`,
+            );
+          },
           event: {
             provider: LAGO_PROVIDER_ID,
             eventId: delivery.eventId,
             uniqueKey: request.headers.get("x-lago-unique-key") ?? undefined,
             webhookType: delivery.webhookType,
             ...(delivery.objectId ? { objectId: delivery.objectId } : {}),
+            bodyHash: delivery.bodyHash,
           },
         });
+        // Best-effort replay evidence (audit A7): the count runs after the inbox insert, so it
+        // includes this delivery, and a failed count is swallowed — evidence must never fail a
+        // delivery the projection already accepted. Swallowed, not silent: the fallback leaves
+        // replay detection dark for THIS delivery, so the catch says so. The inbox row still
+        // stands, and a later replay of the same body re-counts it.
+        const priorDeliveries = await store
+          .countDeliveriesOfBody(delivery.bodyHash)
+          .catch((error: unknown) => {
+            (deps.log ?? console.warn)(
+              `billing: webhook_body_replay_count_failed event=${delivery.eventId} name=${error instanceof Error ? error.name : "unknown"}`,
+            );
+            return 1;
+          });
+        if (priorDeliveries > 1) {
+          (deps.log ?? console.warn)(
+            `billing: webhook_body_replay event=${delivery.eventId} deliveries=${priorDeliveries}`,
+          );
+        }
         return json(200, { status });
       } catch (error) {
         if (error instanceof BillingPersistenceError) {
-          (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
-          return json(503, { error: "Billing webhook could not be applied." });
+          (deps.log ?? console.warn)(
+            `billing: webhook failed — ${error.operation}${error.retryable ? " (retryable)" : " (non-retryable data failure)"}`,
+          );
+          // 503 when it may heal on its own, 500 when it needs a person: both are ours, never
+          // the provider's delivery. Nothing recorded, so the retry re-reads and re-applies the
+          // whole projection.
+          return json(error.retryable ? 503 : 500, {
+            error: "Billing webhook could not be applied.",
+          });
         }
         if (error instanceof BillingError && error.retryable) {
           (deps.log ?? console.warn)(`billing: webhook failed — ${error.code}`);
@@ -416,54 +496,9 @@ export function createBillingService(deps: {
     },
 
     /**
-     * Meter one event against the active subscription, without blocking the caller.
-     *
-     * The provider's transaction id deduplicates, so a crashed run reporting twice costs nothing;
-     * every failure below is a logged sentence, never a throw — usage that cannot be metered is a
-     * billing miss, not a product error, and a throw here would fail the very run that produced it.
-     * No plan vocabulary and no per-call configuration: the metric code is the caller's own word,
-     * which is also the provider's because the deployment registered it there on purpose.
-     */
-    async recordUsage(input) {
-      const key = input.externalCustomerId ?? config.externalCustomerKey;
-      try {
-        const rows = await store.readSubscriptions(key);
-        const active = rows.find((row) => row.status === "active");
-        if (!active) {
-          console.warn(
-            `billing: usage for ${input.metricCode} dropped — no active subscription for this deployment`,
-          );
-          return;
-        }
-        const result = await client.postEvent({
-          transactionId: input.transactionId,
-          code: input.metricCode,
-          // Unix seconds: the provider's v1.53 event validator refuses every ISO-8601 spelling
-          // (invalid_format), so the wire carries the integer its own frontend sends.
-          timestamp: Math.floor(
-            (input.timestamp ?? new Date()).getTime() / 1000,
-          ),
-          externalSubscriptionId: active.externalSubscriptionId,
-          properties: input.properties,
-        });
-        if (result.status === 404 || result.status === 422) {
-          console.warn(
-            `billing: usage for ${input.metricCode} refused by the provider (status ${result.status}) — check the metric and the subscription exist there`,
-          );
-        }
-      } catch (error) {
-        console.warn(
-          `billing: usage for ${input.metricCode} could not be reported — ${
-            error instanceof BillingError ? error.code : "unexpected error"
-          }`,
-        );
-      }
-    },
-
-    /**
-     * Delivery-grade twin of recordUsage: the same provider call, but success means the provider
-     * accepted (or deduplicated, by transaction id) the event, and every other outcome rejects with
-     * a stable code so the outbox keeps the target pending.
+     * Delivery-grade usage metering: resolves only once the provider accepted (or deduplicated,
+     * by transaction id) the event, and every other outcome rejects with a stable code so the
+     * outbox keeps the target pending.
      */
     async deliverUsage(input) {
       const key = input.externalCustomerId ?? config.externalCustomerKey;
@@ -477,6 +512,11 @@ export function createBillingService(deps: {
         externalSubscriptionId: active.externalSubscriptionId,
         properties: input.properties,
       });
+      // Only 404/422 can reach this check: lago.ts's request() already turned 429/5xx and refused
+      // redirects into the retryable BillingError("unreachable") before a status is returned, and
+      // postEvent passes only 200/202/404/422 through (every other 4xx becomes
+      // BillingError("invalid_response")). A refusal here is therefore always a permanent
+      // "unknown metric or subscription", never a transient provider blip.
       if (result.status !== 200 && result.status !== 202) {
         throw new UsageDeliveryError("provider_refused");
       }
@@ -568,9 +608,13 @@ export function createBillingService(deps: {
           if (!body) break;
           for (const event of body.events) {
             const date = dayKey(new Date(event.timestamp));
-            const bucket =
-              buckets.get(date) ??
-              { date, tokens: 0, inputTokens: 0, outputTokens: 0, calls: 0 };
+            const bucket = buckets.get(date) ?? {
+              date,
+              tokens: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              calls: 0,
+            };
             bucket.tokens += numberOf(event.properties, "tokens") ?? 0;
             bucket.inputTokens +=
               numberOf(event.properties, "input_tokens") ?? 0;

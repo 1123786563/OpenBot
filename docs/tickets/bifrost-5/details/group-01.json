@@ -1,0 +1,342 @@
+{
+ "group": "01",
+ "context": [
+  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC12/AC19）",
+  "docs/specs/2026-10-14-bifrost-integration-design.md（30 项决定：Q10 职责划分、Q14/Q19 兑换比例、Q17 同步与新鲜度）",
+  "docs/adr/0003-bifrost-openbot-credit-admission.md（严格积分准入）",
+  "CONTEXT.md（网关、兑换比例、就绪、付款账户术语）"
+ ],
+ "anchors": {
+  "openbot-config": "server/src/config.ts（环境变量校验风格，如 LAGO_API_URL / BILLING_MODEL_CREDIT_RATES 的拒绝语义）",
+  "openbot-admin-settings": "server/src/admin/settings-store.ts、server/src/admin/capabilities.ts、server/src/admin/gate.ts、server/src/admin/routes.ts",
+  "openbot-secrets": "server/src/credentials.ts（encryptSecret / decryptSecret / createCredentialStore / rotateCredential）",
+  "openbot-app-admin-ui": "app/src/routes/_authed/admin/*（如 credentials.tsx、boundaries.tsx 的页面模式）",
+  "bifrost": "bifrost/plugins/governance/main.go（PreRequestHook / PreLLMHook / PostLLMHook）、bifrost/framework/configstore/tables/*"
+ },
+ "verification_common": [
+  "bun run --filter server typecheck",
+  "bunx biome lint --error-on-warnings <changed files>"
+ ],
+ "tickets": {
+  "01.1": {
+   "slug": "gateway-endpoint-config",
+   "contracts": {
+    "consumes": [
+     "现有部署配置装载与环境变量校验（server/src/config.ts 的拒绝式校验风格）",
+     "管理员设置存储（server/src/admin/settings-store.ts 的 EnterpriseSettings 读写与变更通知模式）"
+    ],
+    "produces": [
+     "GatewayEndpointConfig { baseUrl, requestTimeoutMs, configVersion } 持久化模型：读取只返回非敏感字段",
+     "configVersion 单调递增整数，任何成功保存都产生新版本",
+     "saveGatewayEndpoint(input) / readGatewayEndpoint() 服务接口，供 01.2、01.5、01.7 消费"
+    ]
+   },
+   "steps": [
+    "在配置层新增网关地址与连接参数，沿用现有 URL 校验拒绝语义（必须是 http/https、不得在 URL 内携带凭据、不得带 path/query）",
+    "在管理员设置存储中新增网关配置行，写入即递增 configVersion，并复用现有设置变更通知机制",
+    "暴露管理员写入接口与只读查询接口；只读查询不包含任何凭据字段",
+    "把配置注入应用依赖容器，使下游模块（01.5 探测、01.7 门禁）可读取当前 configVersion",
+    "先写失败测试：非法地址拒绝、保存后重启读取一致、连续保存版本严格递增"
+   ],
+   "criteria": [
+    "管理员保存合法网关地址后，进程重启读取到的地址与 configVersion 一致",
+    "空值、非 http(s)、带凭据或带 path 的地址被拒绝，并返回可解释原因",
+    "只读查询响应中不存在任何凭据或 Secret 字段",
+    "连续两次成功保存使 configVersion 严格递增，且旧版本不可再被写回"
+   ],
+   "tests": [
+    "server 集成测试：保存 → 重新构造 store → 读取一致（复用 server/tests/support/database.ts 的 TEST_DATABASE_URL 专用库）",
+    "server 单元测试：非法地址逐条拒绝并断言错误信息",
+    "管理员接口权限测试：非管理员写入被拒绝"
+   ],
+   "verification": [
+    "bun test server/tests/gateway-endpoint-config.test.ts",
+    "TEST_DATABASE_URL=... bun test server/tests/gateway-endpoint-config.integration.test.ts"
+   ],
+   "owned_scope": [
+    "网关配置模块（新增，位于 server/src/gateway/）",
+    "server/src/config.ts 中网关相关环境变量校验",
+    "server/src/admin/settings-store.ts 的网关配置行与其迁移",
+    "对应 server/tests 测试文件"
+   ],
+   "resume_hint": "先看是否已存在网关配置表与迁移：若表已建但缺 configVersion 递增语义，只补版本与重启一致性测试；若接口已存在，检查是否泄露凭据字段再决定改动范围。"
+  },
+  "01.2": {
+   "slug": "gateway-admin-secret-write-only",
+   "contracts": {
+    "consumes": [
+     "01.1 的 GatewayEndpointConfig 与 configVersion",
+     "现有 Secret 加密能力（server/src/credentials.ts 的 encryptSecret / decryptSecret / createCredentialStore）"
+    ],
+    "produces": [
+     "GatewayAdminCredentialRef：只写凭据引用，任何读取路径返回脱敏状态而非明文",
+     "resolveGatewayAdminCredential() 仅供服务端内部（01.5 探测、07.x 准入扩展）调用的解密入口",
+     "凭据轮换语义：轮换后 configVersion 递增，旧引用立即失效"
+    ]
+   },
+   "steps": [
+    "复用现有凭据加密存储新增一种网关管理凭据类型，禁止把明文写入配置表或日志",
+    "提供管理员写入/轮换接口：写入成功只返回脱敏状态（是否存在、最近更新时间、指纹后 4 位）",
+    "提供内部解密入口并限定调用方为服务端受信代码路径，不经任何 HTTP 响应返回",
+    "确认所有日志与错误信息路径对凭据脱敏（包括上游 4xx/5xx 响应体不回显）",
+    "先写失败测试：读取接口与日志中都不出现明文；轮换后旧引用不可用"
+   ],
+   "criteria": [
+    "任何管理或用户接口的响应体中都不包含网关管理凭据明文",
+    "普通应用日志、错误日志与审计记录中不出现凭据明文或可还原片段",
+    "轮换凭据后 configVersion 递增，使用旧引用的调用被拒绝",
+    "未设置凭据时状态明确为“未配置”，不伪装成“已配置但失败”"
+   ],
+   "tests": [
+    "凭据写入/轮换/读取脱敏的 server 集成测试",
+    "日志脱敏断言（捕获日志输出，断言不含明文与 base64 变体）",
+    "非管理员写入与越权读取被拒绝"
+   ],
+   "verification": [
+    "bun test server/tests/gateway-credential.test.ts",
+    "TEST_DATABASE_URL=... bun test server/tests/gateway-credential.integration.test.ts"
+   ],
+   "owned_scope": [
+    "网关凭据模块（server/src/gateway/）",
+    "server/src/credentials.ts 中新增的凭据类型注册",
+    "管理员网关凭据路由与其测试"
+   ],
+   "resume_hint": "若加密写入已可用，重点检查“读取路径是否仍返回明文或可还原值”和“轮换后旧引用是否失效”两点，这两处是拒绝路径最常被漏掉的位置。"
+  },
+  "01.3": {
+   "slug": "conversion-rate-required-config",
+   "contracts": {
+    "consumes": [
+     "现有部署配置校验风格（server/src/config.ts）",
+     "CREDIT_SCALE 积分精度约定（server/src/billing/credits.ts）"
+    ],
+    "produces": [
+     "ConversionRateConfig { numerator, denominator, rateVersion }：以精确有理数表达 1 USD = X 积分，不用浮点",
+     "校验语义：未配置 → 计费路径禁止启用；零、负数、超出精度上限、非法字符串 → 拒绝并给出原因",
+     "readConversionRate() 供 01.4 版本锁定与 06.5 结算消费"
+    ]
+   },
+   "steps": [
+    "定义兑换比例的精确十进制/有理数表示，明确允许的精度上限与拒绝规则",
+    "在配置装载与管理员写入两处都执行同一校验，不提供隐含默认值",
+    "未配置比例时向下游暴露“计费未启用”的明确状态，而不是回退到某个比例",
+    "把比例与 CREDIT_SCALE 的关系写清：比例负责 USD→积分换算，CREDIT_SCALE 负责积分内部整数化",
+    "先写失败测试：未配置、0、负数、超精度、非法字符串逐条拒绝"
+   ],
+   "criteria": [
+    "未配置兑换比例时，任何付费模型能力都不可启用，且状态可解释",
+    "零、负数、超过精度上限或非法格式的比例被拒绝并返回具体原因",
+    "合法比例保存后可被读取为精确值，不发生浮点误差",
+    "配置校验在进程启动与管理员写入两条路径上结论一致"
+   ],
+   "tests": [
+    "配置校验单元测试：逐条非法输入断言错误信息",
+    "管理员写入接口测试：非法比例拒绝、合法比例保存成功",
+    "精度测试：极小比例与极大比例都不丢精度"
+   ],
+   "verification": [
+    "bun test server/tests/gateway-conversion-rate.test.ts",
+    "bun run --filter server typecheck"
+   ],
+   "owned_scope": [
+    "网关计费配置模块（server/src/gateway/）",
+    "server/src/config.ts 中兑换比例校验",
+    "对应测试文件"
+   ],
+   "resume_hint": "检查是否有人用浮点数存比例：若有，必须改为精确有理数并补精度测试，这是 AC12 的硬要求，不能用“误差很小”放过。"
+  },
+  "01.4": {
+   "slug": "conversion-rate-immutable-versions",
+   "contracts": {
+    "consumes": ["01.3 的 ConversionRateConfig 与校验语义", "01.1 的 configVersion"],
+    "produces": [
+     "RateVersion 记录：每次比例变更生成不可变版本（版本号、生效时间、精确值、操作者）",
+     "rateVersionAt(requestTime) 查询：返回该时刻应使用的版本",
+     "锁定契约：一次请求准入时确定 rateVersion，后续结算必须使用同一版本"
+    ]
+   },
+   "steps": [
+    "把比例存成不可变版本记录而不是可变单值；当前生效版本单独标记",
+    "提供按时间点解析版本的查询，供准入与结算共用",
+    "管理员修改比例只创建新版本，不改写历史版本",
+    "明确变更只影响新请求：已锁定的准入继续使用旧版本结算",
+    "先写失败测试：变更后历史版本仍可解析且值不变；新请求使用新版本"
+   ],
+   "criteria": [
+    "历史比例版本不可被改写，修改后旧版本仍能按原值解析",
+    "变更生效前已锁定版本的请求，结算时使用旧版本而非新版本",
+    "变更生效后新发起的请求使用新版本",
+    "每个版本都记录生效时间与操作者，可审计"
+   ],
+   "tests": [
+    "版本不可变性测试：尝试改写历史版本被拒绝",
+    "时间点解析测试：跨越变更时刻的请求分别解析到正确版本",
+    "并发变更测试：两个管理员同时变更不产生重复版本号"
+   ],
+   "verification": [
+    "TEST_DATABASE_URL=... bun test server/tests/gateway-rate-version.integration.test.ts"
+   ],
+   "owned_scope": [
+    "网关计费配置模块的版本存储与查询",
+    "对应数据库迁移",
+    "对应测试文件"
+   ],
+   "resume_hint": "若比例仍是可变单值，先补版本表与回填当前版本，再改查询；不要在同一改动里同时动结算逻辑，结算侧版本锁定属于 06.5。"
+  },
+  "01.5": {
+   "slug": "gateway-connection-probe",
+   "contracts": {
+    "consumes": ["01.1 的 GatewayEndpointConfig", "01.2 的 resolveGatewayAdminCredential()"],
+    "produces": [
+     "ProbeResult { status: ok|unauthenticated|unreachable|timeout|invalid_response, reasonCode, checkedAt, configVersion }",
+     "reasonCode 是可展示的脱敏原因，不包含上游响应体、凭据或内部地址细节",
+     "probeGateway() 供 01.6 与 01.8 消费；探测结果可持久化以便重启后展示"
+    ]
+   },
+   "steps": [
+    "实现带超时的认证探测：使用 01.2 的内部解密入口取得凭据，调用网关管理端点",
+    "把成功、超时、连接失败、401/403、非预期响应分别映射为不同 reasonCode",
+    "确保错误信息脱敏：不回显上游响应体、请求头或凭据",
+    "持久化最近一次探测结果与 configVersion，供状态页面在探测不可用时展示",
+    "先写失败测试：用可控 fake 网关分别产生 5 类结果，断言 reasonCode 与脱敏"
+   ],
+   "criteria": [
+    "网关正常时探测返回 ok 并记录 checkedAt 与当时的 configVersion",
+    "超时、连接失败、401/403、非预期响应分别返回各自 reasonCode，不混为“失败”一种",
+    "任何探测结果与日志中都不包含上游响应体或凭据明文",
+    "探测失败不改变已保存的配置，也不清除已有比例版本"
+   ],
+   "tests": [
+    "以 fake HTTP 网关注入成功/超时/401/500/畸形响应，断言状态与 reasonCode",
+    "脱敏断言：响应体与日志中不出现注入的敏感字符串",
+    "探测期间配置被并发修改时，结果绑定正确的 configVersion"
+   ],
+   "verification": [
+    "bun test server/tests/gateway-probe.test.ts"
+   ],
+   "owned_scope": [
+    "网关探测模块（server/src/gateway/）",
+    "探测结果持久化表与迁移",
+    "对应测试与其 fake 网关 helper"
+   ],
+   "resume_hint": "若探测已能返回 ok/失败两态，缺口通常在“区分 401 与超时”和“脱敏”两处；先补 reasonCode 分类测试再改实现。"
+  },
+  "01.6": {
+   "slug": "admission-extension-negotiation",
+   "contracts": {
+    "consumes": ["01.5 的 ProbeResult 与 probeGateway()", "01.1 的 configVersion"],
+    "produces": [
+     "CapabilityNegotiation { creditAdmissionExtension: present|absent|incompatible, extensionVersion, reasonCode }",
+     "判定规则：健康端点 200 不足以判就绪，必须确认积分准入扩展存在且版本兼容",
+     "negotiateGatewayCapabilities() 供 01.7 门禁与 01.8 展示消费"
+    ]
+   },
+   "steps": [
+    "向网关查询已加载扩展/插件清单与其版本，识别 OpenBot 积分准入扩展是否存在",
+    "定义兼容版本范围；不兼容时给出明确 reasonCode 而不是笼统失败",
+    "把协商结果与 configVersion 绑定持久化，配置或网关变更后需重新协商",
+    "明确“健康 200 但缺扩展”必须判未就绪，这是 AC05 的关键拒绝路径",
+    "先写失败测试：fake 网关分别返回“无扩展”“旧版本扩展”“兼容扩展”三种清单"
+   ],
+   "criteria": [
+    "网关健康但缺积分准入扩展时，协商结果为未就绪且原因明确",
+    "扩展版本不兼容时同样判未就绪，并说明所需版本范围",
+    "扩展存在且兼容时才允许进入就绪判定",
+    "网关配置变更后旧协商结果失效，必须重新协商"
+   ],
+   "tests": [
+    "fake 网关扩展清单三种情形断言协商结果",
+    "配置变更后旧结果失效测试",
+    "协商失败的脱敏断言"
+   ],
+   "verification": [
+    "bun test server/tests/gateway-capability-negotiation.test.ts"
+   ],
+   "owned_scope": [
+    "网关能力协商模块（server/src/gateway/）",
+    "协商结果持久化与迁移",
+    "对应测试与 fake 网关清单 fixture"
+   ],
+   "resume_hint": "常见错误是仅探测健康端点就判就绪；接手时先跑“健康 200 + 无扩展”的用例，若通过说明该拒绝路径已实现，再检查版本兼容分支。"
+  },
+  "01.7": {
+   "slug": "readiness-gate-for-consumption",
+   "contracts": {
+    "consumes": ["01.4 的当前生效 RateVersion", "01.5 的 ProbeResult", "01.6 的 CapabilityNegotiation", "现有能力门禁模式（server/src/admin/capabilities.ts、server/src/admin/gate.ts）"],
+    "produces": [
+     "GatewayReadiness { ready: boolean, blockingReasons: reasonCode[], configVersion, checkedAt }",
+     "assertGatewayReadyForBilling() 单一门禁入口：所有付费模型能力路径都必须调用它",
+     "未就绪时抛出可展示拒绝，不降级、不回退供应商直连"
+    ]
+   },
+   "steps": [
+    "定义就绪的合取条件：已配置地址、凭据可用、探测 ok、扩展兼容、比例已配置且合法",
+    "实现单一门禁函数，供后续所有消费入口（03.x 目录、05.x Key、06.x 预留、07.x 调用）统一调用",
+    "未就绪时返回聚合的 blockingReasons，而不是只报第一个原因",
+    "明确禁止任何回退路径：不得因门禁失败改用供应商直连或免费放行",
+    "先写失败测试：逐项制造未就绪条件，断言门禁拒绝且原因包含该项"
+   ],
+   "criteria": [
+    "地址未配置、凭据缺失、探测失败、扩展缺失、比例未配置任一条件下门禁都拒绝",
+    "拒绝响应包含全部阻塞原因，且每条都可向管理员展示",
+    "门禁通过时返回当时的 configVersion，供下游锁定",
+    "代码库中不存在绕过门禁的付费能力入口（以调用点清单为证据）"
+   ],
+   "tests": [
+    "逐条未就绪条件的门禁单元测试",
+    "聚合原因断言（多个条件同时不满足）",
+    "调用点覆盖测试：断言付费入口都经过门禁（可用静态检查或依赖注入 spy）"
+   ],
+   "verification": [
+    "bun test server/tests/gateway-readiness-gate.test.ts",
+    "bun run --filter server typecheck"
+   ],
+   "owned_scope": [
+    "网关就绪门禁模块（server/src/gateway/）",
+    "server/src/app.ts 依赖容器中门禁的注入点",
+    "对应测试文件"
+   ],
+   "resume_hint": "门禁本体通常很快完成，真正的缺口在“所有付费入口都调用它”；接手时先枚举调用点，缺哪个入口就补哪个，不要放宽门禁条件。"
+  },
+  "01.8": {
+   "slug": "admin-gateway-readiness-ui",
+   "contracts": {
+    "consumes": ["01.7 的 GatewayReadiness 与 assertGatewayReadyForBilling()", "01.1/01.2/01.3 的保存接口", "现有管理员页面模式（app/src/routes/_authed/admin/*）"],
+    "produces": [
+     "管理员网关设置页：保存地址/凭据/比例、触发探测、查看就绪状态与阻塞原因、查看 configVersion 与当前比例",
+     "只读状态查询接口：普通用户不可访问管理诊断，管理接口不返回凭据明文",
+     "组 01 缝合点：本 Ticket 完成后“管理员配置网关并判断是否可启用”这一行为端到端可演示"
+    ]
+   },
+   "steps": [
+    "按现有管理员页面模式新增网关设置页，复用现有表单校验与错误展示组件",
+    "接入保存地址、写入/轮换凭据、设置比例三个动作，保存后展示新的 configVersion",
+    "展示就绪状态与全部阻塞原因，提供“重新探测”动作",
+    "确认普通用户路由与接口都无法访问该页与诊断接口",
+    "先写失败的界面测试：未就绪时展示原因、保存后状态刷新、凭据字段永不回显"
+   ],
+   "criteria": [
+    "管理员可以完成保存地址、写入凭据、设置比例、触发探测的完整流程并看到状态变化",
+    "未就绪时页面展示每条阻塞原因，而不是笼统“失败”",
+    "页面与接口响应中都不出现凭据明文",
+    "普通用户访问该页面或诊断接口被拒绝"
+   ],
+   "tests": [
+    "app 界面测试：未就绪/就绪两种状态渲染与操作（参照 app/tests/billing-credits-ui.test.tsx 的模式）",
+    "管理接口权限测试：非管理员 403",
+    "凭据不回显断言：渲染后 DOM 中不含注入的敏感字符串"
+   ],
+   "verification": [
+    "bun test app/tests/admin-gateway-readiness.test.tsx",
+    "bun run --filter app typecheck && bun run --filter app build"
+   ],
+   "owned_scope": [
+    "app/src/routes/_authed/admin/ 下的网关设置页与其组件",
+    "app/src/lib/ 下的网关查询封装",
+    "server 侧只读状态查询路由",
+    "对应 app/tests 与 server/tests 测试"
+   ],
+   "resume_hint": "后端门禁就绪但页面缺失时，先用只读状态接口驱动最小页面，再补保存动作；不要把后端语义改动混进界面 Ticket。"
+  }
+ }
+}

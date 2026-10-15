@@ -235,7 +235,7 @@ export function createPaymentService(deps: {
       planCode: order.planCode,
       provider: order.provider,
       amountCents: order.amountCents,
-      currency: "CNY",
+      currency: order.currency,
       status: order.status,
       activationState: order.activationState,
       // The QR exists to be paid once: a paid (or terminal) order stops showing it.
@@ -294,7 +294,8 @@ export function createPaymentService(deps: {
     if (!period.currentPeriodStart || !period.currentPeriodEnd) return null;
     const start = new Date(period.currentPeriodStart);
     const end = new Date(period.currentPeriodEnd);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+      return null;
     return { start, end };
   }
 
@@ -327,8 +328,7 @@ export function createPaymentService(deps: {
       // and keeps the order pending-activation: better a retried payout than an allowance with
       // no defensible expiry.
       const periodEnd =
-        (await grantor.readCurrentPeriodEnd(order.planCode)) ??
-        order.periodEnd;
+        (await grantor.readCurrentPeriodEnd(order.planCode)) ?? order.periodEnd;
       if (!periodEnd) {
         log.warn(
           `payments: plan ${order.planCode} credits withheld on order ${order.id} — neither the provider's period nor the order's own period answered an expiry`,
@@ -446,7 +446,11 @@ export function createPaymentService(deps: {
    */
   async function settlePaidFact(
     order: PaymentOrderRecord,
-    fact: { channelTransactionId?: string; amountCents?: number },
+    fact: {
+      channelTransactionId?: string;
+      amountCents?: number;
+      currency?: string;
+    },
   ): Promise<PaymentSettlementResult> {
     const at = now();
     const transactionId = fact.channelTransactionId ?? order.id;
@@ -488,6 +492,24 @@ export function createPaymentService(deps: {
         if (!blocked) return { kind: "retryable-failure" };
       }
       return { kind: "refused", reason: "amount-mismatch" };
+    }
+    /*
+     * Currency before amount (audit A5): "49.00 USD" and "49.00 CNY" are the same integer and
+     * different money. The channel's silence is not a mismatch — plenty of domestic notifications
+     * carry no currency member — but a stated currency that disagrees with the order snapshot is
+     * an operator case, never a settlement.
+     */
+    if (fact.currency !== undefined && fact.currency !== order.currency) {
+      const recorded = await recordAnomalyQuietly({
+        orderId: order.id,
+        code: "currency_mismatch",
+        channelTransactionId: transactionId,
+        amountCents: fact.amountCents ?? null,
+        detail: `channel reports ${fact.currency}, order snapshot says ${order.currency}`,
+      });
+      return recorded
+        ? { kind: "refused", reason: "currency-mismatch" }
+        : { kind: "retryable-failure" };
     }
     if (fact.amountCents !== order.amountCents) {
       if (order.status === "pending") {
@@ -617,13 +639,14 @@ export function createPaymentService(deps: {
       return { kind: "retryable-failure" };
     }
 
-    // A cross-order duplicate is worth one more look on EVERY confirm, not only a canceled order
-    // reviving: two QR codes can coexist only if one predates the pending-pair index, or the pair
-    // spans providers (one pending alipay + one pending wechat — the index is per (plan,
-    // provider), deliberately, because a channel switch is a legal flow). Either way, the same
-    // plan already holding another paid order while this money lands means double collection for
-    // one entitlement. The confirm STANDS — the money is real and the payer bought something —
-    // the anomaly is what makes it visible to reconciliation instead of hiding inside a second
+    /*
+     * The confirm stands on its own evidence: the paid fact's partial unique index makes one
+     * channel transaction claimable by exactly one order, and cross-order duplicates are settled
+     * by `resolveActivationOwnership` inside `activateOrder` below (which records the
+     * `duplicate_paid` anomaly and withholds the second entitlement). An earlier revision compared
+     * `readLatestPaidOrder` here as well; that check was folded into the ownership resolution in
+     * 88664e88, and this comment is the record of why nothing here looks like it.
+     */
     const fresh = await deps.store.readOrder(order.id).catch(() => null);
     if (fresh) await activateOrder(fresh);
     return { kind: "claimed" };
@@ -669,7 +692,9 @@ export function createPaymentService(deps: {
       // projection is one indexed query; the cached read lags syncs by its TTL and its failure
       // fallback answers "not active" — either window lets a duplicate purchase through, which
       // is money collected against an activation the service will refuse).
-      const active = await (deps.activePlanCodeUncached ?? deps.activePlanCode)();
+      const active = await (
+        deps.activePlanCodeUncached ?? deps.activePlanCode
+      )();
       if (active !== null) {
         // One subscription at a time: the guard that also blocks the admin sync's other-plan
         // route, so an upgrade cannot bypass the front door.
@@ -803,7 +828,9 @@ export function createPaymentService(deps: {
     },
 
     async readCurrentOrder(scope) {
-      const order = await deps.store.readLatestLiveOrder(scope).catch(() => null);
+      const order = await deps.store
+        .readLatestLiveOrder(scope)
+        .catch(() => null);
       return { order: order ? toView(order) : null };
     },
 

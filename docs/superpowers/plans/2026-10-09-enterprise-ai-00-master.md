@@ -54,11 +54,6 @@
 
 本次已有总体方案与 00/01/02；03–06 尚待编写，§3/§10 仅分配需求，不代表已覆盖设计或验收。授权引擎移出不删安全能力；后续分册必须落实本地策略和合同。未提供业务样本、容量阈值及部署环境的项目保留明确责任人与阻断门禁，不虚构输入。
 
-F01/C05 收尾评审登记（2026-10-10，来源：F01/C05 收尾评审确认发现 + 残余收尾轮更新。本登记文件位于 gitignore 的 `docs/superpowers/` 下，属本地工作区记录，未纳入版本库）：
-
-- **企业 runs 生产域已随提交 `85b081e` 进入主干，构成未经批准流程的生产 DB 姿态变更；本条登记覆盖 85b081e 及其后 03 册轨对 runs 域的全部提交（登记时点实证至 5969dbb）。** 该域包括：`server/drizzle/0059_outgoing_lilandra.sql`（22 张表）、`server/drizzle/0060_enterprise_runs_rls.sql`（RLS＋5 角色 GRANT）、`server/ops/enterprise/roles.sql`（新增 `ob_ent_run_writer` 等 5 角色）、`server/src/enterprise/runs/`、`shared/enterprise/run-contracts.ts`、`server/src/enterprise/runtime/wire.ts`、`server/tests/enterprise/runs/`。该域按计划 03（`docs/superpowers/plans/2026-10-09-enterprise-ai-03-runs-models.md`）属 E1-A/E1-B 范围，但 03 册编写轮明确“只获准编写文档，未授权安装、编码、创建角色、迁移”，E1-B 要求“DBA 批准后创建能力角色”。因此该提交构成未经批准流程的生产 DB 姿态变更：迁移链执行将直接产生 22 表＋RLS＋5 角色，且当前无任何路由消费（`RunService` 仅接口声明，`server/src/enterprise/runs/contracts.ts:36`）。**后续实质扩大（单独点名）**：提交 `5969dbb`（2026-10-10 14:12）把 0060 中 `ob_ent_run_writer` 对 `enterprise_budget_accounts` 的策略从 `FOR SELECT` 扩为 `FOR ALL`＋`WITH CHECK`、GRANT 增加 `UPDATE`，并把 0059 的 `enterprise_run_releases.model_route_ref`、`tool_manifest_digest` 两列改为 NOT NULL，同步 schema/快照/测试——构成对该"待批准"域生产 DB 姿态的实质扩大。登记处置状态：待 03 册按 G1b 门禁补规格批准；批准前生产迁移不得执行；C05 门禁不将该域计入。
-- **已知偏差：0058 迁移缺 snapshot 且 journal 时间戳为手工圆整值。** `server/drizzle/meta/` 目录无 `0058_snapshot.json`（快照序列从 0057 直接跳到 0059）；`meta/_journal.json` 中 0058 条目 `when=1791560000000` 为手工圆整毫秒值（对比 0059=`1791605450505`、0060=`1791605571663` 为生成器真实精度）；0059 快照缺 `enterprise_channels`（全文出现 0 次），0060 快照含之（出现 9 次）。
-
 ## 2. 工作区事实与保护范围
 
 初始检查日期：2026-10-09；历史基线提交 `4773ef6`，不能代表未提交工作区。根包管理器为 `bun@1.3.14`；server 已声明 Hono、Drizzle、Zod 和 AG-UI。本轮复核已存在 runtime-go module 及 adapter/identity/callback/server 组件；`cmd/runtime/main.go` 仍仅挂健康服务，不能据此宣称真实 AG-UI 启动接线完成。01 中历史 `[x]` 与本轮待验收清单分开保存，不重复初始化 module，也不重置用户进度。执行前重新记录 commit、相关 diff、文件摘要和测试制品，禁止复用过期状态。

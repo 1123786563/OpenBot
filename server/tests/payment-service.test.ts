@@ -33,7 +33,8 @@ const addMonths = (from: Date, months: number) => {
 function memoryStore(): PaymentStore {
   const orders = new Map<string, PaymentOrderRecord>();
   const paidFacts = new Set<string>();
-  const anomalies: Array<{ orderId: string; code: string; detail?: string }> = [];
+  const anomalies: Array<{ orderId: string; code: string; detail?: string }> =
+    [];
   let serial = 0;
 
   const base: Omit<PaymentOrderRecord, "id"> = {
@@ -99,20 +100,6 @@ function memoryStore(): PaymentStore {
           .reverse()
           .find((order) => order.status === "pending") ?? null
       );
-    },
-    async readLatestPaidOrder(planCode, excludeOrderId) {
-      const paid = [...orders.values()]
-        .filter(
-          (order) =>
-            order.planCode === planCode &&
-            order.status === "paid" &&
-            order.id !== excludeOrderId,
-        )
-        .sort(
-          (a, b) =>
-            (b.terminalAt?.getTime() ?? 0) - (a.terminalAt?.getTime() ?? 0),
-        );
-      return paid[0] ?? null;
     },
     async readLatestLiveOrder() {
       const live = [...orders.values()]
@@ -266,16 +253,15 @@ function memoryStore(): PaymentStore {
       ) {
         return { outcome: "not-paid" as const };
       }
-      const overlapping = [...orders.values()]
-        .filter(
-          (order) =>
-            order.status === "paid" &&
-            order.planCode === current.planCode &&
-            order.periodStart !== null &&
-            order.periodEnd !== null &&
-            order.periodStart.getTime() < current.periodEnd.getTime() &&
-            order.periodEnd.getTime() > current.periodStart.getTime(),
-        );
+      const overlapping = [...orders.values()].filter(
+        (order) =>
+          order.status === "paid" &&
+          order.planCode === current.planCode &&
+          order.periodStart !== null &&
+          order.periodEnd !== null &&
+          order.periodStart.getTime() < current.periodEnd.getTime() &&
+          order.periodEnd.getTime() > current.periodStart.getTime(),
+      );
       const claimed = overlapping
         .filter((order) => order.activationState !== "pending")
         .sort((a, b) => {
@@ -309,7 +295,10 @@ function memoryStore(): PaymentStore {
       if (!winner) return { outcome: "unknown" as const };
       if (winner.id === current.id) {
         if (current.activationState === "pending") {
-          const claimedOwner = { ...current, activationState: "failed" as const };
+          const claimedOwner = {
+            ...current,
+            activationState: "failed" as const,
+          };
           orders.set(current.id, claimedOwner);
           return { outcome: "owner" as const, order: claimedOwner };
         }
@@ -1031,8 +1020,7 @@ describe("callback triage", () => {
     expect(
       store.anomalies.some(
         (anomaly) =>
-          anomaly.orderId === order.id &&
-          anomaly.code === "amount_unreadable",
+          anomaly.orderId === order.id && anomaly.code === "amount_unreadable",
       ),
     ).toBe(true);
   });
@@ -1463,7 +1451,9 @@ describe("callback triage", () => {
     });
     const settled = await store.readOrder(order.id);
     expect(settled?.periodStart?.toISOString()).toBe(tick().toISOString());
-    expect(settled?.periodEnd?.toISOString()).toBe(addMonths(tick(), 12).toISOString());
+    expect(settled?.periodEnd?.toISOString()).toBe(
+      addMonths(tick(), 12).toISOString(),
+    );
   });
 
   test("activation replaces the fallback snapshot when Lago returns exact dates", async () => {
@@ -1934,16 +1924,28 @@ describe("activation gate", () => {
     // The refusing rule: the plan bills yearly — a verdict that used to be terminal, stranding
     // the paid order forever. The sweep now retries it.
     const refusing = fakeLago({
-      getPlan: async () => ({ found: true, interval: "yearly", currency: "CNY" }),
+      getPlan: async () => ({
+        found: true,
+        interval: "yearly",
+        currency: "CNY",
+      }),
     });
-    const { service } = buildService({ store, lago: refusing, providers: [alipay] });
+    const { service } = buildService({
+      store,
+      lago: refusing,
+      providers: [alipay],
+    });
     await service.handleCallback("alipay", new Headers(), "x");
     expect((await store.readOrder(order.id))?.activationState).toBe("failed");
 
     // The rule changes at the provider (corrected to monthly): the SAME failed order retries
     // on the next sweep pass and lands.
     const fixed = fakeLago();
-    const { service: fixing } = buildService({ store, lago: fixed, providers: [alipay] });
+    const { service: fixing } = buildService({
+      store,
+      lago: fixed,
+      providers: [alipay],
+    });
     await fixing.sweepActivations();
     const settled = await store.readOrder(order.id);
     expect(settled?.activationState).toBe("applied");
@@ -1956,7 +1958,11 @@ describe("activation gate", () => {
     const refusing = fakeLago({
       getPlan: async () => ({ found: false }),
     });
-    const { service } = buildService({ store, lago: refusing, providers: [alipay] });
+    const { service } = buildService({
+      store,
+      lago: refusing,
+      providers: [alipay],
+    });
     await service.handleCallback("alipay", new Headers(), "x");
     // Three passes, each refused the same way: the alarm fires on the third, exactly once —
     // the anomaly is one alarm, not a log.
@@ -2240,7 +2246,11 @@ describe("the plan allowance payout", () => {
         throw new Error("ledger down");
       },
     };
-    const first = buildService({ store, providers: [alipay], grantor: failing });
+    const first = buildService({
+      store,
+      providers: [alipay],
+      grantor: failing,
+    });
     await first.service.handleCallback("alipay", new Headers(), "x");
     expect((await store.readOrder(order.id))?.activationState).toBe("failed");
 
@@ -2357,5 +2367,84 @@ describe("the expiry sweep", () => {
     await service.sweepExpired();
     expect((await store.readOrder(order.id))?.status).toBe("expired");
     expect(alipay.closes).toEqual([order.id]);
+  });
+});
+
+describe("the currency gate (audit A5)", () => {
+  test("a paid fact in another currency is refused and recorded, not settled", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-1",
+      checkoutPayload: null,
+    });
+    const { service } = buildService({
+      store,
+      providers: [
+        fakeProvider("alipay", {
+          verifyNotification: async () => ({
+            ok: true as const,
+            fact: {
+              outTradeNo: order.id,
+              state: "paid" as const,
+              channelTransactionId: "tx-usd-1",
+              amountCents: 8800,
+              currency: "USD",
+            },
+          }),
+        }),
+      ],
+    });
+
+    const outcome = await service.handleCallback(
+      "alipay",
+      new Headers(),
+      "body",
+    );
+
+    expect(outcome).toEqual({
+      kind: "settlement-refused",
+      settlement: { kind: "refused", reason: "currency-mismatch" },
+    });
+    expect((await store.readOrder(order.id))?.status).toBe("pending");
+    expect(await store.countAnomalies(order.id, "currency_mismatch")).toBe(1);
+  });
+
+  test("a fact that names no currency still settles — the channel's silence is not a mismatch", async () => {
+    const store = memoryStore();
+    const { order } = await store.insertOrder({
+      planCode: "pro",
+      provider: "alipay",
+      amountCents: 8800,
+      currency: "CNY",
+      expiresAt: new Date(clockMs + 15 * 60_000),
+      createdBy: "admin-1",
+      checkoutPayload: null,
+    });
+    const { service } = buildService({
+      store,
+      providers: [
+        fakeProvider("alipay", {
+          verifyNotification: async () => ({
+            ok: true as const,
+            fact: {
+              outTradeNo: order.id,
+              state: "paid" as const,
+              channelTransactionId: "tx-cny-1",
+              amountCents: 8800,
+            },
+          }),
+        }),
+      ],
+    });
+
+    expect(
+      (await service.handleCallback("alipay", new Headers(), "body")).kind,
+    ).toBe("success");
+    expect((await store.readOrder(order.id))?.status).toBe("paid");
   });
 });

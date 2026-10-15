@@ -36,9 +36,7 @@ export const billingSubscriptions = pgTable(
       .references(() => billingCustomers.externalId, { onDelete: "cascade" }),
     externalSubscriptionId: text("external_subscription_id").primaryKey(),
     planCode: text("plan_code").notNull(),
-    status: text("status")
-      .$type<BillingSubscriptionStatus>()
-      .notNull(),
+    status: text("status").$type<BillingSubscriptionStatus>().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -70,6 +68,8 @@ export const billingWebhookEvents = pgTable(
     lagoUniqueKey: text("lago_unique_key"),
     webhookType: text("webhook_type").notNull(),
     objectId: text("object_id"),
+    /** sha256 of the raw delivery body; the replay-evidence key (audit A7). Nullable: rows written before it exist. */
+    bodyHash: text("body_hash"),
     /** Always true today: the row exists precisely because the work it names is done. */
     processed: boolean("processed").notNull().default(true),
     receivedAt: timestamp("received_at", { withTimezone: true })
@@ -82,5 +82,8 @@ export const billingWebhookEvents = pgTable(
       table.eventId,
     ),
     index("billing_webhook_events_unique_key_idx").on(table.lagoUniqueKey),
+    // A plain lookup index, not a uniqueness fence: two distinct events may legitimately carry
+    // byte-identical bodies, so the hash is evidence, never a dedupe key (audit A7).
+    index("billing_webhook_events_body_hash_idx").on(table.bodyHash),
   ],
 );

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { loadCraftConfig } from "../src/craft/config";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import {
+  resolveWebappHmrUpgrade,
   type WebappHmrDeps,
   type WebappHmrSocketData,
-  resolveWebappHmrUpgrade,
   webappHmrQueryString,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
@@ -59,7 +60,10 @@ function hmrDeps(input: {
     sandboxConnectionFor: () =>
       input.connBaseUrl === null
         ? null
-        : { baseUrl: input.connBaseUrl ?? "http://sbox.internal:4300", token: null },
+        : {
+            baseUrl: input.connBaseUrl ?? "http://sbox.internal:4300",
+            token: null,
+          },
   };
 }
 
@@ -90,10 +94,40 @@ describe("webappHmrQueryString / webappHmrUpstreamUrl (onyx _webapp_hmr_*)", () 
     expect(webappHmrQueryString("")).toBe("");
   });
 
-  test("targets the dev server's own /_next/webpack-hmr on the sandbox host port", () => {
+  test("the upstream path carries the scaffold's basePath — Next serves HMR under it, not at the port root", () => {
+    // The scaffold sets basePath to this route's own mount (web-template/
+    // next.config.ts), and a Next dev server with a basePath serves
+    // /_next/webpack-hmr UNDER it. Dialing the port root connects to nothing:
+    // measured live against a running session, `ws://127.0.0.1:3012/_next/
+    // webpack-hmr` timed out with 0 frames while the basePath-joined URL opened
+    // and streamed. Turbopack's dev client gates its chunk loading on that
+    // socket, so the preview never hydrated — 17 scripts and then silence for
+    // 90s, where the same page loaded direct from the dev server pulls 187 and
+    // hydrates. The HTML was byte-identical either way, which is what made this
+    // invisible from the response side.
     expect(
-      webappHmrUpstreamUrl({ host: "sbox.internal", port: 3011, query: "?id=x&z=1" }),
-    ).toBe("ws://sbox.internal:3011/_next/webpack-hmr?id=x");
+      webappHmrUpstreamUrl({
+        host: "sbox.internal",
+        port: 3011,
+        path: HMR_PATH,
+        query: "?id=x&z=1",
+      }),
+    ).toBe(`ws://sbox.internal:3011${HMR_PATH}?id=x`);
+  });
+
+  test("the template really does set basePath to this mount — the assumption the relay rests on", async () => {
+    // Pinned against the shipped scaffold rather than restated in a comment: the
+    // relay's upstream path is only correct for as long as the template derives
+    // its basePath from the same mount. If that ever changes, this fails and says
+    // why, instead of the preview silently going non-interactive again.
+    const source = await readFile(
+      new URL("../assets/craft/web-template/next.config.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("nextConfig.basePath = webappBasePath");
+    // Escaped `${`: this asserts on the template literal's own SOURCE TEXT, so the
+    // placeholder has to survive as text rather than interpolate.
+    expect(source).toContain(`/api/craft/sessions/\${match[1]}/webapp`);
   });
 });
 
@@ -102,6 +136,7 @@ describe("resolveWebappHmrUpgrade — the hand-applied webapp-proxy auth", () =>
     const decision = await resolveWebappHmrUpgrade(hmrDeps({}), {
       sessionId: SESSION_ID,
       actor: null,
+      path: HMR_PATH,
       query: "",
     });
     expect(decision).toMatchObject({ ok: false, status: 401 });
@@ -110,31 +145,40 @@ describe("resolveWebappHmrUpgrade — the hand-applied webapp-proxy auth", () =>
   test("another user's session is refused 404 — the HTTP proxy's indistinct absence", async () => {
     const decision = await resolveWebappHmrUpgrade(
       hmrDeps({ ownerUserId: "somebody-else" }),
-      { sessionId: SESSION_ID, actor: { id: "u1" }, query: "" },
+      { sessionId: SESSION_ID, actor: { id: "u1" }, path: HMR_PATH, query: "" },
     );
     expect(decision).toMatchObject({ ok: false, status: 404 });
 
     const unknown = await resolveWebappHmrUpgrade(hmrDeps({}), {
       sessionId: "never-heard-of",
       actor: { id: "u1" },
+      path: HMR_PATH,
       query: "",
     });
     expect(unknown).toMatchObject({ ok: false, status: 404 });
   });
 
   test("no sandbox connection is 503, and so is a session without a reserved port", async () => {
-    const noConn = await resolveWebappHmrUpgrade(hmrDeps({ connBaseUrl: null }), {
-      sessionId: SESSION_ID,
-      actor: { id: "u1" },
-      query: "",
-    });
+    const noConn = await resolveWebappHmrUpgrade(
+      hmrDeps({ connBaseUrl: null }),
+      {
+        sessionId: SESSION_ID,
+        actor: { id: "u1" },
+        path: HMR_PATH,
+        query: "",
+      },
+    );
     expect(noConn).toMatchObject({ ok: false, status: 503 });
 
-    const noPort = await resolveWebappHmrUpgrade(hmrDeps({ nextjsPort: null }), {
-      sessionId: SESSION_ID,
-      actor: { id: "u1" },
-      query: "",
-    });
+    const noPort = await resolveWebappHmrUpgrade(
+      hmrDeps({ nextjsPort: null }),
+      {
+        sessionId: SESSION_ID,
+        actor: { id: "u1" },
+        path: HMR_PATH,
+        query: "",
+      },
+    );
     expect(noPort).toMatchObject({ ok: false, status: 503 });
   });
 
@@ -142,22 +186,23 @@ describe("resolveWebappHmrUpgrade — the hand-applied webapp-proxy auth", () =>
     const decision = await resolveWebappHmrUpgrade(hmrDeps({}), {
       sessionId: SESSION_ID,
       actor: { id: "u1" },
+      path: HMR_PATH,
       query: "?id=hmr-1&unrelated=drop",
     });
     expect(decision).toEqual({
       ok: true,
-      upstreamUrl: "ws://sbox.internal:3011/_next/webpack-hmr?id=hmr-1",
+      upstreamUrl: `ws://sbox.internal:3011${HMR_PATH}?id=hmr-1`,
     });
   });
 
   test("the config gateway URL wins over the connection baseUrl (F-E parity)", async () => {
     const decision = await resolveWebappHmrUpgrade(
       hmrDeps({ gatewayBaseUrl: "http://gateway.host:4300" }),
-      { sessionId: SESSION_ID, actor: { id: "u1" }, query: "" },
+      { sessionId: SESSION_ID, actor: { id: "u1" }, path: HMR_PATH, query: "" },
     );
     expect(decision).toEqual({
       ok: true,
-      upstreamUrl: "ws://gateway.host:3011/_next/webpack-hmr",
+      upstreamUrl: `ws://gateway.host:3011${HMR_PATH}`,
     });
   });
 });

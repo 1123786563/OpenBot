@@ -1,0 +1,48 @@
+{
+ "repository": "1123786563/OpenBot",
+ "parent": "本地 https://github.com/1123786563/OpenBot/issues/358",
+ "status": "published-ready-for-agent",
+ "source_read_date": "2026-10-15",
+ "source_state": "APPROVED",
+ "decisions_confirmed_2026_10_15": [
+  "D7 (Q1) 子域名用 hash，不用明文 session id：避免内部标识进 DNS 与证书透明度日志；派生需稳定/不可枚举/DNS 安全且服务端可反查（机制由 Ticket 02 选定）",
+  "D8 (Q2) 泛域名证书用 ACME DNS-01 自动化：签发与续期是自动流水线（Ticket 00），非一次性人工操作；dev (127.0.0.1) 不需要证书，不受此阻塞",
+  "D9 (Q3) ticket 单次使用 + 30 秒有效期；兑换后种 preview 域会话级 HttpOnly cookie；不做空闲作废",
+  "D10 (Q4) 存量会话不迁移：旧 outputs/web 走旧路径直到自然结束，新会话走新形态；判定信号由 Ticket 08 落地",
+  "D11 (Q5) webapp_url 绝对化：webapp-info 返回含 preview 主机的绝对地址；下游逐一核验适配（preview-tab / webapp-download / 桌面端 / 分享）"
+ ],
+ "decisions_locked_by_evidence": [
+  "D1 换主机才是真独立 origin：实测只换端口 cookie 仍共享（document.cookie 全可见，带凭证调主站 API 200 可读）",
+  "D2 保留 allow-same-origin：摘掉会让应用完全不可交互（opaque origin 下自身 fetch 跨源、localStorage 抛异常）",
+  "D3 每会话子域名 + 应用跑根路径：basePath 足枪退场，且堵住会话间互访",
+  "D4 短时一次性 preview ticket 鉴权，不做跨域 cookie 共享",
+  "D5 dev 默认 127.0.0.1:<SERVER_PORT>，与 localhost 即为不同主机，免泛域名 DNS",
+  "D6 basePath 机制（cwd 正则抠 session id / assetPrefix / redirects）整体退场"
+ ],
+ "split_policy": [
+  "R1 每张 Ticket 只引入一个可观察行为变化，验证命令不超过 3 条。",
+  "R3 成功路径与拒绝路径分开成张：先打通成功路径（01–06），再逐条加拒绝（07）。",
+  "R6 禁止无行为 Ticket：纯配置/纯类型不并回上一张。",
+  "R7 每张 Ticket 必带 handoff：consumes / produces / owned_scope / verification / resume_hint / checkpoint。",
+  "R8 每组保留一张缝合验收 Ticket（06），保证端到端可演示。"
+ ],
+ "global_constraints": [
+  "以父 Spec 为事实源；Q1–Q5 未确认前不得派发任何 Ticket（issue-tracker 约定：依赖未完成不能派发实现）。",
+  "附着模型不回退：预览代理只探测不拉起第二进程；webapp tool 的 status/logs/restart 与预览指向同一 dev server。",
+  "不回退交互能力：hydration、HMR 热更新、POST/PUT/PATCH/DELETE 透传、全屏放大均为既有行为，每张 Ticket 不得引入回归。",
+  "拒绝形状与既有预览代理一致（401/404/503），拒绝原因可向用户展示。",
+  "票据值不得进入任何日志字段；错误响应不回显票据。",
+  "每张 Ticket 完成须以真实浏览器证据为准（Playwright + Casdoor 登录 + 真实 dev server），单测桩不算通过。"
+ ],
+ "tickets": [
+  { "id": "00", "file": "issues/00-acme-dns01-wildcard-certificate.md", "ac": ["AC8"], "blocked_by": [], "note": "仅生产形态需要；dev (127.0.0.1) 不阻塞" },
+  { "id": "01", "file": "issues/01-preview-ticket-primitive.md", "ac": ["AC4"], "blocked_by": [] },
+  { "id": "02", "file": "issues/02-preview-origin-host-routing-and-gate.md", "ac": ["AC6", "AC9"], "blocked_by": ["01"] },
+  { "id": "03", "file": "issues/03-preview-proxy-host-routing-and-ticket-flow.md", "ac": ["AC1", "AC2"], "blocked_by": ["01", "02"] },
+  { "id": "04", "file": "issues/04-hmr-upgrade-on-preview-origin.md", "ac": ["AC5"], "blocked_by": ["03"] },
+  { "id": "05", "file": "issues/05-scaffold-drop-basepath.md", "ac": ["AC2"], "blocked_by": ["03"] },
+  { "id": "06", "file": "issues/06-seam-isolation-plus-interactivity-e2e.md", "ac": ["AC1", "AC2", "AC3", "AC5"], "blocked_by": ["03", "04", "05"] },
+  { "id": "07", "file": "issues/07-refusal-and-failure-injection.md", "ac": ["AC3", "AC4"], "blocked_by": ["06"] },
+  { "id": "08", "file": "issues/08-legacy-session-regression.md", "ac": ["AC7"], "blocked_by": ["06"] }
+ ]
+}
