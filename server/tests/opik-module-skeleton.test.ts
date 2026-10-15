@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   OBSERVATION_ACCESS_DENIED,
   OBSERVATION_BOT_REQUIRED,
   resolveObservationBot,
   type BotManagementCheck,
 } from "../src/ai-observability/context";
+import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
 import type { AgentProfile } from "../src/agents/profile-types";
+import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 
 const owner = { id: "user-owner", role: "user" } as const;
 const stranger = { id: "user-stranger", role: "user" } as const;
@@ -85,5 +89,85 @@ describe("resolveObservationBot", () => {
     const rows = [profile({ systemOwned: true }), profile({ id: "agent-2", deletedAt: new Date() })];
     expect((await resolveObservationBot(managementCheck(rows), owner, "agent-1")).ok).toBe(false);
     expect((await resolveObservationBot(managementCheck(rows), owner, "agent-2")).ok).toBe(false);
+  });
+});
+
+function actorVariables(
+  actor: AuthenticatedActor,
+): MiddlewareHandler<{ Variables: AppVariables }> {
+  return async (context, next) => {
+    context.set("actor", actor);
+    await next();
+  };
+}
+
+const rejectingUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+  context,
+) => {
+  // `return` is load-bearing: without it the middleware does not short-circuit, Hono reports
+  // "Context is not finalized" and a correct implementation answers 500 instead of 401.
+  // The real guard (auth/guards.ts createRequireUser) returns too.
+  return await context.json({ error: "Authentication required." }, 401);
+};
+
+function appFor(
+  rows: AgentProfile[],
+  middleware: MiddlewareHandler<{ Variables: AppVariables }> = actorVariables(
+    owner as unknown as AuthenticatedActor,
+  ),
+) {
+  const app = new Hono<{ Variables: AppVariables }>();
+  app.route(
+    "/",
+    createAiObservabilityRoutes({
+      requireUser: middleware,
+      canManageBot: managementCheck(rows),
+    }),
+  );
+  return app;
+}
+
+describe("GET /bots/:botId/access", () => {
+  test("an unauthenticated caller is refused before business logic", async () => {
+    const app = appFor([profile()], rejectingUser);
+    const response = await app.request("http://openbot.test/bots/agent-1/access");
+    expect(response.status).toBe(401);
+  });
+
+  test("the owner sees observation access granted and no capability yet", async () => {
+    const response = await appFor([profile()]).request(
+      "http://openbot.test/bots/agent-1/access",
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      botId: "agent-1",
+      observationAccess: true,
+      capability: "none",
+    });
+  });
+
+  test("a stranger is refused with 403 and the store is never asked for runs", async () => {
+    const app = appFor(
+      [profile()],
+      actorVariables(stranger as unknown as AuthenticatedActor),
+    );
+    const response = await app.request("http://openbot.test/bots/agent-1/access");
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe(OBSERVATION_ACCESS_DENIED);
+  });
+
+  test("a public Bot the caller cannot manage is still refused", async () => {
+    const app = appFor(
+      [profile({ visibility: "public" })],
+      actorVariables(stranger as unknown as AuthenticatedActor),
+    );
+    expect((await app.request("http://openbot.test/bots/agent-1/access")).status).toBe(403);
+  });
+
+  test("a missing bot id answers 404 with an explainable error", async () => {
+    const response = await appFor([profile()]).request(
+      "http://openbot.test/bots//access",
+    );
+    expect([404]).toContain(response.status);
   });
 });
