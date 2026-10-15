@@ -37,6 +37,11 @@ import {
   WorkspaceListingError,
 } from "./directory-archive";
 import { webappDevServerReady, webappUpstreamHost } from "./nextjs-dev";
+import {
+  createPreviewTickets,
+  defaultPreviewOrigin,
+  type PreviewTickets,
+} from "./preview-ticket";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
@@ -55,6 +60,13 @@ export type WebappProxyRoutesDeps = {
   sandboxConnectionFor: (
     botId: string,
   ) => { baseUrl: string; token: string | null } | null;
+  /**
+   * The preview-ticket service (#360); defaults to the in-memory TTL table over
+   * `store`. Injectable so tests drive the clock.
+   */
+  previewTickets?: PreviewTickets;
+  /** The preview origin tickets are bound to; D5's dev default when absent. */
+  previewOriginFor?: () => string;
 };
 
 const WEBAPP_PROBE_TIMEOUT_MS = 10_000;
@@ -297,6 +309,9 @@ export function createWebappProxyRoutes(
 ): Hono<{ Variables: AppVariables }> {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", requireUser);
+  const previewTickets =
+    deps.previewTickets ?? createPreviewTickets({ store: deps.store });
+  const previewOrigin = deps.previewOriginFor ?? defaultPreviewOrigin;
 
   /** Ownership-checked session + its sandbox connection facts. */
   const resolve = async (sessionId: string, userId: string) => {
@@ -359,6 +374,34 @@ export function createWebappProxyRoutes(
       // iframe the proxy's 503 — nothing downstream could tell the two apart.
       status: ready ? "running" : "stopped",
       ready,
+    });
+  });
+
+  // ── POST /sessions/:id/preview-ticket — mint the cross-origin credential ────
+  // #360 (spec D4/D9): the main-site session cookie (this surface's requireUser)
+  // is the only way in, and the refusals are the surface's own shapes — 404 for
+  // a session that is not the actor's, 503 when no sandbox backs the preview.
+  // The ticket itself never appears in any log field or error body; the value
+  // crosses exactly one response, to the caller that just authenticated.
+  app.post("/sessions/:sessionId/preview-ticket", async (context) => {
+    const actor = context.var.actor;
+    const sessionId = context.req.param("sessionId");
+    const { session, botId, conn } = await resolve(sessionId, actor.id);
+    if (!session) return context.json({ error: "Session not found" }, 404);
+    if (!botId || !conn) {
+      return context.json({ error: "The sandbox is not available." }, 503);
+    }
+
+    const origin = previewOrigin();
+    const { ticket, expiresAt } = previewTickets.issuePreviewTicket({
+      sessionId,
+      userId: actor.id,
+      previewHost: origin.replace(/^https?:\/\//, ""),
+    });
+    return context.json({
+      ticket,
+      expiresAt: expiresAt.toISOString(),
+      origin,
     });
   });
 
