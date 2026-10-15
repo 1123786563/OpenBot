@@ -44,6 +44,9 @@ export type SafeText =
   | { state: "omitted"; reason: OmitReason }
   | { state: "truncated"; text: string; originalBytes: number };
 
+/** A record whose every value is a projected SafeValue — the metadata wire shape. */
+export type SafeRecord = Record<string, SafeValue>;
+
 export type SafeValue =
   | { state: "projected"; value: unknown }
   | { state: "omitted"; reason: OmitReason }

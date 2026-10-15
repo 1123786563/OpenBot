@@ -52,6 +52,18 @@ export type RunsQueryRouteDeps = Readonly<{
 
 const BAD_LIMIT = new RunsQueryError("RUNS_QUERY_INPUT_INVALID", 400);
 
+/*
+ * Issue #18: the list's filter vocabulary — state, timeFrom, timeTo — is named in the
+ * contract so the browser and this seam agree on one spelling. The verified port supports
+ * no upstream filter today, so a filter is REFUSED with 422 rather than silently ignored
+ * (a filter that quietly answered everything would be a lie about what was shown). When
+ * the port gains a verified filter operation, this refusal is the one seam to replace.
+ */
+const FILTER_UNSUPPORTED = new RunsQueryError(
+  "RUNS_QUERY_FILTER_UNSUPPORTED",
+  422,
+);
+
 function parseLimit(raw: string | undefined): number {
   if (raw === undefined) return 20;
   const parsed = Number.parseInt(raw, 10);
@@ -64,7 +76,7 @@ function parseLimit(raw: string | undefined): number {
 /** House convention: known errors map to their code, anything else rethrows. */
 function classify(error: unknown): {
   body: { error: string };
-  status: 400 | 401 | 402 | 403 | 404 | 502 | 503;
+  status: 400 | 401 | 402 | 403 | 404 | 422 | 502 | 503;
 } {
   if (error instanceof ObservationScopeError) {
     return { body: { error: error.code }, status: error.status };
@@ -128,6 +140,9 @@ export function createRunsQueryRoutes(
     try {
       const resolved = await scopeFor(context);
       if (resolved instanceof Response) return resolved;
+      for (const filter of ["state", "timeFrom", "timeTo"]) {
+        if (context.req.query(filter) !== undefined) throw FILTER_UNSUPPORTED;
+      }
       const body = await query.list(resolved.scope, {
         cursor: context.req.query("cursor") || undefined,
         limit: parseLimit(context.req.query("limit")),

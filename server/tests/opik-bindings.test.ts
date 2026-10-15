@@ -52,6 +52,20 @@ describe("the run-binding store refuses what is not a trusted scope", () => {
     expect(() => store.latestAttempt(forged, "run-1")).toThrow(
       new ObservationScopeError("OWNERSHIP_REQUIRED", 403),
     );
+    expect(() =>
+      store.capabilitiesByOpikTraceIds(forged, ["opik-trace-1"]),
+    ).toThrow(new ObservationScopeError("OWNERSHIP_REQUIRED", 403));
+    expect(() => store.countUnreconciled(forged)).toThrow(
+      new ObservationScopeError("OWNERSHIP_REQUIRED", 403),
+    );
+  });
+
+  test("the Issue #18 reads refuse before any query: no ids is no rows", async () => {
+    // An empty id set is answered without touching the database, which the {} cast
+    // below guarantees: any query attempt would fail loudly on the missing client.
+    expect(await store.capabilitiesByOpikTraceIds(trusted, [])).toEqual(
+      new Map(),
+    );
   });
 
   test("an ownership denial never yields a scope to bind under", () => {

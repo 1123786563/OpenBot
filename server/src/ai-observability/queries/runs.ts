@@ -20,12 +20,19 @@
  * epoch. Producer credentials (T32) never appear here: reads carry the scope,
  * not the write-path credential.
  */
+
+import type {
+  RunCapabilityLevel,
+  RunDetailResult,
+  RunSummary,
+  RunsListResult,
+  RunUsageReport,
+} from "../../../../shared/ai-observability-runs";
 import type { RunBindingStore } from "../bindings";
 import type { OpikConfig } from "../config";
 import type { ObservationScope } from "../contracts";
 import { ObservationScopeError } from "../contracts";
 import type { OpikPort, OpikPortResult, OpikTraceRow } from "../opik-port";
-import type { SafeRecord } from "../redaction";
 import { projectSafeMetadata } from "../redaction";
 import type { AttemptRunState } from "../run-lifecycle";
 import { bindCursor, cacheKey, readCursor } from "../scope";
@@ -40,6 +47,8 @@ export type RunsQueryErrorCode =
   /** T09: the integration is off, unconfigured, or no verified port backs it. */
   | "capability_missing"
   | "RUNS_QUERY_INPUT_INVALID"
+  /** Issue #18: a filter was named that the verified port cannot pass upstream today. */
+  | "RUNS_QUERY_FILTER_UNSUPPORTED"
   | "RUN_NOT_FOUND"
   | "OPIK_TIMEOUT"
   | "OPIK_UNREACHABLE"
@@ -52,65 +61,38 @@ export type RunsQueryErrorCode =
 export class RunsQueryError extends Error {
   constructor(
     public code: RunsQueryErrorCode,
-    public status: 400 | 402 | 403 | 404 | 502 | 503,
+    public status: 400 | 402 | 403 | 404 | 422 | 502 | 503,
   ) {
     super(code);
   }
 }
 
-/** Provider usage as reported upstream, or the explicit absence of a report. */
-export type RunUsageReport =
-  | {
-      source: "provider";
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    }
-  | { source: "unavailable" };
-
-/** One upstream trace row, reduced to what may safely be shown. */
-export type RunSummary = {
-  opikTraceId: string;
-  state: AttemptRunState;
-  durationMs: number | "unavailable";
-  usage: RunUsageReport;
-  metadata: SafeRecord;
-};
-
-export type RunsListResult = {
-  runs: readonly RunSummary[];
-  pagination: {
-    /** Upstream's own count of the scope's traces — the truth, not the window. */
-    total: number;
-    /** How many rows the servable window actually holds. */
-    window: number;
-    offset: number;
-    limit: number;
-    nextCursor: string | null;
-  };
-};
-
-export type RunDetailResult = {
-  run: {
-    runId: string;
-    attemptId: string;
-    traceId: string;
-    opikTraceId: string | null;
-    capability: string;
-    state: AttemptRunState;
-    createdAt: string;
-    updatedAt: string;
-    expiresAt: string;
-  };
-  upstream:
-    | ({ status: "present" } & RunSummary)
-    | { status: "unreconciled" }
-    | { status: "absent" };
-};
+/*
+ * The wire contract lives in shared/ai-observability-runs.ts — the one place the browser
+ * and this service agree on (Issue #18: a contract change is a change there first). It is
+ * re-exported so the server's own import surface keeps its historical spelling.
+ */
+export type {
+  RunCapabilityLevel,
+  RunDetailResult,
+  RunState,
+  RunSummary,
+  RunsListResult,
+  RunUsageReport,
+} from "../../../../shared/ai-observability-runs";
 
 export type RunsQueryServiceDeps = Readonly<{
   /** T07's authoritative ownership seam: a run this scope did not bind is not found. */
-  bindings: Pick<RunBindingStore, "latestAttempt">;
+  bindings: Pick<RunBindingStore, "latestAttempt"> &
+    /*
+     * Issue #18's optional joins: row-level capability and the list-level syncing count.
+     * Optional because they are additive reads — a wiring (or parallel stream) that
+     * injects only the historical seam still answers, with capability failing closed to
+     * "unavailable" and syncing to false, exactly like an unverified verdict elsewhere.
+     */
+    Partial<
+      Pick<RunBindingStore, "capabilitiesByOpikTraceIds" | "countUnreconciled">
+    >;
   config: () => OpikConfig;
   /** The verified port, or null when no verified contract backs this deployment. */
   port: OpikPort | null;
@@ -171,6 +153,19 @@ function usageFromUpstream(usage: unknown): RunUsageReport {
   };
 }
 
+/**
+ * The upstream start time (Issue #18). A string that parses as a date is normalized to
+ * ISO; anything else — missing, a number, a lie — is an explicit unavailable, never a
+ * fabricated time. The value is display data, not authorization, so it survives as text.
+ */
+function createdAtFromUpstream(row: OpikTraceRow): string | "unavailable" {
+  const started = (row as Record<string, unknown>).start_time;
+  if (typeof started !== "string") return "unavailable";
+  const parsed = Date.parse(started);
+  if (Number.isNaN(parsed)) return "unavailable";
+  return new Date(parsed).toISOString();
+}
+
 /** The sanctioned duration field (T05 allowlist), raw and validated. */
 function durationFromUpstream(metadata: unknown): number | "unavailable" {
   if (typeof metadata === "object" && metadata !== null) {
@@ -188,12 +183,17 @@ function durationFromUpstream(metadata: unknown): number | "unavailable" {
  * freezes it into artifacts — so an export can never carry anything the query
  * surface would have refused.
  */
-export function projectRow(row: OpikTraceRow): RunSummary {
+export function projectRow(
+  row: OpikTraceRow,
+  capability: RunCapabilityLevel = "unavailable",
+): RunSummary {
   return {
     opikTraceId: row.id,
     state: runStateFromUpstream(row.status),
+    createdAt: createdAtFromUpstream(row),
     durationMs: durationFromUpstream(row.metadata),
     usage: usageFromUpstream(row.usage),
+    capability,
     metadata: projectSafeMetadata(row.metadata),
   };
 }
@@ -295,8 +295,25 @@ export function createRunsQueryService(
       offset + limit < current.rows.length
         ? bindCursor(scope, String(offset + limit))
         : null;
+    /*
+     * Issue #18's two page facts, answered per request so a transfer or revocation is
+     * effective on the very next call: the capability verdicts joined from this scope's
+     * own binding rows (an unbound trace is the honest "unavailable", never a guess), and
+     * whether bindings exist that never reconciled upstream — the "still syncing" signal.
+     */
+    const verdicts = deps.bindings.capabilitiesByOpikTraceIds;
+    const joined = verdicts
+      ? await verdicts(
+          scope,
+          rows.map((row) => row.id),
+        )
+      : null;
+    const unreconciled = deps.bindings.countUnreconciled;
+    const syncing = unreconciled ? (await unreconciled(scope)) > 0 : false;
     return {
-      runs: rows.map(projectRow),
+      runs: rows.map((row) =>
+        projectRow(row, joined?.get(row.id) ?? "unavailable"),
+      ),
       pagination: {
         total: current.total,
         window: current.rows.length,
@@ -304,6 +321,7 @@ export function createRunsQueryService(
         limit,
         nextCursor,
       },
+      syncing,
     };
   };
 
@@ -341,7 +359,7 @@ export function createRunsQueryService(
       // pretending the trace is gone.
       return { run, upstream: { status: "absent" } };
     }
-    const summary = projectRow(row);
+    const summary = projectRow(row, binding.capability);
     // The upstream copy is the closed one; when it is visible its observed
     // state is the actual state, and the local row keeps the refs.
     return {

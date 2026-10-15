@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
@@ -73,6 +73,22 @@ export type RunBindingStore = {
     scope: ObservationScope,
     runId: string,
   ): Promise<RunBinding | null>;
+  /**
+   * The capability verdicts for a page of upstream traces (Issue #18), joined on this
+   * scope's own binding rows — the (scope, opik trace) unique index answers at most one
+   * verdict per id, and a trace this scope never bound answers nothing at all, which the
+   * caller renders as the honest "unavailable" rather than a guess.
+   */
+  capabilitiesByOpikTraceIds(
+    scope: ObservationScope,
+    opikTraceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, AiObservationBindingCapability>>;
+  /**
+   * How many of this scope's bindings began but never reconciled upstream (Issue #18) —
+   * the positive evidence behind a list-level "still syncing" signal. Zero evidence is
+   * zero, never a guess.
+   */
+  countUnreconciled(scope: ObservationScope): Promise<number>;
 };
 
 const capabilities: readonly AiObservationBindingCapability[] = [
@@ -230,6 +246,49 @@ export function createRunBindingStore(db: Database): RunBindingStore {
         .orderBy(desc(aiObservationBindings.updatedAt))
         .limit(1);
       return rows[0] ?? null;
+    },
+
+    async capabilitiesByOpikTraceIds(scope, opikTraceIds) {
+      assertObservationScope(scope);
+      // inArray with an empty list is not a query anyone can answer; it is no rows.
+      if (opikTraceIds.length === 0) return new Map();
+      const rows = await db
+        .select({
+          opikTraceId: aiObservationBindings.opikTraceId,
+          capability: aiObservationBindings.capability,
+        })
+        .from(aiObservationBindings)
+        .where(
+          and(
+            eq(aiObservationBindings.scopeKey, scope.key),
+            inArray(aiObservationBindings.opikTraceId, [
+              ...new Set(opikTraceIds),
+            ]),
+          ),
+        );
+      const verdicts = new Map<string, AiObservationBindingCapability>();
+      for (const row of rows) {
+        if (row.opikTraceId !== null)
+          verdicts.set(row.opikTraceId, row.capability);
+      }
+      return verdicts;
+    },
+
+    async countUnreconciled(scope) {
+      assertObservationScope(scope);
+      // Soft-deleted rows stop being evidence; an expired-but-live binding is still
+      // an unconfirmed record and still counts, exactly like the reads above treat it.
+      const rows = await db
+        .select({ value: count() })
+        .from(aiObservationBindings)
+        .where(
+          and(
+            eq(aiObservationBindings.scopeKey, scope.key),
+            isNull(aiObservationBindings.opikTraceId),
+            isNull(aiObservationBindings.deletedAt),
+          ),
+        );
+      return rows[0]?.value ?? 0;
     },
   };
 }

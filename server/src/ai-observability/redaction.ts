@@ -13,6 +13,7 @@
  */
 import type {
   OmitReason,
+  SafeRecord,
   SafeText,
   SafeValue,
 } from "../../../shared/ai-observability";
@@ -214,7 +215,7 @@ export const DEFAULT_METADATA_ALLOWLIST: readonly string[] = [
   "tokens_output",
 ];
 
-export type SafeRecord = Record<string, SafeValue>;
+export type { SafeRecord };
 
 /**
  * Define an own enumerable property. A plain `out[key] = value` routes a `__proto__` key through
