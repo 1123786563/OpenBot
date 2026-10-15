@@ -6,6 +6,10 @@ This file provides guidance to AI agents when working on the web application wit
 
 - **The development server is already running** (started by the `webapp` tool, which scaffolded this app) on a dynamically allocated port. Do NOT run `bun run dev` yourself. Use the `webapp` tool's `status`/`logs` actions to check on it (logs also at `../../nextjs.log`).
 - **The app serves under a session-scoped base path, not `/`** — use the preview URL returned by the `webapp` tool; other paths 404 or redirect even when the app is healthy.
+- **Every call to this app's own API routes must go through `apiUrl()` from `@/lib/base-path`** — e.g. `fetch(apiUrl("/api/tasks"))`. Next.js prefixes `<Link>`, `router.push` and assets with the base path, but **not** a raw `fetch()`, so the URL has to carry it:
+  - `fetch("/api/tasks")` resolves against the HOST origin and lands in the platform's own `/api/**` (wrong server, and it is authenticated — do not do this)
+  - `fetch("api/tasks")` drops the base-path segment entirely (the document URL has no trailing slash) and 404s
+  - The same applies to `<a href>`, `window.open`, `EventSource` and `WebSocket` URLs you build by hand. Use `apiUrl()` for all of them. Do NOT remove the base path from `next.config.ts` — the preview proxy only routes to it.
 - **We do NOT use a `src` directory** - all code lives directly in the root folders (`app/`, `components/`, `lib/`, etc.)
 - If the app needs pre-computation (data processing, API calls, etc.), create a bash or python script called `prepare.sh`/`prepare.py` at the root of this directory
 - **CRITICAL: Create small, modular components** - Do NOT write everything in `page.tsx`. Break your UI into small, reusable components in the `components/` directory. Each component should have a single responsibility and be in its own file.

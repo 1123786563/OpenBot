@@ -1,0 +1,565 @@
+{
+  "date": "2026-10-10",
+  "spec": "docs/superpowers/specs/2026-10-10-mastra-intelligence-migration-design.md",
+  "plan": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md",
+  "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
+  "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
+  "starting_head": "508800cf2c54f6eba2f3cf52ff897b198a92c714",
+  "contains": [],
+  "nodes": [
+    {
+      "id": "M01",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "bun.lock",
+        "server/package.json",
+        "server/src/mastra/compatibility.ts",
+        "server/tests/enterprise/mastra-compatibility.test.ts",
+        "server/tests/learning-mastra.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 1; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 1 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-compatibility.test.ts server/tests/learning-mastra.test.ts server/tests/mastra-roster.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "verified"
+    },
+    {
+      "id": "M02",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M01"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/drizzle.config.ts",
+        "server/drizzle/",
+        "server/src/db/schema/enterprise-conversations.ts",
+        "server/src/db/schema/index.ts",
+        "server/src/enterprise/contracts.ts",
+        "server/src/enterprise/conversations/service.ts",
+        "server/src/enterprise/conversations/store.ts",
+        "server/src/mastra/contracts.ts",
+        "server/src/mastra/conversations.ts",
+        "server/src/mastra/tenant-storage.ts",
+        "server/tests/enterprise/mastra-storage.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 2; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 2 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-storage.integration.test.ts server/tests/enterprise/conversations.integration.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "verified"
+    },
+    {
+      "id": "M03",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M02"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/enterprise/contracts.ts",
+        "server/src/enterprise/models/runtime-adapter.ts",
+        "server/src/enterprise/runs/service.ts",
+        "server/src/mastra/model.ts",
+        "server/tests/enterprise/mastra-model.integration.test.ts",
+        "server/tests/enterprise/mastra-model.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 3; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 3 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-model.test.ts server/tests/enterprise/mastra-model.integration.test.ts server/tests/enterprise/model-gateway.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "running"
+    },
+    {
+      "id": "M04",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M03"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/drizzle/",
+        "server/src/db/schema/enterprise-tools.ts",
+        "server/src/db/schema/index.ts",
+        "server/src/enterprise/contracts.ts",
+        "server/src/enterprise/tools/service.ts",
+        "server/src/enterprise/tools/store.ts",
+        "server/src/mastra/tools.ts",
+        "server/tests/enterprise/mastra-tools.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 4; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 4 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-tools.integration.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M05",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M04"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/copilot.ts",
+        "server/src/enterprise/runs/outbox.ts",
+        "server/src/index.ts",
+        "server/src/mastra/dispatcher.ts",
+        "server/src/mastra/runtime.ts",
+        "server/tests/enterprise/mastra-runtime.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 5; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 5 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-runtime.integration.test.ts server/tests/mastra-roster.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M06",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M05"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/drizzle/",
+        "server/src/channels/thread-routes.ts",
+        "server/src/copilot.ts",
+        "server/src/db/schema/enterprise-events.ts",
+        "server/src/db/schema/index.ts",
+        "server/src/enterprise/events/service.ts",
+        "server/src/enterprise/events/store.ts",
+        "server/src/mastra/agui.ts",
+        "server/src/mastra/routes.ts",
+        "server/tests/enterprise/mastra-agui.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 6; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 6 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-agui.integration.test.ts server/tests/enterprise/sdk-compatibility.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M07",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M06"
+      ],
+      "owner_role": "frontend_implementer → frontend_validator → reviewer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/components/channels/",
+        "app/src/lib/copilot/bot-thread.ts",
+        "app/src/lib/copilot/join-thread.ts",
+        "app/src/lib/copilot/platform-threads.ts",
+        "app/src/lib/copilot/thread-messages.ts",
+        "app/tests/mastra-chat-history.test.tsx"
+      ],
+      "interfaces": {
+        "plan_task": "Task 7; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 7 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test app/tests/mastra-chat-history.test.tsx app/tests/composer-attachments-ui.test.tsx`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M08",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M06",
+        "M07"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/enterprise/runs/store.ts",
+        "server/src/mastra/recovery.ts",
+        "server/src/mastra/routes.ts",
+        "server/src/mastra/runtime.ts",
+        "server/tests/enterprise/mastra-recovery.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 8; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 8 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-recovery.integration.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M09",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M08"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/src/agents/handoff-runner.ts",
+        "server/src/channels/group.ts",
+        "server/src/channels/routes.ts",
+        "server/src/mastra/headless.ts",
+        "server/src/routines/runner.ts",
+        "server/tests/enterprise/mastra-headless.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 9; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 9 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-headless.integration.test.ts server/tests/learning-handoff.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M10",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M09"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/drizzle/",
+        "server/src/db/schema/index.ts",
+        "server/src/mastra/conversations.ts",
+        "server/src/mastra/deletion.ts",
+        "server/src/mastra/memory.ts",
+        "server/src/memory/routes.ts",
+        "server/src/memory/store.ts",
+        "server/tests/enterprise/mastra-memory.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 10; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 10 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-memory.integration.test.ts server/tests/memory-runtime.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M11",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [],
+      "depends_on": [
+        "M10"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/drizzle/",
+        "server/src/db/schema/enterprise-learning.ts",
+        "server/src/db/schema/index.ts",
+        "server/src/enterprise/learning/service.ts",
+        "server/src/learning/remote.ts",
+        "server/src/learning/routes.ts",
+        "server/src/learning/runtime.ts",
+        "server/src/learning/settings.ts",
+        "server/src/mastra/learning.ts",
+        "server/tests/enterprise/mastra-learning.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 11; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 11 for exact Consumes/Produces"
+      },
+      "verification": [
+        "执行下述针对性命令，保存失败断言和源码 hash；环境错误先定位，不能作为产品 RED。",
+        "`bun test server/tests/enterprise/mastra-learning.integration.test.ts server/tests/learning-runtime.test.ts server/tests/learning-routes.test.ts server/tests/learning-mastra.test.ts`；预期 exit 0，所列验收实际执行，没有 skip 代替通过。运行 owned code Biome；受影响 typecheck。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M12",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [
+        "AC-02",
+        "AC-03",
+        "AC-05",
+        "AC-10"
+      ],
+      "depends_on": [
+        "M11"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "server/drizzle/",
+        "server/src/db/schema/index.ts",
+        "server/src/enterprise/conversations/store.ts",
+        "server/src/mastra/conversations.ts",
+        "server/src/mastra/import.ts",
+        "server/tests/enterprise/mastra-import.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 12; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 12 for exact Consumes/Produces"
+      },
+      "verification": [
+        "用已存在 PostgreSQL TEST_DATABASE_URL fixture，production 未改时保存每个预期失败与数据库清理证据。",
+        "bun test server/tests/enterprise/mastra-import.integration.test.ts server/tests/enterprise/conversations.integration.test.ts；预期两个进程同时切换仅一个成功，摘要/引用计数一致，其余冲突安全失败。Biome 与受影响 server typecheck 单独记录。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M13",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [
+        "AC-09"
+      ],
+      "depends_on": [
+        "M11"
+      ],
+      "owner_role": "frontend_implementer → frontend_validator → reviewer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "app/src/lib/learning/queries.ts",
+        "app/src/routes/_authed/admin/learning.tsx",
+        "app/tests/mastra-learning-admin.test.tsx"
+      ],
+      "interfaces": {
+        "plan_task": "Task 13; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 13 for exact Consumes/Produces"
+      },
+      "verification": [
+        "bun test app/tests/mastra-learning-admin.test.tsx，预期缺少产品 API/现有 Intelligence 调用未满足新断言。",
+        "bun test app/tests/mastra-learning-admin.test.tsx app/tests/learning-admin.test.tsx 且 bun run --filter app typecheck；每条命令独立保存 exit/output/hash。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M14",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-05",
+        "AC-08",
+        "AC-11"
+      ],
+      "depends_on": [
+        "M12",
+        "M13"
+      ],
+      "owner_role": "backend_implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        ".env.example",
+        "Dockerfile",
+        "charts/openbot/templates/configmap.yaml",
+        "charts/openbot/templates/server/deployment.yaml",
+        "charts/openbot/values.yaml",
+        "docker-compose.yml",
+        "scripts/generate-app-config.ts",
+        "server/src/computer/deployment-routes.ts",
+        "server/src/config.ts",
+        "server/src/copilot.ts",
+        "server/src/index.ts",
+        "server/src/intelligence-client.ts",
+        "server/tests/enterprise/mastra-bootstrap.test.ts",
+        "tests/mastra-deployment.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 14; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 14 for exact Consumes/Produces"
+      },
+      "verification": [
+        "分别跑服务配置单测和部署模板合成检查，记录缺失行为；每租户角色只在 TEST_DATABASE_URL 隔离库创建及清理。",
+        "分别运行 bun test server/tests/enterprise/mastra-bootstrap.test.ts tests/mastra-deployment.test.ts、bun run --filter server typecheck、bunx biome check <owned-ts-files>；任一非零即停止后续命令并修复，不用分号吞错。Helm helm template（若已安装）亦单独记结果。真实双租户 roles 用 guarded TEST_DATABASE_URL。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M15",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [
+        "AC-01",
+        "AC-05"
+      ],
+      "depends_on": [
+        "M14"
+      ],
+      "owner_role": "implementer → backend_validator → reviewer",
+      "validator_role": "backend_validator",
+      "owned_files": [
+        "desktop/src-tauri/src/desktop_connection.rs",
+        "desktop/src-tauri/src/install.rs",
+        "desktop/src-tauri/src/lib.rs"
+      ],
+      "interfaces": {
+        "plan_task": "Task 15; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 15 for exact Consumes/Produces"
+      },
+      "verification": [
+        "cargo test --manifest-path desktop/src-tauri/Cargo.toml scoped names, save output.",
+        "scoped cargo test then cargo check --manifest-path desktop/src-tauri/Cargo.toml，两个命令独立保存结果。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M16",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [
+        "AC-01",
+        "AC-11"
+      ],
+      "depends_on": [
+        "M15"
+      ],
+      "owner_role": "frontend_implementer → frontend_validator → reviewer",
+      "validator_role": "frontend_validator",
+      "owned_files": [
+        "desktop/src/App.tsx",
+        "desktop/src/MastraSetup.test.tsx",
+        "desktop/src/Welcome.tsx"
+      ],
+      "interfaces": {
+        "plan_task": "Task 16; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 16 for exact Consumes/Produces"
+      },
+      "verification": [
+        "bun test desktop/src/MastraSetup.test.tsx desktop/src/App.test.tsx。",
+        "bun test desktop/src/MastraSetup.test.tsx desktop/src/App.test.tsx then bun run --filter openbot-desktop typecheck，单独检查结果。"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M17",
+      "source_issues": [],
+      "source_spec": "2026-10-10-mastra-intelligence-migration-design.md",
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "AC-12"
+      ],
+      "depends_on": [
+        "M16"
+      ],
+      "owner_role": "主控编排验收；independent backend_validator、frontend_validator、reviewer（最强可用模型）",
+      "validator_role": "backend_validator + frontend_validator",
+      "owned_files": [
+        "docs/superpowers/reports/2026-10-10-mastra-intelligence-validation.md",
+        "server/scripts/enterprise-runtime-probe.ts",
+        "server/tests/enterprise/mastra-acceptance.integration.test.ts"
+      ],
+      "interfaces": {
+        "plan_task": "Task 17; see /Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot/docs/superpowers/plans/2026-10-10-mastra-intelligence-migration.md heading Task 17 for exact Consumes/Produces"
+      },
+      "verification": [
+        "逐条单独执行 bun test server/tests/enterprise/mastra-acceptance.integration.test.ts、bun run typecheck、bun run lint、bun run build、browser suite；每一命令成功后才运行下一条，保存每个 exit/result 与同一 after-hash。非必要 provider/浏览器环境若不可用，报告受限不将 skip 计通过。"
+      ],
+      "status": "pending"
+    }
+  ],
+  "dependency_basis": "Code/API preconditions. M12 history import and M13 learning admin UI both consume verified M11 API and have disjoint owned files; M14 bootstrap/deployment consumes both. M08 waits for M07 solely for end-to-end UI replay verification. No Issue relationships are inferred.",
+  "coverage": {
+    "AC-01": [
+      "M14",
+      "M15",
+      "M16",
+      "M17"
+    ],
+    "AC-02": [
+      "M12",
+      "M14",
+      "M17"
+    ],
+    "AC-03": [
+      "M12",
+      "M17"
+    ],
+    "AC-04": [
+      "M17"
+    ],
+    "AC-05": [
+      "M12",
+      "M14",
+      "M15",
+      "M17"
+    ],
+    "AC-06": [
+      "M17"
+    ],
+    "AC-07": [
+      "M17"
+    ],
+    "AC-08": [
+      "M14",
+      "M17"
+    ],
+    "AC-09": [
+      "M13",
+      "M17"
+    ],
+    "AC-10": [
+      "M12",
+      "M17"
+    ],
+    "AC-11": [
+      "M14",
+      "M16",
+      "M17"
+    ],
+    "AC-12": [
+      "M17"
+    ]
+  }
+}

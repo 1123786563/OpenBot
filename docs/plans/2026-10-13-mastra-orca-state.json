@@ -1,0 +1,139 @@
+{
+  "run_id": "run_59501894b7de",
+  "workspace": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
+  "original_base": "8d6b9bd71a810556ab46b5dffa9f72f0427f5289",
+  "current_head": "b1532dbe4ec4d2e64b58fd31c57a7c1863ffd155",
+  "commit_strategy": "uncommitted checkpoints; no git mutations authorized",
+  "worker_agent": "claude; no Codex child workers",
+  "database_acceptance": "unverified; no DB access or service operations until explicitly isolated test database is ready",
+  "verified": [
+    {
+      "task": "Expert descriptor A Fix1",
+      "test_sha256": "c7bc545c9bd9241186f43710da78d7a9bcfc98d4bce248a045c9b4cd38e262de",
+      "scope": "DB-free",
+      "review": "Spec PASS; Quality PASS"
+    },
+    {
+      "task": "Expert Run admission B",
+      "manifest": ".superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/checkpoints/task-b/task-b-checkpoint-manifest.json",
+      "scope": "DB-free",
+      "review": "Spec PASS; Quality PASS",
+      "low_record_corrections": "new-file patch supplemented; complete non-owned tracked diff independently compared"
+    },
+    {
+      "task": "T2-SSE Runner/SSE admission",
+      "checkpoint": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/checkpoints/task-1-continuation/checkpoint-manifest.json",
+      "validator_report": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-continuation-validator-report.md",
+      "reviewer_report": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-continuation-reviewer-report.md",
+      "scope": "DB-free only; 18 pre-existing stale test failures remain",
+      "review": "Spec PASS; Quality PASS"
+    },
+    {
+      "task": "Remote fail-closed stale test repair",
+      "checkpoint_patch_sha256": "ce31c91b60c04d4deec09fd624c20da11f7288e6987691a93a810f0b5e789d3d",
+      "scope": "DB-free, three test files only",
+      "review": "Spec PASS; Quality PASS; no Critical/High/Medium"
+    },
+    {
+      "task": "T2-GOV run-success Task 1 (adopted concurrent increment)",
+      "after": {
+        "contracts": "2ad9b9967986323a33e5ae542cdf3bfbaca665b816f978c99a5e60f05857fb15",
+        "service": "643ebc89914774d897a606c3b6a00022be9c034878723d630f9e2fbfbdbea75d",
+        "store": "7e31b7047c9b696fa3b2c07862371c98270ed921712a5950b377a8095ce58fe4"
+      },
+      "scope": "DB-free; validator PASS 5/5 (task-1-validator-report-c2.md); reviewer Spec PASS/Quality APPROVED (task-1-reviewer-report-c2.md)"
+    },
+    {
+      "task": "T2-GOV route-rebind Task 1",
+      "files": {
+        "model-route-rebind.ts": "46d92148006376ffed1b34c6e956fe1306c1c6b325f9d01331d1c66277117652",
+        "model-route-rebind.test.ts": "2925dea51e3e10ea1a1e2e990eb5a3a14ea4009a4a090ce9e7aaf39b69db5340"
+      },
+      "scope": "DB-free; validator PASS 5/5; reviewer Spec PASS/Quality APPROVED"
+    },
+    {
+      "task": "T2-GOV built-in-execution Tasks 1-3",
+      "after": {
+        "adapter": "5673e3febb02e95b7c07f2f8b1d82d4215526df9c9e0b877e5439d8e8bc5dddc",
+        "contracts": "bad0b6e589f5db1de35e98a27e17025a7fb51f32c6cdf453d85bc81d89e5d0a0",
+        "service": "9f947a82a496933afd8613409868966503eb40728dcbbafa3b7636fd2bf51cde",
+        "store": "4f83ee73741de8e5d61242acbceea668d78b14b07100da101410dc47ab27a7ed",
+        "run-success-contract.test.ts": "90ceb63c4e20dce09a10a59d69d2d28198a849cc1c2dbcd55f341c36ac324af3",
+        "governed-execution.ts": "e5d074c4",
+        "runner.ts": "1f6d2cd5",
+        "copilot.ts": "05633cd0",
+        "agent-resolver.ts": "70c9deaf",
+        "index.ts": "a6e0c3bf"
+      },
+      "scope": "DB-free; DEVIATION-1 accepted; validator PASS (T1 5/5, T2 6/6, T3 6/6); reviewer Spec PASS/Quality APPROVED all three; GREEN 38/0, 66/0, 286/0"
+    }
+  ],
+  "active": [],
+  "pending_gates": [],
+  "resume": "T2-GOV + repair waves R1-R10 ALL CLOSED. OCR r5 achieved FIRST FULL COVERAGE (46/46 items, 45 findings); R10 fixed its 2 highs (caller-ceiling cap 8M at the single derivation point; invocation-capability FK default-name restored after R6 sed collateral) + all mediums (renewal interval derivation, outcome settlement verification, refused-settlement cancel fallback, post-commit cleanup downgrade, tenancy batching+logging, transient-only 503s, index.ts credential/verify/auth logging) + a dozen lows. Adjudicated invalid: request-context dead-code claim (callers exist). Deferred wave recorded in progress.md R10 entry. REMAINING BLOCKERS: all DB acceptance (isolated DB unprovisioned; once ready apply 0065-0071, run DB-gated suites) + a confirmatory full OCR re-run after R10 is advisable (prior full-coverage report predates R10). Next DAG: T3-CORE -> T2-HEADLESS -> T4-T10.",
+  "research_completed": {
+    "report": ".superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/governed-execution-continuation-map.md",
+    "sha256": "f289daacca041509adbfe32b14fcf358d3773361ac69df8b7ddbcc244cdb2569"
+  },
+  "dependency_ruling": {
+    "report": ".superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/headless-history-dependency-ruling-evidence.md",
+    "sha256": "044ecb1eac2308321a8d955cb48ff161311702cb918337609f711eb1a5337312",
+    "ratified_order": [
+      "T2-SSE",
+      "T2-GOV",
+      "T3-CORE",
+      "T2-HEADLESS"
+    ],
+    "database_gates": "remain unverified; aggregate T2/T3 acceptance preserved"
+  },
+  "sse_implementation": {
+    "task_id": "task_2fd201df3f48",
+    "dispatch_id": "ctx_9c6d2d6b3d99",
+    "status": "verified DB-free checkpoint; parent T2 incomplete",
+    "report": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-continuation-implementer-report.md",
+    "checkpoint": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/checkpoints/task-1-continuation/checkpoint-manifest.json",
+    "checkpoint_patch_sha256": "9df1441c0cd9cbdb082018f24c0847308a2569d5022952cdcda59df399da02b6",
+    "open_review_risks": [
+      "independent code reviewer pending",
+      "18 wider suite failures proven pre-SSE, still migration debt",
+      "legacy Intelligence fallback when enterprise capabilities absent remains a final cutover question",
+      "DB acceptance unverified"
+    ],
+    "validator": {
+      "status": "PASS DB-free",
+      "report": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-continuation-validator-report.md",
+      "sha256": "193681c325af511a12f262fa0b08d218222b60919ecb2e47442ea4e40e33b91d",
+      "tests": "165 pass / 0 fail; exact frozen hashes"
+    },
+    "reviewer": {
+      "status": "Spec PASS; Quality PASS",
+      "report": ".superpowers/sdd/2026-10-12-mastra-t2-runner-sse-admission/reports/task-1-continuation-reviewer-report.md",
+      "sha256": "d9d942794fa633be1f01ffc5b05d130a978c872062943661308f70d1c064390a",
+      "findings": "four Low and four Info, no Critical/High/Medium"
+    }
+  },
+  "governed_architecture_preflight": {
+    "report": ".superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/governed-success-route-architecture.md",
+    "sha256": "70091d421fa9c8151a0bbec9fb39c700d4376e83cdff8b3f115228e1698b3417",
+    "status": "read-only complete; main accepted SSE DB-free checkpoint after report read; planning must correct stream-failure-to-success ambiguity"
+  },
+  "remote_test_repair": {
+    "implementation_task": "task_a9cd65c186bf",
+    "dispatch_id": "ctx_a4526adbed67",
+    "status": "verified DB-free; validator PASS; Spec PASS; Quality PASS",
+    "after_hashes": {
+      "picked": "e5103e1b2705b1225aa050e38653bfc0107804ac3ab45ac66a0d32100c5d17a1",
+      "approval": "c3da17e37bc93b390eaf79a02897f8931130dc15f087027528b5feab1f697f44",
+      "cancellation": "8d3fe2801e4567a10e1820b51ef3f40d98076c9a466e6d6136c5884e01ac1a89"
+    },
+    "patch_sha256": "ce31c91b60c04d4deec09fd624c20da11f7288e6987691a93a810f0b5e789d3d",
+    "validator_report_sha256": "91e78690d3a141101705641be42ef0770b60d2ab85b48ef6c56687cc1e3a65e1",
+    "reviewer_report_sha256": "f27aa255af2e914e3d6984856967de03992ac4d92c45fe5a5c7eb56ae88c8fff",
+    "low_findings": "R1 curated RED digest rather than full stdout; R2 literal refused:true; parked remote-only coverage disclosed"
+  },
+  "per_step_cap_preflight": {
+    "report": ".superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/governed-per-step-cap-ruling.md",
+    "sha256": "360bc24a4ec525d9d410b70ee2a4ee87795d4c81a3a70853567673fc0b082e37",
+    "status": "read-only complete"
+  }
+}

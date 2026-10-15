@@ -1,0 +1,56 @@
+{
+  "root": "R2-2",
+  "source_issues": [
+    "Independent review finding T02-R03 (Medium)"
+  ],
+  "source_of_requirements": "Approved migration design AC-05, enterprise tenancy T1-B/T1-C, and repair plan R2-2; no GitHub Issue was provided.",
+  "depends_on": [
+    "R2-1 verified"
+  ],
+  "dependency_evidence": "The parent Task 2 repair DAG makes channel revocation consistency dependent on verified RLS and role boundaries; R2-1 and cleanup repair R2-1C are verified in this same serial worktree.",
+  "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
+  "worktree": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
+  "commit_policy": "uncommitted checkpoint; no commit or stash",
+  "nodes": [
+    {
+      "id": "R2-2",
+      "source_issues": [
+        "T02-R03"
+      ],
+      "acceptance": [
+        "canReadLegacyChannel determines membership, live-channel state, and optional Bot mapping in one SQL statement/snapshot.",
+        "Missing membership/channel/Bot, deleted channel, malformed input, and database errors deny access.",
+        "Tests assert positive and negative outcomes and inspect the emitted query contract to prove the two-query revocation window is closed.",
+        "Focused Bun tests, scoped strict TypeScript, Biome, and diff-check pass."
+      ],
+      "depends_on": [],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "reviewer_role": "reviewer",
+      "owned_files": [
+        "server/src/enterprise/authz/legacy-channel-scope.ts",
+        "server/tests/enterprise/legacy-channel-scope.test.ts"
+      ],
+      "interfaces": [
+        "canReadLegacyChannel(database, {actorId, channelId, botId?}): Promise<boolean>"
+      ],
+      "verification": [
+        "bun --no-env-file test tests/enterprise/legacy-channel-scope.test.ts",
+        "bun --no-env-file test tests/enterprise/authz.integration.test.ts",
+        "scoped strict TypeScript, Biome, git diff --check"
+      ],
+      "status": "verified"
+    }
+  ],
+  "topological_order": [
+    "R2-2"
+  ],
+  "isolated_checks": {
+    "unique_node_ids": true,
+    "dependencies_resolve": true,
+    "no_self_edges": true,
+    "acyclic": true,
+    "no_orphan_nodes": true,
+    "all_acceptance_mapped": true
+  }
+}

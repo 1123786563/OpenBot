@@ -1,0 +1,51 @@
+{
+  "root": "R2-1C",
+  "source_issues": [
+    "Independent review finding R2-1B-L01 (Low)"
+  ],
+  "source_of_requirements": "Approved R2-1B plan and independent review; no GitHub Issue was provided.",
+  "base": "fbdecc29cd786952c4b496abc68384b31a320b17",
+  "worktree": "/Users/wuyongjun/.codex/worktrees/trpc-intelligence-migration/OpenBot",
+  "commit_policy": "uncommitted checkpoint; no commit or stash",
+  "nodes": [
+    {
+      "id": "R2-1C",
+      "source_issues": [
+        "R2-1B-L01"
+      ],
+      "acceptance": [
+        "A focused test proves every sequential fallback cleanup action runs even if an earlier action rejects, with errors surfaced after all attempts.",
+        "afterAll independently attempts owner restoration, direct grant revocation, and each child-before-parent fixture deletion.",
+        "State flags remain set when their cleanup action fails; close handles are still attempted.",
+        "Assigned offline tests, strict TypeScript, Biome and diff checks pass."
+      ],
+      "depends_on": [],
+      "owner_role": "backend_implementer",
+      "validator_role": "backend_validator",
+      "reviewer_role": "reviewer",
+      "owned_files": [
+        "server/tests/enterprise/tenancy-rls.integration.test.ts"
+      ],
+      "interfaces": [
+        "runCleanupActions(actions: Array<() => Promise<void>>): Promise<void>"
+      ],
+      "verification": [
+        "bun --no-env-file test tests/enterprise/tenancy-rls.integration.test.ts -t 'runs every cleanup action'",
+        "bun --no-env-file test tests/enterprise/tenancy-connections.test.ts tests/enterprise/enterprise-test-database.test.ts tests/enterprise/authz.integration.test.ts",
+        "scoped strict TypeScript, Biome, git diff --check"
+      ],
+      "status": "verified"
+    }
+  ],
+  "topological_order": [
+    "R2-1C"
+  ],
+  "isolated_checks": {
+    "unique_node_ids": true,
+    "dependencies_resolve": true,
+    "no_self_edges": true,
+    "acyclic": true,
+    "no_orphan_nodes": true,
+    "all_acceptance_mapped": true
+  }
+}
