@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #198 L Craft/Workshop（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Craft 的计划任务、子任务与应用连接在创建时固定归属，后�
 
 ## Blocked by
 
-- MT053 Craft 会话、turn、消息与快照的作用域
-- MT041 任务、运行、触发与租约固定原始归属与配置版本
+- #96 Craft 会话、turn、消息与快照的作用域（MT053）
+- #84 任务、运行、触发与租约固定原始归属与配置版本（MT041）
 
 ## Scope boundary
 

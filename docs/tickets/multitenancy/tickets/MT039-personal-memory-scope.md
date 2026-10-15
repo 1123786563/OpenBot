@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #195 I 知识与记忆（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT038 文档上传、删除、导入与重解析的作用域
-- MT010 个人资源权限与显式跨团队分享例外
+- #81 文档上传、删除、导入与重解析的作用域（MT038）
+- #53 个人资源权限与显式跨团队分享例外（MT010）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT083 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应
-- MT076 人员提升、降级与离职按公司授权
+- #126 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应（MT083）
+- #119 人员提升、降级与离职按公司授权（MT076）
 
 ## Scope boundary
 

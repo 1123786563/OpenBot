@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT114 主库子记录回填第一批：Bot、会话、凭据与插件
-- MT115 主库子记录回填第二批：记忆、任务、Craft/Workshop、OpenMuse、账务与策略
-- MT116 知识库侧归属回填与独立进度记录
+- #157 主库子记录回填第一批：Bot、会话、凭据与插件（MT114）
+- #158 主库子记录回填第二批：记忆、任务、Craft/Workshop、OpenMuse、账务与策略（MT115）
+- #159 知识库侧归属回填与独立进度记录（MT116）
 
 ## Scope boundary
 

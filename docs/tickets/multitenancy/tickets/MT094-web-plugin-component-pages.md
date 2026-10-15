@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT093 Web 知识管理与文档处理页面接入范围
-- MT033 技能与组件发布、组件数据函数的作用域
+- #136 Web 知识管理与文档处理页面接入范围（MT093）
+- #76 技能与组件发布、组件数据函数的作用域（MT033）
 
 ## Scope boundary
 

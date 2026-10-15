@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #205 S 观测（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ trace、日志与业务事件携带真实公司、团队与执行归属，使共
 
 ## Blocked by
 
-- MT050 Go Runtime、supervisor 与原生 agent 适配器的归属传递
-- MT065 OpenMuse 活动流与通知的归属与正文过滤
+- #93 Go Runtime、supervisor 与原生 agent 适配器的归属传递（MT050）
+- #108 OpenMuse 活动流与通知的归属与正文过滤（MT065）
 
 ## Scope boundary
 

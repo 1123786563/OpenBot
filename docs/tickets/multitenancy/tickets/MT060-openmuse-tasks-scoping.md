@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #199 M OpenMuse 个人域（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ OpenMuse 的任务、计划、监控与租约按公司团队用户归属；同�
 
 ## Blocked by
 
-- MT059 私有 OpenMuse Bot 按公司团队用户幂等创建
-- MT041 任务、运行、触发与租约固定原始归属与配置版本
+- #102 私有 OpenMuse Bot 按公司团队用户幂等创建（MT059）
+- #84 任务、运行、触发与租约固定原始归属与配置版本（MT041）
 
 ## Scope boundary
 

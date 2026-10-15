@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #191 E Bot（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT017 Bot 发布受众与旧 public 语义的显式迁移
-- MT009 团队公共资源动作规则（可用不可改）
+- #60 Bot 发布受众与旧 public 语义的显式迁移（MT017）
+- #52 团队公共资源动作规则（可用不可改）（MT009）
 
 ## Scope boundary
 

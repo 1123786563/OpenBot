@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Worker 与后台程序装配不含启动期默认公司；每项执行按持久�
 
 ## Blocked by
 
-- MT129 多租户启动就绪强制与缺口阻断
-- MT042 全局扫描只有调度权，每项执行重建业务作用域
+- #172 多租户启动就绪强制与缺口阻断（MT129）
+- #85 全局扫描只有调度权，每项执行重建业务作用域（MT042）
 
 ## Scope boundary
 

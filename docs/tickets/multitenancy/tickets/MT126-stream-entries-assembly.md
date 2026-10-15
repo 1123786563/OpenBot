@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ SSE、WebSocket 与长连接入口在建连、续订与重连时都建立并校�
 
 ## Blocked by
 
-- MT123 移除启动期默认公司状态并保持 API 兼容
-- MT025 事件流订阅授权与外部线程映射归属
+- #166 移除启动期默认公司状态并保持 API 兼容（MT123）
+- #68 事件流订阅授权与外部线程映射归属（MT025）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT135 覆盖证据：后台任务与执行隔离
-- MT058 分享令牌改为有效分享授权（受众、有效期、撤销）
-- MT068 清理、保留与恢复带可核验归属与不可伪造 manifest
+- #178 覆盖证据：后台任务与执行隔离（MT135）
+- #101 分享令牌改为有效分享授权（受众、有效期、撤销）（MT058）
+- #111 清理、保留与恢复带可核验归属与不可伪造 manifest（MT068）
 
 ## Scope boundary
 

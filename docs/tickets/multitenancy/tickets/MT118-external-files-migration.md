@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT117 跨库一致性校验、断点续跑与回填报告
-- MT055 产物与对象存储路径按归属隔离
-- MT061 OpenMuse 文件、PDF 检视/填写/传输与个人工作区的作用域
+- #160 跨库一致性校验、断点续跑与回填报告（MT117）
+- #98 产物与对象存储路径按归属隔离（MT055）
+- #104 OpenMuse 文件、PDF 检视/填写/传输与个人工作区的作用域（MT061）
 
 ## Scope boundary
 

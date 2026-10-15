@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT131 验收 harness 与独立测试环境
-- MT128 机器回调与个人 Bifrost 直连路径例外登记闭合
+- #174 验收 harness 与独立测试环境（MT131）
+- #171 机器回调与个人 Bifrost 直连路径例外登记闭合（MT128）
 
 ## Scope boundary
 

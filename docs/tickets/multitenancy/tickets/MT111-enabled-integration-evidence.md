@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #205 S 观测（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT109 用量事件的账户区分与脱敏回归
-- MT072 支付回调、订阅激活、outbox 与对账从原记录解析付款账户
+- #152 用量事件的账户区分与脱敏回归（MT109）
+- #115 支付回调、订阅激活、outbox 与对账从原记录解析付款账户（MT072）
 
 ## Scope boundary
 

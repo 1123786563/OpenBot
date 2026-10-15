@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT132 身份矩阵 runner 与逐入口覆盖状态输出
-- MT019 Bot 生命周期动作逐项授权（复制/隐藏/重置/删除/模板更新/远端回调）
-- MT024 附件暂存上传、绑定、下载签发与清理的归属
+- #175 身份矩阵 runner 与逐入口覆盖状态输出（MT132）
+- #62 Bot 生命周期动作逐项授权（复制/隐藏/重置/删除/模板更新/远端回调）（MT019）
+- #67 附件暂存上传、绑定、下载签发与清理的归属（MT024）
 
 ## Scope boundary
 

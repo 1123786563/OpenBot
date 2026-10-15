@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #204 R Canonical 移动端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT103 移动端 submodule 基线核对与可审查差异报告
-- MT083 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应
+- #146 移动端 submodule 基线核对与可审查差异报告（MT103）
+- #126 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应（MT083）
 
 ## Scope boundary
 

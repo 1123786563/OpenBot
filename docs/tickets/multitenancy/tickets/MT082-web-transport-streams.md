@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT081 Web REST 与上传下载签发统一附加当前范围
-- MT025 事件流订阅授权与外部线程映射归属
+- #124 Web REST 与上传下载签发统一附加当前范围（MT081）
+- #68 事件流订阅授权与外部线程映射归属（MT025）
 
 ## Scope boundary
 

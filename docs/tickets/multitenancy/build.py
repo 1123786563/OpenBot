@@ -163,7 +163,9 @@ multi_dep = sorted(((len(t["deps"]), t["id"]) for t in tickets), reverse=True)[:
 
 # --- emit ------------------------------------------------------------------
 def body(t):
-    lines = ["## Parent", "", f"Spec: {SPEC_ISSUE} — 公司与团队多租户整改（全功能隔离后统一上线）", "",
+    epic = EPICS.get(t["g"])
+    parent_extra = (f"\n分组 Epic: #{epic} {t['g']}（本 Ticket 是其 sub-issue）" if epic else "")
+    lines = ["## Parent", "", f"Spec: {SPEC_ISSUE} — 公司与团队多租户整改（全功能隔离后统一上线）" + parent_extra, "",
              "## What to build", "", t["what"], "", "## Acceptance criteria", ""]
     lines += [f"- [ ] {c}" for c in t["crit"]]
     lines += ["", "## Blocked by", ""]
@@ -188,6 +190,8 @@ def body(t):
 PUBLISHED = {}
 if (HERE / "published.json").exists():
     PUBLISHED = json.loads((HERE / "published.json").read_text())
+EPICS = json.loads((HERE / "epics.json").read_text()) if (HERE / "epics.json").exists() else {}
+EPIC_URL = {g: f"https://github.com/1123786563/OpenBot/issues/{n}" for g, n in EPICS.items()}
 
 tdir = HERE / "tickets"
 tdir.mkdir(exist_ok=True)
@@ -209,7 +213,9 @@ manifest = {
         f"{PLAN_FOLDER}/00-master.md",
     ],
     "prepared_date": "2026-10-15",
-    "status": "draft-awaiting-breakdown-approval",
+    "status": "published" if PUBLISHED and all(t["id"] in PUBLISHED for t in tickets) else "draft-awaiting-breakdown-approval",
+    "hierarchy": "Spec #6 -> 20 group epics (native sub-issues) -> 143 tickets; blocking edges are text in each ticket body.",
+    "epics": {g: {"issue": n, "url": f"https://github.com/1123786563/OpenBot/issues/{n}"} for g, n in EPICS.items()},
     "granularity_rule": "每个 Ticket 必须能在单个 code agent 上下文内完成，使某个 agent 失败时另一个 agent 能很快接手；多依赖与多目标 Ticket 已进一步拆分。",
     "sequencing": "宽范围机械重构按 expand → migrate（按 blast radius 分批）→ contract 排序；每批一个 Ticket，保持每个 Ticket 是可独立验证的业务行为切片。",
     "ticket_count": len(tickets),
@@ -232,7 +238,9 @@ manifest = {
     "tickets": [
         {"id": t["id"], "slug": t["slug"], "group": t["g"], "title": t["title"],
          "depends_on": t["deps"], "acceptance": t["acc"], "split_from": t.get("split_from"),
-         "issue_number": PUBLISHED.get(t["id"]), "status": "pending"}
+         "issue_number": PUBLISHED.get(t["id"]),
+         "issue_url": f"https://github.com/1123786563/OpenBot/issues/{PUBLISHED[t['id']]}" if t["id"] in PUBLISHED else None,
+         "epic_issue": EPICS.get(t["g"]), "status": "pending"}
         for t in tickets
     ],
 }

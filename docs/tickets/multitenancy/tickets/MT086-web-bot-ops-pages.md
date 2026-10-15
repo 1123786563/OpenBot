@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Bot 的职责、电脑与审批页面按范围工作，撤权后管理入口消�
 
 ## Blocked by
 
-- MT085 Web Bot 共享与发布页按服务端能力展示
-- MT046 电脑与浏览器实例分配、远程屏幕与人工接管授权
-- MT034 共享账号审批绑定对象、参数摘要与归属
+- #128 Web Bot 共享与发布页按服务端能力展示（MT085）
+- #89 电脑与浏览器实例分配、远程屏幕与人工接管授权（MT046）
+- #77 共享账号审批绑定对象、参数摘要与归属（MT034）
 
 ## Scope boundary
 

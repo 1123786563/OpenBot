@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #189 C 资源授权策略（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT002 多公司多团队测试身份夹具与受限角色数据库 harness
-- MT008 资源可见性属性与 workspace-v1 策略版本（expand）
+- #45 多公司多团队测试身份夹具与受限角色数据库 harness（MT002）
+- #51 资源可见性属性与 workspace-v1 策略版本（expand）（MT008）
 
 ## Scope boundary
 

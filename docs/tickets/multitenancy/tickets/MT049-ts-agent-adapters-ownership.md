@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #197 K 执行隔离（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT048 运行协议环节的归属：委托、能力、步骤、事件、恢复与取消
+- #91 运行协议环节的归属：委托、能力、步骤、事件、恢复与取消（MT048）
 
 ## Scope boundary
 

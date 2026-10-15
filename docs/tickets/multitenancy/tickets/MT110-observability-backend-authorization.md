@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #205 S 观测（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT109 用量事件的账户区分与脱敏回归
-- MT078 业务审计与身份审计分域，计费管理需明确授权
+- #152 用量事件的账户区分与脱敏回归（MT109）
+- #121 业务审计与身份审计分域，计费管理需明确授权（MT078）
 
 ## Scope boundary
 

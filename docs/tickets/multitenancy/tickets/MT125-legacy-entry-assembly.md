@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT124 企业入口装配接入统一上下文与授权
-- MT066 语音、听写与移动聚合接口只返回当前范围
+- #167 企业入口装配接入统一上下文与授权（MT124）
+- #109 语音、听写与移动聚合接口只返回当前范围（MT066）
 
 ## Scope boundary
 

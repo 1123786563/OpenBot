@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Craft 与 Workshop 的列表、详情、产物与执行页面按范围工作；�
 
 ## Blocked by
 
-- MT083 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应
-- MT057 Workshop 会话、执行、产物与沙箱实例关联的作用域
+- #126 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应（MT083）
+- #100 Workshop 会话、执行、产物与沙箱实例关联的作用域（MT057）
 
 ## Scope boundary
 

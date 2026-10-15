@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT132 身份矩阵 runner 与逐入口覆盖状态输出
-- MT073 账务可见性：付款人订单、公司财务授权与团队用量视图
+- #175 身份矩阵 runner 与逐入口覆盖状态输出（MT132）
+- #116 账务可见性：付款人订单、公司财务授权与团队用量视图（MT073）
 
 ## Scope boundary
 

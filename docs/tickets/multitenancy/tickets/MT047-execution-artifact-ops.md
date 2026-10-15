@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #197 K 执行隔离（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT046 电脑与浏览器实例分配、远程屏幕与人工接管授权
+- #89 电脑与浏览器实例分配、远程屏幕与人工接管授权（MT046）
 
 ## Scope boundary
 

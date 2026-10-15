@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #192 F 会话（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT022 消息读写、重命名、归档与历史 replay 的授权
-- MT018 使用团队公共 Bot 时保持使用者自己的会话与凭据
+- #65 消息读写、重命名、归档与历史 replay 的授权（MT022）
+- #61 使用团队公共 Bot 时保持使用者自己的会话与凭据（MT018）
 
 ## Scope boundary
 

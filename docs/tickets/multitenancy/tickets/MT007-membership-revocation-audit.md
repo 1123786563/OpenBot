@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #188 B 成员与作用域（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT005 团队资格进入集中授权 seam 与事务内重验
-- MT006 公司与团队列表、选择与管理入口
+- #48 团队资格进入集中授权 seam 与事务内重验（MT005）
+- #49 公司与团队列表、选择与管理入口（MT006）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT082 Web SSE 与 WebSocket 建连、续订携带范围并终止旧连接
+- #125 Web SSE 与 WebSocket 建连、续订携带范围并终止旧连接（MT082）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #198 L Craft/Workshop（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Craft 的会话、turn、消息与快照按公司与团队归属；无权用户�
 
 ## Blocked by
 
-- MT022 消息读写、重命名、归档与历史 replay 的授权
-- MT046 电脑与浏览器实例分配、远程屏幕与人工接管授权
+- #65 消息读写、重命名、归档与历史 replay 的授权（MT022）
+- #89 电脑与浏览器实例分配、远程屏幕与人工接管授权（MT046）
 
 ## Scope boundary
 

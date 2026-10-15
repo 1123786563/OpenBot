@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #199 M OpenMuse 个人域（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ OpenMuse 的文件、PDF 检视、表单填写与传输，以及个人工作区�
 
 ## Blocked by
 
-- MT060 OpenMuse 任务、计划、监控与租约的作用域
-- MT055 产物与对象存储路径按归属隔离
+- #103 OpenMuse 任务、计划、监控与租约的作用域（MT060）
+- #98 产物与对象存储路径按归属隔离（MT055）
 
 ## Scope boundary
 

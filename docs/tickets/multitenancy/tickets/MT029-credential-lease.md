@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #193 G 身份与凭据（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT027 连接凭据与站点登录归属，可用不等于可读明文
-- MT018 使用团队公共 Bot 时保持使用者自己的会话与凭据
+- #70 连接凭据与站点登录归属，可用不等于可读明文（MT027）
+- #61 使用团队公共 Bot 时保持使用者自己的会话与凭据（MT018）
 
 ## Scope boundary
 
