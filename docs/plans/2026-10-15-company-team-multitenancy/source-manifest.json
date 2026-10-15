@@ -6,8 +6,8 @@
   "files": [
     {
       "path": "CONTEXT.md",
-      "sha256": "24a2fc6ac532f0805720930aa7b0742d0cd371d261349c38824c5eaa72dbe01e",
-      "bytes": 6073
+      "sha256": "46341ddfedeecae01039eab6996bedcbacde4b7279ab52012e80db39257faf09",
+      "bytes": 6346
     },
     {
       "path": "docs/specs/2026-10-14-company-team-multitenancy-design.md",
@@ -16,8 +16,8 @@
     },
     {
       "path": "docs/adr/0002-per-user-bot-model-access.md",
-      "sha256": "9a5a8444956f549e0884e25192515512046bb25ed0d2f41f14fb75b5ea6b723b",
-      "bytes": 1236
+      "sha256": "1394697839c1d05e41d6a34818f04e447262f4acdedff7a521eeadceb6ecafe9",
+      "bytes": 1472
     },
     {
       "path": "docs/adr/0003-bifrost-openbot-credit-admission.md",
@@ -31,8 +31,8 @@
     },
     {
       "path": "docs/specs/2026-10-14-bifrost-integration-design.md",
-      "sha256": "4743f80ab46f669b8eaf165ef77d6bb02bf2616b28c99d0ae7f329f6f9703053",
-      "bytes": 11532
+      "sha256": "3058e449835c07e2eea6ee579b1b45cfcbb944addad9aa03a6c71089eebcdc00",
+      "bytes": 26503
     },
     {
       "path": "docs/specs/2026-10-14-opik-integration-design.md",
@@ -43,5 +43,11 @@
   "unrelated_changes_excluded": [
     "tests/e2e/bot-chat.e2e.ts"
   ],
-  "scope": "Planning documents only; no commits, dependencies, database changes or product code."
+  "scope": "Planning documents only; no commits, dependencies, database changes or product code.",
+  "synced_to_main": {
+    "date": "2026-10-15",
+    "main_head": "4dd1922dd0073c2f349bc8c336ab649eaa9ca804",
+    "merge_commit": "094f458a72cfa8b264535d0a6db8b20b0589245b",
+    "note": "CONTEXT.md、docs/adr/0002、docs/specs/2026-10-14-bifrost-integration-design.md 在合并冲突中采用 main 版本（更完整演进版）；其余文件未变。main 与 origin/main(e01ae5fa) 已分叉，实施前需确认目标 main。"
+  }
 }
