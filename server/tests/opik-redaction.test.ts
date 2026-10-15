@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  OMIT_COPY_KEY,
+  type OmitReason,
+  REDACTION_POLICY_VERSION,
+  type SafeText,
+  type SafeValue,
+} from "../../shared/ai-observability";
+import {
   DEFAULT_METADATA_ALLOWLIST,
   MAX_SAFE_RECORD_DEPTH,
   MAX_SAFE_RECORD_KEYS,
@@ -11,13 +18,6 @@ import {
   projectSafeText,
   projectSafeUrl,
 } from "../src/ai-observability/redaction";
-import {
-  OMIT_COPY_KEY,
-  REDACTION_POLICY_VERSION,
-  type OmitReason,
-  type SafeText,
-  type SafeValue,
-} from "../../shared/ai-observability";
 
 /**
  * Canary discipline: the assertion is always "the canary is NOT in the output", never "the canary
@@ -154,6 +154,9 @@ describe("projectSafeText", () => {
         );
         // A well-formed string round-trips through its own UTF-8 bytes unchanged.
         expect(new TextDecoder().decode(bytes), `pad=${pad}`).toBe(result.text);
+        expect(result.originalBytes, `pad=${pad}`).toBe(
+          new TextEncoder().encode(input).length,
+        );
       }
     }
   });
@@ -165,6 +168,8 @@ describe("deny patterns hold on the reviewed-free-text path", () => {
     const placements = [
       pem, // string start
       `config:\n${pem}`, // after a newline
+      `deploy key:${pem}`, // after a colon
+      `deploy key ${pem}`, // after a space
       `value="${pem}"`, // after a quote
       `key${pem}`, // glued to a word character (the only form the old anchor caught)
     ];
@@ -172,6 +177,8 @@ describe("deny patterns hold on the reviewed-free-text path", () => {
       const result = projectSafeText(text, { allowFreeText: true });
       expect(result.state).toBe("omitted");
       expect(JSON.stringify(result)).not.toContain("OPENSSH PRIVATE KEY");
+      // The base64 body is the credential; denying only the header still leaks the key.
+      expect(JSON.stringify(result)).not.toContain("b3BlbnNzaC1rZXktdjE");
     }
   });
 
@@ -203,10 +210,30 @@ describe("deny patterns hold on the reviewed-free-text path", () => {
     expect(JSON.stringify(labelled)).not.toContain(CANARIES.awsSecret);
   });
 
+  test("an uppercase env-dump label is still denied", () => {
+    const result = projectSafeText(
+      `AWS_SECRET_ACCESS_KEY=${CANARIES.awsSecret}`,
+      { allowFreeText: true },
+    );
+    expect(result.state).toBe("omitted");
+    expect(JSON.stringify(result)).not.toContain(CANARIES.awsSecret);
+  });
+
+  test("a bare 40-char token without any context stays projected (accepted precision trade-off)", () => {
+    // Rejecting every bare 40-char base64 run would flag every hash, and unreviewed text is
+    // metrics-only anyway (`allowFreeText` is the gate). Reviewed text carries its label.
+    const input = `digest ${CANARIES.awsSecret}`;
+    expect(projectSafeText(input, { allowFreeText: true })).toEqual({
+      state: "projected",
+      text: input,
+    });
+  });
+
   test("a PEM block never reaches the default metadata path", () => {
     const result = projectSafeMetadata({ model: CANARIES.pemKey });
     expect(result.model?.state).toBe("omitted");
     expect(JSON.stringify(result)).not.toContain("OPENSSH PRIVATE KEY");
+    expect(JSON.stringify(result)).not.toContain("b3BlbnNzaC1rZXktdjE");
   });
 });
 
@@ -293,6 +320,16 @@ describe("projectSafeRecord", () => {
     const result = projectSafeRecord({ model: CANARIES.bearer }, ["model"]);
     expect(result.model.state).toBe("omitted");
     expect(values(result)).not.toContain("sk-live-9f3a7c21e8b44d0f");
+  });
+
+  test("an inherited property never produces a phantom entry", () => {
+    // Own keys only on the source side too: a prototype chain member named by the allowlist
+    // must not fabricate data the record never carried.
+    const source = Object.create({ inherited: "phantom-value" });
+    source.model = "gpt-4o";
+    const result = projectSafeRecord(source, ["inherited", "model"]);
+    expect(Object.keys(result).sort()).toEqual(["model"]);
+    expect(values(result)).not.toContain("phantom-value");
   });
 
   test("nested objects are projected to the depth limit and then omitted", () => {
