@@ -17,6 +17,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { BaseEvent } from "@ag-ui/client";
+import { context, trace } from "@opentelemetry/api";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { Subject } from "rxjs";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
@@ -116,6 +119,34 @@ const CANARY_GH = `ghp_${"c".repeat(24)}`;
 
 /** A plain structural AG-UI event — exactly the public fields, nothing more. */
 const ev = (event: Record<string, unknown>) => event as unknown as BaseEvent;
+
+/** A provider whose only processor hands ended spans to the test. */
+function recordedSpansForBypass(): {
+  spans: ReadableSpan[];
+  stop: () => Promise<void>;
+} {
+  const spans: ReadableSpan[] = [];
+  const provider = new NodeTracerProvider({
+    spanProcessors: [
+      {
+        onStart: () => {},
+        onEnd: (span) => {
+          spans.push(span);
+        },
+        shutdown: () => Promise.resolve(),
+        forceFlush: () => Promise.resolve(),
+      },
+    ],
+  });
+  provider.register();
+  return {
+    spans,
+    stop: async () => {
+      await provider.shutdown();
+      trace.disable();
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // The pure determination: step kind, three-way execution state, terminal state
@@ -914,6 +945,231 @@ describe("the knowledge retrieval observation seam", () => {
     try {
       const outcome = await retriever.retrieve("anything");
       expect(outcome.status).toBe("miss");
+    } finally {
+      setKnowledgeRetrievalObserver(undefined);
+      server.stop(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T15 review (a)–(d), folded into this ticket: teardown leak, out-of-order
+// double record, the tap error path, and the duplicated kbIds extraction.
+// ---------------------------------------------------------------------------
+
+describe("the observation bypass fixes (T15 review)", () => {
+  test("(c) a stream error closes pending cells terminal", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const subject = new Subject<BaseEvent>();
+    const subscription = toolStepObservationForTests
+      .observeStream(subject)
+      .subscribe({ error: () => undefined });
+    try {
+      subject.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "err-tap-1",
+          toolCallName: "host_read",
+        }),
+      );
+      subject.error(new Error("pipeline broke"));
+    } finally {
+      subscription.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(1);
+    expect(facts[0].window).toBe("terminal");
+    expect(facts[0].executionObserved).toBe(false);
+    expect(toolStepExecutionState(facts[0])).toBe("unobserved");
+  });
+
+  test("(a) a teardown without a terminal event still retires open cells", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const subject = new Subject<BaseEvent>();
+    const subscription = toolStepObservationForTests
+      .observeStream(subject)
+      .subscribe();
+    subject.next(
+      ev({
+        type: "TOOL_CALL_START",
+        toolCallId: "teardown-1",
+        toolCallName: "host_read",
+      }),
+    );
+    // The consumer walks away mid-run: no complete, no error, just unsubscribe.
+    subscription.unsubscribe();
+    // Late events on a torn-down stream reach nobody and must not resurrect a cell.
+    subject.next(
+      ev({ type: "TOOL_CALL_ARGS", toolCallId: "teardown-1", delta: "{}" }),
+    );
+    setBuiltinToolStepObserver(undefined);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].toolCallId).toBe("teardown-1");
+    expect(facts[0].window).toBe("terminal");
+    expect(facts[0].input).toBeNull();
+    expect(toolStepExecutionState(facts[0])).toBe("unobserved");
+  });
+
+  test("(a) many torn-down streams leave no cells behind (the leak itself)", async () => {
+    for (let round = 0; round < 50; round += 1) {
+      const subject = new Subject<BaseEvent>();
+      const subscription = toolStepObservationForTests
+        .observeStream(subject)
+        .subscribe();
+      subject.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: `leak-${round}`,
+          toolCallName: "host_read",
+        }),
+      );
+      subscription.unsubscribe();
+    }
+    // A FRESH stream reusing one of those ids must see a fresh cell, not the
+    // stale one a leak would have left open: the proposal lands and completes.
+    const facts = await runStream([
+      ev({
+        type: "TOOL_CALL_START",
+        toolCallId: "leak-49",
+        toolCallName: "host_read",
+      }),
+      ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
+    ]);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].proposalObserved).toBe(true);
+  });
+
+  test("(b) a late proposal for an already-executed call records exactly once", async () => {
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => facts.push(fact));
+    const subject = new Subject<BaseEvent>();
+    const subscription = toolStepObservationForTests
+      .observeStream(subject)
+      .subscribe();
+    try {
+      subject.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "ooo-1",
+          toolCallName: "host_read",
+        }),
+      );
+      await toolStepObservationForTests.observeExecution(
+        "host_read",
+        "ooo-1",
+        async () => "42",
+      );
+      // The out-of-order window: the proposal event arrives AFTER the execution
+      // settled. It must not open a second cell for the same call.
+      subject.next(
+        ev({
+          type: "TOOL_CALL_START",
+          toolCallId: "ooo-1",
+          toolCallName: "host_read",
+        }),
+      );
+      subject.next(ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }));
+      subject.complete();
+    } finally {
+      subscription.unsubscribe();
+      setBuiltinToolStepObserver(undefined);
+    }
+    expect(facts).toHaveLength(1);
+    expect(facts[0].executionObserved).toBe(true);
+    expect(toolStepExecutionState(facts[0])).toBe("executed");
+  });
+
+  test("the fact carries the run's trace coordinates captured at open time", async () => {
+    const { spans, stop } = recordedSpansForBypass();
+    try {
+      const facts: BuiltinToolStepFact[] = [];
+      setBuiltinToolStepObserver((fact) => facts.push(fact));
+      const subject = new Subject<BaseEvent>();
+      const subscription = toolStepObservationForTests
+        .observeStream(subject)
+        .subscribe();
+      try {
+        const parent = trace.getTracer("test").startSpan("run request");
+        await context.with(trace.setSpan(context.active(), parent), async () => {
+          subject.next(
+            ev({
+              type: "TOOL_CALL_START",
+              toolCallId: "trace-1",
+              toolCallName: "host_read",
+            }),
+          );
+          subject.next(
+            ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
+          );
+        });
+        parent.end();
+      } finally {
+        subscription.unsubscribe();
+        setBuiltinToolStepObserver(undefined);
+      }
+      expect(facts).toHaveLength(1);
+      const parent = spans.find((span) => span.name === "run request");
+      expect(parent).toBeDefined();
+      expect(facts[0].trace).toEqual({
+        traceId: parent?.spanContext().traceId,
+        spanId: parent?.spanContext().spanId,
+      });
+    } finally {
+      await stop();
+    }
+  });
+
+  test("(d) the observer reads the same effective kb list the retrieval used", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                chunk_id: "chunk-1",
+                doc_id: "doc-1",
+                content: "c",
+                score: 0.9,
+                source: "s.md",
+              },
+            ],
+            count: 1,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+    const config = {
+      baseUrl: `http://127.0.0.1:${server.port}`,
+      apiKey: "secret",
+      timeoutMs: 10_000,
+    };
+    const observations: KnowledgeRetrievalObservation[] = [];
+    setKnowledgeRetrievalObserver((observation) =>
+      observations.push(observation),
+    );
+    const options = {
+      kbIds: ["configured"],
+      topK: 5,
+      timeoutMs: 1500,
+      scoreThreshold: 0,
+    };
+    const retriever = createKnowledgeRetriever(
+      config,
+      options,
+      createKnowledgeCircuit(),
+    );
+    try {
+      await retriever.retrieve("q", { kbIds: ["overridden"] });
+      await retriever.retrieve("q", { kbIds: [] });
+      await retriever.retrieve("q");
+      expect(observations.map((observation) => observation.kbIds)).toEqual([
+        ["overridden"],
+        ["configured"],
+        ["configured"],
+      ]);
     } finally {
       setKnowledgeRetrievalObserver(undefined);
       server.stop(true);

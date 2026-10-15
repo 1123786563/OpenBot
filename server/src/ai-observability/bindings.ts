@@ -89,6 +89,25 @@ export type RunBindingStore = {
    * zero, never a guess.
    */
   countUnreconciled(scope: ObservationScope): Promise<number>;
+  /**
+   * One exact attempt inside the caller's scope — the unambiguous run lookup the id
+   * mapping's query seam reads (Issue #23/T17): run AND attempt, never a guess about
+   * which attempt of several a reference meant.
+   */
+  attempt(
+    scope: ObservationScope,
+    runId: string,
+    attemptId: string,
+  ): Promise<RunBinding | null>;
+  /**
+   * The attempt an upstream trace id maps back to, inside the caller's scope — the
+   * reverse direction of the run↔trace mapping. Another scope's trace id is simply
+   * not found.
+   */
+  byOpikTrace(
+    scope: ObservationScope,
+    opikTraceId: string,
+  ): Promise<RunBinding | null>;
 };
 
 const capabilities: readonly AiObservationBindingCapability[] = [
@@ -290,6 +309,33 @@ export function createRunBindingStore(db: Database): RunBindingStore {
           ),
         );
       return rows[0]?.value ?? 0;
+    },
+
+    async attempt(scope, runId, attemptId) {
+      assertObservationScope(scope);
+      reference(runId);
+      reference(attemptId);
+      const rows = await db
+        .select()
+        .from(aiObservationBindings)
+        .where(byAuthoritativeKey(scope, runId, attemptId));
+      return rows[0] ?? null;
+    },
+
+    async byOpikTrace(scope, opikTraceId) {
+      assertObservationScope(scope);
+      reference(opikTraceId);
+      const rows = await db
+        .select()
+        .from(aiObservationBindings)
+        .where(
+          and(
+            eq(aiObservationBindings.scopeKey, scope.key),
+            eq(aiObservationBindings.opikTraceId, opikTraceId),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
     },
   };
 }

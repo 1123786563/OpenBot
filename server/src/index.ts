@@ -62,9 +62,11 @@ import {
   createWakeUpStore,
   wakeUpTools,
 } from "./agents/wake-up";
+import { createRunBindingStore } from "./ai-observability/bindings";
 import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
 import { createOpikHealthService } from "./ai-observability/health";
+import { createIdLinkStore } from "./ai-observability/id-links";
 import { createModelSpanRecorder } from "./ai-observability/model-span";
 import { createToolStepRecorder } from "./ai-observability/tool-steps";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
@@ -5147,6 +5149,16 @@ if (opikConfigFromEnv(process.env).enabled) {
  */
 const opikToolSteps = createToolStepRecorder({
   healthService: opikHealthService,
+  /*
+   * The id-mapping half (Issue #23/T17): a tool step whose span adopted an explicit
+   * upstream id is linked after the write lands, chain-checked against the run
+   * binding's trace. Inert today for the same reason the span writes are — facts
+   * arrive scope-less until the run-association ticket threads one — and activates
+   * with zero changes when they do.
+   */
+  idLinks: createIdLinkStore(database, {
+    bindings: createRunBindingStore(database),
+  }),
 });
 if (opikConfigFromEnv(process.env).enabled) {
   setBuiltinToolStepObserver((fact) =>
@@ -5162,6 +5174,11 @@ if (opikConfigFromEnv(process.env).enabled) {
       window: fact.window,
       input: fact.input,
       output: fact.output,
+      // The run's W3C chain captured at cell open (Issue #23/T17): the step span
+      // joins the cross-service trace instead of rooting a fresh random one.
+      ...(fact.trace
+        ? { trace: { traceId: fact.trace.traceId, parentSpanId: fact.trace.spanId } }
+        : {}),
     }),
   );
   setKnowledgeRetrievalObserver((observed) =>
@@ -5170,6 +5187,14 @@ if (opikConfigFromEnv(process.env).enabled) {
       endedAt: observed.endedAt,
       query: observed.query,
       kbIds: observed.kbIds,
+      ...(observed.trace
+        ? {
+            trace: {
+              traceId: observed.trace.traceId,
+              parentSpanId: observed.trace.spanId,
+            },
+          }
+        : {}),
       outcome:
         observed.outcome.status === "hit"
           ? {

@@ -407,7 +407,13 @@ export async function traceDeploymentToolCall<T>(
       },
     });
   try {
-    const result = await exec();
+    // The tool span is ACTIVE while the call runs, so an outbound dial inside it
+    // (the deployment tool calling back through the server, Issue #23/T17)
+    // injects this span as the next hop's parent — the chain's tool receipt.
+    const result = await context.with(
+      trace.setSpan(context.active(), span),
+      () => exec(),
+    );
     span.setAttribute("openbot.span.state", "completed");
     return result;
   } catch (error) {

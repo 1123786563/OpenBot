@@ -75,6 +75,21 @@ export function currentTraceId(): string | undefined {
     : undefined;
 }
 
+/**
+ * The active span's full W3C coordinates — trace id AND span id — or undefined when
+ * nothing valid is active. The span id is what an observation captures so a step span
+ * recorded after the fact can still parent under the span whose context it ran in
+ * (the cross-service chain's server-side half, Issue #23/T17).
+ */
+export function currentTraceContext():
+  | { traceId: string; spanId: string }
+  | undefined {
+  const spanContext = trace.getSpan(context.active())?.spanContext();
+  return spanContext && trace.isSpanContextValid(spanContext)
+    ? { traceId: spanContext.traceId, spanId: spanContext.spanId }
+    : undefined;
+}
+
 /** The provider this process registered, the idempotence guard for init/shutdown. */
 let provider: NodeTracerProvider | undefined;
 /** Whether this process ever installed the API globals (propagator, context manager). */
