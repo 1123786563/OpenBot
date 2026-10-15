@@ -12,6 +12,7 @@
  */
 
 import { getLogger } from "../../../shared/logger";
+import { currentTraceContext } from "../../../shared/trace";
 import { markUntrusted } from "../untrusted-content";
 import { createKnowledgeCircuit, type KnowledgeCircuit } from "./circuit";
 import { KnowledgeServiceError, knowledgeRequest } from "./client";
@@ -135,7 +136,25 @@ export type KnowledgeRetrievalObservation = {
   outcome: RetrievalOutcome;
   startedAt: Date;
   endedAt: Date;
+  /**
+   * 检索发起时的 W3C trace 坐标（Issue #23/T17）：步骤 span 事后记录仍能挂回
+   * 请求链。无有效活动 span 时为 null。
+   */
+  trace: { traceId: string; spanId: string } | null;
 };
+
+/**
+ * 本次实际生效的 kb 列表（T15 评审 (d)：override 非空优先，否则配置档默认）——
+ * 检索本体与观测旁路读同一处，不再两份逻辑各自漂移。
+ */
+function effectiveKbIds(
+  options: RetrievalOptions,
+  overrides?: RetrieveOverrides,
+): string[] {
+  return overrides?.kbIds && overrides.kbIds.length > 0
+    ? overrides.kbIds
+    : options.kbIds;
+}
 
 /**
  * 检索观测旁路，沿 copilot.ts setBuiltinModelSpanObserver 同一 setter 先例：未注册
@@ -212,10 +231,7 @@ export function createKnowledgeRetriever(
     const cleanQuery = sanitizeQuery(query);
     if (cleanQuery === "") return { status: "miss" };
 
-    const kbIds =
-      overrides?.kbIds && overrides.kbIds.length > 0
-        ? overrides.kbIds
-        : options.kbIds;
+    const kbIds = effectiveKbIds(options, overrides);
     const topK =
       overrides?.topK !== undefined
         ? Math.min(MAX_TOP_K, Math.max(MIN_TOP_K, overrides.topK))
@@ -386,17 +402,17 @@ export function createKnowledgeRetriever(
       const observer = knowledgeRetrievalObserver;
       if (observer === undefined) return performRetrieve(query, overrides);
       const startedAt = new Date();
+      // 链坐标在发起时捕获（请求上下文内），事后记录不再依赖活动上下文。
+      const trace = currentTraceContext() ?? null;
       const outcome = await performRetrieve(query, overrides);
       try {
         observer({
           query: sanitizeQuery(query),
-          kbIds:
-            overrides?.kbIds && overrides.kbIds.length > 0
-              ? overrides.kbIds
-              : options.kbIds,
+          kbIds: effectiveKbIds(options, overrides),
           outcome,
           startedAt,
           endedAt: new Date(),
+          trace,
         });
       } catch {
         // 观测旁路绝不影响检索结果。

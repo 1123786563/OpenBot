@@ -32,6 +32,7 @@ import {
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { getLogger } from "../../shared/logger";
+import { currentTraceContext } from "../../shared/trace";
 import {
   type ActorAgentResolver,
   CoworkerUnavailableError,
@@ -538,6 +539,13 @@ export type BuiltinToolStepFact = {
     output: string | null;
   } | null;
   window: "interrupted" | "terminal";
+  /**
+   * The run's W3C trace coordinates captured when the cell opened (Issue #23/T17) —
+   * the chain a step span recorded after the fact still parents under. Null when no
+   * valid span was active (no provider, outside a traced request). Structural, like
+   * every field here: the adapter threads it, the recorder decides what it means.
+   */
+  trace: { traceId: string; spanId: string } | null;
   /** The raw accumulated call arguments — BEFORE projection; the recorder projects. */
   input: string | null;
   /** The raw execution output or error text — BEFORE projection; the recorder projects. */
@@ -571,6 +579,8 @@ type BuiltinToolStepCell = {
   executionObserved: boolean;
   receiptObserved: boolean;
   execution: BuiltinToolStepFact["execution"];
+  /** The run's W3C coordinates at open time; the fact's `trace` comes from here. */
+  trace: { traceId: string; spanId: string } | null;
   /** Argument deltas, joined once at close — linear, never quadratic. */
   args: string[];
   closed: boolean;
@@ -578,10 +588,35 @@ type BuiltinToolStepCell = {
 
 const builtinToolStepCells = new Map<string, BuiltinToolStepCell>();
 
+/**
+ * Tool call ids whose cell already settled (T15 review (b)). An out-of-order late
+ * proposal for one of these must not open a SECOND cell — that would double-record
+ * one call as both executed and proposed. Bounded FIFO: ids are unique per call, so
+ * only recency matters, and a settled id is never legitimately reopened.
+ */
+const settledToolCallIds = new Set<string>();
+const SETTLED_ID_CAP = 4096;
+
 function builtinToolStepCell(
   toolCallId: string,
   toolName: string | null,
 ): BuiltinToolStepCell {
+  if (settledToolCallIds.has(toolCallId)) {
+    // A closed tombstone: every later event for this id is a no-op, by the same
+    // `closed` check a settled-but-still-referenced cell gets.
+    return {
+      toolCallId,
+      toolName,
+      proposedAt: null,
+      proposalObserved: false,
+      executionObserved: false,
+      receiptObserved: false,
+      execution: null,
+      trace: null,
+      args: [],
+      closed: true,
+    };
+  }
   const existing = builtinToolStepCells.get(toolCallId);
   if (existing) return existing;
   const cell: BuiltinToolStepCell = {
@@ -592,6 +627,9 @@ function builtinToolStepCell(
     executionObserved: false,
     receiptObserved: false,
     execution: null,
+    // Captured at open, inside the request's context, because settlement can land
+    // at stream teardown where the ambient context is no longer guaranteed.
+    trace: currentTraceContext() ?? null,
     args: [],
     closed: false,
   };
@@ -607,6 +645,10 @@ function settleBuiltinToolStep(
   if (cell.closed) return;
   cell.closed = true;
   builtinToolStepCells.delete(cell.toolCallId);
+  settledToolCallIds.add(cell.toolCallId);
+  if (settledToolCallIds.size > SETTLED_ID_CAP) {
+    settledToolCallIds.delete(settledToolCallIds.values().next().value as string);
+  }
   const observer = builtinToolStepObserver;
   if (observer === undefined) return;
   try {
@@ -620,6 +662,7 @@ function settleBuiltinToolStep(
       receiptObserved: cell.receiptObserved,
       execution: cell.execution,
       window,
+      trace: cell.trace,
       input: cell.args.length > 0 ? cell.args.join("") : null,
       output: cell.execution?.output ?? null,
     });
@@ -690,6 +733,11 @@ function observeBuiltinToolSteps(
       error: () => close("terminal"),
       complete: () => close("terminal"),
     }),
+    // T15 review (a): a teardown WITHOUT a terminal event — the consumer
+    // unsubscribed mid-run — closes every open cell too. `finalize` is the one
+    // hook that fires on unsubscribe as well as on complete and error; without
+    // it, the module-level registry keeps those cells forever.
+    finalize(() => close("terminal")),
   );
 }
 

@@ -104,6 +104,15 @@ export type ObservationDatasetStore = {
     scope: ObservationScope,
     id: string,
   ): Promise<ObservationDataset | null>;
+  /**
+   * The dataset an upstream id maps back to, inside the caller's scope — the reverse
+   * direction of the dataset↔dataset mapping (Issue #23/T17's query seam). Another
+   * scope's upstream id is simply not found.
+   */
+  byOpikDatasetId(
+    scope: ObservationScope,
+    opikDatasetId: string,
+  ): Promise<ObservationDataset | null>;
   /** Read one frozen version inside the caller's scope. */
   getVersion(
     scope: ObservationScope,
@@ -337,6 +346,22 @@ export function createObservationDatasetStore(
         .select()
         .from(aiObservationDatasets)
         .where(scopeDataset(scope, id));
+      return rows[0] ?? null;
+    },
+
+    async byOpikDatasetId(scope, opikDatasetId) {
+      assertObservationScope(scope);
+      reference(opikDatasetId);
+      const rows = await db
+        .select()
+        .from(aiObservationDatasets)
+        .where(
+          and(
+            eq(aiObservationDatasets.scopeKey, scope.key),
+            eq(aiObservationDatasets.opikDatasetId, opikDatasetId),
+          ),
+        )
+        .limit(1);
       return rows[0] ?? null;
     },
 
