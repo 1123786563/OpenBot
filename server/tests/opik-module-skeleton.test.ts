@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
+import { createApp } from "../src/app";
+import { loadConfig } from "../src/config";
+import { testEnvironment } from "./support/environment";
 import {
   OBSERVATION_ACCESS_DENIED,
   OBSERVATION_BOT_REQUIRED,
@@ -221,9 +224,10 @@ describe("GET /bots/:botId/access", () => {
 });
 
 describe("mount seam", () => {
-  test("the module is absent from the app when no deps are supplied", async () => {
-    const app = new Hono<{ Variables: AppVariables }>();
-    // Nothing mounted: this is what createApp does when `aiObservability` is undefined.
+  test("the module is absent from a real createApp when no deps are supplied", async () => {
+    // The actual boot path, not a bare Hono: createApp leaves the guard mount
+    // untouched when `aiObservability` is undefined, so the surface 404s.
+    const app = createApp(loadConfig(testEnvironment()));
     const response = await app.request(
       "http://openbot.test/api/ai-observability/bots/agent-1/access",
     );
