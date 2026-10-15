@@ -174,10 +174,12 @@ export type OpikPort = {
    * List traces in one upstream project. The verified answer is a `page/size/total/content`
    * envelope whose rows carry `id`; a page that never arrives whole is malformed, never an
    * empty success, and a row attesting a different project than the one queried is drift.
+   * `page` is the envelope's own position field, defaulted upstream when omitted — the T34
+   * export walks it to cover a whole project inside its row cap.
    */
   listTraces(
     scope: ObservationScope,
-    input: { projectId: string; size?: number },
+    input: { projectId: string; size?: number; page?: number },
   ): Promise<OpikPortResult<OpikTracePage>>;
 };
 
