@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT125 旧 REST、Copilot 与移动聚合入口装配与兼容
-- MT030 全局身份、刷新锁与例外端点显式登记
+- #168 旧 REST、Copilot 与移动聚合入口装配与兼容（MT125）
+- #73 全局身份、刷新锁与例外端点显式登记（MT030）
 
 ## Scope boundary
 

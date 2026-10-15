@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #199 M OpenMuse 个人域（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT064 OpenMuse 审阅动作提案与回执的归属
+- #107 OpenMuse 审阅动作提案与回执的归属（MT064）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ REST 请求、上传通道与下载签发统一附加当前公司/团队选择�
 
 ## Blocked by
 
-- MT080 Web 公司与团队选择界面及无资格空状态
-- MT056 签名下载与代理访问在签发点和访问点都授权，撤销即停止
+- #123 Web 公司与团队选择界面及无资格空状态（MT080）
+- #99 签名下载与代理访问在签发点和访问点都授权，撤销即停止（MT056）
 
 ## Scope boundary
 

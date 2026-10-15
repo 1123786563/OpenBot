@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #194 H 插件与审批（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ MCP、Composio、OpenConnector 等插件的公共目录可全局只读浏览，�
 
 ## Blocked by
 
-- MT027 连接凭据与站点登录归属，可用不等于可读明文
-- MT016 Bot 与配置的创建、列表、详情按公司团队归属
+- #70 连接凭据与站点登录归属，可用不等于可读明文（MT027）
+- #59 Bot 与配置的创建、列表、详情按公司团队归属（MT016）
 
 ## Scope boundary
 

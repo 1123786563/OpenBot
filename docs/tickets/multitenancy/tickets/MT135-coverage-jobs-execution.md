@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT132 身份矩阵 runner 与逐入口覆盖状态输出
-- MT045 主动建议与外部调用前后的事务边界
-- MT051 执行上界、审批与机密脱敏的既有保证不回退
+- #175 身份矩阵 runner 与逐入口覆盖状态输出（MT132）
+- #88 主动建议与外部调用前后的事务边界（MT045）
+- #94 执行上界、审批与机密脱敏的既有保证不回退（MT051）
 
 ## Scope boundary
 

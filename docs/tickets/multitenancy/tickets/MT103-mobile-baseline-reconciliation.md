@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #204 R Canonical 移动端（本 Ticket 是其 sub-issue）
 
 ## What to build
 

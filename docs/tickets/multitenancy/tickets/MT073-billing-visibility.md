@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #200 N 账务（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT070 公司调用归属与同一余额的原子预扣
-- MT010 个人资源权限与显式跨团队分享例外
+- #113 公司调用归属与同一余额的原子预扣（MT070）
+- #53 个人资源权限与显式跨团队分享例外（MT010）
 
 ## Scope boundary
 

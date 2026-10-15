@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT088 Web 技能与连接账号页面接入范围
-- MT039 个人记忆与来源选择保持个人权限
-- MT041 任务、运行、触发与租约固定原始归属与配置版本
+- #131 Web 技能与连接账号页面接入范围（MT088）
+- #82 个人记忆与来源选择保持个人权限（MT039）
+- #84 任务、运行、触发与租约固定原始归属与配置版本（MT041）
 
 ## Scope boundary
 

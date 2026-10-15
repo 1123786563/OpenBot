@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #197 K 执行隔离（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT047 快照、shell、文件、cancel/reset/cull 的归属
-- MT050 Go Runtime、supervisor 与原生 agent 适配器的归属传递
+- #90 快照、shell、文件、cancel/reset/cull 的归属（MT047）
+- #93 Go Runtime、supervisor 与原生 agent 适配器的归属传递（MT050）
 
 ## Scope boundary
 

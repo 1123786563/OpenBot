@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #205 S 观测（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT108 Trace、日志与事件的归属字段注入
-- MT069 公司计费 Customer 映射与公司/个人账户类型（expand）
+- #151 Trace、日志与事件的归属字段注入（MT108）
+- #112 公司计费 Customer 映射与公司/个人账户类型（expand）（MT069）
 
 ## Scope boundary
 

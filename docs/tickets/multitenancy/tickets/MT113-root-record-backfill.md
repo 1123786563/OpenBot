@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT112 创建原有公司与默认团队并建立映射
-- MT074 历史余额只迁一次到原有公司，个人 Bifrost 路径不变
+- #155 创建原有公司与默认团队并建立映射（MT112）
+- #117 历史余额只迁一次到原有公司，个人 Bifrost 路径不变（MT074）
 
 ## Scope boundary
 

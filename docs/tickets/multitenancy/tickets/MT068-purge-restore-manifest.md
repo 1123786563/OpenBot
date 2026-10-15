@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #199 M OpenMuse 个人域（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ purge、retention 与 restore 操作都携带归属与发起权限，并以不�
 
 ## Blocked by
 
-- MT067 退出公司与全局账号删除是两个不同操作
+- #110 退出公司与全局账号删除是两个不同操作（MT067）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #203 Q 桌面（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT100 桌面切换或退出组织时清理公司媒体与订阅状态
-- MT101 桌面组织登录、公司团队选择与嵌入工作台携带选择
+- #143 桌面切换或退出组织时清理公司媒体与订阅状态（MT100）
+- #144 桌面组织登录、公司团队选择与嵌入工作台携带选择（MT101）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #196 J 任务与执行（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT041 任务、运行、触发与租约固定原始归属与配置版本
+- #84 任务、运行、触发与租约固定原始归属与配置版本（MT041）
 
 ## Scope boundary
 

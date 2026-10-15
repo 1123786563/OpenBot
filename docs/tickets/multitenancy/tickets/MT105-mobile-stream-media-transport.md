@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #204 R Canonical 移动端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT104 移动端 tenancy 适配层：选择与缓存
-- MT025 事件流订阅授权与外部线程映射归属
+- #147 移动端 tenancy 适配层：选择与缓存（MT104）
+- #68 事件流订阅授权与外部线程映射归属（MT025）
 
 ## Scope boundary
 

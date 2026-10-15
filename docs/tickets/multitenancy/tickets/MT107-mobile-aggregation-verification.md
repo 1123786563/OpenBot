@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #204 R Canonical 移动端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT106 Web、iOS、Android 三端选择与缓存一致性验证
-- MT066 语音、听写与移动聚合接口只返回当前范围
+- #149 Web、iOS、Android 三端选择与缓存一致性验证（MT106）
+- #109 语音、听写与移动聚合接口只返回当前范围（MT066）
 
 ## Scope boundary
 

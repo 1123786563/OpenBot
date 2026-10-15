@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #195 I 知识与记忆（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT036 知识库的团队归属与受限查询（独立库，不假装跨库外键）
-- MT014 公司运行配置装配（替换部署级单份租户包）
+- #79 知识库的团队归属与受限查询（独立库，不假装跨库外键）（MT036）
+- #57 公司运行配置装配（替换部署级单份租户包）（MT014）
 
 ## Scope boundary
 

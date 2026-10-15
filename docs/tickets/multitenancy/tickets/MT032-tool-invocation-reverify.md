@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #194 H 插件与审批（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT031 插件安装与连接归属（目录只读，安装不全局）
-- MT018 使用团队公共 Bot 时保持使用者自己的会话与凭据
+- #74 插件安装与连接归属（目录只读，安装不全局）（MT031）
+- #61 使用团队公共 Bot 时保持使用者自己的会话与凭据（MT018）
 
 ## Scope boundary
 

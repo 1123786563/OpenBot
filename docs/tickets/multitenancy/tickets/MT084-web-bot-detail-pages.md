@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Bot 详情与配置页在切换范围后只显示与保存当前范围的 Bot；
 
 ## Blocked by
 
-- MT083 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应
-- MT017 Bot 发布受众与旧 public 语义的显式迁移
-- MT019 Bot 生命周期动作逐项授权（复制/隐藏/重置/删除/模板更新/远端回调）
+- #126 按公司团队隔离查询缓存并拒绝旧 generation 的在途响应（MT083）
+- #60 Bot 发布受众与旧 public 语义的显式迁移（MT017）
+- #62 Bot 生命周期动作逐项授权（复制/隐藏/重置/删除/模板更新/远端回调）（MT019）
 
 ## Scope boundary
 

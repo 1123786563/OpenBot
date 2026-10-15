@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #193 G 身份与凭据（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT007 成员停用与撤权的级联生效与审计留痕
-- MT014 公司运行配置装配（替换部署级单份租户包）
+- #50 成员停用与撤权的级联生效与审计留痕（MT007）
+- #57 公司运行配置装配（替换部署级单份租户包）（MT014）
 
 ## Scope boundary
 

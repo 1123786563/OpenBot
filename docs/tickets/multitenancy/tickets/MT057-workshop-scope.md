@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #198 L Craft/Workshop（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Workshop 的会话、turn、执行、产物与沙箱实例关联都按归属隔�
 
 ## Blocked by
 
-- MT053 Craft 会话、turn、消息与快照的作用域
-- MT047 快照、shell、文件、cancel/reset/cull 的归属
+- #96 Craft 会话、turn、消息与快照的作用域（MT053）
+- #90 快照、shell、文件、cancel/reset/cull 的归属（MT047）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #202 P Web 客户端（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT091 Web Craft 与 Workshop 页面接入范围
-- MT058 分享令牌改为有效分享授权（受众、有效期、撤销）
+- #134 Web Craft 与 Workshop 页面接入范围（MT091）
+- #101 分享令牌改为有效分享授权（受众、有效期、撤销）（MT058）
 
 ## Scope boundary
 

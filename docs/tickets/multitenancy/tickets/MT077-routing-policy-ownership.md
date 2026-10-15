@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #201 O 治理（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT075 部署级平台管理与公司/团队管理动作分离
-- MT014 公司运行配置装配（替换部署级单份租户包）
+- #118 部署级平台管理与公司/团队管理动作分离（MT075）
+- #57 公司运行配置装配（替换部署级单份租户包）（MT014）
 
 ## Scope boundary
 

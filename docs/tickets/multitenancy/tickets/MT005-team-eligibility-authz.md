@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #188 B 成员与作用域（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -16,8 +17,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT002 多公司多团队测试身份夹具与受限角色数据库 harness
-- MT004 团队成员关系数据模型与复合约束
+- #45 多公司多团队测试身份夹具与受限角色数据库 harness（MT002）
+- #47 团队成员关系数据模型与复合约束（MT004）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #206 T 迁移与收尾（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,9 +16,9 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT118 对象存储文件与产物的归属迁移
-- MT037 检索在候选、重排与进入模型之前限制范围
-- MT052 状态化公共 Bot 为不同使用者隔离浏览器与工作区
+- #161 对象存储文件与产物的归属迁移（MT118）
+- #80 检索在候选、重排与进入模型之前限制范围（MT037）
+- #95 状态化公共 Bot 为不同使用者隔离浏览器与工作区（MT052）
 
 ## Scope boundary
 

@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #194 H 插件与审批（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT031 插件安装与连接归属（目录只读，安装不全局）
-- MT029 凭据取用 lease：固定用途、作用域且可撤销
+- #74 插件安装与连接归属（目录只读，安装不全局）（MT031）
+- #72 凭据取用 lease：固定用途、作用域且可撤销（MT029）
 
 ## Scope boundary
 

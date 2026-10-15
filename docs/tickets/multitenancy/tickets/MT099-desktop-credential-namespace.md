@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #203 Q 桌面（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,8 +16,8 @@ Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租�
 
 ## Blocked by
 
-- MT098 桌面原生组织上下文模型与命令门控
-- MT069 公司计费 Customer 映射与公司/个人账户类型（expand）
+- #141 桌面原生组织上下文模型与命令门控（MT098）
+- #112 公司计费 Customer 映射与公司/个人账户类型（expand）（MT069）
 
 ## Scope boundary
 

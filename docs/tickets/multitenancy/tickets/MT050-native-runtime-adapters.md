@@ -1,6 +1,7 @@
 ## Parent
 
 Spec: https://github.com/1123786563/OpenBot/issues/6 — 公司与团队多租户整改（全功能隔离后统一上线）
+分组 Epic: #197 K 执行隔离（本 Ticket 是其 sub-issue）
 
 ## What to build
 
@@ -15,7 +16,7 @@ Go Runtime、supervisor、agent-computer 与 agent-sandbox 等原生组件从调
 
 ## Blocked by
 
-- MT049 TypeScript agent 适配器统一消费已验证归属
+- #92 TypeScript agent 适配器统一消费已验证归属（MT049）
 
 ## Scope boundary
 
