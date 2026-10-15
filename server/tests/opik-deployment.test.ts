@@ -33,10 +33,17 @@ describe("docker/opik/versions.json", () => {
     expect(versions.sdk.typescript).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  test("compatibility stays unverified until ticket #10 proves it", () => {
-    // Flipping this to "verified" is T04's job, with real ingest/query/delete evidence.
-    expect(versions.compatibility.status).toBe("unverified");
+  test("compatibility is verified by ticket #10 with real-instance evidence", () => {
+    // T04 (#10) flipped this after proving ingest, query, evaluation, id mapping and
+    // deletion against a real instance; the evidence manifest must stay traceable.
+    expect(versions.compatibility.status).toBe("verified");
     expect(versions.compatibility.verifiedBy).toBe("#10");
+    expect(versions.compatibility.verifiedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    );
+    expect(versions.compatibility.evidence).toMatch(
+      /47-manifest\.json, sha256 [0-9a-f]{64}$/,
+    );
   });
 });
 
