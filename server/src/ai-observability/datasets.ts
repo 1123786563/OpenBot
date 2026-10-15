@@ -427,8 +427,10 @@ export function createObservationDatasetStore(
             .set({ syncState: "synced", updatedAt: new Date() })
             .where(eq(aiObservationDatasets.id, current.id))
             .returning();
-          return { dataset: restored[0] ?? current, adopted: false };
+          return { dataset: restored[0], adopted: false };
         }
+        // Both updates target the id this transaction holds a FOR UPDATE lock on, so the
+        // RETURNING row is a fact, not a hope — no absent-row branch to defend here.
         const updated = await tx
           .update(aiObservationDatasets)
           .set({
@@ -438,11 +440,7 @@ export function createObservationDatasetStore(
           })
           .where(eq(aiObservationDatasets.id, current.id))
           .returning();
-        const dataset = updated[0];
-        if (!dataset) {
-          throw new Error("markSynced updated a row it cannot read back");
-        }
-        return { dataset, adopted: true };
+        return { dataset: updated[0], adopted: true };
       });
     },
 

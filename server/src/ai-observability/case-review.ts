@@ -139,7 +139,11 @@ function reference(value: string): string {
   return value;
 }
 
-/** How many cases the deny patterns refused outright — the canary the reviewer must see. */
+/**
+ * How many cases the deny patterns refused outright — the canary the reviewer must see.
+ * The unit is the case: one with both fields refused still counts once, because the
+ * number answers "how many of my cases came back damaged", not "how many fields".
+ */
 function countCanaryFindings(frozen: readonly FrozenDatasetCase[]): number {
   return frozen.filter(
     (one) =>

@@ -7,7 +7,9 @@
 -- describe; the file is hand-merged and its snapshot is a copy of 0123's (T07 precedent).
 CREATE FUNCTION "ai_observation_dataset_versions_reject_delete"() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-	IF current_setting('ai_observation.dataset_cleanup', true) <> 'on' THEN
+	-- IS DISTINCT FROM, never <>: unset reads NULL here, and NULL <> 'on' is NULL, which
+	-- the IF treats as false — the guard fails open on every fresh connection.
+	IF current_setting('ai_observation.dataset_cleanup', true) IS DISTINCT FROM 'on' THEN
 		RAISE EXCEPTION 'dataset versions are removed only through dataset cleanup'
 			USING ERRCODE = 'restrict_violation';
 	END IF;

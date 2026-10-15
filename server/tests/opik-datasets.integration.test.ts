@@ -1,7 +1,7 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { TransactionSQL } from "bun";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
 import {
@@ -57,9 +57,18 @@ const caseA = {
 };
 
 afterEach(async () => {
-  await database
-    .delete(aiObservationDatasets)
-    .where(sql`${aiObservationDatasets.name} LIKE ${`${prefix}%`}`);
+  // The delete guard (migration 0124) refuses version rows leaving any way but dataset
+  // cleanup, and that includes this suite's own cleanup: the transaction-local flag plus
+  // the cascade from the subject row is the one sanctioned path. Before the guard's
+  // fail-open hole was fixed, this DELETE went through unflagged — proof the hole was
+  // real, not hygiene theater.
+  await database.$client.begin(async (tx) => {
+    await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
+    await tx`DELETE FROM ai_observation_datasets WHERE name LIKE ${`${prefix}%`}`;
+  });
+  // Return the pooled connection to a known session state; see the case-review suite's
+  // afterEach for why residue here once masked the guard's fail-open hole.
+  await database.$client`RESET ai_observation.dataset_cleanup`;
 });
 
 afterAll(async () => {

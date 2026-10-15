@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { SQL } from "bun";
 import { eq, sql } from "drizzle-orm";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import {
@@ -24,6 +25,7 @@ import {
   aiObservationDatasets,
   aiObservationDatasetVersions,
 } from "../src/db/schema/ai-observability-datasets";
+import { testDatabaseUrl } from "./support/database";
 import { opikTestDatabase } from "./support/opik-test-db";
 import { rejectionOf } from "./support/pg-errors";
 
@@ -101,6 +103,15 @@ afterEach(async () => {
     await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
     await tx`DELETE FROM ai_observation_datasets WHERE name LIKE ${`${prefix}%`}`;
   });
+  // The flag above must not outlive the cleanup on the pooled connection it ran on:
+  // residue there once masked the guard's fail-open hole (a fresh connection deleted
+  // through, while the pool's connections refused by leftover state, not by logic).
+  // DISCARD SETS would be the general reset, but it is a PostgreSQL 17 feature and this
+  // server is 16 — the explicit RESET names the one setting this suite ever touches,
+  // returning the connection to a known state (unset, which reads as NULL-or-empty) so
+  // what a test proves about the guard is about the guard, never about the test before
+  // it. The fresh-connection test below pins the NULL side of that state.
+  await database.$client`RESET ai_observation.dataset_cleanup`;
   await database
     .delete(aiObservationBindings)
     .where(sql`${aiObservationBindings.runId} LIKE ${`${prefix}%`}`);
@@ -366,6 +377,37 @@ test("hardening (b): a direct version delete is refused by the database; cleanup
   // The explicit API is the one sanctioned path, and it still works.
   await datasetsStore.deleteDataset(scopeA, saved.dataset.id);
   expect(await datasetsStore.getVersion(scopeA, saved.version.id)).toBeNull();
+});
+
+test("the delete guard holds on a connection with no session state at all (C-1)", async () => {
+  const runId = `${prefix}-run-fresh`;
+  await boundRun(scopeA, runId);
+  const saved = await service.saveReviewed(scopeA, {
+    datasetName: `${prefix}-fresh`,
+    runId,
+    cases: [fragment],
+  });
+
+  // The guard was once fail-open exactly here: on a connection that never carried the
+  // cleanup flag, current_setting(..., true) is NULL, and NULL <> 'on' is NULL — which the
+  // trigger's IF read as false, and the delete went through. The pool's own connections
+  // could never prove that: earlier tests' cleanup leaves the flag set on them, so the
+  // guard held there by residue, not by logic. This delete therefore runs on a brand-new
+  // connection outside the shared pool, and it must be refused all the same.
+  const fresh = new SQL(testDatabaseUrl(), { max: 1 });
+  try {
+    const refused = await rejectionOf(
+      () =>
+        fresh`DELETE FROM ai_observation_dataset_versions WHERE id = ${saved.version.id}`,
+    );
+    expect(refused.code).toBe("23001"); // restrict_violation
+    expect(refused.message).toContain("dataset cleanup");
+    const rows =
+      await fresh`SELECT id FROM ai_observation_dataset_versions WHERE id = ${saved.version.id}`;
+    expect(rows).toHaveLength(1);
+  } finally {
+    await fresh.close();
+  }
 });
 
 test("hardening (c): listVersions is deterministic even on a shared clock tick", async () => {
