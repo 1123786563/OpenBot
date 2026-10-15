@@ -204,6 +204,23 @@ export type CraftConfig = {
   /** Gate the scheduled-tasks surface (cron-driven headless turns). */
   readonly enableScheduledTasks: boolean;
 
+  // ── preview origin (spec craft-preview-origin: D5/D7, #361) ────────────────
+  /**
+   * Gate the independent preview origin. Closed = preview hosts answer 503 with
+   * a displayable reason and no preview address is ever minted — the same-origin
+   * form is never a fallback (AC6).
+   */
+  readonly previewOriginEnabled: boolean;
+  /**
+   * The preview origin's address template. Empty = the D5 dev form
+   * (`http://127.0.0.1:<server port>` — the port is derived with serverPort's
+   * PORT/SERVER_PORT semantics in preview-origin.ts). A deployment with a
+   * wildcard host sets e.g. `https://{session}.preview.example.com`; `{session}`
+   * must appear exactly once, as the hostname's leading label, and is where the
+   * per-session hash label goes (D7: hashed, never the session id).
+   */
+  readonly previewOriginTemplate: string;
+
   // ── derived timeout family (timeouts.py) ───────────────────────────────────
   /**
    * A turn runner heartbeats on every consumed event, and the transport emits a keepalive at
@@ -458,6 +475,18 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
       env,
       "OPENBOT_CRAFT_ENABLE_SCHEDULED_TASKS",
       false,
+    ),
+
+    // ── preview origin (#361) ────────────────────────────────────────────────
+    previewOriginEnabled: boolEnv(
+      env,
+      "OPENBOT_CRAFT_PREVIEW_ORIGIN_ENABLED",
+      true,
+    ),
+    previewOriginTemplate: stringEnv(
+      env,
+      "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+      "",
     ),
 
     // ── derived family: arithmetic over the roots, exactly onyx's ──

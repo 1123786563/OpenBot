@@ -49,6 +49,7 @@ import { createSubagentRoutes } from "./subagent-routes";
 import { createTurnExecutor } from "./turn-executor";
 import { createTurnRoutes } from "./turn-routes";
 import { createTurnStateStore } from "./turn-state";
+import type { PreviewTickets } from "./preview-ticket";
 import { createWebappProxyRoutes } from "./webapp-proxy";
 
 export type CraftRoutesDeps = {
@@ -117,6 +118,19 @@ export type CraftRoutesDeps = {
    * so the factory's wiring — not a specific store — is what gets exercised.
    */
   store?: CraftStore;
+  /**
+   * The process's ONE preview-ticket table (#360): the issuing route mints through
+   * this instance and the preview origin's entry redeems against the SAME one —
+   * the boot file constructs it; unset leaves the routes' own in-memory default
+   * (tests that exercise the primitive in isolation).
+   */
+  previewTickets?: PreviewTickets;
+  /**
+   * The preview origin's per-session address (#361's admission-aware derivation —
+   * the replacement for #360's `defaultPreviewOrigin()` default, which the review
+   * flagged for converging on serverPort's PORT/SERVER_PORT semantics).
+   */
+  previewOriginFor?: (sessionId: string) => string;
 };
 
 /**
@@ -355,6 +369,8 @@ export function createCraftRoutes(input: {
         gateway,
         botIdFor: deps.botIdFor,
         sandboxConnectionFor: deps.sandboxConnectionFor,
+        previewTickets: deps.previewTickets,
+        previewOriginFor: deps.previewOriginFor,
       }),
     );
   }
