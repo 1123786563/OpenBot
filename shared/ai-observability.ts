@@ -15,8 +15,12 @@
  * v2: PEM blocks are denied wherever they sit; an AWS secret is denied with its label before the
  * value; record caps report `truncated` instead of silently dropping; the byte cut never strands a
  * lone surrogate; record projection is prototype-safe.
+ * v3: URL userinfo credentials (scheme://user:pass@host) are denied at every entrance; the
+ * secret-label context covers api_key/access-token-style labels at any distance on either side;
+ * `<think>` chains are reasoning content; loopback, unspecified and link-local hosts are raw
+ * attachments; a hostile accessor cannot abort projection; lowercase PEM headers are denied.
  */
-export const REDACTION_POLICY_VERSION = "opik-redaction/2";
+export const REDACTION_POLICY_VERSION = "opik-redaction/3";
 
 export type SafeContentState = "projected" | "omitted" | "truncated";
 
