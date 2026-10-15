@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   REDACTION_POLICY_VERSION,
   type SafeText,
@@ -7,7 +7,6 @@ import {
 } from "../../../shared/ai-observability";
 import type { Database } from "../db/client";
 import {
-  type AiObservationDatasetSyncState,
   aiObservationDatasets,
   aiObservationDatasetVersions,
 } from "../db/schema/ai-observability-datasets";
@@ -223,11 +222,6 @@ function validateSaveInput(input: SaveDatasetVersionInput) {
   return name;
 }
 
-const retryable: ReadonlySet<AiObservationDatasetSyncState> = new Set([
-  "pending",
-  "failed",
-]);
-
 export function createObservationDatasetStore(
   db: Database,
 ): ObservationDatasetStore {
@@ -360,7 +354,9 @@ export function createObservationDatasetStore(
       reference(datasetId);
       // The scope key is filtered here, not trusted from the dataset row: a version of this
       // dataset minted under another scope key would be a bug worth refusing loudly, and the
-      // unique index guarantees such a row cannot exist anyway.
+      // unique index guarantees such a row cannot exist anyway. The id rides along as the
+      // deterministic tiebreaker: createdAt alone orders versions only until two land on the
+      // same clock tick, and "newest first" must not become a coin flip for those two.
       return db
         .select()
         .from(aiObservationDatasetVersions)
@@ -370,23 +366,39 @@ export function createObservationDatasetStore(
             eq(aiObservationDatasetVersions.datasetId, datasetId),
           ),
         )
-        .orderBy(desc(aiObservationDatasetVersions.createdAt));
+        .orderBy(
+          desc(aiObservationDatasetVersions.createdAt),
+          desc(aiObservationDatasetVersions.id),
+        );
     },
 
     async markSyncing(scope, datasetId) {
       assertObservationScope(scope);
       reference(datasetId);
-      const dataset = await this.getDataset(scope, datasetId);
-      if (!dataset) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
-      // A synced dataset has an upstream copy; re-pushing is version sync, not this state
-      // machine. Already syncing is answered as-is so a lost acknowledgment cannot restart it.
-      if (!retryable.has(dataset.syncState)) return dataset;
+      // The state guard rides the UPDATE itself, never a read that races it (T19 review
+      // finding): only pending/syncing/failed rows may enter syncing, so a synced row —
+      // the one whose upstream copy exists — cannot be downgraded, however concurrent the
+      // callers. A lost read-decide-write window is a missed update, not a corrupt state.
       const updated = await db
         .update(aiObservationDatasets)
         .set({ syncState: "syncing", updatedAt: new Date() })
-        .where(scopeDataset(scope, datasetId))
+        .where(
+          and(
+            scopeDataset(scope, datasetId),
+            inArray(aiObservationDatasets.syncState, [
+              "pending",
+              "syncing",
+              "failed",
+            ]),
+          ),
+        )
         .returning();
-      return updated[0] ?? dataset;
+      if (updated[0]) return updated[0];
+      // The guard refused. Either the dataset is absent, or it is synced and has nothing
+      // to push through this state machine — read the row once more to say which.
+      const dataset = await this.getDataset(scope, datasetId);
+      if (!dataset) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+      return dataset;
     },
 
     async markSynced(scope, datasetId, opikDatasetId) {
@@ -404,8 +416,18 @@ export function createObservationDatasetStore(
         if (!current) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
         if (current.opikDatasetId !== null) {
           // First recorded id wins: a replay, or a divergent id signalling upstream
-          // duplication, changes nothing here.
-          return { dataset: current, adopted: false };
+          // duplication, changes nothing here. A drifted non-synced state is repaired
+          // rather than kept — the recorded upstream id is the proof this dataset
+          // synced, so the row answers synced again (T19 review finding).
+          if (current.syncState === "synced") {
+            return { dataset: current, adopted: false };
+          }
+          const restored = await tx
+            .update(aiObservationDatasets)
+            .set({ syncState: "synced", updatedAt: new Date() })
+            .where(eq(aiObservationDatasets.id, current.id))
+            .returning();
+          return { dataset: restored[0] ?? current, adopted: false };
         }
         const updated = await tx
           .update(aiObservationDatasets)
@@ -427,27 +449,41 @@ export function createObservationDatasetStore(
     async markFailed(scope, datasetId) {
       assertObservationScope(scope);
       reference(datasetId);
-      const dataset = await this.getDataset(scope, datasetId);
-      if (!dataset) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
-      if (dataset.syncState !== "syncing") {
-        throw new DatasetStoreError("DATASET_STATE_INVALID", 409);
-      }
+      // Only a syncing push can fail, and the database enforces it: the conditional UPDATE
+      // cannot downgrade a synced or pending row (T19 review finding), so a markFailed that
+      // races a markSynced either loses the row or never matches it — never corrupts it.
       const updated = await db
         .update(aiObservationDatasets)
         .set({ syncState: "failed", updatedAt: new Date() })
-        .where(scopeDataset(scope, datasetId))
+        .where(
+          and(
+            scopeDataset(scope, datasetId),
+            eq(aiObservationDatasets.syncState, "syncing"),
+          ),
+        )
         .returning();
-      return updated[0] ?? dataset;
+      if (updated[0]) return updated[0];
+      const dataset = await this.getDataset(scope, datasetId);
+      if (!dataset) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+      throw new DatasetStoreError("DATASET_STATE_INVALID", 409);
     },
 
     async deleteDataset(scope, datasetId) {
       assertObservationScope(scope);
       reference(datasetId);
-      const removed = await db
-        .delete(aiObservationDatasets)
-        .where(scopeDataset(scope, datasetId))
-        .returning({ id: aiObservationDatasets.id });
-      if (!removed[0]) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+      // The one sanctioned way past the versions' delete guard (migration 0124): the
+      // transaction-local flag says "this is dataset cleanup", so a direct DELETE of a
+      // frozen version is refused by the database while the cascade from here passes.
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('ai_observation.dataset_cleanup', 'on', true)`,
+        );
+        const removed = await tx
+          .delete(aiObservationDatasets)
+          .where(scopeDataset(scope, datasetId))
+          .returning({ id: aiObservationDatasets.id });
+        if (!removed[0]) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
+      });
     },
   };
 }
