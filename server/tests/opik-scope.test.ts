@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ObservationScopeError,
   type BotOwnership,
+  ObservationScopeError,
   type ObservationScopeErrorCode,
 } from "../src/ai-observability/contracts";
 import {

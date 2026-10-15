@@ -18,9 +18,9 @@
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
-  ObservationScopeError,
   type EvaluationEligibility,
   type ObservationScope,
+  ObservationScopeError,
   type ObservationStorageLocator,
   type ScopeResolutionInput,
 } from "./contracts";
