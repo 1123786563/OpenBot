@@ -100,6 +100,17 @@ function safeName(value: unknown): string {
   return trimmed;
 }
 
+/**
+ * The error's shape only, never its message or value: an Error contributes its `name`; any
+ * other thrown value — string, number, object — is free text of unknown provenance that the
+ * name allowlist cannot judge, so it contributes a fixed marker instead and the thrown value
+ * itself can never ride the error channel into exported bytes.
+ */
+function errorNameOf(error: unknown): string {
+  if (error instanceof Error) return safeName(error.name);
+  return "NonErrorThrow";
+}
+
 /** The omission markers every span here carries, in the projection policy's vocabulary. */
 function omittedContent(): Record<string, string> {
   return {
@@ -237,10 +248,7 @@ export class GovernedCallbackHandler extends BaseCallbackHandler {
       span.setStatus({ code: SpanStatusCode.ERROR });
       // The error's shape only: its message is free text and can carry anything, including
       // the URL and credentials of the thing that failed.
-      const name = safeName(
-        error instanceof Error ? error.name : String(error ?? ""),
-      );
-      span.setAttribute("openbot.error.name", name);
+      span.setAttribute("openbot.error.name", errorNameOf(error));
     }
     span.setAttribute("openbot.span.state", state);
     span.setAttributes(extra);
@@ -404,10 +412,7 @@ export async function traceDeploymentToolCall<T>(
     return result;
   } catch (error) {
     span.setStatus({ code: SpanStatusCode.ERROR });
-    span.setAttribute(
-      "openbot.error.name",
-      safeName(error instanceof Error ? error.name : String(error ?? "")),
-    );
+    span.setAttribute("openbot.error.name", errorNameOf(error));
     span.setAttribute("openbot.span.state", "failed");
     throw error;
   } finally {
