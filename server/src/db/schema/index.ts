@@ -2,6 +2,7 @@
 
 export * from "./admin";
 export * from "./ai-observability-bindings";
+export * from "./ai-observability-datasets";
 export * from "./approvals";
 export * from "./billing";
 export * from "./code-runs";
