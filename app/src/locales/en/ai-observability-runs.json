@@ -44,5 +44,50 @@
       "title": "Token usage unavailable",
       "description": "Token usage could not be read for this run. Unavailable is not zero — the run is not counted as 0 tokens."
     }
+  },
+  "page": {
+    "title": "Run history",
+    "description": "Recorded runs of this Bot, as the observability store holds them."
+  },
+  "states": {
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "interrupted": "Interrupted",
+    "unknown": "Unknown outcome"
+  },
+  "capability": {
+    "detailed": "Detailed coverage",
+    "basic": "Basic coverage",
+    "unavailable": "Coverage unavailable"
+  },
+  "row": {
+    "timeUnavailable": "Time unavailable",
+    "durationUnavailable": "Duration unavailable",
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} tokens",
+    "tokensUnavailable": "Tokens unavailable"
+  },
+  "marker": {
+    "omitted": "Omitted",
+    "truncated": "Truncated"
+  },
+  "filter": {
+    "state": "State",
+    "stateAll": "All states",
+    "time": "Time",
+    "timeAll": "Any time",
+    "timeHour": "Last hour",
+    "timeDay": "Last 24 hours",
+    "timeWeek": "Last 7 days",
+    "loadedPageOnly": "Filters apply to the loaded page.",
+    "noMatch": "No run on this page matches the filters."
+  },
+  "pagination": {
+    "previous": "Previous page",
+    "next": "Next page",
+    "range": "{{from}}–{{to}} of {{total}}",
+    "reset": "Back to the first page"
   }
 }
