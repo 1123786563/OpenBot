@@ -230,6 +230,8 @@ describe("the five screen conditions stay five different sentences (acceptance 2
     await view.findByText("No runs yet");
     expect(view.getByText(/has not recorded a run/)).toBeTruthy();
     expect(view.queryByText("Still syncing")).toBeNull();
+    // An empty page draws no "0–0 of 0" range: there is no page to describe.
+    expect(view.queryByText(/–\d+ of/)).toBeNull();
   });
 
   test("a disabled deployment says disabled, not empty", async () => {
@@ -442,5 +444,77 @@ describe("cursor pagination (acceptance 5, T06 semantics)", () => {
     previous.focus();
     await user.keyboard("{Enter}");
     await waitFor(() => expect(pageText(view)).toContain("1–1 of 5"));
+  });
+
+  test("a cursor the server rotated out (403) keeps the fault sentence and the way back to page one", async () => {
+    runsHandler = (url) => {
+      const cursor = new URL(url, "http://openbot.test").searchParams.get(
+        "cursor",
+      );
+      if (cursor === null)
+        return Response.json(
+          listBody([summary({ state: "failed", durationMs: 21_860 })], {
+            pagination: {
+              total: 5,
+              window: 5,
+              offset: 0,
+              limit: 20,
+              nextCursor: "cursor-2",
+            },
+          }),
+        );
+      // A restart or an ownership epoch bump (T06) kills outstanding cursors
+      // with 403 — mid-pagination, that is where the person is standing.
+      return Response.json({ error: "OWNERSHIP_REQUIRED" }, { status: 403 });
+    };
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("21.9 s"));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    const next = view.getByRole("button", { name: "Next page" });
+    next.focus();
+    await user.keyboard("{Enter}");
+    await view.findByText("You cannot observe this Bot");
+    // The way back is offered beside the refusal, not hidden behind it.
+    const reset = view.getByRole("button", { name: "Back to the first page" });
+    reset.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(pageText(view)).toContain("21.9 s"));
+    expect(pageText(view)).not.toContain("You cannot observe this Bot");
+    expect(
+      requested.filter((url) => url.includes("/runs?")).length,
+    ).toBeGreaterThanOrEqual(3); // page one, the refused cursor, page one again
+  });
+
+  test("a gone cursor (410) lands on the unavailable sentence, with the same way back", async () => {
+    runsHandler = (url) => {
+      const cursor = new URL(url, "http://openbot.test").searchParams.get(
+        "cursor",
+      );
+      if (cursor === null)
+        return Response.json(
+          listBody([summary({ state: "failed", durationMs: 21_860 })], {
+            pagination: {
+              total: 5,
+              window: 5,
+              offset: 0,
+              limit: 20,
+              nextCursor: "cursor-2",
+            },
+          }),
+        );
+      return new Response(null, { status: 410 });
+    };
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("21.9 s"));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    const next = view.getByRole("button", { name: "Next page" });
+    next.focus();
+    await user.keyboard("{Enter}");
+    await view.findByText("Upstream unavailable");
+    const reset = view.getByRole("button", { name: "Back to the first page" });
+    reset.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(pageText(view)).toContain("21.9 s"));
+    expect(pageText(view)).not.toContain("Upstream unavailable");
   });
 });
