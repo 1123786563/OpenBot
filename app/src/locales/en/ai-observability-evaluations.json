@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "namespace": "ai-observability-evaluations",
+    "ownedBy": "#36 #37 (experiment submit/results, comparison)"
+  },
+  "placeholder": {
+    "title": "Evaluations",
+    "description": "Dataset versions and experiment results for this Bot will be listed here once the observability store is connected. Nothing is missing from the Bot itself."
+  },
+  "availability": {
+    "disabled": {
+      "title": "Evaluation is off",
+      "description": "Observability is disabled for this deployment, so experiments cannot run."
+    },
+    "empty": {
+      "title": "No experiments yet",
+      "description": "Pick a frozen dataset version and a Bot configuration to submit the first experiment."
+    },
+    "forbidden": {
+      "title": "You cannot run this experiment",
+      "description": "Experiments follow the Bot's management rights and are re-checked before every sample."
+    },
+    "basic": {
+      "title": "Score unavailable for this sample",
+      "description": "The sample produced no score. A missing score is not a zero, and it is excluded from the average rather than counted as a failure."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "This field could not be handled safely, so only metrics are shown. Omitted is not the same as empty."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "This value exceeds the recorded size limit and was cut."
+    },
+    "syncing": {
+      "title": "Results still syncing",
+      "description": "The experiment finished but its scores are not confirmed upstream yet. Syncing is not success."
+    },
+    "unavailable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer. Runs already in flight kept their hold; nothing was released or double-charged."
+    }
+  }
+}
