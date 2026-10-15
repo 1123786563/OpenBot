@@ -31,7 +31,7 @@ import { aiObservationDatasetVersions } from "./ai-observability-datasets";
  * The state vocabulary is two words, fail-closed: `draft` (mutable, `frozen_at` null, hash
  * empty) and `frozen` (immutable, hash and freeze time set), and the coherence check refuses
  * any row that is half of either. Immutability is a database fact, not a discipline:
- * migration 0125 installs a BEFORE UPDATE trigger that raises on any UPDATE of a frozen row,
+ * migration 0126 installs a BEFORE UPDATE trigger that raises on any UPDATE of a frozen row,
  * so a later code change cannot rewrite what an evaluation already ran under, and a BEFORE
  * DELETE trigger that refuses every delete outside the cleanup path.
  */

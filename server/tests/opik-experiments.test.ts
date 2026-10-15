@@ -463,9 +463,9 @@ describe("the submit service leaves one audit row per submit action", () => {
 });
 
 test("ExperimentStoreError keeps the house error convention: the code is the contract", () => {
-  const error = new ExperimentStoreError("EXPERIMENT_NOT_FOUND", 404);
-  expect(error.message).toBe("EXPERIMENT_NOT_FOUND");
-  expect(error.code).toBe("EXPERIMENT_NOT_FOUND");
-  expect(error.status).toBe(404);
+  const error = new ExperimentStoreError("EXPERIMENT_STATE_INVALID", 409);
+  expect(error.message).toBe("EXPERIMENT_STATE_INVALID");
+  expect(error.code).toBe("EXPERIMENT_STATE_INVALID");
+  expect(error.status).toBe(409);
   expect(error).toBeInstanceOf(Error);
 });

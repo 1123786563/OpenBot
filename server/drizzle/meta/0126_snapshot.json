@@ -19575,7 +19575,182 @@
         },
         "ai_observation_experiments_frozen_coherence_check": {
           "name": "ai_observation_experiments_frozen_coherence_check",
-          "value": "((\"ai_observation_experiments\".\"state\" = 'draft' AND \"ai_observation_experiments\".\"frozen_at\" IS NULL) OR (\"ai_observation_experiments\".\"state\" = 'frozen' AND \"ai_observation_experiments\".\"frozen_at\" IS NOT NULL AND \"ai_observation_experiments\".\"config_hash\" <> ''))"
+          "value": "((\"ai_observation_experiments\".\"state\" = 'draft' AND \"ai_observation_experiments\".\"frozen_at\" IS NULL AND \"ai_observation_experiments\".\"config_hash\" = '') OR (\"ai_observation_experiments\".\"state\" = 'frozen' AND \"ai_observation_experiments\".\"frozen_at\" IS NOT NULL AND \"ai_observation_experiments\".\"config_hash\" <> ''))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.ai_observation_export_jobs": {
+      "name": "ai_observation_export_jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "row_limit": {
+          "name": "row_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_count": {
+          "name": "row_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redaction_policy_version": {
+          "name": "redaction_policy_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "artifact": {
+          "name": "artifact",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locator_workspace": {
+          "name": "locator_workspace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "locator_project": {
+          "name": "locator_project",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ai_observation_export_jobs_scope_created_idx": {
+          "name": "ai_observation_export_jobs_scope_created_idx",
+          "columns": [
+            {
+              "expression": "scope_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ai_observation_export_jobs_active_actor_idx": {
+          "name": "ai_observation_export_jobs_active_actor_idx",
+          "columns": [
+            {
+              "expression": "actor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {},
+          "where": "\"ai_observation_export_jobs\".\"state\" IN ('queued', 'running')"
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ai_observation_export_jobs_state_check": {
+          "name": "ai_observation_export_jobs_state_check",
+          "value": "\"ai_observation_export_jobs\".\"state\" IN ('queued', 'running', 'completed', 'failed', 'cancelled')"
+        },
+        "ai_observation_export_jobs_artifact_completed_check": {
+          "name": "ai_observation_export_jobs_artifact_completed_check",
+          "value": "\"ai_observation_export_jobs\".\"artifact\" IS NULL OR \"ai_observation_export_jobs\".\"state\" = 'completed'"
+        },
+        "ai_observation_export_jobs_error_failed_check": {
+          "name": "ai_observation_export_jobs_error_failed_check",
+          "value": "\"ai_observation_export_jobs\".\"error_code\" IS NULL OR \"ai_observation_export_jobs\".\"state\" = 'failed'"
+        },
+        "ai_observation_export_jobs_settled_terminal_check": {
+          "name": "ai_observation_export_jobs_settled_terminal_check",
+          "value": "(\"ai_observation_export_jobs\".\"settled_at\" IS NULL AND \"ai_observation_export_jobs\".\"state\" IN ('queued', 'running')) OR (\"ai_observation_export_jobs\".\"settled_at\" IS NOT NULL AND \"ai_observation_export_jobs\".\"state\" NOT IN ('queued', 'running'))"
+        },
+        "ai_observation_export_jobs_row_count_completed_check": {
+          "name": "ai_observation_export_jobs_row_count_completed_check",
+          "value": "\"ai_observation_export_jobs\".\"row_count\" IS NULL OR \"ai_observation_export_jobs\".\"state\" = 'completed'"
+        },
+        "ai_observation_export_jobs_row_limit_positive_check": {
+          "name": "ai_observation_export_jobs_row_limit_positive_check",
+          "value": "\"ai_observation_export_jobs\".\"row_limit\" > 0"
         }
       },
       "isRLSEnabled": false
