@@ -19,8 +19,11 @@
  * secret-label context covers api_key/access-token-style labels at any distance on either side;
  * `<think>` chains are reasoning content; loopback, unspecified and link-local hosts are raw
  * attachments; a hostile accessor cannot abort projection; lowercase PEM headers are denied.
+ * v4: endpoint host matching strips the DNS root-label trailing dot (`localhost.` is the
+ * loopback host); record enumeration survives throwing ownKeys/getOwnPropertyDescriptor traps
+ * and drops deny-matching Proxy key names.
  */
-export const REDACTION_POLICY_VERSION = "opik-redaction/3";
+export const REDACTION_POLICY_VERSION = "opik-redaction/4";
 
 export type SafeContentState = "projected" | "omitted" | "truncated";
 
