@@ -206,6 +206,8 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
+import { createPreviewOrigin } from "./craft/preview-origin";
+import { createPreviewTickets } from "./craft/preview-ticket";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
@@ -4641,6 +4643,28 @@ const craftManagedContentFor = createCraftManagedContentResolver({
     });
   },
 });
+/*
+ * The craft preview origin (#361, spec craft-preview-origin D5/D7): hosts in the
+ * preview namespace — dev: 127.0.0.1 on this server's own port beside a localhost
+ * login; production: <hash-label>.<preview base> from the configured template —
+ * are claimed by the dispatcher below, ahead of every main-site branch. One
+ * preview-ticket table for the whole process: the issuing route and the preview
+ * origin's redemption entry share this instance (#360's review constraint).
+ * Undefined when craft is off: with no craft surface there is nothing to claim.
+ */
+const craftPreviewTickets =
+  craftEffectiveConfig.enabled
+    ? createPreviewTickets({ store: createCraftStore(database) })
+    : undefined;
+const craftPreviewOrigin =
+  craftEffectiveConfig.enabled && craftPreviewTickets
+    ? createPreviewOrigin({
+        config: craftEffectiveConfig,
+        previewTickets: craftPreviewTickets,
+        secret: config.keyEncryptionKey,
+      })
+    : undefined;
+
 const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
   ? ({ requireUser }) =>
       createCraftRoutes({
@@ -4679,6 +4703,14 @@ const craftRoutes: CraftRoutesFactory | undefined = craftEffectiveConfig.enabled
             pluginStore.mcpWireConnectionFor(userId, serverId),
           kbSearch: craftKbSearch,
           mcpRelayBaseUrl: craftMcpRelayBaseUrl,
+          /*
+           * The process's ONE preview-ticket table and the preview origin's
+           * address derivation (#360/#361): the issuing route mints through these
+           * very instances and the preview origin's entry (the dispatcher branch
+           * below) redeems against the same table — never a second instance.
+           */
+          previewTickets: craftPreviewTickets,
+          previewOriginFor: (sessionId: string) => craftPreviewOrigin!.originFor(sessionId),
         },
       })
   : undefined;
@@ -5565,6 +5597,25 @@ serve<SocketData>({
   port,
   async fetch(request, server) {
     const url = new URL(request.url);
+    // The craft preview origin (#361): claimed hosts NEVER fall through to the
+    // main-site branches below — unknown preview hosts 404 right here, closed
+    // admission answers 503 with its displayable reason, and a resolved session
+    // lands on the preview entry (ticket redemption → D9 cookie). Bun derives
+    // request.url's host from the Host header on this listener for plain HTTP
+    // and websocket upgrades alike (verified against a live listener).
+    if (craftPreviewOrigin?.handlesRequest(request)) {
+      const resolved = craftPreviewOrigin.resolvePreviewRequest(request);
+      if ("sessionId" in resolved) {
+        return craftPreviewOrigin.handlePreviewRequest(
+          resolved.sessionId,
+          request,
+        );
+      }
+      return Response.json(
+        { error: resolved.refuse.reason },
+        { status: resolved.refuse.status },
+      );
+    }
     if (url.pathname === "/api/audio/transcriptions") {
       server.timeout(request, DICTATION_HTTP_IDLE_SECONDS);
     }
