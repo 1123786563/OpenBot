@@ -27,10 +27,10 @@ const DENY: ReadonlyArray<{ reason: OmitReason; pattern: RegExp }> = [
     pattern:
       /\b(?:postgresql|postgres|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?):\/\/\S+/i,
   },
-  { reason: "credential", pattern: /\bBearer\s+[A-Za-z0-9._\-]{16,}/i },
+  { reason: "credential", pattern: /\bBearer\s+[A-Za-z0-9._-]{16,}/i },
   {
     reason: "credential",
-    pattern: /\bsk-(?:live|test|proj)-[A-Za-z0-9._\-]{16,}/,
+    pattern: /\bsk-(?:live|test|proj)-[A-Za-z0-9._-]{16,}/,
   },
   { reason: "credential", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { reason: "credential", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
