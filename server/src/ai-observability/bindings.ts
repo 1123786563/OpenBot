@@ -276,8 +276,9 @@ export function createRunBindingStore(db: Database): RunBindingStore {
 
     async countUnreconciled(scope) {
       assertObservationScope(scope);
-      // Soft-deleted rows stop being evidence; an expired-but-live binding is still
-      // an unconfirmed record and still counts, exactly like the reads above treat it.
+      // Soft-deleted rows stop being evidence here — unlike the reads above, which
+      // do not filter on deletedAt; an expired-but-live binding is still an
+      // unconfirmed record and still counts.
       const rows = await db
         .select({ value: count() })
         .from(aiObservationBindings)

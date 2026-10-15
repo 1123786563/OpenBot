@@ -159,7 +159,7 @@ function usageFromUpstream(usage: unknown): RunUsageReport {
  * fabricated time. The value is display data, not authorization, so it survives as text.
  */
 function createdAtFromUpstream(row: OpikTraceRow): string | "unavailable" {
-  const started = (row as Record<string, unknown>).start_time;
+  const started = row.start_time;
   if (typeof started !== "string") return "unavailable";
   const parsed = Date.parse(started);
   if (Number.isNaN(parsed)) return "unavailable";

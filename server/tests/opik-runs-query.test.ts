@@ -342,17 +342,21 @@ describe("runs query — acceptance 1: only current managers may query", () => {
 
   test("two scopes holding the same resource ids stay isolated", async () => {
     // Both scopes own a binding for the SAME run id with different attempt ids;
-    // each scope must only ever see its own row.
+    // each scope must only ever see its own row. The TTL is the production
+    // default: the count of upstream reads this asserts must not race a
+    // sub-test wall clock.
     const shared = fakePort();
     const a = appFor({
       bindings: [bindingRow(scopeA, { attemptId: "a-1" })],
       port: shared,
+      cacheTtlMs: 5_000,
     });
     const b = appFor({
       actor: otherOwner,
       rows: [profile({ ownerUserId: otherOwner.id })],
       bindings: [bindingRow(scopeB, { attemptId: "b-1" })],
       port: shared,
+      cacheTtlMs: 5_000,
     });
 
     const detailA = await (await detail(a.app)).json();
@@ -382,7 +386,7 @@ describe("runs query — acceptance 1: only current managers may query", () => {
 describe("runs query — acceptance 3: revocation and transfer are immediate", () => {
   test("losing management makes list, detail and history unreadable at once", async () => {
     const rows = [profile()];
-    const { app, port } = appFor({ rows });
+    const { app, port } = appFor({ rows, cacheTtlMs: 5_000 });
     expect((await list(app)).status).toBe(200);
     expect((await detail(app)).status).toBe(200);
 
@@ -507,7 +511,12 @@ describe("runs query — list pagination contract", () => {
     const { app } = appFor({ port: fakePort({ rows: fiveRows }) });
     const first = await (await list(app, "?limit=2")).json();
     const cursor: string = first.pagination.nextCursor;
-    const forged = `${cursor.slice(0, -2)}xx`;
+    // The replacement tail is picked so the tamper is never a no-op: in 1 of
+    // 4096 processes the cursor's own tail is already "xx", and swapping it for
+    // itself would assert on a valid cursor. The expect pins that invariant.
+    const tail = cursor.endsWith("xx") ? "xw" : "xx";
+    const forged = `${cursor.slice(0, -2)}${tail}`;
+    expect(forged).not.toBe(cursor);
     const response = await list(app, `?cursor=${forged}`);
     expect(response.status).toBe(403);
     expect((await response.json()).error).toBe("OWNERSHIP_REQUIRED");
@@ -898,7 +907,10 @@ describe("runs query — detail", () => {
   });
 
   test("detail after a list reuses the cached window", async () => {
-    const { app, port } = appFor({ port: fakePort({ rows: [traceRow()] }) });
+    const { app, port } = appFor({
+      port: fakePort({ rows: [traceRow()] }),
+      cacheTtlMs: 5_000,
+    });
     await list(app);
     await detail(app);
     expect(reads(port.calls)).toBe(2);
