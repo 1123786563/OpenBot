@@ -49,6 +49,9 @@ describe("the run-binding store refuses what is not a trusted scope", () => {
     expect(() =>
       store.reconcile(forged, "run-1", "attempt-1", "opik-trace-1"),
     ).toThrow(new ObservationScopeError("OWNERSHIP_REQUIRED", 403));
+    expect(() => store.latestAttempt(forged, "run-1")).toThrow(
+      new ObservationScopeError("OWNERSHIP_REQUIRED", 403),
+    );
   });
 
   test("an ownership denial never yields a scope to bind under", () => {
@@ -101,6 +104,16 @@ describe("the run-binding store validates its own inputs", () => {
     expect(() => store.reconcile(trusted, "run-1", "attempt-1", "")).toThrow(
       new RunBindingError("BINDING_INPUT_INVALID", 400),
     );
+  });
+
+  test("T11's read seam refuses a run reference before any query", () => {
+    // The pre-query refusals the runs-query surface depends on: an empty run id
+    // never reaches the database.
+    for (const runId of ["", " "]) {
+      expect(() => store.latestAttempt(trusted, runId)).toThrow(
+        new RunBindingError("BINDING_INPUT_INVALID", 400),
+      );
+    }
   });
 });
 
