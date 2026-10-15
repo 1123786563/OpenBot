@@ -427,6 +427,25 @@ describe("case review — acceptance 4: the canary never survives projection", (
       "sk-live-abc123def456ghi789jkl012",
     );
   });
+
+  test("one case refused in both fields still counts once — the unit is the case", async () => {
+    const { service } = serviceFor([bindingRow(scopeA)]);
+    const outcome = await service.review(scopeA, {
+      runId: "run-1",
+      decision: "approved",
+      cases: [
+        {
+          ...fragment,
+          input: "sk-live-abc123def456ghi789jkl012 is not a case input",
+          referenceOutput: "postgres://u:p@h/db is not a reference output",
+        },
+        fragment,
+      ],
+    });
+    // The count answers "how many of my cases came back damaged", which the reviewer
+    // then compares against cases.length — not "how many fields the policy refused".
+    expect(outcome.canaryFindings).toBe(1);
+  });
 });
 
 describe("case review — acceptance 2: saving reaches the T19 freeze with honest provenance", () => {
