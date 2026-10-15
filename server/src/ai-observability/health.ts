@@ -52,7 +52,21 @@ export type OpikWriteStats = Readonly<{
     ownership_drift: number;
     unexpected: number;
   }>;
+  /**
+   * The id-mapping outcomes the observation path produces (T17): a refused link
+   * verdict is a detected fact (a broken chain, upstream duplication) and a
+   * link-store failure is a swallowed-but-seen error. Labels only — never the
+   * local or upstream ids, never the evidence.
+   */
+  idLinks: Readonly<{
+    chain_broken: number;
+    divergent: number;
+    error: number;
+  }>;
 }>;
+
+/** One id-mapping outcome label, the same enumeration `OpikWriteStats.idLinks` counts. */
+export type OpikIdLinkOutcome = "chain_broken" | "divergent" | "error";
 
 /** The safe projection the health route serves. */
 export type OpikHealthSnapshot = Readonly<{
@@ -88,6 +102,12 @@ export type OpikHealthService = {
    * `failed.unavailable`) instead of performing it. Never awaits the network.
    */
   submit(write: OpikObservationWrite): OpikWriteSubmitResult;
+  /**
+   * Counts one id-mapping outcome from the observation path (T17): safe labels
+   * only, so the refusals and failures of the mapping stay observable without
+   * the ids or evidence ever leaving the store.
+   */
+  countIdLink(outcome: OpikIdLinkOutcome): void;
   writeStats(): OpikWriteStats;
   /** The safe health projection: a fresh probe plus the write counters. */
   snapshot(): Promise<OpikHealthSnapshot>;
@@ -130,6 +150,11 @@ export function createOpikHealthService(
       unexpected: 0,
     },
   };
+  const idLinkStats: Record<OpikIdLinkOutcome, number> = {
+    chain_broken: 0,
+    divergent: 0,
+    error: 0,
+  };
   const idleWaiters = new Set<() => void>();
 
   const writeStats = (): OpikWriteStats => ({
@@ -137,6 +162,7 @@ export function createOpikHealthService(
     depth: queue.length,
     ...stats,
     failed: { ...stats.failed },
+    idLinks: { ...idLinkStats },
   });
 
   const settleIdle = () => {
@@ -257,6 +283,9 @@ export function createOpikHealthService(
   return {
     readiness,
     submit,
+    countIdLink: (outcome) => {
+      idLinkStats[outcome] += 1;
+    },
     writeStats,
     snapshot: async () => ({
       readiness: await readiness(),

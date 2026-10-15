@@ -156,6 +156,32 @@ test("a replay of the same link is a replay; a divergent upstream id changes not
   expect(rows).toHaveLength(1);
 });
 
+test("a DIFFERENT local subject claiming an already-claimed upstream id is divergent, not an error (T17 review L-1a)", async () => {
+  await links.link(scopeA, {
+    local: { kind: "tool_step", id: `${prefix}-call-claim-a` },
+    upstream: { kind: "span", id: OP(11) },
+    observedTraceId: traceId("claim"),
+  });
+  // Upstream duplication: the challenger is a different local subject carrying
+  // the SAME upstream id. The store must answer the divergent verdict — an
+  // ON CONFLICT that names only the local key lets the upstream unique key
+  // throw a raw unique_violation instead.
+  expect(
+    await links.link(scopeA, {
+      local: { kind: "tool_step", id: `${prefix}-call-claim-b` },
+      upstream: { kind: "span", id: OP(11) },
+      observedTraceId: traceId("claim"),
+    }),
+  ).toEqual({ linked: false, reason: "divergent" });
+  // The standing mapping won; the challenger wrote nothing.
+  expect(
+    await links.byLocal(scopeA, "tool_step", `${prefix}-call-claim-b`),
+  ).toBeNull();
+  expect(await links.byUpstream(scopeA, "span", OP(11))).toMatchObject({
+    localId: `${prefix}-call-claim-a`,
+  });
+});
+
 test("the same local id under another scope is a different subject", async () => {
   await links.link(scopeA, {
     local: { kind: "tool_step", id: `${prefix}-call-3` },
