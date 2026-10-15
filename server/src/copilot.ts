@@ -464,6 +464,45 @@ export type ModelUsageReport = {
 };
 
 /**
+ * What one built-in model call's observation bypass saw: the verdict the metered path
+ * already reached, read after the fact. Structural on purpose — `copilot.ts` must not
+ * depend on the observability module a deployment may not have; `index.ts` adapts this
+ * fact into the recorder's observation at assembly.
+ */
+export type BuiltinModelSpanFact = {
+  eventId: string;
+  startedAt: Date;
+  endedAt: Date;
+  provider: string | undefined;
+  modelId: string | null;
+  ending:
+    | { kind: "succeeded"; inputTokens: number; outputTokens: number }
+    | { kind: "refused"; code: string }
+    | { kind: "settlement_failed"; code: string }
+    | { kind: "failed"; code: "provider_error" | "stream_error" }
+    | { kind: "canceled" }
+    | { kind: "usage_missing" };
+  /** The serialized provider request prompt; raw here, projected at the recorder. */
+  input: string | null;
+  /** The accumulated output text; raw here, projected at the recorder. */
+  output: string | null;
+};
+
+/**
+ * The model-span observer, wired at assembly exactly like the meter: absent means no
+ * observation happens at all — no prompt serialization, no delta accumulation, nothing.
+ */
+let builtinModelSpanObserver:
+  | ((fact: BuiltinModelSpanFact) => void)
+  | undefined;
+
+export function setBuiltinModelSpanObserver(
+  observer: ((fact: BuiltinModelSpanFact) => void) | undefined,
+) {
+  builtinModelSpanObserver = observer;
+}
+
+/**
  * How the input side of one billed call is provably bounded BEFORE the provider is called.
  *
  * A reservation is not a provider limit: admission needs a proof that billable input cannot
@@ -701,6 +740,42 @@ function meteredModel<T>(model: T): T {
       const occurredAt = new Date();
       let lifecycle: ModelUsageGateLifecycle | undefined;
       /*
+       * The model-span observation bypass (Issue #20): reads this call's verdict AFTER
+       * the metered path reaches it — never in front of a settlement decision, never a
+       * second provider call. Wired at assembly like the meter; absent, none of the
+       * capture below runs at all.
+       */
+      const spanObserver = builtinModelSpanObserver;
+      let spanInput: string | null = null;
+      let spanOutput = "";
+      if (spanObserver !== undefined) {
+        try {
+          spanInput = JSON.stringify(
+            (params as { prompt?: unknown })?.prompt ?? null,
+          );
+        } catch {
+          // A prompt that cannot serialize is metrics-only for the span, never a failure.
+        }
+      }
+      const reportSpan = (ending: BuiltinModelSpanFact["ending"]) => {
+        if (spanObserver === undefined) return;
+        try {
+          spanObserver({
+            eventId,
+            startedAt: occurredAt,
+            endedAt: new Date(),
+            provider:
+              typeof inner.provider === "string" ? inner.provider : undefined,
+            modelId: typeof inner.modelId === "string" ? inner.modelId : null,
+            ending,
+            input: spanInput,
+            output: spanOutput === "" ? null : spanOutput,
+          });
+        } catch {
+          // Observation never takes the product path down.
+        }
+      };
+      /*
        * The credit gate, BEFORE the first token: this is the one point every built-in Bot's
        * model call passes through (the same reason the meter lives here), and "before the
        * call" is the only place a refusal saves the cost. The gate itself is index.ts's — it
@@ -724,6 +799,13 @@ function meteredModel<T>(model: T): T {
             error instanceof ModelNotPricedError ||
             error instanceof CreditGateFailureError
           ) {
+            reportSpan({
+              kind: "refused",
+              code:
+                typeof (error as { code?: unknown })?.code === "string"
+                  ? (error as { code: string }).code
+                  : "admission_refused",
+            });
             throw error;
           }
           // The gate's own failure reason stays out of the person-facing sentinel; the
@@ -736,6 +818,7 @@ function meteredModel<T>(model: T): T {
             },
             "billing-model-gate-failed",
           );
+          reportSpan({ kind: "refused", code: "credit_gate_failed" });
           throw new CreditGateFailureError();
         }
       }
@@ -761,6 +844,7 @@ function meteredModel<T>(model: T): T {
         } catch {
           // Admission cleanup is contained: the refusal is the product failure.
         }
+        reportSpan({ kind: "refused", code });
         throw new ModelUsageRefusalError(code);
       };
       let request = params;
@@ -839,6 +923,8 @@ function meteredModel<T>(model: T): T {
         } catch {
           // Admission cleanup is contained: the provider failure is the product failure.
         }
+        // This exit predates the stream, so settleFail never runs here.
+        reportSpan({ kind: "failed", code: "provider_error" });
         throw error;
       }
 
@@ -882,6 +968,13 @@ function meteredModel<T>(model: T): T {
         } catch {
           // A meter that throws (or rejects) must not take the run's last chunk down with it.
         }
+        // The bypass observes last: durable finish, then meter, then this fact — the
+        // usage is the settlement's own committed number, copied, never recomputed.
+        reportSpan({
+          kind: "succeeded",
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        });
       };
       const settleFail = async (
         reason: ModelUsageFailureReason,
@@ -898,6 +991,28 @@ function meteredModel<T>(model: T): T {
           });
         } catch {
           // Release failures stay contained: the hold's own expiry is the backstop.
+        }
+        // The bypass maps the failure verdict the metered path just reached. Half-
+        // reported usage stays usage_missing — the observed half is billing evidence
+        // above, never a span usage number (a reported half is not a known whole).
+        switch (reason) {
+          case "no_usage":
+            // The provider confirmed a zero-cost completion: an actual 0/0, not missing.
+            reportSpan({ kind: "succeeded", inputTokens: 0, outputTokens: 0 });
+            break;
+          case "usage_missing":
+            reportSpan({ kind: "usage_missing" });
+            break;
+          case "cancelled":
+            reportSpan({ kind: "canceled" });
+            break;
+          case "bound_refused":
+            reportSpan({ kind: "refused", code: reason });
+            break;
+          case "provider_error":
+          case "stream_error":
+            reportSpan({ kind: "failed", code: reason });
+            break;
         }
       };
 
@@ -921,6 +1036,15 @@ function meteredModel<T>(model: T): T {
           }
 
           const part = chunk.value;
+          // Read-only output accumulation for the observation bypass: the delta is
+          // forwarded untouched below; this only remembers what already flowed past.
+          if (
+            spanObserver !== undefined &&
+            part?.type === "text-delta" &&
+            typeof (part as { delta?: unknown }).delta === "string"
+          ) {
+            spanOutput += (part as { delta: string }).delta;
+          }
           /**
            * The one settlement-failure exit: mark settled, log by eventId, tear the
            * upstream down, error the stream. Cancel — not just `releaseLock` — so the
@@ -967,6 +1091,9 @@ function meteredModel<T>(model: T): T {
             reader.cancel("settlement_failed").catch(() => {
               // The upstream is already gone; nothing to recover.
             });
+            // A settlement failure is never a success span: the verdict this call
+            // reached is a failure-terminal fact, observed after the teardown decision.
+            reportSpan({ kind: "settlement_failed", code: error.code });
             controller.error(error);
           };
           if (part?.type === "finish" && !settled) {
