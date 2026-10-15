@@ -25,9 +25,27 @@
   // not with a sibling. Named individually the way `app/tsconfig.json` names the two `shared` files
   // it reaches for.
   //
-  // `tests` is NOT here yet, and that is a known gap rather than a decision: the suite has never been
-  // type-checked and turning it on surfaces a few hundred years of accumulated `any`. It is what let
-  // a test pass an options object where a connection string belongs and hear nothing back. Its own
-  // change, because it is a sweep and not a fix.
-  "include": ["src", "scripts", "../scripts/composio-smoke.ts"]
+  // `tests` is NOT here, and that is a known gap rather than a decision: the suite has never been
+  // type-checked and turning it on surfaces a few hundred errors of accumulated `any`. It is what
+  // let a test pass an options object where a connection string belongs and hear nothing back. Its
+  // own change, because it is a sweep and not a fix.
+  //
+  // THAT GAP NOW DELIBERATELY INCLUDES `tests/enterprise/**` ONLY. The frozen cross-package
+  // zod contracts keep a DIRECT type gate instead: `../shared/enterprise` is included in full
+  // below, so nothing under `shared/enterprise` is a gap any more (app and server tests both
+  // consume these schemas; dropping the include would leave them unchecked everywhere): the
+  // dedicated `tsconfig.enterprise-tests.json` that used to check them belonged to main's enterprise
+  // stack, and this merge deletes that stack wholesale in favor of the delivery lineage's. The
+  // surviving enterprise tests are the delivery lineage's own, which were never written against
+  // that gate — restoring it against them reports ~190 errors (ai-sdk stream-part typing drift plus
+  // accumulated implicit `any`). Only `tests/support/enterprise-database.ts` is individually
+  // included, because the URL validation it carries is security-relevant and stays clean.
+  // Re-covering the enterprise suite is part of the same future sweep as the rest of `tests`.
+  "include": [
+    "src",
+    "scripts",
+    "tests/support/enterprise-database.ts",
+    "../shared/enterprise",
+    "../scripts/composio-smoke.ts"
+  ]
 }

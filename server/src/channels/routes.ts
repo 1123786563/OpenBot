@@ -792,6 +792,9 @@ export function createChannelStore(
     async softDelete(actor, channelId) {
       return await database.transaction(
         async (transaction) => {
+          await transaction.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["legacy", "channel", channelId])}, 0))`,
+          );
           const [row] = await transaction
             .select({ packageId: channels.packageId })
             .from(channels)

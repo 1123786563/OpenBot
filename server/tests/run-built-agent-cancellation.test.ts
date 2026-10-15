@@ -512,33 +512,24 @@ test("Stop aborts a production wrapped remote AG-UI HTTP stream", async () => {
   const wrapped = agents["remote-fixture"];
   if (!wrapped) throw new Error("remote fixture not built");
 
-  const wrappedResult = await runRemoteAndStop(
-    "production wrapped remote",
-    wrapped,
-    wrappedEndpoint,
+  // Fail-closed: the production-wrapped remote build refuses before any dial, and the
+  // standing wrapped endpoint is the tripwire proving no request ever arrives. The
+  // wrapped-remote HTTP-abort propagation and standing-role-on-the-wire coverage this
+  // half used to pin is parked behind a future verified governance contract.
+  await expect(wrapped.runAgent(input)).rejects.toThrow(
+    "REMOTE_RUN_BUDGET_UNVERIFIED",
   );
-  expect(wrappedResult.closedBeforeStop).toBe(false);
-  expect(wrappedResult.closedAfterStop).toBe(true);
-  expect(wrappedResult.requests).toBe(1);
-  expect(wrappedResult.bodies[0]?.runId).toBe(input.runId);
-  expect(typeof wrappedResult.bodies[0]?.threadId).toBe("string");
-  expect(wrappedResult.bodies[0]?.messages[0]).toMatchObject({
-    id: "standing-role:remote-fixture",
-    role: "system",
-  });
+  expect(wrappedEndpoint.counts().requests).toBe(0);
+  expect(() => wrapped.abortRun()).not.toThrow();
   console.log(
     JSON.stringify({
-      proof: "production-wrapped-remote-http-stop",
+      proof: "production-wrapped-remote-refused",
       direct: {
         closedBeforeStop: direct.closedBeforeStop,
         closedAfterStop: direct.closedAfterStop,
         requests: direct.requests,
       },
-      wrapped: {
-        closedBeforeStop: wrappedResult.closedBeforeStop,
-        closedAfterStop: wrappedResult.closedAfterStop,
-        requests: wrappedResult.requests,
-      },
+      wrapped: { refused: true, requests: 0 },
     }),
   );
 });
