@@ -70,6 +70,7 @@ export default defineConfig({
     "./src/db/schema/workshop.ts",
     "./src/db/schema/payment.ts",
     "./src/db/schema/usage-outbox.ts",
+    "./src/db/schema/ai-observability-bindings.ts",
     "./src/db/schema/enterprise-tenancy.ts",
     "./src/db/schema/enterprise-authz.ts",
     "./src/db/schema/enterprise-conversations.ts",
