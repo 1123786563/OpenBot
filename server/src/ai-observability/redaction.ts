@@ -77,7 +77,13 @@ function hasLabelledSecret(input: string): boolean {
   return SECRET_RUN.test(input) && SECRET_LABEL.test(input);
 }
 
-function denyReason(input: string): OmitReason | undefined {
+/**
+ * The structural deny verdict for a whole string. Exported for the id-mapping store
+ * (Issue #23/T17): an id that matches a credential class is refused before anything is
+ * stored — the mapping's columns are identifiers, and a canary-shaped identifier is a
+ * leak with an index on it.
+ */
+export function denyReason(input: string): OmitReason | undefined {
   for (const { reason, pattern } of DENY) {
     if (pattern.test(input)) return reason;
   }

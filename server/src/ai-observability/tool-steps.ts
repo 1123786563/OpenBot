@@ -31,6 +31,7 @@ import { randomBytes } from "node:crypto";
 import type { SafeText, SafeValue } from "../../../shared/ai-observability";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
+import type { IdLinkStore } from "./id-links";
 import type { OpikOtlpSpan } from "./opik-port";
 import {
   DEFAULT_METADATA_ALLOWLIST,
@@ -42,6 +43,26 @@ import {
 
 /** The step kinds a built-in run is made of (the step-type enumeration, Issue #21 handoff). */
 export type StepKind = "tool" | "retrieval";
+
+/**
+ * The run's W3C trace context a step observation carries (Issue #23/T17): the
+ * cross-service chain a step span must join. `traceId`/`parentSpanId` are the W3C
+ * coordinates the segment actually ran under; `opikTraceId` is the run's upstream
+ * trace id under the explicit-id strategy, present only when the run's upstream
+ * identity is honestly known (the run-association ticket threads it). A malformed
+ * value is never adopted — the span falls back to its own honest identity rather
+ * than claiming a context it cannot prove.
+ */
+export type StepTraceContext = Readonly<{
+  /** W3C trace id, 32 lowercase hex. */
+  traceId: string;
+  /** W3C parent span id, 16 lowercase hex, when the ambient span is known. */
+  parentSpanId?: string;
+  /** The upstream Opik trace id (hyphenated UUIDv7), when known. */
+  opikTraceId?: string;
+  /** The run/attempt this step belonged to, when the association is known. */
+  runRef?: Readonly<{ runId: string; attemptId: string }>;
+}>;
 
 /**
  * The three-way execution determination over the three separately observed facts:
@@ -79,6 +100,8 @@ export type ToolStepObservation = Readonly<{
   output?: string | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
+  /** The run's W3C trace context; absent roots the span's own trace, as before. */
+  trace?: StepTraceContext;
 }>;
 
 /**
@@ -154,6 +177,8 @@ export type RetrievalStepObservation = Readonly<{
     | { kind: "degraded"; reason: string };
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
+  /** The run's W3C trace context; absent roots the span's own trace, as before. */
+  trace?: StepTraceContext;
 }>;
 
 export type ToolStepRecorder = {
@@ -217,6 +242,63 @@ function nanos(date: Date): string | undefined {
   return (BigInt(date.getTime()) * 1_000_000n).toString();
 }
 
+/** The W3C id shapes the OTLP wire format admits. */
+const W3C_TRACE_ID = /^[0-9a-f]{32}$/;
+const W3C_SPAN_ID = /^[0-9a-f]{16}$/;
+/** Hyphenated UUIDv7 — the explicit-id shape the verified contract adopts verbatim. */
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** One freshly minted UUIDv7, the id the backend adopts as this span's own. */
+function mintUuidV7(): string {
+  const timestamp = BigInt(Date.now());
+  const bytes = randomBytes(16);
+  bytes[0] = Number((timestamp >> 40n) & 0xffn);
+  bytes[1] = Number((timestamp >> 32n) & 0xffn);
+  bytes[2] = Number((timestamp >> 24n) & 0xffn);
+  bytes[3] = Number((timestamp >> 16n) & 0xffn);
+  bytes[4] = Number((timestamp >> 8n) & 0xffn);
+  bytes[5] = Number(timestamp & 0xffn);
+  bytes[6] = (bytes[6] & 0x0f) | 0x70; // version 7
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = [...bytes]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * The span's identity under the run's chain (Issue #23/T17): the W3C trace id and
+ * parent the segment actually carries, plus the explicit upstream overrides when —
+ * and only when — the run's upstream trace id is honestly known. A malformed value
+ * is never adopted: the span falls back to its own honest identity (a fresh trace,
+ * no parent, no overrides, and therefore nothing to link) rather than claiming a
+ * context it cannot prove.
+ */
+function spanIdentity(
+  trace: StepTraceContext | undefined,
+): Pick<OpikOtlpSpan, "traceId" | "parentSpanId" | "opik"> {
+  const traceId =
+    trace !== undefined && W3C_TRACE_ID.test(trace.traceId)
+      ? trace.traceId
+      : randomBytes(16).toString("hex");
+  const parentSpanId =
+    trace?.parentSpanId !== undefined && W3C_SPAN_ID.test(trace.parentSpanId)
+      ? trace.parentSpanId
+      : undefined;
+  const opikTraceId =
+    trace?.opikTraceId !== undefined && UUID_V7.test(trace.opikTraceId)
+      ? trace.opikTraceId
+      : undefined;
+  return opikTraceId === undefined
+    ? { traceId, parentSpanId }
+    : {
+        traceId,
+        parentSpanId,
+        opik: { traceId: opikTraceId, spanId: mintUuidV7() },
+      };
+}
+
 /** Span content: the recorder's own assertion that this IS the span's product — the deny
  * patterns still run first and always win. */
 function projectSpanContent(text: string | null | undefined): SafeValue | null {
@@ -256,13 +338,20 @@ function baseSpan(
   fallback: string,
   startedAt: Date,
   endedAt: Date,
+  identity: ReturnType<typeof spanIdentity>,
 ): Pick<
   OpikOtlpSpan,
-  "traceId" | "spanId" | "name" | "startTimeUnixNano" | "endTimeUnixNano"
+  | "traceId"
+  | "spanId"
+  | "parentSpanId"
+  | "opik"
+  | "name"
+  | "startTimeUnixNano"
+  | "endTimeUnixNano"
 > {
   const name = projectSafeName(label);
   return {
-    traceId: randomBytes(16).toString("hex"),
+    ...identity,
     spanId: randomBytes(8).toString("hex"),
     // A withheld name would be refused by the port; a known-safe literal stands in.
     name:
@@ -303,6 +392,7 @@ function buildToolStepSpan(observation: ToolStepObservation): OpikOtlpSpan {
       "tool",
       observation.proposedAt ?? observation.endedAt,
       observation.endedAt,
+      spanIdentity(observation.trace),
     ),
     attributes,
   };
@@ -343,29 +433,65 @@ function buildRetrievalStepSpan(
       "retrieval",
       observation.occurredAt,
       observation.endedAt,
+      spanIdentity(observation.trace),
     ),
     attributes,
   };
 }
 
 export function createToolStepRecorder(
-  deps: Readonly<{ healthService: Pick<OpikHealthService, "submit"> }>,
+  deps: Readonly<{
+    healthService: Pick<OpikHealthService, "submit">;
+    /**
+     * The id-mapping store (Issue #23/T17). When present, a tool step whose span
+     * carries an explicit upstream id is linked AFTER the upstream write landed —
+     * the governed write path's ordering: projection, span, then the mapping, so an
+     * id the backend never adopted can never be claimed. Absent means no mapping
+     * happens and the span write is unchanged.
+     */
+    idLinks?: Pick<IdLinkStore, "link">;
+  }>,
 ): ToolStepRecorder {
   return {
     record(observation) {
       const scope = observation.scope;
       if (scope === undefined) return;
       const span = buildToolStepSpan(observation);
+      const idLinks = deps.idLinks;
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
         operation: "writeSpans",
-        perform: (port) => port.writeSpans(scope, { spans: [span] }),
+        perform: async (port) => {
+          const result = await port.writeSpans(scope, { spans: [span] });
+          if (result.outcome === "ok" && idLinks !== undefined && span.opik) {
+            // The mapping follows the write, never precedes it. A refused verdict
+            // (chain_broken, divergent) is a detected fact, and a link store that
+            // throws must not turn a span that already landed into a counted
+            // failure — both are observations here, swallowed by design.
+            try {
+              await idLinks.link(scope, {
+                local: { kind: "tool_step", id: observation.toolCallId },
+                upstream: { kind: "span", id: span.opik.spanId },
+                ...(observation.trace?.runRef !== undefined
+                  ? { runRef: observation.trace.runRef }
+                  : {}),
+                observedTraceId: span.traceId,
+              });
+            } catch {
+              // See above: the span write's own outcome is the queue's truth.
+            }
+          }
+          return result;
+        },
       };
       deps.healthService.submit(write);
     },
     recordRetrieval(observation) {
       const scope = observation.scope;
       if (scope === undefined) return;
+      // No id link: a retrieval step has no local id of its own (queries are not
+      // id'd), and a synthesized one would make the mapping ambiguous. Only tool
+      // steps — which carry a toolCallId — link.
       const span = buildRetrievalStepSpan(observation);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,

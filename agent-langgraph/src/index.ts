@@ -22,7 +22,11 @@ import {
   keyVariableFor,
   requiresResponsesApi,
 } from "../../shared/model-providers";
-import { initProcessTracing, withTraceFetch } from "../../shared/trace";
+import {
+  initProcessTracing,
+  injectTraceHeaders,
+  withTraceFetch,
+} from "../../shared/trace";
 import {
   GovernedCallbackHandler,
   governedRunSpan,
@@ -262,12 +266,18 @@ async function callTool(
     return "Refused. This run carried no signed statement of which Bot and person it is for.";
   }
   try {
+    /*
+     * The chain's next hop (Issue #23/T17): the tool call dials back into this
+     * deployment carrying the W3C context of the span it runs under — the tool
+     * span when one is active, the run's otherwise — so the server-side
+     * execution continues the same trace instead of rooting a fresh one.
+     */
     const response = await fetch(TOOL_URL, {
       method: "POST",
-      headers: {
+      headers: injectTraceHeaders({
         "content-type": "application/json",
         "x-openbot-agent-token": TOOL_TOKEN,
-      },
+      }),
       /*
        * The deployment's own statement, handed straight back.
        *
