@@ -221,6 +221,26 @@ describe("the run list answers the real facts (acceptance 1)", () => {
     // Unavailable is not zero: no "0" token claim is rendered anywhere.
     expect(pageText(view)).not.toContain("0 tokens");
   });
+
+  test("a row whose state this build cannot name fails closed as unknown (Q-M1b)", async () => {
+    runsHandler = () =>
+      Response.json({
+        ...listBody([]),
+        runs: [
+          { ...summary(), state: "escalated" },
+          summary({ state: "completed", durationMs: 30_000 }),
+        ],
+      });
+    const view = draw();
+    // The row keeps its own facts — it renders, it does not crash.
+    await waitFor(() => expect(pageText(view)).toContain("21.9 s"));
+    expect(pageText(view)).toContain("30.0 s");
+    // The unknown word is the row's title, not just the filter chip that always shows it.
+    const rowTitle = view
+      .getAllByText("Unknown outcome")
+      .find((node) => node.tagName !== "BUTTON");
+    expect(rowTitle).toBeTruthy();
+  });
 });
 
 describe("the five screen conditions stay five different sentences (acceptance 2)", () => {
@@ -264,6 +284,20 @@ describe("the five screen conditions stay five different sentences (acceptance 2
     const view = draw();
     await view.findByText("Upstream unavailable");
     expect(view.queryByText("No runs yet")).toBeNull();
+  });
+
+  test("a pagination object without a cursor is the unavailable fault, not a clickable Next (Q-L)", async () => {
+    // nextCursor absent: a Next button that would fire an undefined cursor is a
+    // promise the body cannot keep, so the malformed success is the store failing
+    // to answer — not a page of rows that pages into a refusal.
+    runsHandler = () =>
+      Response.json({
+        ...listBody([summary()]),
+        pagination: { total: 1, window: 1, offset: 0, limit: 20 },
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("21.9 s")).toBeNull();
   });
 
   test("a still-syncing store says so beside the rows it does have", async () => {
