@@ -1,0 +1,593 @@
+import { describe, expect, test } from "bun:test";
+import type { SafeText, SafeValue } from "../../shared/ai-observability";
+import { freezeExperimentConfig } from "../src/ai-observability/experiments";
+import {
+  projectSafeFixture,
+  projectSafeText,
+} from "../src/ai-observability/redaction";
+import {
+  DEFAULT_EVALUATION_BUDGET,
+  extractRuleSet,
+  MAX_RULES_PER_SET,
+  type ScoringRule,
+  scoreRunOutput,
+} from "../src/ai-observability/scoring/rules";
+
+/**
+ * Unit contract of the deterministic rule scorer (Issue #32 / DAG T26). Everything here is the
+ * pure seam: rules come out of a really-frozen judge config (freezeExperimentConfig, never a
+ * hand-drawn envelope), outputs arrive as real projection envelopes, and the assertions pin the
+ * three failure classes, the freeze-tamper refusal, the canary doctrine (withheld content is
+ * classified, never scored) and same-input-same-output determinism. No database, no LLM, no clock.
+ */
+
+/** Freeze a judge config through the real T22 pipeline and hand back just its envelope. */
+function frozenJudgeConfig(raw: Record<string, unknown>): SafeValue {
+  return freezeExperimentConfig({
+    botConfig: {},
+    prompt: "summarize",
+    modelName: "test-model",
+    modelParameters: {},
+    toolFixtures: {},
+    judgeConfig: raw,
+    judgeVersion: "rules-1",
+  }).judgeConfig;
+}
+
+/** A projected text output — what T23/T24 will hand the scorer after a run. */
+const textOutput = (text: string): SafeText =>
+  projectSafeText(text, { allowFreeText: true });
+
+const RULE_SET = {
+  rules: [
+    {
+      id: "exact",
+      kind: "exact_match",
+      expected: "Paris",
+      caseSensitive: true,
+    },
+    { id: "ci", kind: "contains", expected: "PARIS", caseSensitive: false },
+    { id: "re", kind: "regex", pattern: "^P\\w+s$", flags: "" },
+    { id: "num", kind: "numeric", op: ">", expected: 10 },
+    {
+      id: "jp",
+      kind: "json_path",
+      path: "cities[0].name",
+      assert: "equals",
+      expected: "Paris",
+    },
+  ],
+};
+
+describe("extractRuleSet refuses anything that is not an intact frozen rule set", () => {
+  test("a real freeze of the five operators round-trips into plain rules", () => {
+    const res = extractRuleSet(frozenJudgeConfig(RULE_SET));
+    expect(res).toMatchObject({ ok: true });
+    if (!res.ok) return;
+    expect(res.rules).toEqual(RULE_SET.rules);
+    // Extra judge settings outside `rules` are not the scorer's business.
+    const withExtra = extractRuleSet(
+      frozenJudgeConfig({ ...RULE_SET, llmJudge: { model: "x" } }),
+    );
+    expect(withExtra).toMatchObject({ ok: true });
+  });
+
+  test("an omitted or truncated judge config envelope is unavailable, never empty rules", () => {
+    expect(
+      extractRuleSet({ state: "omitted", reason: "credential" }),
+    ).toMatchObject({ ok: false, code: "RULESET_UNAVAILABLE" });
+    expect(
+      extractRuleSet({ state: "truncated", value: null, originalBytes: 99 }),
+    ).toMatchObject({ ok: false, code: "RULESET_UNAVAILABLE" });
+  });
+
+  test("rules absent, not an array, or past the freeze's array cap refuse", () => {
+    expect(extractRuleSet(frozenJudgeConfig({}))).toMatchObject({
+      ok: false,
+      code: "RULESET_UNAVAILABLE",
+    });
+    expect(extractRuleSet(frozenJudgeConfig({ rules: "nope" }))).toMatchObject({
+      ok: false,
+      code: "RULESET_UNAVAILABLE",
+    });
+    const tooMany = {
+      rules: Array.from({ length: MAX_RULES_PER_SET + 1 }, (_, i) => ({
+        id: `r${i}`,
+        kind: "contains",
+        expected: "x",
+      })),
+    };
+    // 65 rules cannot survive the freeze intact (it truncates at 64), so the real pipeline
+    // already answers truncated — and extraction must refuse either way.
+    const frozen = frozenJudgeConfig(tooMany);
+    const rulesNode = (frozen.value as Record<string, SafeValue>).rules;
+    expect(rulesNode.state).toBe("truncated");
+    expect(extractRuleSet(frozen)).toMatchObject({
+      ok: false,
+      code: "RULESET_UNAVAILABLE",
+    });
+  });
+
+  test("a secret frozen into a rule withholds the leaf — the whole set is refused (canary)", () => {
+    const res = extractRuleSet(
+      frozenJudgeConfig({
+        rules: [
+          {
+            id: "leak",
+            kind: "contains",
+            expected: "sk-live-abcdefghijklmnop1234",
+          },
+        ],
+      }),
+    );
+    expect(res).toMatchObject({ ok: false, code: "RULESET_UNAVAILABLE" });
+  });
+
+  test("unknown fields and structured rule fields are refused, not ignored", () => {
+    expect(
+      extractRuleSet(
+        frozenJudgeConfig({
+          rules: [{ id: "x", kind: "contains", expected: "a", weight: 2 }],
+        }),
+      ),
+    ).toMatchObject({ ok: false, code: "RULESET_UNAVAILABLE" });
+    expect(
+      extractRuleSet(
+        frozenJudgeConfig({
+          rules: [{ id: "x", kind: "contains", expected: { deep: 1 } }],
+        }),
+      ),
+    ).toMatchObject({ ok: false, code: "RULESET_UNAVAILABLE" });
+  });
+
+  test("an empty rule set is legal — it scores nothing and reports no error", () => {
+    const res = extractRuleSet(frozenJudgeConfig({ rules: [] }));
+    expect(res).toMatchObject({ ok: true });
+    if (!res.ok) return;
+    const scored = scoreRunOutput(res, textOutput("anything"));
+    expect(scored.results).toEqual([]);
+    expect(scored.error).toBeUndefined();
+  });
+
+  test("extracted rules are deep-frozen: mutation attempts throw and change nothing", () => {
+    const res = extractRuleSet(frozenJudgeConfig(RULE_SET));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const rules = res.rules as readonly ScoringRule[];
+    expect(() => {
+      (rules[0] as { expected: string }).expected = "tampered";
+    }).toThrow();
+    expect(() => {
+      (rules as unknown as unknown[]).push({
+        id: "x",
+        kind: "contains",
+        expected: "x",
+      });
+    }).toThrow();
+    const before = scoreRunOutput(res, textOutput("Paris"));
+    const after = scoreRunOutput(res, textOutput("Paris"));
+    expect(after).toEqual(before);
+  });
+});
+
+describe("operator truth tables", () => {
+  const rules = (list: unknown[]) =>
+    extractRuleSet(frozenJudgeConfig({ rules: list }));
+
+  test("exact_match: equality, case fold, and mismatch", () => {
+    const rs = rules([
+      { id: "cs", kind: "exact_match", expected: "Paris", caseSensitive: true },
+      {
+        id: "ci",
+        kind: "exact_match",
+        expected: "paris",
+        caseSensitive: false,
+      },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(rs, textOutput("Paris")).results;
+    expect(out[0]).toMatchObject({ id: "cs", status: "passed" });
+    expect(out[1]).toMatchObject({ id: "ci", status: "passed" });
+    const miss = scoreRunOutput(rs, textOutput("paris")).results;
+    expect(miss[0]).toMatchObject({
+      id: "cs",
+      status: "failed",
+      reason: "not_equal",
+    });
+    expect(miss[1]).toMatchObject({ id: "ci", status: "passed" });
+  });
+
+  test("contains: substring and case fold", () => {
+    const rs = rules([
+      { id: "c", kind: "contains", expected: "answer", caseSensitive: true },
+      { id: "ci", kind: "contains", expected: "ANSWER", caseSensitive: false },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const hit = scoreRunOutput(rs, textOutput("The answer is 42.")).results;
+    expect(hit[0]).toMatchObject({ status: "passed" });
+    expect(hit[1]).toMatchObject({ status: "passed" });
+    const miss = scoreRunOutput(rs, textOutput("The ANSWER is 42.")).results;
+    expect(miss[0]).toMatchObject({
+      status: "failed",
+      reason: "not_contained",
+    });
+    expect(miss[1]).toMatchObject({ status: "passed" });
+  });
+
+  test("regex: match, no-match, i flag", () => {
+    const rs = rules([
+      { id: "m", kind: "regex", pattern: "^P\\w+s$", flags: "" },
+      { id: "i", kind: "regex", pattern: "^paris$", flags: "i" },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const hit = scoreRunOutput(rs, textOutput("Paris")).results;
+    expect(hit[0]).toMatchObject({ status: "passed" });
+    expect(hit[1]).toMatchObject({ status: "passed" });
+    const miss = scoreRunOutput(rs, textOutput("Lyons")).results;
+    expect(miss[0]).toMatchObject({ status: "failed", reason: "no_match" });
+    expect(miss[1]).toMatchObject({ status: "failed", reason: "no_match" });
+  });
+
+  test("numeric: every comparison, trim, floats, negatives", () => {
+    const rs = rules([
+      { id: "gt", kind: "numeric", op: ">", expected: 10 },
+      { id: "ge", kind: "numeric", op: ">=", expected: 10 },
+      { id: "lt", kind: "numeric", op: "<", expected: 10 },
+      { id: "le", kind: "numeric", op: "<=", expected: 10 },
+      { id: "eq", kind: "numeric", op: "==", expected: 10 },
+      { id: "ne", kind: "numeric", op: "!=", expected: 10 },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const ten = scoreRunOutput(rs, textOutput(" 10 ")).results;
+    expect(ten.map((r) => r.status)).toEqual([
+      "failed",
+      "passed",
+      "failed",
+      "passed",
+      "passed",
+      "failed",
+    ]);
+    expect(ten[0]).toMatchObject({ reason: "comparison_false" });
+    const neg = scoreRunOutput(rs, textOutput("-0.5")).results;
+    expect(neg.map((r) => r.status)).toEqual([
+      "failed",
+      "failed",
+      "passed",
+      "passed",
+      "failed",
+      "passed",
+    ]);
+    const f = scoreRunOutput(rs, textOutput("10.0001")).results;
+    expect(f[0]).toMatchObject({ status: "passed" });
+    expect(f[2]).toMatchObject({
+      status: "failed",
+      reason: "comparison_false",
+    });
+  });
+
+  test("numeric: non-numeric output is an explicit failed reason, never a silent 0", () => {
+    const rs = rules([{ id: "n", kind: "numeric", op: ">", expected: 1 }]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    expect(scoreRunOutput(rs, textOutput("42abc")).results[0]).toMatchObject({
+      status: "failed",
+      reason: "non_numeric",
+    });
+    expect(scoreRunOutput(rs, textOutput("Infinity")).results[0]).toMatchObject(
+      {
+        reason: "non_numeric",
+      },
+    );
+    // A structured output is compared at its root: a number scores, an object does not.
+    expect(scoreRunOutput(rs, projectSafeFixture(42)).results[0]).toMatchObject(
+      { status: "passed" },
+    );
+    expect(
+      scoreRunOutput(rs, projectSafeFixture({ a: 1 })).results[0],
+    ).toMatchObject({ reason: "non_numeric" });
+  });
+
+  test("json_path: deep nesting, every assert, arrays", () => {
+    const rs = rules([
+      {
+        id: "deep",
+        kind: "json_path",
+        path: "a.b[0].c.d[2]",
+        assert: "equals",
+        expected: 42,
+      },
+      { id: "ex", kind: "json_path", path: "a.b[0].c.d", assert: "exists" },
+      {
+        id: "str",
+        kind: "json_path",
+        path: "a.b[0].name",
+        assert: "contains",
+        expected: "ari",
+      },
+      {
+        id: "gt",
+        kind: "json_path",
+        path: "a.b[0].score",
+        assert: "gt",
+        expected: 0.5,
+      },
+      {
+        id: "le",
+        kind: "json_path",
+        path: "a.b[0].score",
+        assert: "lte",
+        expected: 0.87,
+      },
+      {
+        id: "nul",
+        kind: "json_path",
+        path: "a.b[0].note",
+        assert: "equals",
+        expected: null,
+      },
+      {
+        id: "bool",
+        kind: "json_path",
+        path: "a.b[0].ok",
+        assert: "equals",
+        expected: true,
+      },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(
+      rs,
+      textOutput(
+        JSON.stringify({
+          a: {
+            b: [
+              {
+                name: "Paris",
+                score: 0.87,
+                note: null,
+                ok: true,
+                c: { d: [0, 1, 42] },
+              },
+            ],
+          },
+        }),
+      ),
+    ).results;
+    expect(out.map((r) => r.status)).toEqual(Array(7).fill("passed"));
+  });
+
+  test("json_path: missing path, non-JSON output, non-string contains, non-numeric compare", () => {
+    const rs = rules([
+      { id: "miss", kind: "json_path", path: "a.x", assert: "exists" },
+      {
+        id: "eq",
+        kind: "json_path",
+        path: "a.x",
+        assert: "equals",
+        expected: 1,
+      },
+      {
+        id: "c",
+        kind: "json_path",
+        path: "a.n",
+        assert: "contains",
+        expected: "x",
+      },
+      { id: "g", kind: "json_path", path: "a.n", assert: "gt", expected: 10 },
+      { id: "gs", kind: "json_path", path: "a.s", assert: "gte", expected: 1 },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(
+      rs,
+      textOutput(JSON.stringify({ a: { n: 7, s: "seven" } })),
+    ).results;
+    expect(out[0]).toMatchObject({ status: "failed", reason: "path_missing" });
+    expect(out[1]).toMatchObject({ status: "failed", reason: "path_missing" });
+    expect(out[2]).toMatchObject({ status: "failed", reason: "not_a_string" });
+    // 7 does not exceed 10 — a data-shaped fact, honestly a failed comparison.
+    expect(out[3]).toMatchObject({
+      status: "failed",
+      reason: "comparison_false",
+    });
+    // "seven" is not a number to compare — an explicit failed reason, never a silent 0.
+    expect(out[4]).toMatchObject({ status: "failed", reason: "non_numeric" });
+    expect(
+      scoreRunOutput(rs, textOutput("just prose, not JSON")).results[0],
+    ).toMatchObject({ status: "failed", reason: "output_not_json" });
+  });
+
+  test("json_path walks the structured envelope directly; withheld leaves are per-rule errors", () => {
+    const rs = rules([
+      {
+        id: "ok",
+        kind: "json_path",
+        path: "meta.lang",
+        assert: "equals",
+        expected: "fr",
+      },
+      {
+        id: "score",
+        kind: "json_path",
+        path: "score",
+        assert: "gt",
+        expected: 0.5,
+      },
+      { id: "secret", kind: "json_path", path: "token", assert: "exists" },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const output = projectSafeFixture({
+      meta: { lang: "fr" },
+      score: 0.87,
+      token: "sk-live-abcdefghijklmnop1234",
+    });
+    const out = scoreRunOutput(rs, output).results;
+    expect(out[0]).toMatchObject({ status: "passed" });
+    expect(out[1]).toMatchObject({ status: "passed" });
+    // The canary: the withheld leaf is never read as a value — it is classified.
+    expect(out[2]).toMatchObject({ status: "error", code: "OUTPUT_MISSING" });
+  });
+
+  test("text operators score a structured output as its canonical JSON", () => {
+    const rs = rules([
+      { id: "exact", kind: "exact_match", expected: '{"a":1,"b":2}' },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    expect(
+      scoreRunOutput(rs, projectSafeFixture({ b: 2, a: 1 })).results[0],
+    ).toMatchObject({ status: "passed" });
+    expect(
+      scoreRunOutput(rs, projectSafeFixture({ b: 2, a: 3 })).results[0],
+    ).toMatchObject({ status: "failed", reason: "not_equal" });
+  });
+});
+
+describe("the three failure classes are explicit, never a 0", () => {
+  const rules = (list: unknown[]) =>
+    extractRuleSet(frozenJudgeConfig({ rules: list }));
+
+  test("rule syntax errors hit only their rule; the rest still score", () => {
+    const rs = rules([
+      { id: "good", kind: "contains", expected: "Paris" },
+      { id: "badre", kind: "regex", pattern: "(", flags: "" },
+      { id: "badflag", kind: "regex", pattern: "x", flags: "g" },
+      { id: "badpath", kind: "json_path", path: "a..b", assert: "exists" },
+      { id: "negidx", kind: "json_path", path: "a[-1]", assert: "exists" },
+      { id: "badop", kind: "numeric", op: "=>", expected: 1 },
+      { id: "noexp", kind: "contains" },
+      { id: "wrongtype", kind: "contains", expected: 5 },
+      { kind: "contains", expected: "x" },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(rs, textOutput("Paris")).results;
+    expect(out[0]).toMatchObject({ status: "passed" });
+    for (const i of [1, 2, 3, 4, 5, 6, 7]) {
+      expect(out[i]).toMatchObject({
+        status: "error",
+        code: "RULE_SYNTAX_INVALID",
+      });
+    }
+    // A rule without a usable id still gets a stable, addressed result row.
+    expect(out[8]).toMatchObject({
+      id: "rule[8]",
+      status: "error",
+      code: "RULE_SYNTAX_INVALID",
+    });
+    // No run-level error: the run itself evaluated fine.
+    expect(scoreRunOutput(rs, textOutput("Paris")).error).toBeUndefined();
+  });
+
+  test("pattern and path size caps are syntax errors", () => {
+    const rs = rules([
+      { id: "long", kind: "regex", pattern: "a".repeat(513), flags: "" },
+      {
+        id: "deep",
+        kind: "json_path",
+        path: Array.from({ length: 17 }, (_, i) => `k${i}`).join("."),
+        assert: "exists",
+      },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(rs, textOutput("aaa")).results;
+    expect(out[0]).toMatchObject({
+      status: "error",
+      code: "RULE_SYNTAX_INVALID",
+    });
+    expect(out[1]).toMatchObject({
+      status: "error",
+      code: "RULE_SYNTAX_INVALID",
+    });
+  });
+
+  test("evaluation timeout: budget exhaustion marks the unaffordable rules, deterministically", () => {
+    const rs = rules([
+      { id: "cheap", kind: "exact_match", expected: "Paris" },
+      { id: "costly", kind: "regex", pattern: "P", flags: "" },
+      { id: "after", kind: "contains", expected: "Paris" },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    // exact_match on "Paris" costs 10; regex costs (5+1)*8 = 48 — a 20-unit budget affords
+    // the first rule and nothing after it.
+    const run = scoreRunOutput(rs, textOutput("Paris"), { budget: 20 });
+    expect(run.results[0]).toMatchObject({ status: "passed" });
+    expect(run.results[1]).toMatchObject({
+      status: "error",
+      code: "EVALUATION_TIMEOUT",
+    });
+    expect(run.results[2]).toMatchObject({
+      status: "error",
+      code: "EVALUATION_TIMEOUT",
+    });
+    expect(run.error).toMatchObject({ code: "EVALUATION_TIMEOUT" });
+    // Same inputs, same classification — the budget is spent deterministically.
+    expect(scoreRunOutput(rs, textOutput("Paris"), { budget: 20 })).toEqual(
+      run,
+    );
+    // A budget that cannot afford even the first rule times out everything.
+    const none = scoreRunOutput(rs, textOutput("Paris"), { budget: 1 });
+    expect(none.results.every((r) => r.status === "error")).toBe(true);
+    // The default budget is generous enough that this suite's outputs never trip it.
+    expect(DEFAULT_EVALUATION_BUDGET).toBeGreaterThan(100_000);
+  });
+
+  test("missing output: absent, withheld, truncated and unprojected are OUTPUT_MISSING for every rule", () => {
+    const rs = rules([
+      { id: "a", kind: "contains", expected: "x" },
+      { id: "b", kind: "numeric", op: ">", expected: 1 },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    for (const output of [
+      undefined,
+      null,
+      { state: "omitted", reason: "credential" } as SafeText,
+      { state: "truncated", text: "x", originalBytes: 99 } as SafeText,
+      {
+        state: "truncated",
+        value: null,
+        originalBytes: 99,
+      } as unknown as SafeValue,
+      // Raw, unprojected content must never be scored, whatever a caller passes.
+      "raw secret text" as unknown as SafeText,
+      42 as unknown as SafeValue,
+    ]) {
+      const run = scoreRunOutput(rs, output);
+      expect(run.error).toMatchObject({ code: "OUTPUT_MISSING" });
+      expect(run.results.every((r) => r.status === "error")).toBe(true);
+      expect(run.results.every((r) => r.status !== "failed")).toBe(true);
+    }
+  });
+});
+
+describe("determinism and purity", () => {
+  test("the same inputs answer identically, call after call", () => {
+    const rs = extractRuleSet(frozenJudgeConfig(RULE_SET));
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const output = textOutput("Paris");
+    const first = scoreRunOutput(rs, output);
+    for (let i = 0; i < 50; i++) {
+      expect(scoreRunOutput(rs, output)).toEqual(first);
+    }
+    expect(first.error).toBeUndefined();
+  });
+
+  test("two independently frozen copies of one config score identically", () => {
+    const a = extractRuleSet(frozenJudgeConfig(RULE_SET));
+    const b = extractRuleSet(frozenJudgeConfig(RULE_SET));
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(scoreRunOutput(b, textOutput("Paris"))).toEqual(
+      scoreRunOutput(a, textOutput("Paris")),
+    );
+  });
+});
