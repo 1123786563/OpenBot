@@ -36,5 +36,76 @@
       "title": "上游不可用",
       "description": "可观测性存储没有响应，暂时读不到该版本。没有任何数据被删除。"
     }
+  },
+  "page": {
+    "title": "评测集",
+    "description": "来自本 Bot 运行记录的已审查案例，冻结为不可变的评测集版本。"
+  },
+  "list": {
+    "title": "评测集",
+    "description": "本 Bot 持有的每个评测集一行，并标注冻结版本数。",
+    "versions_one": "{{count}} 个版本",
+    "versions_other": "{{count}} 个版本"
+  },
+  "row": {
+    "noVersion": "还没有冻结版本"
+  },
+  "sync": {
+    "pending": "等待同步",
+    "syncing": "同步中",
+    "synced": "已同步",
+    "failed": "同步失败"
+  },
+  "save": {
+    "rowTitle": "从运行保存案例",
+    "rowDescription": "从本 Bot 的运行历史中挑选一个案例，审查脱敏策略将冻结的内容，然后保存为评测集版本。运行 id 来自运行可观测页面。",
+    "dialogTitle": "保存一个已审查案例",
+    "dialogDescription": "审查会先投影一次案例，并精确展示保存会冻结的内容。在你保存之前不会写入任何东西。",
+    "runId": "运行 id",
+    "datasetName": "评测集名称",
+    "caseInput": "案例输入",
+    "referenceOutput": "参考输出",
+    "toolFixtures": "工具 fixture（JSON 对象）",
+    "review": "预览将冻结的内容",
+    "save": "保存版本",
+    "close": "关闭",
+    "previewTitle": "将冻结的内容",
+    "canary_one": "有 {{count}} 个案例的部分内容被脱敏策略拒收。这些部分会以省略形式冻结，绝不按原文冻结。",
+    "canary_other": "有 {{count}} 个案例的部分内容被脱敏策略拒收。这些部分会以省略形式冻结，绝不按原文冻结。",
+    "fixturesInvalid": "工具 fixture 必须是一个 JSON 对象。",
+    "incomplete": "请先填写运行 id、评测集名称、案例输入和参考输出。",
+    "mustReview": "请先预览将冻结的内容；预览之后任何修改都会使预览失效。",
+    "savedNew": "已冻结为「{{name}}」的新版本：{{hash}}",
+    "savedReplay": "这段内容此前已保存过。返回的是「{{name}}」已存在的版本，原样未变：{{hash}}。没有创建任何新内容。",
+    "savedCases_one": "已冻结 {{count}} 个案例。",
+    "savedCases_other": "已冻结 {{count}} 个案例。"
+  },
+  "preview": {
+    "input": "输入",
+    "referenceOutput": "参考输出",
+    "toolFixtures": "工具 fixture"
+  },
+  "marker": {
+    "omitted": "已省略",
+    "truncated": "已截断"
+  },
+  "version": {
+    "title": "冻结版本",
+    "description": "每个版本都是不可变快照：投影一次、计算哈希、永不可编辑。保存不同内容会创建新版本；既有版本原样保留。",
+    "cases_one": "{{count}} 个案例",
+    "cases_other": "{{count}} 个案例",
+    "policy": "按 {{policy}} 投影"
+  },
+  "detail": {
+    "back": "评测集",
+    "untitled": "评测集",
+    "noVersions": "该评测集还没有冻结版本。"
+  },
+  "error": {
+    "CASE_REVIEW_RUN_NOT_FOUND": "本 Bot 的记录中没有这个运行 id。未保存任何内容。",
+    "CASE_REVIEW_INPUT_INVALID": "案例不合法：每个字段都必须有内容，给出的 attempt id 必须与该运行最近的 attempt 一致，fixture 必须是 JSON 对象。",
+    "DATASET_INPUT_INVALID": "评测集名称或案例不合法。未保存任何内容。",
+    "DATASET_NOT_FOUND": "该评测集不存在于本 Bot 的范围内。",
+    "unreachable": "可观测性存储没有响应。未保存任何内容。"
   }
 }

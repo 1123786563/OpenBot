@@ -29,6 +29,10 @@ const OBSERVABILITY_ROUTES = [
     url: "/bots/$agentId/evaluations",
     id: "/_authed/_app/bots/$agentId/evaluations",
   },
+  {
+    url: "/bots/$agentId/evaluations/$datasetId",
+    id: "/_authed/_app/bots/$agentId/evaluations/$datasetId",
+  },
   { url: "/admin/ai-observability", id: "/_authed/admin/ai-observability" },
 ];
 
