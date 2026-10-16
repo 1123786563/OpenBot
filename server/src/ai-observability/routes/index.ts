@@ -18,6 +18,7 @@
  */
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AgentActor, AgentProfile } from "../../agents/profile-types";
+import { createAuditStore } from "../../audit";
 import type { AppVariables } from "../../auth/guards";
 import type { Database } from "../../db/client";
 import {
@@ -28,7 +29,10 @@ import type { RunBindingStore } from "../bindings";
 import type { OpikConfig } from "../config";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
 import { createObservationDatasetStore } from "../datasets";
-import { createObservationExecutionStore } from "../executions";
+import {
+  createObservationExecutionStore,
+  type ExecutionBudgetPrecheck,
+} from "../executions";
 import { createObservationExperimentStore } from "../experiments";
 import type { OpikHealthService } from "../health";
 import type { OpikPort } from "../opik-port";
@@ -36,6 +40,7 @@ import type { RunsQueryService } from "../queries/runs";
 import { createWorkTicketReader } from "../results";
 import { createAdminSummaryRoutes } from "./admin-summary";
 import { createExperimentComparisonRoutes } from "./comparison";
+import { createExperimentWriteRoutes } from "./experiments";
 import { createExportRoutes } from "./exports";
 import { createAiObservabilityHealthRoutes } from "./health";
 import { createExperimentResultsRoutes } from "./results";
@@ -65,6 +70,12 @@ export type AiObservabilityDeps = {
   runsQuery?: RunsQueryService;
   /** The caller's bot listing, for the unfiltered admin summary. */
   listBots?: (actor: AgentActor) => Promise<readonly AgentProfile[]>;
+  /**
+   * The execution-start billing gate (T23/T25): the experiment submit route hands it
+   * to the start seam. Absent means the deployment has no metering machinery — the
+   * start refuses fail-closed, the freeze does not.
+   */
+  executionBilling?: Readonly<{ precheck: ExecutionBudgetPrecheck }>;
   /** Override for tests; the assembly builds its own service from the deps above. */
   summary?: AdminSummaryService;
 };
@@ -117,6 +128,21 @@ export function createAiObservabilityRoutes(
     routes.route(
       "/bots/:botId/experiment-comparisons",
       createExperimentComparisonRoutes(experimentStores),
+    );
+    // The write face (the T-routes closure): the T30 page's submit — one POST that
+    // freezes (T22, audited, idempotent on the frozen-configuration key) and starts
+    // the execution behind the billing precheck — and cancel, which settles a
+    // not-yet-terminal execution and leaves its settle trail.
+    routes.route(
+      "/bots/:botId/experiments",
+      createExperimentWriteRoutes({
+        canManageBot: deps.canManageBot,
+        scopeEpoch: deps.scopeEpoch,
+        experiments: experimentStores.experiments,
+        executions: experimentStores.executions,
+        audit: createAuditStore(deps.database),
+        billing: deps.executionBilling,
+      }),
     );
   }
 
