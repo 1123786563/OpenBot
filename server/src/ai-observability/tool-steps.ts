@@ -35,6 +35,9 @@ import type { IdLinkStore } from "./id-links";
 import type { OpikOtlpSpan } from "./opik-port";
 import {
   DEFAULT_METADATA_ALLOWLIST,
+  denyReason,
+  MAX_SAFE_RECORD_KEYS,
+  MAX_SAFE_TEXT_BYTES,
   projectSafeName,
   projectSafeRecord,
   projectSafeText,
@@ -398,6 +401,39 @@ function buildToolStepSpan(observation: ToolStepObservation): OpikOtlpSpan {
   };
 }
 
+/**
+ * kb_ids is the retrieval summary's id list, and the read side's contract (T18) is a
+ * BARE string array — so the list projects element-wise as plain ids, never through
+ * the deep projection. The T37 probe showed why: the deep projection wraps every
+ * element in a SafeValue envelope, the port's serializer unwraps only the outermost
+ * one, and the envelopes reached the upstream row — blinding the read side's hit
+ * summary (it reads strings) for every real retrieval step. Ids are structured
+ * allowlisted data, not free text, so the deny patterns still run per element; one
+ * withheld element withholds the whole list (a partial list would read as complete),
+ * which is the honest absence the projection already speaks. The ceiling is the same
+ * defensive bound the deep projection slices at; beyond it the list is not a shape
+ * this recorder produces, and it is omitted rather than silently shortened.
+ */
+function projectKbIds(
+  value: readonly string[] | undefined,
+): SafeValue | undefined {
+  if (value === undefined) return undefined;
+  if (value.length > MAX_SAFE_RECORD_KEYS) return undefined;
+  const kept: string[] = [];
+  for (const id of value) {
+    // An id is a locator, not free text: the deny patterns run (a credential-shaped
+    // id is refused outright), and a kept id lands verbatim — truncation would break
+    // the identity the read side resolves, so an over-bound id withholds instead.
+    if (typeof id !== "string") return undefined;
+    if (denyReason(id) !== undefined) return undefined;
+    if (new TextEncoder().encode(id).length > MAX_SAFE_TEXT_BYTES) {
+      return undefined;
+    }
+    kept.push(id);
+  }
+  return { state: "projected", value: kept };
+}
+
 function buildRetrievalStepSpan(
   observation: RetrievalStepObservation,
 ): OpikOtlpSpan {
@@ -413,13 +449,14 @@ function buildRetrievalStepSpan(
       ...(observation.outcome.kind === "hit"
         ? { fragment_count: observation.outcome.fragments.length }
         : {}),
-      kb_ids: observation.kbIds,
       span_state:
         observation.outcome.kind === "degraded" ? "failed" : "completed",
       origin: "builtin",
     },
     SPAN_ATTRIBUTE_ALLOWLIST,
   );
+  const kbIds = projectKbIds(observation.kbIds);
+  if (kbIds !== undefined) attributes.kb_ids = kbIds;
   const fragments =
     observation.outcome.kind === "hit"
       ? projectFragments(observation.outcome.fragments)

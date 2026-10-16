@@ -538,9 +538,24 @@ export function createObservationRetentionWorker(
     switch (record.kind) {
       case "run":
         // Bindings have no delete guard: the binding table's own write path is the channel.
-        await db.execute(
-          sql`delete from ai_observation_bindings where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
-        );
+        // The run's T17 id-link mapping rows are retention data of the same subject —
+        // the chain check ties every row to the binding's W3C trace — so they are
+        // removed in the same transaction (the T37-registered G2 fix), before the
+        // binding row they join through disappears. Idempotent: an already-deleted
+        // binding's subselect is empty and the mapping delete becomes a no-op.
+        await db.transaction(async (tx) => {
+          await tx.execute(
+            sql`delete from ai_observation_id_links
+                where scope_key = ${record.scopeKey}
+                  and observed_trace_id in (
+                    select trace_id from ai_observation_bindings
+                    where id = ${record.targetId} and scope_key = ${record.scopeKey}
+                  )`,
+          );
+          await tx.execute(
+            sql`delete from ai_observation_bindings where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
+          );
+        });
         return;
       case "dataset":
         try {

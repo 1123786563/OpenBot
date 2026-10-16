@@ -35,10 +35,15 @@ import { RunBindingError, type RunBindingStore } from "../bindings";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
 import { type ObservationScope, ObservationScopeError } from "../contracts";
 import {
+  type AttemptRunState,
+  type AttemptTerminalOutcome,
   beginRunAttempt,
   parseRunObservationEvent,
+  type RunAssociation,
+  type RunCapability,
   RunLifecycleError,
   type RunObservationEvent,
+  type RunToolObservation,
   resolveRunCapability,
 } from "../run-lifecycle";
 import { resolveObservationScope } from "../scope";
@@ -48,22 +53,46 @@ export type BasicRunDeps = Readonly<{
   /** The ownership generation for the scope key; wiring supplies the live source. */
   scopeEpoch: (actor: AgentActor, botId: string) => Promise<number>;
   /** The accepted T07 trusted-association seam (Issue #13), injected. */
-  bindings: Pick<RunBindingStore, "begin">;
+  bindings: Pick<RunBindingStore, "begin" | "finish">;
   /** Binding expiry horizon. Default 7 days — the Spec's run-trace retention default. */
   bindingTtlMs?: number;
   now?: () => Date;
 }>;
 
-const DEFAULT_BINDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const BASIC_RUN_INPUT_INVALID = "BASIC_RUN_INPUT_INVALID";
+/** Everything the classification seam needs once authorization has answered. */
+export type BasicRunCore = Readonly<{
+  bindings: Pick<RunBindingStore, "begin" | "finish">;
+  bindingTtlMs?: number;
+  now?: () => Date;
+}>;
 
-type BasicRunReport = {
+const DEFAULT_BINDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export type BasicRunReport = {
   threadId: string;
   runId: string;
   attemptId: string;
   traceId: string;
   events: RunObservationEvent[];
 };
+
+export type BasicRunOutcome = Readonly<{
+  attempt: {
+    origin: RunAssociation["origin"];
+    botId: string;
+    threadId: string;
+    runId: string;
+    attemptId: string;
+    state: AttemptRunState;
+    outcome: AttemptTerminalOutcome | null;
+    observed: { firstFrame: boolean; started: boolean; disconnected: boolean };
+    tools: RunToolObservation;
+  };
+  capability: RunCapability;
+  internalSteps: "unobserved";
+  rejectedEvents: number;
+  binding: { id: string; replayed: boolean };
+}>;
 
 /** Reads the report by whitelist. Unknown fields — however forged — are ignored. */
 function parseReport(body: unknown): BasicRunReport {
@@ -91,12 +120,91 @@ function parseReport(body: unknown): BasicRunReport {
   return { ...refs, events: rawEvents.map(parseRunObservationEvent) };
 }
 
+/**
+ * The one run-reporting composition, shared by the HTTP seam and the deletion-path
+ * probe: begin (idempotent), classify what was actually observed, and — when the
+ * events reached a terminal outcome — settle the binding onto that state through the
+ * T07 store's `finish`. A report with no observed terminal event leaves the binding
+ * `running`: the run may still be executing, and nothing here may invent an ending
+ * it did not see. The store's first-terminal-write-wins discipline makes a replayed
+ * or divergent later report unable to rewrite a standing outcome.
+ */
+export async function reportBasicRun(
+  core: BasicRunCore,
+  scope: ObservationScope,
+  report: BasicRunReport,
+): Promise<BasicRunOutcome> {
+  const ttl = core.bindingTtlMs ?? DEFAULT_BINDING_TTL_MS;
+  const now = core.now ?? (() => new Date());
+
+  // The remote AG-UI path is honest about what it cannot see: internal steps are
+  // never verified here, so the verdict is basic or unavailable, never detailed.
+  const capability = resolveRunCapability({
+    internalStepsVerified: false,
+    observedEvents: report.events.length > 0,
+  });
+
+  const bound: Awaited<ReturnType<RunBindingStore["begin"]>> =
+    await core.bindings.begin(scope, {
+      runId: report.runId,
+      attemptId: report.attemptId,
+      traceId: report.traceId,
+      capability,
+      expiresAt: new Date(now().getTime() + ttl),
+    });
+
+  const attempt = beginRunAttempt({
+    scopeKey: scope.key,
+    botId: scope.botId,
+    threadId: report.threadId,
+    runId: report.runId,
+    attemptId: report.attemptId,
+    origin: "remote-agui",
+  });
+  let rejectedEvents = 0;
+  for (const event of report.events) {
+    if (!attempt.observe(event).accepted) rejectedEvents += 1;
+  }
+  const record = attempt.record();
+
+  // The G1 seam: an observed terminal outcome is the one production writer of the
+  // binding's terminal state — the write that makes the retention run discovery
+  // (`state <> 'running'`) reachable for real production bindings.
+  if (record.outcome !== null) {
+    await core.bindings.finish(
+      scope,
+      report.runId,
+      report.attemptId,
+      record.outcome.state,
+    );
+  }
+
+  return {
+    attempt: {
+      origin: record.association.origin,
+      botId: record.association.botId,
+      threadId: record.association.threadId,
+      runId: record.association.runId,
+      attemptId: record.association.attemptId,
+      state: record.state,
+      outcome: record.outcome,
+      observed: record.observed,
+      tools: record.tools,
+    },
+    capability,
+    // "unobserved" is a visibility marker, not an empty result: invisible internal
+    // calls are not claimed to be absent.
+    internalSteps: "unobserved",
+    rejectedEvents,
+    binding: { id: bound.binding.id, replayed: bound.replayed },
+  };
+}
+
 export function createBasicRunRoutes(
   deps: BasicRunDeps,
 ): Hono<{ Variables: AppVariables }> {
   const routes = new Hono<{ Variables: AppVariables }>();
-  const ttl = deps.bindingTtlMs ?? DEFAULT_BINDING_TTL_MS;
-  const now = deps.now ?? (() => new Date());
+  const BASIC_RUN_INPUT_INVALID = "BASIC_RUN_INPUT_INVALID";
 
   routes.post("/", async (context) => {
     const access = await resolveObservationBot(
@@ -139,22 +247,11 @@ export function createBasicRunRoutes(
       throw error;
     }
 
-    // The remote AG-UI path is honest about what it cannot see: internal steps are
-    // never verified here, so the verdict is basic or unavailable, never detailed.
-    const capability = resolveRunCapability({
-      internalStepsVerified: false,
-      observedEvents: report.events.length > 0,
-    });
-
-    let bound: Awaited<ReturnType<RunBindingStore["begin"]>>;
+    let outcome: BasicRunOutcome;
     try {
-      bound = await deps.bindings.begin(scope, {
-        runId: report.runId,
-        attemptId: report.attemptId,
-        traceId: report.traceId,
-        capability,
-        expiresAt: new Date(now().getTime() + ttl),
-      });
+      // The one composition, shared with the deletion-path probe: begin, classify,
+      // and settle the binding when the events reached a terminal outcome.
+      outcome = await reportBasicRun(deps, scope, report);
     } catch (error) {
       if (error instanceof RunBindingError) {
         return context.json({ error: error.code }, error.status);
@@ -162,39 +259,7 @@ export function createBasicRunRoutes(
       throw error;
     }
 
-    const attempt = beginRunAttempt({
-      scopeKey: scope.key,
-      botId: scope.botId,
-      threadId: report.threadId,
-      runId: report.runId,
-      attemptId: report.attemptId,
-      origin: "remote-agui",
-    });
-    let rejectedEvents = 0;
-    for (const event of report.events) {
-      if (!attempt.observe(event).accepted) rejectedEvents += 1;
-    }
-    const record = attempt.record();
-
-    return context.json({
-      attempt: {
-        origin: record.association.origin,
-        botId: record.association.botId,
-        threadId: record.association.threadId,
-        runId: record.association.runId,
-        attemptId: record.association.attemptId,
-        state: record.state,
-        outcome: record.outcome,
-        observed: record.observed,
-        tools: record.tools,
-      },
-      capability,
-      // "unobserved" is a visibility marker, not an empty result: invisible internal
-      // calls are not claimed to be absent.
-      internalSteps: "unobserved",
-      rejectedEvents,
-      binding: { id: bound.binding.id, replayed: bound.replayed },
-    });
+    return context.json(outcome);
   });
 
   return routes;

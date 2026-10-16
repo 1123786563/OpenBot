@@ -7,6 +7,7 @@ import {
   RunBindingError,
 } from "../src/ai-observability/bindings";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
+import { reportBasicRun } from "../src/ai-observability/routes/basic-run";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
 import {
@@ -265,6 +266,145 @@ test("an ownership epoch bump fences the old scope's bindings away", async () =>
 
   // The old binding is untouched underneath, not overwritten by the new epoch.
   expect(await store.get(scopeA, before.binding.id)).toEqual(before.binding);
+});
+
+/*
+ * G1 (T37 acceptance report) — the binding terminal state's production writer.
+ *
+ * A binding is born `running` and retention discovery excludes `running`, so a binding
+ * that never leaves `running` can never be deleted: the terminal-state write is what makes
+ * the deletion path reachable. `finish` is that writer's single seam, and the guard below
+ * drives it through the exact production composition the reporting route runs.
+ */
+
+test("finish moves the running binding onto the observed terminal state", async () => {
+  const runId = `${prefix}-run-fin-1`;
+  await store.begin(scopeA, {
+    runId,
+    attemptId: "attempt-1",
+    traceId: "trace-fin-1",
+    capability: "basic",
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  });
+
+  const settled = await store.finish(scopeA, runId, "attempt-1", "completed");
+  expect(settled.settled).toBe(true);
+  expect(settled.binding).not.toBeNull();
+  expect(settled.binding?.state).toBe("completed");
+
+  const rows = await database
+    .select({ state: aiObservationBindings.state })
+    .from(aiObservationBindings)
+    .where(eq(aiObservationBindings.runId, runId));
+  expect(rows.map((row) => row.state)).toEqual(["completed"]);
+});
+
+test("the first terminal write wins: a later divergent finish changes nothing", async () => {
+  const runId = `${prefix}-run-fin-2`;
+  await store.begin(scopeA, {
+    runId,
+    attemptId: "attempt-1",
+    traceId: "trace-fin-2",
+    capability: "basic",
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  });
+  await store.finish(scopeA, runId, "attempt-1", "completed");
+
+  // A straggler or replayed report naming a different ending is refused by the
+  // same rule the lifecycle refuses divergent terminal events with.
+  const divergent = await store.finish(scopeA, runId, "attempt-1", "failed");
+  expect(divergent.settled).toBe(false);
+  expect(divergent.binding?.state).toBe("completed");
+});
+
+test("concurrent finishes settle exactly once", async () => {
+  const runId = `${prefix}-run-fin-3`;
+  await store.begin(scopeA, {
+    runId,
+    attemptId: "attempt-1",
+    traceId: "trace-fin-3",
+    capability: "basic",
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  });
+
+  const outcomes = await Promise.all([
+    store.finish(scopeA, runId, "attempt-1", "completed"),
+    store.finish(scopeA, runId, "attempt-1", "failed"),
+  ]);
+  expect(outcomes.filter((outcome) => outcome.settled)).toHaveLength(1);
+  const rows = await database
+    .select({ state: aiObservationBindings.state })
+    .from(aiObservationBindings)
+    .where(eq(aiObservationBindings.runId, runId));
+  expect(rows[0]?.state === "completed" || rows[0]?.state === "failed").toBe(
+    true,
+  );
+});
+
+test("finishing an attempt that was never begun settles nothing and creates no row", async () => {
+  const runId = `${prefix}-run-fin-4`;
+  const absent = await store.finish(scopeA, runId, "attempt-1", "completed");
+  expect(absent.settled).toBe(false);
+  expect(absent.binding).toBeNull();
+  const rows = await database
+    .select({ id: aiObservationBindings.id })
+    .from(aiObservationBindings)
+    .where(eq(aiObservationBindings.runId, runId));
+  expect(rows).toHaveLength(0);
+});
+
+test("finish refuses a non-terminal state and a forged scope", async () => {
+  // `running` is not an outcome; no event may write it.
+  await expect(
+    store.finish(
+      scopeA,
+      `${prefix}-run-fin-5`,
+      "attempt-1",
+      "running" as "completed",
+    ),
+  ).rejects.toThrow(new RunBindingError("BINDING_INPUT_INVALID", 400));
+
+  const forged = { ...scopeA };
+  expect(() =>
+    store.finish(forged, `${prefix}-run-fin-5`, "attempt-1", "completed"),
+  ).toThrow(new ObservationScopeError("OWNERSHIP_REQUIRED", 403));
+});
+
+test("GUARD: a real run termination moves the binding out of running (G1)", async () => {
+  const runId = `${prefix}-run-fin-guard`;
+  const attemptId = "attempt-1";
+  const traceId = "trace-fin-guard";
+
+  // The production composition the reporting route runs: a first-frame report begins
+  // the binding and ends nothing.
+  const firstFrame = await reportBasicRun({ bindings: store }, scopeA, {
+    threadId: "thread-1",
+    runId,
+    attemptId,
+    traceId,
+    events: [{ type: "http_first_frame" }],
+  });
+  expect(firstFrame.attempt.state).toBe("running");
+  const midRun = await database
+    .select({ state: aiObservationBindings.state })
+    .from(aiObservationBindings)
+    .where(eq(aiObservationBindings.runId, runId));
+  expect(midRun.map((row) => row.state)).toEqual(["running"]);
+
+  // The run terminates for real: the same composition records the outcome —
+  // and the binding can never answer `running` again.
+  await reportBasicRun({ bindings: store }, scopeA, {
+    threadId: "thread-1",
+    runId,
+    attemptId,
+    traceId,
+    events: [{ type: "success" }],
+  });
+  const ended = await database
+    .select({ state: aiObservationBindings.state })
+    .from(aiObservationBindings)
+    .where(eq(aiObservationBindings.runId, runId));
+  expect(ended.map((row) => row.state)).toEqual(["completed"]);
 });
 
 test("the migrated table exposes no column raw business content could land in", async () => {
