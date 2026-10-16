@@ -25,7 +25,6 @@ import {
 import { createIdLinkQueryService } from "../src/ai-observability/queries/links";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
-import { aiObservationDatasets } from "../src/db/schema/ai-observability-datasets";
 import { aiObservationIdLinks } from "../src/db/schema/ai-observability-id-links";
 import { opikTestDatabase } from "./support/opik-test-db";
 

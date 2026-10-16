@@ -13,14 +13,14 @@
  * and `OPENBOT_TRACES=off` disables the whole thing with an endpoint still set.
  */
 import {
-  diag,
-  DiagConsoleLogger,
-  DiagLogLevel,
   type Context,
   context,
+  DiagConsoleLogger,
+  DiagLogLevel,
+  diag,
   propagation,
-  trace,
   SpanStatusCode,
+  trace,
 } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
