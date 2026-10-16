@@ -57,7 +57,8 @@ export type EvaluationModelCallObserver = (
 ) => void;
 
 /** The frozen fields arrive as projection envelopes; the call needs the values. */
-const textOf = (safe: SafeText): string => ("text" in safe ? safe.text : "");
+export const textOf = (safe: SafeText): string =>
+  "text" in safe ? safe.text : "";
 
 const recordOf = (safe: SafeValue): Record<string, unknown> =>
   safe.state === "projected" &&
