@@ -73,6 +73,7 @@ export default defineConfig({
     "./src/db/schema/ai-observability-bindings.ts",
     "./src/db/schema/ai-observability-datasets.ts",
     "./src/db/schema/ai-observability-experiments.ts",
+    "./src/db/schema/ai-observability-executions.ts",
     "./src/db/schema/enterprise-tenancy.ts",
     "./src/db/schema/enterprise-authz.ts",
     "./src/db/schema/enterprise-conversations.ts",

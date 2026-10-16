@@ -716,6 +716,15 @@ export const auditEventTypes = [
    * configuration as before" from the trail without reading the frozen configuration.
    */
   "opik.experiment_submitted",
+  /**
+   * An isolated execution of a frozen experiment settled (Issue #29 / T23). The payload
+   * names the execution, the experiment and the config hash it ran under, the terminal
+   * state with its case count or error code, and — the part the governance channel is
+   * for — how many production write-tool calls the execution refused, with the distinct
+   * tool names: "the evaluation reached for the world and was stopped" is a queryable
+   * fact, not an inference from a log line.
+   */
+  "opik.experiment_execution_settled",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];
