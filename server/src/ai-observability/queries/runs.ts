@@ -109,6 +109,13 @@ export type RunsQueryService = {
     input: { cursor?: string; limit?: number },
   ): Promise<RunsListResult>;
   detail(scope: ObservationScope, runId: string): Promise<RunDetailResult>;
+  /**
+   * Drop the scope's cached window: the M1 deletion precondition's invalidation
+   * target. The very next read goes upstream again, so a deletion that just
+   * changed the data face is served, not the pre-deletion page. Wiring (T33)
+   * hands this to the retention worker's `invalidateReads` seam.
+   */
+  invalidate(scope: ObservationScope): void;
 };
 
 type CachedWindow = {
@@ -368,5 +375,10 @@ export function createRunsQueryService(
     };
   };
 
-  return { list, detail };
+  /** The M1 precondition's target: the exact key the window caches under. */
+  const invalidate = (scope: ObservationScope) => {
+    cache.delete(cacheKey(scope, "runs-window"));
+  };
+
+  return { list, detail, invalidate };
 }

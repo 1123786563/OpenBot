@@ -12,6 +12,7 @@ import { aiObservationExperiments } from "../db/schema/ai-observability-experime
 import type { ObservationScope } from "./contracts";
 import { canonicalJson } from "./datasets";
 import { projectSafeFixture, projectSafeText } from "./redaction";
+import { notPendingDeletion } from "./retention";
 import { assertObservationScope } from "./scope";
 
 /**
@@ -455,6 +456,9 @@ export function createObservationExperimentStore(
           and(
             eq(aiObservationExperiments.id, id),
             eq(aiObservationExperiments.scopeKey, scope.key),
+            // The M1a visibility rule: an experiment under retention deletion is
+            // gone to readers from discovery on.
+            notPendingDeletion("experiment", aiObservationExperiments.id),
           ),
         );
       return rows[0] ?? null;

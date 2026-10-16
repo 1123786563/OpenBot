@@ -230,6 +230,13 @@ export type ObservationExportStore = {
    */
   cancelForActor(actorId: string): Promise<number>;
   /**
+   * The retention precondition's stop: settle every queued or running job of one
+   * scope as cancelled, before the retention worker deletes that scope's data out
+   * from under a fetch in flight. Scope-keyed, not actor-keyed, because one scope
+   * expiring never gets to stop the same actor's work in another scope.
+   */
+  cancelForScope(scopeKey: string): Promise<number>;
+  /**
    * Worker-side read by claim-ticket key. Trust is the lease the worker holds,
    * not a scope; the worker re-derives authorization itself before acting.
    */
@@ -384,6 +391,30 @@ export function createObservationExportStore(
         .where(
           and(
             eq(aiObservationExportJobs.actorId, actorId),
+            inArray(aiObservationExportJobs.state, ["queued", "running"]),
+          ),
+        )
+        .returning({ id: aiObservationExportJobs.id });
+      return cancelled.length;
+    },
+
+    async cancelForScope(scopeKey) {
+      reference(scopeKey);
+      // The retention precondition's stop (M1b): the scope's data face is about
+      // to change under every queued or running fetch, so they are settled as
+      // cancelled first. Same conditional write as cancelForActor — terminal
+      // jobs are untouched, and a worker whose fetch already landed drops its
+      // artifact at the conditional settle.
+      const cancelled = await db
+        .update(aiObservationExportJobs)
+        .set({
+          state: "cancelled",
+          updatedAt: new Date(),
+          settledAt: new Date(),
+        })
+        .where(
+          and(
+            eq(aiObservationExportJobs.scopeKey, scopeKey),
             inArray(aiObservationExportJobs.state, ["queued", "running"]),
           ),
         )
