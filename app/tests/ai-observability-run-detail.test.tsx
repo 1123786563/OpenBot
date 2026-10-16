@@ -41,15 +41,54 @@ import "@/lib/i18n";
  *      notFound and unavailable are four different answers;
  *   5. upstream content renders as text only — a <script> in projected metadata is data,
  *      not code, and nothing outside the projection is shown;
- *   6. the step section is a mount point, not a step tree: one honest sentence, no rows.
+ *   6. the step section renders T18's step tree for a detailed run — the placeholder
+ *      sentence is gone and the recorded timeline stands in its place.
  */
 
 beforeAll(() => GlobalRegistrator.register());
-afterEach(cleanup);
+afterEach(async () => {
+  /*
+   * The steps query (T18) commits its render one beat after the facts these tests await,
+   * so a test that ends on a detail-level sentence leaves React's scheduler with a pending
+   * flush. Yield once before unmounting so that flush drains while the DOM registrar's
+   * window still exists — otherwise it fires after unregister and crashes on window.event.
+   */
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  cleanup();
+});
 afterAll(() => GlobalRegistrator.unregister());
 
 const originalFetch = global.fetch;
 let detailHandler: () => Response = () => Response.json(detailBody());
+/*
+ * T18: the step tree rides its own query on the same run, so the page's regression
+ * harness answers it — a timeline with one step of each kind by default.
+ */
+const stepsHandler: () => Response = () =>
+  Response.json({
+    steps: [
+      {
+        kind: "model",
+        spanId: "s1",
+        parentSpanId: null,
+        name: "gpt-x",
+        state: "completed",
+        startedAt: "2026-10-16T09:30:05.000Z",
+        endedAt: "2026-10-16T09:30:08.000Z",
+      },
+      {
+        kind: "tool",
+        spanId: "s2",
+        parentSpanId: "s1",
+        name: "search_knowledge",
+        state: "completed",
+        executionState: "executed",
+        startedAt: "2026-10-16T09:30:08.000Z",
+        endedAt: "2026-10-16T09:30:09.000Z",
+        output: { state: "projected", value: "found 3 chunks" },
+      },
+    ],
+  });
 
 const ME = {
   id: "me",
@@ -86,6 +125,8 @@ beforeEach(() => {
         return Response.json({ agent: PROFILE });
       if (url === "/api/ai-observability/bots/agent-1/runs/run-9")
         return detailHandler();
+      if (url === "/api/ai-observability/bots/agent-1/runs/run-9/steps")
+        return stepsHandler();
       return new Response(null, { status: 404 });
     },
     { preconnect: originalFetch.preconnect },
@@ -437,13 +478,13 @@ describe("upstream content is projected text, never code (acceptance 5)", () => 
   });
 });
 
-describe("the step section is a mount point, not a step tree (acceptance 6)", () => {
-  test("one honest sentence, and no step rows are rendered", async () => {
+describe("the step section renders the step tree (acceptance 6, T18)", () => {
+  test("a detailed run shows its recorded steps in place of the old placeholder", async () => {
     const view = draw();
-    await waitFor(() =>
-      expect(pageText(view)).toContain("The step timeline will render here"),
-    );
-    // The reserved section draws no step rows of its own.
-    expect(view.queryAllByRole("listitem")).toHaveLength(0);
+    await waitFor(() => expect(pageText(view)).toContain("gpt-x"));
+    // The T13 placeholder sentence is gone; the recorded timeline stands in its place.
+    expect(pageText(view)).not.toContain("The step timeline will render here");
+    expect(pageText(view)).toContain("search_knowledge");
+    expect(pageText(view)).toContain("found 3 chunks");
   });
 });

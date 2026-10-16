@@ -19,6 +19,12 @@ export type {
   RunCapabilityLevel,
   RunDetailResult,
   RunState,
+  RunStep,
+  RunStepExecutionState,
+  RunStepKind,
+  RunStepRetrieval,
+  RunStepState,
+  RunStepsResult,
   RunSummary,
   RunsListResult,
   RunUsageReport,
@@ -27,6 +33,10 @@ export type {
 import type {
   RunDetailResult,
   RunState,
+  RunStep,
+  RunStepExecutionState,
+  RunStepKind,
+  RunStepsResult,
   RunsListResult,
 } from "../../../../shared/ai-observability-runs";
 
@@ -36,6 +46,8 @@ export const observationRunKeys = {
     ["ai-observability-runs", "list", botId, page] as const,
   detail: (botId: string, runId: string) =>
     ["ai-observability-runs", "detail", botId, runId] as const,
+  steps: (botId: string, runId: string) =>
+    ["ai-observability-runs", "steps", botId, runId] as const,
 };
 
 /** What the screen is allowed to conclude: the list itself, or the fault that explains it. */
@@ -53,6 +65,23 @@ export type ObservationRunDetailScreen =
       view: "fault";
       fault: "disabled" | "forbidden" | "notFound" | "unavailable";
     };
+
+/** The step tree's own conclusion: the timeline, or the fault that explains its absence. */
+export type ObservationRunStepsScreen =
+  | { view: "steps"; result: { steps: readonly ObservationRunStep[] } }
+  | {
+      view: "fault";
+      fault: "disabled" | "forbidden" | "notFound" | "unavailable";
+    };
+
+/**
+ * A step after the read boundary's coercion: identical to the wire's RunStep except that a
+ * kind this build has never heard of is null — the row renders unnamed rather than being
+ * dropped (a missing row would invent a timeline that says the step never happened).
+ */
+export type ObservationRunStep = Omit<RunStep, "kind"> & {
+  kind: RunStepKind | null;
+};
 
 /** The server's error code, when it sent one in the house `{ error }` envelope. */
 async function refusalCode(response: Response): Promise<string | null> {
@@ -247,6 +276,152 @@ export function observationRunDetailQueryOptions(botId: string, runId: string) {
           run: { ...body.run, state: toKnownState(body.run.state) },
         },
       };
+    },
+  });
+}
+
+/*
+ * The steps read (Issue #24) answers with the same refusal vocabulary as the detail it
+ * hangs off: a 503 capability_missing is tracing off, a 401/403 the management gate, and a
+ * 404 the same two-refusal split (RUN_NOT_FOUND is about the run, anything else is the
+ * manage gate refusing to name the Bot). The shape defense follows the Q-M1 ruling: a
+ * structurally broken body is the store failing to answer — the unavailable fault, never a
+ * half-drawn timeline — while a vocabulary the build has never heard of fails closed to the
+ * honest word (unknown / unobserved / an unnamed kind) exactly as an unnamed run state does.
+ */
+function isSafeValueBody(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const state = (value as Record<string, unknown>).state;
+  return state === "projected" || state === "truncated" || state === "omitted";
+}
+
+function isRetrievalBody(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const retrieval = value as Record<string, unknown>;
+  if (retrieval.outcome === "miss") return true;
+  if (retrieval.outcome === "degraded")
+    return typeof retrieval.reason === "string";
+  if (retrieval.outcome !== "hit") return false;
+  return (
+    typeof retrieval.fragmentCount === "number" &&
+    Array.isArray(retrieval.kbIds) &&
+    retrieval.kbIds.every((id) => typeof id === "string")
+  );
+}
+
+function isRunStepsBody(body: unknown): body is RunStepsResult {
+  if (typeof body !== "object" || body === null) return false;
+  const steps = (body as { steps?: unknown }).steps;
+  if (!Array.isArray(steps)) return false;
+  for (const step of steps) {
+    if (typeof step !== "object" || step === null) return false;
+    const record = step as Record<string, unknown>;
+    for (const field of ["spanId", "state", "startedAt", "endedAt"]) {
+      if (typeof record[field] !== "string") return false;
+    }
+    if (
+      record.parentSpanId !== null &&
+      typeof record.parentSpanId !== "string"
+    ) {
+      return false;
+    }
+    if (record.name !== null && typeof record.name !== "string") return false;
+    if (
+      record.executionState !== undefined &&
+      typeof record.executionState !== "string"
+    ) {
+      return false;
+    }
+    if (
+      record.input !== undefined &&
+      record.input !== null &&
+      !isSafeValueBody(record.input)
+    ) {
+      return false;
+    }
+    if (
+      record.output !== undefined &&
+      record.output !== null &&
+      !isSafeValueBody(record.output)
+    ) {
+      return false;
+    }
+    if (record.retrieval !== undefined && !isRetrievalBody(record.retrieval)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const KNOWN_STEP_KINDS: readonly RunStepKind[] = ["model", "tool", "retrieval"];
+const KNOWN_EXECUTION_STATES: readonly RunStepExecutionState[] = [
+  "proposed",
+  "executed",
+  "unobserved",
+];
+const KNOWN_STEP_STATES: readonly RunStep["state"][] = [
+  "completed",
+  "failed",
+  "canceled",
+  "unknown",
+];
+
+/**
+ * One step onto what this build can name. Vocabulary drift fails closed per fact — an
+ * unheard terminal or determination renders its honest word, an unheard kind renders
+ * unnamed — and T15's A3 invariant is enforced at the read boundary: a step not observed
+ * as executed is never allowed to arrive claiming success, whatever the body said.
+ */
+function toKnownStep(step: RunStep): ObservationRunStep {
+  const executionState =
+    step.executionState !== undefined &&
+    !KNOWN_EXECUTION_STATES.includes(step.executionState)
+      ? "unobserved"
+      : step.executionState;
+  let state = KNOWN_STEP_STATES.includes(step.state) ? step.state : "unknown";
+  if (executionState !== undefined && executionState !== "executed") {
+    // Only an execution this deployment observed may be completed (A3); proposed and
+    // unobserved are terminal unknown, never success.
+    state = "unknown";
+  }
+  return {
+    ...step,
+    kind: KNOWN_STEP_KINDS.includes(step.kind) ? step.kind : null,
+    state,
+    executionState,
+  };
+}
+
+export function observationRunStepsQueryOptions(botId: string, runId: string) {
+  return queryOptions({
+    queryKey: observationRunKeys.steps(botId, runId),
+    queryFn: async (): Promise<ObservationRunStepsScreen> => {
+      const response = await tryClient(
+        `/api/ai-observability/bots/${encodeURIComponent(botId)}/runs/${encodeURIComponent(runId)}/steps`,
+      );
+      if (
+        response.status === 503 &&
+        (await refusalCode(response)) === "capability_missing"
+      ) {
+        return { view: "fault", fault: "disabled" };
+      }
+      if (response.status === 401 || response.status === 403) {
+        return { view: "fault", fault: "forbidden" };
+      }
+      if (response.status === 404) {
+        // The same two-refusal split as the detail: RUN_NOT_FOUND is about the run.
+        return (await refusalCode(response)) === "RUN_NOT_FOUND"
+          ? { view: "fault", fault: "notFound" }
+          : { view: "fault", fault: "forbidden" };
+      }
+      if (!response.ok) {
+        return { view: "fault", fault: "unavailable" };
+      }
+      const body = (await response.json().catch(() => null)) as unknown;
+      if (!isRunStepsBody(body)) {
+        return { view: "fault", fault: "unavailable" };
+      }
+      return { view: "steps", result: { steps: body.steps.map(toKnownStep) } };
     },
   });
 }
