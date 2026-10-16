@@ -82,6 +82,7 @@ import { Route as AuthedAppBotsAgentIdRunsRouteImport } from './routes/_authed/_
 import { Route as AuthedAppBotsAgentIdSetupRouteImport } from './routes/_authed/_app/bots.$agentId.setup'
 import { Route as AuthedAppBotsAgentIdSharingRouteImport } from './routes/_authed/_app/bots.$agentId.sharing'
 import { Route as AuthedAppBotsAgentIdEvaluationsDatasetIdRouteImport } from './routes/_authed/_app/bots.$agentId.evaluations.$datasetId'
+import { Route as AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRouteImport } from './routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons'
 import { Route as AuthedAppBotsAgentIdRunsBindingIdRouteImport } from './routes/_authed/_app/bots.$agentId.runs.$bindingId'
 import { Route as AuthedAdminPluginsKeyBotsAgentIdRouteImport } from './routes/_authed/admin/plugins/$key_.bots.$agentId'
 import { Route as AuthedAdminPluginsKeyToolsToolRouteImport } from './routes/_authed/admin/plugins/$key_.tools.$tool'
@@ -478,6 +479,12 @@ const AuthedAppBotsAgentIdEvaluationsDatasetIdRoute =
     path: '/$datasetId',
     getParentRoute: () => AuthedAppBotsAgentIdEvaluationsRoute,
   } as any)
+const AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute =
+  AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRouteImport.update({
+    id: '/experiment-comparisons',
+    path: '/experiment-comparisons',
+    getParentRoute: () => AuthedAppBotsAgentIdEvaluationsRoute,
+  } as any)
 const AuthedAppBotsAgentIdRunsBindingIdRoute =
   AuthedAppBotsAgentIdRunsBindingIdRouteImport.update({
     id: '/$bindingId',
@@ -577,6 +584,7 @@ export interface FileRoutesByFullPath {
   '/bots/$agentId/sharing': typeof AuthedAppBotsAgentIdSharingRoute
   '/bots/$agentId/': typeof AuthedAppBotsAgentIdIndexRoute
   '/bots/$agentId/evaluations/$datasetId': typeof AuthedAppBotsAgentIdEvaluationsDatasetIdRoute
+  '/bots/$agentId/evaluations/experiment-comparisons': typeof AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute
   '/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/admin/plugins/$key/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/admin/plugins/$key/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
@@ -652,6 +660,7 @@ export interface FileRoutesByTo {
   '/bots/$agentId/sharing': typeof AuthedAppBotsAgentIdSharingRoute
   '/bots/$agentId': typeof AuthedAppBotsAgentIdIndexRoute
   '/bots/$agentId/evaluations/$datasetId': typeof AuthedAppBotsAgentIdEvaluationsDatasetIdRoute
+  '/bots/$agentId/evaluations/experiment-comparisons': typeof AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute
   '/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/admin/plugins/$key/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/admin/plugins/$key/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
@@ -732,6 +741,7 @@ export interface FileRoutesById {
   '/_authed/_app/bots/$agentId/sharing': typeof AuthedAppBotsAgentIdSharingRoute
   '/_authed/_app/bots/$agentId/': typeof AuthedAppBotsAgentIdIndexRoute
   '/_authed/_app/bots/$agentId/evaluations/$datasetId': typeof AuthedAppBotsAgentIdEvaluationsDatasetIdRoute
+  '/_authed/_app/bots/$agentId/evaluations/experiment-comparisons': typeof AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute
   '/_authed/_app/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/_authed/admin/plugins/$key_/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/_authed/admin/plugins/$key_/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
@@ -811,6 +821,7 @@ export interface FileRouteTypes {
     | '/bots/$agentId/sharing'
     | '/bots/$agentId/'
     | '/bots/$agentId/evaluations/$datasetId'
+    | '/bots/$agentId/evaluations/experiment-comparisons'
     | '/bots/$agentId/runs/$bindingId'
     | '/admin/plugins/$key/bots/$agentId'
     | '/admin/plugins/$key/tools/$tool'
@@ -886,6 +897,7 @@ export interface FileRouteTypes {
     | '/bots/$agentId/sharing'
     | '/bots/$agentId'
     | '/bots/$agentId/evaluations/$datasetId'
+    | '/bots/$agentId/evaluations/experiment-comparisons'
     | '/bots/$agentId/runs/$bindingId'
     | '/admin/plugins/$key/bots/$agentId'
     | '/admin/plugins/$key/tools/$tool'
@@ -965,6 +977,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/bots/$agentId/sharing'
     | '/_authed/_app/bots/$agentId/'
     | '/_authed/_app/bots/$agentId/evaluations/$datasetId'
+    | '/_authed/_app/bots/$agentId/evaluations/experiment-comparisons'
     | '/_authed/_app/bots/$agentId/runs/$bindingId'
     | '/_authed/admin/plugins/$key_/bots/$agentId'
     | '/_authed/admin/plugins/$key_/tools/$tool'
@@ -1490,6 +1503,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppBotsAgentIdEvaluationsDatasetIdRouteImport
       parentRoute: typeof AuthedAppBotsAgentIdEvaluationsRoute
     }
+    '/_authed/_app/bots/$agentId/evaluations/experiment-comparisons': {
+      id: '/_authed/_app/bots/$agentId/evaluations/experiment-comparisons'
+      path: '/experiment-comparisons'
+      fullPath: '/bots/$agentId/evaluations/experiment-comparisons'
+      preLoaderRoute: typeof AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRouteImport
+      parentRoute: typeof AuthedAppBotsAgentIdEvaluationsRoute
+    }
     '/_authed/_app/bots/$agentId/runs/$bindingId': {
       id: '/_authed/_app/bots/$agentId/runs/$bindingId'
       path: '/$bindingId'
@@ -1615,6 +1635,7 @@ const AuthedSettingsRouteRouteWithChildren =
 
 interface AuthedAppBotsAgentIdEvaluationsRouteChildren {
   AuthedAppBotsAgentIdEvaluationsDatasetIdRoute: typeof AuthedAppBotsAgentIdEvaluationsDatasetIdRoute
+  AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute: typeof AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute
   AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute: typeof AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute
 }
 
@@ -1622,6 +1643,8 @@ const AuthedAppBotsAgentIdEvaluationsRouteChildren: AuthedAppBotsAgentIdEvaluati
   {
     AuthedAppBotsAgentIdEvaluationsDatasetIdRoute:
       AuthedAppBotsAgentIdEvaluationsDatasetIdRoute,
+    AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute:
+      AuthedAppBotsAgentIdEvaluationsExperimentComparisonsRoute,
     AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute:
       AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute,
   }

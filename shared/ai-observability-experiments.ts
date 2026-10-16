@@ -24,6 +24,14 @@
  *
  *   GET /api/ai-observability/bots/:botId/experiments/:experimentId/results/:executionId
  *     → 200 ExperimentResultsReport | 4xx { error }
+ *
+ * The comparison read is T29's already-mounted face (Issue #37 / DAG T31 pins it here
+ * for the page): the comparison spans two experiments, so the four ids arrive as query
+ * parameters and nothing else:
+ *
+ *   GET /api/ai-observability/bots/:botId/experiment-comparisons
+ *     ?baselineExperimentId&baselineExecutionId&candidateExperimentId&candidateExecutionId
+ *     → 200 ExperimentComparison | 4xx { error }
  */
 
 /**
@@ -241,4 +249,117 @@ export type SubmittedExperimentResult = Readonly<{
 export type CancelledExecutionResult = Readonly<{
   executionId: string;
   state: "cancelled";
+}>;
+
+/**
+ * The frozen fields the comparison's ledger names, in display order (T29's
+ * COMPATIBILITY_FIELDS). The first three block the verdict — a different sample set or
+ * scoring definition refuses to rank; the rest are the configuration being compared,
+ * shown with their difference, never blocking.
+ */
+export const EXPERIMENT_COMPATIBILITY_FIELDS = [
+  "datasetContentHash",
+  "judgeVersion",
+  "judgeConfig",
+  "readOnlyTools",
+  "modelName",
+  "modelParameters",
+  "prompt",
+  "botConfig",
+  "toolFixtures",
+] as const;
+
+export type ExperimentCompatibilityField =
+  (typeof EXPERIMENT_COMPATIBILITY_FIELDS)[number];
+
+/** One ledger row: each side's compact witness (text, a JSON list, or sha256:…). */
+export type ExperimentCompatibilityEntry = Readonly<{
+  field: ExperimentCompatibilityField;
+  baseline: string | null;
+  candidate: string | null;
+  equal: boolean;
+  /** True when a difference on this field refuses the comparison. */
+  blocking: boolean;
+}>;
+
+/** One side's own facts: the T28 report verbatim plus the comparison's derived ledgers. */
+export type ExperimentComparisonSide = Readonly<{
+  experimentId: string;
+  executionId: string;
+  resultLink: string;
+  report: ExperimentResultsReport;
+  /** Settled samples over the base: (base − inProgress − pendingReconciliation) / base. */
+  completionRate: number;
+  timing: Readonly<{
+    startedAt: string | null;
+    settledAt: string | null;
+    /** settled − started in ms; null while either end is unknown, never a masked 0. */
+    durationMs: number | null;
+  }>;
+  /** Usage presence: values ride report.samples[].usage, missing stays counted. */
+  usage: Readonly<{ reported: number; missing: number }>;
+}>;
+
+/** One frozen case's per-sample verdict — the closed four-word direction vocabulary. */
+export type ExperimentSampleDelta = Readonly<{
+  index: number;
+  baseline: Readonly<{
+    class: ExperimentSampleClass;
+    score: number | null;
+  }>;
+  candidate: Readonly<{
+    class: ExperimentSampleClass;
+    score: number | null;
+  }>;
+  /** Finite only when both sides scored; a missing score never masquerades as a 0. */
+  scoreDelta: number | null;
+  /**
+   * The closed four-word verdict. Non-terminal classes on either side keep
+   * `incomparable` — an open settlement is never a regressed or improved fact.
+   */
+  direction: "regressed" | "improved" | "unchanged" | "incomparable";
+}>;
+
+/** A regressed sample: the frozen case plus both sides' classes, codes and result links. */
+export type ExperimentRegressionRow = Readonly<{
+  index: number;
+  /** The frozen case both sides evaluated (the shared content hash names its content). */
+  case: Readonly<{ datasetVersionId: string; contentHash: string }>;
+  baseline: Readonly<{
+    class: ExperimentSampleClass;
+    score: number | null;
+    /** The T28 reason code; null when scored — the class already says everything. */
+    code: string | null;
+    resultLink: string;
+  }>;
+  candidate: Readonly<{
+    class: ExperimentSampleClass;
+    score: number | null;
+    code: string | null;
+    resultLink: string;
+  }>;
+}>;
+
+/**
+ * The whole comparison (T29's ExperimentComparison). Null when incompatible — no
+ * deltas, no regressions, no winner across different cases or scorers; the field ledger
+ * and both sides' own facts still arrive.
+ */
+export type ExperimentComparison = Readonly<{
+  baseline: ExperimentComparisonSide;
+  candidate: ExperimentComparisonSide;
+  compatibility: Readonly<{
+    compatible: boolean;
+    fields: readonly ExperimentCompatibilityEntry[];
+  }>;
+  deltas: Readonly<{
+    meanScore: Readonly<{
+      baseline: number | null;
+      candidate: number | null;
+      delta: number | null;
+    }>;
+    perSample: readonly ExperimentSampleDelta[];
+  }> | null;
+  /** Null when incompatible; the regressed samples otherwise, possibly none. */
+  regressions: readonly ExperimentRegressionRow[] | null;
 }>;

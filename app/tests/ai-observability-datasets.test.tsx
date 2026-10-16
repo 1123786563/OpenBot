@@ -585,20 +585,22 @@ describe("T21-rev pinned leftovers", () => {
     listHandler = () =>
       Response.json(
         datasetsBody([
+          // The row names avoid the sync words, so each word assertion can only be
+          // satisfied by the sync column itself, never by the row's own name.
           datasetItem({
             id: "ds-s",
-            name: "Syncing one",
+            name: "In-flight one",
             syncState: "syncing",
           }),
           datasetItem({
             id: "ds-p",
-            name: "Pending one",
+            name: "Queued one",
             syncState: "pending",
           }),
         ]),
       );
     const view = draw();
-    await waitFor(() => expect(pageText(view)).toContain("Syncing one"));
+    await waitFor(() => expect(pageText(view)).toContain("In-flight one"));
     expect(pageText(view)).toContain("Syncing");
     expect(pageText(view)).toContain("Waiting to sync");
   });

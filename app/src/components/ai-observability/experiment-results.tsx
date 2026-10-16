@@ -132,7 +132,6 @@ export function ObservationExperimentResultsPage({
       title={t("results.untitled")}
     >
       <PageSection
-        className="mt-6"
         description={t("results.executionDescription")}
         title={t("results.executionTitle")}
       >
@@ -228,7 +227,6 @@ export function ObservationExperimentResultsPage({
       </PageSection>
 
       <PageSection
-        className="mt-10"
         description={t("results.summaryDescription")}
         title={t("results.summaryTitle")}
       >
@@ -255,7 +253,6 @@ export function ObservationExperimentResultsPage({
       </PageSection>
 
       <PageSection
-        className="mt-10"
         description={t("results.samplesDescription")}
         title={t("results.samplesTitle")}
       >
