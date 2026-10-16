@@ -1113,18 +1113,21 @@ describe("the observation bypass fixes (T15 review)", () => {
         .subscribe();
       try {
         const parent = trace.getTracer("test").startSpan("run request");
-        await context.with(trace.setSpan(context.active(), parent), async () => {
-          subject.next(
-            ev({
-              type: "TOOL_CALL_START",
-              toolCallId: "trace-1",
-              toolCallName: "host_read",
-            }),
-          );
-          subject.next(
-            ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
-          );
-        });
+        await context.with(
+          trace.setSpan(context.active(), parent),
+          async () => {
+            subject.next(
+              ev({
+                type: "TOOL_CALL_START",
+                toolCallId: "trace-1",
+                toolCallName: "host_read",
+              }),
+            );
+            subject.next(
+              ev({ type: "RUN_FINISHED", threadId: "t", runId: "r" }),
+            );
+          },
+        );
         parent.end();
       } finally {
         subscription.unsubscribe();
