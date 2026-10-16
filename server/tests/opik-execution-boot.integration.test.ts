@@ -3,10 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { TransactionSQL } from "bun";
 import { eq } from "drizzle-orm";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
-import {
-  createBilledEvaluationCaseRunner,
-  createExecutionBudgetPrecheck,
-} from "../src/ai-observability/execution-billing";
+import { createExecutionBudgetPrecheck } from "../src/ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "../src/ai-observability/execution-boot";
 import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
 import {
@@ -47,9 +44,12 @@ const chargeCredits = createCreditUsageTarget(writer);
 const audit = createAuditStore(database);
 const prefix = `boot-${randomUUID().slice(0, 8)}`;
 
+// A file-unique scope: the suite runs concurrently with the other opik files on one
+// dedicated database, and a scope no other file writes keeps this file's rows out of
+// every other file's window (and theirs out of this one's).
 const scope = resolveObservationScope({
-  actorId: "user-a",
-  botId: "agent-1",
+  actorId: "user-tr-boot",
+  botId: "agent-tr-boot",
   ownership: "owner",
   epoch: 1,
 });
