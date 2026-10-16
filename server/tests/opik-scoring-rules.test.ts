@@ -325,6 +325,39 @@ describe("operator truth tables", () => {
     });
   });
 
+  test("numeric: grammar-legal overflow literals stay non_numeric — finite is part of the contract", () => {
+    // M2 (T26-rev2): "1e400" passes the strict grammar but Number() overflows to Infinity.
+    // The isFinite gate must survive the grammar switch in both directions — and the `!=`
+    // direction, where an unparseable output would otherwise earn a passing score.
+    const rs = rules([
+      { id: "gt", kind: "numeric", op: ">", expected: 5 },
+      { id: "lt", kind: "numeric", op: "<", expected: -1e308 },
+      { id: "ne", kind: "numeric", op: "!=", expected: 5 },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    for (const text of ["1e400", "-1e999", "9".repeat(400)]) {
+      const rows = scoreRunOutput(rs, textOutput(text)).results;
+      expect(rows[0]).toMatchObject({
+        status: "failed",
+        reason: "non_numeric",
+      });
+      expect(rows[1]).toMatchObject({
+        status: "failed",
+        reason: "non_numeric",
+      });
+      expect(rows[2]).toMatchObject({
+        status: "failed",
+        reason: "non_numeric",
+      });
+    }
+    // Symmetry with the structured side: the same overflow (Number("1e400") is Infinity)
+    // as a projected number root is already refused by its isFinite gate.
+    expect(
+      scoreRunOutput(rs, projectSafeFixture(Infinity)).results[0],
+    ).toMatchObject({ status: "failed", reason: "non_numeric" });
+  });
+
   test("json_path: deep nesting, every assert, arrays", () => {
     const rs = rules([
       {

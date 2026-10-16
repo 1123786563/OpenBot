@@ -4,10 +4,10 @@ import { canonicalJson } from "../datasets";
 /**
  * The deterministic rule scorer (Issue #32 / DAG T26).
  *
- * Module version 2 — review-fix round: json_path asserts type-check their `expected`
- * operand (M1: no coercion-passed scores) and the numeric operator parses text under the
- * strict number grammar (L1: `""`/`"0x10"` are non_numeric). Version 1 was the initial
- * T26 delivery.
+ * Module version 3 — fix2 round: the numeric text parser keeps the `Number.isFinite` gate
+ * through the strict grammar (M2: grammar-legal overflow literals like `1e400` are
+ * non_numeric, not a coerced ±Infinity comparison). Version 2 was the review-fix round
+ * (json_path `expected` type gates, strict number grammar); version 1 the initial T26 delivery.
  *
  * An experiment's rule set lives inside the frozen judge config (T22): the submitter composes
  * it, `freezeExperimentConfig` projects it, and the database freezes it. This module never sees
@@ -196,10 +196,14 @@ const STRICT_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 /**
  * `Number()`'s coercions (`""→0`, `"0x10"→16`, `"true"`-adjacent shapes) never get to
  * compare: only a real number or a string that parses under the strict grammar does.
+ * The grammar admits overflow literals (`1e400`), so the isFinite check stays — a parsed
+ * ±Infinity is non_numeric, symmetric with the structured side's gate.
  */
 function parseStrictNumber(text: string): number | null {
   const trimmed = text.trim();
-  return STRICT_NUMBER.test(trimmed) ? Number(trimmed) : null;
+  if (!STRICT_NUMBER.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function isEnvelopeShape(node: unknown): node is SafeValue | SafeText {
