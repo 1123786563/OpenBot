@@ -179,5 +179,22 @@ export function createRunsQueryRoutes(
     }
   });
 
+  // The step timeline (Issue #24 / T18-server): the same authorization block as detail,
+  // answering the wire contract the frontend pinned (RunStepsResult).
+  routes.get("/:runId/steps", async (context) => {
+    try {
+      const resolved = await scopeFor(context);
+      if (resolved instanceof Response) return resolved;
+      const body = await query.steps(
+        resolved.scope,
+        context.req.param("runId"),
+      );
+      return context.json(body);
+    } catch (error) {
+      const failure = classify(error);
+      return context.json(failure.body, failure.status);
+    }
+  });
+
   return routes;
 }

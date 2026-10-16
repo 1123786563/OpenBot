@@ -196,6 +196,10 @@ function fakePort(
       calls.push({ op: "writeSpans" });
       throw new Error("the read surface must never write");
     },
+    listSpans: async () => {
+      calls.push({ op: "listSpans" });
+      throw new Error("the runs list never reads spans");
+    },
   };
   return { port, calls };
 }

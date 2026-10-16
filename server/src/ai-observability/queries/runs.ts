@@ -21,9 +21,15 @@
  * not the write-path credential.
  */
 
+import type { SafeValue } from "../../../../shared/ai-observability";
 import type {
   RunCapabilityLevel,
   RunDetailResult,
+  RunStep,
+  RunStepKind,
+  RunStepRetrieval,
+  RunStepState,
+  RunStepsResult,
   RunSummary,
   RunsListResult,
   RunUsageReport,
@@ -32,8 +38,13 @@ import type { RunBindingStore } from "../bindings";
 import type { OpikConfig } from "../config";
 import type { ObservationScope } from "../contracts";
 import { ObservationScopeError } from "../contracts";
-import type { OpikPort, OpikPortResult, OpikTraceRow } from "../opik-port";
-import { projectSafeMetadata } from "../redaction";
+import type {
+  OpikPort,
+  OpikPortResult,
+  OpikSpanRow,
+  OpikTraceRow,
+} from "../opik-port";
+import { projectSafeMetadata, projectSafeText } from "../redaction";
 import type { AttemptRunState } from "../run-lifecycle";
 import { bindCursor, cacheKey, readCursor, scopeCacheKey } from "../scope";
 
@@ -41,6 +52,8 @@ import { bindCursor, cacheKey, readCursor, scopeCacheKey } from "../scope";
 export const DEFAULT_RUNS_WINDOW = 100;
 /** The client-facing page contract: an explicit cap, not a silent clamp. */
 export const MAX_RUNS_LIMIT = 100;
+/** The span-walk ceiling: defensive only, the retention window bounds real totals. */
+const MAX_SPAN_PAGES = 100;
 const CACHE_CAPACITY = 128;
 
 export type RunsQueryErrorCode =
@@ -109,6 +122,14 @@ export type RunsQueryService = {
     input: { cursor?: string; limit?: number },
   ): Promise<RunsListResult>;
   detail(scope: ObservationScope, runId: string): Promise<RunDetailResult>;
+  /**
+   * The run's step timeline (Issue #24 / T18-server): the bound trace's spans, read
+   * back over the port and projected mechanically onto the wire's step shapes. The
+   * same ownership discipline as detail — the binding answers before any upstream
+   * call — and never cached: a step read is per-trace, with no list→detail locality
+   * to exploit.
+   */
+  steps(scope: ObservationScope, runId: string): Promise<RunStepsResult>;
   /**
    * Drop the scope's cached window: the M1 deletion precondition's invalidation
    * target. The very next read goes upstream again, so a deletion that just
@@ -208,6 +229,139 @@ export function projectRow(
     usage: usageFromUpstream(row.usage),
     capability,
     metadata: projectSafeMetadata(row.metadata),
+  };
+}
+
+/*
+ * The step projection (Issue #24 / T18-server). The recorder families the tree renders are
+ * named by the spans themselves: T14's model spans (`model:<id>`) and T15's steps (`tool:<name>`,
+ * bare `retrieval`). A span outside those families is not a recorded step — it is dropped,
+ * never invented into the timeline. The T15 attributes ride inside the span row's `input`
+ * object (the verified OTLP read-back shape); anything else there is untrusted data.
+ */
+
+/** The recorder families, read off the span name the recorders themselves write. */
+function stepFamily(name: unknown): RunStepKind | null {
+  if (typeof name !== "string") return null;
+  if (name === "retrieval") return "retrieval";
+  if (name === "tool" || name.startsWith("tool:")) return "tool";
+  if (name === "model" || name.startsWith("model:")) return "model";
+  return null;
+}
+
+/** The display name: the span's own name minus its kind prefix. Empty folds into null (L-3). */
+function stepDisplayName(kind: RunStepKind, name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  const stripped =
+    kind === "retrieval" ? "" : name.slice(name.indexOf(":") + 1);
+  return stripped.trim() === "" ? null : stripped;
+}
+
+/** The attribute carrier: a non-object `input` is a row without recorder attributes. */
+function stepAttributes(row: OpikSpanRow): Record<string, unknown> {
+  return typeof row.input === "object" && row.input !== null
+    ? (row.input as Record<string, unknown>)
+    : {};
+}
+
+/** T05 on read: content rides the wire only through the projection, deny patterns first. */
+function stepContent(value: unknown): SafeValue | null {
+  if (typeof value !== "string") return null;
+  const safe = projectSafeText(value, { allowFreeText: true });
+  if (safe.state === "omitted") return safe;
+  if (safe.state === "truncated") {
+    return {
+      state: "truncated",
+      value: safe.text,
+      originalBytes: safe.originalBytes,
+    };
+  }
+  return { state: "projected", value: safe.text };
+}
+
+/** The retrieval outcome summary, in T15's shapes; a half-said outcome makes no claim. */
+function stepRetrieval(
+  attributes: Record<string, unknown>,
+): RunStepRetrieval | undefined {
+  const outcome = attributes.retrieval_outcome;
+  if (outcome === "miss") return { outcome: "miss" };
+  if (outcome === "degraded") {
+    const reason = attributes.degraded_reason;
+    if (typeof reason !== "string") return undefined;
+    const safe = projectSafeText(reason, { allowFreeText: true });
+    return safe.state === "omitted"
+      ? undefined
+      : { outcome: "degraded", reason: safe.text };
+  }
+  if (outcome === "hit") {
+    const count = attributes.fragment_count;
+    const kbIds = attributes.kb_ids;
+    if (typeof count !== "number" || !Number.isInteger(count) || count < 0) {
+      return undefined;
+    }
+    if (!Array.isArray(kbIds) || !kbIds.every((id) => typeof id === "string")) {
+      return undefined;
+    }
+    return { outcome: "hit", fragmentCount: count, kbIds };
+  }
+  return undefined;
+}
+
+/**
+ * One span row onto the wire's step. A row without its window (start/end) is the store
+ * failing to answer, not a step without a time; terminal vocabulary and T15's determination
+ * fail closed onto the words this build can say, and A3 holds at the read boundary: only an
+ * execution this deployment observed may keep a terminal state, whatever the row claims.
+ */
+function projectStep(row: OpikSpanRow): RunStep | null {
+  const kind = stepFamily(row.name);
+  if (kind === null) return null;
+  const attributes = stepAttributes(row);
+  if (typeof row.start_time !== "string" || typeof row.end_time !== "string") {
+    throw new RunsQueryError("OPIK_MALFORMED_RESPONSE", 502);
+  }
+  const determination = attributes.execution_state;
+  const executionState =
+    determination === "proposed" ||
+    determination === "executed" ||
+    determination === "unobserved"
+      ? determination
+      : undefined;
+  const recorded = attributes.span_state;
+  const terminal: RunStepState =
+    recorded === "completed" ||
+    recorded === "failed" ||
+    recorded === "canceled" ||
+    recorded === "unknown"
+      ? recorded
+      : "unknown";
+  const state: RunStepState =
+    kind === "tool" && executionState !== "executed" ? "unknown" : terminal;
+  // Input rides with the attributes (row.input.input); output is the attribute the
+  // upstream mapper lifts into its own field (row.output.output). A retrieval step
+  // records a query only — its hit summary rides `retrieval`, never an output.
+  const input = stepContent(attributes.input);
+  const output =
+    kind === "retrieval"
+      ? null
+      : typeof row.output === "object" && row.output !== null
+        ? stepContent((row.output as Record<string, unknown>).output)
+        : null;
+  const retrieval =
+    kind === "retrieval" ? stepRetrieval(attributes) : undefined;
+  return {
+    kind,
+    spanId: row.id,
+    parentSpanId:
+      typeof row.parent_span_id === "string" ? row.parent_span_id : null,
+    name: stepDisplayName(kind, row.name),
+    state,
+    startedAt: row.start_time,
+    endedAt: row.end_time,
+    ...(executionState !== undefined ? { executionState } : {}),
+    ...(input !== null ? { input } : {}),
+    ...(output !== null ? { output } : {}),
+    ...(retrieval !== undefined ? { retrieval } : {}),
   };
 }
 
@@ -381,6 +535,75 @@ export function createRunsQueryService(
     };
   };
 
+  const steps = async (
+    scope: ObservationScope,
+    runId: string,
+  ): Promise<RunStepsResult> => {
+    gate();
+    // Ownership first, upstream second — same discipline as detail: a guessed run
+    // id answers not-found before any network I/O.
+    const binding = await deps.bindings.latestAttempt(scope, runId);
+    if (binding === null) {
+      throw new RunsQueryError("RUN_NOT_FOUND", 404);
+    }
+    if (binding.opikTraceId === null) {
+      // Begun locally, never reconciled upstream: an honest empty timeline, and
+      // upstream is not asked.
+      return { steps: [] };
+    }
+    const port = deps.port;
+    if (port === null) throw new RunsQueryError("capability_missing", 503);
+    const project = unwrap(await port.retrieveProject(scope));
+    if (project === null) {
+      // The verified 404 on the scope's own project: the truthful empty, the
+      // one that is not a disguise.
+      return { steps: [] };
+    }
+    // Walk the envelope until the trace's spans are covered; a page that never
+    // arrives whole keeps asking rather than truncating the timeline. The page
+    // ceiling is defensive only — the retention window bounds real totals.
+    const rows: OpikSpanRow[] = [];
+    let page = 1;
+    for (;;) {
+      const result = unwrap(
+        await port.listSpans(scope, {
+          projectId: project.id,
+          traceId: binding.opikTraceId,
+          size: windowSize,
+          page,
+        }),
+      );
+      rows.push(...result.content);
+      if (
+        rows.length >= result.total ||
+        result.content.length === 0 ||
+        page >= MAX_SPAN_PAGES
+      ) {
+        break;
+      }
+      page += 1;
+    }
+    // First occurrence wins on a duplicate span id (L-4): the row answers once,
+    // never a keyed warning downstream.
+    const seen = new Set<string>();
+    const projected: RunStep[] = [];
+    for (const row of rows) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      const step = projectStep(row);
+      if (step !== null) projected.push(step);
+    }
+    // Upstream rows arrive newest-first; the wire answers the chronology. A
+    // start time that will not parse keeps the wire order (stable sort).
+    projected.sort((a, b) => {
+      const left = Date.parse(a.startedAt);
+      const right = Date.parse(b.startedAt);
+      if (Number.isNaN(left) || Number.isNaN(right)) return 0;
+      return left - right;
+    });
+    return { steps: projected };
+  };
+
   /** The M1 precondition's target: the exact key the window caches under. */
   const invalidate = (scope: ObservationScope) => {
     cache.delete(cacheKey(scope, "runs-window"));
@@ -390,5 +613,5 @@ export function createRunsQueryService(
     cache.delete(scopeCacheKey(scopeKey, "runs-window"));
   };
 
-  return { list, detail, invalidate, invalidateKey };
+  return { list, detail, steps, invalidate, invalidateKey };
 }

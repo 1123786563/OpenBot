@@ -25,6 +25,7 @@ export type OpikOperation =
   | "createTrace"
   | "writeSpans"
   | "listTraces"
+  | "listSpans"
   | "deleteTraces"
   | "deleteDataset";
 
@@ -135,6 +136,22 @@ export type OpikTracePage = Readonly<{
   content: readonly OpikTraceRow[];
 }>;
 
+/**
+ * One span row, exactly as the verified read-back observed it (Issue #24 / T18-server):
+ * OTLP-written spans answer with their attributes merged into the row's `input` object and
+ * the `input`/`output` attributes under their own keys. Only `id` is typed and validated;
+ * every other field — `name`, `parent_span_id`, the attribute carrier — passes through as
+ * data, untrusted, for the step projection to read defensively.
+ */
+export type OpikSpanRow = Readonly<{ id: string } & Record<string, unknown>>;
+
+export type OpikSpanPage = Readonly<{
+  page: number;
+  size: number;
+  total: number;
+  content: readonly OpikSpanRow[];
+}>;
+
 export type OpikPort = {
   /** Deployment-level liveness on the verified path. No scope: it authorizes nothing. */
   healthCheck(): Promise<OpikPortResult<{ healthy: true }>>;
@@ -183,6 +200,17 @@ export type OpikPort = {
     scope: ObservationScope,
     input: { projectId: string; size?: number; page?: number },
   ): Promise<OpikPortResult<OpikTracePage>>;
+  /**
+   * List a trace's spans in one upstream project — the step-tree read-back (Issue #24 /
+   * T18-server), gated on the parent-child query-link capability whose T04 evidence is the
+   * span query/detail round-trip. The verified answer is the same `page/size/total/content`
+   * envelope with rows carrying `id`; a row attesting a different project than the one
+   * queried is drift, exactly like listTraces.
+   */
+  listSpans(
+    scope: ObservationScope,
+    input: { projectId: string; traceId: string; size?: number; page?: number },
+  ): Promise<OpikPortResult<OpikSpanPage>>;
   /**
    * Delete traces upstream by the locator's own project (Issue #41 / T35). The locator, not a
    * scope: retention freezes it at discovery and a deletion's upstream half must run against

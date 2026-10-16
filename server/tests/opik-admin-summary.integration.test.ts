@@ -131,6 +131,9 @@ function fakePort(rows: readonly OpikTraceRow[], healthy = true): OpikPort {
     writeSpans: async () => {
       throw new Error("the summary must not write");
     },
+    listSpans: async () => {
+      throw new Error("the summary does not read spans");
+    },
   };
 }
 
