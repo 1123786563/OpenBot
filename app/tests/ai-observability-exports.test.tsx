@@ -164,8 +164,13 @@ function completedWithArtifact(): ExportJobView {
 }
 
 function draw(initial = "/bots/agent-1/exports", pollMs = 40) {
+  // The production QueryClient's globals (retry and focus refetch both off) —
+  // so a flip driven by visibilitychange here proves the page-level opt-in,
+  // not a library default the shipped app never had (review Maj-2).
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false },
+    },
   });
   const rootRoute = createRootRoute();
   const exportsRoute = createRoute({
@@ -268,14 +273,31 @@ describe("a permission change flips the page, not the cache (acceptance 2)", () 
     const view = draw();
     await waitFor(() => expect(pageText(view)).toContain("Exporting"));
     // The manage right ends: the next answer is the refusal, and the page flips. In the
-    // browser that next answer arrives on the in-flight poll (or the tab regaining focus);
-    // here the interval scheduler is inert because react-query froze isServer at import,
-    // before happy-dom registered, so the focus refetch stands in for the same reload.
+    // browser that next answer arrives on the in-flight poll or the tab regaining focus —
+    // both real production paths now, this page opting into the focus refetch the
+    // app-wide QueryClient turns off. Here the interval scheduler is inert because
+    // react-query froze isServer at import, before happy-dom registered, so the focus
+    // refetch stands in for the same reload.
     exportsHandler = () =>
       Response.json({ error: "OWNERSHIP_REQUIRED" }, { status: 403 });
     window.dispatchEvent(new Event("visibilitychange"));
     await view.findByText("Outside your scope");
     expect(pageText(view)).not.toContain("Exporting");
+  });
+
+  test("a revocation after every job has settled still flips the page", async () => {
+    // Review Maj-2's other half: with all jobs settled the poll closes, and a
+    // focus refetch the shipped app had turned off left the download button
+    // alive indefinitely. The tab returning to the foreground now re-asks, the
+    // refusal replaces the data, and the file offer goes with it.
+    exportsHandler = () => Response.json({ jobs: [completedWithArtifact()] });
+    const view = draw();
+    await view.findByText("Ready to download");
+    exportsHandler = () =>
+      Response.json({ error: "OWNERSHIP_REQUIRED" }, { status: 403 });
+    window.dispatchEvent(new Event("visibilitychange"));
+    await view.findByText("Outside your scope");
+    expect(pageText(view)).not.toContain("Ready to download");
   });
 });
 

@@ -69,9 +69,9 @@
   },
   "filter": {
     "timeAll": "All time",
-    "timeHour": "Last 24 hours",
-    "timeDay": "Last 7 days",
-    "timeWeek": "Last 30 days"
+    "timeDay": "Last 24 hours",
+    "timeWeek": "Last 7 days",
+    "timeMonth": "Last 30 days"
   },
   "summary": {
     "healthTitle": "Collection health",

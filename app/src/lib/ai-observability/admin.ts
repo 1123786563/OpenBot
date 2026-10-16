@@ -30,9 +30,9 @@ import type { AdminSummaryResult } from "../../../../shared/ai-observability-adm
 /** Each time filter's label and span; "all" asks for the open window. */
 export const ADMIN_TIME_WINDOWS = [
   { id: "all", labelKey: "filter.timeAll", ms: null },
-  { id: "hour", labelKey: "filter.timeHour", ms: 3_600_000 },
   { id: "day", labelKey: "filter.timeDay", ms: 86_400_000 },
   { id: "week", labelKey: "filter.timeWeek", ms: 604_800_000 },
+  { id: "month", labelKey: "filter.timeMonth", ms: 2_592_000_000 },
 ] as const;
 
 export type AdminTimeWindowId = (typeof ADMIN_TIME_WINDOWS)[number]["id"];
@@ -134,5 +134,13 @@ export function observationAdminSummaryQueryOptions(window: AdminTimeWindowId) {
       }
       return { view: "summary", result: body };
     },
+    /*
+     * Spec A6 (permission changes show up without a reload): this page has no
+     * poll, and the app-wide QueryClient turns focus refetch off — without
+     * this opt-in a role narrowed while the admin stays on the page keeps its
+     * wider answer until the next navigation. The tab returning to the
+     * foreground re-asks, and the next answer is the refusal.
+     */
+    refetchOnWindowFocus: true,
   });
 }

@@ -264,6 +264,30 @@ describe("GET /admin/summary authorization and filters", () => {
     expect(recorder.calls[0].scopes[0].actorId).toBe(owner.id);
     expect(recorder.calls[0].scopes[0].epoch).toBe(3);
   });
+
+  test("a failed listing answers 500, never an empty 200 (T33-rev3 M-3, server side)", async () => {
+    // The boot wiring used to swallow listBots failures into an empty array,
+    // so the store failing to list read as "no bots in scope" — the page's
+    // explicit unavailable fault could never trigger. A failure propagates
+    // now, and the page maps the 500 to that fault.
+    const recorder = recordingSummary();
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/",
+      createAiObservabilityRoutes({
+        requireUser: actorVariables(owner as unknown as AuthenticatedActor),
+        canManageBot: managementCheck([profile()]),
+        scopeEpoch: async () => 3,
+        listBots: async () => {
+          throw new Error("listing store down");
+        },
+        summary: recorder.service,
+      }),
+    );
+    const response = await app.request("http://openbot.test/admin/summary");
+    expect(response.status).toBe(500);
+    expect(recorder.calls).toEqual([]);
+  });
 });
 
 describe("the T01 mount seam (Part 2 wiring)", () => {

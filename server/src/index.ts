@@ -55,7 +55,7 @@ import {
 } from "./agents/openmuse-template-store";
 import { canManageAgent } from "./agents/profile-policy";
 import { createAgentProfileStore } from "./agents/profile-store";
-import type { AgentActor, AgentProfile } from "./agents/profile-types";
+import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import {
   createWakeUpRunner,
@@ -5137,8 +5137,10 @@ const aiObservability = createAiObservabilityRoutes({
   bindings: aiObservabilityBindings,
   config: () => opikBootConfig,
   port: opikObservationPort,
-  listBots: (actor) =>
-    agentProfileStore.list(actor).catch(() => [] as AgentProfile[]),
+  // A listing that fails propagates: a 500 the page maps to its unavailable
+  // fault, never a 200 with an empty list that reads as "nothing in scope".
+  // (The T33-rev3 listBots minor, server side.)
+  listBots: (actor) => agentProfileStore.list(actor),
 });
 
 /*
