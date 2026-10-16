@@ -75,7 +75,7 @@ async function refusalCode(response: Response): Promise<string | null> {
 }
 
 /** The read endpoint's classifier: a refusal is the screen's verdict, decided here once. */
-async function classifyRead(
+export async function classifyRead(
   response: Response,
 ): Promise<{ fault: ObservationExperimentFault } | { ok: true }> {
   if (

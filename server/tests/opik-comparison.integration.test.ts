@@ -372,6 +372,63 @@ test("a different frozen sample set refuses the verdict and explains the differe
   expect(comparison.regressions).toBeNull();
 });
 
+test("a still-in-flight candidate answers no verdict, not a premature regression (T29-rev L-1)", {
+  timeout: 30_000,
+}, async () => {
+  const version = await frozenVersion(1);
+  const baseline = await frozenExperiment(version.id, "claude-sonnet-5");
+  const candidate = await frozenExperiment(version.id, "claude-haiku-4-5");
+
+  // The baseline settles through the real worker; the candidate is enqueued only
+  // after the sweep, so it stays in flight with a live claim ticket — the honest
+  // open state a comparison must refuse to rank.
+  const baselineRun = await executions.enqueue(scopeA, baseline.id);
+  await workerFor(async () => ({
+    status: "completed",
+    output: "A one-paragraph outage summary.",
+    usage: { tokens_input: 120, tokens_output: 45 },
+  })).sweep();
+  await until(
+    async () => (await settledRow(baselineRun.id))?.state === "completed",
+  );
+  const candidateRun = await executions.enqueue(scopeA, candidate.id);
+
+  const app = mountedApp({ id: scopeA.actorId, role: "user" });
+  const response = await app.request(
+    `http://openbot.test/api/ai-observability/bots/agent-1/experiment-comparisons` +
+      `?baselineExperimentId=${baseline.id}&baselineExecutionId=${baselineRun.id}` +
+      `&candidateExperimentId=${candidate.id}&candidateExecutionId=${candidateRun.id}`,
+  );
+  expect(response.status).toBe(200);
+  const comparison = await response.json();
+
+  expect(comparison.compatibility.compatible).toBe(true);
+  // The candidate's own facts stay honest: nothing settled, no mean, no completion.
+  expect(comparison.candidate.report.summary).toMatchObject({
+    sampleBase: 1,
+    scored: 0,
+    inProgress: 1,
+    meanScore: null,
+  });
+  expect(comparison.candidate.completionRate).toBe(0);
+  expect(comparison.deltas.meanScore).toEqual({
+    baseline: 1,
+    candidate: null,
+    delta: null,
+  });
+  // The open sample keeps the fail-closed verdict and rides no regression list.
+  expect(comparison.deltas.perSample).toEqual([
+    expect.objectContaining({
+      index: 0,
+      baseline: { class: "scored", score: 1 },
+      candidate: { class: "in_progress", score: null },
+      scoreDelta: null,
+      direction: "incomparable",
+    }),
+  ]);
+  expect(comparison.regressions).toEqual([]);
+});
+
 test("the mounted gate: a stranger or another scope learns nothing (AC4)", {
   timeout: 30_000,
 }, async () => {

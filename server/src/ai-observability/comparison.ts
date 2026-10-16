@@ -44,6 +44,16 @@
  * metrics-only stays `scoring_failed/OUTPUT_MISSING` — the comparison mints no explanation
  * the underlying records do not already make.
  *
+ * ## Non-terminal samples (the T29-rev L-1 fix, before the page consumed the verdict)
+ *
+ * `in_progress` (a healthy execution still in flight) and `pending_reconciliation` (an
+ * orphan awaiting recovery) have no final answer yet: their settlement may still score
+ * anything, so they keep the fail-closed `incomparable` and never enter `regressions` —
+ * they masquerade neither as regressions nor as improvements. Only terminal classes
+ * (`execution_failed`, `scoring_failed`, `cancelled`, `sync_failure`) can close a
+ * scored sample's verdict; a `scored → terminal-failure` pair is the honest scoreless
+ * regression.
+ *
  * ## Authorization (Issue #35 AC4, spec A5/A9)
  *
  * One scope answers both sides: every read — the experiment rows for the ledger and the
@@ -126,6 +136,10 @@ export type SampleDelta = Readonly<{
   candidate: Readonly<{ class: SampleClass; score: number | null }>;
   /** Finite only when both sides scored; a missing score never masquerades as a 0. */
   scoreDelta: number | null;
+  /**
+   * The closed four-word verdict. Non-terminal classes on either side keep
+   * `incomparable` — an open settlement is never a regressed or improved fact.
+   */
   direction: "regressed" | "improved" | "unchanged" | "incomparable";
 }>;
 
@@ -341,6 +355,12 @@ function reasonCode(reason: SampleReason): string | null {
   return reason.class === "scored" ? null : reason.code;
 }
 
+/** The classes whose verdict is still open: fail-closed to `incomparable`, never ranked. */
+const UNSETTLED_CLASSES: readonly SampleClass[] = [
+  "in_progress",
+  "pending_reconciliation",
+];
+
 export type ExperimentComparisonService = Readonly<{
   /**
    * Compare two executions of two experiments, inside the caller's scope. Every id is read
@@ -417,7 +437,14 @@ export function createExperimentComparisonService(
           after.score !== null;
         const scoreDelta = bothScored ? after.score - before.score : null;
         let direction: SampleDelta["direction"];
-        if (bothScored && scoreDelta !== null) {
+        if (
+          UNSETTLED_CLASSES.includes(before.class) ||
+          UNSETTLED_CLASSES.includes(after.class)
+        ) {
+          // Still open on a side: the settlement may yet answer anything, so the
+          // direction stays incomparable — never a premature regressed or improved.
+          direction = "incomparable";
+        } else if (bothScored && scoreDelta !== null) {
           direction =
             scoreDelta === 0
               ? "unchanged"
@@ -425,8 +452,8 @@ export function createExperimentComparisonService(
                 ? "regressed"
                 : "improved";
         } else if (before.class === "scored") {
-          // Used to pass, now does not even settle honestly: a regression the missing
-          // score keeps scoreless — never a fabricated −1.
+          // Used to pass, now fails terminally: a regression the missing score keeps
+          // scoreless — never a fabricated −1.
           direction = "regressed";
         } else if (after.class === "scored") {
           direction = "improved";

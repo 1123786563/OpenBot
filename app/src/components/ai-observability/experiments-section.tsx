@@ -108,7 +108,6 @@ export function ObservationExperimentsSection({ botId }: { botId: string }) {
 
   return (
     <PageSection
-      className="mt-10"
       description={t("submit.rowDescription")}
       title={t("submit.rowTitle")}
     >

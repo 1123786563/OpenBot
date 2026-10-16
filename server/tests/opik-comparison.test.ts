@@ -696,10 +696,15 @@ describe("deltas: completion, valid scores, failures, timing, usage (AC2)", () =
       candidate: 1,
       delta: null,
     });
+    // The still-running baseline sample masquerades neither as improved against nor
+    // regressed: its settlement is still open, so the direction stays incomparable.
     expect(comparison.deltas?.perSample[0]).toMatchObject({
-      direction: "improved",
+      baseline: { class: "in_progress" },
+      candidate: { class: "scored" },
+      direction: "incomparable",
       scoreDelta: null,
     });
+    expect(comparison.regressions).toEqual([]);
   });
 });
 
@@ -726,7 +731,7 @@ describe("regressions: the safe case and both execution records (AC3)", () => {
           experimentId: "experiment-cand",
           experimentConfigHash: "e".repeat(64),
           caseCount: 1,
-          result: { cases: [{ index: 0, status: "unknown" }] },
+          result: { cases: [{ index: 0, status: "failed" }] },
         }),
       ],
     });
@@ -748,16 +753,17 @@ describe("regressions: the safe case and both execution records (AC3)", () => {
     expect(regression?.candidate.resultLink).toBe(
       "/api/ai-observability/bots/agent-1/experiments/experiment-cand/results/execution-cand",
     );
-    // The vocabulary stays the T28 classes: unknown stays unknown, no story minted.
+    // The vocabulary stays the T28 classes: a terminal failure keeps its own code,
+    // and no story is minted the records do not already tell.
     expect(regression?.baseline).toMatchObject({
       class: "scored",
       score: 1,
       code: null,
     });
     expect(regression?.candidate).toMatchObject({
-      class: "pending_reconciliation",
+      class: "execution_failed",
       score: null,
-      code: "CASE_UNKNOWN",
+      code: "CASE_FAILED",
     });
     expect(JSON.stringify(regression)).not.toMatch(/Infinity|NaN/);
   });
@@ -803,6 +809,90 @@ describe("regressions: the safe case and both execution records (AC3)", () => {
       class: "scoring_failed",
       code: "OUTPUT_MISSING",
     });
+  });
+
+  test("non-terminal samples masquerade neither as regressions nor as improvements", async () => {
+    // The paired board the T31 fix owes: still-open samples (in-flight and
+    // awaiting-reconciliation) mixed with terminal ones. The open ones keep the
+    // fail-closed `incomparable` and stay out of regressions; the terminal
+    // failures still count, scorelessly.
+    const { service } = serviceFor({
+      versions: [version(4)],
+      executions: [
+        execution({
+          id: "execution-base",
+          caseCount: 4,
+          result: {
+            cases: [
+              // scored.
+              {
+                index: 0,
+                status: "completed",
+                output: textOutput("A one-paragraph outage summary."),
+              },
+              // scored.
+              {
+                index: 1,
+                status: "completed",
+                output: textOutput("A one-paragraph outage summary."),
+              },
+              // awaiting reconciliation.
+              { index: 2, status: "unknown" },
+              // scored.
+              {
+                index: 3,
+                status: "completed",
+                output: textOutput("A one-paragraph outage summary."),
+              },
+            ],
+          },
+        }),
+        execution({
+          id: "execution-cand",
+          experimentId: "experiment-cand",
+          experimentConfigHash: "e".repeat(64),
+          caseCount: 4,
+          result: {
+            cases: [
+              // Awaiting reconciliation: the verdict is still open, not a regression.
+              { index: 0, status: "unknown" },
+              // A terminal execution failure: a regression without a fabricated score.
+              { index: 1, status: "failed" },
+              // Scored against an open baseline: not an improvement.
+              {
+                index: 2,
+                status: "completed",
+                output: textOutput("A one-paragraph outage summary."),
+              },
+              // 1 → 0.5: the regressed sample with a finite delta.
+              {
+                index: 3,
+                status: "completed",
+                output: textOutput("outage partial"),
+              },
+            ],
+          },
+        }),
+      ],
+    });
+
+    const comparison = await service.compare(scopeA, bothSides);
+
+    expect(comparison.deltas?.perSample.map((row) => row.direction)).toEqual([
+      "incomparable", // scored → pending_reconciliation
+      "regressed", // scored → terminal execution failure
+      "incomparable", // pending_reconciliation → scored
+      "regressed", // 1 → 0.5
+    ]);
+    // Only the terminal regressions ride the list; neither open sample is a member.
+    expect(comparison.regressions?.map((row) => row.index)).toEqual([1, 3]);
+    expect(comparison.deltas?.perSample[3]?.scoreDelta).toBe(-0.5);
+    for (const row of comparison.regressions ?? []) {
+      for (const side of [row.baseline, row.candidate]) {
+        expect(side.class).not.toBe("in_progress");
+        expect(side.class).not.toBe("pending_reconciliation");
+      }
+    }
   });
 });
 
