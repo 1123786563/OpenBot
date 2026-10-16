@@ -59,7 +59,11 @@ import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { ObservationScope } from "./contracts";
 import type { FrozenDatasetCase } from "./datasets";
 import type { FrozenExperimentConfig } from "./experiments";
-import { projectSafeFixture, projectSafeName, projectSafeText } from "./redaction";
+import {
+  projectSafeFixture,
+  projectSafeName,
+  projectSafeText,
+} from "./redaction";
 import { assertObservationScope } from "./scope";
 
 /** The work-queue kind an execution's claim ticket rides on. */
@@ -599,7 +603,7 @@ export function createObservationExecutionStore(
       // instead of projecting (and depth-cutting) them a second time.
       const cases = rows.map((row) => {
         const detail = row.detail as {
-          output?: SafeValue;
+          output?: SafeValue | SafeText;
           usage?: SafeValue;
         } | null;
         return {
