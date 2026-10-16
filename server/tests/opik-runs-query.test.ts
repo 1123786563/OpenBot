@@ -957,4 +957,28 @@ describe("runs query — the M1 cache invalidation target", () => {
     // post-deletion upstream on the very next call.
     expect(reads(port.calls)).toBe(4);
   });
+
+  test("invalidateKey() drops the same entry from the stored scope key alone (the retention seam's wiring target)", async () => {
+    // The retention worker's invalidateReads holds a record's scope key, not a
+    // scope: this entry point must compute the exact key invalidate() deletes.
+    const port = fakePort({ rows: fiveRows });
+    const runs = createRunsQueryService({
+      bindings: {
+        latestAttempt: async () => null,
+      },
+      config: () => enabledConfig,
+      port: port.port,
+      windowSize: WINDOW,
+      cacheTtlMs: 60_000,
+    });
+
+    await runs.list(scopeA, {});
+    await runs.list(scopeA, {});
+    expect(reads(port.calls)).toBe(2);
+
+    runs.invalidateKey(scopeA.key);
+    await runs.list(scopeA, {});
+    // The same eviction as invalidate(scopeA), keyed on the stored string.
+    expect(reads(port.calls)).toBe(4);
+  });
 });

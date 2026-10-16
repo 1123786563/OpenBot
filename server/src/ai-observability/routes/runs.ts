@@ -33,6 +33,7 @@ import {
   createRunsQueryService,
   MAX_RUNS_LIMIT,
   RunsQueryError,
+  type RunsQueryService,
 } from "../queries/runs";
 import { resolveObservationScope } from "../scope";
 
@@ -48,6 +49,13 @@ export type RunsQueryRouteDeps = Readonly<{
   windowSize?: number;
   cacheTtlMs?: number;
   now?: () => Date;
+  /**
+   * The shared query service, when a caller outside the route needs the same
+   * cache the route serves from — the boot wiring hands the retention worker's
+   * `invalidateReads` seam this instance's invalidation. Absent = constructed
+   * from the deps above, as before.
+   */
+  query?: RunsQueryService;
 }>;
 
 const BAD_LIMIT = new RunsQueryError("RUNS_QUERY_INPUT_INVALID", 400);
@@ -94,14 +102,16 @@ export function createRunsQueryRoutes(
   deps: RunsQueryRouteDeps,
 ): Hono<{ Variables: AppVariables }> {
   const routes = new Hono<{ Variables: AppVariables }>();
-  const query = createRunsQueryService({
-    bindings: deps.bindings,
-    config: deps.config,
-    port: deps.port,
-    windowSize: deps.windowSize,
-    cacheTtlMs: deps.cacheTtlMs,
-    now: deps.now,
-  });
+  const query =
+    deps.query ??
+    createRunsQueryService({
+      bindings: deps.bindings,
+      config: deps.config,
+      port: deps.port,
+      windowSize: deps.windowSize,
+      cacheTtlMs: deps.cacheTtlMs,
+      now: deps.now,
+    });
 
   /** The T10 authorization block, shared by list and detail: manage-gate, then scope. */
   const scopeFor = async (context: {

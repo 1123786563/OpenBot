@@ -167,7 +167,21 @@ export function cacheKey(
   ...parts: Array<string | number>
 ): string {
   assertObservationScope(scope);
-  return joinKey(["cache", scope.key, name, ...parts.map(String)]);
+  return scopeCacheKey(scope.key, name, ...parts);
+}
+
+/**
+ * The scope-key-only spelling of `cacheKey`: the same key without a scope in
+ * hand. The retention worker's read invalidation holds a stored scope key, not
+ * a scope (a scope is issued per request, never persisted), and must delete the
+ * exact entry the read surface cached under.
+ */
+export function scopeCacheKey(
+  scopeKey: string,
+  name: string,
+  ...parts: Array<string | number>
+): string {
+  return joinKey(["cache", scopeKey, name, ...parts.map(String)]);
 }
 
 export function jobKey(

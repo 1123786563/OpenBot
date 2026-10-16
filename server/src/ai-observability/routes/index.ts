@@ -29,6 +29,7 @@ import type { OpikConfig } from "../config";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
 import type { OpikHealthService } from "../health";
 import type { OpikPort } from "../opik-port";
+import type { RunsQueryService } from "../queries/runs";
 import { createAdminSummaryRoutes } from "./admin-summary";
 import { createExportRoutes } from "./exports";
 import { createAiObservabilityHealthRoutes } from "./health";
@@ -50,6 +51,12 @@ export type AiObservabilityDeps = {
   config?: () => OpikConfig;
   /** The verified port, or null when no verified contract backs this deployment. */
   port?: OpikPort | null;
+  /**
+   * The shared runs query service: when present the runs routes serve from this
+   * instance, so the retention worker's `invalidateReads` seam can drop the
+   * very window the routes cache under. Absent = the routes build their own.
+   */
+  runsQuery?: RunsQueryService;
   /** The caller's bot listing, for the unfiltered admin summary. */
   listBots?: (actor: AgentActor) => Promise<readonly AgentProfile[]>;
   /** Override for tests; the assembly builds its own service from the deps above. */
@@ -79,6 +86,7 @@ export function createAiObservabilityRoutes(
         bindings: deps.bindings,
         config: deps.config,
         port: deps.port ?? null,
+        query: deps.runsQuery,
       }),
     );
   }

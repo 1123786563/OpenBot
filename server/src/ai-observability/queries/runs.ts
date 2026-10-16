@@ -35,7 +35,7 @@ import { ObservationScopeError } from "../contracts";
 import type { OpikPort, OpikPortResult, OpikTraceRow } from "../opik-port";
 import { projectSafeMetadata } from "../redaction";
 import type { AttemptRunState } from "../run-lifecycle";
-import { bindCursor, cacheKey, readCursor } from "../scope";
+import { bindCursor, cacheKey, readCursor, scopeCacheKey } from "../scope";
 
 /** The upstream window this deployment is willing to fetch per read. */
 export const DEFAULT_RUNS_WINDOW = 100;
@@ -116,6 +116,12 @@ export type RunsQueryService = {
    * hands this to the retention worker's `invalidateReads` seam.
    */
   invalidate(scope: ObservationScope): void;
+  /**
+   * The same drop from the stored scope key alone — the entry point the
+   * retention worker's `invalidateReads` seam actually reaches: a deletion
+   * record freezes a scope key, never a scope object.
+   */
+  invalidateKey(scopeKey: string): void;
 };
 
 type CachedWindow = {
@@ -380,5 +386,9 @@ export function createRunsQueryService(
     cache.delete(cacheKey(scope, "runs-window"));
   };
 
-  return { list, detail, invalidate };
+  const invalidateKey = (scopeKey: string) => {
+    cache.delete(scopeCacheKey(scopeKey, "runs-window"));
+  };
+
+  return { list, detail, invalidate, invalidateKey };
 }
