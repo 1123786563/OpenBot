@@ -3,6 +3,7 @@ import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
 import type {
   EvaluationCaseContext,
+  EvaluationCaseOutcome,
   EvaluationCaseRunner,
 } from "../src/ai-observability/executions";
 import { freezeExperimentConfig } from "../src/ai-observability/experiments";
@@ -560,10 +561,7 @@ describe("the case-runner wrapper", () => {
 
   function wrappedCaseRunner(
     answer: Parameters<typeof fakeJudgeModel>[0],
-    innerOutcome: {
-      status: "completed" | "failed" | "unknown";
-      detail?: unknown;
-    },
+    innerOutcome: EvaluationCaseOutcome,
   ) {
     const model = fakeJudgeModel(answer);
     const judge = createJudgeScorer({
@@ -575,30 +573,34 @@ describe("the case-runner wrapper", () => {
         externalCustomerId: "customer-1",
       },
     });
-    const inner: EvaluationCaseRunner = async () => innerOutcome;
+    // The explicit annotation is the same blindspot guard the production wrapper
+    // carries: an inner runner answering a stale shape must not compile green.
+    const inner: EvaluationCaseRunner =
+      async (): Promise<EvaluationCaseOutcome> => innerOutcome;
     const runner = createJudgeScoringCaseRunner({ inner, judge });
     return { runner, model };
   }
 
-  test("a completed case carries its judge record in the outcome detail", async () => {
+  test("a completed case carries its judge record beside its execution truth", async () => {
     const { runner, model } = wrappedCaseRunner(
       { output: VERDICT, inputTokens: 12, outputTokens: 34 },
       {
         status: "completed",
-        detail: { output: "the answer", inputTokens: 10, outputTokens: 20 },
+        output: "the answer",
+        usage: { inputTokens: 10, outputTokens: 20 },
       },
     );
 
     const outcome = await runner(context());
 
     expect(outcome.status).toBe("completed");
-    expect(outcome.detail).toMatchObject({
-      output: "the answer",
-      judge: {
-        status: "scored",
-        score: 0.9,
-        scorerVersion: JUDGE_SCORER_VERSION,
-      },
+    // The case's own truth is untouched; the judge record rides its own field.
+    expect(outcome.output).toBe("the answer");
+    expect(outcome.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
+    expect(outcome.judge).toMatchObject({
+      status: "scored",
+      score: 0.9,
+      scorerVersion: JUDGE_SCORER_VERSION,
     });
     expect(model.calls).toHaveLength(1);
   });
@@ -606,37 +608,31 @@ describe("the case-runner wrapper", () => {
   test("a case that did not complete is never judged — no call, no reservation, no rerun", async () => {
     const { runner, model } = wrappedCaseRunner(
       { output: VERDICT },
-      {
-        status: "failed",
-        detail: { error: "boom" },
-      },
+      { status: "failed" },
     );
 
     const outcome = await runner(context());
 
-    expect(outcome).toEqual({ status: "failed", detail: { error: "boom" } });
+    expect(outcome).toEqual({ status: "failed" });
     expect(model.calls).toHaveLength(0);
   });
 
   test("an experiment without a judge subtree runs rules-only and dials nothing", async () => {
     const { runner, model } = wrappedCaseRunner(
       { output: VERDICT },
-      {
-        status: "completed",
-        detail: { output: "the answer" },
-      },
+      { status: "completed", output: "the answer" },
     );
 
     const outcome = await runner(context(frozenConfig({ rules: [] })));
 
-    expect(outcome.detail).not.toHaveProperty("judge");
+    expect(outcome.judge).toBeUndefined();
     expect(model.calls).toHaveLength(0);
   });
 
   test("a refused judge admission fails the scoring, not the case", async () => {
     const { runner, model } = wrappedCaseRunner(
       { output: VERDICT, inputTokens: 1, outputTokens: 1 },
-      { status: "completed", detail: { output: "the answer" } },
+      { status: "completed", output: "the answer" },
     );
 
     const outcome = await runner(
@@ -647,8 +643,10 @@ describe("the case-runner wrapper", () => {
     // failure — exactly the split the results surface (T28) draws between execution
     // failure and scoring failure.
     expect(outcome.status).toBe("completed");
-    expect(outcome.detail).toMatchObject({
-      judge: { status: "failed", code: "JUDGE_ENTRANCE_NOT_APPROVED" },
+    expect(outcome.output).toBe("the answer");
+    expect(outcome.judge).toMatchObject({
+      status: "failed",
+      code: "JUDGE_ENTRANCE_NOT_APPROVED",
     });
     expect(model.calls).toHaveLength(0);
   });
