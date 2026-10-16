@@ -352,7 +352,10 @@ test("rolling the datasets migration back drops only the dataset objects", async
     await client.begin(async (transaction: TransactionSQL) => {
       await transaction`DROP TRIGGER IF EXISTS "ai_observation_dataset_versions_immutable" ON "ai_observation_dataset_versions"`;
       await transaction`DROP FUNCTION IF EXISTS "ai_observation_dataset_versions_reject_update"`;
-      await transaction`DROP TABLE IF EXISTS "ai_observation_dataset_versions"`;
+      // CASCADE because T22's experiments pin the versions with a foreign key:
+      // a real rollback drops that constraint with the table, and the
+      // referencing experiments table survives (asserted below).
+      await transaction`DROP TABLE IF EXISTS "ai_observation_dataset_versions" CASCADE`;
       await transaction`DROP TABLE IF EXISTS "ai_observation_datasets"`;
       const tablesAfter = await transaction`
         SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
