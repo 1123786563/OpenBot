@@ -261,6 +261,7 @@ function reportBody(
           ],
         },
         usage: { inputTokens: 10, outputTokens: 20 },
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -283,6 +284,7 @@ function reportBody(
           ],
         },
         usage: null,
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -296,6 +298,7 @@ function reportBody(
           state: "running",
         },
         usage: null,
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -305,6 +308,7 @@ function reportBody(
         score: null,
         reason: { class: "execution_failed", code: "CASE_EXECUTION_ERROR" },
         usage: null,
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -314,6 +318,7 @@ function reportBody(
         score: null,
         reason: { class: "scoring_failed", code: "OUTPUT_MISSING" },
         usage: { inputTokens: 5 },
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -323,6 +328,7 @@ function reportBody(
         score: null,
         reason: { class: "cancelled", code: "CANCELLED" },
         usage: null,
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -332,6 +338,7 @@ function reportBody(
         score: null,
         reason: { class: "pending_reconciliation", code: "LEASE_EXPIRED" },
         usage: null,
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -341,6 +348,7 @@ function reportBody(
         score: null,
         reason: { class: "sync_failure", code: "CASE_RECORD_MISSING" },
         usage: null,
+        judge: null,
         resultLink:
           "/api/ai-observability/bots/agent-1/experiments/exp-1/results/exec-1",
       },
@@ -508,6 +516,23 @@ describe("submitting an experiment freezes the T22 contract (acceptance 1)", () 
     ).toBeTruthy();
   });
 
+  test("a 200 body without canaryFindings is not a contract answer — the guard refuses it (T30-rev L-1)", async () => {
+    listHandler = () => Response.json(datasetsBody([datasetRow()]));
+    const { canaryFindings: _dropped, ...incomplete } = submittedBody();
+    submitHandler = () => Response.json(incomplete);
+    const view = draw();
+    const { user, dialog } = await openReadyDialog(view);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Submit experiment" }),
+    );
+    // The store did not answer the pinned shape: the honest refusal sentence, and
+    // never a success story whose canary fact silently vanished.
+    expect(
+      await within(dialog).findByText(/observability store did not answer/),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/frozen and started/)).toBeNull();
+  });
+
   test("a configuration field that is not a JSON object refuses to submit", async () => {
     listHandler = () => Response.json(datasetsBody([datasetRow()]));
     const view = draw();
@@ -670,6 +695,56 @@ describe("the results page answers the report (acceptance 1 and 2)", () => {
     expect(pageText(view)).toContain("CASE_RECORD_MISSING");
     expect(pageText(view)).toContain("CANCELLED");
     expect(pageText(view)).toContain('{"inputTokens":10,"outputTokens":20}');
+  });
+
+  test("a scored judge record renders its score and rationale beside the rule score (T27-rn L-3)", async () => {
+    const base = reportBody();
+    resultsHandler = () =>
+      Response.json({
+        ...base,
+        samples: base.samples.map((sample) =>
+          sample.index === 0
+            ? {
+                ...sample,
+                judge: {
+                  status: "scored",
+                  score: 0.82,
+                  rationale: "It agrees with the reference answer.",
+                  scorerVersion: "judge/1",
+                  entranceId: "main",
+                  usage: null,
+                },
+              }
+            : sample,
+        ),
+      });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await waitFor(() => expect(pageText(view)).toContain("Judge 0.82"));
+    expect(pageText(view)).toContain("It agrees with the reference answer.");
+  });
+
+  test("a failed judge record renders its own code, never a guessed score (T27-rn L-3)", async () => {
+    const base = reportBody();
+    resultsHandler = () =>
+      Response.json({
+        ...base,
+        samples: base.samples.map((sample) =>
+          sample.index === 0
+            ? {
+                ...sample,
+                judge: {
+                  status: "failed",
+                  code: "JUDGE_CALL_FAILED",
+                  message: "the judge provider call threw",
+                },
+              }
+            : sample,
+        ),
+      });
+    const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+    await waitFor(() => expect(pageText(view)).toContain("Judge failed"));
+    expect(pageText(view)).toContain("JUDGE_CALL_FAILED");
+    expect(pageText(view)).toContain("the judge provider call threw");
   });
 
   test("a script payload in a usage record renders as literal text", async () => {

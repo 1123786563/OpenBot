@@ -135,6 +135,25 @@ describe("the production case runner makes one controlled, observed model call",
 
     expect(admitted).toBe(1);
     expect(calls).toEqual([]);
+    // The admission's own reason survives: the span and the outcome carry it, so the
+    // refusal never collapses into a generic budget word (T25-rev L-1).
+    expect(outcome).toEqual({ status: "failed", reason: "no credit" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "no credit",
+    });
+  });
+
+  test("a refusal without a reason keeps the budget_refused fallback word", async () => {
+    const { observe, observations } = recorder();
+    const runner = createProductionEvaluationCaseRunner({
+      callModel: async () => ({ output: "ok" }),
+      observe,
+      admit: async () => ({ allowed: false }),
+    });
+
+    const outcome = await runner(contextFor());
+
     expect(outcome).toEqual({ status: "failed" });
     expect(observations[0]?.ending).toEqual({
       kind: "refused",

@@ -144,6 +144,12 @@ export type EvaluationCaseOutcome = Readonly<{
    * projected with its own budget on the way in, exactly like output and usage.
    */
   judge?: unknown;
+  /**
+   * Why a failed case failed, when the runner knows (T25-rev L-1): the billing
+   * admission's own refusal word rides the persisted case detail and the read, so a
+   * `credits_exhausted` case is never misread as a generic budget refusal.
+   */
+  reason?: string;
 }>;
 
 /** Why a tool call was refused in the evaluation context. */
@@ -341,6 +347,7 @@ export type ObservationExecutionStore = {
     output?: unknown,
     usage?: unknown,
     judge?: unknown,
+    reason?: string,
   ): Promise<boolean>;
   /** One case's write-ahead row, whatever its status. Null when the case never started. */
   caseOutcome(
@@ -362,6 +369,7 @@ export type ObservationExecutionStore = {
       output?: unknown;
       usage?: unknown;
       judge?: unknown;
+      reason?: string;
     }[],
   ): Promise<ObservationExecution | null>;
   /**
@@ -596,6 +604,7 @@ export function createObservationExecutionStore(
             ...(one.judge === undefined
               ? {}
               : { judge: projectSafeFixture(one.judge) }),
+            ...(one.reason === undefined ? {} : { reason: one.reason }),
           })),
         },
       });
@@ -617,6 +626,7 @@ export function createObservationExecutionStore(
           output?: SafeValue | SafeText;
           usage?: SafeValue;
           judge?: SafeValue;
+          reason?: string;
         } | null;
         return {
           index: row.caseIndex,
@@ -625,6 +635,9 @@ export function createObservationExecutionStore(
           ...(detail?.output !== undefined ? { output: detail.output } : {}),
           ...(detail?.usage !== undefined ? { usage: detail.usage } : {}),
           ...(detail?.judge !== undefined ? { judge: detail.judge } : {}),
+          ...(typeof detail?.reason === "string"
+            ? { reason: detail.reason }
+            : {}),
         };
       });
       return settle(id, {
@@ -693,10 +706,24 @@ export function createObservationExecutionStore(
       return rows.length > 0;
     },
 
-    async recordCaseOutcome(id, caseIndex, status, output, usage, judge) {
+    async recordCaseOutcome(
+      id,
+      caseIndex,
+      status,
+      output,
+      usage,
+      judge,
+      reason,
+    ) {
       reference(id);
       assertCaseIndex(caseIndex);
       if (typeof status !== "string" || !CASE_OUTCOME_STATUSES.has(status)) {
+        throw new ExecutionError("EXECUTION_INPUT_INVALID", 400);
+      }
+      if (
+        reason !== undefined &&
+        (typeof reason !== "string" || reason.trim() === "")
+      ) {
         throw new ExecutionError("EXECUTION_INPUT_INVALID", 400);
       }
       // One conditional flip: only the worker whose marker still stands may land an
@@ -709,7 +736,10 @@ export function createObservationExecutionStore(
         .set({
           status,
           detail:
-            output === undefined && usage === undefined && judge === undefined
+            output === undefined &&
+            usage === undefined &&
+            judge === undefined &&
+            reason === undefined
               ? null
               : {
                   // T28's per-field projection budget, paid once here: the same
@@ -732,6 +762,9 @@ export function createObservationExecutionStore(
                   ...(judge === undefined
                     ? {}
                     : { judge: projectSafeFixture(judge) }),
+                  // The admission's own refusal word (T25-rev L-1): a closed-vocabulary
+                  // code, not free text — stored as the plain word it arrived as.
+                  ...(reason === undefined ? {} : { reason }),
                 },
           updatedAt: new Date(),
         })
@@ -1181,6 +1214,7 @@ export function createObservationExecutionWorker(
           outcome.output,
           outcome.usage,
           outcome.judge,
+          outcome.reason,
         );
         // The governance counter follows each case, so a run that dies mid-way has
         // already recorded the refusals that happened.

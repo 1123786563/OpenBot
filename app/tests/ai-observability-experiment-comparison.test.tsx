@@ -467,6 +467,65 @@ describe("an addressed comparison answers both sides and the ledger (acceptance 
     );
     expect(pageText(view)).toContain("Unchanged");
   });
+
+  test("a delta row names each side's judge fact when one exists (T27-rn L-3)", async () => {
+    comparisonHandler = () => {
+      const body = comparisonBody();
+      return Response.json({
+        ...body,
+        baseline: {
+          ...body.baseline,
+          report: reportBody("exp-1", "exec-1", {
+            samples: [
+              {
+                index: 0,
+                class: "scored",
+                score: 1,
+                reason: { class: "scored", passed: 2, failed: 0, rules: [] },
+                usage: null,
+                judge: {
+                  status: "scored",
+                  score: 0.82,
+                  rationale: "It agrees.",
+                  scorerVersion: "judge/1",
+                  entranceId: "main",
+                  usage: null,
+                },
+                resultLink: RESULT_LINK_BASELINE,
+              },
+            ],
+          }),
+        },
+        candidate: {
+          ...body.candidate,
+          report: reportBody("exp-2", "exec-2", {
+            samples: [
+              {
+                index: 0,
+                class: "scored",
+                score: 0.5,
+                reason: { class: "scored", passed: 1, failed: 1, rules: [] },
+                usage: null,
+                judge: {
+                  status: "failed",
+                  code: "JUDGE_CALL_FAILED",
+                  message: "the judge provider call threw",
+                },
+                resultLink: RESULT_LINK_CANDIDATE,
+              },
+            ],
+          }),
+        },
+      });
+    };
+    const view = draw(ADDRESSED);
+    await waitFor(() =>
+      expect(pageText(view)).toContain("Baseline Judge 0.82"),
+    );
+    expect(pageText(view)).toContain(
+      "Candidate · Judge failed · JUDGE_CALL_FAILED",
+    );
+  });
 });
 
 describe("an incompatible pair explains itself and claims no winner (acceptance 3)", () => {

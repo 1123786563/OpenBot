@@ -254,6 +254,8 @@ type StoredCase = {
   output?: SafeText | SafeValue;
   usage?: SafeText | SafeValue;
   judge?: SafeText | SafeValue;
+  /** The admission's own refusal word (T25-rev L-1); a failed case may carry one. */
+  reason?: string;
 };
 
 /**
@@ -289,6 +291,11 @@ function readStoredCases(
       cases.set(record.index, "damaged");
       continue;
     }
+    const reason = record.reason;
+    if (reason !== undefined && typeof reason !== "string") {
+      cases.set(record.index, "damaged");
+      continue;
+    }
     const envelope = (value: unknown): value is SafeText | SafeValue =>
       !!value &&
       typeof value === "object" &&
@@ -307,6 +314,7 @@ function readStoredCases(
       ...(record.output === undefined ? {} : { output: record.output }),
       ...(record.usage === undefined ? {} : { usage: record.usage }),
       ...(record.judge === undefined ? {} : { judge: record.judge }),
+      ...(reason === undefined ? {} : { reason }),
     });
   }
   return cases;
@@ -495,7 +503,9 @@ export function createExperimentResultService(
             if (record.status === "failed") {
               return push(index, "execution_failed", {
                 class: "execution_failed",
-                code: "CASE_FAILED",
+                // The admission's own refusal word when the case carries one
+                // (T25-rev L-1): the code names why, not just that it failed.
+                code: record.reason ?? "CASE_FAILED",
               });
             }
             if (record.status === "unknown") {

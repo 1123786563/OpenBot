@@ -574,12 +574,14 @@ export function createRunsQueryService(
         }),
       );
       rows.push(...result.content);
-      if (
-        rows.length >= result.total ||
-        result.content.length === 0 ||
-        page >= MAX_SPAN_PAGES
-      ) {
+      if (rows.length >= result.total || result.content.length === 0) {
         break;
+      }
+      if (page >= MAX_SPAN_PAGES) {
+        // The ceiling is defensive, not a truncation license: a trace it cannot cover
+        // is the store failing to answer the whole question, never a shorter timeline
+        // wearing a 200.
+        throw new RunsQueryError("OPIK_MALFORMED_RESPONSE", 502);
       }
       page += 1;
     }

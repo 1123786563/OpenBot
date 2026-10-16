@@ -179,6 +179,40 @@ export type ObservationWriteAttempt<T> =
   | { ok: true; result: T }
   | { ok: false; refusal: string | null };
 
+/** A judge record's display facts, as the T27 contract shapes them. */
+export type ObservationJudgeFacts =
+  | { kind: "scored"; score: number; rationale: string }
+  | { kind: "failed"; code: string; message?: string };
+
+/**
+ * The sample's judge record, read defensively (T27-rn L-3): a `scored` record needs a
+ * finite 0-bounded score and its rationale, a `failed` record its JUDGE_* code —
+ * anything else is not a judge fact the page can speak, and answers null rather than
+ * a guess. The judge's score is never the sample's score: the rule score stands alone.
+ */
+export function judgeFacts(value: unknown): ObservationJudgeFacts | null {
+  if (!isRecord(value)) return null;
+  if (value.status === "scored") {
+    return typeof value.score === "number" &&
+      Number.isFinite(value.score) &&
+      value.score >= 0 &&
+      value.score <= 1 &&
+      typeof value.rationale === "string"
+      ? { kind: "scored", score: value.score, rationale: value.rationale }
+      : null;
+  }
+  if (value.status === "failed" && typeof value.code === "string") {
+    return {
+      kind: "failed",
+      code: value.code,
+      ...(typeof value.message === "string" && value.message !== ""
+        ? { message: value.message }
+        : {}),
+    };
+  }
+  return null;
+}
+
 /** The submission: one POST freezes the configuration and starts the execution. */
 export function observationSubmitExperimentMutationOptions() {
   return mutationOptions({
@@ -199,7 +233,11 @@ export function observationSubmitExperimentMutationOptions() {
         typeof body.experimentId !== "string" ||
         typeof body.executionId !== "string" ||
         typeof body.configHash !== "string" ||
-        typeof body.replayed !== "boolean"
+        typeof body.replayed !== "boolean" ||
+        // T30-rev L-1: the canary count is part of the pinned answer — a body that
+        // omits it is not the contract, and the canary sentence must never silently
+        // vanish behind a success story.
+        typeof body.canaryFindings !== "number"
       ) {
         return { ok: false, refusal: null };
       }

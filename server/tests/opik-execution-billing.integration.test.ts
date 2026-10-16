@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { TransactionSQL } from "bun";
-import { eq, like } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import {
@@ -199,6 +199,14 @@ async function deliverCharges(...eventIds: string[]) {
   }
 }
 
+/**
+ * The execution rows this suite actually enqueues (the sweep test); every other test
+ * drives a runner directly over a synthetic execution id and writes no row. The
+ * cleanup narrows to exactly these (T25-rev L-4) — a shared database would no longer
+ * lose other suites' rows to this suite's afterAll.
+ */
+const sweepExecutionIds: string[] = [];
+
 afterAll(async () => {
   // The whole evaluation event vocabulary is this suite's: the sweep test's executions
   // carry generated UUID ids no prefix reaches, and a row left pending on a reused
@@ -209,11 +217,17 @@ afterAll(async () => {
   await database
     .delete(billingCustomers)
     .where(like(billingCustomers.externalId, `${prefix}%`));
-  // The sweep test's opik rows, via the sanctioned flagged-cleanup route (T23's pattern).
-  await database.delete(aiObservationExperimentExecutions);
-  await database
-    .delete(workItems)
-    .where(eq(workItems.kind, EXECUTION_WORK_KIND));
+  // The sweep test's own rows, by id — no full-table sweep, no other suite's rows.
+  for (const id of sweepExecutionIds) {
+    await database
+      .delete(aiObservationExperimentExecutions)
+      .where(eq(aiObservationExperimentExecutions.id, id));
+    await database
+      .delete(workItems)
+      .where(
+        and(eq(workItems.kind, EXECUTION_WORK_KIND), eq(workItems.key, id)),
+      );
+  }
   await database.$client.begin(async (tx: TransactionSQL) => {
     await tx`select set_config('ai_observation.experiment_cleanup', 'on', true)`;
     await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
@@ -293,9 +307,10 @@ test("a balance that cannot cover the hold refuses before the gateway is dialed"
   expect(outcome.status).toBe("failed");
   // The adversarial core: the gateway was never called, and nothing was held.
   expect(calls.length).toBe(0);
+  // T25-rev L-1: the admission's own reason rides the span, not a collapsed word.
   expect(observations[0]?.ending).toEqual({
     kind: "refused",
-    code: "budget_refused",
+    code: "credits_exhausted",
   });
   const eventId = eventIdOf(executionId, 0);
   expect(await reservationOf(eventId)).toBeUndefined();
@@ -446,6 +461,42 @@ test("a model with no configured price refuses before the call", async () => {
   expect(await outboxRow(eventId)).toBeUndefined();
 });
 
+test("the usage fact's occurredAt is the call's start, not the settlement moment (T25-rev L-3)", async () => {
+  const customer = `${prefix}-clock`;
+  await grant(customer, 10_000);
+  const callStarts: number[] = [];
+  const callModel = (async () => {
+    callStarts.push(Date.now());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return { output: "the answer", inputTokens: 10, outputTokens: 20 };
+  }) satisfies EvaluationModelCall;
+  const occurredAts: number[] = [];
+  const runner = createBilledEvaluationCaseRunner({
+    callModel,
+    billing: {
+      creditWriter: writer,
+      // A recording wrapper around the real outbox: the fact's timestamp is the
+      // assertion target, the row still lands for real.
+      outbox: {
+        record: async (fact) => {
+          occurredAts.push(fact.occurredAt.getTime());
+          return outbox.record(fact);
+        },
+      },
+      policy,
+      externalCustomerId: customer,
+    },
+  });
+
+  await runner(contextFor(`${prefix}-exec-clock`));
+
+  expect(callStarts).toHaveLength(1);
+  expect(occurredAts).toHaveLength(1);
+  // The built-in gate meters from the call's start; the evaluation wiring says the
+  // same thing: the timestamp names when the call happened, not when it settled.
+  expect(occurredAts[0]).toBeLessThanOrEqual((callStarts[0] ?? 0) + 5);
+});
+
 test("a swept execution runs its cases through the billed runner and a resume sweep charges nothing new", async () => {
   const customer = `${prefix}-sweep`;
   await grant(customer, 10_000);
@@ -486,6 +537,7 @@ test("a swept execution runs its cases through the billed runner and a resume sw
     },
   });
   const execution = await service.start(scope, experiment.id);
+  sweepExecutionIds.push(execution.id);
 
   const { runner: runCase, calls } = billedRunner({ customer });
   const worker = createObservationExecutionWorker({

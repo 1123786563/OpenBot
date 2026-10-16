@@ -118,7 +118,9 @@
     "passedRules_other": "{{count}} rules passed",
     "failedRules_one": "{{count}} rule failed",
     "failedRules_other": "{{count}} rules failed",
-    "usage": "Usage"
+    "usage": "Usage",
+    "judgeScored": "Judge {{score}}",
+    "judgeFailed": "Judge failed"
   },
   "error": {
     "EXPERIMENT_INPUT_INVALID": "The experiment name or configuration is not valid. Nothing was submitted.",

@@ -48,7 +48,7 @@ export type ExperimentComparisonRouteDeps = Readonly<{
 /** House convention: known errors map to their code, anything else rethrows. */
 function classify(error: unknown): {
   body: { error: string };
-  status: 400 | 401 | 402 | 403 | 404 | 409 | 500;
+  status: 400 | 401 | 402 | 403 | 404 | 409 | 500 | 502;
 } {
   if (error instanceof ObservationScopeError) {
     return { body: { error: error.code }, status: error.status };
