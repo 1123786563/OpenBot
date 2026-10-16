@@ -55,8 +55,9 @@ const BUNDLES = [
 
 /**
  * The bundles whose placeholder routes exist today, named separately so TypeScript keeps each
- * entry its own bundle type. The datasets chain (#27) builds its section inside the evaluations
- * page, so it has no route — and no placeholder copy — yet.
+ * entry its own bundle type. The datasets chain (#27) renders its real section at the
+ * evaluations route and never carried placeholder copy; the evaluations bundle's placeholder
+ * copy stays reserved for the experiment chains (#36 #37) that land beside it.
  */
 const PLACEHOLDER_BUNDLES = [
   { ns: "ai-observability-runs", en: enRuns, zh: zhRuns },
