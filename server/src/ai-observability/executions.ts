@@ -31,17 +31,23 @@
  *
  * The runner is the T34 export worker's lease pattern on a new kind: a
  * claim ticket on the shared work queue, re-authorization from LIVE
- * ownership before anything runs, conditional settles that a revocation
- * can always win, and a state vocabulary the database enforces.
+ * ownership before anything runs — per case, so a revocation stops the
+ * run at the next case boundary — conditional settles that a revocation
+ * can always win, and a state vocabulary the database enforces. Each
+ * case is marked in a durable write-ahead row before its invocation and
+ * its outcome lands in one conditional flip, so a restart or lease
+ * takeover resumes without re-running a completed sample and never
+ * re-invokes one whose outcome it could not observe.
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import type { SafeValue } from "../../../shared/ai-observability";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import type { SafeText, SafeValue } from "../../../shared/ai-observability";
 import { getLogger } from "../../../shared/logger";
 import { workOwner } from "../../../shared/work-owner";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { aiObservationDatasetVersions } from "../db/schema/ai-observability-datasets";
+import { aiObservationExecutionCaseOutcomes } from "../db/schema/ai-observability-execution-case-outcomes";
 import {
   type AiObservationExecutionState,
   aiObservationExperimentExecutions,
@@ -53,7 +59,7 @@ import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { ObservationScope } from "./contracts";
 import type { FrozenDatasetCase } from "./datasets";
 import type { FrozenExperimentConfig } from "./experiments";
-import { projectSafeFixture } from "./redaction";
+import { projectSafeFixture, projectSafeName } from "./redaction";
 import { assertObservationScope } from "./scope";
 
 /** The work-queue kind an execution's claim ticket rides on. */
@@ -232,6 +238,14 @@ export type EvaluationCaseContext = Readonly<{
   /** The frozen experiment configuration, whitelist included. */
   config: FrozenExperimentConfig;
   /**
+   * The namespace this case runs under, re-derived from LIVE authorization immediately
+   * before the case starts (T24). Inert identity data — a key and two ids — not a
+   * production handle: the case still has no session, memory or business-data reach.
+   * The production runner carries it on its observations so they land in the right
+   * scope's channel instead of being dropped as scope-less.
+   */
+  scope: ObservationScope;
+  /**
    * The ONLY way this case may touch a tool. It never executes anything live: a call
    * replays a frozen fixture or is refused with a reason. There is no session, memory,
    * learning or business-data handle in this context at all — isolation by construction.
@@ -253,6 +267,10 @@ export type ExecutionBudgetPrecheck = (input: {
 
 export type ObservationExecution =
   typeof aiObservationExperimentExecutions.$inferSelect;
+
+/** One per-case write-ahead row: `in_flight` before the call, the observed status after. */
+export type ObservationCaseOutcome =
+  typeof aiObservationExecutionCaseOutcomes.$inferSelect;
 
 export type ObservationExecutionStore = {
   /**
@@ -278,13 +296,40 @@ export type ObservationExecutionStore = {
   /**
    * The revocation seam: settle every pending or running execution of one actor as
    * cancelled. Runs exactly when the actor's authorization is gone; already-terminal
-   * executions are untouched, because the first terminal write wins.
+   * executions are untouched, because the first terminal write wins. Returns the
+   * cancelled rows — the caller's audit path needs what each row knew.
    */
-  cancelForActor(actorId: string): Promise<number>;
+  cancelForActor(actorId: string): Promise<readonly ObservationExecution[]>;
   /** Worker-side read by id. Trust is the lease the worker holds, not a scope. */
   loadById(id: string): Promise<ObservationExecution | null>;
   /** pending (or lease-orphaned running) → running. Null when gone or already terminal. */
   markRunning(id: string): Promise<ObservationExecution | null>;
+  /**
+   * The per-case write-ahead marker: insert `in_flight` for this case, BEFORE its
+   * invocation, and only while the execution is still running. False when the row
+   * already exists (another worker marked, ran, or died on this case) or the
+   * execution left running — the caller reads the row to tell those apart.
+   */
+  markCaseStarted(id: string, caseIndex: number): Promise<boolean>;
+  /**
+   * Land one case's observed outcome: one conditional flip `in_flight` → final,
+   * the detail projected once on the way in. False when the case's truth was
+   * already written — by this worker, or by a takeover that honestly recorded
+   * `unknown` for a call whose outcome nobody observed.
+   */
+  recordCaseOutcome(
+    id: string,
+    caseIndex: number,
+    status: EvaluationCaseStatus,
+    detail?: unknown,
+  ): Promise<boolean>;
+  /** One case's write-ahead row, whatever its status. Null when the case never started. */
+  caseOutcome(
+    id: string,
+    caseIndex: number,
+  ): Promise<ObservationCaseOutcome | null>;
+  /** One execution's case rows in case order — the resume path's map of what already ran. */
+  caseOutcomes(id: string): Promise<readonly ObservationCaseOutcome[]>;
   /**
    * The one place per-case outcomes land: conditional on still running, and the
    * result is projected before it is stored. Null when revocation won the row.
@@ -297,6 +342,12 @@ export type ObservationExecutionStore = {
       detail?: unknown;
     }[],
   ): Promise<ObservationExecution | null>;
+  /**
+   * Settle completed from the durable per-case rows themselves (the worker's path):
+   * what ran is what the rows say, not what any worker remembers. Any row still
+   * `in_flight` at settle time is assembled as `unknown` — an ending nobody observed.
+   */
+  settleCompletedFromOutcomes(id: string): Promise<ObservationExecution | null>;
   /** Record why an execution failed. Conditional on still running, like completion. */
   settleFailed(
     id: string,
@@ -314,6 +365,19 @@ function reference(value: string): string {
     throw new ExecutionError("EXECUTION_INPUT_INVALID", 400);
   }
   return value;
+}
+
+/** The statuses `recordCaseOutcome` accepts: every case outcome is final, never `in_flight`. */
+const CASE_OUTCOME_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "unknown",
+]);
+
+function assertCaseIndex(caseIndex: number): void {
+  if (!Number.isInteger(caseIndex) || caseIndex < 0) {
+    throw new ExecutionError("EXECUTION_INPUT_INVALID", 400);
+  }
 }
 
 export function createObservationExecutionStore(
@@ -437,8 +501,8 @@ export function createObservationExecutionStore(
             ]),
           ),
         )
-        .returning({ id: aiObservationExperimentExecutions.id });
-      return cancelled.length;
+        .returning();
+      return cancelled;
     },
 
     async loadById(id) {
@@ -486,6 +550,39 @@ export function createObservationExecutionStore(
       });
     },
 
+    async settleCompletedFromOutcomes(id) {
+      reference(id);
+      const rows = await db
+        .select()
+        .from(aiObservationExecutionCaseOutcomes)
+        .where(eq(aiObservationExecutionCaseOutcomes.executionId, id))
+        .orderBy(asc(aiObservationExecutionCaseOutcomes.caseIndex));
+      // The rows ARE the projection's output — detail was projected once at record
+      // time — so this assembles the same envelope `projectSafeFixture({ cases })`
+      // would build for raw outcomes, embedding each stored envelope as-is instead
+      // of projecting (and depth-cutting) it a second time.
+      const cases: SafeValue[] = rows.map((row) => ({
+        state: "projected",
+        value: {
+          index: { state: "projected", value: row.caseIndex },
+          status: {
+            state: "projected",
+            // A row still in flight at settle time is an ending nobody observed.
+            value: row.status === "in_flight" ? "unknown" : row.status,
+          },
+          ...(row.detail !== null ? { detail: row.detail as SafeValue } : {}),
+        },
+      }));
+      return settle(id, {
+        state: "completed",
+        caseCount: rows.length,
+        result: {
+          state: "projected",
+          value: { cases: { state: "projected", value: cases } },
+        },
+      });
+    },
+
     async settleFailed(id, code) {
       reference(id);
       if (!(EXECUTION_JOB_ERROR_CODES as readonly string[]).includes(code)) {
@@ -518,6 +615,86 @@ export function createObservationExecutionStore(
         )
         .returning();
       return rows[0] ?? null;
+    },
+
+    async markCaseStarted(id, caseIndex) {
+      reference(id);
+      assertCaseIndex(caseIndex);
+      // One statement, three facts: the marker is born only if the case has none
+      // (the primary key), only while the execution is running (the EXISTS guard —
+      // a cancelled or settled execution schedules nothing new), and this caller
+      // learns whether the insert was its own.
+      const written = await db.execute(sql`
+        insert into "ai_observation_execution_case_outcomes" ("execution_id", "case_index", "status")
+        select ${id}, ${caseIndex}, 'in_flight'
+        where exists (
+          select 1 from "ai_observation_experiment_executions" e
+          where e."id" = ${id} and e."state" = 'running'
+        )
+        on conflict do nothing
+        returning "execution_id"
+      `);
+      const rows = (
+        Array.isArray(written)
+          ? written
+          : ((written as { rows?: unknown[] })?.rows ?? [])
+      ) as unknown[];
+      return rows.length > 0;
+    },
+
+    async recordCaseOutcome(id, caseIndex, status, detail) {
+      reference(id);
+      assertCaseIndex(caseIndex);
+      if (typeof status !== "string" || !CASE_OUTCOME_STATUSES.has(status)) {
+        throw new ExecutionError("EXECUTION_INPUT_INVALID", 400);
+      }
+      // One conditional flip: only the worker whose marker still stands may land an
+      // outcome. A takeover that recorded `unknown` closes the row; the original
+      // owner's later write is refused, which is the no-double-truth guarantee.
+      // Deliberately NOT conditional on the execution still running: an outcome that
+      // was observed is a fact, and recording it after a cancellation is honest.
+      const rows = await db
+        .update(aiObservationExecutionCaseOutcomes)
+        .set({
+          status,
+          detail: detail === undefined ? null : projectSafeFixture(detail),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(aiObservationExecutionCaseOutcomes.executionId, id),
+            eq(aiObservationExecutionCaseOutcomes.caseIndex, caseIndex),
+            eq(aiObservationExecutionCaseOutcomes.status, "in_flight"),
+          ),
+        )
+        .returning({
+          executionId: aiObservationExecutionCaseOutcomes.executionId,
+        });
+      return rows.length > 0;
+    },
+
+    async caseOutcome(id, caseIndex) {
+      reference(id);
+      assertCaseIndex(caseIndex);
+      const rows = await db
+        .select()
+        .from(aiObservationExecutionCaseOutcomes)
+        .where(
+          and(
+            eq(aiObservationExecutionCaseOutcomes.executionId, id),
+            eq(aiObservationExecutionCaseOutcomes.caseIndex, caseIndex),
+          ),
+        );
+      return rows[0] ?? null;
+    },
+
+    async caseOutcomes(id) {
+      reference(id);
+      return db
+        .select()
+        .from(aiObservationExecutionCaseOutcomes)
+        .where(eq(aiObservationExecutionCaseOutcomes.executionId, id))
+        .orderBy(asc(aiObservationExecutionCaseOutcomes.caseIndex));
     },
 
     async bumpToolRejections(id, count) {
@@ -624,6 +801,84 @@ const MAX_AUDITED_TOOL_NAMES = 32;
 /** Internal: the work-item lease was taken over; another owner owns the truth now. */
 class ExecutionLeaseLost extends Error {}
 
+/**
+ * The settle audit row: what ended, against which frozen experiment, how many cases
+ * ran, and how many production tool calls were refused. It follows the database fact
+ * deliberately (the T22 precedent): the row is the truth, the trail is its record,
+ * and a trail write that fails is logged — never allowed to un-settle an execution.
+ *
+ * Tool names are projected before they land (T23-rev L-2): after T24 the names come
+ * from a runner, which is to say from a model, and an audit payload is a record.
+ */
+async function auditExecutionSettled(
+  audit: Pick<AuditStore, "insert">,
+  input: {
+    execution: Pick<
+      ObservationExecution,
+      "id" | "experimentId" | "experimentConfigHash" | "actorId"
+    >;
+    settled: Pick<ObservationExecution, "state" | "caseCount" | "errorCode">;
+    tally: Pick<ToolGateTally, "rejections" | "rejectedTools">;
+  },
+): Promise<void> {
+  const { execution, settled, tally } = input;
+  const log = getLogger("server");
+  try {
+    await recordAuditEvent(audit, {
+      eventType: "opik.experiment_execution_settled",
+      targetType: "ai_observation_experiment_execution",
+      targetId: execution.id,
+      actorUserId: execution.actorId,
+      payload: {
+        executionId: execution.id,
+        experimentId: execution.experimentId,
+        experimentConfigHash: execution.experimentConfigHash,
+        state: settled.state,
+        caseCount: settled.caseCount,
+        errorCode: settled.errorCode,
+        toolRejections: tally.rejections,
+        rejectedTools: tally.rejectedTools
+          .slice(0, MAX_AUDITED_TOOL_NAMES)
+          .map((name): SafeText => projectSafeName(name)),
+      },
+    });
+  } catch (error) {
+    log.warn(
+      {
+        type: "opik-execution-audit-failed",
+        executionId: execution.id,
+        error: String(error),
+      },
+      "opik-execution-audit-failed",
+    );
+  }
+}
+
+/**
+ * The audited revocation seam: cancel every active execution of one actor and leave
+ * a settle audit row for each (T23-rev L-1 — a cancelled execution with mid-run
+ * refusals must reach the governance channel, not just the row's counter). The row's
+ * `tool_rejections` is the truth here; the distinct names live only in a live gate's
+ * memory and are honestly absent from this path's payload.
+ */
+export async function cancelExecutionsForActor(
+  deps: Readonly<{
+    executions: Pick<ObservationExecutionStore, "cancelForActor">;
+    audit: Pick<AuditStore, "insert">;
+  }>,
+  actorId: string,
+): Promise<readonly ObservationExecution[]> {
+  const cancelled = await deps.executions.cancelForActor(actorId);
+  for (const execution of cancelled) {
+    await auditExecutionSettled(deps.audit, {
+      execution,
+      settled: execution,
+      tally: { rejections: execution.toolRejections, rejectedTools: [] },
+    });
+  }
+  return cancelled;
+}
+
 export function createObservationExecutionWorker(
   deps: ObservationExecutionWorkerDeps,
 ): ObservationExecutionWorker {
@@ -634,46 +889,16 @@ export function createObservationExecutionWorker(
   const leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
   const owner = deps.owner ?? workOwner("opik-execution");
 
-  /**
-   * The settle audit row: what ended, against which frozen experiment, how many cases
-   * ran, and how many production tool calls were refused. It follows the database fact
-   * deliberately (the T22 precedent): the row is the truth, the trail is its record,
-   * and a trail write that fails is logged and retried by the next settle, never
-   * allowed to un-settle an execution.
-   */
-  const auditSettle = async (
+  const auditSettle = (
     execution: ObservationExecution,
     settled: ObservationExecution,
     tally: ToolGateTally,
-  ) => {
-    try {
-      await recordAuditEvent(deps.audit, {
-        eventType: "opik.experiment_execution_settled",
-        targetType: "ai_observation_experiment_execution",
-        targetId: execution.id,
-        actorUserId: execution.actorId,
-        payload: {
-          executionId: execution.id,
-          experimentId: execution.experimentId,
-          experimentConfigHash: execution.experimentConfigHash,
-          state: settled.state,
-          caseCount: settled.caseCount,
-          errorCode: settled.errorCode,
-          toolRejections: tally.rejections,
-          rejectedTools: tally.rejectedTools.slice(0, MAX_AUDITED_TOOL_NAMES),
-        },
-      });
-    } catch (error) {
-      log.warn(
-        {
-          type: "opik-execution-audit-failed",
-          executionId: execution.id,
-          error: String(error),
-        },
-        "opik-execution-audit-failed",
-      );
-    }
-  };
+  ) =>
+    auditExecutionSettled(deps.audit, {
+      execution,
+      settled,
+      tally,
+    });
 
   const run = async (key: string, renew: () => Promise<boolean>) => {
     const finish = () =>
@@ -700,7 +925,15 @@ export function createObservationExecutionWorker(
       botId: execution.botId,
     });
     if (scope === null) {
-      await store.settleCancelled(execution.id);
+      // Cancelled before a single case, and audited like every settle (T23-rev L-1):
+      // the gate has not run, so the tally is an honest zero.
+      const settled = await store.settleCancelled(execution.id);
+      if (settled) {
+        await auditSettle(execution, settled, {
+          rejections: 0,
+          rejectedTools: [],
+        });
+      }
       await finish();
       return;
     }
@@ -763,16 +996,43 @@ export function createObservationExecutionWorker(
     const gate = createEvaluationToolGate(experiment.config, deps.classify);
     const config = experiment.config;
     let lastTally = 0;
-    const outcomes: {
-      index: number;
-      status: EvaluationCaseStatus;
-      detail?: unknown;
-    }[] = [];
 
     try {
       for (const [index, frozenCase] of version.cases.entries()) {
         if (!(await renew())) {
           throw new ExecutionLeaseLost();
+        }
+        // Re-authorization BEFORE every sample (the T06 obligation, per case in T24):
+        // a revocation that lands between cases stops the run at the boundary — no
+        // case after it runs, reads, or consumes anything, and the cancel is audited.
+        const live = await deps.reauthorize({
+          actorId: execution.actorId,
+          botId: execution.botId,
+        });
+        if (live === null) {
+          const settled = await store.settleCancelled(execution.id);
+          if (settled) await auditSettle(execution, settled, gate.tally());
+          await finish();
+          return;
+        }
+        // The write-ahead marker, before any invocation. A row that already exists is
+        // this execution's own durable memory: a final row is a completed sample to
+        // skip; an in_flight row is a call whose outcome nobody observed — recorded
+        // unknown and never invoked again, which is the no-double-billing promise.
+        const started = await store.markCaseStarted(execution.id, index);
+        if (!started) {
+          const existing = await store.caseOutcome(execution.id, index);
+          if (!existing) {
+            // No marker could be written: the execution left running — a cancel or a
+            // settle won the row between the re-authorization and now. Nothing new
+            // is scheduled on a settled execution.
+            await finish();
+            return;
+          }
+          if (existing.status === "in_flight") {
+            await store.recordCaseOutcome(execution.id, index, "unknown");
+          }
+          continue;
         }
         const outcome = await deps.runCase({
           executionId: execution.id,
@@ -780,14 +1040,16 @@ export function createObservationExecutionWorker(
           caseIndex: index,
           frozenCase,
           config,
+          scope: live,
           callTool: async (toolName) =>
             gate.call(toolName, [frozenCase.toolFixtures, config.toolFixtures]),
         });
-        outcomes.push({
+        await store.recordCaseOutcome(
+          execution.id,
           index,
-          status: outcome.status,
-          detail: outcome.detail,
-        });
+          outcome.status,
+          outcome.detail,
+        );
         // The governance counter follows each case, so a run that dies mid-way has
         // already recorded the refusals that happened.
         const tally = gate.tally();
@@ -797,7 +1059,9 @@ export function createObservationExecutionWorker(
           lastTally = tally.rejections;
         }
       }
-      const settled = await store.settleCompleted(execution.id, outcomes);
+      // Settled from the durable rows, not from memory: what ran is what the rows
+      // say, whatever process started them.
+      const settled = await store.settleCompletedFromOutcomes(execution.id);
       if (settled) await auditSettle(execution, settled, gate.tally());
     } catch (error) {
       if (error instanceof ExecutionLeaseLost) {
