@@ -954,6 +954,61 @@ export async function cancelExecutionsForActor(
   return cancelled;
 }
 
+/**
+ * The audited single-execution cancel (the write route's seam): one execution of one
+ * experiment, inside the caller's scope, settled cancelled while it is still
+ * pending or running. A terminal execution refuses the cancel — the first terminal
+ * write wins, and a cancel that lost a race to the worker's own settle answers the
+ * same 409 rather than overwriting the truth it lost to. The settle is audited with
+ * the row's own refusal counter, exactly like the revocation seam above.
+ */
+export type ExecutionCancelService = Readonly<{
+  cancel(
+    scope: ObservationScope,
+    input: Readonly<{ experimentId: string; executionId: string }>,
+  ): Promise<ObservationExecution>;
+}>;
+
+export function createExecutionCancelService(
+  deps: Readonly<{
+    executions: Pick<ObservationExecutionStore, "get" | "settleCancelled">;
+    audit: Pick<AuditStore, "insert">;
+  }>,
+): ExecutionCancelService {
+  return {
+    async cancel(scope, input) {
+      assertObservationScope(scope);
+      reference(input.experimentId);
+      reference(input.executionId);
+      const execution = await deps.executions.get(scope, input.executionId);
+      // The same unfakeable back-link the result read draws: an execution that does
+      // not name the given experiment is not that experiment's execution, whoever's
+      // id arrived — and another scope's execution is simply not found.
+      if (!execution || execution.experimentId !== input.experimentId) {
+        throw new ExecutionError("EXECUTION_EXPERIMENT_NOT_FOUND", 404);
+      }
+      if (isTerminalExecutionState(parseExecutionState(execution.state))) {
+        throw new ExecutionError("EXECUTION_STATE_INVALID", 409);
+      }
+      const settled = await deps.executions.settleCancelled(execution.id);
+      if (!settled) {
+        // A worker settle or a revocation landed between the read and the write:
+        // the row is terminal now, and this cancel lost the race.
+        throw new ExecutionError("EXECUTION_STATE_INVALID", 409);
+      }
+      await auditExecutionSettled(deps.audit, {
+        execution,
+        settled,
+        tally: {
+          rejections: execution.toolRejections,
+          rejectedTools: [],
+        },
+      });
+      return settled;
+    },
+  };
+}
+
 export function createObservationExecutionWorker(
   deps: ObservationExecutionWorkerDeps,
 ): ObservationExecutionWorker {
