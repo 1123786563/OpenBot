@@ -16,7 +16,10 @@ import {
   createGatewayModelCall,
   type EvaluationModelCall,
 } from "../execution-runner";
-import type { EvaluationCaseRunner } from "../executions";
+import type {
+  EvaluationCaseOutcome,
+  EvaluationCaseRunner,
+} from "../executions";
 import { projectSafeText } from "../redaction";
 
 /**
@@ -530,22 +533,24 @@ export function createJudgeScorer(
 /**
  * The case-runner seam composition: the T25 billed runner (or any case runner) inside,
  * the judge beside it. Only completed cases are judged — a failed or unknown case has
- * nothing to score and the judge stays silent — and the judge's own failure is merged
- * into the outcome detail as its own record, so the case's execution truth and its
- * scoring truth are separate facts for the results surface (T28) to show separately.
- * The wrapper adds no retries, no re-reads and no scope reach: everything it touches
- * was already in the case context.
+ * nothing to score and the judge stays silent — and the judge's own record rides the
+ * outcome's `judge` field, so the case's execution truth and its scoring truth are
+ * separate facts for the results surface (T28) to show separately. The wrapper adds
+ * no retries, no re-reads and no scope reach: everything it touches was already in
+ * the case context.
+ *
+ * The explicit `Promise<EvaluationCaseOutcome>` is load-bearing: TypeScript 5.9 does
+ * not excess-property-check an async arrow's returned literal against an inherited
+ * contextual signature, so without the annotation a legacy `{status, detail}` shape
+ * compiles green and the worker silently drops the judge record. With it, a shape
+ * drift is a compile error, not a landing-channel loss.
  */
 export function createJudgeScoringCaseRunner(
   deps: Readonly<{ inner: EvaluationCaseRunner; judge: JudgeScorer }>,
 ): EvaluationCaseRunner {
-  return async (context) => {
+  return async (context): Promise<EvaluationCaseOutcome> => {
     const outcome = await deps.inner(context);
     if (outcome.status !== "completed") return outcome;
-    const detail =
-      outcome.detail && typeof outcome.detail === "object"
-        ? (outcome.detail as Record<string, unknown>)
-        : {};
     const record = await deps.judge({
       executionId: context.executionId,
       caseIndex: context.caseIndex,
@@ -556,9 +561,9 @@ export function createJudgeScoringCaseRunner(
         input: context.frozenCase.safeInput,
         reference: context.frozenCase.referenceOutput,
       },
-      output: detail.output,
+      output: outcome.output,
     });
     if (record === null) return outcome;
-    return { status: outcome.status, detail: { ...detail, judge: record } };
+    return { ...outcome, judge: record };
   };
 }

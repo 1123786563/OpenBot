@@ -138,6 +138,12 @@ export type EvaluationCaseOutcome = Readonly<{
   output?: unknown;
   /** The case's usage record (tokens and friends), raw as the runner observed it. */
   usage?: unknown;
+  /**
+   * The case's judge record (T27), when a judge wrapper ran and answered. A scoring
+   * fact beside the execution facts — the judge's own score, rationale and usage —
+   * projected with its own budget on the way in, exactly like output and usage.
+   */
+  judge?: unknown;
 }>;
 
 /** Why a tool call was refused in the evaluation context. */
@@ -334,6 +340,7 @@ export type ObservationExecutionStore = {
     status: EvaluationCaseStatus,
     output?: unknown,
     usage?: unknown,
+    judge?: unknown,
   ): Promise<boolean>;
   /** One case's write-ahead row, whatever its status. Null when the case never started. */
   caseOutcome(
@@ -354,6 +361,7 @@ export type ObservationExecutionStore = {
       status: EvaluationCaseStatus;
       output?: unknown;
       usage?: unknown;
+      judge?: unknown;
     }[],
   ): Promise<ObservationExecution | null>;
   /**
@@ -585,6 +593,9 @@ export function createObservationExecutionStore(
             ...(one.usage === undefined
               ? {}
               : { usage: projectSafeFixture(one.usage) }),
+            ...(one.judge === undefined
+              ? {}
+              : { judge: projectSafeFixture(one.judge) }),
           })),
         },
       });
@@ -605,6 +616,7 @@ export function createObservationExecutionStore(
         const detail = row.detail as {
           output?: SafeValue | SafeText;
           usage?: SafeValue;
+          judge?: SafeValue;
         } | null;
         return {
           index: row.caseIndex,
@@ -612,6 +624,7 @@ export function createObservationExecutionStore(
           status: row.status === "in_flight" ? "unknown" : row.status,
           ...(detail?.output !== undefined ? { output: detail.output } : {}),
           ...(detail?.usage !== undefined ? { usage: detail.usage } : {}),
+          ...(detail?.judge !== undefined ? { judge: detail.judge } : {}),
         };
       });
       return settle(id, {
@@ -680,7 +693,7 @@ export function createObservationExecutionStore(
       return rows.length > 0;
     },
 
-    async recordCaseOutcome(id, caseIndex, status, output, usage) {
+    async recordCaseOutcome(id, caseIndex, status, output, usage, judge) {
       reference(id);
       assertCaseIndex(caseIndex);
       if (typeof status !== "string" || !CASE_OUTCOME_STATUSES.has(status)) {
@@ -696,7 +709,7 @@ export function createObservationExecutionStore(
         .set({
           status,
           detail:
-            output === undefined && usage === undefined
+            output === undefined && usage === undefined && judge === undefined
               ? null
               : {
                   // T28's per-field projection budget, paid once here: the same
@@ -713,6 +726,12 @@ export function createObservationExecutionStore(
                   ...(usage === undefined
                     ? {}
                     : { usage: projectSafeFixture(usage) }),
+                  // The judge record is a fixture-shaped scoring fact (T27): its
+                  // rationale is already a projected envelope, so it rides the deep
+                  // fixture projection like any other structured content.
+                  ...(judge === undefined
+                    ? {}
+                    : { judge: projectSafeFixture(judge) }),
                 },
           updatedAt: new Date(),
         })
@@ -1106,6 +1125,7 @@ export function createObservationExecutionWorker(
           outcome.status,
           outcome.output,
           outcome.usage,
+          outcome.judge,
         );
         // The governance counter follows each case, so a run that dies mid-way has
         // already recorded the refusals that happened.

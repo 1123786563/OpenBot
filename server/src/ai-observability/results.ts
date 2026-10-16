@@ -129,6 +129,12 @@ export type ExperimentResultsSample = Readonly<{
   reason: SampleReason;
   /** The case's projected usage record as plain JSON, or null when none survived. */
   usage: unknown;
+  /**
+   * The case's projected judge record (T27) as plain JSON, or null when no judge
+   * answered for this case. A scoring fact beside the rule score — its own status
+   * (`scored` or `failed` with a JUDGE_* code), never a number averaged into `score`.
+   */
+  judge: unknown;
   /** The server-minted link back to this report, which names the execution id. */
   resultLink: string;
 }>;
@@ -247,11 +253,12 @@ type StoredCase = {
   status: "completed" | "failed" | "unknown";
   output?: SafeText | SafeValue;
   usage?: SafeText | SafeValue;
+  judge?: SafeText | SafeValue;
 };
 
 /**
  * Read the settled result defensively. Anything that is not the contract's shape — a
- * missing record for a base index, a case that is not `{index, status, output?, usage?}`
+ * missing record for a base index, a case that is not `{index, status, output?, usage?, judge?}`
  * with an envelope where a projection belongs — is damage to report, never content to
  * interpret: the caller classifies it `sync_failure` rather than guessing an outcome.
  */
@@ -288,7 +295,8 @@ function readStoredCases(
       (value as { state?: unknown }).state !== undefined;
     if (
       (record.output !== undefined && !envelope(record.output)) ||
-      (record.usage !== undefined && !envelope(record.usage))
+      (record.usage !== undefined && !envelope(record.usage)) ||
+      (record.judge !== undefined && !envelope(record.judge))
     ) {
       cases.set(record.index, "damaged");
       continue;
@@ -298,13 +306,15 @@ function readStoredCases(
       status,
       ...(record.output === undefined ? {} : { output: record.output }),
       ...(record.usage === undefined ? {} : { usage: record.usage }),
+      ...(record.judge === undefined ? {} : { judge: record.judge }),
     });
   }
   return cases;
 }
 
 /**
- * Serve a projected usage record as plain JSON, envelopes unwrapped. Only fully
+ * Serve a projected stored record (usage, judge) as plain JSON, envelopes
+ * unwrapped. Only fully
  * projected content answers its value; a withheld or cut leaf answers null — the REST
  * contract never echoes a projection state it cannot honestly fill. Non-finite leaves
  * (a jsonb numeric that parses past JS infinity — the T26-rev3 overflow leftover)
@@ -318,8 +328,8 @@ function readStoredCases(
  * violations readStoredCases classifies as CASE_RECORD_DAMAGED. The read never
  * interprets what the contract cannot have produced.
  */
-function plainUsage(usage: SafeText | SafeValue | undefined): unknown {
-  if (usage?.state !== "projected" || !("value" in usage)) return null;
+function plainEnvelope(envelope: SafeText | SafeValue | undefined): unknown {
+  if (envelope?.state !== "projected" || !("value" in envelope)) return null;
   /** An envelope: only projected content answers a value, every other state nulls. */
   const unwrap = (value: unknown): unknown => {
     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -349,7 +359,7 @@ function plainUsage(usage: SafeText | SafeValue | undefined): unknown {
     }
     return typeof value === "number" && !Number.isFinite(value) ? null : value;
   };
-  return payload(usage.value);
+  return payload(envelope.value);
 }
 
 export type ExperimentResultService = Readonly<{
@@ -433,10 +443,19 @@ export function createExperimentResultService(
         reason: SampleReason,
         usage: unknown = null,
         score: number | null = null,
+        judge: unknown = null,
       ): ExperimentResultsSample => {
         summary[CLASS_TO_SUMMARY[sampleClass]] += 1;
         if (sampleClass === "scored" && score !== null) scoreSum.total += score;
-        return { index, class: sampleClass, score, reason, usage, resultLink };
+        return {
+          index,
+          class: sampleClass,
+          score,
+          reason,
+          usage,
+          judge,
+          resultLink,
+        };
       };
 
       let samples: ExperimentResultsSample[];
@@ -485,7 +504,8 @@ export function createExperimentResultService(
                 code: "CASE_UNKNOWN",
               });
             }
-            const usage = plainUsage(record.usage);
+            const usage = plainEnvelope(record.usage);
+            const judge = plainEnvelope(record.judge);
             if (!ruleSet.ok) {
               return push(
                 index,
@@ -496,6 +516,8 @@ export function createExperimentResultService(
                   message: ruleSet.message,
                 },
                 usage,
+                null,
+                judge,
               );
             }
             if (ruleSet.rules.length === 0) {
@@ -504,6 +526,8 @@ export function createExperimentResultService(
                 "scoring_failed",
                 { class: "scoring_failed", code: "NO_RULES" },
                 usage,
+                null,
+                judge,
               );
             }
             const run = scoreRunOutput(ruleSet, record.output ?? null);
@@ -517,6 +541,8 @@ export function createExperimentResultService(
                   message: run.error.message,
                 },
                 usage,
+                null,
+                judge,
               );
             }
             const errored = run.results.filter((row) => row.status === "error");
@@ -531,6 +557,8 @@ export function createExperimentResultService(
                   rules: run.results,
                 },
                 usage,
+                null,
+                judge,
               );
             }
             const passed = run.results.filter(
@@ -551,6 +579,8 @@ export function createExperimentResultService(
                   message: "non-finite score",
                 },
                 usage,
+                null,
+                judge,
               );
             }
             return push(
@@ -559,6 +589,7 @@ export function createExperimentResultService(
               { class: "scored", passed, failed, rules: run.results },
               usage,
               score,
+              judge,
             );
           });
         }

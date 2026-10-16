@@ -16,6 +16,7 @@ import {
   EXECUTION_WORK_KIND,
 } from "../src/ai-observability/executions";
 import { createObservationExperimentStore } from "../src/ai-observability/experiments";
+import { createExperimentResultService } from "../src/ai-observability/results";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import {
   createJudgeScorer,
@@ -91,7 +92,10 @@ const policy = new Map([
 const entrances = new Map([["approved", { modelName: "judge-model" }]]);
 
 /** One experiment configuration as the submitter composes it. */
-const configInput = (entrance = "approved") => ({
+const configInput = (
+  entrance = "approved",
+  rules: readonly unknown[] = [],
+) => ({
   botConfig: {},
   prompt: "Answer the support question.",
   modelName: "gateway-model",
@@ -102,6 +106,7 @@ const configInput = (entrance = "approved") => ({
       entrance,
       rubric: "Score the answer's agreement with the reference, 0 to 1.",
     },
+    ...(rules.length > 0 ? { rules } : {}),
   },
   judgeVersion: JUDGE_SCORER_VERSION,
   readOnlyTools: [],
@@ -180,6 +185,7 @@ async function sweepWithJudge(input: {
   judgeAnswer: { output: string; inputTokens?: number; outputTokens?: number };
   entrance?: string;
   judgePolicy?: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
+  rules?: readonly unknown[];
 }) {
   const providers = fakeProviders(input.judgeAnswer);
   const datasets = createObservationDatasetStore(database);
@@ -203,7 +209,7 @@ async function sweepWithJudge(input: {
   const { experiment } = await experiments.submit(scope, {
     name: `${prefix}-exp-${randomUUID().slice(0, 8)}`,
     datasetVersionId: version.id,
-    config: configInput(input.entrance),
+    config: configInput(input.entrance, input.rules),
   });
 
   const service = createExperimentExecutionService({
@@ -251,17 +257,15 @@ async function sweepWithJudge(input: {
 
   const settled = await executionsStore.get(scope, execution.id);
   const outcomes = await executionsStore.caseOutcomes(execution.id);
-  return { execution, settled, outcomes, providers };
+  return { execution, experiment, settled, outcomes, providers, datasets };
 }
 
-/** The stored detail envelope's leaf at a path of keys — the projected form T28 reads. */
-function detailLeaf(detail: unknown, ...keys: string[]): unknown {
-  let node = detail as { state?: string; value?: unknown };
-  for (const key of keys) {
-    const value = node?.value as Record<string, unknown> | undefined;
-    node = value?.[key] as { state?: string; value?: unknown };
-  }
-  return node;
+/**
+ * One per-field envelope out of the case row's stored detail (T28's contract: output,
+ * usage and judge each carry their own projection budget) — the projected form T28 reads.
+ */
+function fieldEnvelope(detail: unknown, key: string): unknown {
+  return (detail as Record<string, unknown> | null)?.[key];
 }
 
 afterAll(async () => {
@@ -305,7 +309,7 @@ test("a swept experiment judges each completed case and both charges settle thro
 
   // The per-sample record survived storage: score, version, usage, rationale — the
   // projected detail envelope T28 reads.
-  const judge = detailLeaf(outcomes[0]?.detail, "judge");
+  const judge = fieldEnvelope(outcomes[0]?.detail, "judge");
   expect(judge).toMatchObject({
     state: "projected",
     value: {
@@ -364,7 +368,7 @@ test("an entrance the deployment never approved leaves the execution complete an
     await reservationOf(judgeCaseUsageId(settled?.id ?? "", 0)),
   ).toBeUndefined();
 
-  const judge = detailLeaf(outcomes[0]?.detail, "judge");
+  const judge = fieldEnvelope(outcomes[0]?.detail, "judge");
   expect(judge).toMatchObject({
     state: "projected",
     value: {
@@ -394,7 +398,7 @@ test("a judge verdict without usage keeps the hold occupied with an evidence row
   expect(evidence?.reservationId).toBeNull();
   expect(evidence?.status).toBe("usage_missing");
 
-  const judge = detailLeaf(outcomes[0]?.detail, "judge");
+  const judge = fieldEnvelope(outcomes[0]?.detail, "judge");
   expect(judge).toMatchObject({
     state: "projected",
     value: {
@@ -421,7 +425,7 @@ test("a judge hold the balance cannot cover refuses before the dial while the ev
   expect(providers.evalCalls).toHaveLength(1);
   expect(providers.judgeCalls).toHaveLength(0);
 
-  const judge = detailLeaf(outcomes[0]?.detail, "judge");
+  const judge = fieldEnvelope(outcomes[0]?.detail, "judge");
   expect(judge).toMatchObject({
     state: "projected",
     value: {
@@ -436,5 +440,102 @@ test("a judge hold the balance cannot cover refuses before the dial while the ev
   expect(await reservationOf(evalEvent)).toMatchObject({
     status: "settled",
     charged: 50,
+  });
+});
+
+test("the judge record survives the whole landing channel: outcome row, settle contract, results read", async () => {
+  const customer = `${prefix}-landing`;
+  await grant(customer, 20_000);
+
+  const { experiment, execution, settled, outcomes, datasets } =
+    await sweepWithJudge({
+      customer,
+      judgeAnswer: { output: VERDICT, inputTokens: 12, outputTokens: 34 },
+      // One rule the evaluated output passes, so the sample is scored — the judge
+      // record rides beside the rule score on the same frozen set (A7).
+      rules: [{ id: "mentions", kind: "contains", expected: "answer" }],
+    });
+
+  expect(settled?.state).toBe("completed");
+
+  // 1. The write-ahead row: T28's per-field contract — the case's own output and
+  //    usage beside the judge record, each with its own projection envelope.
+  const detail = outcomes[0]?.detail as Record<string, unknown>;
+  expect(detail?.output).toEqual({
+    state: "projected",
+    text: "the answer",
+  });
+  expect(detail?.usage).toEqual({
+    state: "projected",
+    value: {
+      inputTokens: { state: "projected", value: 10 },
+      outputTokens: { state: "projected", value: 20 },
+    },
+  });
+  expect(detail?.judge).toMatchObject({
+    state: "projected",
+    value: {
+      status: { state: "projected", value: "scored" },
+      score: { state: "projected", value: 0.9 },
+      scorerVersion: { state: "projected", value: JUDGE_SCORER_VERSION },
+      entranceId: { state: "projected", value: "approved" },
+      usage: {
+        state: "projected",
+        value: {
+          inputTokens: { state: "projected", value: 12 },
+          outputTokens: { state: "projected", value: 34 },
+        },
+      },
+      // The rationale reaches the store as an already-projected SafeText riding the
+      // fixture projection — its envelope wrapped as a value, one budget deep.
+      rationale: {
+        state: "projected",
+        value: {
+          state: { state: "projected", value: "projected" },
+          text: {
+            state: "projected",
+            value: "Covers the outage summary accurately.",
+          },
+        },
+      },
+    },
+  });
+
+  // 2. The settle contract: settleCompletedFromOutcomes embeds the stored judge
+  //    envelope as-is — the record is in the result the read side consumes, which
+  //    is exactly the landing the old `{status, detail}` shape silently lost.
+  const settledCases = ((settled?.result as { cases?: unknown[] } | null)
+    ?.cases ?? []) as Record<string, unknown>[];
+  expect(settledCases[0]?.judge).toEqual(detail?.judge);
+
+  // 3. The results read (T28): plain JSON on the sample — the rule score and the
+  //    judge's own score/rationale/usage are separate facts, both consumable.
+  const results = createExperimentResultService({
+    experiments: createObservationExperimentStore(database),
+    executions: createObservationExecutionStore(database),
+    datasets,
+    ticket: async () => null,
+  });
+  const report = await results.query(scope, {
+    experimentId: experiment.id,
+    executionId: execution.id,
+  });
+  expect(report.samples).toHaveLength(1);
+  const sample = report.samples[0];
+  expect(sample.class).toBe("scored");
+  expect(sample.score).toBe(1);
+  expect(sample.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
+  expect(sample.judge).toEqual({
+    status: "scored",
+    score: 0.9,
+    // The rationale's own envelope survives the deep unwrap — a projected SafeText
+    // answers its {state, text}, exactly as the record minted it.
+    rationale: {
+      state: "projected",
+      text: "Covers the outage summary accurately.",
+    },
+    scorerVersion: JUDGE_SCORER_VERSION,
+    entranceId: "approved",
+    usage: { inputTokens: 12, outputTokens: 34 },
   });
 });
