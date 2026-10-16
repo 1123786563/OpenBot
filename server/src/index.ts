@@ -73,6 +73,12 @@ import {
 import { createOpikHealthService } from "./ai-observability/health";
 import { createIdLinkStore } from "./ai-observability/id-links";
 import { createModelSpanRecorder } from "./ai-observability/model-span";
+import { createRunsQueryService } from "./ai-observability/queries/runs";
+import {
+  createObservationRetentionWorker,
+  resolveRetentionDays,
+  RETENTION_WORK_KIND,
+} from "./ai-observability/retention";
 import { createToolStepRecorder } from "./ai-observability/tool-steps";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
 import {
@@ -5128,6 +5134,17 @@ const opikHealthService = createOpikHealthService({
   port: opikObservationPort,
 });
 const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
+/*
+ * The one runs query service, shared by the routes and the retention worker
+ * (T35's M1c wiring): the retention seam drops the cached window by scope key,
+ * and only the instance the routes actually serve from has that window to drop,
+ * so the service is built here once and injected below.
+ */
+const aiObservabilityRunsQuery = createRunsQueryService({
+  bindings: aiObservabilityBindings,
+  config: () => opikBootConfig,
+  port: opikObservationPort,
+});
 const aiObservability = createAiObservabilityRoutes({
   requireUser: createDeploymentRequireUser(config, auth, roleRepository),
   canManageBot: aiObservabilityCanManageBot,
@@ -5137,6 +5154,7 @@ const aiObservability = createAiObservabilityRoutes({
   bindings: aiObservabilityBindings,
   config: () => opikBootConfig,
   port: opikObservationPort,
+  runsQuery: aiObservabilityRunsQuery,
   listBots: (actor) =>
     agentProfileStore.list(actor).catch(() => [] as AgentProfile[]),
 });
@@ -5165,22 +5183,48 @@ if (opikBootConfig.enabled) {
     reauthorize: opikExportReauthorize,
   }).start();
 }
-// The finished opik.export tickets ride the same work_items table every
-// bounded task does; the wake-up reaper's own cadence (a week past done)
-// keeps the table from growing without end.
-const opikExportTicketQueue = createWorkQueue(database);
-const opikExportTicketReaper = repeatAfterEach(
+/*
+ * The T35 retention worker (the fix report §5 wiring): sweep the four local
+ * tables for expired targets and delete them for real. The M1c read
+ * invalidation is the shared runs query service above — a deletion drops the
+ * scope's cached window, so the next run read serves the post-deletion face
+ * rather than the page before it. Enabled-only for the same §10 reason as the
+ * export worker. No lease renewal is wired (rev2-confirmed harmless at the
+ * default lease 60s vs the 5s upstream timeout): raise the upstream timeout or
+ * concurrency and a T34-style renew belongs here.
+ */
+if (opikBootConfig.enabled) {
+  createObservationRetentionWorker({
+    database,
+    config: () => opikBootConfig,
+    port: opikObservationPort,
+    retention: () => resolveRetentionDays(process.env),
+    audit: bootAuditStore,
+    exportStore: observationExportStore,
+    invalidateReads: ({ scopeKey }) =>
+      aiObservabilityRunsQuery.invalidateKey(scopeKey),
+  }).start();
+}
+// The finished opik.export and opik.retention tickets ride the same work_items
+// table every bounded task does; the wake-up reaper's own cadence (a week past
+// done) keeps the table from growing without end. A purged retention ticket on
+// a non-terminal record is re-offered by discovery (retention.ts), so the reap
+// can only ever cost a retry, never a wedged target.
+const opikTicketQueue = createWorkQueue(database);
+const opikTicketReaper = repeatAfterEach(
   async () => {
-    try {
-      await opikExportTicketQueue.purge({
-        kind: EXPORT_WORK_KIND,
-        olderThanMs: 7 * 24 * 60 * 60_000,
-      });
-    } catch (error) {
-      log.warn(
-        { err: error, type: "opik-export-tickets-reap-failed" },
-        "opik-export-tickets-reap-failed",
-      );
+    for (const kind of [EXPORT_WORK_KIND, RETENTION_WORK_KIND]) {
+      try {
+        await opikTicketQueue.purge({
+          kind,
+          olderThanMs: 7 * 24 * 60 * 60_000,
+        });
+      } catch (error) {
+        log.warn(
+          { err: error, kind, type: "opik-tickets-reap-failed" },
+          "opik-tickets-reap-failed",
+        );
+      }
     }
   },
   24 * 60 * 60_000,
@@ -6018,7 +6062,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     responsibilitySweep.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
-    opikExportTicketReaper.stop();
+    opikTicketReaper.stop();
     openMuseTaskSweep.stop();
     openMuseTaskReaper.stop();
     memorySweep.stop();

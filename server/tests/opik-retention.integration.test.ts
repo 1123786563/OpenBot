@@ -1,6 +1,6 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
@@ -365,6 +365,35 @@ test("the expiry boundary: exactly-expired is offered, comfortably-newer and run
   // The offer is exactly once: re-discovery of the same expired row is a no-op.
   await workerFor().discover();
   expect(await deletionsFor(scopeA)).toHaveLength(records.length);
+});
+
+test("discovery re-offers a purged ticket while the record is non-terminal (the purge precondition)", async () => {
+  // The L2 forward pitfall, as the precondition it is: a purge that removes a
+  // ticket parked on a pending/failed record must not wedge the target for good
+  // — re-discovery rebuilds the ticket from the record that still exists.
+  await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const worker = workerFor();
+  await worker.discover();
+  const record = (await deletionsFor(scopeA))[0];
+  const ticketFor = () =>
+    database
+      .select({ key: workItems.key })
+      .from(workItems)
+      .where(
+        and(eq(workItems.kind, "opik.retention"), eq(workItems.key, record.id)),
+      );
+  expect(await ticketFor()).toHaveLength(1);
+
+  // The reaper's removal, simulated exactly as purge would do it.
+  await database
+    .delete(workItems)
+    .where(
+      and(eq(workItems.kind, "opik.retention"), eq(workItems.key, record.id)),
+    );
+  expect(await ticketFor()).toHaveLength(0);
+
+  await worker.discover();
+  expect(await ticketFor()).toHaveLength(1);
 });
 
 test("a reconciled run is deleted for real: rows, upstream copy, audit — verified on a fresh connection (AC2/AC4)", async () => {

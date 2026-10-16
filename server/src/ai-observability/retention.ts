@@ -430,30 +430,55 @@ export function createObservationRetentionWorker(
         and j.settled_at <= now() - make_interval(days => coalesce(o.exports_days, ${global.exports}))
       limit ${DISCOVERY_BATCH}`;
 
-    /** One offer: records and tickets in one transaction, both idempotent. */
+    /**
+     * One offer: records and tickets in one transaction, both idempotent. The
+     * ticket insert covers EVERY non-terminal record in the batch, not only the
+     * freshly inserted ones — a ticket a purge removed while its record parks in
+     * pending/failed is invisible to the record insert (the (kind, target)
+     * conflict is a no-op), and without this re-offer that target would never be
+     * retried. Terminal records are excluded: their work is done, and their
+     * source rows no longer surface in discovery anyway.
+     */
     const offer = async (
+      kind: AiObservationDeletionKind,
       targets: readonly DiscoveredTarget[],
       record: (
         target: DiscoveredTarget,
-      ) => Omit<typeof aiObservationRetentionDeletions.$inferInsert, "id">,
+      ) => Omit<
+        typeof aiObservationRetentionDeletions.$inferInsert,
+        "id" | "kind"
+      >,
     ) => {
       if (targets.length === 0) return;
       await db.transaction(async (tx) => {
-        const inserted = await tx
+        await tx
           .insert(aiObservationRetentionDeletions)
           .values(
             targets.map((target) => ({
               ...record(target),
               id: randomUUID(),
+              kind,
             })),
           )
-          .onConflictDoNothing()
-          .returning({ id: aiObservationRetentionDeletions.id });
-        if (inserted.length > 0) {
+          .onConflictDoNothing();
+        const wantsWork = await tx
+          .select({ id: aiObservationRetentionDeletions.id })
+          .from(aiObservationRetentionDeletions)
+          .where(
+            and(
+              eq(aiObservationRetentionDeletions.kind, kind),
+              inArray(
+                aiObservationRetentionDeletions.targetId,
+                targets.map((target) => target.id),
+              ),
+              ne(aiObservationRetentionDeletions.state, "deleted"),
+            ),
+          );
+        if (wantsWork.length > 0) {
           await tx
             .insert(workItems)
             .values(
-              inserted.map(({ id }) => ({
+              wantsWork.map(({ id }) => ({
                 kind: RETENTION_WORK_KIND,
                 key: id,
               })),
@@ -463,11 +488,10 @@ export function createObservationRetentionWorker(
       });
     };
 
-    await offer(runs, (t) => ({
+    await offer("run", runs, (t) => ({
       scopeKey: t.scope_key,
       actorId: t.actor_id,
       botId: t.bot_id,
-      kind: "run",
       targetId: t.id,
       locatorWorkspace: t.locator_workspace ?? null,
       locatorProject: t.locator_project ?? null,
@@ -476,11 +500,10 @@ export function createObservationRetentionWorker(
       retentionDays: t.retention_days,
     }));
 
-    await offer(datasets, (t) => ({
+    await offer("dataset", datasets, (t) => ({
       scopeKey: t.scope_key,
       actorId: t.actor_id,
       botId: t.bot_id,
-      kind: "dataset",
       targetId: t.id,
       upstreamKind:
         t.sync_state === "synced" && t.opik_dataset_id ? "dataset" : null,
@@ -491,20 +514,18 @@ export function createObservationRetentionWorker(
       retentionDays: t.retention_days,
     }));
 
-    await offer(experiments, (t) => ({
+    await offer("experiment", experiments, (t) => ({
       scopeKey: t.scope_key,
       actorId: t.actor_id,
       botId: t.bot_id,
-      kind: "experiment",
       targetId: t.id,
       retentionDays: t.retention_days,
     }));
 
-    await offer(exports, (t) => ({
+    await offer("export", exports, (t) => ({
       scopeKey: t.scope_key,
       actorId: t.actor_id,
       botId: t.bot_id,
-      kind: "export",
       targetId: t.id,
       retentionDays: t.retention_days,
     }));
