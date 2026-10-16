@@ -53,7 +53,7 @@ import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { ObservationScope } from "./contracts";
 import type { FrozenDatasetCase } from "./datasets";
 import type { FrozenExperimentConfig } from "./experiments";
-import { projectSafeFixture } from "./redaction";
+import { projectSafeFixture, projectSafeText } from "./redaction";
 import { assertObservationScope } from "./scope";
 
 /** The work-queue kind an execution's claim ticket rides on. */
@@ -120,8 +120,14 @@ export type EvaluationCaseStatus = "completed" | "failed" | "unknown";
 /** What the case runner answers for one case: a status, and optionally why. */
 export type EvaluationCaseOutcome = Readonly<{
   status: EvaluationCaseStatus;
-  /** Structured detail the runner observed; projected before it is ever stored. */
-  detail?: unknown;
+  /**
+   * The case's model output — text or structured, raw as the runner observed it.
+   * The settle projects it before anything lands (T28's result contract): raw free
+   * text never reaches the result column, at any depth.
+   */
+  output?: unknown;
+  /** The case's usage record (tokens and friends), raw as the runner observed it. */
+  usage?: unknown;
 }>;
 
 /** Why a tool call was refused in the evaluation context. */
@@ -286,15 +292,17 @@ export type ObservationExecutionStore = {
   /** pending (or lease-orphaned running) → running. Null when gone or already terminal. */
   markRunning(id: string): Promise<ObservationExecution | null>;
   /**
-   * The one place per-case outcomes land: conditional on still running, and the
-   * result is projected before it is stored. Null when revocation won the row.
+   * The one place per-case outcomes land: conditional on still running, and every
+   * case's output and usage are projected before they are stored. Null when
+   * revocation won the row.
    */
   settleCompleted(
     id: string,
     cases: readonly {
       index: number;
       status: EvaluationCaseStatus;
-      detail?: unknown;
+      output?: unknown;
+      usage?: unknown;
     }[],
   ): Promise<ObservationExecution | null>;
   /** Record why an execution failed. Conditional on still running, like completion. */
@@ -477,12 +485,35 @@ export function createObservationExecutionStore(
 
     async settleCompleted(id, cases) {
       reference(id);
-      // The result is projected before it is stored: case detail is model-shaped
-      // content, and no path into this table may store raw free text.
+      /*
+       * The result contract (T28): one record per case, and each case's fields carry
+       * their OWN projection budget. The T23 shape projected the whole `{cases}` tree in
+       * one pass, which cut every envelope past MAX_SAFE_RECORD_DEPTH — a case's output
+       * and usage, five levels down, could never survive a settlement. Projecting per
+       * field keeps the T05 doctrine exactly where it was — no naked free text reaches
+       * this column at any depth, the deny patterns always win — while letting the
+       * scoreable output and the usage record land intact. The model output is
+       * projected with `allowFreeText`: the evaluation runner is the caller asserting
+       * this content is handled, and even that assertion cannot license a credential.
+       */
       return settle(id, {
         state: "completed",
         caseCount: cases.length,
-        result: projectSafeFixture({ cases }),
+        result: {
+          cases: cases.map((one) => ({
+            index: one.index,
+            status: one.status,
+            output:
+              one.output === undefined
+                ? undefined
+                : typeof one.output === "string"
+                  ? projectSafeText(one.output, { allowFreeText: true })
+                  : projectSafeFixture(one.output),
+            ...(one.usage === undefined
+              ? {}
+              : { usage: projectSafeFixture(one.usage) }),
+          })),
+        },
       });
     },
 
@@ -766,7 +797,8 @@ export function createObservationExecutionWorker(
     const outcomes: {
       index: number;
       status: EvaluationCaseStatus;
-      detail?: unknown;
+      output?: unknown;
+      usage?: unknown;
     }[] = [];
 
     try {
@@ -786,7 +818,8 @@ export function createObservationExecutionWorker(
         outcomes.push({
           index,
           status: outcome.status,
-          detail: outcome.detail,
+          ...(outcome.output === undefined ? {} : { output: outcome.output }),
+          ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
         });
         // The governance counter follows each case, so a run that dies mid-way has
         // already recorded the refusals that happened.
