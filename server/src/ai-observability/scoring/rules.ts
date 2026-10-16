@@ -4,6 +4,11 @@ import { canonicalJson } from "../datasets";
 /**
  * The deterministic rule scorer (Issue #32 / DAG T26).
  *
+ * Module version 2 — review-fix round: json_path asserts type-check their `expected`
+ * operand (M1: no coercion-passed scores) and the numeric operator parses text under the
+ * strict number grammar (L1: `""`/`"0x10"` are non_numeric). Version 1 was the initial
+ * T26 delivery.
+ *
  * An experiment's rule set lives inside the frozen judge config (T22): the submitter composes
  * it, `freezeExperimentConfig` projects it, and the database freezes it. This module never sees
  * raw content on either side — rules arrive as the projected `judgeConfig` envelope, outputs
@@ -21,12 +26,14 @@ import { canonicalJson } from "../datasets";
  * | exact_match   | expected: string, caseSensitive?: boolean         | the output text (a structured output is scored as its canonical JSON, keys sorted) equals expected |
  * | contains      | expected: string, caseSensitive?: boolean         | expected is a substring of the output text |
  * | regex         | pattern: string, flags?: subset of "imsu"         | pattern matches the output text; `g`/`y` are refused — they carry per-call state |
- * | numeric       | op: ">" ">=" "<" "<=" "==" "!=", expected: number | the whole output parses as one finite number (text: trimmed; structured: a number at the root) and the comparison holds |
+ * | numeric       | op: ">" ">=" "<" "<=" "==" "!=", expected: number | the whole output parses as one finite number (text: trimmed, then JSON's number grammar; structured: a number at the root) and the comparison holds |
  * | json_path     | path, assert, expected?                           | the path resolves in the output and the assertion holds |
  *
  * `path` grammar: `key.key2[0].key3` — keys `[A-Za-z0-9_-]+`, indexes `[0-9]+`, at most 16
  * segments / 128 bytes. `assert` ∈ exists | equals | contains | gt | gte | lt | lte; `expected`
- * is a primitive required by every assert except `exists`. A text output is parsed as JSON; a
+ * is required by every assert except `exists` and carries the assert's operand type — a
+ * string for contains, a finite number for gt/gte/lt/lte, any primitive for equals — and a
+ * mistyped operand is a syntax error, never a coercion. A text output is parsed as JSON; a
  * structured output is walked through its projection envelopes.
  *
  * ## Failure taxonomy (Issue #32 AC4 — a failure is never a score of 0)
@@ -182,6 +189,18 @@ export type ScoredOutput = SafeText | SafeValue | null | undefined;
 
 const encoder = new TextEncoder();
 const utf8Bytes = (text: string): number => encoder.encode(text).length;
+
+/** JSON's number grammar — the strict text form the numeric operator accepts. */
+const STRICT_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+/**
+ * `Number()`'s coercions (`""→0`, `"0x10"→16`, `"true"`-adjacent shapes) never get to
+ * compare: only a real number or a string that parses under the strict grammar does.
+ */
+function parseStrictNumber(text: string): number | null {
+  const trimmed = text.trim();
+  return STRICT_NUMBER.test(trimmed) ? Number(trimmed) : null;
+}
 
 function isEnvelopeShape(node: unknown): node is SafeValue | SafeText {
   if (!node || typeof node !== "object") return false;
@@ -622,6 +641,29 @@ export function scoreRunOutput(
           syntaxError(`assert ${rule.assert} requires expected`);
           continue;
         }
+        // Per-assert operand typing: the closed asserts each name the primitive they
+        // compare against, so an operand of the wrong type is an unscorable rule — never
+        // an operand `includes(null)`/`2 > true` can coerce into a pass.
+        if (rule.assert === "contains" && typeof rule.expected !== "string") {
+          syntaxError("assert contains requires a string expected");
+          continue;
+        }
+        if (
+          (rule.assert === "gt" ||
+            rule.assert === "gte" ||
+            rule.assert === "lt" ||
+            rule.assert === "lte") &&
+          (typeof rule.expected !== "number" || !Number.isFinite(rule.expected))
+        ) {
+          syntaxError(
+            `assert ${rule.assert} requires a finite number expected`,
+          );
+          continue;
+        }
+        if (rule.assert === "equals" && !isPrimitive(rule.expected)) {
+          syntaxError("assert equals requires a primitive expected");
+          continue;
+        }
         pathTokens = parsed.tokens;
         cost = subjectBytes + parsed.tokens.length * 8;
         break;
@@ -698,9 +740,7 @@ export function scoreRunOutput(
       if (kind === "numeric") {
         const number: number | null =
           prepared.kind === "text"
-            ? Number.isFinite(Number(prepared.text.trim()))
-              ? Number(prepared.text.trim())
-              : null
+            ? parseStrictNumber(prepared.text)
             : typeof prepared.value.value === "number" &&
                 Number.isFinite(prepared.value.value)
               ? prepared.value.value
