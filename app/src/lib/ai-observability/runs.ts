@@ -26,6 +26,7 @@ export type {
 
 import type {
   RunDetailResult,
+  RunState,
   RunsListResult,
 } from "../../../../shared/ai-observability-runs";
 
@@ -66,6 +67,13 @@ async function refusalCode(response: Response): Promise<string | null> {
  * the contract's source of truth, but a 200 whose body lost its key fields would otherwise
  * render a page of undefined. Key fields missing is the store failing to answer — the same
  * unavailable fault as any other non-answer, never a disguised empty page.
+ *
+ * The T13 review deepened this to the shapes that crash rather than render undefined. Those
+ * split by what the body is claiming: a "present" without its payload objects, or a cursor
+ * that is neither string nor null, is a promise the body breaks — the unavailable fault. A
+ * state string this build has never heard of is not a broken promise (the vocabulary simply
+ * moved on), so it fails closed to "unknown", the same word the server gives upstream
+ * statuses it cannot name — never a crash, never a guess.
  */
 function isRunsListBody(body: unknown): body is RunsListResult {
   if (typeof body !== "object" || body === null) return false;
@@ -74,6 +82,12 @@ function isRunsListBody(body: unknown): body is RunsListResult {
     Array.isArray(candidate.runs) &&
     typeof candidate.pagination === "object" &&
     candidate.pagination !== null &&
+    /*
+     * A missing cursor is not "no next page": undefined would slip past the page's null
+     * checks and arm a Next button that fires an undefined cursor.
+     */
+    (candidate.pagination.nextCursor === null ||
+      typeof candidate.pagination.nextCursor === "string") &&
     typeof candidate.syncing === "boolean"
   );
 }
@@ -97,9 +111,47 @@ function isRunDetailBody(body: unknown): body is RunDetailResult {
   const upstream = (body as { upstream?: unknown }).upstream;
   if (typeof upstream !== "object" || upstream === null) return false;
   const status = (upstream as Record<string, unknown>).status;
+  if (
+    status !== "present" &&
+    status !== "unreconciled" &&
+    status !== "absent"
+  ) {
+    return false;
+  }
+  if (status !== "present") return true;
+  /*
+   * "present" is the promise that the upstream record rides along: a present whose
+   * payload objects are missing would crash the page mid-render (reading usage.source,
+   * walking metadata), so it is the store failing to answer, not a record to half-draw.
+   */
+  const present = upstream as Partial<
+    Extract<RunDetailResult["upstream"], { status: "present" }>
+  >;
   return (
-    status === "present" || status === "unreconciled" || status === "absent"
+    typeof present.metadata === "object" &&
+    present.metadata !== null &&
+    typeof present.usage === "object" &&
+    present.usage !== null
   );
+}
+
+/*
+ * The states this build can name. A newer server may already speak one it has never heard
+ * of, so an unnamed state is coerced at the query boundary — where the fault vocabulary is
+ * decided — and every consumer (the icons, the states.* labels, the list's filters) sees a
+ * state that exists, with the honest word "unknown" in place of the one it cannot say.
+ */
+const KNOWN_RUN_STATES: readonly RunState[] = [
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+  "interrupted",
+  "unknown",
+];
+
+function toKnownState(state: RunState): RunState {
+  return KNOWN_RUN_STATES.includes(state) ? state : "unknown";
 }
 
 export function observationRunsQueryOptions(
@@ -140,7 +192,16 @@ export function observationRunsQueryOptions(
         // A malformed success is the store failing to answer, never an empty page.
         return { view: "fault", fault: "unavailable" };
       }
-      return { view: "list", result: body };
+      return {
+        view: "list",
+        result: {
+          ...body,
+          runs: body.runs.map((row) => ({
+            ...row,
+            state: toKnownState(row.state),
+          })),
+        },
+      };
     },
   });
 }
@@ -179,7 +240,13 @@ export function observationRunDetailQueryOptions(botId: string, runId: string) {
       if (!isRunDetailBody(body)) {
         return { view: "fault", fault: "unavailable" };
       }
-      return { view: "detail", result: body };
+      return {
+        view: "detail",
+        result: {
+          ...body,
+          run: { ...body.run, state: toKnownState(body.run.state) },
+        },
+      };
     },
   });
 }
