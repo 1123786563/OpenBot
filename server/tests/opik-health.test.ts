@@ -116,6 +116,7 @@ function fakePort(
     createTrace: refuse,
     writeSpans: refuse,
     listTraces: refuse,
+    listSpans: refuse,
   };
 }
 

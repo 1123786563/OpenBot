@@ -298,6 +298,77 @@ describe("the step tree answers the recorded chronology (acceptance 1)", () => {
     const orphan = stepNode(view, "s5");
     expect(orphan?.parentElement?.closest("[data-step]")).toBeNull();
   });
+
+  test("a two-node cycle roots both steps, nesting under neither (T18-rev L-1)", async () => {
+    stepsHandler = () =>
+      Response.json(
+        stepsBody([
+          step({
+            spanId: "cyc-a",
+            parentSpanId: "cyc-b",
+            name: "loop_one",
+            startedAt: "2026-10-16T09:30:06.000Z",
+            endedAt: "2026-10-16T09:30:07.000Z",
+          }),
+          step({
+            spanId: "cyc-b",
+            parentSpanId: "cyc-a",
+            name: "loop_two",
+            startedAt: "2026-10-16T09:30:07.000Z",
+            endedAt: "2026-10-16T09:30:08.000Z",
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(stepNode(view, "cyc-a")).not.toBeNull());
+    // The cycle roots both steps — neither nests under the other, neither is dropped.
+    expect(
+      stepNode(view, "cyc-a")?.parentElement?.closest("[data-step]"),
+    ).toBeNull();
+    expect(
+      stepNode(view, "cyc-b")?.parentElement?.closest("[data-step]"),
+    ).toBeNull();
+    expect(stepNode(view, "cyc-a")?.contains(stepNode(view, "cyc-b"))).toBe(
+      false,
+    );
+  });
+
+  test("a child hanging off a cycle keeps its real parent (T18-rev L-1)", async () => {
+    stepsHandler = () =>
+      Response.json(
+        stepsBody([
+          step({
+            spanId: "cyc-a",
+            parentSpanId: "cyc-b",
+            name: "loop_one",
+            startedAt: "2026-10-16T09:30:06.000Z",
+            endedAt: "2026-10-16T09:30:07.000Z",
+          }),
+          step({
+            spanId: "cyc-b",
+            parentSpanId: "cyc-a",
+            name: "loop_two",
+            startedAt: "2026-10-16T09:30:07.000Z",
+            endedAt: "2026-10-16T09:30:08.000Z",
+          }),
+          step({
+            spanId: "child-c",
+            parentSpanId: "cyc-a",
+            name: "real_child",
+            state: "completed",
+            executionState: "executed",
+            startedAt: "2026-10-16T09:30:08.500Z",
+            endedAt: "2026-10-16T09:30:09.000Z",
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(stepNode(view, "child-c")).not.toBeNull());
+    // Only the broken ancestors root; the child still nests under its real parent.
+    expect(stepNode(view, "cyc-a")?.contains(stepNode(view, "child-c"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("tool steps render T15's three-way determination (acceptance 2)", () => {
@@ -352,6 +423,48 @@ describe("tool steps render T15's three-way determination (acceptance 2)", () =>
     const row = stepNode(view, "s-x");
     expect(row?.textContent).toContain("Unknown outcome");
     expect(row?.textContent).not.toContain("Completed");
+  });
+
+  test("a determination this build cannot name is coerced unobserved, never success (T18-rev L-2)", async () => {
+    stepsHandler = () =>
+      Response.json(
+        stepsBody([
+          step({
+            spanId: "s-det",
+            name: "weird_determination",
+            state: "completed",
+            executionState: "hallucinated" as never,
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(stepNode(view, "s-det")).not.toBeNull());
+    const row = stepNode(view, "s-det");
+    expect(row?.textContent).toContain("Execution unobserved");
+    expect(row?.textContent).toContain("Unknown outcome");
+    expect(row?.textContent).not.toContain("Completed");
+  });
+
+  test("a kind this build cannot name renders its locator, unnamed but present (T18-rev L-2)", async () => {
+    stepsHandler = () =>
+      Response.json(
+        stepsBody([
+          step({
+            spanId: "span-locator-7",
+            kind: "quantum" as never,
+            name: null,
+            state: "completed",
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() =>
+      expect(stepNode(view, "span-locator-7")).not.toBeNull(),
+    );
+    // The span id is the title when neither name nor kind can be named; the row stays.
+    expect(stepNode(view, "span-locator-7")?.textContent).toContain(
+      "span-locator-7",
+    );
   });
 
   test("an unnamed tool renders the kind word, not a blank title", async () => {

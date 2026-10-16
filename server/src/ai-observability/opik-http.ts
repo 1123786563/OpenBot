@@ -32,6 +32,7 @@ import {
   OpikPortError,
   type OpikPortResult,
   type OpikRunBindingRef,
+  type OpikSpanRow,
   type OpikTraceRow,
   type VerifiedOpikContract,
 } from "./opik-port";
@@ -52,6 +53,7 @@ const REQUIRED_CAPABILITIES: Record<OpikOperation, readonly string[]> = {
   createTrace: ["trace-query-id-mapping"],
   writeSpans: ["otlp-write-parent-child", "body-limit-boundary"],
   listTraces: ["trace-query-id-mapping"],
+  listSpans: ["parent-child-query-link"],
   deleteTraces: ["trace-span-physical-delete"],
   deleteDataset: ["experiment-dataset-physical-delete"],
 };
@@ -63,6 +65,7 @@ const VERIFIED_STATUS: Record<OpikOperation, number> = {
   createTrace: 201,
   writeSpans: 200,
   listTraces: 200,
+  listSpans: 200,
   deleteTraces: 204,
   deleteDataset: 204,
 };
@@ -182,6 +185,26 @@ function buildSpan(span: OpikOtlpSpan): Record<string, unknown> {
   return wire;
 }
 
+/** The size/page query parameters both listing operations send, validated the same way. */
+function setSizePage(
+  query: URLSearchParams,
+  size: number | undefined,
+  page: number | undefined,
+): void {
+  if (size !== undefined) {
+    if (!Number.isInteger(size) || size <= 0) {
+      throw new OpikPortError("OPERATION_INPUT_INVALID");
+    }
+    query.set("size", String(size));
+  }
+  if (page !== undefined) {
+    if (!Number.isInteger(page) || page < 0) {
+      throw new OpikPortError("OPERATION_INPUT_INVALID");
+    }
+    query.set("page", String(page));
+  }
+}
+
 function statusFailure(operation: OpikOperation, status: number): Failure {
   if (status >= 500) {
     return {
@@ -217,6 +240,74 @@ async function readJsonObject(
     return malformed(operation, "invalid_json");
   }
   return { outcome: "ok", value: parsed as Record<string, unknown> };
+}
+
+/**
+ * The one `page/size/total/content` envelope both listing operations answer in (T04's
+ * verified query shape). A page that never arrives whole is malformed, never an empty
+ * success; rows must each carry the `id` the contract reads back by; and a row attesting
+ * a different project than the one queried is drift. Must be created inside the port: the
+ * drift it records suspends the scope's writes.
+ */
+function makeEnvelopePageReader(
+  drift: (
+    operation: OpikOperation,
+    scopeKey: string,
+    reason: OpikDriftReason,
+  ) => Failure,
+) {
+  return async <R extends { id: string }>(
+    operation: OpikOperation,
+    response: Response,
+    projectId: string,
+    scopeKey: string,
+  ): Promise<
+    OpikPortResult<{ page: number; size: number; total: number; content: R[] }>
+  > => {
+    const parsed = await readJsonObject(operation, response);
+    if (parsed.outcome !== "ok") return parsed;
+    const envelope = parsed.value;
+    const page = envelope.page;
+    const size = envelope.size;
+    const total = envelope.total;
+    if (
+      typeof page !== "number" ||
+      typeof size !== "number" ||
+      typeof total !== "number"
+    ) {
+      return malformed(
+        operation,
+        typeof page !== "number"
+          ? "field:page"
+          : typeof size !== "number"
+            ? "field:size"
+            : "field:total",
+      );
+    }
+    const content = envelope.content;
+    if (!Array.isArray(content)) {
+      return malformed(operation, "field:content");
+    }
+    const rows: R[] = [];
+    for (const row of content) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        return malformed(operation, "field:content.id");
+      }
+      const record = row as Record<string, unknown>;
+      if (typeof record.id !== "string" || record.id === "") {
+        return malformed(operation, "field:content.id");
+      }
+      // `project_id` on rows is not a verified field, but when present it is held
+      // against the project the port itself queried — cross-project data in our
+      // page is drift.
+      const rowProjectId = record.project_id;
+      if (typeof rowProjectId === "string" && rowProjectId !== projectId) {
+        return drift(operation, scopeKey, "response_project_mismatch");
+      }
+      rows.push(record as R);
+    }
+    return { outcome: "ok", value: { page, size, total, content: rows } };
+  };
 }
 
 export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
@@ -269,6 +360,9 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       scopeKey,
     };
   };
+
+  /** The shared envelope reader (see makeEnvelopePageReader); its drift suspends writes. */
+  const readEnvelopePage = makeEnvelopePageReader(drift);
 
   /** Scope and binding agreement for write paths: no request leaves while they disagree. */
   const guardWriteScope = (
@@ -522,18 +616,7 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         throw new OpikPortError("OPERATION_INPUT_INVALID");
       }
       const query = new URLSearchParams({ project_id: input.projectId });
-      if (input.size !== undefined) {
-        if (!Number.isInteger(input.size) || input.size <= 0) {
-          throw new OpikPortError("OPERATION_INPUT_INVALID");
-        }
-        query.set("size", String(input.size));
-      }
-      if (input.page !== undefined) {
-        if (!Number.isInteger(input.page) || input.page < 0) {
-          throw new OpikPortError("OPERATION_INPUT_INVALID");
-        }
-        query.set("page", String(input.page));
-      }
+      setSizePage(query, input.size, input.page);
       const exchanged = await exchange(
         "listTraces",
         `/v1/private/traces?${query.toString()}`,
@@ -542,67 +625,50 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
           if (response.status !== VERIFIED_STATUS.listTraces) {
             return statusFailure("listTraces", response.status);
           }
-          const parsed = await readJsonObject("listTraces", response);
-          if (parsed.outcome !== "ok") return parsed;
-          const envelope = parsed.value;
-          const page = envelope.page;
-          const size = envelope.size;
-          const total = envelope.total;
-          if (
-            typeof page !== "number" ||
-            typeof size !== "number" ||
-            typeof total !== "number"
-          ) {
-            return malformed(
-              "listTraces",
-              typeof page !== "number"
-                ? "field:page"
-                : typeof size !== "number"
-                  ? "field:size"
-                  : "field:total",
-            );
-          }
-          const content = envelope.content;
-          if (!Array.isArray(content)) {
-            return malformed("listTraces", "field:content");
-          }
-          const rows: OpikTraceRow[] = [];
-          for (const row of content) {
-            if (!row || typeof row !== "object" || Array.isArray(row)) {
-              return malformed("listTraces", "field:content.id");
-            }
-            const record = row as Record<string, unknown>;
-            if (typeof record.id !== "string" || record.id === "") {
-              return malformed("listTraces", "field:content.id");
-            }
-            // `project_id` on rows is not a verified field, but when present it is held
-            // against the project the port itself queried — cross-project data in our
-            // page is drift.
-            const projectId = record.project_id;
-            if (
-              typeof projectId === "string" &&
-              projectId !== input.projectId
-            ) {
-              return drift(
-                "listTraces",
-                scope.key,
-                "response_project_mismatch",
-              );
-            }
-            rows.push(record as OpikTraceRow);
-          }
-          return {
-            outcome: "ok",
-            value: {
-              page,
-              size,
-              total,
-              content: rows,
-            },
-          };
+          return readEnvelopePage<OpikTraceRow>(
+            "listTraces",
+            response,
+            input.projectId,
+            scope.key,
+          );
         },
       );
       return exchanged;
+    },
+
+    async listSpans(scope, input) {
+      requireOperation("listSpans");
+      assertObservationScope(scope);
+      if (
+        typeof input.projectId !== "string" ||
+        input.projectId === "" ||
+        typeof input.traceId !== "string" ||
+        input.traceId === ""
+      ) {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
+      // Verified query shape: span listing requires project_id AND trace_id.
+      const query = new URLSearchParams({
+        project_id: input.projectId,
+        trace_id: input.traceId,
+      });
+      setSizePage(query, input.size, input.page);
+      return exchange(
+        "listSpans",
+        `/v1/private/spans?${query.toString()}`,
+        { method: "GET" },
+        async (response) => {
+          if (response.status !== VERIFIED_STATUS.listSpans) {
+            return statusFailure("listSpans", response.status);
+          }
+          return readEnvelopePage<OpikSpanRow>(
+            "listSpans",
+            response,
+            input.projectId,
+            scope.key,
+          );
+        },
+      );
     },
 
     /**

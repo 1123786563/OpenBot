@@ -148,6 +148,24 @@ describe("the verified contract gates every operation before network I/O", () =>
     expect(calls.length).toBe(1);
   });
 
+  test("the span read-back is gated on the parent-child link capability (T18-server)", async () => {
+    const partial = structuredClone(manifest);
+    partial.capabilities = partial.capabilities.filter(
+      (capability) => capability.name !== "parent-child-query-link",
+    );
+    const { calls, transport } = recorder(() =>
+      json(200, JSON.stringify({ page: 1, size: 0, total: 0, content: [] })),
+    );
+    const p = port({ contract: partial, fetch: transport });
+    await expect(
+      p.listSpans(trusted, {
+        projectId: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+        traceId: "01a13db5-255e-7678-94cc-dcc4fad1c53a",
+      }),
+    ).rejects.toThrow(new OpikPortError("OPERATION_UNSUPPORTED"));
+    expect(calls.length).toBe(0);
+  });
+
   test("a capability recorded as not-ok is just as absent", async () => {
     const partial = structuredClone(manifest);
     const write = partial.capabilities.find(
@@ -456,6 +474,52 @@ describe("serialization follows the verified T04 contract exactly", () => {
     });
     expect(calls[0].url).toBe(
       "http://opik.test/api/v1/private/traces?project_id=01a13db5-256b-73a4-b213-d7b33c4fd2d4&size=10",
+    );
+    expect(calls[0].init.method).toBe("GET");
+  });
+
+  test("span listing sends the verified query and types the page (T18-server)", async () => {
+    const { calls, transport } = recorder(() =>
+      json(
+        200,
+        JSON.stringify({
+          page: 1,
+          size: 10,
+          total: 1,
+          content: [
+            {
+              id: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+              project_id: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+              name: "tool:web_search",
+              parent_span_id: null,
+            },
+          ],
+        }),
+      ),
+    );
+    const result = await port({ fetch: transport }).listSpans(trusted, {
+      projectId: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+      traceId: "01a13db5-255e-7678-94cc-dcc4fad1c53a",
+      size: 10,
+    });
+    expect(result).toEqual({
+      outcome: "ok",
+      value: {
+        page: 1,
+        size: 10,
+        total: 1,
+        content: [
+          {
+            id: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+            project_id: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+            name: "tool:web_search",
+            parent_span_id: null,
+          },
+        ],
+      },
+    });
+    expect(calls[0].url).toBe(
+      "http://opik.test/api/v1/private/spans?project_id=01a13db5-256b-73a4-b213-d7b33c4fd2d4&trace_id=01a13db5-255e-7678-94cc-dcc4fad1c53a&size=10",
     );
     expect(calls[0].init.method).toBe("GET");
   });
