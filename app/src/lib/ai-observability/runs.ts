@@ -83,8 +83,11 @@ export type ObservationRunStep = Omit<RunStep, "kind"> & {
   kind: RunStepKind | null;
 };
 
-/** The server's error code, when it sent one in the house `{ error }` envelope. */
-async function refusalCode(response: Response): Promise<string | null> {
+/**
+ * The server's error code, when it sent one in the house `{ error }` envelope. Shared by
+ * the runs chain and the two #42 pages, so a refusal is read the same way everywhere.
+ */
+export async function refusalCode(response: Response): Promise<string | null> {
   const body = (await response.json().catch(() => null)) as {
     error?: unknown;
   } | null;

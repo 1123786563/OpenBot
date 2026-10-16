@@ -60,11 +60,11 @@ const BUNDLES = [
  * this list and its placeholder copy was deleted. The datasets chain (#27) renders its real
  * section at the evaluations route and never carried placeholder copy; the evaluations
  * bundle's placeholder copy stays reserved for the experiment chains (#36 #37) that land
- * beside it.
+ * beside it. #42's two pages (admin summary, export status) render real pages in the admin
+ * namespace, so it left this list too and its placeholder copy was deleted.
  */
 const PLACEHOLDER_BUNDLES = [
   { ns: "ai-observability-evaluations", en: enEvaluations, zh: zhEvaluations },
-  { ns: "ai-observability-admin", en: enAdmin, zh: zhAdmin },
 ] as const;
 
 function flatKeys(value: unknown, prefix = ""): string[] {
