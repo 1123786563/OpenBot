@@ -182,12 +182,19 @@ export type ExperimentComparison = Readonly<{
   regressions: readonly RegressionRow[] | null;
 }>;
 
-export type ExperimentComparisonErrorCode = "COMPARISON_INPUT_INVALID";
+export type ExperimentComparisonErrorCode =
+  | "COMPARISON_INPUT_INVALID"
+  /**
+   * Storage damage (T29-rev L-2): the two rows claim one content hash but pin frozen
+   * bases of different sizes — the freeze pipeline cannot produce this, so the read
+   * refuses instead of indexing a sample that is not there.
+   */
+  | "COMPARISON_SAMPLE_BASE_DIVERGED";
 
 export class ExperimentComparisonError extends Error {
   constructor(
     public code: ExperimentComparisonErrorCode,
-    public status: 400,
+    public status: 400 | 502,
   ) {
     super(code);
   }
@@ -425,6 +432,15 @@ export function createExperimentComparisonService(
       }
 
       const base = baselineReport.summary.sampleBase;
+      if (candidateReport.summary.sampleBase !== base) {
+        // Equal hash ⇒ equal base is the invariant the freeze pipeline forges; a read
+        // that sees it broken is looking at damaged rows, and answers its code rather
+        // than indexing a sample that is not there (T29-rev L-2).
+        throw new ExperimentComparisonError(
+          "COMPARISON_SAMPLE_BASE_DIVERGED",
+          502,
+        );
+      }
       const perSample: SampleDelta[] = [];
       const regressions: RegressionRow[] = [];
       for (let index = 0; index < base; index += 1) {

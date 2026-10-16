@@ -750,6 +750,35 @@ describe("steps — acceptance 4: honest absence, honest failure", () => {
     expect(call).toBe(2);
     expect(spanReads(port.calls)).toBe(2);
   });
+
+  test("a trace the defensive page ceiling cannot cover is a 502, never a shorter timeline", async () => {
+    // Every page arrives whole, but the trace outlasts the defensive walk ceiling:
+    // the read refuses (the store failed to answer the whole question) rather than
+    // answering 200 with a timeline it silently cut short.
+    let call = 0;
+    const { app, port } = appFor({
+      port: fakePort({
+        spansByCall: () => {
+          call += 1;
+          return {
+            outcome: "ok" as const,
+            value: {
+              page: call,
+              size: 100,
+              total: 100 * 100 + 1, // one row past the ceiling's reach
+              content: Array.from({ length: 100 }, (_, index) =>
+                spanRow({ id: `span-${call}-${index}` }),
+              ),
+            },
+          };
+        },
+      }),
+    });
+    const response = await steps(app);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "OPIK_MALFORMED_RESPONSE" });
+    expect(spanReads(port.calls)).toBe(100);
+  });
 });
 
 describe("steps — the surface is read-only, never a proxy", () => {

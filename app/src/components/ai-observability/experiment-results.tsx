@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   type ExperimentResultsSample,
   type ExperimentSampleClass,
+  judgeFacts,
   observationCancelExecutionMutationOptions,
   observationExperimentResultsQueryOptions,
 } from "@/lib/ai-observability/experiments";
@@ -270,7 +271,7 @@ export function ObservationExperimentResultsPage({
   );
 }
 
-/** One sample's line: class word, score, reason, usage — text only, never code. */
+/** One sample's line: class word, score, reason, judge, usage — text only, never code. */
 function SampleRow({
   sample,
   showSeparator,
@@ -299,6 +300,22 @@ function SampleRow({
         ]
           .filter((part) => part !== null)
           .join(" · ");
+  // The judge's own fact beside the rule score (T27-rn L-3): what it answered, or
+  // its own failure code — never averaged into the sample's score, never a guess.
+  const judge = judgeFacts(sample.judge);
+  const judgeText =
+    judge === null
+      ? null
+      : judge.kind === "scored"
+        ? [
+            t("sample.judgeScored", {
+              score: judge.score.toFixed(2),
+            }),
+            judge.rationale,
+          ].join(" · ")
+        : [t("sample.judgeFailed"), judge.code, judge.message ?? null]
+            .filter((part) => part !== null)
+            .join(" · ");
   return (
     <>
       {showSeparator ? <Separator /> : null}
@@ -313,6 +330,11 @@ function SampleRow({
               ? reasonText
               : [sample.score.toFixed(2), reasonText].join(" · ")}
           </ItemDescription>
+          {judgeText === null ? null : (
+            <ItemDescription className="line-clamp-none">
+              {judgeText}
+            </ItemDescription>
+          )}
           {sample.usage === null || sample.usage === undefined ? null : (
             <ItemDescription className="line-clamp-none">
               {`${t("sample.usage")}: ${JSON.stringify(sample.usage)}`}

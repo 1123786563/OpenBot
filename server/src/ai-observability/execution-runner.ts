@@ -103,15 +103,23 @@ export function createProductionEvaluationCaseRunner(
       modelName,
     });
     if (admission && !admission.allowed) {
+      // The admission's own reason rides the span AND the outcome (T25-rev L-1): a
+      // credits_exhausted case is never collapsed into a generic budget word whose
+      // diagnosis lives only in a log line. `budget_refused` stays the fallback for
+      // an admission that refuses without naming why.
       report({
         ...base,
         occurredAt: startedAt,
         endedAt: new Date(),
-        ending: { kind: "refused", code: "budget_refused" },
+        ending: {
+          kind: "refused",
+          code: admission.reason ?? "budget_refused",
+        },
       });
-      // The refusal's diagnosis rides the span observation and the settle's error
-      // code; the T28 outcome shape has no case-level reason field.
-      return { status: "failed" };
+      return {
+        status: "failed",
+        ...(admission.reason === undefined ? {} : { reason: admission.reason }),
+      };
     }
 
     try {

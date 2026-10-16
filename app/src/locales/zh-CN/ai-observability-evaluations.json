@@ -118,7 +118,9 @@
     "passedRules_other": "{{count}} 条规则通过",
     "failedRules_one": "{{count}} 条规则未通过",
     "failedRules_other": "{{count}} 条规则未通过",
-    "usage": "用量"
+    "usage": "用量",
+    "judgeScored": "判分 {{score}}",
+    "judgeFailed": "判分失败"
   },
   "error": {
     "EXPERIMENT_INPUT_INVALID": "实验名称或配置不合法。未提交任何内容。",

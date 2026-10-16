@@ -15,6 +15,7 @@ import {
   ExecutionError,
 } from "../src/ai-observability/executions";
 import { createObservationExperimentStore } from "../src/ai-observability/experiments";
+import { createExperimentResultService } from "../src/ai-observability/results";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { createAuditStore } from "../src/audit";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
@@ -385,6 +386,43 @@ test("a case runner that fails settles failed with its code, and no result", {
     state: "failed",
     errorCode: "CASE_EXECUTION_ERROR",
   });
+});
+
+test("a refused case carries its admission reason through the settle and the read", {
+  timeout: 30_000,
+}, async () => {
+  // T25-rev L-1: the four refusal reasons must not collapse into a generic
+  // budget word in the persisted case detail — the span already carries it, and
+  // the read side names it as the sample's execution-failure code.
+  const { experiment } = await frozenExperiment();
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  const worker = workerFor(
+    async (): Promise<EvaluationCaseOutcome> => ({
+      status: "failed",
+      reason: "model_not_priced",
+    }),
+  );
+  await worker.sweep();
+
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("completed");
+  const cases =
+    (settled?.result as { cases?: Array<Record<string, unknown>> })?.cases ??
+    [];
+  expect(cases[0]).toMatchObject({
+    status: "failed",
+    reason: "model_not_priced",
+  });
+
+  const report = await createExperimentResultService({
+    experiments,
+    executions,
+    datasets,
+    ticket: async () => null,
+  }).query(scopeA, { experimentId: experiment.id, executionId: row.id });
+  expect(report.samples[0]?.class).toBe("execution_failed");
+  expect(report.samples[0]?.reason).toMatchObject({ code: "model_not_priced" });
 });
 
 test("a revoked actor's execution is cancelled before any case runs", {

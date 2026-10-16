@@ -195,6 +195,10 @@ export function createBilledEvaluationCaseRunner(
       context.caseIndex,
     );
     let reservationId: string | undefined;
+    // The moment the admission grants is the moment the call begins (the built-in
+    // gate's clock): the usage fact timestamps the call, never its settlement
+    // (T25-rev L-3).
+    let callStartedAt = new Date();
 
     // The admission the T24 runner asks for, answered by a real hold. The natural key
     // makes the reservation replay-safe: a still-reserved hold answers itself, and a
@@ -212,6 +216,7 @@ export function createBilledEvaluationCaseRunner(
               return { allowed: false as const, reason: "credits_exhausted" };
             }
             reservationId = hold.reservationId;
+            callStartedAt = new Date();
             return { allowed: true as const };
           } catch (error) {
             deps.log?.(
@@ -247,7 +252,7 @@ export function createBilledEvaluationCaseRunner(
       externalCustomerId: deps.billing.externalCustomerId,
       model: modelName,
       client: EVALUATION_USAGE_CLIENT,
-      occurredAt: new Date(),
+      occurredAt: callStartedAt,
     };
 
     if (outcome.status === "completed") {

@@ -147,6 +147,14 @@ export type ExperimentResultsSample = Readonly<{
   reason: ExperimentSampleReason;
   /** The case's projected usage record as plain JSON, or null when none survived. */
   usage: unknown;
+  /**
+   * The case's projected judge record (T27) as plain JSON, or null when no judge
+   * answered for this case. A scoring fact beside the rule score — its own status
+   * (`scored` with a 0..1 score and rationale, or `failed` with a JUDGE_* code) —
+   * never a number averaged into `score`. Contract gap closed by the T-routes
+   * ticket: the server has answered this field since T27-rn.
+   */
+  judge: unknown;
   /** The server-minted link back to this report, which names the execution id. */
   resultLink: string;
 }>;

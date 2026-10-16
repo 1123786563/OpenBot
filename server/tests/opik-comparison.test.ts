@@ -995,6 +995,70 @@ describe("scope and authorization discipline (AC4, spec A5/A9)", () => {
   });
 });
 
+describe("storage damage: an equal hash with a diverged sample base refuses", () => {
+  test("the compatible ledger over diverged frozen bases answers a controlled 502, never a TypeError", async () => {
+    // Direct-write damage the freeze pipeline cannot produce (the T29-rev L-2 probe):
+    // both experiment rows claim the same content hash, but the versions they pin
+    // froze different numbers of cases — index N is no longer the same case on both
+    // sides. The read side refuses with its code, the same discipline
+    // readStoredCases keeps for damaged case records.
+    const { service } = serviceFor({
+      experiments: [
+        experiment({
+          id: "experiment-base",
+          name: "outage-eval-base",
+          datasetVersionId: "version-6",
+        }),
+        experiment({
+          id: "experiment-cand",
+          name: "outage-eval-candidate",
+          config: candidateConfig,
+          configHash: "e".repeat(64),
+          datasetVersionId: "version-4",
+        }),
+      ],
+      versions: [version(6, "version-6"), version(4, "version-4")],
+      executions: [
+        execution({
+          id: "execution-base",
+          caseCount: 6,
+          result: {
+            cases: Array.from({ length: 6 }, (_, index) => ({
+              index,
+              status: "completed",
+              output: textOutput("A one-paragraph outage summary."),
+            })),
+          },
+        }),
+        execution({
+          id: "execution-cand",
+          experimentId: "experiment-cand",
+          experimentConfigHash: "e".repeat(64),
+          caseCount: 4,
+          result: {
+            cases: Array.from({ length: 4 }, (_, index) => ({
+              index,
+              status: "completed",
+              output: textOutput("A one-paragraph outage summary."),
+            })),
+          },
+        }),
+      ],
+    });
+    let thrown: unknown = null;
+    try {
+      await service.compare(scopeA, bothSides);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ExperimentComparisonError);
+    expect((thrown as ExperimentComparisonError).code).toBe(
+      "COMPARISON_SAMPLE_BASE_DIVERGED",
+    );
+    expect((thrown as ExperimentComparisonError).status).toBe(502);
+  });
+});
+
 describe("the REST surface (mounting contract: /bots/:botId/experiment-comparisons)", () => {
   const profile = (ownerId: string): AgentProfile =>
     ({

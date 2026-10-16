@@ -24,6 +24,7 @@ import {
   type ObservationExperimentFault,
   observationExperimentComparisonQueryOptions,
 } from "@/lib/ai-observability/comparison";
+import { judgeFacts } from "@/lib/ai-observability/experiments";
 import { useDateTime } from "@/lib/i18n/datetime";
 import type {
   ExperimentComparison,
@@ -193,7 +194,17 @@ export function ObservationExperimentComparisonPage({
           <PageRows>
             <MeanRow deltas={comparison.deltas} />
             {comparison.deltas.perSample.map((delta) => (
-              <SampleDeltaRow delta={delta} key={delta.index} showSeparator />
+              <SampleDeltaRow
+                delta={delta}
+                key={delta.index}
+                showSeparator
+                baselineJudge={
+                  comparison.baseline.report.samples[delta.index]?.judge
+                }
+                candidateJudge={
+                  comparison.candidate.report.samples[delta.index]?.judge
+                }
+              />
             ))}
           </PageRows>
         </PageSection>
@@ -447,9 +458,14 @@ function MeanRow({
 function SampleDeltaRow({
   delta,
   showSeparator,
+  baselineJudge,
+  candidateJudge,
 }: {
   delta: ExperimentSampleDelta;
   showSeparator: boolean;
+  /** Each side's own judge record for this index (T27-rn L-3), when one answered. */
+  baselineJudge: unknown;
+  candidateJudge: unknown;
 }) {
   const { t } = useTranslation("ai-observability-evaluations");
   const side = (one: { class: ExperimentSampleClass; score: number | null }) =>
@@ -459,6 +475,23 @@ function SampleDeltaRow({
     ]
       .filter((part) => part !== null)
       .join(" ");
+  // Each side's judge fact, beside the classes it belongs to — its own score or its
+  // own failure code, never averaged into either side's rule score (T27-rn L-3).
+  const judgeSide = (label: string, record: unknown) => {
+    const facts = judgeFacts(record);
+    if (facts === null) return null;
+    return facts.kind === "scored"
+      ? `${label} ${t("sample.judgeScored", { score: facts.score.toFixed(2) })}`
+      : [label, t("sample.judgeFailed"), facts.code, facts.message ?? null]
+          .filter((part) => part !== null)
+          .join(" · ");
+  };
+  const judgeLine = [
+    judgeSide(t("comparison.baseline"), baselineJudge),
+    judgeSide(t("comparison.candidate"), candidateJudge),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
   return (
     <>
       {showSeparator ? <Separator /> : null}
@@ -479,6 +512,11 @@ function SampleDeltaRow({
                   }),
             ].join(" · ")}
           </ItemDescription>
+          {judgeLine === "" ? null : (
+            <ItemDescription className="line-clamp-none">
+              {judgeLine}
+            </ItemDescription>
+          )}
         </ItemContent>
       </Item>
     </>
