@@ -899,6 +899,94 @@ describe("overflow values never enter the contract (T26 rev3 leftover)", () => {
   });
 });
 
+describe("deep usage discipline (T28-rev L-1: only envelope trees survive the read)", () => {
+  const scoredCase = (usage: unknown) =>
+    execution({
+      caseCount: 1,
+      result: {
+        cases: [
+          {
+            index: 0,
+            status: "completed",
+            output: textOutput("A one-paragraph outage summary."),
+            usage,
+          },
+        ],
+      },
+    });
+
+  test("a deep record field that is a bare string, not an envelope, serves null", async () => {
+    const { service } = serviceFor({
+      version: version(1),
+      // Damage shape: the write path wraps every record field in an envelope, so a
+      // bare string directly under the payload is not contract content.
+      execution: scoredCase({
+        state: "projected",
+        value: { note: "raw" },
+      }),
+    });
+    const report = await service.query(scopeA, {
+      experimentId: "experiment-1",
+      executionId: "execution-1",
+    });
+    expect(report.samples[0].usage).toEqual({ note: null });
+  });
+
+  test("a deep object without a state field serves null, never its entries", async () => {
+    const { service } = serviceFor({
+      version: version(1),
+      execution: scoredCase({
+        state: "projected",
+        value: { nested: { deep: { secret: "x" } } },
+      }),
+    });
+    const report = await service.query(scopeA, {
+      experimentId: "experiment-1",
+      executionId: "execution-1",
+    });
+    expect(report.samples[0].usage).toEqual({ nested: null });
+  });
+
+  test("an envelope with an unknown state word serves null, never a guess", async () => {
+    const { service } = serviceFor({
+      version: version(1),
+      execution: scoredCase({
+        state: "projected",
+        value: { weird: { state: "quantum", value: 1 } },
+      }),
+    });
+    const report = await service.query(scopeA, {
+      experimentId: "experiment-1",
+      executionId: "execution-1",
+    });
+    expect(report.samples[0].usage).toEqual({ weird: null });
+  });
+
+  test("an array whose item is a bare primitive serves null for that item", async () => {
+    const { service } = serviceFor({
+      version: version(1),
+      execution: scoredCase({
+        state: "projected",
+        value: {
+          steps: {
+            state: "projected",
+            value: [
+              { state: "projected", value: 1 },
+              "bare",
+              { state: "omitted", reason: "credential" },
+            ],
+          },
+        },
+      }),
+    });
+    const report = await service.query(scopeA, {
+      experimentId: "experiment-1",
+      executionId: "execution-1",
+    });
+    expect(report.samples[0].usage).toEqual({ steps: [1, null, null] });
+  });
+});
+
 describe("scope and authorization discipline (A5/A9)", () => {
   test("a forged scope is refused before any store is asked", async () => {
     const { service, fake } = serviceFor({

@@ -27,12 +27,18 @@ import {
 import type { RunBindingStore } from "../bindings";
 import type { OpikConfig } from "../config";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
+import { createObservationDatasetStore } from "../datasets";
+import { createObservationExecutionStore } from "../executions";
+import { createObservationExperimentStore } from "../experiments";
 import type { OpikHealthService } from "../health";
 import type { OpikPort } from "../opik-port";
 import type { RunsQueryService } from "../queries/runs";
+import { createWorkTicketReader } from "../results";
 import { createAdminSummaryRoutes } from "./admin-summary";
+import { createExperimentComparisonRoutes } from "./comparison";
 import { createExportRoutes } from "./exports";
 import { createAiObservabilityHealthRoutes } from "./health";
+import { createExperimentResultsRoutes } from "./results";
 import { createRunsQueryRoutes } from "./runs";
 
 export type AiObservabilityDeps = {
@@ -88,6 +94,29 @@ export function createAiObservabilityRoutes(
         port: deps.port ?? null,
         query: deps.runsQuery,
       }),
+    );
+  }
+
+  // The T28/T29 experiment surfaces (this ticket's wiring obligation): the result read
+  // and the comparison, both over the local tables only — a portless deployment answers
+  // them honestly, because nothing here asks Opik anything. Built from the same database
+  // the export routes aggregate over, behind the same manage gate and live epoch.
+  if (deps.database && deps.scopeEpoch) {
+    const experimentStores = {
+      canManageBot: deps.canManageBot,
+      scopeEpoch: deps.scopeEpoch,
+      experiments: createObservationExperimentStore(deps.database),
+      executions: createObservationExecutionStore(deps.database),
+      datasets: createObservationDatasetStore(deps.database),
+      ticket: createWorkTicketReader(deps.database),
+    };
+    routes.route(
+      "/bots/:botId/experiments/:experimentId/results",
+      createExperimentResultsRoutes(experimentStores),
+    );
+    routes.route(
+      "/bots/:botId/experiment-comparisons",
+      createExperimentComparisonRoutes(experimentStores),
     );
   }
 
