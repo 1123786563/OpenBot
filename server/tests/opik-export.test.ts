@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_EXPORT_CONCURRENCY,
+  DEFAULT_EXPORT_MAX_ACTIVE,
   DEFAULT_EXPORT_MAX_ROWS,
   ExportError,
   ExportRowLimitExceeded,
@@ -56,6 +57,7 @@ describe("deployment bounds", () => {
     expect(resolveExportLimits({})).toEqual({
       concurrency: DEFAULT_EXPORT_CONCURRENCY,
       maxRows: DEFAULT_EXPORT_MAX_ROWS,
+      maxActive: DEFAULT_EXPORT_MAX_ACTIVE,
     });
   });
 
