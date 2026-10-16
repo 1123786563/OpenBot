@@ -7,6 +7,10 @@
     "title": "Evaluations",
     "description": "Dataset versions and experiment results for this Bot will be listed here once the observability store is connected. Nothing is missing from the Bot itself."
   },
+  "page": {
+    "title": "Evaluations",
+    "description": "Frozen dataset versions and experiment results for this Bot."
+  },
   "availability": {
     "disabled": {
       "title": "Evaluation is off",
@@ -19,6 +23,10 @@
     "forbidden": {
       "title": "You cannot run this experiment",
       "description": "Experiments follow the Bot's management rights and are re-checked before every sample."
+    },
+    "notFound": {
+      "title": "No such experiment",
+      "description": "This address names an experiment or execution your scope does not hold — either it never existed or it belongs to someone else."
     },
     "unscored": {
       "title": "Score unavailable for this sample",
@@ -40,5 +48,83 @@
       "title": "Upstream unavailable",
       "description": "The observability store did not answer. Runs already in flight kept their hold; nothing was released or double-charged."
     }
+  },
+  "submit": {
+    "rowTitle": "Run an experiment",
+    "rowDescription": "Freeze a Bot configuration against a frozen dataset version and submit it for evaluation.",
+    "dialogTitle": "Submit an experiment",
+    "dialogDescription": "The configuration freezes as submitted — the dataset version, prompt, model, parameters, tool fixtures and judge are pinned, and resubmitting the same configuration hits the same experiment.",
+    "name": "Experiment name",
+    "dataset": "Dataset",
+    "version": "Frozen version",
+    "versionCases_one": "{{id}} · {{count}} case",
+    "versionCases_other": "{{id}} · {{count}} cases",
+    "prompt": "Prompt",
+    "modelName": "Model",
+    "modelParameters": "Model parameters (JSON)",
+    "botConfig": "Bot configuration (JSON)",
+    "toolFixtures": "Tool fixtures (JSON)",
+    "judgeConfig": "Judge configuration (JSON)",
+    "judgeVersion": "Judge version",
+    "incomplete": "A name, a frozen version, a prompt, a model and a judge version are needed before submitting.",
+    "jsonInvalid": "This field must be a JSON object.",
+    "versionsUnavailable": "The frozen versions of this dataset did not answer.",
+    "submit": "Submit experiment",
+    "close": "Close",
+    "submittedNew": "Experiment frozen and started.",
+    "submittedReplay": "This configuration was already frozen — the existing experiment answered, and nothing new was created.",
+    "canary_one": "{{count}} field the redaction policy refused.",
+    "canary_other": "{{count}} fields the redaction policy refused.",
+    "viewResults": "View results"
+  },
+  "results": {
+    "back": "Evaluations",
+    "untitled": "Experiment results",
+    "executionTitle": "Execution record",
+    "executionDescription": "The safe execution record this report links back to — the run that produced these samples.",
+    "summaryTitle": "Summary",
+    "summaryDescription": "Every class is counted on its own; the mean averages scored samples only.",
+    "samplesTitle": "Samples",
+    "samplesDescription": "One row per frozen case, with its class, score, reason and usage.",
+    "cancel": "Cancel this experiment",
+    "meanScore": "Mean score",
+    "meanNone": "No sample was scored — a missing score is not a zero.",
+    "base_one": "{{count}} frozen case",
+    "base_other": "{{count}} frozen cases",
+    "scorerVersion": "Scored by {{version}}",
+    "scorerUnavailable": "Scorer version unavailable",
+    "toolRejections_one": "{{count}} tool call refused",
+    "toolRejections_other": "{{count}} tool calls refused"
+  },
+  "states": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Canceled"
+  },
+  "classes": {
+    "scored": "Scored",
+    "in_progress": "Still running",
+    "execution_failed": "Execution failed",
+    "scoring_failed": "Scoring failed",
+    "cancelled": "Canceled",
+    "pending_reconciliation": "Awaiting reconciliation",
+    "sync_failure": "Result sync failure"
+  },
+  "sample": {
+    "scoreUnavailable": "Score unavailable",
+    "passedRules_one": "{{count}} rule passed",
+    "passedRules_other": "{{count}} rules passed",
+    "failedRules_one": "{{count}} rule failed",
+    "failedRules_other": "{{count}} rules failed",
+    "usage": "Usage"
+  },
+  "error": {
+    "EXPERIMENT_INPUT_INVALID": "The experiment name or configuration is not valid. Nothing was submitted.",
+    "EXPERIMENT_DATASET_VERSION_NOT_FOUND": "This Bot's datasets hold no frozen version with that id. Nothing was submitted.",
+    "EXPERIMENT_STATE_INVALID": "The experiment's state refuses this. Nothing changed.",
+    "EXECUTION_STATE_INVALID": "Only a running execution can be canceled — this one has already settled.",
+    "unreachable": "The observability store did not answer. Nothing changed."
   }
 }

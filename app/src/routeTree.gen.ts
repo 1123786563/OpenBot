@@ -84,6 +84,7 @@ import { Route as AuthedAppBotsAgentIdEvaluationsDatasetIdRouteImport } from './
 import { Route as AuthedAppBotsAgentIdRunsBindingIdRouteImport } from './routes/_authed/_app/bots.$agentId.runs.$bindingId'
 import { Route as AuthedAdminPluginsKeyBotsAgentIdRouteImport } from './routes/_authed/admin/plugins/$key_.bots.$agentId'
 import { Route as AuthedAdminPluginsKeyToolsToolRouteImport } from './routes/_authed/admin/plugins/$key_.tools.$tool'
+import { Route as AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRouteImport } from './routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId'
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
@@ -488,6 +489,14 @@ const AuthedAdminPluginsKeyToolsToolRoute =
     path: '/plugins/$key/tools/$tool',
     getParentRoute: () => AuthedAdminRouteRoute,
   } as any)
+const AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute =
+  AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRouteImport.update(
+    {
+      id: '/experiments/$experimentId/$executionId',
+      path: '/experiments/$experimentId/$executionId',
+      getParentRoute: () => AuthedAppBotsAgentIdEvaluationsRoute,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
@@ -563,6 +572,7 @@ export interface FileRoutesByFullPath {
   '/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/admin/plugins/$key/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/admin/plugins/$key/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
+  '/bots/$agentId/evaluations/experiments/$experimentId/$executionId': typeof AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
@@ -636,6 +646,7 @@ export interface FileRoutesByTo {
   '/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/admin/plugins/$key/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/admin/plugins/$key/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
+  '/bots/$agentId/evaluations/experiments/$experimentId/$executionId': typeof AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -714,6 +725,7 @@ export interface FileRoutesById {
   '/_authed/_app/bots/$agentId/runs/$bindingId': typeof AuthedAppBotsAgentIdRunsBindingIdRoute
   '/_authed/admin/plugins/$key_/bots/$agentId': typeof AuthedAdminPluginsKeyBotsAgentIdRoute
   '/_authed/admin/plugins/$key_/tools/$tool': typeof AuthedAdminPluginsKeyToolsToolRoute
+  '/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId': typeof AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -791,6 +803,7 @@ export interface FileRouteTypes {
     | '/bots/$agentId/runs/$bindingId'
     | '/admin/plugins/$key/bots/$agentId'
     | '/admin/plugins/$key/tools/$tool'
+    | '/bots/$agentId/evaluations/experiments/$experimentId/$executionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -864,6 +877,7 @@ export interface FileRouteTypes {
     | '/bots/$agentId/runs/$bindingId'
     | '/admin/plugins/$key/bots/$agentId'
     | '/admin/plugins/$key/tools/$tool'
+    | '/bots/$agentId/evaluations/experiments/$experimentId/$executionId'
   id:
     | '__root__'
     | '/_authed'
@@ -941,6 +955,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/bots/$agentId/runs/$bindingId'
     | '/_authed/admin/plugins/$key_/bots/$agentId'
     | '/_authed/admin/plugins/$key_/tools/$tool'
+    | '/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1476,6 +1491,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminPluginsKeyToolsToolRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
     }
+    '/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId': {
+      id: '/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId'
+      path: '/experiments/$experimentId/$executionId'
+      fullPath: '/bots/$agentId/evaluations/experiments/$experimentId/$executionId'
+      preLoaderRoute: typeof AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRouteImport
+      parentRoute: typeof AuthedAppBotsAgentIdEvaluationsRoute
+    }
   }
 }
 
@@ -1573,12 +1595,15 @@ const AuthedSettingsRouteRouteWithChildren =
 
 interface AuthedAppBotsAgentIdEvaluationsRouteChildren {
   AuthedAppBotsAgentIdEvaluationsDatasetIdRoute: typeof AuthedAppBotsAgentIdEvaluationsDatasetIdRoute
+  AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute: typeof AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute
 }
 
 const AuthedAppBotsAgentIdEvaluationsRouteChildren: AuthedAppBotsAgentIdEvaluationsRouteChildren =
   {
     AuthedAppBotsAgentIdEvaluationsDatasetIdRoute:
       AuthedAppBotsAgentIdEvaluationsDatasetIdRoute,
+    AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute:
+      AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute,
   }
 
 const AuthedAppBotsAgentIdEvaluationsRouteWithChildren =
