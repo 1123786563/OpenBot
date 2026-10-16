@@ -55,7 +55,7 @@ import {
 } from "./agents/openmuse-template-store";
 import { canManageAgent } from "./agents/profile-policy";
 import { createAgentProfileStore } from "./agents/profile-store";
-import type { AgentActor } from "./agents/profile-types";
+import type { AgentActor, AgentProfile } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import {
   createWakeUpRunner,
@@ -65,11 +65,22 @@ import {
 import { createRunBindingStore } from "./ai-observability/bindings";
 import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
+import {
+  createObservationExportStore,
+  createObservationExportWorker,
+  EXPORT_WORK_KIND,
+} from "./ai-observability/exports";
 import { createOpikHealthService } from "./ai-observability/health";
 import { createIdLinkStore } from "./ai-observability/id-links";
 import { createModelSpanRecorder } from "./ai-observability/model-span";
 import { createToolStepRecorder } from "./ai-observability/tool-steps";
 import { createAiObservabilityRoutes } from "./ai-observability/routes";
+import {
+  createActorResolver,
+  createAgentProfileScopeEpoch,
+  createExportReauthorization,
+  loadVerifiedOpikPort,
+} from "./ai-observability/wiring";
 import { createApp, createDeploymentRequireUser } from "./app";
 import { createApprovedActionExecutor } from "./approvals/execute";
 import {
@@ -5097,19 +5108,83 @@ const aiObservabilityCanManageBot: BotManagementCheck = async (
   return profile && canManageAgent(actor, profile) ? profile : null;
 };
 
-// Review F-1: without a health service the enabled state is invisible over
-// HTTP. The port stays null until a manifest-verified adapter is wired into
-// this deployment, so an enabled configuration honestly answers
-// capability_missing — and with no port there is no transport at all.
+/*
+ * T33 wiring, on the inert-until-proven footing every observation seam keeps:
+ * one boot-time config snapshot, one T07 binding store shared by every reader,
+ * and one verified port. The port loads from the T04 evidence manifest — the
+ * only contract this deployment trusts — and any failure to load answers
+ * null, which every consumer reads as the honest capability_missing: without
+ * a verified contract there is no transport at all (the T09 assembly rule).
+ */
+const opikBootConfig = opikConfigFromEnv(process.env);
+const aiObservabilityBindings = createRunBindingStore(database);
+const opikObservationPort =
+  opikBootConfig.enabled && opikBootConfig.baseUrl !== null
+    ? await loadVerifiedOpikPort(opikBootConfig.baseUrl)
+    : null;
+// Review F-1: without a health service the enabled state is invisible over HTTP.
 const opikHealthService = createOpikHealthService({
-  config: () => opikConfigFromEnv(process.env),
-  port: null,
+  config: () => opikBootConfig,
+  port: opikObservationPort,
 });
+const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
 const aiObservability = createAiObservabilityRoutes({
   requireUser: createDeploymentRequireUser(config, auth, roleRepository),
   canManageBot: aiObservabilityCanManageBot,
   healthService: opikHealthService,
+  database,
+  scopeEpoch: aiObservabilityScopeEpoch,
+  bindings: aiObservabilityBindings,
+  config: () => opikBootConfig,
+  port: opikObservationPort,
+  listBots: (actor) =>
+    agentProfileStore.list(actor).catch(() => [] as AgentProfile[]),
 });
+
+/*
+ * The T34 export worker (this ticket's boot wiring): claims tickets under
+ * lease and re-derives the scope from LIVE authorization on every execution —
+ * the same manage-gate + ownership + live-epoch seam the routes answer per
+ * request, with the actor resolved from live roles. Spec §10: a deployment
+ * that has Opik disabled starts no export task at all, so the worker boots
+ * only for an enabled configuration; queued rows simply wait, unclaimed.
+ */
+const observationExportStore = createObservationExportStore(database);
+const opikExportReauthorize = createExportReauthorization({
+  canManageBot: aiObservabilityCanManageBot,
+  scopeEpoch: aiObservabilityScopeEpoch,
+  resolveActor: createActorResolver((userId) =>
+    roleRepository.rolesForUser(userId),
+  ),
+});
+if (opikBootConfig.enabled) {
+  createObservationExportWorker({
+    database,
+    config: () => opikBootConfig,
+    port: opikObservationPort,
+    reauthorize: opikExportReauthorize,
+  }).start();
+}
+// The finished opik.export tickets ride the same work_items table every
+// bounded task does; the wake-up reaper's own cadence (a week past done)
+// keeps the table from growing without end.
+const opikExportTicketQueue = createWorkQueue(database);
+const opikExportTicketReaper = repeatAfterEach(
+  async () => {
+    try {
+      await opikExportTicketQueue.purge({
+        kind: EXPORT_WORK_KIND,
+        olderThanMs: 7 * 24 * 60 * 60_000,
+      });
+    } catch (error) {
+      log.warn(
+        { err: error, type: "opik-export-tickets-reap-failed" },
+        "opik-export-tickets-reap-failed",
+      );
+    }
+  },
+  24 * 60 * 60_000,
+);
 
 /*
  * Built-in model-span recording (Issue #20 / T14), on the same inert-until-proven
@@ -5124,7 +5199,7 @@ const aiObservability = createAiObservabilityRoutes({
 const opikModelSpans = createModelSpanRecorder({
   healthService: opikHealthService,
 });
-if (opikConfigFromEnv(process.env).enabled) {
+if (opikBootConfig.enabled) {
   setBuiltinModelSpanObserver((fact) =>
     opikModelSpans.record({
       occurredAt: fact.startedAt,
@@ -5157,10 +5232,10 @@ const opikToolSteps = createToolStepRecorder({
    * with zero changes when they do.
    */
   idLinks: createIdLinkStore(database, {
-    bindings: createRunBindingStore(database),
+    bindings: aiObservabilityBindings,
   }),
 });
-if (opikConfigFromEnv(process.env).enabled) {
+if (opikBootConfig.enabled) {
   setBuiltinToolStepObserver((fact) =>
     opikToolSteps.record({
       toolCallId: fact.toolCallId,
@@ -5628,7 +5703,21 @@ const app = createApp(
     documents: openMuseDocuments,
     notifications: openMuseNotifications,
     accountDeletion: openMuseAccountDeletionStore,
-    deletionShutdown: openMuseWorkShutdown,
+    // T33: the §9 shutdown ends the deleting owner's authorization, so their
+    // queued observation exports are cancelled in the same breath (T34 §6).
+    deletionShutdown: async (userId: string) => {
+      await openMuseWorkShutdown(userId);
+      await observationExportStore.cancelForActor(userId).catch((error) => {
+        log.warn(
+          {
+            err: error,
+            type: "opik-export-cancel-failed",
+            userId,
+          },
+          "opik-export-cancel-failed",
+        );
+      });
+    },
     deletionRevoke: openMuseExternalAccessRevoker,
     deletionManifest: (userId) =>
       openMuseDeletionManifestBuilder.buildManifest(userId),
@@ -5645,6 +5734,9 @@ const app = createApp(
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
     aiObservability,
+    // T33: the admin people-revoke route's cancel seam (T34 §6 wiring).
+    aiObservabilityCancelForActor: (actorId) =>
+      observationExportStore.cancelForActor(actorId),
   },
   identityStore,
   identityGithubCallback,
@@ -5926,6 +6018,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     responsibilitySweep.stop();
     wakeUpSweep.stop();
     wakeUpReaper.stop();
+    opikExportTicketReaper.stop();
     openMuseTaskSweep.stop();
     openMuseTaskReaper.stop();
     memorySweep.stop();

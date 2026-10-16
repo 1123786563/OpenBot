@@ -586,6 +586,8 @@ describe("health output is a safe projection (acceptance 4)", () => {
       "refusedNotReady",
       "completed",
       "failed",
+      // T17's id-mapping outcome counters — labels only, same safe shape.
+      "idLinks",
     ]);
     for (const value of Object.values(writes)) {
       if (typeof value === "object" && value !== null) continue;

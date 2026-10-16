@@ -732,6 +732,14 @@ export function createApp(
     opsSignals?: Hono<{ Variables: AppVariables }>;
     /** Observation surfaces (ticket #7). Absent = the integration is not mounted at all. */
     aiObservability?: Hono<{ Variables: AppVariables }>;
+    /**
+     * T33 (T34 §6): what a user-disable/revocation path does about queued
+     * observation export work — the store's cancelForActor seam. Best-effort
+     * beside the revoke it accompanies: the export worker re-authorizes on
+     * every execution, so a cancelled-call miss is caught at the next run,
+     * never by shipping an artifact. Absent cancels nothing here.
+     */
+    aiObservabilityCancelForActor?: (actorId: string) => Promise<unknown>;
   },
   /** A person's own linked accounts. Absent answers 503 on /api/identity. */
   identity?: IdentityStore,
@@ -766,6 +774,7 @@ export function createApp(
     activity: openMuseActivity,
     opsSignals: openMuseOpsSignals,
     aiObservability,
+    aiObservabilityCancelForActor,
   } = openMuseSeams ?? {};
 
   const app = new Hono<{ Variables: AppVariables }>();
@@ -1487,6 +1496,18 @@ export function createApp(
 
     if (revoked) {
       await peopleStore.retireOwned(userId, context.var.actor.id);
+      // T33: ending a person's access ends their observation authorization
+      // too — queued export work is cancelled rather than left to fetch under
+      // an authorization that no longer exists. Best-effort by design: the
+      // worker re-authorizes per execution and drops what this call missed.
+      if (aiObservabilityCancelForActor) {
+        try {
+          await aiObservabilityCancelForActor(userId);
+        } catch {
+          // The revoke itself already succeeded; the worker's reauthorization
+          // is the backstop that catches a missed cancellation.
+        }
+      }
     }
 
     return context.json({ person: await peopleStore.find(userId) });
