@@ -52,6 +52,8 @@ const REQUIRED_CAPABILITIES: Record<OpikOperation, readonly string[]> = {
   createTrace: ["trace-query-id-mapping"],
   writeSpans: ["otlp-write-parent-child", "body-limit-boundary"],
   listTraces: ["trace-query-id-mapping"],
+  deleteTraces: ["trace-span-physical-delete"],
+  deleteDataset: ["experiment-dataset-physical-delete"],
 };
 
 /** The success status the contract observed for each operation. Anything else is a failure. */
@@ -61,6 +63,8 @@ const VERIFIED_STATUS: Record<OpikOperation, number> = {
   createTrace: 201,
   writeSpans: 200,
   listTraces: 200,
+  deleteTraces: 204,
+  deleteDataset: 204,
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -599,6 +603,113 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         },
       );
       return exchanged;
+    },
+
+    /**
+     * Not `async` on purpose: the pre-I/O refusals (capability, input shape) must throw
+     * synchronously, so a caller cannot `.catch` its way past a deletion the contract never
+     * authorized. Everything after the validation is an ordinary promised exchange.
+     */
+    deleteTraces(locator, input) {
+      requireOperation("deleteTraces");
+      if (
+        !Array.isArray(input.traceIds) ||
+        input.traceIds.length === 0 ||
+        input.traceIds.some((id) => typeof id !== "string" || id === "")
+      ) {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
+      return (async () => {
+        // Resolve the locator's project exactly as retrieveProject does — same wire shape,
+        // same verified 404 — but keyed on the frozen locator, and with drift suspends
+        // recorded against the locator's scope key.
+        const body = JSON.stringify({ name: locator.project });
+        if (!withinVerifiedCap(body)) {
+          throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
+        }
+        const resolved = await exchange(
+          "retrieveProject",
+          "/v1/private/projects/retrieve",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body,
+          },
+          async (response) => {
+            if (response.status === 404) {
+              // The verified answer that the project is gone: so are its traces.
+              return { outcome: "ok" as const, value: null };
+            }
+            if (response.status !== VERIFIED_STATUS.retrieveProject) {
+              return statusFailure("retrieveProject", response.status);
+            }
+            const parsed = await readJsonObject("retrieveProject", response);
+            if (parsed.outcome !== "ok") return parsed;
+            const id = parsed.value.id;
+            if (typeof id !== "string" || id === "") {
+              return malformed("retrieveProject", "field:id");
+            }
+            const name = parsed.value.name;
+            if (typeof name === "string" && name !== locator.project) {
+              return drift(
+                "retrieveProject",
+                locator.scopeKey,
+                "response_name_mismatch",
+              );
+            }
+            return { outcome: "ok" as const, value: { id } };
+          },
+        );
+        if (resolved.outcome !== "ok") return resolved;
+        const project = resolved.value;
+        if (project === null) {
+          // Complete by absence, honestly reported as nothing-was-deleted.
+          return { outcome: "ok" as const, value: { deleted: false } };
+        }
+        const payload = JSON.stringify({
+          ids: [...input.traceIds],
+          project_id: project.id,
+        });
+        if (!withinVerifiedCap(payload)) {
+          throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
+        }
+        const exchanged = await postJson(
+          "deleteTraces",
+          "/v1/private/traces/delete",
+          payload,
+        );
+        if (exchanged.outcome !== "ok") return exchanged;
+        if (exchanged.value.status !== VERIFIED_STATUS.deleteTraces) {
+          return statusFailure("deleteTraces", exchanged.value.status);
+        }
+        return { outcome: "ok" as const, value: { deleted: true } };
+      })();
+    },
+
+    /** Same sync-validation discipline as deleteTraces; see there for why. */
+    deleteDataset(_locator, input) {
+      requireOperation("deleteDataset");
+      if (typeof input.datasetId !== "string" || input.datasetId === "") {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
+      return (async () => {
+        const payload = JSON.stringify({ ids: [input.datasetId] });
+        if (!withinVerifiedCap(payload)) {
+          throw new OpikPortError("REQUEST_BODY_TOO_LARGE");
+        }
+        const exchanged = await postJson(
+          "deleteDataset",
+          "/v1/private/datasets/delete-batch",
+          payload,
+        );
+        if (exchanged.outcome !== "ok") return exchanged;
+        if (exchanged.value.status !== VERIFIED_STATUS.deleteDataset) {
+          // No verified 404 story on this endpoint: a client error stays a retryable
+          // failure, never a success.
+          return statusFailure("deleteDataset", exchanged.value.status);
+        }
+        return { outcome: "ok" as const, value: { deleted: true } };
+      })();
     },
   };
 }

@@ -15,7 +15,7 @@
  */
 
 import type { SafeText } from "../../../shared/ai-observability";
-import type { ObservationScope } from "./contracts";
+import type { ObservationScope, ObservationStorageLocator } from "./contracts";
 import type { SafeRecord } from "./redaction";
 
 /** The operations the verified contract currently covers. Adding one requires new evidence. */
@@ -24,7 +24,9 @@ export type OpikOperation =
   | "retrieveProject"
   | "createTrace"
   | "writeSpans"
-  | "listTraces";
+  | "listTraces"
+  | "deleteTraces"
+  | "deleteDataset";
 
 /**
  * The structural subset of T04's VerifiedOpikContract manifest the adapter depends on. The
@@ -181,6 +183,26 @@ export type OpikPort = {
     scope: ObservationScope,
     input: { projectId: string; size?: number; page?: number },
   ): Promise<OpikPortResult<OpikTracePage>>;
+  /**
+   * Delete traces upstream by the locator's own project (Issue #41 / T35). The locator, not a
+   * scope: retention freezes it at discovery and a deletion's upstream half must run against
+   * exactly that address even when no live scope can be presented anymore. A verified 404 on
+   * the project answers `ok` with `deleted: false` — the project being gone means the traces
+   * are — while any failure from the delete itself stays a retryable failure.
+   */
+  deleteTraces(
+    locator: ObservationStorageLocator,
+    input: { traceIds: readonly string[] },
+  ): Promise<OpikPortResult<{ deleted: boolean }>>;
+  /**
+   * Delete one upstream dataset by id (Issue #41 / T35), same locator discipline as
+   * deleteTraces. Unlike the trace path there is no verified 404-on-retrieve here: a client
+   * error from the delete endpoint itself is an upstream failure, never a disguised success.
+   */
+  deleteDataset(
+    locator: ObservationStorageLocator,
+    input: { datasetId: string },
+  ): Promise<OpikPortResult<{ deleted: boolean }>>;
 };
 
 /** Injection seams: the deployment target, the verified contract, and (for tests) transport

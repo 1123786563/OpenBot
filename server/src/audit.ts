@@ -725,6 +725,14 @@ export const auditEventTypes = [
    * fact, not an inference from a log line.
    */
   "opik.experiment_execution_settled",
+  /**
+   * Retention deleted an observation record for real (Issue #41 / DAG T35). The payload
+   * names the kind, the retention policy that expired the target and how many worker
+   * passes it took — references and counts only, never content, so nothing a deleted
+   * artifact held can be read back out of the trail. Deployment-initiated: there is no
+   * actor whose authority it borrowed, which is why `actorUserId` stays null.
+   */
+  "opik.retention_deleted",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

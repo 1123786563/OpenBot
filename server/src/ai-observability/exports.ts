@@ -70,13 +70,18 @@ export type ExportErrorCode =
   | "EXPORT_INPUT_INVALID"
   | "EXPORT_NOT_FOUND"
   | "EXPORT_STATE_INVALID"
+  /**
+   * The T34 hardening (T35): this scope already holds `maxActive` queued or running
+   * exports. An explicit 429 refusal, never a silent unbounded backlog.
+   */
+  | "EXPORT_ENQUEUE_LIMIT"
   /** The T09 gate: the integration is off, unconfigured, or no verified port backs it. */
   | "CAPABILITY_MISSING";
 
 export class ExportError extends Error {
   constructor(
     public code: ExportErrorCode,
-    public status: 400 | 404 | 500 | 503,
+    public status: 400 | 404 | 429 | 500 | 503,
   ) {
     super(code);
   }
@@ -131,12 +136,20 @@ export const DEFAULT_EXPORT_CONCURRENCY = 2;
 export const MAX_EXPORT_CONCURRENCY = 16;
 export const DEFAULT_EXPORT_MAX_ROWS = 1_000;
 export const MAX_EXPORT_MAX_ROWS = 100_000;
+/**
+ * How many queued/running exports one scope may hold (T34 review hardening, merged into
+ * Issue #41): generous enough that a healthy deployment never meets it, finite enough
+ * that a runaway producer cannot enqueue without bound.
+ */
+export const DEFAULT_EXPORT_MAX_ACTIVE = 1_000;
+export const MAX_EXPORT_MAX_ACTIVE = 100_000;
 /** The page size the verified trace-query contract observed (T04/T08). */
 export const EXPORT_PAGE_SIZE = 100;
 
 export type ExportLimits = Readonly<{
   concurrency: number;
   maxRows: number;
+  maxActive: number;
 }>;
 
 function boundedInteger(
@@ -151,7 +164,7 @@ function boundedInteger(
 }
 
 /**
- * The export knobs, read from exactly two env names and clamped: an unparsable
+ * The export knobs, read from exactly three env names and clamped: an unparsable
  * or out-of-range value keeps the conservative default rather than being
  * guessed at (the T09 config parsing precedent).
  */
@@ -168,6 +181,11 @@ export function resolveExportLimits(
       env.OPIK_EXPORT_MAX_ROWS,
       DEFAULT_EXPORT_MAX_ROWS,
       MAX_EXPORT_MAX_ROWS,
+    ),
+    maxActive: boundedInteger(
+      env.OPIK_EXPORT_MAX_ACTIVE,
+      DEFAULT_EXPORT_MAX_ACTIVE,
+      MAX_EXPORT_MAX_ACTIVE,
     ),
   };
 }
@@ -189,6 +207,12 @@ export type ObservationExportStore = {
   enqueue(
     scope: ObservationScope,
     rowLimit: number,
+    /**
+     * The active-backlog cap for this call (T34 hardening). Omitted means the
+     * deployment's `OPIK_EXPORT_MAX_ACTIVE` default. Terminal jobs never count:
+     * the cap bounds work, not history.
+     */
+    options?: { maxActive?: number },
   ): Promise<ObservationExportJob>;
   /** Read one job inside the caller's scope. Another scope's id is simply not found. */
   get(
@@ -261,14 +285,41 @@ export function createObservationExportStore(
       .then((rows) => rows[0] ?? null);
 
   return {
-    async enqueue(scope, rowLimit) {
+    async enqueue(scope, rowLimit, options) {
       assertObservationScope(scope);
       if (!Number.isInteger(rowLimit) || rowLimit < 1) {
         throw new ExportError("EXPORT_INPUT_INVALID", 400);
       }
+      if (
+        options?.maxActive !== undefined &&
+        (!Number.isInteger(options.maxActive) || options.maxActive < 1)
+      ) {
+        throw new ExportError("EXPORT_INPUT_INVALID", 400);
+      }
+      const maxActive =
+        options?.maxActive ?? resolveExportLimits(process.env).maxActive;
       const locator = resolveStorageLocator(scope);
       const id = randomUUID();
       return db.transaction(async (tx) => {
+        // The cap is counted and written as one step, under the scope's own advisory
+        // lock: concurrent enqueues for one scope otherwise each read a count taken
+        // before any of the others wrote, and all pass a cap of two.
+        const lockKey = `opik-export-enqueue:${scope.key}`;
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`,
+        );
+        const [active] = await tx
+          .select({ total: sql<number>`count(*)::int` })
+          .from(aiObservationExportJobs)
+          .where(
+            and(
+              eq(aiObservationExportJobs.scopeKey, scope.key),
+              inArray(aiObservationExportJobs.state, ["queued", "running"]),
+            ),
+          );
+        if ((active?.total ?? 0) >= maxActive) {
+          throw new ExportError("EXPORT_ENQUEUE_LIMIT", 429);
+        }
         const [job] = await tx
           .insert(aiObservationExportJobs)
           .values({
