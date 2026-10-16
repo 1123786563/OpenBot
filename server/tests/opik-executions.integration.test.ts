@@ -4,6 +4,7 @@ import type { TransactionSQL } from "bun";
 import { and, eq } from "drizzle-orm";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import {
+  cancelExecutionsForActor,
   createExperimentExecutionService,
   createObservationExecutionStore,
   createObservationExecutionWorker,
@@ -82,10 +83,15 @@ const classify = (toolName: string) =>
 async function frozenExperiment(
   scope: typeof scopeA = scopeA,
   extra: Partial<typeof config> = {},
+  /** How many cases the dataset freezes; each case's input is distinct. */
+  caseCount = 1,
 ) {
   const { version } = await datasets.saveVersion(scope, {
     datasetName: `${prefix}-dataset-${randomUUID().slice(0, 8)}`,
-    cases: [caseInput],
+    cases: Array.from({ length: caseCount }, (_, i) => ({
+      ...caseInput,
+      input: i === 0 ? caseInput.input : `${caseInput.input} (case ${i})`,
+    })),
   });
   return experiments.submit(scope, {
     name: `${prefix}-experiment-${randomUUID().slice(0, 8)}`,
@@ -94,24 +100,36 @@ async function frozenExperiment(
   });
 }
 
-/** The worker over injected case runners: the T24 production runner is a later ticket. */
+/** The worker over injected case runners; the production runner has its own unit contract. */
 function workerFor(
   runCase: (context: EvaluationCaseContext) => Promise<EvaluationCaseOutcome>,
-  input: { revoked?: boolean } = {},
+  input: {
+    revoked?: boolean;
+    leaseMs?: number;
+    concurrency?: number;
+    /** Overrides the default scope-echoing reauthorize seam. */
+    reauthorize?: Parameters<
+      typeof createObservationExecutionWorker
+    >[0]["reauthorize"];
+  } = {},
 ) {
   return createObservationExecutionWorker({
     database,
     audit,
     classify,
     runCase,
-    reauthorize: input.revoked
-      ? async () => null
-      : async ({ actorId }) =>
-          actorId === scopeA.actorId
-            ? scopeA
-            : actorId === scopeB.actorId
-              ? scopeB
-              : null,
+    concurrency: input.concurrency,
+    leaseMs: input.leaseMs,
+    reauthorize:
+      input.reauthorize ??
+      (input.revoked
+        ? async () => null
+        : async ({ actorId }) =>
+            actorId === scopeA.actorId
+              ? scopeA
+              : actorId === scopeB.actorId
+                ? scopeB
+                : null),
     owner: `t23-owner-${randomUUID()}`,
   });
 }
@@ -277,10 +295,9 @@ test("the worker executes frozen cases, refusing and counting write tools", {
   expect(settled?.state).toBe("completed");
   expect(settled?.caseCount).toBe(1);
   expect(settled?.toolRejections).toBe(2);
-  // The result is the frozen projection of the case outcomes — envelopes all the way
-  // down: the deep projection wraps arrays and their elements like any other value,
-  // and `detail.answered` sits one level past MAX_SAFE_RECORD_DEPTH, so it is cut to
-  // omitted rather than stored raw. No naked text reaches this column, at any depth.
+  // The result is assembled from the per-case write-ahead rows, each already projected
+  // once at record time (T24): `detail` is the stored envelope embedded as-is, so it is
+  // not projected — or depth-cut — a second time. No naked text reaches this column.
   expect(settled?.result).toEqual({
     state: "projected",
     value: {
@@ -295,7 +312,7 @@ test("the worker executes frozen cases, refusing and counting write tools", {
               detail: {
                 state: "projected",
                 value: {
-                  answered: { state: "omitted", reason: "unhandled_free_text" },
+                  answered: { state: "projected", value: true },
                 },
               },
             },
@@ -305,7 +322,8 @@ test("the worker executes frozen cases, refusing and counting write tools", {
     },
   });
 
-  // The governance channel: the settle row carries the refusal counter and names.
+  // The governance channel: the settle row carries the refusal counter and the projected
+  // names (T23-rev L-2: a name is projected before it lands in the payload).
   const audited = await auditRows(row.id);
   expect(audited.length).toBe(1);
   expect(audited[0].payload).toMatchObject({
@@ -315,7 +333,10 @@ test("the worker executes frozen cases, refusing and counting write tools", {
     state: "completed",
     caseCount: 1,
     toolRejections: 2,
-    rejectedTools: ["calendar_create", "never_heard_of_it"],
+    rejectedTools: [
+      { state: "projected", text: "calendar_create" },
+      { state: "projected", text: "never_heard_of_it" },
+    ],
   });
 });
 
@@ -388,6 +409,14 @@ test("a revoked actor's execution is cancelled before any case runs", {
   const settled = await executions.get(scopeA, row.id);
   expect(settled?.state).toBe("cancelled");
   expect(settled?.settledAt).not.toBeNull();
+  // T23-rev L-1: the cancel path leaves a settle audit row too — a cancelled execution
+  // with mid-run refusals must still reach the governance channel.
+  const audited = await auditRows(row.id);
+  expect(audited.length).toBe(1);
+  expect(audited[0].payload).toMatchObject({
+    state: "cancelled",
+    toolRejections: 0,
+  });
 });
 
 test("revocation wins the race against a completion write", {
@@ -430,7 +459,7 @@ test("cancelForActor settles every active execution and nothing terminal", async
   ]);
 
   const cancelled = await executions.cancelForActor(scopeA.actorId);
-  expect(cancelled).toBe(1);
+  expect(cancelled.length).toBe(1);
   expect((await executions.get(scopeA, pending.id))?.state).toBe("cancelled");
   // First terminal write wins: the completed execution is untouched.
   expect((await executions.get(scopeA, done.id))?.state).toBe("completed");
@@ -512,4 +541,244 @@ test("an execution pins its experiment physically", async () => {
     `,
   );
   expect(refusal.code).toBe("23001");
+});
+
+/*
+ * T24 (Issue #30): durable, bounded-concurrency execution with idempotent resume,
+ * per-case re-authorization, and a no-double-invocation promise on lease takeover.
+ */
+
+test("a lease takeover resumes without re-running completed cases, and never re-invokes an unknown one", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment(scopeA, {}, 3);
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  // Worker A dies mid-case-2: it hangs inside the runner (no lease renewal, no settle,
+  // no finish) — exactly what a crashed process leaves behind.
+  const invocations: number[] = [];
+  let release: (() => void) | null = null;
+  const hang = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sweptA = workerFor(async (one) => {
+    invocations.push(one.caseIndex);
+    if (one.caseIndex === 2) await hang;
+    return { status: "completed", detail: { by: `a-${one.caseIndex}` } };
+  }).sweep();
+  await until(
+    async () =>
+      (await executions.caseOutcomes(row.id)).some(
+        (outcome) => outcome.caseIndex === 2 && outcome.status === "in_flight",
+      ),
+    "worker A reaches case 2",
+  );
+
+  // The lease lapses on the database's clock; worker B takes over.
+  await database.$client`
+    UPDATE work_items SET lease_until = now() - interval '1 second'
+    WHERE kind = ${EXECUTION_WORK_KIND} AND key = ${row.id}
+  `;
+  let resumed = 0;
+  await workerFor(async () => {
+    resumed += 1;
+    return { status: "completed" };
+  }).sweep();
+
+  // Completed cases were skipped, not re-run; the in-flight case was NOT re-invoked —
+  // its outcome is honestly unknown, and each case ran exactly once in total.
+  expect(resumed).toBe(0);
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("completed");
+  expect(settled?.caseCount).toBe(3);
+
+  release!();
+  await sweptA;
+  expect(invocations).toEqual([0, 1, 2]);
+
+  const outcomes = await executions.caseOutcomes(row.id);
+  expect(outcomes.map((outcome) => outcome.status)).toEqual([
+    "completed",
+    "completed",
+    "unknown",
+  ]);
+});
+
+test("two workers claiming one execution are mutually exclusive", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment();
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  const invocations: string[] = [];
+  const workerForOwner = (tag: string) =>
+    createObservationExecutionWorker({
+      database,
+      audit,
+      classify,
+      runCase: async () => {
+        invocations.push(tag);
+        return { status: "completed" };
+      },
+      reauthorize: async () => scopeA,
+      owner: `t24-${tag}-${randomUUID()}`,
+    });
+  await Promise.all([workerForOwner("a").sweep(), workerForOwner("b").sweep()]);
+
+  // The lease is the exclusion: one claim wins, the other worker takes nothing.
+  expect(invocations.length).toBe(1);
+  expect((await executions.get(scopeA, row.id))?.state).toBe("completed");
+  expect((await auditRows(row.id)).length).toBe(1);
+});
+
+test("a worker runs at most its concurrency bound at once", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment();
+  const ids: string[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    ids.push((await executions.enqueue(scopeA, experiment.id)).id);
+  }
+
+  let active = 0;
+  let peak = 0;
+  const worker = workerFor(
+    async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      active -= 1;
+      return { status: "completed" };
+    },
+    { concurrency: 2 },
+  );
+  await worker.sweep();
+  await worker.sweep();
+  await worker.sweep();
+
+  expect(peak).toBe(2);
+  const settled = await Promise.all(
+    ids.map((id) => executions.get(scopeA, id)),
+  );
+  expect(settled.map((row) => row?.state)).toEqual([
+    "completed",
+    "completed",
+    "completed",
+    "completed",
+    "completed",
+  ]);
+});
+
+test("revocation between cases stops the run at the next case boundary, audited", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment(scopeA, {}, 3);
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  let authorizations = 0;
+  const worker = workerFor(async () => ({ status: "completed" }), {
+    reauthorize: async () => {
+      authorizations += 1;
+      return authorizations <= 2 ? scopeA : null;
+    },
+  });
+  await worker.sweep();
+
+  // Authorized at claim and before case 0; refused before case 1 — no case after
+  // the revocation runs, reads or consumes anything.
+  expect(authorizations).toBe(3);
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("cancelled");
+  expect(
+    (await executions.caseOutcomes(row.id)).map((outcome) => outcome.status),
+  ).toEqual(["completed"]);
+
+  const audited = await auditRows(row.id);
+  expect(audited.length).toBe(1);
+  expect(audited[0].payload).toMatchObject({
+    state: "cancelled",
+    executionId: row.id,
+  });
+});
+
+test("a cancelled execution stops scheduling cases it has not started", {
+  timeout: 30_000,
+}, async () => {
+  const { experiment } = await frozenExperiment(scopeA, {}, 3);
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  let ran = 0;
+  let release: (() => void) | null = null;
+  const hang = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const swept = workerFor(async () => {
+    ran += 1;
+    await hang;
+    return { status: "completed" };
+  }).sweep();
+  // Cancel while case 0 is mid-run: the case-start write-ahead guard finds a settled
+  // row before case 1 and the worker stops — cases 1 and 2 never start.
+  await until(
+    async () =>
+      (await executions.caseOutcomes(row.id)).some(
+        (outcome) => outcome.caseIndex === 0,
+      ) && ran === 1,
+    "case 0 is running",
+  );
+  await executions.cancelForActor(scopeA.actorId);
+  release!();
+  await swept;
+
+  expect(ran).toBe(1);
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("cancelled");
+  // What had already run is still the truth: case 0's outcome was recorded, not dropped.
+  expect(
+    (await executions.caseOutcomes(row.id)).map((outcome) => outcome.status),
+  ).toEqual(["completed"]);
+});
+
+test("cancelling an actor's executions leaves a settle audit row for each", async () => {
+  const { experiment } = await frozenExperiment();
+  const pending = await executions.enqueue(scopeA, experiment.id);
+  const noisy = await executions.enqueue(scopeA, experiment.id);
+  await executions.markRunning(noisy.id);
+  await executions.bumpToolRejections(noisy.id, 3);
+
+  const cancelled = await cancelExecutionsForActor(
+    { executions, audit },
+    scopeA.actorId,
+  );
+  expect(cancelled.length).toBe(2);
+  expect((await auditRows(pending.id))[0].payload).toMatchObject({
+    state: "cancelled",
+    toolRejections: 0,
+  });
+  // The mid-run refusal counter reaches the governance channel even on this path.
+  expect((await auditRows(noisy.id))[0].payload).toMatchObject({
+    state: "cancelled",
+    toolRejections: 3,
+  });
+});
+
+test("the case-outcome vocabulary is a database fact, and rows die with the execution", async () => {
+  const { experiment } = await frozenExperiment();
+  const row = await executions.enqueue(scopeA, experiment.id);
+  await executions.markRunning(row.id);
+
+  const refusal = await rejectionOf(
+    () => database.$client`
+      INSERT INTO ai_observation_execution_case_outcomes (execution_id, case_index, status)
+      VALUES (${row.id}, 0, 'queued')
+    `,
+  );
+  expect(refusal.code).toBe("23514");
+
+  // The outcome rows are the execution's own: when the execution row goes, they go.
+  await executions.markCaseStarted(row.id, 0);
+  await database
+    .delete(aiObservationExperimentExecutions)
+    .where(eq(aiObservationExperimentExecutions.id, row.id));
+  expect(await executions.caseOutcomes(row.id)).toEqual([]);
 });
