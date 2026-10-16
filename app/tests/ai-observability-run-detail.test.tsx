@@ -228,6 +228,22 @@ describe("the detail answers the full T11 contract (acceptance 1)", () => {
     // The value is the unavailable word, not a count — the explanation beside it is the
     // sentence that says unavailable is not zero ("not counted as 0 tokens").
   });
+
+  test("a state this build cannot name fails closed as unknown, keeping every other fact (Q-M1b)", async () => {
+    // A newer server may already speak a state the vocabulary has never heard of. The
+    // page answers with its own fail-closed word — never a crash, never a guess.
+    detailHandler = () =>
+      Response.json({
+        ...detailBody(),
+        run: { ...detailBody().run, state: "escalated" },
+      });
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("Unknown outcome"));
+    // The unnamed state costs its fact, not the page: the contract's rest stays.
+    expect(pageText(view)).toContain("21.9 s");
+    expect(pageText(view)).toContain("30 tokens");
+    expect(pageText(view)).not.toContain("Upstream unavailable");
+  });
 });
 
 describe("the availability block states coverage, binding and freshness (acceptance 2)", () => {
@@ -335,6 +351,28 @@ describe("loading and fault conditions keep the T02 vocabulary (acceptance 4)", 
     detailHandler = () => Response.json({ run: { runId: 42 } });
     const view = draw();
     await view.findByText("Upstream unavailable");
+  });
+
+  test("a present status without the upstream payload is the unavailable fault, never a crash (Q-M1a)", async () => {
+    // "present" is the promise that the record rides along; a 200 that breaks it — here
+    // by skipping metadata — is the store failing to answer, not a page that crashes
+    // halfway through rendering.
+    detailHandler = () =>
+      Response.json({
+        ...detailBody(),
+        upstream: {
+          status: "present",
+          opikTraceId: "trace-9",
+          state: "failed",
+          createdAt: "2026-10-16T09:30:05.000Z",
+          durationMs: 21_860,
+          usage: PROVIDER_USAGE,
+          capability: "detailed",
+        },
+      });
+    const view = draw();
+    await view.findByText("Upstream unavailable");
+    expect(view.queryByText("21.9 s")).toBeNull();
   });
 });
 
