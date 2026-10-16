@@ -65,6 +65,7 @@ import {
 import { createRunBindingStore } from "./ai-observability/bindings";
 import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
+import { createExperimentExecutionWorkerBoot } from "./ai-observability/execution-boot";
 import {
   createObservationExportStore,
   createObservationExportWorker,
@@ -5333,6 +5334,42 @@ if (opikBootConfig.enabled) {
             : { kind: "degraded", reason: observed.outcome.reason },
     }),
   );
+}
+
+/*
+ * The experiment execution worker (the T-routes closure ticket's boot wiring):
+ * submissions freeze and enqueue; this worker claims them and runs every case
+ * through the billed runner (T25) with the judge (T27, entrances from env) wrapped
+ * outside it, re-deriving live authorization per case. Enabled-only, like the export
+ * and retention workers above — and only when the one billing machinery evaluation
+ * calls are metered through exists; the submit route refuses the start fail-closed
+ * otherwise, so a deployment without it never accumulates unclaimable work.
+ */
+if (
+  opikBootConfig.enabled &&
+  billing !== undefined &&
+  usageOutbox !== undefined
+) {
+  const opikEvaluationCreditPolicy = billingSettings?.creditPolicy;
+  if (opikEvaluationCreditPolicy?.configured === true) {
+    createExperimentExecutionWorkerBoot({
+      database,
+      audit: bootAuditStore,
+      billing: {
+        creditWriter: billing.creditWriter,
+        outbox: usageOutbox,
+        policy: opikEvaluationCreditPolicy.models,
+        externalCustomerId: billing.externalCustomerKey,
+      },
+      canManageBot: aiObservabilityCanManageBot,
+      scopeEpoch: aiObservabilityScopeEpoch,
+      resolveActor: createActorResolver((userId) =>
+        roleRepository.rolesForUser(userId),
+      ),
+      observe: (observation) => opikModelSpans.record(observation),
+      env: process.env,
+    }).start();
+  }
 }
 
 /*
