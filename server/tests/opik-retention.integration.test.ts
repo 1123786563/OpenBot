@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
+import { createObservationExperimentStore } from "../src/ai-observability/experiments";
 import {
   createObservationExportStore,
   ExportError,
@@ -184,6 +185,10 @@ function workerFor(
     retention?: () => RetentionDays;
     owner?: string;
     concurrency?: number;
+    invalidateReads?: (input: {
+      scopeKey: string;
+      kind: string;
+    }) => Promise<void> | void;
   } = {},
 ): ObservationRetentionWorker {
   return createObservationRetentionWorker({
@@ -194,6 +199,7 @@ function workerFor(
     audit: createAuditStore(database),
     owner: input.owner ?? `t35-owner-${randomUUID()}`,
     concurrency: input.concurrency,
+    invalidateReads: input.invalidateReads,
   });
 }
 
@@ -849,4 +855,147 @@ test("export enqueue is capped: over the limit is an explicit refusal, never a s
   // Another actor's backlog is not this actor's refusal.
   const other = await capped.enqueue(scopeB, 10, { maxActive: 2 });
   expect(other.state).toBe("queued");
+});
+
+test("the deletion precondition: reader visibility revoked, the scope's affected exports stopped, read caches invalidated (M1)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+  // The scope's own in-flight export, and another scope's that must not be touched.
+  const own = await exportStore.enqueue(scopeA, 10);
+  const untouched = await exportStore.enqueue(scopeB, 10);
+  const invalidated: { scopeKey: string; kind: string }[] = [];
+
+  const upstream = fakePort({
+    rows: [{ id: traceId, status: "COMPLETED" }],
+    failFirstTraceDelete: true,
+  });
+  await workerFor({
+    port: upstream.port,
+    invalidateReads: (input) => {
+      invalidated.push(input);
+    },
+  }).sweep();
+
+  // Parked in failed — the deletion is in flight, which is exactly the state
+  // the precondition sequence exists for.
+  expect((await deletionsFor(scopeA))[0].state).toBe("failed");
+
+  // (a) Visibility revoked: the reader surface already answers not-found for the
+  // target under deletion, before any row has actually gone.
+  const runs = createRunsQueryService({
+    bindings: bindingStore,
+    config: () => enabledConfig,
+    port: upstream.port,
+  });
+  await expect(runs.detail(scopeA, binding.runId)).rejects.toMatchObject({
+    code: "RUN_NOT_FOUND",
+  });
+
+  // (b) The affected work is stopped: this scope's queued export is cancelled,
+  // and another scope's queued export is untouched.
+  expect((await exportStore.get(scopeA, own.id))?.state).toBe("cancelled");
+  expect((await exportStore.get(scopeB, untouched.id))?.state).toBe("queued");
+
+  // (c) The cache invalidation seam fired for the scope being deleted, only it.
+  expect(invalidated).toContainEqual({ scopeKey: scopeA.key, kind: "run" });
+  expect(invalidated.every((input) => input.scopeKey !== scopeB.key)).toBe(
+    true,
+  );
+
+  // The honest retry still completes, and the reader stays not-found — now
+  // because the row is truly gone.
+  await workerFor({ port: upstream.port }).sweep();
+  expect((await deletionsFor(scopeA))[0].state).toBe("deleted");
+  await expect(runs.detail(scopeA, binding.runId)).rejects.toMatchObject({
+    code: "RUN_NOT_FOUND",
+  });
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a deletion in flight hides its dataset and experiment from the readers (M1)", async () => {
+  // A dataset whose upstream delete fails: parked in failed, the park window the
+  // precondition sequence must cover. A fresh sibling stays fully readable.
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const expiring = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-hide-${randomUUID()}`,
+    cases: [oneCase(binding.runId)],
+  });
+  const fresh = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-keep-${randomUUID()}`,
+    cases: [oneCase(binding.runId)],
+  });
+  for (const dataset of [expiring.dataset, fresh.dataset]) {
+    await database
+      .update(aiObservationDatasets)
+      .set({
+        opikDatasetId: `ds-${randomUUID()}`,
+        syncState: "synced",
+      })
+      .where(eq(aiObservationDatasets.id, dataset.id));
+  }
+  await database
+    .update(aiObservationDatasets)
+    .set({ createdAt: sql`now() - interval '40 days'` })
+    .where(eq(aiObservationDatasets.id, expiring.dataset.id));
+
+  const upstream = fakePort({ failFirstDatasetDelete: true });
+  await workerFor({ port: upstream.port, concurrency: 8 }).sweep();
+  expect(
+    (await deletionsFor(scopeA)).find((r) => r.targetId === expiring.dataset.id)
+      ?.state,
+  ).toBe("failed");
+
+  // The readers answer not-found and empty for the target under deletion…
+  expect(await datasetStore.getDataset(scopeA, expiring.dataset.id)).toBeNull();
+  expect(await datasetStore.getVersion(scopeA, expiring.version.id)).toBeNull();
+  expect(await datasetStore.listVersions(scopeA, expiring.dataset.id)).toEqual(
+    [],
+  );
+  // …and stay whole for the sibling that is not.
+  expect(
+    await datasetStore.getDataset(scopeA, fresh.dataset.id),
+  ).not.toBeNull();
+  expect(
+    await datasetStore.listVersions(scopeA, fresh.dataset.id),
+  ).toHaveLength(1);
+
+  // Experiments delete locally in one pass, so an in-flight experiment is staged
+  // the way discovery always stages one: the deletion record itself. The reader
+  // must respect it — the same hide-first rule, proven on the record.
+  const pinned = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-ehide-${randomUUID()}`,
+    cases: [oneCase(binding.runId)],
+  });
+  const hiding = randomUUID();
+  const kept = randomUUID();
+  for (const id of [hiding, kept]) {
+    await database.insert(aiObservationExperiments).values({
+      id,
+      scopeKey: scopeA.key,
+      actorId: scopeA.actorId,
+      botId: scopeA.botId,
+      name: `t35-ehide-${id.slice(0, 8)}`,
+      datasetVersionId: pinned.version.id,
+      datasetContentHash: pinned.version.contentHash,
+      config: {},
+      state: "draft",
+      createdAt: sql`now() - interval '40 days'`,
+    });
+  }
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "experiment",
+    targetId: hiding,
+    retentionDays: 30,
+    state: "pending",
+  });
+  const experimentStore = createObservationExperimentStore(database);
+  expect(await experimentStore.getExperiment(scopeA, hiding)).toBeNull();
+  expect(await experimentStore.getExperiment(scopeA, kept)).not.toBeNull();
 });

@@ -34,6 +34,7 @@ import type {
   OpikPortResult,
   OpikTraceRow,
 } from "../src/ai-observability/opik-port";
+import { createRunsQueryService } from "../src/ai-observability/queries/runs";
 import { createRunsQueryRoutes } from "../src/ai-observability/routes/runs";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
@@ -927,5 +928,33 @@ describe("runs query — acceptance 4: the surface is read-only, never a proxy",
         (call) => call.op === "createTrace" || call.op === "writeSpans",
       ),
     ).toHaveLength(0);
+  });
+});
+
+describe("runs query — the M1 cache invalidation target", () => {
+  test("invalidate() drops the scope's cached window: the next read serves fresh upstream", async () => {
+    // The service, not the route: retention calls this seam per deletion (M1c),
+    // and the TTL here is long enough that only invalidate() can evict.
+    const port = fakePort({ rows: fiveRows });
+    const runs = createRunsQueryService({
+      bindings: {
+        latestAttempt: async () => null,
+      },
+      config: () => enabledConfig,
+      port: port.port,
+      windowSize: WINDOW,
+      cacheTtlMs: 60_000,
+    });
+
+    await runs.list(scopeA, {});
+    await runs.list(scopeA, {});
+    // The window served from cache: two reads total, one per fetch.
+    expect(reads(port.calls)).toBe(2);
+
+    runs.invalidate(scopeA);
+    await runs.list(scopeA, {});
+    // Evicted by the seam, not by the clock: the read face answers the
+    // post-deletion upstream on the very next call.
+    expect(reads(port.calls)).toBe(4);
   });
 });

@@ -30,7 +30,8 @@
  *    vanish with their job row, and a fresh connection cannot read any of it back.
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, type SQL, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import { getLogger } from "../../../shared/logger";
 import { workOwner } from "../../../shared/work-owner";
 import { type AuditStore, recordAuditEvent } from "../audit";
@@ -46,6 +47,10 @@ import { type Repeating, repeatAfterEach } from "../work/loop";
 import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
+import {
+  createObservationExportStore,
+  type ObservationExportStore,
+} from "./exports";
 import { type OpikPort, OpikPortError, type OpikPortResult } from "./opik-port";
 import { assertObservationScope } from "./scope";
 
@@ -139,6 +144,20 @@ export function effectiveRetention(
 
 /** The work-queue kind a deletion's claim ticket rides on. */
 export const RETENTION_WORK_KIND = "opik.retention";
+
+/**
+ * The visibility half of the deletion precondition (M1a): a target with a deletion
+ * record is already gone to readers — from discovery on, however long the upstream
+ * half then parks in `failed`. Reader paths append this to their WHERE clause with
+ * the target's id column; it answers "no deletion record exists for this target
+ * of this kind" through the (kind, target) unique index.
+ */
+export function notPendingDeletion(
+  kind: AiObservationDeletionKind,
+  target: PgColumn,
+): SQL {
+  return sql`not exists (select 1 from ai_observation_retention_deletions d where d.kind = ${kind} and d.target_id = ${target})`;
+}
 
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_POLL_MS = 5_000;
@@ -304,6 +323,21 @@ export type ObservationRetentionWorkerDeps = Readonly<{
   retention: () => RetentionDays;
   /** Where the deletion audit rows go. */
   audit: AuditStore;
+  /**
+   * The stop half of the deletion precondition (M1b): the store whose queued/running
+   * exports are cancelled before the scope's data face changes under a fetch in
+   * flight. Defaults to one built on the same database.
+   */
+  exportStore?: ObservationExportStore;
+  /**
+   * The cache half of the deletion precondition (M1c): an explicit invalidation
+   * call point per deletion. Wiring (T33) points this at the read surfaces' caches
+   * (the T11 window cache); until then the default is the honest no-op.
+   */
+  invalidateReads?: (input: {
+    scopeKey: string;
+    kind: AiObservationDeletionKind;
+  }) => Promise<void> | void;
   owner?: string;
   concurrency?: number;
   leaseMs?: number;
@@ -317,6 +351,7 @@ export function createObservationRetentionWorker(
   const log = getLogger("server");
   const db = deps.database;
   const store = createObservationRetentionStore(db);
+  const exportStore = deps.exportStore ?? createObservationExportStore(db);
   const queue = deps.queue ?? createWorkQueue(deps.database);
   const owner = deps.owner ?? workOwner("opik-retention");
   const concurrency = deps.concurrency ?? DEFAULT_CONCURRENCY;
@@ -587,6 +622,24 @@ export function createObservationRetentionWorker(
       .where(eq(aiObservationRetentionDeletions.id, id));
 
     try {
+      /*
+       * The M1 precondition sequence, before any deletion I/O: (a) visibility is
+       * already revoked — `notPendingDeletion` makes every reader treat a target
+       * with a deletion record as gone, from discovery on, however long the
+       * upstream half then parks in failed; (b) stop the affected work: a run's
+       * data face is what the scope's queued/running exports fetch, so they are
+       * settled cancelled before the deletion changes it under them; (c) drop the
+       * read caches, so no projection keeps serving what readers can no longer
+       * see. All three are idempotent — a retry pass runs the sequence again
+       * harmlessly.
+       */
+      if (record.kind === "run") {
+        await exportStore.cancelForScope(record.scopeKey);
+      }
+      await deps.invalidateReads?.({
+        scopeKey: record.scopeKey,
+        kind: record.kind,
+      });
       if (record.upstreamKind !== null && record.state !== "upstream_done") {
         const port = gate();
         const locator = Object.freeze({

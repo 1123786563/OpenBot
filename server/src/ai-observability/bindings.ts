@@ -6,6 +6,7 @@ import {
   aiObservationBindings,
 } from "../db/schema/ai-observability-bindings";
 import type { ObservationScope } from "./contracts";
+import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
 /**
@@ -260,6 +261,10 @@ export function createRunBindingStore(db: Database): RunBindingStore {
           and(
             eq(aiObservationBindings.scopeKey, scope.key),
             eq(aiObservationBindings.runId, runId),
+            // The M1a visibility rule: a binding under retention deletion is gone
+            // to readers from discovery on — the latest attempt falls back to the
+            // next one that is not being deleted.
+            notPendingDeletion("run", aiObservationBindings.id),
           ),
         )
         .orderBy(desc(aiObservationBindings.updatedAt))

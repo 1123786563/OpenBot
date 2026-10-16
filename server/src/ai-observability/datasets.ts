@@ -12,6 +12,7 @@ import {
 } from "../db/schema/ai-observability-datasets";
 import type { ObservationScope } from "./contracts";
 import { projectSafeFixture, projectSafeText } from "./redaction";
+import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
 /**
@@ -339,7 +340,14 @@ export function createObservationDatasetStore(
       const rows = await db
         .select()
         .from(aiObservationDatasets)
-        .where(scopeDataset(scope, id));
+        .where(
+          and(
+            scopeDataset(scope, id),
+            // The M1a visibility rule: a dataset under retention deletion is gone
+            // to readers from discovery on, versions and all.
+            notPendingDeletion("dataset", aiObservationDatasets.id),
+          ),
+        );
       return rows[0] ?? null;
     },
 
@@ -369,6 +377,12 @@ export function createObservationDatasetStore(
           and(
             eq(aiObservationDatasetVersions.id, versionId),
             eq(aiObservationDatasetVersions.scopeKey, scope.key),
+            // A version hides with its dataset: the deletion record targets the
+            // subject, the cascade will take the versions.
+            notPendingDeletion(
+              "dataset",
+              aiObservationDatasetVersions.datasetId,
+            ),
           ),
         );
       return rows[0] ?? null;
@@ -389,6 +403,12 @@ export function createObservationDatasetStore(
           and(
             eq(aiObservationDatasetVersions.scopeKey, scope.key),
             eq(aiObservationDatasetVersions.datasetId, datasetId),
+            // The M1a visibility rule, version-shaped: an in-flight dataset
+            // deletion answers an empty version list.
+            notPendingDeletion(
+              "dataset",
+              aiObservationDatasetVersions.datasetId,
+            ),
           ),
         )
         .orderBy(
