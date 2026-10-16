@@ -310,20 +310,35 @@ function readStoredCases(
  * (a jsonb numeric that parses past JS infinity — the T26-rev3 overflow leftover)
  * answer null too: an overflowed usage number is a non-numeric data fact, never an
  * `Infinity` on the wire.
+ *
+ * The deep discipline (T28-rev L-1, tightened in T29): the write path wraps every
+ * record field and array item of a projected payload in its own envelope, so a deep
+ * object without `state`, a bare primitive where an envelope belongs, or an unknown
+ * state word is storage damage, not content — it answers null, exactly like the shape
+ * violations readStoredCases classifies as CASE_RECORD_DAMAGED. The read never
+ * interprets what the contract cannot have produced.
  */
 function plainUsage(usage: SafeText | SafeValue | undefined): unknown {
   if (usage?.state !== "projected" || !("value" in usage)) return null;
+  /** An envelope: only projected content answers a value, every other state nulls. */
   const unwrap = (value: unknown): unknown => {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const state = (value as { state?: unknown }).state;
-      if (state === "omitted" || state === "truncated") return null;
-      if (state === "projected") {
-        return "value" in (value as object)
-          ? unwrap((value as { value: unknown }).value)
-          : "text" in (value as object)
-            ? unwrap((value as { text: unknown }).text)
-            : null;
-      }
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return null;
+    const envelope = value as { state?: unknown };
+    if (envelope.state === "projected") {
+      return "value" in envelope
+        ? payload((envelope as { value: unknown }).value)
+        : "text" in envelope
+          ? payload((envelope as { text: unknown }).text)
+          : null;
+    }
+    // omitted, truncated, or a word the contract never minted: withheld.
+    return null;
+  };
+  /** A payload: primitives serve as leaves; records and arrays hold envelopes only. */
+  const payload = (value: unknown): unknown => {
+    if (value !== null && typeof value === "object") {
+      if (Array.isArray(value)) return value.map(unwrap);
       const out: Record<string, unknown> = {};
       for (const [key, one] of Object.entries(
         value as Record<string, unknown>,
@@ -332,11 +347,9 @@ function plainUsage(usage: SafeText | SafeValue | undefined): unknown {
       }
       return out;
     }
-    if (Array.isArray(value)) return value.map(unwrap);
-    if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    return value;
+    return typeof value === "number" && !Number.isFinite(value) ? null : value;
   };
-  return unwrap(usage.value);
+  return payload(usage.value);
 }
 
 export type ExperimentResultService = Readonly<{
