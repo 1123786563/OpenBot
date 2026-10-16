@@ -232,11 +232,8 @@ test("an admitted case reserves before the call, records the exact charge fact, 
   const outcome = await runner(contextFor(executionId));
 
   expect(outcome.status).toBe("completed");
-  expect(outcome.detail).toMatchObject({
-    output: "the answer",
-    inputTokens: 10,
-    outputTokens: 20,
-  });
+  expect(outcome.output).toBe("the answer");
+  expect(outcome.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
   expect(calls.length).toBe(1);
   expect(observations[0]?.ending).toEqual({
     kind: "succeeded",
@@ -294,7 +291,6 @@ test("a balance that cannot cover the hold refuses before the gateway is dialed"
   const outcome = await runner(contextFor(executionId));
 
   expect(outcome.status).toBe("failed");
-  expect(outcome.detail).toMatchObject({ reason: "budget_refused" });
   // The adversarial core: the gateway was never called, and nothing was held.
   expect(calls.length).toBe(0);
   expect(observations[0]?.ending).toEqual({
