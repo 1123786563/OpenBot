@@ -60,7 +60,17 @@ export function ObservationDatasetDetailPage({
         },
       }}
       description={t("page.description")}
-      title={loaded ? loaded.dataset.name : t("detail.untitled")}
+      /* A pending read keeps the title blank rather than flashing the placeholder
+       * (T21-rev F5): the honest name arrives with the data, and an empty title is
+       * not a claim. A fault answers with the placeholder — the page it names is
+       * genuinely an unnamed, failed read. */
+      title={
+        screen.isPending
+          ? ""
+          : loaded
+            ? loaded.dataset.name
+            : t("detail.untitled")
+      }
     >
       {screen.isPending ? null : fault !== null ? (
         <StateNotice

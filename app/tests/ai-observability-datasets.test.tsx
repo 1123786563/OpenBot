@@ -26,7 +26,7 @@ import type {
   SavedDatasetVersionResult,
 } from "../../shared/ai-observability-datasets";
 import { ObservationDatasetDetailPage } from "../src/components/ai-observability/dataset-detail";
-import { ObservationDatasetsPage } from "../src/components/ai-observability/datasets-list";
+import { ObservationDatasetsBody } from "../src/components/ai-observability/datasets-list";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
 import "@/lib/i18n";
 import { queryClient } from "../src/query-client";
@@ -59,7 +59,8 @@ afterAll(() => GlobalRegistrator.unregister());
 const originalFetch = global.fetch;
 const requested: string[] = [];
 let listHandler: () => Response = () => Response.json(datasetsBody([]));
-let detailHandler: () => Response = () => Response.json(detailBody());
+let detailHandler: () => Response | Promise<Response> = () =>
+  Response.json(detailBody());
 let reviewHandler: () => Response = () => Response.json(reviewBody());
 let saveHandler: () => Response = () => Response.json(savedBody());
 
@@ -233,7 +234,12 @@ function draw(initial = "/bots/agent-1/evaluations") {
     path: "/bots/$agentId/evaluations",
     component: function TestDatasetsPage() {
       const { agentId } = listRoute.useParams();
-      return <ObservationDatasetsPage agentId={agentId} />;
+      /*
+       * The datasets section as the evaluations page mounts it (the Bot frame lives on
+       * ObservationEvaluationsPage, whose tests are the experiments file's) — the
+       * body is the mountable unit without the authenticated runtime.
+       */
+      return <ObservationDatasetsBody botId={agentId} />;
     },
   });
   const detailRoute = createRoute({
@@ -566,5 +572,65 @@ describe("content is text, never code (acceptance 7)", () => {
     const text = dialog.textContent ?? "";
     expect(text).toContain("<script>alert(1)</script>");
     expect(document.querySelector("script")).toBeNull();
+  });
+});
+
+/*
+ * The T21-rev leftovers this ticket was asked to pin (F3/F4/F5): the two sync states
+ * the list had no assertion for, the truncated branches of the projection markers,
+ * and the pending title that used to flash the placeholder before the data arrived.
+ */
+describe("T21-rev pinned leftovers", () => {
+  test("a syncing and a pending dataset row each keep their own sync word", async () => {
+    listHandler = () =>
+      Response.json(
+        datasetsBody([
+          datasetItem({
+            id: "ds-s",
+            name: "Syncing one",
+            syncState: "syncing",
+          }),
+          datasetItem({
+            id: "ds-p",
+            name: "Pending one",
+            syncState: "pending",
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("Syncing one"));
+    expect(pageText(view)).toContain("Syncing");
+    expect(pageText(view)).toContain("Waiting to sync");
+  });
+
+  test("a truncated projected field shows its content with the truncated marker", async () => {
+    const scripted = reviewBody();
+    reviewHandler = () =>
+      Response.json({
+        ...scripted,
+        preview: [
+          {
+            ...scripted.preview[0],
+            safeInput: { state: "truncated", text: "What is the refund" },
+            toolFixtures: { state: "truncated", value: { kb: { hits: 3 } } },
+          },
+        ],
+      });
+    const view = draw();
+    listHandler = () => Response.json(datasetsBody([]));
+    const { dialog } = await openReviewedDialog(view);
+    const text = dialog.textContent ?? "";
+    expect(text).toContain("What is the refund · Truncated");
+    expect(text).toContain('{"kb":{"hits":3}} · Truncated');
+  });
+
+  test("a pending detail keeps its title blank rather than flashing a placeholder", async () => {
+    detailHandler = () => new Promise<Response>(() => {});
+    const view = draw("/bots/agent-1/evaluations/ds-1");
+    // The read never settles: the honest name has not arrived, and no placeholder
+    // stands in for it (T21-rev F5 — the title flashes blank, not "Dataset").
+    await waitFor(() =>
+      expect(view.container.querySelector("h1")?.textContent).toBe(""),
+    );
   });
 });

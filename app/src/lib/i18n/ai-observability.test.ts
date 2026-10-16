@@ -41,6 +41,12 @@ const STATES_BY_NS: Record<string, readonly string[]> = {
   "ai-observability-evaluations": [
     ...STATES.filter((state) => state !== "basic"),
     "unscored",
+    /*
+     * `notFound` (#36 results): an experiment or execution this scope does not hold is
+     * a different answer than the manage gate's refusal to name the Bot, exactly as
+     * the runs detail (#19) keeps its two 404s apart.
+     */
+    "notFound",
   ],
   "ai-observability-admin": STATES,
 };

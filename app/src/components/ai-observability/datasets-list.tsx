@@ -7,7 +7,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BotSubpage } from "@/components/bot-profile/bot-subpage";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,23 +94,13 @@ function safeValueLine(value: SafeValue, t: MarkerTranslate): string {
 }
 
 /**
- * The datasets page body: the Bot frame plus the sections. Lives here rather than in the
- * route file so tests mount it without the authenticated runtime the layout drags in.
+ * The datasets section of the evaluations page: the frozen-version list and the save
+ * flow. The Bot frame lives one level up, on ObservationEvaluationsPage — the page the
+ * experiment chains (#36 #37) add their sections beside, per the route convention's
+ * one-URL decision — so this body is a mountable unit without the authenticated
+ * runtime the layout drags in.
  */
-export function ObservationDatasetsPage({ agentId }: { agentId: string }) {
-  const { t } = useTranslation("ai-observability-datasets");
-  return (
-    <BotSubpage
-      agentId={agentId}
-      description={t("page.description")}
-      title={t("page.title")}
-    >
-      {(agent) => <ObservationDatasetsBody botId={agent.id} />}
-    </BotSubpage>
-  );
-}
-
-function ObservationDatasetsBody({ botId }: { botId: string }) {
+export function ObservationDatasetsBody({ botId }: { botId: string }) {
   const { t } = useTranslation("ai-observability-datasets");
   const screen = useQuery(observationDatasetsQueryOptions(botId));
 
