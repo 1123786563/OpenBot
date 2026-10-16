@@ -1,11 +1,12 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { TransactionSQL } from "bun";
-import { and, eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { OBSERVATION_BOT_NOT_FOUND } from "../src/ai-observability/context";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
+import { createExecutionBudgetPrecheck } from "../src/ai-observability/execution-billing";
 import {
   createObservationExecutionStore,
   EXECUTION_WORK_KIND,
@@ -15,8 +16,10 @@ import { createObservationExperimentStore } from "../src/ai-observability/experi
 import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
+import { createCreditWriter } from "../src/billing/credits-writer";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
 import { aiObservationExperiments } from "../src/db/schema/ai-observability-experiments";
+import { billingCustomers } from "../src/db/schema/billing";
 import { auditEvents } from "../src/db/schema/core";
 import { workItems } from "../src/db/schema/work";
 import { opikTestDatabase } from "./support/opik-test-db";
@@ -37,7 +40,16 @@ const database = opikTestDatabase();
 const datasets = createObservationDatasetStore(database);
 const experiments = createObservationExperimentStore(database);
 const executions = createObservationExecutionStore(database);
+const writer = createCreditWriter(database);
 const prefix = `tr-${randomUUID().slice(0, 8)}`;
+
+/**
+ * The execution rows this suite actually started (every one comes out of a
+ * submit answer's executionId). The cleanup narrows to exactly these (T-routes
+ * review M1, the C-4 L-4 footing): a shared database must not lose other
+ * suites' in-flight rows to this suite's afterEach.
+ */
+const startedExecutionIds: string[] = [];
 
 // A file-unique scope: the suite runs concurrently with the other opik files on one
 // dedicated database, and a scope no other file writes keeps this file's rows out of
@@ -104,11 +116,24 @@ const submitUrl =
   "http://openbot.test/api/ai-observability/bots/agent-tr-routes/experiments";
 
 async function submit(app: ReturnType<typeof mountedApp>, body: unknown) {
-  return app.request(submitUrl, {
+  const response = await app.request(submitUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
+  // Every execution this suite creates rides a successful submit answer; the
+  // refusals (400/402/404) carry no executionId and track nothing.
+  try {
+    const answered = (await response.clone().json()) as {
+      executionId?: unknown;
+    };
+    if (typeof answered.executionId === "string") {
+      startedExecutionIds.push(answered.executionId);
+    }
+  } catch {
+    // A non-JSON body carries no execution to track.
+  }
+  return response;
 }
 
 const cancelUrl = (experimentId: string, executionId: string) =>
@@ -150,10 +175,19 @@ const auditRowsOf = async (eventType: string, targetId: string) =>
     );
 
 afterEach(async () => {
-  await database.delete(aiObservationExperimentExecutions);
-  await database
-    .delete(workItems)
-    .where(eq(workItems.kind, EXECUTION_WORK_KIND));
+  // This suite's own rows, by id — no full-table sweep, no other suite's rows
+  // (T-routes review M1).
+  for (const id of startedExecutionIds) {
+    await database
+      .delete(aiObservationExperimentExecutions)
+      .where(eq(aiObservationExperimentExecutions.id, id));
+    await database
+      .delete(workItems)
+      .where(
+        and(eq(workItems.kind, EXECUTION_WORK_KIND), eq(workItems.key, id)),
+      );
+  }
+  startedExecutionIds.length = 0;
   // Audit rows are append-only by trigger (and every assertion here addresses its
   // own experiment/execution id), so the trail accumulates on the dedicated database.
   await database.$client.begin(async (tx: TransactionSQL) => {
@@ -165,6 +199,11 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  // The funding customers the real-precheck guard test granted; grant/ledger
+  // rows stay, like every other billing side's dedicated database.
+  await database
+    .delete(billingCustomers)
+    .where(like(billingCustomers.externalId, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -394,6 +433,56 @@ describe("POST /bots/:botId/experiments — the submit face", () => {
     });
     expect(response.status).toBe(402);
     expect(await response.json()).toEqual({
+      error: "EXECUTION_BUDGET_REFUSED",
+    });
+  });
+
+  test("the production precheck seam: a funded deployment's submit starts, an unfunded one refuses 402", async () => {
+    // The seam exactly as the production assembly builds it (the review-H1
+    // guard's behavioral half): createExecutionBudgetPrecheck over the real
+    // credit ledger, not a test stub. A funded deployment must get past the
+    // gate; an unfunded one must refuse on the budget, not on a missing seam.
+    const version = await frozenVersion();
+    const funded = `${prefix}-funded`;
+    await writer.grantCredits({
+      externalCustomerId: funded,
+      source: "promo",
+      totalCents: 10_000,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      idempotencyKey: `${funded}-g-${randomUUID().slice(0, 6)}`,
+    });
+    const app = mountedApp(
+      { id: scopeA.actorId, role: "user" },
+      createExecutionBudgetPrecheck({
+        creditWriter: writer,
+        externalCustomerId: funded,
+      }),
+    );
+
+    const response = await submit(app, {
+      name: `${prefix}-exp-funded`,
+      datasetVersionId: version.id,
+      config: CONFIG,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { executionId: string };
+    expect(body.executionId).toBeTruthy();
+
+    const unfunded = `${prefix}-unfunded`;
+    const empty = mountedApp(
+      { id: scopeA.actorId, role: "user" },
+      createExecutionBudgetPrecheck({
+        creditWriter: writer,
+        externalCustomerId: unfunded,
+      }),
+    );
+    const refused = await submit(empty, {
+      name: `${prefix}-exp-unfunded`,
+      datasetVersionId: version.id,
+      config: CONFIG,
+    });
+    expect(refused.status).toBe(402);
+    expect(await refused.json()).toEqual({
       error: "EXECUTION_BUDGET_REFUSED",
     });
   });

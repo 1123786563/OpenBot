@@ -65,6 +65,7 @@ import {
 import { createRunBindingStore } from "./ai-observability/bindings";
 import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
+import { createExecutionBudgetPrecheck } from "./ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "./ai-observability/execution-boot";
 import {
   createObservationExportStore,
@@ -5156,6 +5157,23 @@ const aiObservability = createAiObservabilityRoutes({
   config: () => opikBootConfig,
   port: opikObservationPort,
   runsQuery: aiObservabilityRunsQuery,
+  // The review-H1 wiring: the submit route's start seam is the SAME billing gate the
+  // worker boot below runs under — the real precheck over the deployment's credit
+  // ledger, under the one gate that says a worker exists to claim what a submit
+  // enqueues. Absent (no metering machinery, or no enabled boot) the route keeps its
+  // own fail-closed refusal; present, a funded deployment's submit actually starts.
+  executionBilling:
+    opikBootConfig.enabled &&
+    billing !== undefined &&
+    usageOutbox !== undefined &&
+    billingSettings?.creditPolicy.configured === true
+      ? {
+          precheck: createExecutionBudgetPrecheck({
+            creditWriter: billing.creditWriter,
+            externalCustomerId: billing.externalCustomerKey,
+          }),
+        }
+      : undefined,
   // A listing that fails propagates: a 500 the page maps to its unavailable
   // fault, never a 200 with an empty list that reads as "nothing in scope".
   // (The T33-rev3 listBots minor, server side.)

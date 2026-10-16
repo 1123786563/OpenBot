@@ -1,7 +1,7 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { TransactionSQL } from "bun";
-import { eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import { createExecutionBudgetPrecheck } from "../src/ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "../src/ai-observability/execution-boot";
@@ -139,6 +139,13 @@ function boot(input: {
   return { worker, calls };
 }
 
+/**
+ * The executions this suite actually started. The cleanup narrows to exactly
+ * these (T-routes review M1, the C-4 L-4 footing): no full-table sweep, so a
+ * shared database keeps other suites' in-flight rows.
+ */
+const startedExecutionIds: string[] = [];
+
 /** One frozen dataset version + experiment, and the execution the service started. */
 async function submittedExecution(customer: string) {
   const datasets = createObservationDatasetStore(database);
@@ -171,7 +178,9 @@ async function submittedExecution(customer: string) {
       }),
     },
   });
-  return service.start(scope, experiment.id);
+  const execution = await service.start(scope, experiment.id);
+  startedExecutionIds.push(execution.id);
+  return execution;
 }
 
 const eventIdOf = (executionId: string, caseIndex: number) =>
@@ -188,13 +197,25 @@ async function grant(customer: string, totalCents: number) {
 }
 
 afterEach(async () => {
-  await database.delete(aiObservationExperimentExecutions);
-  await database
-    .delete(workItems)
-    .where(eq(workItems.kind, EXECUTION_WORK_KIND));
-  await database
-    .delete(usageOutbox)
-    .where(eq(usageOutbox.eventId, "opik-execution-case:%"));
+  // This suite's own rows, by id — no full-table sweep, no other suite's rows
+  // on the shared database (T-routes review M1).
+  for (const id of startedExecutionIds) {
+    await database
+      .delete(aiObservationExperimentExecutions)
+      .where(eq(aiObservationExperimentExecutions.id, id));
+    await database
+      .delete(workItems)
+      .where(
+        and(eq(workItems.kind, EXECUTION_WORK_KIND), eq(workItems.key, id)),
+      );
+    // This execution's usage facts, by the event-id shape evaluationCaseUsageId
+    // pins. Like, not eq — the review's L1: the old eq compared the column
+    // against the pattern string itself and matched zero rows, a fake cleanup.
+    await database
+      .delete(usageOutbox)
+      .where(like(usageOutbox.eventId, `opik-execution-case:${id}:%`));
+  }
+  startedExecutionIds.length = 0;
   await database.$client.begin(async (tx: TransactionSQL) => {
     await tx`select set_config('ai_observation.experiment_cleanup', 'on', true)`;
     await tx`select set_config('ai_observation.dataset_cleanup', 'on', true)`;
@@ -204,9 +225,9 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await database
-    .delete(usageOutbox)
-    .where(eq(usageOutbox.client, "opik_evaluation"));
+  // The per-execution cleanup above is this suite's whole usage_outbox footprint
+  // (every fact rides a startedExecutionIds event id), so no client-wide delete
+  // here (T-routes review M1) — a shared database keeps other suites' rows.
   await database.$client.close();
 });
 
