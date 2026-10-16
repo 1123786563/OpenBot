@@ -109,7 +109,9 @@ export function createProductionEvaluationCaseRunner(
         endedAt: new Date(),
         ending: { kind: "refused", code: "budget_refused" },
       });
-      return { status: "failed", detail: { reason: "budget_refused" } };
+      // The refusal's diagnosis rides the span observation and the settle's error
+      // code; the T28 outcome shape has no case-level reason field.
+      return { status: "failed" };
     }
 
     try {
@@ -137,28 +139,26 @@ export function createProductionEvaluationCaseRunner(
       });
       return {
         status: "completed",
-        detail: {
-          output: answer.output,
-          ...(knownUsage
-            ? {
+        output: answer.output,
+        ...(knownUsage
+          ? {
+              usage: {
                 inputTokens: answer.inputTokens,
                 outputTokens: answer.outputTokens,
-              }
-            : {}),
-        },
+              },
+            }
+          : {}),
       };
-    } catch (error) {
+    } catch {
       report({
         ...base,
         occurredAt: startedAt,
         endedAt: new Date(),
         ending: { kind: "failed", code: "provider_error" },
       });
-      // Bounded, honest failure detail; the store projects whatever shape lands.
-      return {
-        status: "failed",
-        detail: { error: String(error).slice(0, 200) },
-      };
+      // The bounded error text is gone with the detail field it lived in; the span
+      // observation keeps the `provider_error` diagnosis.
+      return { status: "failed" };
     }
   };
 }

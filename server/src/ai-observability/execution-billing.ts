@@ -124,6 +124,51 @@ export type EvaluationBillingDeps = Readonly<{
 }>;
 
 /**
+ * The token counts an exact charge can be priced from, or null when the cost must stay
+ * unknown. T28 carries a case's usage as `unknown` — the runner's own raw record, or
+ * the SafeValue envelope the T28 projection shapes (each count itself envelope-wrapped
+ * one level) — so every honest spelling unwraps here, and each count must be a finite
+ * number. An omitted or truncated envelope, a record without both counts, or a count
+ * that is not a finite number yields null: unknown cost, never zero (the T25 ruling).
+ */
+export function exactTokensOf(usage: unknown): {
+  inputTokens: number;
+  outputTokens: number;
+} | null {
+  // One envelope level is all the projection produces; deeper wrapping is not billable.
+  const counted = (value: unknown, unwrapped = false): number | null => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (unwrapped) return null;
+    if (value !== null && typeof value === "object") {
+      const envelope = value as { state?: unknown; value?: unknown };
+      if (envelope.state === "projected") {
+        return counted(envelope.value, true);
+      }
+    }
+    return null;
+  };
+  const seen =
+    usage !== null && typeof usage === "object" && !Array.isArray(usage)
+      ? (usage as { state?: unknown; value?: unknown })
+      : null;
+  const record =
+    seen?.state === "projected"
+      ? seen.value
+      : seen && !("state" in seen)
+        ? seen
+        : null;
+  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+    return null;
+  }
+  const fields = record as Record<string, unknown>;
+  const inputTokens = counted(fields.inputTokens);
+  const outputTokens = counted(fields.outputTokens);
+  return inputTokens !== null && outputTokens !== null
+    ? { inputTokens, outputTokens }
+    : null;
+}
+
+/**
  * The production case runner, billed: the T24 runner runs inside, its admission seam
  * answered by a real reservation, and the outcome that comes back is settled through
  * the same outbox the built-in path's calls settle through. The runner's contract is
@@ -206,18 +251,10 @@ export function createBilledEvaluationCaseRunner(
     };
 
     if (outcome.status === "completed") {
-      const detail = outcome.detail as
-        | { inputTokens?: unknown; outputTokens?: unknown }
-        | undefined;
-      if (
-        typeof detail?.inputTokens === "number" &&
-        typeof detail?.outputTokens === "number"
-      ) {
+      const tokens = exactTokensOf(outcome.usage);
+      if (tokens) {
         try {
-          const charged = calculateExactModelUsageCharge(modelPolicy, {
-            inputTokens: detail.inputTokens,
-            outputTokens: detail.outputTokens,
-          });
+          const charged = calculateExactModelUsageCharge(modelPolicy, tokens);
           await deps.billing.outbox.record({
             ...base,
             transactionId: eventId,
@@ -239,16 +276,18 @@ export function createBilledEvaluationCaseRunner(
           // price (audit A3's discipline): they ride the evidence row, hold retained.
           await evidence({
             ...base,
-            inputTokens: detail.inputTokens,
-            outputTokens: detail.outputTokens,
+            inputTokens: tokens.inputTokens,
+            outputTokens: tokens.outputTokens,
             reason: code,
           });
           throw new EvaluationCaseSettlementError(code);
         }
       }
-      // Usage never arrived: an unknown cost, never a zero. The evidence row carries no
-      // reservation facts, so the credits target holds it for review while the Lago
-      // target still meters the zero the call reported; the hold stays occupied.
+      // Usage never arrived, or arrived in a shape no exact charge can price (an
+      // envelope the projection did not fully carry): an unknown cost, never a zero.
+      // The evidence row carries no reservation facts, so the credits target holds it
+      // for review while the Lago target still meters the zero the call reported; the
+      // hold stays occupied.
       await evidence({
         ...base,
         inputTokens: 0,

@@ -94,7 +94,8 @@ describe("the production case runner makes one controlled, observed model call",
     ]);
     expect(outcome).toEqual({
       status: "completed",
-      detail: { output: "the answer", inputTokens: 10, outputTokens: 20 },
+      output: "the answer",
+      usage: { inputTokens: 10, outputTokens: 20 },
     });
     expect(observations).toMatchObject([
       {
@@ -114,6 +115,7 @@ describe("the production case runner makes one controlled, observed model call",
     const outcome = await runner(contextFor());
 
     expect(outcome.status).toBe("completed");
+    expect(outcome.usage).toBeUndefined();
     expect(observations[0]?.ending).toEqual({ kind: "usage_missing" });
   });
 
@@ -133,10 +135,7 @@ describe("the production case runner makes one controlled, observed model call",
 
     expect(admitted).toBe(1);
     expect(calls).toEqual([]);
-    expect(outcome).toEqual({
-      status: "failed",
-      detail: { reason: "budget_refused" },
-    });
+    expect(outcome).toEqual({ status: "failed" });
     expect(observations[0]?.ending).toEqual({
       kind: "refused",
       code: "budget_refused",
