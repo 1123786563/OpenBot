@@ -69,9 +69,9 @@
   },
   "filter": {
     "timeAll": "全部时间",
-    "timeHour": "最近 24 小时",
-    "timeDay": "最近 7 天",
-    "timeWeek": "最近 30 天"
+    "timeDay": "最近 24 小时",
+    "timeWeek": "最近 7 天",
+    "timeMonth": "最近 30 天"
   },
   "summary": {
     "healthTitle": "采集健康",

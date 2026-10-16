@@ -120,5 +120,14 @@ export function observationExportsQueryOptions(
         ? pollMs
         : false;
     },
+    /*
+     * Spec A6 (permission changes show up without a reload): the poll covers the
+     * in-flight case, but once every job settles it closes — and the app-wide
+     * QueryClient turns focus refetch off. This page opts back in so the tab
+     * returning to the foreground is a real refresh path in production, not
+     * only in tests: the next answer is the refusal, and the download button
+     * goes with the rows it belonged to.
+     */
+    refetchOnWindowFocus: true,
   });
 }

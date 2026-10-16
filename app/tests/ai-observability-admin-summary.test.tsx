@@ -126,8 +126,13 @@ function summaryBody(
  * mounts the CopilotKit runtime an admin summary has nothing to say to).
  */
 function draw(initial = "/admin/ai-observability") {
+  // The production QueryClient's globals (retry and focus refetch both off) —
+  // so a flip driven by visibilitychange here proves the page-level opt-in,
+  // not a library default the shipped app never had.
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false },
+    },
   });
   const rootRoute = createRootRoute();
   const adminRoute = createRoute({
@@ -249,6 +254,21 @@ describe("the page is no bypass around the API's scope (acceptance 1)", () => {
     const view = draw();
     await view.findByText("Upstream unavailable");
   });
+
+  test("a role narrowed while the admin stays on the page reaches them on focus", async () => {
+    // Spec A6, review Maj-2: this page has no poll and the app-wide QueryClient
+    // turns focus refetch off, so the opt-in is the only production path a
+    // narrowed role has to the person still looking — the tab regaining focus
+    // re-asks, and the refusal replaces the page's wider answer.
+    summaryHandler = () => Response.json(summaryBody([botSummary("bot-1")]));
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("bot-1"));
+    summaryHandler = () =>
+      Response.json({ error: "OBSERVATION_SCOPE_REFUSED" }, { status: 403 });
+    window.dispatchEvent(new Event("visibilitychange"));
+    await view.findByText("Outside your scope");
+    expect(pageText(view)).not.toContain("bot-1");
+  });
 });
 
 describe("filters, keyboard and narrow screens (acceptance 3)", () => {
@@ -273,6 +293,39 @@ describe("filters, keyboard and narrow screens (acceptance 3)", () => {
     await waitFor(() =>
       expect(requested[requested.length - 1].includes("timeFrom=")).toBeFalsy(),
     );
+  });
+
+  test("each time filter asks for the span its label names", async () => {
+    // Review Maj-1: the labels promised 24 hours / 7 days / 30 days while the
+    // copied-over milliseconds answered 1 hour / 1 day / 7 days — a "Last 30
+    // days" that silently summarized one week. The span sent is now asserted,
+    // not just the parameter's presence.
+    summaryHandler = () => Response.json(summaryBody([botSummary("bot-1")]));
+    const view = draw();
+    await waitFor(() => expect(pageText(view)).toContain("bot-1"));
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    for (const [label, span] of [
+      ["Last 24 hours", 86_400_000],
+      ["Last 7 days", 604_800_000],
+      ["Last 30 days", 2_592_000_000],
+    ] as const) {
+      const chip = view.getByRole("button", { name: label });
+      chip.focus();
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        const url = requested[requested.length - 1];
+        const params = new URLSearchParams(url.slice(url.indexOf("?") + 1));
+        const from = params.get("timeFrom");
+        const to = params.get("timeTo");
+        expect(from).not.toBeNull();
+        expect(to).not.toBeNull();
+        // Resolved from the clock at fetch time: anything within seconds of
+        // the named span is that span, not a neighbouring preset.
+        expect(
+          Math.abs(Date.parse(to ?? "") - Date.parse(from ?? "") - span),
+        ).toBeLessThan(5_000);
+      });
+    }
   });
 
   test("the filter row and per-Bot facts wrap instead of overflowing", async () => {
