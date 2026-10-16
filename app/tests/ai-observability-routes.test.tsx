@@ -33,6 +33,10 @@ const OBSERVABILITY_ROUTES = [
     url: "/bots/$agentId/evaluations/$datasetId",
     id: "/_authed/_app/bots/$agentId/evaluations/$datasetId",
   },
+  {
+    url: "/bots/$agentId/exports",
+    id: "/_authed/_app/bots/$agentId/exports",
+  },
   { url: "/admin/ai-observability", id: "/_authed/admin/ai-observability" },
 ];
 
@@ -89,11 +93,10 @@ describe("observability placeholder routes", () => {
   });
 
   test("a placeholder says what it is, announced as a status", () => {
-    for (const namespace of [
-      "ai-observability-runs",
-      "ai-observability-evaluations",
-      "ai-observability-admin",
-    ] as const) {
+    // Only the experiment chains (#36 #37) still ship a placeholder; the runs chain, the
+    // datasets chain and #42's two pages render real pages now, and their placeholder copy
+    // was deleted with the placeholder routes.
+    for (const namespace of ["ai-observability-evaluations"] as const) {
       /*
        * Queries come off the `render` result rather than the global `screen`: module imports
        * evaluate before `beforeAll` can install happy-dom, and `screen` bakes in its no-document

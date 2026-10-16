@@ -96,6 +96,7 @@ function projectedText(value: SafeValue | undefined): string | null {
 
 export function ObservationRunsList({ botId }: { botId: string }) {
   const { t } = useTranslation("ai-observability-runs");
+  const { t: tAdmin } = useTranslation("ai-observability-admin");
   const { formatNumber } = useDateTime();
 
   // The cursor stack is the page history: forward pushes, back pops, and page one is null.
@@ -242,7 +243,19 @@ export function ObservationRunsList({ botId }: { botId: string }) {
         ) : (
           <span />
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* The export status page is this page's sibling: the runs a person is looking
+              at are the runs an export packages. The label lives in the admin namespace,
+              the one #42 owns for export status copy. */}
+          <Button
+            render={
+              <Link params={{ agentId: botId }} to="/bots/$agentId/exports" />
+            }
+            size="sm"
+            variant="outline"
+          >
+            {tAdmin("exports.link")}
+          </Button>
           <Button
             disabled={cursors.length <= 1 || screen.isFetching}
             onClick={() => setCursors(cursors.slice(0, -1))}
