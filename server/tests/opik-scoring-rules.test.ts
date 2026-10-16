@@ -291,6 +291,40 @@ describe("operator truth tables", () => {
     ).toMatchObject({ reason: "non_numeric" });
   });
 
+  test("numeric: text parses only under the strict number grammar — implicit coercions never compare", () => {
+    const rs = rules([{ id: "eq", kind: "numeric", op: "==", expected: 0 }]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    // Number("") === 0 and Number("0x10") === 16 — the loose conversions must not reach a
+    // comparison; an empty or hex-literal text is honestly non_numeric.
+    for (const text of ["", "   ", "0x10"]) {
+      expect(scoreRunOutput(rs, textOutput(text)).results[0]).toMatchObject({
+        status: "failed",
+        reason: "non_numeric",
+      });
+    }
+    // Strict grammar still accepts trimmed decimal, negative, float and exponent forms.
+    const rs2 = rules([
+      { id: "t", kind: "numeric", op: "==", expected: 10 },
+      { id: "e", kind: "numeric", op: "==", expected: 1000 },
+    ]);
+    expect(rs2.ok).toBe(true);
+    if (!rs2.ok) return;
+    expect(scoreRunOutput(rs2, textOutput(" 10 ")).results[0]).toMatchObject({
+      status: "passed",
+    });
+    expect(scoreRunOutput(rs2, textOutput("10.0")).results[0]).toMatchObject({
+      status: "passed",
+    });
+    expect(scoreRunOutput(rs2, textOutput("1e3")).results[1]).toMatchObject({
+      status: "passed",
+    });
+    expect(scoreRunOutput(rs2, textOutput("-5")).results[0]).toMatchObject({
+      status: "failed",
+      reason: "comparison_false",
+    });
+  });
+
   test("json_path: deep nesting, every assert, arrays", () => {
     const rs = rules([
       {
@@ -482,6 +516,109 @@ describe("the three failure classes are explicit, never a 0", () => {
     });
     // No run-level error: the run itself evaluated fine.
     expect(scoreRunOutput(rs, textOutput("Paris")).error).toBeUndefined();
+  });
+
+  test("every operator with an expected operand type-checks it before it can score", () => {
+    // regex has no expected operand (pattern/flags are checked separately), so the four
+    // expected-bearing kinds each get one mistyped operand here.
+    const rs = rules([
+      { id: "exact", kind: "exact_match", expected: 7 },
+      { id: "cont", kind: "contains", expected: null },
+      { id: "numstr", kind: "numeric", op: ">", expected: "10" },
+      { id: "numbool", kind: "numeric", op: "<=", expected: true },
+      {
+        id: "jpc",
+        kind: "json_path",
+        path: "a.s",
+        assert: "contains",
+        expected: null,
+      },
+      {
+        id: "jpgt",
+        kind: "json_path",
+        path: "a.n",
+        assert: "gt",
+        expected: true,
+      },
+      {
+        id: "jpgte",
+        kind: "json_path",
+        path: "a.n",
+        assert: "gte",
+        expected: "0.5",
+      },
+      {
+        id: "jplt",
+        kind: "json_path",
+        path: "a.n",
+        assert: "lt",
+        expected: null,
+      },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(rs, textOutput("anything")).results;
+    for (const row of out) {
+      expect(row).toMatchObject({
+        status: "error",
+        code: "RULE_SYNTAX_INVALID",
+      });
+    }
+  });
+
+  test("json_path: a mistyped expected is a syntax error, never a coercion-passed score", () => {
+    // The review's G2 pair: `includes(null)` stringifies to "null", `2 > true` numericizes
+    // true to 1 — both must be refused as unscorable, not passed.
+    const rs = rules([
+      {
+        id: "g21",
+        kind: "json_path",
+        path: "a.s",
+        assert: "contains",
+        expected: null,
+      },
+      {
+        id: "g22",
+        kind: "json_path",
+        path: "a.n",
+        assert: "gt",
+        expected: true,
+      },
+      {
+        id: "ok",
+        kind: "json_path",
+        path: "a.n",
+        assert: "equals",
+        expected: "7",
+      },
+      {
+        id: "nul",
+        kind: "json_path",
+        path: "a.z",
+        assert: "equals",
+        expected: null,
+      },
+    ]);
+    expect(rs.ok).toBe(true);
+    if (!rs.ok) return;
+    const out = scoreRunOutput(
+      rs,
+      textOutput(
+        JSON.stringify({ a: { s: "null pointer deref", n: 2, z: null } }),
+      ),
+    ).results;
+    expect(out[0]).toMatchObject({
+      status: "error",
+      code: "RULE_SYNTAX_INVALID",
+    });
+    expect(out[1]).toMatchObject({
+      status: "error",
+      code: "RULE_SYNTAX_INVALID",
+    });
+    // equals keeps its strict-primitive contract: the string "7" is legal and strictly is
+    // not the number 7; null stays a legitimate expected.
+    expect(out[2]).toMatchObject({ status: "failed", reason: "not_equal" });
+    expect(out[3]).toMatchObject({ status: "passed" });
   });
 
   test("pattern and path size caps are syntax errors", () => {
