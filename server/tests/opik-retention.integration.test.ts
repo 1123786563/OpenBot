@@ -10,6 +10,7 @@ import {
   createObservationExportStore,
   ExportError,
 } from "../src/ai-observability/exports";
+import { createIdLinkStore } from "../src/ai-observability/id-links";
 import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
 import { createRunsQueryService } from "../src/ai-observability/queries/runs";
 import {
@@ -212,7 +213,11 @@ const oneCase = (runId: string) => ({
   sourceAttemptId: `attempt-${randomUUID()}`,
 });
 
-/** One terminal binding, optionally reconciled upstream, backdated `days` days. */
+/**
+ * One terminal binding — the terminal state written through the production `finish`
+ * seam (the T37-registered G1 fix, never a raw state UPDATE) — optionally reconciled
+ * upstream, backdated `days` days.
+ */
 async function expiredBinding(
   scope: typeof scopeA,
   input: { opikTraceId?: string | null; days?: number } = {},
@@ -224,11 +229,23 @@ async function expiredBinding(
     capability: "basic",
     expiresAt: new Date(Date.now() + 3_600_000),
   });
+  await bindingStore.finish(
+    scope,
+    binding.runId,
+    binding.attemptId,
+    "completed",
+  );
+  if (input.opikTraceId) {
+    await bindingStore.reconcile(
+      scope,
+      binding.runId,
+      binding.attemptId,
+      input.opikTraceId,
+    );
+  }
   await database
     .update(aiObservationBindings)
     .set({
-      state: "completed",
-      opikTraceId: input.opikTraceId === undefined ? null : input.opikTraceId,
       createdAt: sql`now() - make_interval(secs => ${(input.days ?? 8) * 86_400})`,
     })
     .where(eq(aiObservationBindings.id, binding.id));
@@ -433,6 +450,53 @@ test("a reconciled run is deleted for real: rows, upstream copy, audit — verif
     .from(workItems)
     .where(eq(workItems.key, records[0].id));
   expect(ticket[0].finishedAt).not.toBeNull();
+});
+
+test("a run deletion takes its id-link mapping rows with it — zero residue (G2)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+
+  // The run's governed steps chained to the binding's own W3C trace: exactly the
+  // mapping rows the T37 probe found surviving a run deletion (its GAP-CHECK).
+  const idLinks = createIdLinkStore(database, { bindings: bindingStore });
+  for (const callId of [`call-${randomUUID()}`, `call-${randomUUID()}`]) {
+    const verdict = await idLinks.link(scopeA, {
+      local: { kind: "tool_step", id: callId },
+      upstream: { kind: "span", id: `span-${randomUUID()}` },
+      runRef: { runId: binding.runId, attemptId: binding.attemptId },
+      observedTraceId: binding.traceId,
+    });
+    expect(verdict).toEqual({ linked: true, replayed: false });
+  }
+  // Another run's mapping, same scope, not expiring with this one: the cleanup is
+  // the deleted run's own trace, never a scope-wide wipe.
+  const other = await expiredBinding(scopeA, { opikTraceId: null, days: 1 });
+  const otherVerdict = await idLinks.link(scopeA, {
+    local: { kind: "tool_step", id: `call-${randomUUID()}` },
+    upstream: { kind: "span", id: `span-${randomUUID()}` },
+    runRef: { runId: other.runId, attemptId: other.attemptId },
+    observedTraceId: other.traceId,
+  });
+  expect(otherVerdict).toEqual({ linked: true, replayed: false });
+
+  const upstream = fakePort({ rows: [{ id: traceId, status: "COMPLETED" }] });
+  await workerFor({ port: upstream.port }).sweep();
+
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  // Zero residue, on a connection this process never served from: the mapping rows
+  // of the deleted run are gone with its binding, in the same deletion transaction.
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_id_links where scope_key = ${scopeA.key}`,
+  ).toEqual([{ n: 1 }]);
+  // ...and the survivor is the other run's row, verifiably.
+  expect(
+    await fresh`select run_id from ai_observation_id_links where scope_key = ${scopeA.key}`,
+  ).toEqual([{ run_id: other.runId }]);
 });
 
 test("zero residue on the query surfaces after a sweep (AC3)", async () => {

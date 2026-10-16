@@ -38,6 +38,12 @@ loopback 上占用了这两个端口。两个栈抢一个端口的表现很像 O
 后端 API（8080）不对外发布，只经前端 nginx 反代（`http://frontend:5173/api`）。所有发布端口只绑
 `127.0.0.1` 与 `[::1]`。
 
+注意：本栈的 `otel-collector` 只 debug-export（span 只进 collector 日志），**不转发 traces 到
+Opik backend**（上游 2.2.100 同形）。走框架/SDK 路径的部署必须把
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 直指 backend 的
+`/api/v1/private/otel/v1/traces`（经前端反代）；误指 collector 的表现是 span 只出现在日志里、
+永远不进库。
+
 ## 健康检查
 
 ```bash

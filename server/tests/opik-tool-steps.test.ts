@@ -503,6 +503,14 @@ describe("the retrieval step recorder", () => {
       state: "projected",
       value: "vacation policy",
     });
+    // G3: the summary's id list lands as a BARE string array — the read contract
+    // (T18) reads `kb_ids` as strings, and the port's serializer unwraps only the
+    // outermost SafeValue envelope. Per-element envelopes reached the upstream row
+    // and blinded the read side's summary (the T37-registered gap).
+    expect(span.attributes?.kb_ids).toEqual({
+      state: "projected",
+      value: ["kb-1", "kb-2"],
+    });
     // Each fragment keeps its locators: which kb, which chunk, which document,
     // where it came from and how it scored.
     const fragmentsAttribute = span.attributes?.fragments as
@@ -582,6 +590,26 @@ describe("the retrieval step recorder", () => {
     expect(span.attributes?.input).toEqual({
       state: "omitted",
       reason: "credential",
+    });
+  });
+
+  test("a canary in a kb id withholds the whole list, never a partial one (G3)", async () => {
+    const { writes } = await recordRetrievalAndCapture({
+      occurredAt: startedAt,
+      endedAt,
+      query: "q",
+      kbIds: ["kb-1", CANARY_KEY],
+      outcome: { kind: "hit", fragments: [] },
+      scope: aScope(),
+    });
+    const span = writes[0].spans[0];
+    expect(JSON.stringify(span)).not.toContain(CANARY_KEY);
+    // A partial list would read as complete: one withheld id withholds the key.
+    expect(span.attributes?.kb_ids).toBeUndefined();
+    // The rest of the hit summary is untouched.
+    expect(span.attributes?.retrieval_outcome).toEqual({
+      state: "projected",
+      value: "hit",
     });
   });
 });

@@ -85,14 +85,21 @@ const rejectingUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
   return context.json({ error: "Authentication required." }, 401);
 };
 
-/** Records every begin() and answers idempotently like the real store's unique key. */
+/** Records every begin() and finish(), answering idempotently like the real store's unique key. */
 function fakeBindings() {
   const begins: Array<{
     scope: ObservationScope;
     input: BeginRunBindingInput;
   }> = [];
+  const finishes: Array<{
+    scope: ObservationScope;
+    runId: string;
+    attemptId: string;
+    state: string;
+  }> = [];
   const seen = new Set<string>();
-  const bindings: Pick<RunBindingStore, "begin"> = {
+  const settled = new Set<string>();
+  const bindings: Pick<RunBindingStore, "begin" | "finish"> = {
     async begin(scope, input) {
       begins.push({ scope, input });
       const key = `${scope.key}|${input.runId}|${input.attemptId}`;
@@ -103,8 +110,18 @@ function fakeBindings() {
         replayed,
       };
     },
+    async finish(scope, runId, attemptId, state) {
+      finishes.push({ scope, runId, attemptId, state });
+      const key = `${scope.key}|${runId}|${attemptId}`;
+      const first = !settled.has(key);
+      settled.add(key);
+      return {
+        binding: first ? ({ id: "settled" } as RunBinding) : null,
+        settled: first,
+      };
+    },
   };
-  return { begins, bindings };
+  return { begins, finishes, bindings };
 }
 
 const EPOCH = 3;
@@ -113,7 +130,7 @@ function appFor(
   rows: AgentProfile[],
   overrides: {
     middleware?: MiddlewareHandler<{ Variables: AppVariables }>;
-    bindings?: Pick<RunBindingStore, "begin">;
+    bindings?: Pick<RunBindingStore, "begin" | "finish">;
     scopeEpoch?: (
       actor: { id: string; role: string },
       botId: string,
@@ -135,7 +152,7 @@ function appFor(
       bindings: overrides.bindings ?? fake.bindings,
     }),
   );
-  return { app, begins: fake.begins };
+  return { app, begins: fake.begins, finishes: fake.finishes };
 }
 
 function post(
@@ -629,5 +646,76 @@ describe("POST / basic run reporting seam", () => {
     const response = await post(app, report([{ type: "success" }]));
     expect(response.status).toBe(403);
     expect(begins).toHaveLength(0);
+  });
+});
+
+describe("POST / — the binding terminal state's production writer (G1)", () => {
+  test("a terminal report settles the binding onto the observed state", async () => {
+    const { app, finishes } = appFor([profile()]);
+    const response = await post(
+      app,
+      report([{ type: "run_started" }, { type: "success" }]),
+    );
+    expect(response.status).toBe(200);
+    expect(finishes).toEqual([
+      {
+        scope: expect.objectContaining({
+          key: scopeKey(owner.id, "agent-1", EPOCH),
+        }),
+        runId: "run-1",
+        attemptId: "attempt-1",
+        state: "completed",
+      },
+    ]);
+  });
+
+  test("each terminal outcome maps onto its own binding state", async () => {
+    const { app, finishes } = appFor([profile()]);
+    await post(app, report([{ type: "error" }], { attemptId: "a-e" }));
+    await post(app, report([{ type: "canceled" }], { attemptId: "a-c" }));
+    await post(
+      app,
+      report([{ type: "retry", nextAttemptId: "attempt-2" }], {
+        attemptId: "a-r",
+      }),
+    );
+    await post(app, report([{ type: "interrupted" }], { attemptId: "a-i" }));
+    await post(app, report([{ type: "unknown" }], { attemptId: "a-u" }));
+    expect(finishes.map((finish) => finish.state)).toEqual([
+      "failed",
+      "canceled",
+      "interrupted",
+      "interrupted",
+      "unknown",
+    ]);
+  });
+
+  test("a report with no terminal event never settles the binding", async () => {
+    const { app, finishes } = appFor([profile()]);
+    for (const events of [
+      [{ type: "http_first_frame" }],
+      [{ type: "run_started" }],
+      [{ type: "disconnected" }],
+      [
+        { type: "tool_proposed", toolCallId: "t1" },
+        { type: "tool_executed", toolCallId: "t1" },
+      ],
+      [],
+    ] as RunObservationEvent[][]) {
+      const response = await post(app, report(events));
+      expect(response.status).toBe(200);
+    }
+    expect(finishes).toHaveLength(0);
+  });
+
+  test("a replayed terminal report still attempts the settle; the store's first-wins decides", async () => {
+    const { app, finishes } = appFor([profile()]);
+    await post(app, report([{ type: "success" }]));
+    const replay = await post(app, report([{ type: "success" }]));
+    expect((await replay.json()).binding.replayed).toBe(true);
+    // The seam asks twice; the store's conditional write is what keeps the
+    // standing outcome (verified against the real store in the integration suite).
+    expect(finishes).toHaveLength(2);
+    expect(finishes.every((finish) => finish.state === "completed")).toBe(true);
   });
 });

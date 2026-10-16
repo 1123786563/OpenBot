@@ -3,6 +3,7 @@ import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
+  type AiObservationBindingState,
   aiObservationBindings,
 } from "../db/schema/ai-observability-bindings";
 import type { ObservationScope } from "./contracts";
@@ -63,6 +64,21 @@ export type RunBindingStore = {
     attemptId: string,
     opikTraceId: string,
   ): Promise<{ binding: RunBinding; adopted: boolean }>;
+  /**
+   * The binding terminal state's one production writer (the T37-registered G1 seam): the
+   * run-termination event a terminal report carries moves the attempt's binding out of `running`
+   * onto the state the lifecycle observed. The first terminal write wins — a replayed or
+   * divergent later report changes nothing, exactly as the lifecycle refuses a straggler
+   * terminal event — and a binding that is already gone (retention won the race) settles
+   * nothing rather than resurrecting a row. This write is what makes the retention run
+   * discovery (`state <> 'running'`) reachable for real production bindings.
+   */
+  finish(
+    scope: ObservationScope,
+    runId: string,
+    attemptId: string,
+    state: Exclude<AiObservationBindingState, "running">,
+  ): Promise<{ binding: RunBinding | null; settled: boolean }>;
   /** Read one binding inside the caller's scope. Another scope's id is simply not found. */
   get(scope: ObservationScope, id: string): Promise<RunBinding | null>;
   /**
@@ -116,6 +132,10 @@ const capabilities: readonly AiObservationBindingCapability[] = [
   "detailed",
   "unavailable",
 ];
+
+/** The terminal vocabulary the schema's own CHECK admits beyond `running`. */
+const terminalStates: readonly Exclude<AiObservationBindingState, "running">[] =
+  ["completed", "failed", "canceled", "interrupted", "unknown"];
 
 /** A non-empty opaque reference. Values are stored as-is; only emptiness is refused. */
 function reference(value: string): string {
@@ -233,6 +253,46 @@ export function createRunBindingStore(db: Database): RunBindingStore {
           throw new Error("reconcile updated a row it cannot read back");
         }
         return { binding: adopted, adopted: true };
+      });
+    },
+
+    async finish(scope, runId, attemptId, state) {
+      assertObservationScope(scope);
+      reference(runId);
+      reference(attemptId);
+      if (!terminalStates.includes(state)) {
+        // `running` is not an outcome; nothing may write it back onto a binding.
+        throw new RunBindingError("BINDING_INPUT_INVALID", 400);
+      }
+
+      return db.transaction(async (tx) => {
+        // Lock the one row the authoritative key names, so two concurrent settles of
+        // the same attempt race in the database and exactly one wins.
+        const found = await tx
+          .select()
+          .from(aiObservationBindings)
+          .where(byAuthoritativeKey(scope, runId, attemptId))
+          .for("update");
+        const current = found[0];
+        if (!current) {
+          // A settle can only move a binding that is there. One retention already
+          // deleted is beyond settling — and never resurrected by a straggler report.
+          return { binding: null, settled: false };
+        }
+        if (current.state !== "running") {
+          // First terminal write wins; the standing outcome is the answer.
+          return { binding: current, settled: false };
+        }
+        const updated = await tx
+          .update(aiObservationBindings)
+          .set({ state, updatedAt: new Date() })
+          .where(eq(aiObservationBindings.id, current.id))
+          .returning();
+        const settled = updated[0];
+        if (!settled) {
+          throw new Error("finish updated a row it cannot read back");
+        }
+        return { binding: settled, settled: true };
       });
     },
 
