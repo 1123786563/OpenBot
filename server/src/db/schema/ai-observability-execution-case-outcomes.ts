@@ -26,9 +26,10 @@ import { aiObservationExperimentExecutions } from "./ai-observability-executions
  * The status vocabulary is its own four words, deliberately not the execution
  * row's five: `in_flight` is the write-ahead marker only that table can carry,
  * and `unknown` is an ending the runner could not observe — the same honesty
- * word T23 gave case outcomes. `detail` holds the projected outcome envelope
- * and may not exist on an `in_flight` row: a marker carries nothing it has not
- * learned yet.
+ * word T23 gave case outcomes. `detail` holds the case's projected output and
+ * usage envelopes — each projected once at record time with its own budget
+ * (T28's result contract) — and may not exist on an `in_flight` row: a marker
+ * carries nothing it has not learned yet.
  */
 export type AiObservationCaseOutcomeStatus =
   | "in_flight"

@@ -266,7 +266,11 @@ test("the worker executes frozen cases, refusing and counting write tools", {
     seen.push(await one.callTool("search"));
     seen.push(await one.callTool("calendar_create"));
     seen.push(await one.callTool("never_heard_of_it"));
-    return { status: "completed", detail: { answered: true } };
+    return {
+      status: "completed",
+      output: "A one-paragraph outage summary.",
+      usage: { tokens_input: 120, tokens_output: 45 },
+    };
   });
   await worker.sweep();
 
@@ -295,31 +299,25 @@ test("the worker executes frozen cases, refusing and counting write tools", {
   expect(settled?.state).toBe("completed");
   expect(settled?.caseCount).toBe(1);
   expect(settled?.toolRejections).toBe(2);
-  // The result is assembled from the per-case write-ahead rows, each already projected
-  // once at record time (T24): `detail` is the stored envelope embedded as-is, so it is
-  // not projected — or depth-cut — a second time. No naked text reaches this column.
+  // The result is assembled from the per-case write-ahead rows (T24), landing the
+  // T28 contract: one record per case, each field's envelope already projected once
+  // at record time with its own budget — embedded as-is, not projected or depth-cut
+  // a second time. No naked free text reaches this column, at any depth.
   expect(settled?.result).toEqual({
-    state: "projected",
-    value: {
-      cases: {
-        state: "projected",
-        value: [
-          {
-            state: "projected",
-            value: {
-              index: { state: "projected", value: 0 },
-              status: { state: "projected", value: "completed" },
-              detail: {
-                state: "projected",
-                value: {
-                  answered: { state: "projected", value: true },
-                },
-              },
-            },
+    cases: [
+      {
+        index: 0,
+        status: "completed",
+        output: { state: "projected", text: "A one-paragraph outage summary." },
+        usage: {
+          state: "projected",
+          value: {
+            tokens_input: { state: "projected", value: 120 },
+            tokens_output: { state: "projected", value: 45 },
           },
-        ],
+        },
       },
-    },
+    ],
   });
 
   // The governance channel: the settle row carries the refusal counter and the projected
@@ -564,7 +562,7 @@ test("a lease takeover resumes without re-running completed cases, and never re-
   const sweptA = workerFor(async (one) => {
     invocations.push(one.caseIndex);
     if (one.caseIndex === 2) await hang;
-    return { status: "completed", detail: { by: `a-${one.caseIndex}` } };
+    return { status: "completed", output: `a-${one.caseIndex}` };
   }).sweep();
   await until(
     async () =>
