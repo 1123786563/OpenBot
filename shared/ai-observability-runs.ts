@@ -1,7 +1,8 @@
-import type { SafeRecord } from "./ai-observability";
+import type { SafeRecord, SafeValue } from "./ai-observability";
 
 /**
- * The wire contract of the creator's runs API (Issue #17 list/detail, extended for Issue #18).
+ * The wire contract of the creator's runs API (Issue #17 list/detail, extended for Issue #18
+ * and Issue #24's step timeline).
  *
  * This file is the ONE place the runs list contract is defined: the server's query service
  * answers these shapes, the browser renders these shapes, and a contract change is a change
@@ -83,4 +84,52 @@ export type RunDetailResult = {
     | ({ status: "present" } & RunSummary)
     | { status: "unreconciled" }
     | { status: "absent" };
+};
+
+/*
+ * The run's step timeline (Issue #24), one node per recorded span — T14's model spans and
+ * T15's tool and retrieval steps. The wire follows the span families the recorders write:
+ * each node carries the span's own locator and parent (display facts, never authorization),
+ * T15's three-way execution determination for tool steps, and the retrieval seam's outcome
+ * summary. Terminal states speak the same RunState vocabulary the whole chain already
+ * renders; content survives only as T05 projections (SafeValue), exactly like metadata.
+ */
+export type RunStepKind = "model" | "tool" | "retrieval";
+
+/** T15's determination, verbatim — the only words the step tree may use for it. */
+export type RunStepExecutionState = "proposed" | "executed" | "unobserved";
+
+/** The terminal vocabulary a step span may settle into (T15's toolStepTerminalState). */
+export type RunStepState = "completed" | "failed" | "canceled" | "unknown";
+
+/** One retrieval step's outcome summary, along T15's retrieval seam shape. */
+export type RunStepRetrieval =
+  | { outcome: "hit"; fragmentCount: number; kbIds: readonly string[] }
+  | { outcome: "miss" }
+  | { outcome: "degraded"; reason: string };
+
+export type RunStep = {
+  kind: RunStepKind;
+  /** The step's own span id; with parentSpanId it fixes the tree's nesting. */
+  spanId: string;
+  /** The recorded parent, or null at the root. A dangling id nests at the root. */
+  parentSpanId: string | null;
+  /** The projected span name minus its kind prefix (a tool name, a model id). */
+  name: string | null;
+  state: RunStepState;
+  /** The span's window, ISO strings; startedAt is the timeline's sort key. */
+  startedAt: string;
+  endedAt: string;
+  /** Tool steps only: T15's determination over the three separately observed facts. */
+  executionState?: RunStepExecutionState;
+  /** The projected call arguments, or the retrieval query. */
+  input?: SafeValue | null;
+  /** The projected result or error text. */
+  output?: SafeValue | null;
+  /** Retrieval steps only. */
+  retrieval?: RunStepRetrieval;
+};
+
+export type RunStepsResult = {
+  steps: readonly RunStep[];
 };

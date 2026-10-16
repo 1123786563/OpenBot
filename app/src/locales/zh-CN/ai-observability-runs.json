@@ -83,7 +83,27 @@
       "absentDescription": "该运行已在上游对账，但存储只服务最近的运行，因此其上游详情无法展示。运行本身不受影响。"
     },
     "metadataEmpty": "该运行没有可投影的元数据。",
-    "stepsPlaceholder": "步骤记录功能落地后，步骤时间线将在此渲染。在那之前，本页只展示整次运行的事实。"
+    "steps": {
+      "kind": {
+        "model": "模型调用",
+        "tool": "工具调用",
+        "retrieval": "知识检索"
+      },
+      "execution": {
+        "proposed": "已提议，未执行",
+        "executed": "已在此真实执行",
+        "unobserved": "执行未被观测"
+      },
+      "empty": "该运行没有记录到步骤。",
+      "basicNote": "该运行为基础覆盖：只记录 OpenBot 自身观察到的内容。远程 Agent 内部的步骤不可见，其缺失并不代表没有发生。",
+      "coverageNote": "该运行的覆盖未经证实，因此无法给出可信的步骤树。",
+      "noResults": "没有返回片段",
+      "degraded": "降级：{{reason}}",
+      "fragments_one": "{{count}} 个片段",
+      "fragments_other": "{{count}} 个片段",
+      "kbs_one": "{{count}} 个知识库",
+      "kbs_other": "{{count}} 个知识库"
+    }
   },
   "states": {
     "running": "运行中",

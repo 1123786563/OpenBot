@@ -83,7 +83,27 @@
       "absentDescription": "This run reconciled upstream, but the store only serves the most recent runs, so its upstream detail cannot be shown. The run itself is unaffected."
     },
     "metadataEmpty": "No metadata was projected for this run.",
-    "stepsPlaceholder": "The step timeline will render here once step recording ships. Until then this page shows whole-run facts only."
+    "steps": {
+      "kind": {
+        "model": "Model call",
+        "tool": "Tool call",
+        "retrieval": "Knowledge retrieval"
+      },
+      "execution": {
+        "proposed": "Proposed, not executed",
+        "executed": "Executed here",
+        "unobserved": "Execution unobserved"
+      },
+      "empty": "No steps were recorded for this run.",
+      "basicNote": "This run has basic coverage: only what OpenBot itself observed is recorded. Steps inside the remote Agent are not visible, and their absence is not evidence they did not happen.",
+      "coverageNote": "Coverage is unverified for this run, so no step tree can be vouched for.",
+      "noResults": "No fragments returned",
+      "degraded": "Degraded: {{reason}}",
+      "fragments_one": "{{count}} fragment",
+      "fragments_other": "{{count}} fragments",
+      "kbs_one": "{{count}} knowledge base",
+      "kbs_other": "{{count}} knowledge bases"
+    }
   },
   "states": {
     "running": "Running",

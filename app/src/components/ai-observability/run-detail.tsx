@@ -20,7 +20,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { observationRunDetailQueryOptions } from "@/lib/ai-observability/runs";
 import { useDateTime } from "@/lib/i18n/datetime";
-import type { SafeValue } from "../../../../shared/ai-observability";
+import { ObservationRunSteps, projectedValueText } from "./run-steps";
 import { formatDuration, STATE_ICONS, StateNotice } from "./runs-list";
 
 /*
@@ -30,31 +30,9 @@ import { formatDuration, STATE_ICONS, StateNotice } from "./runs-list";
  * upstream binding status and data freshness are answers about the record's trustworthiness,
  * and a reader who wants only those should not have to re-read the facts to find them.
  *
- * The steps section is a mount point, not a step tree: T18 renders into it later, and until
- * then it says so in one honest sentence rather than drawing rows it cannot vouch for (the
- * Spec is explicit that unobservable internal steps are never shown as if they were facts).
+ * The steps section is T18's step tree: the recorded timeline of model, tool and retrieval
+ * spans, gated by the coverage verdict, never a row the record cannot vouch for.
  */
-
-/** A metadata leaf as display text, whatever the projection did to it. */
-function metadataText(
-  value: SafeValue,
-  truncatedMarker: string,
-): string | null {
-  switch (value.state) {
-    case "omitted":
-      return null;
-    case "truncated":
-      return `${projectedText(value.value)} · ${truncatedMarker}`;
-    case "projected":
-      return projectedText(value.value);
-  }
-}
-
-function projectedText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined) return "";
-  return JSON.stringify(value) ?? "";
-}
 
 /** One label-and-value row; the optional note is the "why" behind an unavailable value. */
 type FactRowSpec = {
@@ -215,7 +193,8 @@ export function ObservationRunDetail({
       : Object.entries(present.metadata).map(([key, value]) => ({
           label: key,
           value:
-            metadataText(value, t("marker.truncated")) ?? t("marker.omitted"),
+            projectedValueText(value, t("marker.truncated")) ??
+            t("marker.omitted"),
         }));
 
   return (
@@ -240,11 +219,14 @@ export function ObservationRunDetail({
         )}
       </PageSection>
 
-      {/* T18's mount point: the step tree renders into this section, same page, same facts. */}
+      {/* T18's step tree: same page, same facts, gated by the coverage verdict above. */}
       <PageSection title={t("detail.section.steps")}>
-        <p className="mt-4 max-w-prose text-muted-foreground text-sm">
-          {t("detail.stepsPlaceholder")}
-        </p>
+        <ObservationRunSteps
+          botId={botId}
+          capability={run.capability}
+          runId={runId}
+          upstream={upstream.status}
+        />
       </PageSection>
     </>
   );
