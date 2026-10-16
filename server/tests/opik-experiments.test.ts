@@ -241,9 +241,14 @@ describe("the configuration hash is stable, canonical and policy-bound", () => {
     // Computed once and frozen here so a future refactor cannot silently rehash every
     // submitted experiment into "new" ones. If this breaks on purpose, the policy/migration
     // story must say so loudly — bumping the algorithm re-keys every experiment.
+    //
+    // Re-keyed ON PURPOSE by Issue #29 / T23: the frozen configuration gained the
+    // `readOnlyTools` field (an empty list here), so every configuration hashes differently
+    // than the T22 golden `77d39ab5...`. Opik is pre-production; no frozen row predates
+    // the field. The new golden pins the shape that carries the whitelist.
     expect(
       experimentConfigHash("version-1", frozen, REDACTION_POLICY_VERSION),
-    ).toBe("77d39ab56a32691f8b088a0d53ee04cc7b3bf1ce8415264a9532a50501a5f9c3");
+    ).toBe("444df837fa18ca89265c35224acbf58d107b197ca01e1709af3d95423a1d8967");
   });
 });
 

@@ -11,7 +11,11 @@ import { aiObservationDatasetVersions } from "../db/schema/ai-observability-data
 import { aiObservationExperiments } from "../db/schema/ai-observability-experiments";
 import type { ObservationScope } from "./contracts";
 import { canonicalJson } from "./datasets";
-import { projectSafeFixture, projectSafeText } from "./redaction";
+import {
+  projectSafeFixture,
+  projectSafeName,
+  projectSafeText,
+} from "./redaction";
 import { assertObservationScope } from "./scope";
 
 /**
@@ -66,6 +70,13 @@ export type ExperimentConfigInput = {
   judgeConfig: Record<string, unknown>;
   /** The judge/scorer version — the scoring code this experiment is pinned to. */
   judgeVersion: string;
+  /**
+   * The read-only tool whitelist (Issue #29 / T23): the only tool names evaluation
+   * execution may even consider calling. Every name outside it — including any tool
+   * the model invents — is refused in the evaluation context. Optional at input; a
+   * freeze without one is an empty whitelist, which refuses everything.
+   */
+  readOnlyTools?: readonly string[];
 };
 
 /** The same configuration as a freeze holds it: projected fields, nothing raw. */
@@ -77,9 +88,13 @@ export type FrozenExperimentConfig = Readonly<{
   toolFixtures: SafeValue;
   judgeConfig: SafeValue;
   judgeVersion: SafeText;
+  /** Sorted, deduplicated, projected: the whitelist is part of the hashed identity. */
+  readOnlyTools: readonly SafeText[];
 }>;
 
 export const MAX_EXPERIMENT_NAME_BYTES = 128;
+/** How many tool names one whitelist may hold — a list longer than any Bot's reach. */
+export const MAX_READ_ONLY_TOOLS = 64;
 
 export type ObservationExperiment =
   typeof aiObservationExperiments.$inferSelect;
@@ -146,6 +161,14 @@ function validateInput(input: SaveExperimentInput) {
   structure(config.toolFixtures);
   structure(config.judgeConfig);
   reference(config.judgeVersion);
+  const tools = config.readOnlyTools ?? [];
+  if (
+    !Array.isArray(tools) ||
+    tools.length > MAX_READ_ONLY_TOOLS ||
+    tools.some((name) => typeof name !== "string" || name.trim() === "")
+  ) {
+    throw new ExperimentStoreError("EXPERIMENT_INPUT_INVALID", 400);
+  }
   return name;
 }
 
@@ -161,6 +184,13 @@ export function freezeExperimentConfig(
     toolFixtures: projectSafeFixture(structure(config.toolFixtures)),
     judgeConfig: projectSafeFixture(structure(config.judgeConfig)),
     judgeVersion: projectSafeText(config.judgeVersion, { allowFreeText: true }),
+    // Sorted and deduplicated so the whitelist is a set in canonical form: submitting
+    // the same tools in another order is the same configuration, the same hash, the
+    // same experiment. Each name is projected, so a name the redaction policy refuses
+    // drops out (it can never match a call) rather than widening what may run.
+    readOnlyTools: [...new Set(config.readOnlyTools ?? [])]
+      .sort()
+      .map((name) => projectSafeName(name)),
   };
 }
 
