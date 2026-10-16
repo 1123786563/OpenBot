@@ -417,8 +417,8 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
    * The run's governed span tree, opened before the stream so the framework's model, tool and
    * retrieval spans hang from it through the ambient context. One handler per run: its run-id →
    * span map must never outlive the run that built it. The span's capability attribute is
-   * `basic` today, because the internal step shape is not verified on a real instance yet —
-   * `FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE` flips only when T37 has verified it.
+   * `detailed` since T37 verified the internal step shape on a real instance
+   * (docs/plans/evidence/2026-10-16-issue4/T37/evidence/b1-framework-rows.json).
    */
   const callbacks = new GovernedCallbackHandler();
   const governedRun = governedRunSpan(input);

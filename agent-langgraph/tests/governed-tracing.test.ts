@@ -119,15 +119,18 @@ describe("the capability verdict (Issue #22: unverified is never detailed)", () 
     ).toBe("detailed");
   });
 
-  test("the wiring constant stays false until T37 verifies on a real instance", () => {
-    expect(FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE).toBe(false);
-    // The verdict this module stamps on every run span today: honest basic, never detailed.
+  test("the wiring constant is true: T37 verified the shape on a real instance", () => {
+    // T37 probe B (2026-10-16, opik-issue4-validation stack): run → chain → model/tool/
+    // retrieval parent-child nesting verified over the governed OTLP path; evidence in
+    // docs/plans/evidence/2026-10-16-issue4/T37/evidence/b1-framework-rows.json.
+    expect(FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE).toBe(true);
+    // The verdict this module stamps on every run span now: detailed, on verified evidence.
     expect(
       resolveFrameworkCapability({
         internalStepsVerified: FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE,
         observedEvents: true,
       }),
-    ).toBe("basic");
+    ).toBe("detailed");
   });
 });
 
