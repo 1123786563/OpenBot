@@ -39,9 +39,12 @@ const experiments = createObservationExperimentStore(database);
 const executions = createObservationExecutionStore(database);
 const prefix = `tr-${randomUUID().slice(0, 8)}`;
 
+// A file-unique scope: the suite runs concurrently with the other opik files on one
+// dedicated database, and a scope no other file writes keeps this file's rows out of
+// every other file's window (and theirs out of this one's).
 const scopeA = resolveObservationScope({
-  actorId: "user-a",
-  botId: "agent-1",
+  actorId: "user-tr-routes",
+  botId: "agent-tr-routes",
   ownership: "owner",
   epoch: 1,
 });
@@ -98,7 +101,7 @@ function mountedApp(
 }
 
 const submitUrl =
-  "http://openbot.test/api/ai-observability/bots/agent-1/experiments";
+  "http://openbot.test/api/ai-observability/bots/agent-tr-routes/experiments";
 
 async function submit(app: ReturnType<typeof mountedApp>, body: unknown) {
   return app.request(submitUrl, {
@@ -109,7 +112,7 @@ async function submit(app: ReturnType<typeof mountedApp>, body: unknown) {
 }
 
 const cancelUrl = (experimentId: string, executionId: string) =>
-  `http://openbot.test/api/ai-observability/bots/agent-1/experiments/${experimentId}/executions/${executionId}/cancel`;
+  `http://openbot.test/api/ai-observability/bots/agent-tr-routes/experiments/${experimentId}/executions/${executionId}/cancel`;
 
 /** One frozen dataset version, through the real T19 pipeline. */
 async function frozenVersion() {
