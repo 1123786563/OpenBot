@@ -15,9 +15,13 @@
  * policy allows an unasserted recorder.
  *
  * Capability honesty (the issue's second acceptance): `detailed` claims that a model/tool/
- * retrieval parent-child shape has been VERIFIED observable on a real instance. That
- * verification is T37's; until it lands the wiring constant below stays false and every run
- * span this module stamps says `basic`.
+ * retrieval parent-child shape has been VERIFIED observable on a real instance. T37 verified
+ * it on 2026-10-16 against the `opik-issue4-validation` stack (Opik 2.2.100): run span → chain
+ * → model/tool/retrieval all landed with correct parent-child nesting over the governed OTLP
+ * path, with capability markers, honest usage and zero canaries — evidence in
+ * `docs/plans/evidence/2026-10-16-issue4/T37/evidence/b1-framework-rows.json` (probe
+ * `T37/probe/b-framework.ts`, ALL PASS). The wiring constant below is therefore true and
+ * every run span this module stamps claims `detailed`.
  */
 
 import type { RunAgentInput } from "@ag-ui/core";
@@ -30,9 +34,10 @@ import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 
 /**
  * Whether the model/tool/retrieval parent-child shape has been verified on a real Opik
- * instance. T37 owns flipping this; until then no span this module emits may claim detailed.
+ * instance. T37 verified it on 2026-10-16 (see the module head for the evidence pointer);
+ * a future path change must re-verify before flipping this back.
  */
-export const FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE = false;
+export const FRAMEWORK_STEPS_VERIFIED_ON_REAL_INSTANCE = true;
 
 export type FrameworkCapability = "detailed" | "basic" | "unavailable";
 
