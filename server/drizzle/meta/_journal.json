@@ -771,6 +771,13 @@
       "when": 1791963172272,
       "tag": "0109_openmuse_final_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1792034619518,
+      "tag": "0110_opik_observation_bindings",
+      "breakpoints": true
     }
   ]
 }
