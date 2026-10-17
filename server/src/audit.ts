@@ -690,6 +690,26 @@ export const auditEventTypes = [
    * decision was asked for and made.
    */
   "craft.connect_app_decided",
+  /*
+   * An administrator registered a Bot as a service identity (kind and capability declaration in
+   * the payload). The row is the whole of what a registration grants: no credential, no user
+   * authorization and no credit permission comes with it — 04.2 and 04.5 create those separately,
+   * and each of them leaves its own row. Recorded because “who let this Bot in” is exactly the
+   * question a surprise in the audit trail answers.
+   */
+  "bot_service.registered",
+  /*
+   * An administrator changed a registered Bot's declaration (display name and/or capabilities, in
+   * the payload as from/to pairs). Kind never appears here because kind is not editable: a Bot's
+   * builtin-or-approved origin is a fact about the registration, not a setting.
+   */
+  "bot_service.edited",
+  /*
+   * An administrator disabled a registered Bot. The row beside the status is who chose it and
+   * when, so “why did every one of this Bot's calls stop at admission” has an answer that outlives
+   * the person who clicked it.
+   */
+  "bot_service.disabled",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

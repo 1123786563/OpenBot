@@ -59,6 +59,10 @@
       "identityProviders": {
         "title": "Identity providers",
         "description": "A company's own SAML or OpenID Connect provider, routed by email domain."
+      },
+      "botServices": {
+        "title": "Bot services",
+        "description": "The unique service identities of builtin and approved external Bots."
       }
     },
     "history": {
@@ -89,7 +93,8 @@
     "audit": "Audit",
     "approvals": "Approvals",
     "market": "Market",
-    "knowledge": "Knowledge"
+    "knowledge": "Knowledge",
+    "botServices": "Bot services"
   },
   "audit": {
     "title": "Audit",
@@ -1025,5 +1030,51 @@
   "approvals": {
     "title": "Approvals",
     "description": "What members' Bots must ask before acting, rules for everyone, and requests to use shared accounts."
+  },
+  "botServices": {
+    "title": "Bot services",
+    "description": "Register the builtin and approved external Bots that hold a unique service identity on this deployment.",
+    "grantsNothing": "Registration grants nothing: no credential, no person's model access and no credit permission. A Bot may only call models through a person's explicit authorization.",
+    "add": "Register Bot",
+    "cancel": "Cancel",
+    "fields": {
+      "botId": "Bot ID",
+      "displayName": "Display name",
+      "kind": "Kind",
+      "capabilities": "Capability declaration"
+    },
+    "kinds": {
+      "builtin": "Builtin",
+      "external": "External"
+    },
+    "capabilities": {
+      "chat": "Chat",
+      "image": "Image",
+      "audio": "Audio",
+      "embedding": "Embedding",
+      "realtime": "Realtime",
+      "async": "Async"
+    },
+    "dialog": {
+      "title": "Register Bot",
+      "description": "Creates a service identity registration. No credential is issued.",
+      "botIdHint": "1–64 characters: lowercase letters, digits, \".\", \"_\", \"-\", starting and ending with a letter or digit; cannot be reused once registered.",
+      "capabilityRequired": "Declare at least one capability.",
+      "saving": "Saving…",
+      "save": "Register"
+    },
+    "editDialog": {
+      "title": "Edit {{name}}",
+      "description": "The display name and capability declaration can change; the kind and the identity cannot.",
+      "save": "Save changes"
+    },
+    "registered": {
+      "title": "Registered Bots",
+      "empty": "No Bots are registered.",
+      "loadError": "Could not load the registered Bots.",
+      "disabled": "disabled",
+      "edit": "Edit",
+      "disable": "Disable"
+    }
   }
 }

@@ -267,6 +267,7 @@ import { hostAccessTools } from "./host-access/tools";
 import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
+import { createBotServiceStore } from "./bot-services/store";
 import { createIdentityStore } from "./identity/store";
 import {
   createIntelligenceClient,
@@ -5504,6 +5505,9 @@ const app = createApp(
   },
   identityStore,
   identityGithubCallback,
+  // The Bot service registry (04.1): the same audit store the boot row uses, so a registration
+  // lands on the trail beside everything else an administrator did.
+  createBotServiceStore(database, bootAuditStore),
 );
 
 /**

@@ -10,6 +10,8 @@ import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
 import { createOpenMuseTemplateAdminRoutes } from "./admin/openmuse-template-routes";
 import { createEnterpriseAdminRoutes } from "./admin/routes";
+import { createBotServiceAdminRoutes } from "./bot-services/routes";
+import type { BotServiceStore } from "./bot-services/store";
 import {
   authoriseAgentCall,
   parseAgentToolCallInput,
@@ -735,6 +737,16 @@ export function createApp(
   identity?: IdentityStore,
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
+  /**
+   * The Bot service registry (bifrost-5, 04.1): an administrator's record of every Bot that exists
+   * as a service identity, builtin or approved external, and whether it is disabled.
+   *
+   * APPENDED LAST, for the reason every parameter above it gives: these are positional, so
+   * inserting one anywhere else silently shifts every existing call site's arguments by one.
+   * Absent leaves /api/admin/bot-services unmounted rather than mounted and refusing — a
+   * deployment that never built the store has no door for a registration, not a locked one.
+   */
+  botServiceStore?: BotServiceStore,
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -1002,6 +1014,17 @@ export function createApp(
    */
   app.use("/api/*", (context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
+  if (botServiceStore) {
+    /*
+     * The Bot service registry (04.1): registration, edit and disable, administrator-only, each
+     * write on the audit trail. Mounted only where the assembly built the store, beside the
+     * enterprise admin surface, so a deployment without a registry has no door for one.
+     */
+    app.route(
+      "/api/admin/bot-services",
+      createBotServiceAdminRoutes({ requireUser, store: botServiceStore }),
+    );
+  }
   if (openMuseTemplateRevisions) {
     /*
      * Template revision preview/apply: administrator-only (requireUser + requireAdmin inside the

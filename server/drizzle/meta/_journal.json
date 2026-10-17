@@ -855,6 +855,13 @@
       "when": 1792008991185,
       "tag": "0121_married_harpoon",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1792075201770,
+      "tag": "0122_bot_service_registry",
+      "breakpoints": true
     }
   ]
 }

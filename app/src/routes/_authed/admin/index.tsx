@@ -9,6 +9,7 @@ import {
   IconLayoutGrid,
   IconListDetails,
   IconPuzzle,
+  IconRobot,
   IconShieldCheck,
   IconUsers,
 } from "@tabler/icons-react";
@@ -131,6 +132,12 @@ const SECTIONS = [
         description: "overview.access.identityProviders.description",
         icon: IconBuildingBank,
         linkOptions: { to: "/admin/identity-providers" },
+      },
+      {
+        title: "overview.access.botServices.title",
+        description: "overview.access.botServices.description",
+        icon: IconRobot,
+        linkOptions: { to: "/admin/bot-services" },
       },
     ],
   },

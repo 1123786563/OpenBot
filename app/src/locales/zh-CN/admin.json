@@ -59,6 +59,10 @@
       "identityProviders": {
         "title": "身份提供方",
         "description": "公司自己的 SAML 或 OpenID Connect 提供方，按邮箱域名路由。"
+      },
+      "botServices": {
+        "title": "Bot 服务",
+        "description": "登记内置与获准外部 Bot 的唯一服务身份。"
       }
     },
     "history": {
@@ -89,7 +93,8 @@
     "audit": "审计",
     "approvals": "批准",
     "market": "市场",
-    "knowledge": "知识库"
+    "knowledge": "知识库",
+    "botServices": "Bot 服务"
   },
   "audit": {
     "title": "审计",
@@ -1025,5 +1030,51 @@
   "approvals": {
     "title": "审批",
     "description": "成员的 Bots 在行动前必须先请求什么、适用于所有人的规则，以及使用共享账户的请求。"
+  },
+  "botServices": {
+    "title": "Bot 服务",
+    "description": "登记为部署提供唯一服务身份的内置与获准外部 Bot。",
+    "grantsNothing": "登记本身不产生任何凭据、用户授权或积分权限；Bot 只有在用户授权后才能代表该用户调用模型。",
+    "add": "登记 Bot",
+    "cancel": "取消",
+    "fields": {
+      "botId": "Bot ID",
+      "displayName": "显示名称",
+      "kind": "类型",
+      "capabilities": "能力声明"
+    },
+    "kinds": {
+      "builtin": "内置",
+      "external": "外部"
+    },
+    "capabilities": {
+      "chat": "对话",
+      "image": "图像",
+      "audio": "音频",
+      "embedding": "Embedding",
+      "realtime": "实时",
+      "async": "异步"
+    },
+    "dialog": {
+      "title": "登记 Bot",
+      "description": "创建一条服务身份登记记录。登记不会发放任何凭据。",
+      "botIdHint": "1–64 个字符：小写字母、数字、\".\"、\"_\"、\"-\"，以字母或数字开头和结尾；登记后不可复用。",
+      "capabilityRequired": "至少声明一项能力。",
+      "saving": "保存中…",
+      "save": "登记"
+    },
+    "editDialog": {
+      "title": "编辑 {{name}}",
+      "description": "显示名称与能力声明可以修改；类型与服务身份不可修改。",
+      "save": "保存修改"
+    },
+    "registered": {
+      "title": "已登记的 Bot",
+      "empty": "尚未登记任何 Bot。",
+      "loadError": "无法加载已登记的 Bot。",
+      "disabled": "已停用",
+      "edit": "编辑",
+      "disable": "停用"
+    }
   }
 }
