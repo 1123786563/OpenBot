@@ -5,6 +5,7 @@
 // a running isolated Opik instance, whose output is preserved as evidence.
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { loadSecretCanaries } from "../scripts/opik-contract";
 import {
   buildOtlpJsonPayload,
   collectForbiddenCanaryLabels,
@@ -290,6 +291,67 @@ describe("evidence sanitizer and canary scan", () => {
         [{ label: "env-secret", value: "super-secret-datastore-password" }],
       ),
     ).toEqual([]);
+  });
+});
+
+describe("R3fix R3-25: the secrets-env credential-shape rule", () => {
+  // The natural configuration the compose file forces: the datastore USER names
+  // are literal deployment facts (docker/compose/opik.yml pins MYSQL_USER /
+  // CLICKHOUSE_USER to `opik` and requires OPIK_MINIO_ROOT_USER), while the
+  // paired passwords are the actual secrets. The minio user value collides with
+  // the ubiquitous `opik` substring of every compose-project name, image name and
+  // tarball URL in the evidence, so treating USER values as forbidden canaries
+  // made the runner permanently red and [redacted] every such string.
+  let envPath: string;
+  const writeEnv = async (lines: string[]) => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "opik-contract-r325-"));
+    envPath = join(dir, "secrets.env");
+    await writeFile(envPath, `${lines.join("\n")}\n`);
+  };
+
+  test("USER names are deployment facts, not canaries; passwords stay canaries", async () => {
+    await writeEnv([
+      "MYSQL_USER=opik",
+      "CLICKHOUSE_USER=opik",
+      "OPIK_MINIO_ROOT_USER=opik",
+      "OPIK_MINIO_ROOT_PASSWORD=t04-minio-secret-password",
+      "OPIK_MYSQL_PASSWORD=t04-mysql-secret-password",
+    ]);
+    const labels = (await loadSecretCanaries(envPath)).map((c) => c.label);
+    expect(labels).toEqual([
+      "env:OPIK_MINIO_ROOT_PASSWORD",
+      "env:OPIK_MYSQL_PASSWORD",
+    ]);
+  });
+
+  test("the natural compose values cannot collide with the ubiquitous evidence text", async () => {
+    await writeEnv([
+      "MYSQL_USER=opik",
+      "OPIK_MINIO_ROOT_USER=opik",
+      "OPIK_MINIO_ROOT_PASSWORD=t04-minio-secret-password",
+    ]);
+    const canaries = await loadSecretCanaries(envPath);
+    // The manifest/running-services face the runner always serializes: compose
+    // project, image names, upstream tarball URL — every one contains `opik`.
+    const naturalEvidenceText = JSON.stringify({
+      composeProject: "opik-issue4-validation",
+      images: ["minio", "mysql", "clickhouse"],
+      tarball:
+        "https://github.com/comet-ml/opik/archive/refs/tags/2.2.100.tar.gz",
+    });
+    expect(
+      collectForbiddenCanaryLabels([naturalEvidenceText], canaries),
+    ).toEqual([]);
+    // The actual secret still trips the redline when it leaks.
+    expect(
+      collectForbiddenCanaryLabels(
+        [JSON.stringify({ leaked: "t04-minio-secret-password" })],
+        canaries,
+      ),
+    ).toEqual(["env:OPIK_MINIO_ROOT_PASSWORD"]);
   });
 });
 
