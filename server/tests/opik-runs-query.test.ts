@@ -29,14 +29,16 @@ import {
   OBSERVATION_BOT_NOT_FOUND,
 } from "../src/ai-observability/context";
 import type { ObservationScope } from "../src/ai-observability/contracts";
-import type {
-  OpikPort,
-  OpikPortResult,
-  OpikTraceRow,
+import {
+  type OpikPort,
+  OpikPortError,
+  type OpikPortResult,
+  type OpikTraceRow,
 } from "../src/ai-observability/opik-port";
 import {
   createRunsQueryService,
   projectRow,
+  RunsQueryError,
   UPSTREAM_RUN_STATUS,
 } from "../src/ai-observability/queries/runs";
 import { createRunsQueryRoutes } from "../src/ai-observability/routes/runs";
@@ -164,6 +166,12 @@ function fakePort(
       content: readonly OpikTraceRow[];
     }>;
     rows?: OpikTraceRow[];
+    /**
+     * OCR R3-28: a pre-I/O refusal — requireOperation's CONTRACT_UNVERIFIED /
+     * OPERATION_UNSUPPORTED throw before any fetch. The adapter method is
+     * async, so the caller sees a rejected promise, never an OpikPortResult.
+     */
+    refuseProject?: OpikPortError;
   } = {},
 ) {
   const calls: Array<{ op: string; projectId?: string; size?: number }> = [];
@@ -171,6 +179,7 @@ function fakePort(
     healthCheck: async () => ({ outcome: "ok", value: { healthy: true } }),
     retrieveProject: async () => {
       calls.push({ op: "retrieveProject" });
+      if (behavior.refuseProject) throw behavior.refuseProject;
       return behavior.project ?? { outcome: "ok", value: { id: "proj-1" } };
     },
     listTraces: async (_scope, input) => {
@@ -651,6 +660,57 @@ describe("runs query — acceptance 5: honest empty vs upstream failure", () => 
     const response = await list(app);
     expect(response.status).toBe(503);
     expect((await response.json()).error).toBe("OPIK_OWNERSHIP_DRIFT");
+  });
+
+  test("a pre-I/O contract refusal answers capability_missing, not a code-less 500 (OCR R3-28)", async () => {
+    // requireOperation throws OpikPortError BEFORE any I/O when the verified
+    // contract is stale or the operation is unsupported. The route must still
+    // answer an explainable code — the same mapping the health seam already
+    // applies — never an unclassified 500.
+    const { app } = appFor({
+      port: fakePort({
+        refuseProject: new OpikPortError("CONTRACT_UNVERIFIED"),
+      }),
+    });
+    const response = await list(app);
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toBe("capability_missing");
+  });
+
+  test("the span walk's pre-I/O refusals answer capability_missing too (OCR R3-28)", async () => {
+    const refuse = new OpikPortError("OPERATION_UNSUPPORTED");
+    const port: OpikPort = {
+      healthCheck: async () => ({ outcome: "ok", value: { healthy: true } }),
+      retrieveProject: async () => ({ outcome: "ok", value: { id: "proj-1" } }),
+      listTraces: async () => ({
+        outcome: "ok",
+        value: { page: 1, size: 5, total: 0, content: [] },
+      }),
+      listSpans: async () => {
+        throw refuse;
+      },
+      createTrace: async () => {
+        throw new Error("the read surface must never write");
+      },
+      writeSpans: async () => {
+        throw new Error("the read surface must never write");
+      },
+    };
+    const service = createRunsQueryService({
+      bindings: {
+        latestAttempt: async () => bindingRow(scopeA),
+      },
+      config: () => enabledConfig,
+      port,
+    });
+    try {
+      await service.steps(scopeA, "run-1");
+      throw new Error("steps must not answer on a refusing port");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RunsQueryError);
+      expect((error as RunsQueryError).code).toBe("capability_missing");
+      expect((error as RunsQueryError).status).toBe(503);
+    }
   });
 });
 

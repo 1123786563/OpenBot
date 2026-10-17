@@ -140,28 +140,33 @@ function reference(value: string): string {
  * number answers "how many of my cases came back damaged", not "how many fields"
  * (OCR m107: the toolFixtures projection is a SafeValue too — an omitted fixture
  * node, top-level or deep, is exactly the damage the count exists to surface).
+ * OCR R3-31: a truncated node is the same damage, so it counts the same — a
+ * >8KiB text leaf or an oversized record value freezes as { state: "truncated" }
+ * with no omission anywhere, and the dataset would not hold what the reviewer
+ * saw. Alignment with this function's own comment and the m107 declaration.
  */
 function countCanaryFindings(frozen: readonly FrozenDatasetCase[]): number {
   // The fixtures tree carries SafeValue nodes at every level: an omitted leaf
-  // (deny-refused, past the depth cap) or a truncated node is the damage the
-  // count exists to surface, wherever it sits.
+  // (deny-refused, past the depth cap) or a truncated node (past the byte cap)
+  // is the damage the count exists to surface, wherever it sits.
   const valueHasOmission = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(valueHasOmission);
     if (value && typeof value === "object") {
       const record = value as Record<string, unknown>;
-      if (record.state === "omitted") return true;
+      if (record.state === "omitted" || record.state === "truncated")
+        return true;
       return Object.values(record).some(valueHasOmission);
     }
     return false;
   };
   const fixturesOmitted = (fixtures: SafeValue): boolean =>
     fixtures.state === "omitted" ||
-    ((fixtures.state === "projected" || fixtures.state === "truncated") &&
-      valueHasOmission(fixtures.value));
+    fixtures.state === "truncated" ||
+    (fixtures.state === "projected" && valueHasOmission(fixtures.value));
   return frozen.filter(
     (one) =>
-      one.safeInput.state === "omitted" ||
-      one.referenceOutput.state === "omitted" ||
+      one.safeInput.state !== "projected" ||
+      one.referenceOutput.state !== "projected" ||
       fixturesOmitted(one.toolFixtures),
   ).length;
 }
