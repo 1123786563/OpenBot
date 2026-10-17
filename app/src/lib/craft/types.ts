@@ -205,9 +205,43 @@ export type CraftStreamPacket =
 /** What a `webapp-info` read answers with. */
 export type CraftWebappInfo = {
   has_webapp: boolean | null;
+  /** D11 (#362): the ABSOLUTE preview address — null while the origin is closed or unsandboxed. */
   webapp_url: string | null;
+  /**
+   * The same address as its own field (the ticket exchange's `origin` target).
+   * Server-response mirror, kept for shape completeness — the frontend reads
+   * `webapp_url` instead and does not consume this field today (fix-ocr16).
+   */
+  previewOrigin: string | null;
+  /** m-5 (#362): the displayable sentence for WHY no preview address exists. */
+  previewOriginClosedReason: string | null;
+  /**
+   * #367 (D10): which preview this session gets. "legacy" — the app predates
+   * the preview origin; `webapp_url` is the OLD same-origin path and the pane
+   * iframes it directly (the platform's own cookies authenticate it, no pass).
+   * "current" — the absolute preview origin + the ticket exchange. Optional so
+   * an older server answer still types.
+   */
+  webappGeneration?: "legacy" | "current";
   status: string;
   ready: boolean;
+};
+
+/**
+ * What `POST /sessions/:id/preview-ticket` answers (#360/#362): a single-use,
+ * 30-second pass the preview origin redeems — the ticket rides exactly one hop
+ * (the entry URL below) and dies in the 302 that follows it.
+ */
+export type CraftPreviewTicket = {
+  ticket: string;
+  /**
+   * The 30-second single-use pass's expiry, as the server sent it. Reserved
+   * mirror of the response shape — the frontend does not read it today; the
+   * pane's only ticket-time behavior is the one entry hop (fix-ocr16).
+   */
+  expiresAt: string;
+  /** The absolute preview address to enter with `?ticket=` appended once. */
+  origin: string;
 };
 
 /**

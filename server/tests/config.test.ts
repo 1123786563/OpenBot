@@ -1,7 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { getLogger } from "../../shared/logger";
-import { configuredAuthProviders, loadConfig } from "../src/config";
+import {
+  configuredAuthProviders,
+  loadConfig,
+  portFromEnvironment,
+} from "../src/config";
 
 // Intelligence is part of the MINIMUM contract, so it belongs in the base environment every other
 // case builds on. Leaving it out of the base would make most of this file assert the behaviour of a
@@ -778,6 +782,49 @@ describe("deployment configuration", () => {
       ).toThrow("SERVER_PORT must be a whole number between 1 and 65535");
     },
   );
+
+  /*
+   * fix-ocr23 #8: the PORT/SERVER_PORT rules used to live twice — here in
+   * `serverPort`, and as a hand-synced twin inside preview-ticket.ts's
+   * `previewPortFromEnv`, held together only by a comment's promise (the very
+   * shape the DEFAULT_PORT import retired). The parser is exported once, in
+   * the `{ port } | { reason }` shape both consumers need: `serverPort` throws
+   * the reason at boot, the preview folds it into a displayable refusal.
+   */
+  describe("portFromEnvironment — the one PORT/SERVER_PORT parser (fix-ocr23 #8)", () => {
+    test("answers the port both names agree on, either name alone, and the default when neither is set", () => {
+      expect(portFromEnvironment({ PORT: "3005" })).toEqual({ port: 3005 });
+      expect(portFromEnvironment({ SERVER_PORT: "3006" })).toEqual({
+        port: 3006,
+      });
+      expect(
+        portFromEnvironment({ PORT: " 3007 ", SERVER_PORT: "3007" }),
+      ).toEqual({ port: 3007 });
+      // Empty is absent, not zero — the same read `optional` gives every setting.
+      expect(portFromEnvironment({ PORT: "", SERVER_PORT: "3005" })).toEqual({
+        port: 3005,
+      });
+      expect(portFromEnvironment({})).toEqual({ port: 3001 });
+    });
+
+    test("answers a reason naming the variable when a value is not a whole port", () => {
+      expect(portFromEnvironment({ PORT: "30o1" })).toEqual({
+        reason: "PORT must be a whole number between 1 and 65535",
+      });
+      expect(portFromEnvironment({ SERVER_PORT: "0" })).toEqual({
+        reason: "SERVER_PORT must be a whole number between 1 and 65535",
+      });
+    });
+
+    test("answers a reason naming both values when the names disagree", () => {
+      expect(
+        portFromEnvironment({ PORT: "3001", SERVER_PORT: "3005" }),
+      ).toEqual({
+        reason:
+          "PORT (3001) and SERVER_PORT (3005) disagree: set one or set both to the same value",
+      });
+    });
+  });
 
   test("configures Docker as the per-Bot computer provider", () => {
     const config = loadConfig({
