@@ -517,13 +517,13 @@ try {
       const probe = await fetch(`http://127.0.0.1:${row.nextjs_port}${basePath}/api/probe`).catch(() => null);
       const probeBody = probe?.ok ? await probe.json().catch(() => null) : null;
       const pageHtml = await fetch(`http://127.0.0.1:${row.nextjs_port}${basePath}/`).then((r) => r.text()).catch(() => "");
-      lastSeen = `probe=${probe?.status ?? "err"} page=${pageHtml.slice(0, 60).replace(/\s+/g, " ")}`;
+      lastSeen = `probe=${probe?.status ?? "err"} page=${pageHtml.slice(0, 260).replace(/\s+/g, " ")}`;
       if (probeBody && (probeBody as { method?: string }).method === "GET" && pageHtml.includes(markerV1)) { ready = true; break; }
       await new Promise((r) => setTimeout(r, 2000));
     }
     if (!ready) { await stopSessionWebapp(row.id).catch(() => {}); await killPortOccupant(row.nextjs_port, "S"); await waitPortFree(row.nextjs_port, 30_000, "S 重拉前").catch(() => {}); }
   }
-  assert(ready, `S 探针未就绪。最后观测：${lastSeen}`);
+  assert(ready, `S 探针未就绪。marker=${markerV1} 最后观测：${lastSeen}`);
   evidence(`[3] 探针 dev server 就绪（host 形态根挂载）`);
 
   // 3) 签票 → 顶层第一方进入预览页
