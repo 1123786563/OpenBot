@@ -68,6 +68,18 @@
           }
         }
       }
+    },
+    {
+      "includes": ["server/assets/craft/web-template/**"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["deliverables/**"],
+      "linter": {
+        "enabled": false
+      }
     }
   ]
 }
