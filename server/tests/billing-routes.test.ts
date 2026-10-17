@@ -652,6 +652,26 @@ describe("the admin routes", () => {
     expect(recording.grants).toHaveLength(0);
   });
 
+  test("a grant body naming an account is refused: the writer's key is server-derived", async () => {
+    // 02.4's write-side regression lock: the grant route derives the deployment key itself, so a
+    // body that carries an account identity (someone else's userId or a bare externalCustomerId)
+    // is a shape error answered 400, never a grant onto the named account.
+    const recording = recordingCreditWriter();
+    const { app } = billingApp(ADMIN, countingClient().client, recording.writer as CreditWriter);
+    for (const foreign of [
+      { source: "promo", totalCents: 100, externalCustomerId: "openbot-personal-someone-else" },
+      { source: "promo", totalCents: 100, userId: "user-someone-else" },
+    ]) {
+      const response = await app.request("/api/admin/billing/credits/grants", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(foreign),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(recording.grants).toHaveLength(0);
+  });
+
   test("without a credit writer wired, the grant route answers 503 and grants nothing", async () => {
     const { app } = billingApp(ADMIN, countingClient().client);
     const response = await app.request("/api/admin/billing/credits/grants", {
