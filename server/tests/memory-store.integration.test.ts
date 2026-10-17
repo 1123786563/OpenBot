@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import {
+  AbstractAgent,
+  type BaseEvent,
+  EventType,
+  type RunAgentInput,
+} from "@ag-ui/client";
 import { and, eq, inArray } from "drizzle-orm";
+import { lastValueFrom, of, toArray } from "rxjs";
 import { createAuditStore } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
@@ -10,6 +17,7 @@ import { memorySources, personalMemories } from "../src/db/schema/memory";
 import { mcpServers, mcpTools } from "../src/db/schema/plugins";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { createMemoryStore } from "../src/memory/store";
+import { memoryTools, PersonalMemoryMiddleware } from "../src/memory/tools";
 import { MemoryNotFoundError, MemoryRefusedError } from "../src/memory/types";
 import { createPluginStore } from "../src/plugins/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -114,6 +122,16 @@ async function source() {
     })
   ).source;
 }
+/** A source whose imported record the person has confirmed, so recall-gated tests still see it. */
+async function confirmedSource() {
+  const value = await source();
+  const fact = (await store.list(owner)).find(
+    (row) => row.sourceId === value.id,
+  );
+  if (!fact) throw new Error("Expected imported memory.");
+  await store.update(owner, fact.id, { reviewState: "confirmed" });
+  return { value, fact };
+}
 test("facts are owner scoped on list, edit and delete", async () => {
   const fact = await store.create(owner, { content: "Private preference" });
   expect((await store.list(other)).some((row) => row.id === fact.id)).toBe(
@@ -147,6 +165,11 @@ test("opted-in connector uses actual plugin authority and execution", async () =
   expect(calls.at(-1)?.actorId).toBe(owner);
   expect(calls.at(-1)?.botId).toBe(bot);
   expect(value.syncStatus).toBe("succeeded");
+  const fact = (await store.list(owner)).find(
+    (row) => row.sourceId === value.id,
+  );
+  if (!fact) throw new Error("Expected imported memory.");
+  await store.update(owner, fact.id, { reviewState: "confirmed" });
   expect(await ingestion.contextFor(owner, bot)).toContain(
     "Project launch is Tuesday",
   );
@@ -170,7 +193,7 @@ test("changed connector content updates the same row without duplicates", async 
   expect(rows[0]?.content).toContain("Friday");
 });
 test("disabled source is absent even while its imported facts remain stored", async () => {
-  const value = await source();
+  const { value } = await confirmedSource();
   await store.setSourceEnabled(owner, value.id, false);
   expect(
     (await ingestion.recall(owner, bot)).some(
@@ -223,7 +246,7 @@ test("write tools and another person's Bot cannot become ambient sources", async
   ).rejects.toBeInstanceOf(MemoryRefusedError);
 });
 test("revoked grants immediately remove retrieval and expose source error", async () => {
-  const value = await source();
+  const { value } = await confirmedSource();
   await plugins.revoke("mcp", ref, bot, owner);
   expect(
     (await ingestion.recall(owner, bot)).some(
@@ -236,7 +259,7 @@ test("revoked grants immediately remove retrieval and expose source error", asyn
   await plugins.grant("mcp", ref, bot, owner);
 });
 test("vendor failure hides stale source facts and records a visible error", async () => {
-  const value = await source();
+  const { value } = await confirmedSource();
   vendorError = true;
   await expect(ingestion.sync(owner, value.id)).rejects.toBeInstanceOf(
     MemoryRefusedError,
@@ -274,7 +297,7 @@ test("removing a source deletes its imported records", async () => {
   ).toHaveLength(0);
 });
 test("a resync of a healthy source keeps its facts in recall while it runs", async () => {
-  const value = await source();
+  const { value } = await confirmedSource();
   expect(await store.claimSync(owner, value.id)).not.toBeNull();
   expect(
     (await ingestion.recall(owner, bot)).some(
@@ -304,6 +327,7 @@ test("recall reaches this Bot's memories however many other Bots' are newer", as
     provenance: "Read from Docs",
     formedBy: "bot",
     formedByAgentId: bot,
+    reviewState: "confirmed",
   });
   // Six hundred newer memories formed by another Bot for the same person.
   await database.insert(personalMemories).values(
@@ -355,4 +379,151 @@ test("the same fact formed at once by two runs is stored once", async () => {
   expect(rows).toHaveLength(1);
   expect(new Set(results.map((result) => result.id)).size).toBe(1);
   expect(results.filter((result) => !result.duplicate)).toHaveLength(1);
+});
+
+test("an unreviewed candidate is invisible to every Bot-side recall path until confirmed", async () => {
+  const candidate = `Unreviewed candidate ${randomUUID()}`;
+  const formed = await store.formMemory(owner, {
+    agentId: bot,
+    content: candidate,
+    sourceApp: "Docs",
+    sourceRef: ref,
+  });
+  const confirmed = await store.create(owner, {
+    content: `Confirmed alongside ${randomUUID()}`,
+  });
+  // The person's candidate list keeps both; review is what separates them.
+  const listed = await store.list(owner);
+  expect(listed.find((row) => row.id === formed.id)?.reviewState).toBe(
+    "unreviewed",
+  );
+  expect(listed.some((row) => row.id === confirmed.id)).toBe(true);
+  // Every Bot-side path (the one store seam under recall and context) hides the candidate.
+  const personPath = await store.retrieve(owner, [], "");
+  expect(personPath.some((row) => row.id === formed.id)).toBe(false);
+  expect(personPath.some((row) => row.id === confirmed.id)).toBe(true);
+  const formedPath = await store.retrieve(owner, [], "", {
+    botId: bot,
+    heldServerIds: new Set([server]),
+  });
+  expect(formedPath.some((row) => row.id === formed.id)).toBe(false);
+  const recalled = await ingestion.recall(owner, bot);
+  expect(recalled.some((row) => row.id === formed.id)).toBe(false);
+  expect(recalled.some((row) => row.id === confirmed.id)).toBe(true);
+  expect(await ingestion.contextFor(owner, bot)).not.toContain(candidate);
+  // Confirmation moves it onto every path at once; rejection removes it again.
+  await store.update(owner, formed.id, { reviewState: "confirmed" });
+  expect(
+    (await ingestion.recall(owner, bot)).some((row) => row.id === formed.id),
+  ).toBe(true);
+  expect(await ingestion.contextFor(owner, bot)).toContain(candidate);
+  await store.remove(owner, formed.id);
+  expect(
+    (await ingestion.recall(owner, bot)).some((row) => row.id === formed.id),
+  ).toBe(false);
+});
+
+test("an imported fact waits for the person's confirmation before any Bot recalls it", async () => {
+  const value = await source();
+  const fact = (await store.list(owner)).find(
+    (row) => row.sourceId === value.id,
+  );
+  if (!fact) throw new Error("Expected imported memory.");
+  expect(fact.reviewState).toBe("unreviewed");
+  expect(
+    (await ingestion.recall(owner, bot)).some((row) => row.id === fact.id),
+  ).toBe(false);
+  expect(await ingestion.contextFor(owner, bot)).not.toContain(
+    "Project launch is Tuesday",
+  );
+  await store.update(owner, fact.id, { reviewState: "confirmed" });
+  expect(
+    (await ingestion.recall(owner, bot)).some((row) => row.id === fact.id),
+  ).toBe(true);
+  expect(await ingestion.contextFor(owner, bot)).toContain(
+    "Project launch is Tuesday",
+  );
+});
+
+class RecordingAgent extends AbstractAgent {
+  readonly requests: RunAgentInput[] = [];
+  run(input: RunAgentInput) {
+    this.requests.push(input);
+    return of<BaseEvent>(
+      {
+        type: EventType.RUN_STARTED,
+        runId: input.runId,
+        threadId: input.threadId,
+      },
+      {
+        type: EventType.RUN_FINISHED,
+        runId: input.runId,
+        threadId: input.threadId,
+      },
+    );
+  }
+}
+
+test("the Bot's injected memory context and recall tool carry no unreviewed candidate", async () => {
+  const candidate = `Middleware candidate ${randomUUID()}`;
+  const formed = await store.formMemory(owner, {
+    agentId: bot,
+    content: candidate,
+    sourceApp: "Docs",
+    sourceRef: ref,
+  });
+  const confirmed = await store.create(owner, {
+    content: `Middleware confirmed ${randomUUID()}`,
+  });
+  // The middleware the server wires to contextFor injects only reviewed memories.
+  const agent = new RecordingAgent({ agentId: bot });
+  await lastValueFrom(
+    new PersonalMemoryMiddleware(bot, (id) => ingestion.contextFor(owner, id))
+      .run(
+        {
+          runId: "run",
+          threadId: "thread",
+          messages: [
+            { id: "user", role: "user", content: "What should I know?" },
+          ],
+          context: [],
+          tools: [],
+          state: { progress: 1 },
+          forwardedProps: {},
+        },
+        agent,
+      )
+      .pipe(toArray()),
+  );
+  const injected =
+    agent.requests[0]?.messages.find(
+      (message) => message.id === "openbot:personal-memory",
+    )?.content ?? "";
+  expect(injected).toContain("Middleware confirmed");
+  expect(injected).not.toContain(candidate);
+  // And so does the recall tool a Bot holds.
+  const tool = memoryTools({
+    store,
+    ingestion,
+    ownerUserId: owner,
+    agentId: bot,
+  }).find((entry) => entry.name === "recall_personal_memory");
+  if (!tool) throw new Error("Expected the recall tool.");
+  const result = JSON.parse(String(await tool.execute({}))) as {
+    id: string;
+  }[];
+  expect(result.some((row) => row.id === formed.id)).toBe(false);
+  expect(result.some((row) => row.id === confirmed.id)).toBe(true);
+});
+
+test("'remember' confirms exactly the person's explicit statement, word for word", async () => {
+  const statement = `I prefer morning meetings on ${randomUUID()}`;
+  const before = await store.list(owner);
+  const memory = await store.create(owner, { content: statement });
+  const after = await store.list(owner);
+  expect(memory.content).toBe(statement);
+  expect(memory.reviewState).toBe("confirmed");
+  // One explicit statement becomes exactly one confirmed memory, never more facts.
+  expect(after.length).toBe(before.length + 1);
+  expect(after.filter((row) => row.content === statement)).toHaveLength(1);
 });
