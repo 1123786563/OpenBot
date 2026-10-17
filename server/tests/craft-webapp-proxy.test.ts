@@ -825,6 +825,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     // beside the mount.
     const response = await serve({
       sessionId: PREVIEW_SESSION,
+      userId: "u1",
       appPath: "/abc123label/api/tasks",
       query: "?sort=asc",
       method: "POST",
@@ -866,6 +867,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
 
       const response = await serve({
         sessionId: PREVIEW_SESSION,
+        userId: "u1",
         appPath: "/api/tasks/1",
         query: "",
         method,
@@ -893,6 +895,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     );
     const response = await serve({
       sessionId: PREVIEW_SESSION,
+      userId: "u1",
       appPath: "/",
       query: "",
       method: "GET",
@@ -911,6 +914,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     );
     const connGone = await noConn({
       sessionId: PREVIEW_SESSION,
+      userId: "u1",
       appPath: "/",
       query: "",
       method: "GET",
@@ -923,6 +927,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     );
     const portGone = await noPort({
       sessionId: PREVIEW_SESSION,
+      userId: "u1",
       appPath: "/",
       query: "",
       method: "GET",
@@ -944,6 +949,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const call = () =>
       serve({
         sessionId: PREVIEW_SESSION,
+        userId: "u1",
         appPath: "/x/api/tasks",
         query: "",
         method: "GET",
@@ -970,6 +976,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const call = () =>
       serve({
         sessionId: PREVIEW_SESSION,
+        userId: "u1",
         appPath: "/x/api/tasks",
         query: "",
         method: "GET",
@@ -994,6 +1001,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const call = () =>
       serve({
         sessionId: PREVIEW_SESSION,
+        userId: "u1",
         appPath: "/",
         query: "",
         method: "GET",
@@ -1020,7 +1028,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const serve = createPreviewProxy({
       ...previewProxyDeps({ fetchImpl }),
       store: {
-        async findSessionById() {
+        async findSession() {
           return exists ? sessionRow("app", 3011) : undefined;
         },
       } as unknown as CraftStore,
@@ -1028,6 +1036,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     const call = () =>
       serve({
         sessionId: PREVIEW_SESSION,
+        userId: "u1",
         appPath: "/x/api/tasks",
         query: "",
         method: "GET",
@@ -1054,6 +1063,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
 
     const framed = await serve({
       sessionId: PREVIEW_SESSION,
+      userId: "u1",
       appPath: "/",
       query: "",
       method: "GET",
@@ -1067,6 +1077,7 @@ describe("createPreviewProxy (the servePreview seam)", () => {
 
     const programmatic = await serve({
       sessionId: PREVIEW_SESSION,
+      userId: "u1",
       appPath: "/",
       query: "",
       method: "GET",
