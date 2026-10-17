@@ -224,8 +224,24 @@ export function createGatewayModelCall(
 
 /** Numbers the gateway settings vocabulary accepts; everything else is not forwarded. */
 function gatewaySettings(parameters: Record<string, unknown>) {
-  const numeric = (value: unknown) =>
-    typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  // The frozen configuration projects every leaf through `projectSafeFixture`, so a
+  // parameter arrives as a `{state:"projected", value:n}` envelope (R4-26): unwrap
+  // one projected layer before the numeric gate. Anything else — an omitted or
+  // truncated envelope, a bare non-number — stays undefined, fail-closed: a
+  // parameter the freeze did not keep intact is never guessed onto the wire.
+  const numeric = (value: unknown) => {
+    const unwrapped =
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (value as { state?: unknown }).state === "projected" &&
+      "value" in (value as Record<string, unknown>)
+        ? (value as { value: unknown }).value
+        : value;
+    return typeof unwrapped === "number" && Number.isFinite(unwrapped)
+      ? unwrapped
+      : undefined;
+  };
   return {
     temperature: numeric(parameters.temperature),
     maxOutputTokens: numeric(

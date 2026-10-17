@@ -272,6 +272,20 @@ export function createEntranceModelCall(
         ),
       );
   }
+  // R4-27, the m224 doctrine extended to the base URL: an entrance pinned to a
+  // non-default baseURL must declare the credential that dials it. With no
+  // apiKeyEnv the call would fall back to OPENAI_API_KEY — shipping the deployment
+  // gateway's key to whatever host the entrance names. The entrance is refused
+  // per-call instead of guessed: declare an apiKeyEnv for this baseURL, or drop
+  // the baseURL to ride the deployment's own gateway, which that key belongs to.
+  if (entrance.baseURL !== undefined && envName === undefined) {
+    return () =>
+      Promise.reject(
+        new Error(
+          "judge entrance refused: a non-default baseURL requires a declared apiKeyEnv — the deployment gateway key is never forwarded to a third-party endpoint",
+        ),
+      );
+  }
   return createGatewayModelCall({
     apiKey: envName === undefined ? undefined : process.env[envName],
     baseURL: entrance.baseURL,

@@ -759,3 +759,94 @@ test("an entrance whose declared credential env is missing refuses its own calls
     }),
   ).rejects.toThrow(/JUDGE_KEY_DEFINITELY_UNSET_8f3b/);
 });
+
+/** A local stand-in for a third-party entrance host, recording every dial. */
+function thirdPartyStub() {
+  const seen: { url: string; authorization: string | null }[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      seen.push({
+        url: request.url,
+        authorization: request.headers.get("authorization"),
+      });
+      return Response.json({
+        id: "chatcmpl-1",
+        object: "chat.completion",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "third-party answer" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+      });
+    },
+  });
+  return { seen, server };
+}
+
+test("an entrance on a non-default baseURL with no declared credential is refused outright — the deployment gateway key never dials a third-party host (R4-27)", async () => {
+  const { seen, server } = thirdPartyStub();
+  const previousGatewayKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "sk-gateway-master-secret-R4-27";
+  try {
+    const call = createEntranceModelCall({
+      modelName: "third-party-model",
+      // No apiKeyEnv: the only key in the environment is the deployment
+      // gateway's — exactly the key that must never travel to this host.
+      baseURL: `http://127.0.0.1:${server.port}/v1`,
+    });
+
+    await expect(
+      call({
+        modelName: "third-party-model",
+        modelParameters: {},
+        system: "s",
+        user: "u",
+      }),
+    ).rejects.toThrow(/apiKeyEnv/);
+
+    // The refusal is fail-closed before any byte leaves the process: the
+    // third-party host saw no request and no credential.
+    expect(seen).toEqual([]);
+  } finally {
+    server.stop(true);
+    if (previousGatewayKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousGatewayKey;
+  }
+});
+
+test("an entrance on a custom baseURL with its own declared credential dials that host with its own key (R4-27 normal path)", async () => {
+  const { seen, server } = thirdPartyStub();
+  const previousGatewayKey = process.env.OPENAI_API_KEY;
+  const previousOwnKey = process.env.JUDGE_ENTRANCE_KEY_R4_27;
+  process.env.OPENAI_API_KEY = "sk-gateway-master-secret-R4-27";
+  process.env.JUDGE_ENTRANCE_KEY_R4_27 = "sk-entrance-own-key";
+  try {
+    const call = createEntranceModelCall({
+      modelName: "third-party-model",
+      apiKeyEnv: "JUDGE_ENTRANCE_KEY_R4_27",
+      baseURL: `http://127.0.0.1:${server.port}/v1`,
+    });
+
+    const answer = await call({
+      modelName: "third-party-model",
+      modelParameters: {},
+      system: "s",
+      user: "u",
+    });
+
+    expect(answer.output).toBe("third-party answer");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.authorization).toBe("Bearer sk-entrance-own-key");
+  } finally {
+    server.stop(true);
+    if (previousGatewayKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousGatewayKey;
+    if (previousOwnKey === undefined)
+      delete process.env.JUDGE_ENTRANCE_KEY_R4_27;
+    else process.env.JUDGE_ENTRANCE_KEY_R4_27 = previousOwnKey;
+  }
+});
