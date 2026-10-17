@@ -483,3 +483,6 @@
 - #244（05.3 每授权独立 Key 签发）集成完成（第 55 张）：直复制 key-issuance.ts/key-issuance.integration.test.ts/schema-gateway.ts（91 行）/audit.ts（12 行词条）/bot-services-auth.ts；app.ts 两块（05.3 注释改写+keys 条件传递行）+registry.ts 四步（import/接口声明/modelAccess 提升 const/keys 装配）；index.ts/credit-reserve.ts 的 wt-only 全为旧基线形态零增量不动；迁移 0140_gateway_virtual_keys→0143（journal append 时 when 沿用原值触发严格递增断言红，改 0142.when+1000 后过——**重编号 when 必须取前一条+1000，不能沿用 worktree 原值**）。
 - 集成库回归 @5594 openbot_b5_244i（144 迁移+roles）：key-issuance 5/5、bot-service-auth+binding-codes+service-credentials 12、registry 集成+binding-issuance+hardening 27，全绿 tsc 0。
 - 运行中：#228（ctx_2f7479ac3216 探活确认在读 credit-reserve 5-7 步）。
+- 静默卡死第 15/16 次事件：#228 第五任（2.6h 零文件写）/#245 第三任（53min 零写）md5 双轮对比确认冻结（宿主 load 已降 11.4，非过载）。abandon+ready+重启：#228 第六任 ctx_1720f7a2ab25、#245 第四任 ctx_998463aa4834，接续简报附产出清单。
+- review-293 运行规范（主动 heartbeat alive/investigating）。
+- 运行中 3：#228（ctx_1720f7a2ab25）、#245（ctx_998463aa4834）、review-293（ctx_2f5c07069374）。
