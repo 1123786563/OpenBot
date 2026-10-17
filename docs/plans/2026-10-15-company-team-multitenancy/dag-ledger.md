@@ -13,6 +13,16 @@ main 已与 origin/main 统一为 `f0520524`，分支 merge `bea61c03` 完成同
 - **tasks.json 失效引用（5 任务）**：T01/T25 `enterprise/app.ts`、`enterprise/index.ts`、`enterprise/bootstrap.ts`；T03 `db/schema/enterprise-authz.ts`；T04 `enterprise/config.ts`；T11 `enterprise/runtime/`；T23 `db/schema/enterprise-run-events.ts`。对应 MT Ticket 的 Scope boundary 按新栈文件定位，验收不变。
 - **授权 seam 落点变化**：MT005/MT011/MT012 涉及的「现有授权 seam」在新栈上重新锚定（原 scope/transaction 模块已不在原位）；实施前先做一次新栈 seam 识别（半日内），结论回写本 Ledger。
 
+## 2026-10-15 新栈 Seam 识别结论（实施锚点）
+
+- **可信 Scope 签发**：`server/src/enterprise/tenancy/store.ts` 的 `createScopeResolver(directoryDatabase, { authenticate, selectTenant, selectWorkspace, data? })`。`resolve(request)`：认证 → 读选择头 → 任一缺失抛 `TENANT_REQUIRED`（无默认回退，符合 A6）→ 事务内 `set_config('app.user_id'/'app.tenant_id', …, true)` 建立 RLS 上下文 → 校验 tenant/principal/membership 均 active 与 epoch → 签发 WeakSet 信任的 `PlatformScope`；`assertTrustedScope` 验真。MT005 的团队资格校验落点 = 该 resolver 内补 workspace 成员资格校验。
+- **当前缺口与 Spec 一致**：workspaceId 仅是选择器，**无 workspace 成员资格校验**（成员表只有 tenant 级）；RLS 上下文只设 user_id+tenant_id，MT012 需补 `app.workspace_id`。
+- **选择头命名**：`x-openbot-tenant-id` / `x-openbot-workspace-id`（`server/src/index.ts` 企业会话服务 wiring）。引用旧名 `x-openbot-tenant` 的 Ticket（MT006/MT079 等）一律按新名实施。
+- **授权服务**：`server/src/enterprise/authz/service.ts`（createAuthz，资源 Grant read/run）与 `legacy-channel-scope.ts`；目录/数据库分离在 `tenancy/connections.ts`（assertDirectoryDatabase/assertDataDatabase）。
+- **部署应用装配**：`server/src/app.ts` `createApp(config, auth?, roleRepository?, …)` 位置参数 DI；企业入口已并入部署应用（`/api/admin/enterprise`），独立 enterprise 入口已删除。构建真实 app 用 fakes 的 prior art：`server/tests/identity-app-wiring.test.ts`（按 `createApp.length` 填参数，COWORKER_ARG=34，identity=length-2，githubCallback=length-1）；最小环境 `server/tests/support/environment.ts` 的 `testEnvironment()`。
+- **RLS 与受限角色基础**：`server/drizzle/0056_enterprise_tenancy_rls.sql` 与 `server/ops/enterprise/roles.sql` 已存在，MT012 在其上扩展 workspace 策略。
+- **Schema 清单事实**：主库 schema 导出 147 张表（含 enterprise_tenants/memberships/resources）；KB 独立库 knowledgeBases/knowledges/chunks/chunkRevisions。
+
 
 执行授权门禁：Spec与143张Ticket已发布（2026-10-15）；实现尚未开始，生产代码修改、提交、合并、部署仍需用户逐项授权。
 
