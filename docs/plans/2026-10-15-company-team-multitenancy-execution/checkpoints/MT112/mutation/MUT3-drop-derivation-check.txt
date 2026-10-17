@@ -1,0 +1,53 @@
+bun test v1.4.2 (50a8a8387)
+
+tests/multitenancy/legacy-anchor.test.ts:
+(pass) MT112 criterion 1: legacy company and default team creation is idempotent > the anchor tenant row exists exactly once with the fixed identity [2.88ms]
+(pass) MT112 criterion 1: legacy company and default team creation is idempotent > the default team workspace row exists exactly once under the anchor tenant [2.13ms]
+(pass) MT112 criterion 1: legacy company and default team creation is idempotent > replaying the anchor-row steps verbatim inserts no duplicate entities [7.53ms]
+(pass) MT112 criterion 1: legacy company and default team creation is idempotent > a conflicting tenant insert resolves to no-op and keeps the original row [1.78ms]
+(pass) MT112 criterion 1: legacy company and default team creation is idempotent > the anchor member is the earliest user exactly once with no second anchor [7.15ms]
+(pass) MT112 criterion 1: legacy company and default team creation is idempotent > the anchor member holds the default-team workspace membership exactly once [2.43ms]
+(pass) MT112 criterion 2: the mapping to deployment identity and billing customer is unique and verifiable > exactly one anchor row maps the tenant to the persisted deployment identity [0.64ms]
+(pass) MT112 criterion 2: the mapping to deployment identity and billing customer is unique and verifiable > the mapping is verifiable against deployment_packages and billing_customers by join [1.85ms]
+(pass) MT112 criterion 2: the mapping to deployment identity and billing customer is unique and verifiable > a second tenant claiming the same deployment identity is rejected by the unique index [10.24ms]
+33 |     }
+34 |     throw new Error(
+35 |       `expected a PostgreSQL error with a SQLSTATE and message, got: ${String(error)}`,
+36 |     );
+37 |   }
+38 |   throw new Error("expected the statement to be rejected, but it succeeded");
+                 ^
+error: expected the statement to be rejected, but it succeeded
+      at rejectionOf (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt112/server/tests/support/pg-errors.ts:38:13)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt112/server/tests/multitenancy/legacy-anchor.test.ts:453:29)
+(fail) MT112 criterion 2: the mapping to deployment identity and billing customer is unique and verifiable > a billing customer key that does not follow the derivation is rejected by the check [6.77ms]
+473 |     expect(names).toContain("enterprise_deployment_anchor_billing_customer");
+474 |     const checks = (await rawClient`
+475 |       select conname from pg_constraint
+476 |       where conrelid = 'enterprise_deployment_anchors'::regclass and contype = 'c'
+477 |       order by conname`) as Array<{ conname: string }>;
+478 |     expect(checks.map((row) => row.conname)).toContain(
+                                                   ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "enterprise_deployment_anchor_billing_derivation"
+Received: []
+
+      at <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i6-mt112/server/tests/multitenancy/legacy-anchor.test.ts:478:46)
+(fail) MT112 criterion 2: the mapping to deployment identity and billing customer is unique and verifiable > the unique indexes and the derivation check really exist in the catalog [3.91ms]
+(pass) MT112 criterion 2: the mapping to deployment identity and billing customer is unique and verifiable > the restricted operator role reads the anchor only inside its tenant context and can never write [24.61ms]
+(pass) MT112 criterion 3: creation previews as dry-run and applies via manifest through the MT003 tool > MT112 is a registered task whose plan is deterministic [0.24ms]
+(pass) MT112 criterion 3: creation previews as dry-run and applies via manifest through the MT003 tool > dry-run previews the pending statement plan before anything is applied [0.16ms]
+(pass) MT112 criterion 3: creation previews as dry-run and applies via manifest through the MT003 tool > apply converges via the manifest gate and replays as up-to-date [42.65ms]
+(pass) MT112 criterion 3: creation previews as dry-run and applies via manifest through the MT003 tool > a manifest that drifted from the plan is refused before any database effect [2.72ms]
+(pass) MT112 criterion 4: existing single-tenant behavior is unchanged > the migration is expand-only: only the anchor table (plus the tool journal) may be new and nothing disappears [2.94ms]
+(pass) MT112 criterion 4: existing single-tenant behavior is unchanged > the anchor creation touched no legacy business rows [3.49ms]
+(pass) MT112 criterion 4: existing single-tenant behavior is unchanged > fixture users keep their identity and timestamps after the migration [2.79ms]
+(pass) MT112 criterion 4: existing single-tenant behavior is unchanged > the billing customer projection row is untouched by the anchor creation [2.02ms]
+(pass) MT112 criterion 4: existing single-tenant behavior is unchanged > existing enterprise tables keep exactly the policies they had before [2.44ms]
+
+ 19 pass
+ 2 fail
+ 253 expect() calls
+Ran 21 tests across 1 file. [662.00ms]
+EXIT=1

@@ -1,0 +1,43 @@
+--- /tmp/mt112-before-enterprise-tenancy.ts	2026-10-16 02:58:58
++++ server/src/db/schema/enterprise-tenancy.ts	2026-10-16 02:50:13
+@@ -384,3 +384,40 @@
+     }),
+   ],
+ ).enableRLS();
++
++// MT112（执行轮 Ticket）：历史部署「原有公司」锚点映射表，expand-only。
++// 一行 = 原有公司租户 ↔ 既有部署身份（deployment_packages.tenant_id，启动时
++// 由 synchronizeTenantPackage upsert 的持久化身份）↔ 计费 Customer 键
++// （deploymentExternalCustomerId 的派生规则：'openbot-deployment-' ||
++// deployment_tenant_id，见 src/billing/service.ts；派生 CHECK 让映射自证
++// 一致）。tenant 主键 + 两个方向唯一索引 = 映射在两个方向上都唯一；
++// 锚点行只能由 MT112 迁移写入（对受限角色只授予租户范围 SELECT，
++// 无 INSERT/UPDATE 授权），后续回填 Ticket（MT113/MT074）以本表为锚。
++export const enterpriseDeploymentAnchors = pgTable(
++  "enterprise_deployment_anchors",
++  {
++    tenantId: text("tenant_id")
++      .primaryKey()
++      .references(() => enterpriseTenants.id, { onDelete: "cascade" }),
++    deploymentTenantId: text("deployment_tenant_id").notNull(),
++    billingExternalCustomerId: text("billing_external_customer_id").notNull(),
++    createdAt: createdAt(),
++  },
++  (table) => [
++    uniqueIndex("enterprise_deployment_anchor_identity").on(
++      table.deploymentTenantId,
++    ),
++    uniqueIndex("enterprise_deployment_anchor_billing_customer").on(
++      table.billingExternalCustomerId,
++    ),
++    check(
++      "enterprise_deployment_anchor_billing_derivation",
++      sql`${table.billingExternalCustomerId} = 'openbot-deployment-' || ${table.deploymentTenantId}`,
++    ),
++    pgPolicy("enterprise_deployment_anchor_operator_read", {
++      for: "select",
++      to: "ob_ent_operator",
++      using: sql`enterprise_deployment_anchors.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
++    }),
++  ],
++).enableRLS();
