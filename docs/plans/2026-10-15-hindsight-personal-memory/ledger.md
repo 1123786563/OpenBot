@@ -273,3 +273,10 @@ Run: run_6ec4ffc33d89（objective: Hindsight 个人记忆集成）。coordinator
 - **最终交接清单**（Wave 2 输入，不再修复）：r11 的 4 medium（flock 消息口径、xtrace 口令盲区、sensitivity diagnos 误伤高频技术词、health.ts llm_trace 交叉核对被 gateway_down 掩盖的顺序问题）+ r11 的 6 low + 累积 Wave 2 项（r1-r10 各裁决所记）。完整索引：本 ledger 裁决 7-19 + reports/ocr-result（/tmp/ocr-result-r1..r11.json）。
 - **冻结终态**：11 轮 OCR（medium 8→5→2→2→1→3→4→3→3→2→4）、10 批修复全部独立复审 PASS、0 critical/high 存量；测试 105/0/439 + 27/0/62 + tsc 0 + bash -n/compose 校验通过。
 - 用户已授权提交序列（2026-10-17"按照你的建议顺序开始"）：冻结后按票拆分提交、push、开 PR（CONTEXT.md billing 术语分离，裁决 8/F-L4）。
+
+### 裁决 20:提交与 PR（2026-10-17 14:xx CST）
+
+- 用户授权提交序列后：分支 `1123786563/hindsight-wave1` 基于 origin/main（bab7c0b9）。CONTEXT.md 与 main 零差异（bab7c0b9 已含 billing+个人记忆术语），F-L4 分离问题自然消解；spec/ADR 与 main 一致故未重复提交。
+- 三笔提交：fe596bda（memory 侧 #377+#378，12 文件）、e0171f4f（hindsight 侧 #380，11 文件）、cc4d2494（证据包 docs/plans + superpowers plan）。提交后全套复验：105/0/439 + 27/0/62 + tsc 0。
+- PR #397（base main）。执行工作区工作树 clean、HEAD=cc4d2494。
+- Orca：全部 dispatch 结算完毕；stale stash 仅剩他人 billing-audit 两条未动。
