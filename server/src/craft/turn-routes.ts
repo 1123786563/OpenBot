@@ -121,6 +121,10 @@ export function createTurnRoutes(
               return;
             }
 
+            // Captured once so the guarded callback below narrows without a
+            // non-null assertion: nothing rewrites `deps` mid-stream.
+            const approvalSignals = deps.approvalSignals;
+
             let lastRunnerStartAttempt = 0;
             const maybeStartRunner = (force = false) => {
               const now = Date.now();
@@ -186,8 +190,8 @@ export function createTurnRoutes(
               // onyx's announce merge: approval cards ride the same SSE stream. The
               // drain is inert unless gated tools are configured.
               announceDrain:
-                deps.approvalSignals && config.approvalGatedTools.length > 0
-                  ? () => deps.approvalSignals?.drainAnnouncements(sessionId)
+                approvalSignals && config.approvalGatedTools.length > 0
+                  ? () => approvalSignals.drainAnnouncements(sessionId)
                   : null,
               // connect_app asks are in the permissions template (not a gated-
               // tools config), so the drain is wired whenever the KV is.

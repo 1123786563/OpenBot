@@ -18,7 +18,6 @@
 // overflow. pptxgenjs is resolved from the sandbox's global npm root
 // (NODE_PATH is not set in the sandbox).
 
-
 const { execFileSync } = require("node:child_process");
 
 // --- Layout constants (LAYOUT_16x9, inches) ---------------------------------
@@ -1461,11 +1460,15 @@ function tableSlide(
       fit: "shrink",
     });
   };
-  cols.forEach((h, ci) => cellText(h, ci, top, true));
+  cols.forEach((h, ci) => {
+    cellText(h, ci, top, true);
+  });
   hr(slide, theme.text, MARGIN, top + rowH, CONTENT_W, 1);
   bodyRows.forEach((row, ri) => {
     const y = top + rowH * (ri + 1) + 0.04;
-    cols.forEach((_, ci) => cellText(row[ci], ci, y, false));
+    cols.forEach((_, ci) => {
+      cellText(row[ci], ci, y, false);
+    });
     if (ri < bodyRows.length - 1)
       hr(slide, theme.hairline, MARGIN, y + rowH - 0.04, CONTENT_W);
   });

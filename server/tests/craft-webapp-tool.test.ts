@@ -1033,6 +1033,7 @@ describe("buildWebappBootstrapScript (F5 F)", () => {
     // tempdir into an unwritable path — the script pins the cache under $HOME
     // (smoke-verified: install fails with AccessDenied without this line).
     expect(script).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the assertion matches the target source's own uninterpolated ${...} text.
       'export BUN_INSTALL_CACHE_DIR="${BUN_INSTALL_CACHE_DIR:-$HOME/.bun/install-cache}"',
     );
     // A failed install leaves an empty node_modules behind; .bin/next is the

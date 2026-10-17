@@ -92,17 +92,18 @@ export async function listTree(
       });
       continue;
     }
-    // Nest intermediate directories, creating each on first sight.
+    // Nest intermediate directories, creating each on first sight. The final
+    // segment is the file itself; every earlier one is a directory that exists.
+    const fileName = segments.at(-1);
+    if (fileName === undefined) continue;
     let parent: WorkshopFileNode | undefined;
     let parentPath = prefix;
-    for (let depth = 0; depth < segments.length - 1; depth += 1) {
-      parentPath = parentPath
-        ? `${parentPath}/${segments[depth]}`
-        : segments[depth];
+    for (const segment of segments.slice(0, -1)) {
+      parentPath = parentPath ? `${parentPath}/${segment}` : segment;
       let directory = directories.get(parentPath);
       if (!directory) {
         directory = {
-          name: segments[depth]!,
+          name: segment,
           path: parentPath,
           type: "directory",
           size: 0,
@@ -116,7 +117,7 @@ export async function listTree(
     }
     if (parent) {
       parent.children?.push({
-        name: segments.at(-1)!,
+        name: fileName,
         path: file,
         type: "file",
         size: 0,
@@ -170,11 +171,12 @@ export async function upload(
   }
 
   const sizes = files.map((file) => Buffer.byteLength(file.content, "utf8"));
-  for (let index = 0; index < files.length; index += 1) {
-    if (sizes[index]! > MAX_UPLOAD_BYTES) {
+  for (const file of files) {
+    const size = Buffer.byteLength(file.content, "utf8");
+    if (size > MAX_UPLOAD_BYTES) {
       await refuse(
-        `The file ${files[index]?.name} exceeds the ${MAX_UPLOAD_BYTES}-byte per-file limit.`,
-        { file: files[index]?.name, size: sizes[index] },
+        `The file ${file.name} exceeds the ${MAX_UPLOAD_BYTES}-byte per-file limit.`,
+        { file: file.name, size },
       );
     }
   }
@@ -187,18 +189,19 @@ export async function upload(
   }
 
   const client = options.clientFor(session.botId);
-  if (!client) {
-    await refuse("Code execution is not configured on this deployment.", {
+  if (!client)
+    // `refuse` never resolves (audit first, then UploadLimitError); returning
+    // it keeps that contract and narrows `client` for the sandbox writes.
+    return refuse("Code execution is not configured on this deployment.", {
       configured: false,
     });
-  }
 
   const uploaded: Array<{ path: string; size: number }> = [];
-  for (let index = 0; index < files.length; index += 1) {
+  for (const file of files) {
     // A name from the wire never becomes a path: separators are flattened so one file cannot
     // climb out of the workspace with ../ or plant into another Bot's tree with a slash.
-    const name = files[index]?.name.replace(/[/\\]/g, "_");
-    const written = await client?.writeFile(name, files[index]?.content);
+    const name = file.name.replace(/[/\\]/g, "_");
+    const written = await client.writeFile(name, file.content);
     uploaded.push(written);
   }
 
