@@ -30,6 +30,10 @@ import {
   type TranscriptionConfig,
   transcriptionConfig,
 } from "./dictation/config";
+import {
+  gatewayEnvDefaultConfig,
+  type GatewayEndpointSettings,
+} from "./gateway/endpoint-config";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
@@ -435,6 +439,14 @@ export type DeploymentConfig = {
   payments?: PaymentsConfig;
   /** How far one Bot handing work to another may go. */
   handoff: HandoffCaps;
+  /**
+   * The Bifrost model gateway, when this deployment's environment names one
+   * (`BIFROST_GATEWAY_URL`). Addressing only — the gateway's admin credential is stored separately,
+   * write-only, by the gateway configuration module's consumers. A saved administrator setting
+   * takes precedence over this default; see `gateway/endpoint-config.ts`, which owns the shared
+   * refusal semantics so boot and the admin save cannot disagree about what is legal.
+   */
+  gateway?: GatewayEndpointSettings;
   /**
    * The secret a Bot presents when it calls a tool back through this server.
    *
@@ -2729,6 +2741,14 @@ function serverPort(environment: Environment): number {
   return port ?? serverPort ?? DEFAULT_PORT;
 }
 
+/** The Bifrost gateway from the environment, or undefined when the deployment names none. */
+function gatewayConfig(environment: Environment): GatewayEndpointSettings | undefined {
+  const config = gatewayEnvDefaultConfig(environment);
+  return config === undefined
+    ? undefined
+    : { baseUrl: config.baseUrl, requestTimeoutMs: config.requestTimeoutMs };
+}
+
 export function loadConfig(
   environment: Environment = process.env,
 ): DeploymentConfig {
@@ -2756,6 +2776,7 @@ export function loadConfig(
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
   // Read once so the payments block can refuse a channel configured without its projection.
   const billing = billingConfig(environment);
+  const gateway = gatewayConfig(environment);
   const deploymentKey = keyEncryptionKey(environment);
   const webBotAuth = webBotAuthFromEnv(environment, {
     publicUrl,
@@ -2833,6 +2854,7 @@ export function loadConfig(
     billing,
     payments: paymentsConfig(environment, billing),
     handoff: handoffCaps(environment),
+    ...(gateway ? { gateway } : {}),
     ...(optional(environment, "AGENT_TOOL_TOKEN")
       ? { agentToolToken: optional(environment, "AGENT_TOOL_TOKEN") as string }
       : {}),
