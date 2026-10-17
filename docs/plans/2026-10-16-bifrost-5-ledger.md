@@ -470,3 +470,16 @@
 - review-292 第二任双 PASS（Spec 4/4 + 质量 B+，1 MEDIUM F1=migration-journal 红未披露——定性为基线既有+前序票本地号快照缺陷，集成层重编号+snapshot 重建自然消解，无需 worker 返工；3 low/4 info）。
 - #292 集成重编号计划确定：worktree 本地 0130-0133 实为主仓库已集成内容（sync_delta 复制），唯一新迁移 0134_subscription_owner_allowance → 集成层 **0142**；#259 的 0141 先集成、#244 的 0140_gateway_virtual_keys → 0143。集成顺序：#259 → #292 → #244。
 - 运行中：#228（ctx_868851f0e4e4）、review-259（ctx_8b2722f929a8）、review-244（ctx_4d23c57e0620）。
+- 静默卡死×2（第 11 次故障）：三 dispatch（#228/review-259/review-244）终端 30-40 分钟零输出。探针 review-259（ctx_aaad11d667cd）确认存活后批量：#228 第三任+review-244 第二任，各附接续简报（228 附迁移号≥0141 已被认领警告）。
+
+## T107（2026-10-17）
+- #292（10.3 订阅归属与续期到账）集成完成（第 54 张）：直复制组 maintenance/payments-service/types/schema-billing/store（worktree import 行本为 main 超集含 count+sql，无需修补）+3 新增（plan-renewals.ts/plan-renewal-grantor.test/subscription-ownership.integration.test）+billing-store.test（wt 版含 main 全部 updatedAt 期望，超集直复制）；service.ts/reconcile.ts 核实分叉后主仓库零提交零未提交修改、main-only 行全为被 wt 重构取代旧行→直复制；index.ts 九锚移植（maintenance import 并入、plan-renewals import、billingCreditWriter 提升、renewals grantor 装配、creditWriter 共享、renewalSweeps 启动 key=4_192_007、billingProjectionStore+stampSubscriptionOwnership 接线+readSubscriptions 复用），保留 #227 catalog-sync/#259 unknown-mark/#222 database 传参全部 main 侧内容；audit.ts/app.ts/routes.ts 核实无 #292 增量（main-only=已集成词条，wt-only=注释标点/旧注释）跳过。
+- 迁移重编号落地：0134_subscription_owner_allowance→0142（snapshot 复制重命名+journal append，143 条）。
+- 集成库回归 @5594 openbot_b5_292i（143 迁移+roles）：subscription-ownership 7+plan-renewal-grantor 3+billing-store 14=24 pass、payment-callback-ownership 4+billing-reconcile 28=32 pass、tsc 0。
+- 运行中：#228（ctx_2f7479ac3216 第三任）、review-244（第二任已 succeeded 双 PASS 待集成）、#244 集成（0143）排队。
+- 下一波：#293（10.4）已解锁待派。
+- review-259 双 PASS（Spec 4/4+质量 A-，3 Low+5 Info 无 Medium+；unknown 不超时回收突变复证成立）——#259 已集成无需返工。
+- review-244 第三任双 PASS（Spec 4/4+质量 A-，3 LOW+2 INFO；4 突变复证 M1-M4 全红）。
+- #244（05.3 每授权独立 Key 签发）集成完成（第 55 张）：直复制 key-issuance.ts/key-issuance.integration.test.ts/schema-gateway.ts（91 行）/audit.ts（12 行词条）/bot-services-auth.ts；app.ts 两块（05.3 注释改写+keys 条件传递行）+registry.ts 四步（import/接口声明/modelAccess 提升 const/keys 装配）；index.ts/credit-reserve.ts 的 wt-only 全为旧基线形态零增量不动；迁移 0140_gateway_virtual_keys→0143（journal append 时 when 沿用原值触发严格递增断言红，改 0142.when+1000 后过——**重编号 when 必须取前一条+1000，不能沿用 worktree 原值**）。
+- 集成库回归 @5594 openbot_b5_244i（144 迁移+roles）：key-issuance 5/5、bot-service-auth+binding-codes+service-credentials 12、registry 集成+binding-issuance+hardening 27，全绿 tsc 0。
+- 运行中：#228（ctx_2f7479ac3216 探活确认在读 credit-reserve 5-7 步）。
