@@ -41,6 +41,8 @@ import { createWorkTicketReader } from "../results";
 import { createAdminSummaryRoutes } from "./admin-summary";
 import { createBasicRunRoutes } from "./basic-run";
 import { createExperimentComparisonRoutes } from "./comparison";
+import { createCaseReviewRoutes } from "./case-review";
+import { createObservationDatasetReadRoutes } from "./datasets";
 import { createExperimentWriteRoutes } from "./experiments";
 import { createExportRoutes } from "./exports";
 import { createAiObservabilityHealthRoutes } from "./health";
@@ -195,6 +197,41 @@ export function createAiObservabilityRoutes(
         scopeEpoch: deps.scopeEpoch,
       }),
     );
+
+    // The datasets chain's wire half (Issue #27 list/detail over the T19 store):
+    // the list/detail reads the evaluations page already requests, answered from
+    // the local tables only — a portless deployment serves them honestly, because
+    // nothing here dials Opik. Projection is the read routes' own job: names,
+    // counts, hashes, times — never the scope key, the locator or the actor id.
+    const datasetStore = createObservationDatasetStore(deps.database);
+    routes.route(
+      "/bots/:botId/datasets",
+      createObservationDatasetReadRoutes({
+        canManageBot: deps.canManageBot,
+        scopeEpoch: deps.scopeEpoch,
+        datasets: datasetStore,
+      }),
+    );
+
+    // The case-review write half (Issue #26 review/save through the T20 service),
+    // at the prefix routes/case-review.ts's header has always named. The run is
+    // answered per request through the T07 binding table, so this mount needs the
+    // bindings dep beside the database — absent bindings stays unmounted, the same
+    // "absent = not mounted" contract as every other sub-router here (a review
+    // that cannot ask the authoritative ownership seam must not fall back to
+    // local-table guesses).
+    if (deps.bindings) {
+      routes.route(
+        "/bots/:botId/case-review",
+        createCaseReviewRoutes({
+          canManageBot: deps.canManageBot,
+          scopeEpoch: deps.scopeEpoch,
+          bindings: deps.bindings,
+          datasets: datasetStore,
+          audit: createAuditStore(deps.database),
+        }),
+      );
+    }
   }
 
   // The admin summary (this ticket): authorized scopes first, aggregates after.

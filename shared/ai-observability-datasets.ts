@@ -3,10 +3,9 @@
  * store; Issue #26 review/save, through the T20 service).
  *
  * This file is the ONE place the datasets contract is defined, beside the runs contract in
- * `shared/ai-observability-runs.ts`: the browser renders these shapes, and the wiring ticket
- * (T33) answers them. The backend endpoints do not exist yet on purpose — the mounting seam
- * is integration-owned — so until T33 wires the routes, this file is the agreement the
- * frontend is built against and the tests mock. Two mirror rules keep it honest:
+ * `shared/ai-observability-runs.ts`: the browser renders these shapes, and the mounting seam
+ * answers them (routes/index.ts mounts the T20 case-review routes and the dataset read
+ * routes; absent deps stay unmounted, the house "absent = not mounted" contract). Two mirror rules keep it honest:
  *
  *   - `FrozenDatasetCase` and `CaseReviewOutcome` are byte-for-byte the shapes
  *     server/src/ai-observability/{datasets,case-review}.ts already export. A change there
