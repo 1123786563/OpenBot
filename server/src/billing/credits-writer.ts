@@ -14,6 +14,7 @@ import {
   readCapacity,
   type Tx,
 } from "./capacity";
+import type { ReservationLockedBasis } from "./reserve-bound";
 import type { CreditGrantSource } from "./types";
 
 /**
@@ -121,13 +122,16 @@ export type CreditWriter = {
    * grants, earliest expiry first, atomically with respect to every other hold and settlement of
    * the customer. A replay of `idempotencyKey` answers the original reservation; a replay with a
    * different customer or amount throws `CreditReservationConflictError`. A refused hold writes
-   * nothing and reports what was available.
+   * nothing and reports what was available. When `lockedBasis` is given (the credit protocol's
+   * reserve path, 06.5), it is persisted with the hold: the pricing basis — cell plus
+   * snapshotVersion plus rateVersion — the admission priced, for settlement to resolve exactly.
    */
   reserveCredits(input: {
     externalCustomerId: string;
     idempotencyKey: string;
     maximumCents: number;
     expiresAt: Date;
+    lockedBasis?: ReservationLockedBasis;
   }): Promise<
     | { reserved: true; reservationId: string }
     | { reserved: false; availableCents: number }
@@ -250,6 +254,24 @@ export function createCreditWriter(database: Database): CreditWriter {
           "reserveCredits needs a positive 32-bit scaled amount, a future expiry and a key.",
         );
       }
+      const basis = input.lockedBasis;
+      if (
+        basis !== undefined &&
+        (typeof basis.provider !== "string" ||
+          basis.provider.length === 0 ||
+          typeof basis.model !== "string" ||
+          basis.model.length === 0 ||
+          typeof basis.capability !== "string" ||
+          basis.capability.length === 0 ||
+          !Number.isSafeInteger(basis.snapshotVersion) ||
+          basis.snapshotVersion < 1 ||
+          !Number.isSafeInteger(basis.rateVersion) ||
+          basis.rateVersion < 0)
+      ) {
+        throw new TypeError(
+          "reserveCredits needs a complete locked basis: a non-empty cell with a positive snapshot version and a non-negative rate version.",
+        );
+      }
       await ensureCustomer(database, input.externalCustomerId);
 
       const at = new Date();
@@ -297,6 +319,15 @@ export function createCreditWriter(database: Database): CreditWriter {
           idempotencyKey: input.idempotencyKey,
           maximum: input.maximumCents,
           expiresAt: input.expiresAt,
+          ...(basis === undefined
+            ? {}
+            : {
+                provider: basis.provider,
+                model: basis.model,
+                capability: basis.capability,
+                snapshotVersion: basis.snapshotVersion,
+                rateVersion: basis.rateVersion,
+              }),
         });
         let toHold = input.maximumCents;
         for (const grant of grants) {
