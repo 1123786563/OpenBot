@@ -2760,8 +2760,57 @@ function agentStallTimeoutMs(environment: Environment): number {
   return milliseconds;
 }
 
-/** Where the API listens when nothing says otherwise: what `.env.example` and the image ship. */
-const DEFAULT_PORT = 3001;
+/** Where the API listens when nothing says otherwise: what `.env.example` and the image ship.
+ *
+ * fix-ocr19 #11: exported as the ONE spelling of "the server's default port"
+ * — craft/preview-ticket.ts derives the dev preview origin's default from the
+ * same number (the dev form's address is `127.0.0.1:<server port>`, so the
+ * preview default must equal the server's own), and importing it retires the
+ * hand-synced twin constant there.
+ */
+export const DEFAULT_PORT = 3001;
+
+/**
+ * The PORT/SERVER_PORT parsing rules, in the one place (fix-ocr23 #8).
+ *
+ * Answers `{ port }` or `{ reason }` — never throws — so both consumers can
+ * share the exact rules: `serverPort` turns a reason into a boot failure,
+ * craft/preview-ticket.ts's `previewPortFromEnv` passes the reason through as
+ * the preview feature's refusal (a preview misconfiguration must not take the
+ * server down). Before this export the parser lived twice — once here and once
+ * as a hand-synced twin over there, kept aligned only by a comment's promise
+ * (the very shape the DEFAULT_PORT import retired); if these rules ever evolve
+ * (a new name, a different range, changed empty semantics), the dev preview's
+ * port judgment and the server's actual listener can no longer silently
+ * diverge.
+ */
+export function portFromEnvironment(
+  environment: Environment,
+): { port: number } | { reason: string } {
+  const read = (name: string): { port?: number; reason?: string } => {
+    const raw = optional(environment, name);
+    if (raw === undefined) return {};
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1 || value > 65535) {
+      return { reason: `${name} must be a whole number between 1 and 65535` };
+    }
+    return { port: value };
+  };
+  const port = read("PORT");
+  if (port.reason) return { reason: port.reason };
+  const serverPortValue = read("SERVER_PORT");
+  if (serverPortValue.reason) return { reason: serverPortValue.reason };
+  if (
+    port.port !== undefined &&
+    serverPortValue.port !== undefined &&
+    port.port !== serverPortValue.port
+  ) {
+    return {
+      reason: `PORT (${port.port}) and SERVER_PORT (${serverPortValue.port}) disagree: set one or set both to the same value`,
+    };
+  }
+  return { port: port.port ?? serverPortValue.port ?? DEFAULT_PORT };
+}
 
 /**
  * The port the API listens on, from either of its two names.
@@ -2777,25 +2826,15 @@ const DEFAULT_PORT = 3001;
  *
  * A value that is not a whole port number is refused for the reason the caps above are: `30o1`
  * used to start the server on port 30, and a typo has to fail where somebody is looking.
+ *
+ * fix-ocr23 #8: the rules live in `portFromEnvironment` — this wrapper is the boot-side consumer
+ * that turns a reason into a throw, so the parser cannot drift from the preview side's copy (the
+ * twin no longer exists to drift).
  */
 function serverPort(environment: Environment): number {
-  const read = (name: string): number | undefined => {
-    const raw = optional(environment, name);
-    if (raw === undefined) return undefined;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < 1 || value > 65535) {
-      throw new Error(`${name} must be a whole number between 1 and 65535`);
-    }
-    return value;
-  };
-  const port = read("PORT");
-  const serverPort = read("SERVER_PORT");
-  if (port !== undefined && serverPort !== undefined && port !== serverPort) {
-    throw new Error(
-      `PORT (${port}) and SERVER_PORT (${serverPort}) disagree: set one or set both to the same value`,
-    );
-  }
-  return port ?? serverPort ?? DEFAULT_PORT;
+  const parsed = portFromEnvironment(environment);
+  if ("reason" in parsed) throw new Error(parsed.reason);
+  return parsed.port;
 }
 
 export function loadConfig(
