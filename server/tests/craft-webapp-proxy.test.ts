@@ -1006,6 +1006,46 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     expect(dials).toBe(2);
   });
 
+  test("fix-ocr28 #5: a deleted session's 404 clears the session's memo entries — the next request re-probes", async () => {
+    // The 404 branch (the row gone after redemption) used to leave the
+    // session's readyUntil entries behind — dead-session keys whose values
+    // only the TTL would retire. The cleanup is observable through the
+    // probe dial: a memo entry that survives the 404 would skip the
+    // readiness probe for a session whose row was deleted and re-created
+    // (or a port re-reserved), serving off a verdict about a DIFFERENT
+    // process's lifetime. RED: the third call rides the stale memo and
+    // never re-probes.
+    let exists = true;
+    const { dialed, fetchImpl } = recordingUpstream();
+    const serve = createPreviewProxy({
+      ...previewProxyDeps({ fetchImpl }),
+      store: {
+        async findSessionById() {
+          return exists ? sessionRow("app", 3011) : undefined;
+        },
+      } as unknown as CraftStore,
+    });
+    const call = () =>
+      serve({
+        sessionId: PREVIEW_SESSION,
+        appPath: "/x/api/tasks",
+        query: "",
+        method: "GET",
+        request: new Request("http://127.0.0.1:3001/x/api/tasks"),
+      });
+    expect((await call()).status).toBe(200); // probe 1
+    expect((await call()).status).toBe(200); // memo hit — still one probe
+    exists = false;
+    const gone = await call();
+    expect(gone.status).toBe(404);
+    exists = true;
+    expect((await call()).status).toBe(200);
+    const probes = dialed.filter((url) => url === "http://sbox.internal:3011/");
+    // The 404 wiped the session's entries: the recovered request paid its
+    // own probe instead of trusting a memo minted for a dead row.
+    expect(probes.length).toBe(2);
+  });
+
   test("a down dev server (attach probe fails) is the not-running refusal, HTML for a frame", async () => {
     const down = (async () => {
       throw new Error("ECONNREFUSED");
@@ -2530,5 +2570,58 @@ describe("refuseResponse — the shared HTML/JSON refusal sink (fix-ocr15)", () 
       "The web app is not running.",
     );
     expect(html.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
+// ── fix-ocr28 #4: the .webapp-mount read is ONE helper behind three verdicts ──
+//
+// The readFile + trim + null-fold + catch for `.webapp-mount` (and the
+// expectedMount fold of the preview address's path) used to be spelled
+// verbatim at THREE sites: the preview-ticket mint's legacy-heal mirror and
+// webapp-info's legacy/current branches. Any one site drifting its fold or
+// its null-shape would make the ticket route and webapp-info disagree about
+// the SAME session's record — the two surfaces are documented mirrors
+// (webapp-generation.ts's header), so the READ is now one module-level
+// helper (readMountRecord) and the mount fold one derivation
+// (expectedMountFor). The CONSUMERS' semantics stay separate by design
+// (recordProvesMount needs a non-empty exact match; the legacy branch reads
+// empty as the true legacy answer; the current branch compares against the
+// expected mount) — those judgments are pinned by the behavioral suites
+// above; these pins hold the plumbing single-sourced.
+describe("the .webapp-mount read is single-sourced (fix-ocr28 #4 — source pins)", () => {
+  const source = readFileSync(
+    join(import.meta.dir, "../src/craft/webapp-proxy.ts"),
+    "utf8",
+  );
+
+  test("readMountRecord exists and exactly the three consumers call it", () => {
+    expect(source).toContain("async function readMountRecord(");
+    // Definition line excluded: exactly 3 call sites (the mint's legacy
+    // mirror, webapp-info's legacy branch, webapp-info's current branch).
+    const calls = [...source.matchAll(/await readMountRecord\(/g)];
+    expect(calls.length).toBe(3);
+    // No site kept a private copy of the raw read: the marker's readFile is
+    // spelled nowhere outside the helper.
+    const outsideHelper = source.replace(
+      /async function readMountRecord\([\S\s]*?\n\}/,
+      "",
+    );
+    expect(outsideHelper).not.toContain(`${WEBAPP_MOUNT_MARKER}\`)`);
+  });
+
+  test("expectedMountFor exists and exactly the three consumers derive through it", () => {
+    expect(source).toContain("function expectedMountFor(");
+    const calls = [...source.matchAll(/expectedMountFor\(/g)];
+    // 1 definition + 3 call sites.
+    expect(calls.length).toBe(4);
+    // The hand-copied fold is gone from the call sites — it lives in the
+    // helper and nowhere else.
+    const outsideHelper = source.replace(
+      /function expectedMountFor\([\S\s]*?\n\}/,
+      "",
+    );
+    expect(outsideHelper).not.toContain(
+      'addressPath === "/" ? "" : addressPath',
+    );
   });
 });

@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { loadCraftConfig } from "../src/craft/config";
 import {
   createPreviewOrigin,
+  samePreviewOrigin,
   type ServePreview,
 } from "../src/craft/preview-origin";
 import {
@@ -855,5 +856,105 @@ describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () 
       /const craftWebappHmrDeps =\s*\n\s*craftEffectiveConfig\.enabled && craftEffectiveConfig\.webappProxyEnabled/,
     );
     expect(mainGate).not.toBeNull();
+  });
+});
+
+// ── fix-ocr28 #1 (round28 CSWSH): the preview HMR upgrade's Origin gate ───────
+//
+// The preview pass cookie is SameSite=None, and a WebSocket handshake is NOT
+// subject to CORS: a malicious page could `new WebSocket("wss://<preview-host>/
+// _next/webpack-hmr")` and the pass cookie would ride the cross-site handshake,
+// handing it the live HMR channel (source frames in, protocol messages out).
+// The upgrade must therefore check Origin by hand — the same manual-discipline
+// shape the rest of this surface applies. The judgment is a pure function in
+// preview-origin.ts (beside holdsPreviewSessionPass, its sibling gate), and
+// the boot file wires it INSIDE the preview HMR branch, before the upgrade
+// resolver — pinned at source level like every other index.ts wiring above.
+describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () => {
+  const origin = createPreviewOrigin({
+    config: {
+      enabled: true,
+      webappProxyEnabled: true,
+      previewOriginEnabled: true,
+      previewOriginTemplate: "",
+    },
+    previewTickets: createPreviewTickets({ store: {} as never }),
+    secret: "same-origin-suite-secret",
+    env: { PORT: "3221" },
+    servePreview: async () => new Response("unused"),
+  });
+  const address = origin.originFor(SESSION_ID); // registers the label
+
+  test("no Origin header (a non-browser client) is waved through — existing behavior unchanged", () => {
+    expect(samePreviewOrigin(null, address)).toBe(true);
+  });
+
+  test("the session's own origin passes — including the dev form, where originFor carries the /<label> path an Origin header never spells", () => {
+    // originFor answers the ADDRESS (path included in the dev form); a
+    // browser's Origin header is scheme://host[:port] only. The comparison
+    // must normalize both sides through new URL(x).origin or every
+    // legitimate dev-form browser upgrade would be refused.
+    expect(address).toBe(
+      `http://127.0.0.1:3221/${new URL(address).pathname.slice(1)}`,
+    );
+    expect(samePreviewOrigin("http://127.0.0.1:3221", address)).toBe(true);
+    // The exact originFor string passes too (host form: it IS an origin).
+    expect(samePreviewOrigin(address, address)).toBe(true);
+  });
+
+  test('any other origin is refused — cross-site pages, port neighbors, and the opaque "null" origin', () => {
+    expect(samePreviewOrigin("https://evil.example", address)).toBe(false);
+    // A port neighbor on the same host is a different origin — and the
+    // main site's own origin (the panel's page) is NOT the preview origin.
+    expect(samePreviewOrigin("http://127.0.0.1:3220", address)).toBe(false);
+    // A suffix host is not the same host.
+    expect(
+      samePreviewOrigin("http://127.0.0.1:3221.evil.example", address),
+    ).toBe(false);
+    // Opaque origins (sandboxed frames serialize "null") parse-fail and
+    // must refuse, never throw.
+    expect(samePreviewOrigin("null", address)).toBe(false);
+  });
+
+  test("the host form's address compares as a plain origin (port normalization is a no-op there)", () => {
+    const hostForm = createPreviewOrigin({
+      config: {
+        enabled: true,
+        webappProxyEnabled: true,
+        previewOriginEnabled: true,
+        previewOriginTemplate: "https://{session}.preview.example.com",
+      },
+      previewTickets: createPreviewTickets({ store: {} as never }),
+      secret: "same-origin-suite-secret",
+      env: {},
+      servePreview: async () => new Response("unused"),
+    });
+    const hostAddress = hostForm.originFor(SESSION_ID);
+    expect(samePreviewOrigin(hostAddress, hostAddress)).toBe(true);
+    expect(samePreviewOrigin("https://evil.example", hostAddress)).toBe(false);
+    // A would-be sibling label is a DIFFERENT origin: subdomain enumeration
+    // through the HMR channel stops here.
+    expect(
+      samePreviewOrigin("https://deadbeef.preview.example.com", hostAddress),
+    ).toBe(false);
+  });
+
+  test("the boot file gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
+    const source = readFileSync(
+      join(import.meta.dir, "../src/index.ts"),
+      "utf8",
+    );
+    const branch = source.slice(
+      source.indexOf("craftPreviewOrigin?.handlesRequest"),
+      source.indexOf('url.pathname === "/api/audio/transcriptions"'),
+    );
+    // The gate reads the Origin header and consults the session's own
+    // origin, and its 403 lands before the resolver can commit anything.
+    expect(branch).toContain('request.headers.get("origin")');
+    expect(branch).toContain("samePreviewOrigin");
+    expect(branch.indexOf("samePreviewOrigin")).toBeLessThan(
+      branch.indexOf("resolvePreviewWebappHmrUpgrade("),
+    );
+    expect(branch).toContain("Cross-origin WebSocket upgrades are refused.");
   });
 });
