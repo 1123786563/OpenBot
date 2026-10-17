@@ -8,7 +8,10 @@ import {
   IconKey,
   IconLayoutGrid,
   IconListDetails,
+  IconNetwork,
   IconPuzzle,
+  IconRobot,
+  IconServer,
   IconShieldCheck,
   IconUsers,
 } from "@tabler/icons-react";
@@ -53,6 +56,24 @@ const SECTIONS = [
         description: "overview.reach.credentials.description",
         icon: IconKey,
         linkOptions: { to: "/admin/credentials" },
+      },
+      {
+        title: "overview.reach.botServices.title",
+        description: "overview.reach.botServices.description",
+        icon: IconRobot,
+        linkOptions: { to: "/admin/bot-services" },
+      },
+      {
+        title: "overview.reach.gateway.title",
+        description: "overview.reach.gateway.description",
+        icon: IconNetwork,
+        linkOptions: { to: "/admin/gateway" },
+      },
+      {
+        title: "overview.reach.modelCatalog.title",
+        description: "overview.reach.modelCatalog.description",
+        icon: IconServer,
+        linkOptions: { to: "/admin/model-catalog" },
       },
       {
         title: "overview.reach.boundaries.title",
