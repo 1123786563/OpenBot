@@ -8,6 +8,7 @@ import {
   IconLayoutGrid,
   IconPlug,
   IconReceipt,
+  IconRobot,
   IconSettings,
 } from "@tabler/icons-react";
 import { Link, type LinkOptions } from "@tanstack/react-router";
@@ -64,6 +65,17 @@ const ITEMS = [
     icon: IconPlug,
     exact: false,
     linkOptions: { to: "/settings/connected-accounts" },
+  },
+  {
+    /*
+     * 模型访问授权 (Bifrost 04.5): which registered Bots may call models as you, each confirmed
+     * by you from a one-time binding code. Next to connected accounts because both are yours to
+     * give — an administrator registers the Bot, but only this page authorizes it.
+     */
+    title: "sidebar.modelAccess",
+    icon: IconRobot,
+    exact: false,
+    linkOptions: { to: "/settings/model-access" },
   },
   {
     /* Logins saved from a Bot's private sign-in form. */
