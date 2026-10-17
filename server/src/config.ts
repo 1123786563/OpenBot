@@ -482,6 +482,30 @@ export type DeploymentConfig = {
 export type Environment = Record<string, string | undefined>;
 
 /**
+ * The browser origins this deployment already serves traffic from: `TRUSTED_ORIGINS`
+ * plus the app URL, in bare `scheme://host[:port]` form.
+ *
+ * ONE list, two consumers. app.ts answers it with CORS headers on `/api/*`, and
+ * (#410) craft's cookie-authenticated write guard honors the same names and
+ * refuses every other Origin a browser might present. Two copies of this would
+ * drift into the shape the review keeps finding: a deployment where CORS says
+ * "trusted" to an origin the write surface then refuses, or — the dangerous
+ * direction — a preview base added to one list and not the other.
+ *
+ * Values that are not an http(s) origin are dropped rather than guessed at: a
+ * mobile scheme URL in `TRUSTED_ORIGINS` is real config for the auth layer and
+ * noise for an Origin-header comparison.
+ */
+export function trustedBrowserOrigins(
+  config: Pick<DeploymentConfig, "auth" | "appUrl">,
+): string[] {
+  return [
+    ...(config.auth?.trustedOrigins ?? []),
+    ...(config.appUrl ? [config.appUrl] : []),
+  ].filter((origin) => /^https?:\/\//.test(origin));
+}
+
+/**
  * The caps, read from the environment, refusing anything that is not a whole number at least zero.
  *
  * Refused rather than coerced. A cap is a safety number, and a deployment that typed `two` and got

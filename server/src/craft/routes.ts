@@ -53,6 +53,7 @@ import { createTurnStateStore } from "./turn-state";
 import { generationGatedWebappBasePathFor } from "./webapp-generation";
 import { createWebappProxyRoutes } from "./webapp-proxy";
 import { sessionDirectory } from "./workspace";
+import { createCraftWriteOriginGuard } from "./write-origin-guard";
 
 export type CraftRoutesDeps = {
   config: CraftConfig;
@@ -151,6 +152,19 @@ export type CraftRoutesDeps = {
    * root-path scripts (host form, closed origin — production unchanged).
    */
   webappBasePathFor?: (sessionId: string) => string | null;
+  /**
+   * #410: the origins the write-origin guard trusts alongside the request's own
+   * host — CORS's own list (`TRUSTED_ORIGINS` + app URL), passed through so the
+   * two surfaces can never disagree about who is trusted. Unset = the empty
+   * list: Host same-origin only, fail closed.
+   */
+  previewWriteTrustedOrigins?: readonly string[];
+  /**
+   * #410: the preview origin's Origin-header claim (`PreviewOrigin.claimsOrigin`)
+   * — the same host rule the dispatcher runs on the Host header. Unset = claims
+   * nothing, which leaves the guard's allow-list as the only judgment.
+   */
+  previewOriginClaimsOrigin?: (origin: string) => boolean;
 };
 
 /**
@@ -295,6 +309,21 @@ export function createCraftRoutes(input: {
       createCraftKbSearchRelayApp({ store, search: deps.kbSearch }),
     );
   }
+
+  // #410: the cookie-authenticated write surface refuses a foreign browser Origin
+  // — a production preview is a subdomain of the main site, so SameSite never
+  // withholds the platform cookie there and CSP is only the browser-side half.
+  // Registered on the pre-guard tier's edge: AFTER the two relays above (their
+  // caller is the sandbox, authenticating by session tag and sending no Origin),
+  // BEFORE requireUser (a cross-site write is refused on its Origin alone, with
+  // no store lookup and no session answered). See write-origin-guard.ts.
+  app.use(
+    "*",
+    createCraftWriteOriginGuard({
+      trustedOrigins: deps.previewWriteTrustedOrigins ?? [],
+      isPreviewOrigin: deps.previewOriginClaimsOrigin ?? (() => false),
+    }),
+  );
 
   app.use("*", requireUser);
 
