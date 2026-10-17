@@ -190,6 +190,23 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
     /DROP INDEX (?:IF EXISTS )?"([^"]+)"/gi,
   ).map(([index]) => index!);
 
+  /*
+   * A migration may also flip a column's nullability after adding it — 0134 adds
+   * `price_status` nullable, backfills it from the rows that already exist, and only
+   * then constrains it, which is the only shape that can run against a table holding
+   * rows. What the snapshot must describe is the file's NET effect, so the last flip
+   * a file applies to a column outranks how the ADD COLUMN itself declared it.
+   */
+  const notNullFlips = new Map<string, boolean>();
+  for (const match of sql.matchAll(
+    /ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" (SET|DROP) NOT NULL/gi,
+  )) {
+    notNullFlips.set(
+      `${match[1]}.${match[2]}`,
+      match[3]!.toUpperCase() === "SET",
+    );
+  }
+
   const was = tableNames(before);
   const is = tableNames(after);
   const problems: string[] = [];
@@ -260,9 +277,11 @@ const disagreements = (sql: string, before: Snapshot, after: Snapshot) => {
         problems.push(
           `the migration adds "${table}"."${column}" as ${statement.type}, the snapshot calls it ${added.type}`,
         );
-      if ((added.notNull ?? false) !== statement.notNull)
+      const notNull =
+        notNullFlips.get(`${table}.${column}`) ?? statement.notNull;
+      if ((added.notNull ?? false) !== notNull)
         problems.push(
-          `the migration adds "${table}"."${column}" ${statement.notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
+          `the migration adds "${table}"."${column}" ${notNull ? "NOT NULL" : "nullable"}, the snapshot says the opposite`,
         );
     }
 

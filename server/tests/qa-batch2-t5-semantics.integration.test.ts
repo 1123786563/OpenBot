@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import type { PaymentProvider } from "../src/billing/payments/provider";
 import { createPaymentService } from "../src/billing/payments/service";
 import { createPaymentStore } from "../src/billing/payments/store";
@@ -8,6 +8,7 @@ import { createBillingStore } from "../src/billing/store";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createDatabase } from "../src/db/client";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
+import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -31,13 +32,25 @@ const creditWriter = createCreditWriter(database);
 const prefix = `qa2t5-${randomUUID().slice(0, 8)}`;
 const planOf = () => `qa-plan-${randomUUID().slice(0, 8)}`;
 
+/** Every order this file opened, whatever keyed it — the teardown's exact reach. */
+const orderIds: string[] = [];
+
 afterAll(async () => {
+  // The store mints `po-…` order ids, so an id-prefix sweep matches nothing and
+  // every order (and, through the cascade, its anomaly rows) used to survive the
+  // run — stranding unknown_owner rows that broke the suite's global-count
+  // assertions downstream (cleanup-dry-run, payer-legacy-mapping).
   await database
     .delete(paymentEvents)
-    .where(like(paymentEvents.orderId, `${prefix}%`));
+    .where(inArray(paymentEvents.orderId, orderIds));
   await database
     .delete(paymentOrders)
-    .where(like(paymentOrders.id, `${prefix}%`));
+    .where(inArray(paymentOrders.id, orderIds));
+  // The guard fixture's customer floor: deleting it cascades the subscription
+  // and the seed grant.
+  await database
+    .delete(billingCustomers)
+    .where(like(billingCustomers.externalId, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -108,6 +121,7 @@ async function openOrder(
     ownerPayerRef: { kind: "personal" as const, id: `${prefix}-${tag}` },
     checkoutPayload: null,
   });
+  orderIds.push(order.id);
   return order;
 }
 
@@ -363,7 +377,8 @@ describe("probe i: the purchase guard's uncached projection read", () => {
       ownerPayerRef: { kind: "personal" as const, id: "qa" },
     });
     expect(order.order.status).toBe("pending");
-    // Clean up the pair so afterAll's prefix sweep finds nothing extra.
+    orderIds.push(order.order.orderId);
+    // Clean up the pair so afterAll's sweep finds nothing extra.
     await store.cancelOrder(order.order.orderId, 0).catch(() => {});
   });
 });

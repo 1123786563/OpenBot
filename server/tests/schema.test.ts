@@ -74,6 +74,14 @@ describe("OpenBot database schema", () => {
       "mcp",
       "mcp_oauth_client",
       "mcp_user_token",
+      /* The Bifrost service credentials (65e8d57c bot_service + gateway_admin,
+       * a18e2711 credit_service): three more secrets that speak for the
+       * deployment or a registered Bot, each kept its own kind so "what does
+       * this deployment hold" stays a single row per thing.
+       */
+      "bot_service",
+      "gateway_admin",
+      "credit_service",
     ]);
   });
 
@@ -467,15 +475,17 @@ describe("OpenBot database schema", () => {
   });
 
   /*
-   * 0076 shipped the template unique index whole, so a soft-deleted Bot's
+   * 0097 shipped the template unique index whole, so a soft-deleted Bot's
    * tombstone row held the (owner, key) pair forever and re-provisioning hit
-   * the tombstone with a permanent failure. 0096 drops it and recreates the
+   * the tombstone with a permanent failure. 0117 drops it and recreates the
    * arbiter as partial — live rows only, under a name that says so — beside
-   * the store-side revive, belt and braces.
+   * the store-side revive, belt and braces. (Both renumbered +10 from 0076/
+   * 0107 by 27829833, which inserted the OpenMuse migration block; the file
+   * content the assertions below pin is unchanged.)
    */
   test("recreates the template unique index as partial in its own migration", async () => {
     const migration = await readFile(
-      new URL("../drizzle/0107_owner_template_partial_uq.sql", import.meta.url),
+      new URL("../drizzle/0117_owner_template_partial_uq.sql", import.meta.url),
       "utf8",
     );
     expect(migration).toContain(
