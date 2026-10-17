@@ -77,7 +77,15 @@ describe("proxyWebappRequest", () => {
     });
 
     expect(result.status).toBe(200);
-    expect(result.headers.get("content-security-policy")).toBeTruthy();
+    // F-1（codex 重审）: the dev-road CSP is pinned VERBATIM. `form-action 'self'`
+    // walls off same-site form POSTs to the main site — the preview host shares
+    // the platform's eTLD+1, so an unblocked form submission would ride with the
+    // session cookie and `connect-src` never constrains form submissions.
+    // `frame-src 'self'` walls off nested main-site frames (same reach-back class:
+    // a cookie-carrying embedded main-site document). A drift here reopens F-1.
+    expect(result.headers.get("content-security-policy")).toBe(
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; form-action 'self'; frame-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'",
+    );
     expect(result.headers.get("content-type")).toBe("text/html");
     // Response hop-by-hop + set-cookie stripped.
     expect(result.headers.get("set-cookie")).toBeNull();
@@ -693,6 +701,13 @@ describe("webapp preview reachability dials the sandbox host (F-E)", () => {
       );
       expect(page.status).toBe(200);
       expect(await page.text()).toBe("<html>app</html>");
+      // F-1: the LEGACY same-origin route (`/sessions/:id/webapp`) is a third
+      // consumption surface of the same CSP family — pinned verbatim so a
+      // per-surface copy drifting off `form-action 'self'` fails this suite
+      // instead of a real deployment.
+      expect(page.headers.get("content-security-policy")).toBe(
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; form-action 'self'; frame-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'",
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -844,7 +859,12 @@ describe("createPreviewProxy (the servePreview seam)", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(response.headers.get("content-security-policy")).toBeTruthy();
+    // F-1: the host-form preview source pins the SAME policy verbatim — one
+    // CSP family across every proxy surface (this host-form source, the legacy
+    // same-origin route, the proxied page above), `form-action 'self'` included.
+    expect(response.headers.get("content-security-policy")).toBe(
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; form-action 'self'; frame-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'",
+    );
     // The label rides to the upstream (the mount the dev server serves under),
     // and the preview pass never reaches the app.
     const upstream = dialed.find((url) => url.includes("/api/tasks"));
