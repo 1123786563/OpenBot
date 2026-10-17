@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  index,
   pgTable,
   text,
   timestamp,
@@ -72,6 +73,12 @@ export const aiObservationIdLinks = pgTable(
       table.scopeKey,
       table.upstreamKind,
       table.upstreamId,
+    ),
+    // The retention cleanup path deletes by (scope_key, observed_trace_id) (m200):
+    // the step-level table is this family's largest — no full scans inside the delete.
+    index("ai_observation_id_links_scope_observed_idx").on(
+      table.scopeKey,
+      table.observedTraceId,
     ),
   ],
 );

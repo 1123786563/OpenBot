@@ -1,13 +1,17 @@
 import { sql } from "drizzle-orm";
 import {
   check,
-  jsonb,
+  index,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { FrozenDatasetCase } from "../../ai-observability/datasets";
+// The repo's single-serialization jsonb (m190/m194): drizzle's native jsonb
+// double-encodes under the Bun SQL driver, landing jsonb_typeof = "string" —
+// SQL-side JSON operators read NULL. dataType stays "jsonb", so no migration.
+import { jsonbArray } from "./json";
 
 /**
  * The dataset side of evaluation: one dataset subject per (scope, name), and one immutable
@@ -82,6 +86,8 @@ export const aiObservationDatasets = pgTable(
     uniqueIndex("ai_observation_datasets_scope_opik_dataset_uq")
       .on(table.scopeKey, table.opikDatasetId)
       .where(sql`${table.opikDatasetId} IS NOT NULL`),
+    // The retention discovery predicate's filter column (m164).
+    index("ai_observation_datasets_created_at_idx").on(table.createdAt),
   ],
 );
 
@@ -100,7 +106,7 @@ export const aiObservationDatasetVersions = pgTable(
     /** The T05 policy the content was projected with before freezing, e.g. "opik-redaction/5". */
     redactionPolicyVersion: text("redaction_policy_version").notNull(),
     /** The frozen case snapshots: projected input, reference output, fixtures and provenance. */
-    cases: jsonb("cases").$type<readonly FrozenDatasetCase[]>().notNull(),
+    cases: jsonbArray("cases").$type<readonly FrozenDatasetCase[]>().notNull(),
     locatorWorkspace: text("locator_workspace").notNull(),
     locatorProject: text("locator_project").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })

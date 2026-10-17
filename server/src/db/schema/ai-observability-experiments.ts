@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
-  jsonb,
+  index,
   pgTable,
   text,
   timestamp,
@@ -9,6 +9,9 @@ import {
 } from "drizzle-orm/pg-core";
 import type { FrozenExperimentConfig } from "../../ai-observability/experiments";
 import { aiObservationDatasetVersions } from "./ai-observability-datasets";
+// The repo's single-serialization jsonb (m194): frozen config is the A7 comparison
+// and provenance anchor — SQL-side JSON operators must read it.
+import { jsonb } from "./json";
 
 /**
  * The experiment side of evaluation: one experiment subject per (scope, name), whose
@@ -91,5 +94,12 @@ export const aiObservationExperiments = pgTable(
     uniqueIndex("ai_observation_experiments_scope_config_hash_frozen_uq")
       .on(table.scopeKey, table.configHash)
       .where(sql`${table.state} = 'frozen'`),
+    // The retention discovery predicate's filter column (m164)…
+    index("ai_observation_experiments_created_at_idx").on(table.createdAt),
+    // …and the pin anti-join / FK backstop column (m195): both scan this table per
+    // candidate dataset on every sweep without it.
+    index("ai_observation_experiments_dataset_version_idx").on(
+      table.datasetVersionId,
+    ),
   ],
 );

@@ -2,13 +2,15 @@ import { sql } from "drizzle-orm";
 import {
   check,
   integer,
-  jsonb,
   pgTable,
   primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { aiObservationExperimentExecutions } from "./ai-observability-executions";
+// The repo's single-serialization jsonb (m192): drizzle's native jsonb double-encodes
+// under the Bun SQL driver, landing jsonb_typeof = "string". dataType stays "jsonb".
+import { jsonb } from "./json";
 
 /**
  * The per-case write-ahead record of one execution (Issue #30 / DAG T24).
@@ -51,7 +53,7 @@ export const aiObservationExecutionCaseOutcomes = pgTable(
     /** The write-ahead marker or the final, observed status. */
     status: text("status").$type<AiObservationCaseOutcomeStatus>().notNull(),
     /** The projected outcome envelope; projected once at record time, stored as-is. */
-    detail: jsonb("detail"),
+    detail: jsonb("detail").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

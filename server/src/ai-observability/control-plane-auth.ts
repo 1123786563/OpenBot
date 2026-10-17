@@ -23,6 +23,13 @@
  *    mistaken for a missing session. Private APIs therefore cannot bypass the
  *    role check, because the role check is the only path to them.
  *
+ * WIRING STATUS (OCR m118): this module is BUILT, NOT WIRED. The T32 deployment
+ * boundary shipped as the reverse proxy's loopback binding (opik.yml) instead of
+ * an in-process ingest route, so no production caller consults these predicates
+ * yet — the only exercise is this module's own suite. They are the reserved seam
+ * for the moment a private API passthrough or ingest route lands in-process;
+ * until then this header, not the call graph, is where that intent lives.
+ *
  * Everything fails closed: missing material, malformed actors, unrecognized
  * resources and wrong credentials are all refusals, with the missing and wrong
  * credential answering identically so nothing distinguishes a near miss. The

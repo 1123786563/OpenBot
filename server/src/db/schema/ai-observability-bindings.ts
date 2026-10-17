@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  index,
   pgTable,
   text,
   timestamp,
@@ -84,5 +85,7 @@ export const aiObservationBindings = pgTable(
     uniqueIndex("ai_observation_bindings_scope_opik_trace_uq")
       .on(table.scopeKey, table.opikTraceId)
       .where(sql`${table.opikTraceId} IS NOT NULL`),
+    // The retention discovery predicate's filter column (m164): scanned every poll.
+    index("ai_observation_bindings_created_at_idx").on(table.createdAt),
   ],
 );

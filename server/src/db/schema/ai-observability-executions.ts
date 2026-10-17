@@ -3,12 +3,13 @@ import {
   check,
   index,
   integer,
-  jsonb,
   pgTable,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { aiObservationExperiments } from "./ai-observability-experiments";
+// The repo's single-serialization jsonb (m193): same reasoning as the sibling tables.
+import { jsonb } from "./json";
 
 /**
  * The execution record of an evaluation experiment (Issue #29 / DAG T23).
@@ -74,7 +75,9 @@ export const aiObservationExperimentExecutions = pgTable(
     /** Production write-tool calls refused in this execution (the governance counter). */
     toolRejections: integer("tool_rejections").notNull().default(0),
     /** The projected per-case outcomes. Non-null only on completed (check constraint). */
-    result: jsonb("result"),
+    result: jsonb("result").$type<{
+      cases: ReadonlyArray<Record<string, unknown>>;
+    }>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -14,7 +14,9 @@ import {
   resolveObservationScope,
   resolveStorageLocator,
 } from "../src/ai-observability/scope";
+import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
 import { aiObservationExportJobs } from "../src/db/schema/ai-observability-exports";
+import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import { workItems } from "../src/db/schema/work";
 import { opikTestDatabase } from "./support/opik-test-db";
 import { rejectionOf } from "./support/pg-errors";
@@ -176,6 +178,57 @@ const states = async () => {
   return { rows, count };
 };
 
+test("the export artifact joins the binding's capability verdict like the query surface (OCR m143)", async () => {
+  const rows: OpikTraceRow[] = [
+    { id: "trace-bound", status: "COMPLETED" },
+    { id: "trace-unbound", status: "COMPLETED" },
+  ];
+  await database.insert(aiObservationBindings).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    runId: `t34-run-${randomUUID()}`,
+    attemptId: "attempt-1",
+    traceId: "w".repeat(32),
+    opikTraceId: "trace-bound",
+    locatorWorkspace: resolveStorageLocator(scopeA).workspace,
+    locatorProject: resolveStorageLocator(scopeA).project,
+    capability: "detailed",
+    state: "completed",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  const upstream = fakePort({ rows });
+  const worker = workerFor(upstream.port);
+  const job = await store.enqueue(scopeA, 10);
+  await worker.sweep();
+  const done = await store.get(scopeA, job.id);
+  const byTrace = new Map(
+    (done?.artifact ?? []).map((row) => [row.opikTraceId, row.capability]),
+  );
+  // Bound trace: the verdict the query surface would have answered. Unbound: honest unknown.
+  expect(byTrace.get("trace-bound")).toBe("detailed");
+  expect(byTrace.get("trace-unbound")).toBe("unavailable");
+});
+
+test("a job with a pending deletion record is already gone to readers (OCR m140)", async () => {
+  const job = await store.enqueue(scopeA, 10);
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "export",
+    targetId: job.id,
+    retentionDays: 30,
+    state: "pending",
+  });
+  expect(await store.get(scopeA, job.id)).toBeNull();
+  expect(await store.list(scopeA)).toEqual([]);
+});
+
 afterEach(async () => {
   await database
     .delete(aiObservationExportJobs)
@@ -183,6 +236,16 @@ afterEach(async () => {
       sql`${aiObservationExportJobs.scopeKey} IN (${scopeA.key}, ${scopeB.key})`,
     );
   await database.delete(workItems).where(eq(workItems.kind, EXPORT_WORK_KIND));
+  await database
+    .delete(aiObservationBindings)
+    .where(
+      sql`${aiObservationBindings.scopeKey} IN (${scopeA.key}, ${scopeB.key})`,
+    );
+  await database
+    .delete(aiObservationRetentionDeletions)
+    .where(
+      sql`${aiObservationRetentionDeletions.scopeKey} IN (${scopeA.key}, ${scopeB.key})`,
+    );
 });
 
 afterAll(async () => {

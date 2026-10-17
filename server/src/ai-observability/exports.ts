@@ -32,6 +32,7 @@ import { REDACTION_POLICY_VERSION } from "../../../shared/ai-observability";
 import { getLogger } from "../../../shared/logger";
 import { workOwner } from "../../../shared/work-owner";
 import type { Database } from "../db/client";
+import { aiObservationBindings } from "../db/schema/ai-observability-bindings";
 import { aiObservationExportJobs } from "../db/schema/ai-observability-exports";
 import { workItems } from "../db/schema/work";
 import { type Repeating, repeatAfterEach } from "../work/loop";
@@ -40,6 +41,7 @@ import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
 import type { OpikPort, OpikPortResult, OpikTraceRow } from "./opik-port";
 import { projectRow, type RunSummary } from "./queries/runs";
+import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
 /** One exported row: the T11 projection of one upstream trace, nothing raw. */
@@ -365,6 +367,10 @@ export function createObservationExportStore(
           and(
             eq(aiObservationExportJobs.id, id),
             eq(aiObservationExportJobs.scopeKey, scope.key),
+            // M1a on the export surface too (OCR m140): a discovered-but-not-yet-
+            // deleted job is already gone to readers, artifact and all — however
+            // long the local delete then parks.
+            notPendingDeletion("export", aiObservationExportJobs.id),
           ),
         );
       return rows[0] ?? null;
@@ -375,7 +381,12 @@ export function createObservationExportStore(
       return db
         .select()
         .from(aiObservationExportJobs)
-        .where(eq(aiObservationExportJobs.scopeKey, scope.key))
+        .where(
+          and(
+            eq(aiObservationExportJobs.scopeKey, scope.key),
+            notPendingDeletion("export", aiObservationExportJobs.id),
+          ),
+        )
         .orderBy(desc(aiObservationExportJobs.createdAt));
     },
 
@@ -693,7 +704,37 @@ export function createObservationExportWorker(
               );
               return { total: result.total, content: result.content };
             });
-      const artifact = rows.map((row) => projectRow(row));
+      // The rows are projected exactly as the query surface would have (m143):
+      // the capability verdict joined from this scope's own bindings — an unbound
+      // trace stays the honest "unavailable" — never a flat constant.
+      const ids = rows.map((row) => row.id);
+      const verdicts = new Map<string, string>();
+      if (ids.length > 0) {
+        const bound = await deps.database
+          .select({
+            opikTraceId: aiObservationBindings.opikTraceId,
+            capability: aiObservationBindings.capability,
+          })
+          .from(aiObservationBindings)
+          .where(
+            and(
+              eq(aiObservationBindings.scopeKey, scope.key),
+              inArray(aiObservationBindings.opikTraceId, ids),
+            ),
+          );
+        for (const row of bound) {
+          if (row.opikTraceId !== null)
+            verdicts.set(row.opikTraceId, row.capability);
+        }
+      }
+      const artifact = rows.map((row) =>
+        projectRow(
+          row,
+          (verdicts.get(row.id) ?? "unavailable") as Parameters<
+            typeof projectRow
+          >[1],
+        ),
+      );
       // Null when revocation won the row while the fetch ran: the artifact is
       // dropped right here, and the database check would refuse it anyway.
       await store.settleCompleted(job.id, artifact);
