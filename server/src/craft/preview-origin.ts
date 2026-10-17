@@ -1,6 +1,7 @@
 /**
  * The preview origin's host routing and admission (#361, spec craft-preview-origin
- * D5/D7, AC6/AC9).
+ * D5/D7, AC6/AC9), and — since #362 — the entry that serves the preview's own
+ * traffic on those hosts.
  *
  * A preview must live on a different HOST from the main site (F2/D1) — cookies do
  * not isolate by port. Two shapes carry that:
@@ -11,14 +12,22 @@
  *
  * The hostname label is HMAC(secret, sessionId) truncated — stable for a session's
  * whole life (AC6: the address never drifts), keyed so it cannot be derived or
- * enumerated for other sessions (AC9), one lowercase-hex DNS label. Reversal runs
- * through an in-memory label→sessionId index rather than a craft_sessions column:
- * the label is a pure function of the secret and the id, so a column would only
- * cache what derivation already knows, while the index keeps the schema and its
- * migrations out of a routing concern. The index registers when an address is
- * minted (originFor), which is also how it repopulates after a restart — every
- * entry into a preview passes through the main site first (D4), and that hop
- * re-mints the address.
+ * enumerated for other sessions (AC9), one lowercase-hex DNS label. Derivation is
+ * ONE-WAY: id → label is a function, label → id is not, so reverse routing needs a
+ * real index — this module's in-memory label→sessionId registry is that NECESSARY
+ * object, not a cache of anything derivation knows (derivation knows nothing in
+ * this direction; #361's comment claiming a column "would only cache what
+ * derivation already knows" was wrong, and is corrected here — the honest trade
+ * is in-memory index vs. a store column, and #362 accepts the in-memory one).
+ *
+ * M-2, accepted and documented (docs/craft-preview-origin.md): the registry is
+ * in-memory, so a server restart forgets every label. An already-open preview tab
+ * then reloads into 404 "Unknown preview host" and stays refused until the person
+ * re-enters through the main site (the webapp-info poll or a fresh ticket — both
+ * call originFor, which re-mints the address and re-registers the label).
+ * Registration happens at originFor, which is also how the registry repopulates
+ * after a restart — every entry into a preview passes through the main site first
+ * (D4), and that hop re-mints the address.
  *
  * Admission is the gate in front of all of it: craft off, webapp proxy off,
  * preview origin off, a malformed template, or PORT/SERVER_PORT that do not name
@@ -27,16 +36,25 @@
  * gate. The same-origin form is never a fallback (AC6). The webapp-info half of
  * the reason surface lands with #362's webapp-info rework; the text lives here.
  *
- * What this module serves TODAY is the entry that closes #360's D9 loop: a ticket
- * minted on the main site redeems here and plants the preview domain's own
- * session credential (HttpOnly, Path=/, SameSite=Lax, deliberately session-level —
- * no Max-Age, no Expires). Proxying the preview's traffic on these hosts is #362's;
- * HMR upgrades are #363's.
+ * What this module serves: the entry that closes #360's D9 loop — a ticket minted
+ * on the main site redeems here and plants the preview domain's own session
+ * credential (HttpOnly, Path=/, SameSite=None; Secure — the panel's iframe is
+ * cross-site, #365 F-1 — deliberately session-level: no Max-Age, no Expires) — and, since #362, every further request on a preview host:
+ * gated on that cookie (the preview pass, naming THIS host's session) and handed
+ * to the injected servePreview seam, which proxies to the session's sandbox dev
+ * server with the app-relative path (dev: the leading label stripped; host form:
+ * the pathname verbatim). HMR upgrades on preview hosts are #363's.
  */
 
 import { createHmac } from "node:crypto";
 import type { CraftConfig } from "./config";
-import { previewSessionCookieHeader, type PreviewTickets } from "./preview-ticket";
+import {
+  PREVIEW_SESSION_COOKIE,
+  previewPortFromEnv,
+  previewSessionCookieHeader,
+  type PreviewTickets,
+} from "./preview-ticket";
+import { refuseResponse } from "./webapp-proxy";
 
 /** The gate's answer: open, or closed with the sentence a person can read. */
 export type PreviewOriginAdmission = { ok: true } | { ok: false; reason: string };
@@ -45,6 +63,28 @@ export type PreviewOriginAdmission = { ok: true } | { ok: false; reason: string 
 export type PreviewRequestResolution =
   | { sessionId: string }
   | { refuse: { status: 404 | 503; reason: string } };
+
+/**
+ * The refusal sentence both preview-origin gates answer — the HTTP cookie gate
+ * below and (#363) the HMR upgrade resolver in webapp-proxy — exported so the
+ * two surfaces can never drift apart on the words a person reads.
+ */
+export const PREVIEW_PASS_REFUSAL =
+  "Open this preview from its craft session — its preview pass is missing or no longer valid.";
+
+/**
+ * #363: the upgrade twin of handlePreviewRequest's cookie gate — the EXACT same
+ * judgment (the pass is present and names THIS host's session), extracted so the
+ * HMR resolver applies it without re-deriving the cookie shape. A platform
+ * session is never consulted: on these hosts it does not exist (F2/D1).
+ */
+export function holdsPreviewSessionPass(
+  sessionId: string,
+  request: Request,
+): boolean {
+  const pass = previewSessionCookieValue(request.headers.get("cookie"));
+  return pass !== null && pass === sessionId;
+}
 
 export type PreviewOrigin = {
   /** The gate + its displayable closed reason (the 503 body; webapp-info's #362 field). */
@@ -56,14 +96,36 @@ export type PreviewOrigin = {
   handlesRequest(request: Request): boolean;
   /** Host header → session id: the ONLY entry (#361's produced contract). */
   resolvePreviewRequest(request: Request): PreviewRequestResolution;
-  /** The preview origin entry: ticket redemption → D9 cookie → clean 302. */
+  /**
+   * The app-relative path a request addresses (#363): the dev form's leading
+   * label stripped, the host form's pathname verbatim — the one derivation the
+   * HTTP entry and the HMR upgrade dispatcher share, so a socket and a fetch for
+   * the same resource always name the same upstream path.
+   */
+  appPathFor(request: Request): string;
+  /** The preview origin entry: ticket redemption → D9 cookie → clean 302, and
+   * (#362) every further request on the preview host, cookie-gated then proxied. */
   handlePreviewRequest(sessionId: string, request: Request): Promise<Response>;
 };
+
+/**
+ * How a cookie-authenticated request on the preview origin reaches the session's
+ * app (#362): the routing module hands over the session, the raw request, and the
+ * APP-RELATIVE path — the dev form's leading label already stripped, the host
+ * form's pathname verbatim (the app lives at the origin's root there) — so the
+ * serving side never needs to know how a preview address is spelled. Production
+ * wires webapp-proxy's `createPreviewProxy` here.
+ */
+export type ServePreview = (input: {
+  sessionId: string;
+  request: Request;
+  appPath: string;
+  query: string;
+}) => Promise<Response>;
 
 /** 20 hex chars of HMAC-SHA256 — 80 bits: unguessable, unenumerable, DNS-label safe. */
 const LABEL_HEX_CHARS = 20;
 const DEV_PREVIEW_HOSTNAME = "127.0.0.1";
-const DEV_FALLBACK_PORT = 3001;
 
 function previewLabel(secret: string, sessionId: string): string {
   return createHmac("sha256", secret)
@@ -73,34 +135,18 @@ function previewLabel(secret: string, sessionId: string): string {
 }
 
 /**
- * The dev form's port, parsed with serverPort's rules (server/src/config.ts):
- * PORT and SERVER_PORT name one number, empty means absent, and a value that is
- * not a whole port is refused rather than quietly parsed to its prefix. Where
- * serverPort throws at boot, a closed craft feature refuses with this sentence
- * instead — a preview misconfiguration must not take the server down.
+ * The dev form's port, through the ONE parser (preview-ticket's
+ * `previewPortFromEnv`, converged on server/src/config.ts serverPort's rules by
+ * #362): PORT and SERVER_PORT name one number, empty means absent, and a value
+ * that is not a whole port is refused rather than quietly parsed to its prefix.
+ * Where serverPort throws at boot, a closed craft feature refuses with this
+ * sentence instead — a preview misconfiguration must not take the server down.
  */
 function previewDevPort(
   env: Record<string, string | undefined>,
 ): { port?: number; invalid?: string } {
-  const read = (name: string): { port?: number; invalid?: string } => {
-    const raw = env[name]?.trim();
-    if (raw === undefined || raw === "") return {};
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < 1 || value > 65535) {
-      return { invalid: `${name} must be a whole number between 1 and 65535.` };
-    }
-    return { port: value };
-  };
-  const port = read("PORT");
-  if (port.invalid) return port;
-  const serverPort = read("SERVER_PORT");
-  if (serverPort.invalid) return serverPort;
-  if (port.port !== undefined && serverPort.port !== undefined && port.port !== serverPort.port) {
-    return {
-      invalid: `PORT (${port.port}) and SERVER_PORT (${serverPort.port}) disagree: set one or set both to the same value.`,
-    };
-  }
-  return { port: port.port ?? serverPort.port ?? DEV_FALLBACK_PORT };
+  const parsed = previewPortFromEnv(env);
+  return "reason" in parsed ? { invalid: parsed.reason } : { port: parsed.port };
 }
 
 /** The parsed template: the wildcard-host form, the derived dev form, or the refusal. */
@@ -109,31 +155,63 @@ type ParsedTemplate =
   | { kind: "dev" }
   | { kind: "invalid"; reason: string };
 
+/**
+ * Fold a hostname's fully-qualified trailing dot: WHATWG URL keeps it for
+ * non-IPv4 hosts (`x.preview.example.com.` IS `x.preview.example.com` to DNS
+ * and to certificates), so every host-side comparison must normalize first or
+ * the dotted form escapes the suffix match — straight into the main-site routes
+ * (#361 Pi 终审 M-1, absorbed by #362).
+ */
+function normalizeHostname(hostname: string): string {
+  return hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+}
+
 function parseTemplate(raw: string): ParsedTemplate {
   const value = raw.trim();
   if (value === "") return { kind: "dev" };
   const usage =
     "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE must be an http(s) URL with {session} exactly once as the hostname's leading label, e.g. https://{session}.preview.example.com.";
+  // The address a template mints is what certificates and DNS must answer for,
+  // so the shape is strict on purpose (#359 review F2, absorbed by #362): no
+  // userinfo, no trailing-dot FQDN, no IDN (the certificate pipeline sees the
+  // ASCII form only), no underscore labels, and a whole-number port when present.
+  // Each refusal names the variable so the operator can find it.
+  const refuse = (why: string): ParsedTemplate => ({
+    kind: "invalid",
+    reason: `OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE ${why}`,
+  });
+  if (/[\u0080-\uffff]/.test(value)) {
+    return refuse("must be pure ASCII (IDN hostnames are not supported).");
+  }
   if (value.split("{session}").length !== 2 || !value.includes("{session}.")) {
-    return { kind: "invalid" as const, reason: usage };
+    return refuse(usage);
   }
   let probe: URL;
   try {
     probe = new URL(value.replace("{session}", "probe"));
   } catch {
-    return { kind: "invalid" as const, reason: usage };
+    return refuse(usage);
   }
   if (probe.protocol !== "http:" && probe.protocol !== "https:") {
-    return { kind: "invalid" as const, reason: usage };
+    return refuse(usage);
+  }
+  if (probe.username !== "" || probe.password !== "") {
+    return refuse("must not carry userinfo (user:pass@host).");
+  }
+  if (probe.hostname.endsWith(".")) {
+    return refuse("must not end its hostname with a trailing dot.");
+  }
+  if (probe.hostname.includes("_")) {
+    return refuse("must not contain underscores (they are not DNS label characters).");
   }
   // The wildcard form serves the app at the origin's root (D3) — a template that
   // carries a path or query would smuggle the basePath footgun back in.
   if (probe.pathname !== "/" || probe.search !== "" || probe.hash !== "") {
-    return { kind: "invalid" as const, reason: usage };
+    return refuse(usage);
   }
   const suffix = probe.host.slice("probe".length); // ".preview.example.com[:port]"
   const baseHostname = probe.hostname.slice("probe".length); // ".preview.example.com"
-  if (baseHostname === "") return { kind: "invalid" as const, reason: usage };
+  if (baseHostname === "") return refuse(usage);
   return { kind: "host", scheme: probe.protocol, suffix, baseHostname: baseHostname.slice(1) };
 }
 
@@ -158,6 +236,12 @@ export function createPreviewOrigin(deps: {
   secret: string;
   /** PORT/SERVER_PORT for the dev form's port; injectable so tests pin it. */
   env?: Record<string, string | undefined>;
+  /**
+   * #362: serves an authenticated request on a preview host by proxying to the
+   * session's sandbox dev server (attach model: probe, never spawn). Injected by
+   * the boot file from webapp-proxy's createPreviewProxy; tests stub the seam.
+   */
+  servePreview: ServePreview;
 }): PreviewOrigin {
   const env = deps.env ?? process.env;
   const template = parseTemplate(deps.config.previewOriginTemplate);
@@ -205,14 +289,27 @@ export function createPreviewOrigin(deps: {
       if (template.kind === "host") {
         return `${template.scheme}//${label}${template.suffix}`;
       }
-      return `http://${DEV_PREVIEW_HOSTNAME}:${devPort.port}/${label}`;
+      // Admission open + dev form ⇒ the port parsed to exactly one number;
+      // the unreachable alternative is refused above, this narrows the type.
+      const port = devPort.port;
+      if (port === undefined) {
+        throw new Error(`The preview origin is closed: ${devPort.invalid}`);
+      }
+      // http's default port is dropped by URL serialization (WHATWG), so a
+      // listener on :80 is addressed without the suffix — mint the address in
+      // that same shape or the browser-presented host would never match the
+      // ticket binding (#363, from #361's final review).
+      const portSuffix = port === 80 ? "" : `:${port}`;
+      return `http://${DEV_PREVIEW_HOSTNAME}${portSuffix}/${label}`;
     },
 
     handlesRequest(request) {
-      const hostname = new URL(request.url).hostname;
+      const hostname = normalizeHostname(new URL(request.url).hostname);
       if (template.kind === "host") {
         // The base and everything under it stay in the preview namespace —
-        // fail closed inside the deployment's declared wildcard host.
+        // fail closed inside the deployment's declared wildcard host. The
+        // comparison runs on the DOT-FOLDED hostname: the trailing-dot FQDN
+        // form is the same host to DNS and must never fall to main routes.
         return (
           hostname === template.baseHostname ||
           hostname.endsWith(`.${template.baseHostname}`)
@@ -221,10 +318,16 @@ export function createPreviewOrigin(deps: {
       if (template.kind === "dev") {
         // The dev host is claimed by hostname; the port, when derivable, must be
         // the server's own (an underivable port leaves admission closed anyway).
-        return (
-          hostname === DEV_PREVIEW_HOSTNAME &&
-          (devPort.port === undefined || new URL(request.url).port === String(devPort.port))
-        );
+        // URL serialization drops http's DEFAULT port — `http://127.0.0.1/x`
+        // carries url.port "" — so the check runs on the effective port; a raw
+        // `url.port === String(devPort.port)` would let a :80 listener's preview
+        // traffic fall through to the main-site routes (#363, #361 final review).
+        if (hostname !== DEV_PREVIEW_HOSTNAME) return false;
+        if (devPort.port === undefined) return true;
+        const url = new URL(request.url);
+        const effectivePort =
+          url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port);
+        return effectivePort === devPort.port;
       }
       // A malformed template claims nothing — but admission is closed with the
       // reason, and originFor throws, so no address ever pointed here.
@@ -235,12 +338,15 @@ export function createPreviewOrigin(deps: {
       const gate = admission();
       if (!gate.ok) return { refuse: { status: 503, reason: gate.reason } };
       const url = new URL(request.url);
+      // Dot-folded like handlesRequest: the dotted and undotted forms of one
+      // host must resolve to the same session, never to different branches.
+      const hostname = normalizeHostname(url.hostname);
       const label =
         template.kind === "host"
-          ? url.hostname === template.baseHostname
+          ? hostname === template.baseHostname
             ? null // the apex: a preview host with no session label on it
-            : url.hostname.endsWith(`.${template.baseHostname}`)
-              ? url.hostname.slice(0, -(template.baseHostname.length + 1))
+            : hostname.endsWith(`.${template.baseHostname}`)
+              ? hostname.slice(0, -(template.baseHostname.length + 1))
               : null
           : url.pathname.split("/")[1] ?? null; // dev: the leading path label
       const sessionId = label === null ? undefined : registry.get(label);
@@ -255,6 +361,17 @@ export function createPreviewOrigin(deps: {
       return { sessionId };
     },
 
+    appPathFor(request) {
+      const url = new URL(request.url);
+      // The app-relative path: the dev form rides a leading path label the app
+      // itself never sees (#364 removes the basePath that used to mirror it), so
+      // the first segment goes; the host form's app lives at the origin's root
+      // (D3) and the pathname passes verbatim.
+      return template.kind === "dev"
+        ? url.pathname.replace(/^\/[^/]+/, "") || "/"
+        : url.pathname;
+    },
+
     async handlePreviewRequest(sessionId, request) {
       const gate = admission();
       if (!gate.ok) {
@@ -262,40 +379,74 @@ export function createPreviewOrigin(deps: {
       }
       const url = new URL(request.url);
       const ticket = url.searchParams.get("ticket");
-      if (ticket === null) {
-        // The redemption entry is this ticket's surface; serving the preview's
-        // traffic on these hosts is #362's. Refused with the surface's shape.
-        return Response.json(
-          { error: "The preview is not being served yet." },
-          { status: 503 },
-        );
+      if (ticket !== null) {
+        // The presented host must be the one the ticket was bound to (the triple's
+        // host element) — url.host is what the issuing side bound via originFor.
+        const redeemed = await deps.previewTickets.redeemPreviewTicket({
+          ticket,
+          sessionId,
+          previewHost: url.host,
+        });
+        if ("reason" in redeemed) {
+          // Never the ticket value, never a reason that echoes it (#360's rule).
+          return Response.json(
+            { error: "The preview ticket is invalid, expired, or already used." },
+            { status: 401 },
+          );
+        }
+        // ponytail: the cookie carries the session id itself — HttpOnly on the
+        // preview origin, and the proxy never forwards cookies to the app; mint an
+        // opaque token + index instead only if a consumer needs rotation.
+        return new Response(null, {
+          status: 302,
+          headers: {
+            // The clean path: the ticket dies with this hop, never in the URL (D4).
+            // Leading slashes collapse first: a pathname like `//evil.com` would
+            // otherwise echo into a SCHEME-RELATIVE Location and carry the browser
+            // off the preview origin entirely (review-362 low, fixed in #363) —
+            // the redemption target is always a same-origin path.
+            location: `/${url.pathname.replace(/^\/+/, "")}`,
+            "set-cookie": previewSessionCookieHeader(sessionId),
+            "cache-control": "no-store",
+          },
+        });
       }
-      // The presented host must be the one the ticket was bound to (the triple's
-      // host element) — url.host is what the issuing side bound via originFor.
-      const redeemed = await deps.previewTickets.redeemPreviewTicket({
-        ticket,
+
+      // ── #362: the preview's own traffic — cookie-gated proxying ─────────────
+      //
+      // Everything after the redemption hop rides the preview domain's session
+      // cookie (D9). The gate is exact: the cookie must be present AND name THIS
+      // host's session, so a pass minted for session A never opens session B's
+      // host, and a main-site cookie jar (never carried across hosts — F2) opens
+      // nothing. The refusal is the iframe-facing dual shape, and like every
+      // refusal on this surface it echoes neither cookie nor ticket values.
+      if (!holdsPreviewSessionPass(sessionId, request)) {
+        return refuseResponse(request, PREVIEW_PASS_REFUSAL, 401);
+      }
+      // The app-relative path this request addresses — the shared derivation
+      // (appPathFor above), so the HMR upgrade dispatcher (#363) hands the dev
+      // server the very same path this HTTP entry would.
+      return deps.servePreview({
         sessionId,
-        previewHost: url.host,
-      });
-      if ("reason" in redeemed) {
-        // Never the ticket value, never a reason that echoes it (#360's rule).
-        return Response.json(
-          { error: "The preview ticket is invalid, expired, or already used." },
-          { status: 401 },
-        );
-      }
-      // ponytail: the cookie carries the session id itself — HttpOnly on the
-      // preview origin, and the proxy never forwards cookies to the app; mint an
-      // opaque token + index instead only if a consumer needs rotation.
-      return new Response(null, {
-        status: 302,
-        headers: {
-          // The clean path: the ticket dies with this hop, never in the URL (D4).
-          location: url.pathname,
-          "set-cookie": previewSessionCookieHeader(sessionId),
-          "cache-control": "no-store",
-        },
+        request,
+        appPath: this.appPathFor(request),
+        query: url.search,
       });
     },
   };
+}
+
+/**
+ * The preview pass out of a Cookie header, or null when the jar holds none.
+ * Cookie values are opaque here — parsed, never decoded, never logged.
+ */
+function previewSessionCookieValue(cookieHeader: string | null): string | null {
+  if (cookieHeader === null) return null;
+  for (const part of cookieHeader.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(`${PREVIEW_SESSION_COOKIE}=`)) {
+      return trimmed.slice(PREVIEW_SESSION_COOKIE.length + 1);
+    }
+  }
+  return null;
 }
