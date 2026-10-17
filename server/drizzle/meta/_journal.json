@@ -855,6 +855,55 @@
       "when": 1792008991185,
       "tag": "0121_married_harpoon",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1792080918095,
+      "tag": "0122_payer_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1792085849046,
+      "tag": "0123_bot_services",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1792089653816,
+      "tag": "0124_bot_service_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1792090544120,
+      "tag": "0125_gateway_admin_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1792090545120,
+      "tag": "0126_bot_binding_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1792090546120,
+      "tag": "0127_access_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1792090546121,
+      "tag": "0128_gateway_rate_versions",
+      "breakpoints": true
     }
   ]
 }

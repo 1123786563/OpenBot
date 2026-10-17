@@ -245,5 +245,15 @@
     "loadForBot": "无法加载这位 Bot 的共享应用。",
     "saveDecision": "无法保存该决定。",
     "send": "无法发送该请求。"
+  },
+  "botServices": {
+    "load": "无法加载已登记的 Bot 服务。",
+    "operation": "Bot 服务操作失败。"
+  },
+  "modelAccess": {
+    "previewFailed": "绑定码校验失败。",
+    "confirmFailed": "模型访问授权创建失败。",
+    "loadFailed": "模型访问授权列表加载失败。",
+    "revokeFailed": "授权撤销失败。请重试。"
   }
 }

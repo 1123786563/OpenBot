@@ -15,11 +15,6 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const writer = createCreditWriter(database);
-const credits = createCredits({
-  database,
-  externalCustomerKey: "",
-  catalog: new Map(),
-});
 const prefix = `consumption-${randomUUID().slice(0, 8)}`;
 
 // The same teardown discipline the other integration suites use: one customer delete cascades
@@ -54,9 +49,13 @@ test("a consumption entry carries what the grants absorbed beside what the call 
     title: "over-bound settlement",
   });
 
-  const page = await credits.consumption(
-    { from: null, to: null, page: 1 },
-    customer,
-  );
+  // The account key rides in the constructor now (02.4's convergence): the read no longer names
+  // a customer.
+  const credits = createCredits({
+    database,
+    externalCustomerKey: customer,
+    catalog: new Map(),
+  });
+  const page = await credits.consumption({ from: null, to: null, page: 1 });
   expect(page.entries[0]).toMatchObject({ credits: 2.5, applied: 1 });
 });

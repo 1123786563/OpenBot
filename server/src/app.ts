@@ -114,7 +114,30 @@ import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
 import type { IdentityStore } from "./identity/store";
+import { gatewayAdminCredentialRoutes } from "./gateway/admin-credential-routes";
+import {
+  GatewayAdminCredentialNotConfiguredError,
+  gatewayAdminCredentialControls,
+} from "./gateway/admin-credential";
+import {
+  createEnterpriseGatewayNegotiationStore,
+  createGatewayCapabilityNegotiationService,
+} from "./gateway/capability-negotiation";
+import { createConversionRateStore } from "./gateway/conversion-rate-store";
+import { notConfiguredConversionRateState } from "./gateway/conversion-rate";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import { createEnterpriseGatewayProbeStore } from "./gateway/probe";
+import {
+  createGatewayReadinessService,
+  installGatewayReadinessService,
+} from "./gateway/readiness";
 import { createIntelligenceClient } from "./intelligence-client";
+import { botServiceAdminRoutes } from "./bot-services/routes";
+import type { BotServiceStore } from "./bot-services/store";
+import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
+import { accessGrantRoutes } from "./bot-services/access-grants";
+import { botServiceRoutes } from "./bot-services/auth";
+import type { BotServiceRegistry } from "./bot-services/registry";
 import { knowledgeServiceConfig } from "./knowledge/config";
 import { createKnowledgeRoutes } from "./knowledge/routes";
 import {
@@ -138,9 +161,7 @@ import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
 import { createOpenMuseDeletionAdminRoutes } from "./openmuse-deletion/restore";
-import type {
-  OpenMuseDeletionCleanupView,
-} from "./openmuse-deletion/retention";
+import type { OpenMuseDeletionCleanupView } from "./openmuse-deletion/retention";
 import type { OpenMuseDeletionRestore } from "./openmuse-deletion/restore";
 import { createOpenMuseAccountDeletionRoutes } from "./openmuse-deletion/routes";
 import type { OpenMuseAccountDeletionStore } from "./openmuse-deletion/store";
@@ -735,6 +756,13 @@ export function createApp(
   identity?: IdentityStore,
   /** The GitHub sign-in callback, built by the caller; mounted behind requireUser ahead of /api/identity. */
   identityGithubCallback?: Hono<{ Variables: AppVariables }>,
+  /**
+   * The Bifrost bot service registry (04.1) — and, since 04.2, its credential surface and
+   * authenticator when the deployment composed a full {@link BotServiceRegistry}. A bare 04.1
+   * store keeps every registry route working and leaves the credential surfaces answering a
+   * tagged 503; absent answers a tagged 503 on /api/admin/bot-services.
+   */
+  botServices?: BotServiceStore | BotServiceRegistry,
 ) {
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
@@ -1000,7 +1028,7 @@ export function createApp(
    * provider-proxy surfaces never pass through here, record no usage today, and any future
    * usage-bearing surface must mount below this line or name its own origin.
    */
-  app.use("/api/*", (context, next) => withUsageOrigin("web", next));
+  app.use("/api/*", (_context, next) => withUsageOrigin("web", next));
   app.route("/api/admin/enterprise", createEnterpriseAdminRoutes(requireUser));
   if (openMuseTemplateRevisions) {
     /*
@@ -1144,6 +1172,156 @@ export function createApp(
               encryptionKey: config.keyEncryptionKey,
             }
           : undefined,
+    }),
+  );
+
+  /*
+   * The administrator's bot service registry (Bifrost #234, 04.1): which server-side Bots this
+   * deployment recognizes at all. Registration mints an identity and a declaration, never a
+   * credential or a grant — those are 04.2's and 04.5+'s, under their own triggers. Absent leaves
+   * the surface mounted but answering a tagged 503, so the Admin page can say the registry is
+   * unavailable rather than the route having vanished.
+   */
+  app.route(
+    "/api/admin/bot-services",
+    botServiceAdminRoutes(requireUser, botServices, auditStore),
+  );
+
+  /*
+   * The registry's credential surface (Bifrost #235, 04.2): issue, rotate, revoke and read the
+   * masked status of a Bot's service credential, administrator-only. This is the one place a
+   * credential's plaintext is ever handed out — once, in the issue and rotate responses. Mounted
+   * beside 04.1's routes under the same prefix; without a composed registry it answers a tagged
+   * 503 rather than vanishing.
+   */
+  app.route(
+    "/api/admin/bot-services",
+    botServiceCredentialRoutes(requireUser, botServices),
+  );
+
+  /*
+   * The Bot-facing surface (Bifrost #235, 04.2): the single authenticated door a Bot's server
+   * presents its service credential at. It answers "which Bot am I" and, since 04.3, carries the
+   * binding-code issuance surface the registry composed — mounted on the same guard, so only an
+   * authenticated Bot service identity can reach issuance. Fail-closed in both directions — no
+   * registry, no door; no valid credential, one uniform refusal that says nothing about whether a
+   * botId exists.
+   */
+  app.route(
+    "/api/bot-service",
+    botServiceRoutes(
+      botServices && "authenticate" in botServices && botServices.authenticate
+        ? {
+            authenticate: botServices.authenticate,
+            bindingCodes: botServices.bindingCodes,
+          }
+        : undefined,
+    ),
+  );
+
+  /*
+   * The model access confirmation surface (Bifrost #238, 04.5): a signed-in person's own two-step
+   * authorization — preview what a one-time binding code names, then confirm it into a grant. The
+   * service rides the composed registry (the seam 04.3's binding codes ride), so a deployment that
+   * built only the bare 04.1 store answers a tagged 503 here rather than a confirmation flow with
+   * no registry behind it. Nothing on this mount takes a user or an identity from a request: the
+   * user is always the session's, the identity always the code's own (AC03).
+   */
+  app.route(
+    "/api/model-access",
+    accessGrantRoutes(
+      requireUser,
+      botServices && "modelAccess" in botServices
+        ? botServices.modelAccess
+        : undefined,
+    ),
+  );
+
+  /*
+   * The gateway admin credential (Bifrost 01.2, #208): write and rotate the deployment's own key
+   * for the Bifrost management surface, and read its redacted status. Write-only by construction:
+   * no route here — and none may grow — returns the key; only the service's
+   * `resolveGatewayAdminCredential` decrypts, for server-side trusted code, and 01.5 mounts the
+   * probe that uses it. Resolved through the installed service rather than a createApp parameter:
+   * the wiring installs it before the app is built (index.ts), and a test that never did reads a
+   * tagged 503 — no signature seat moves, which the tail-parameter arithmetic in
+   * identity-app-wiring.test.ts depends on.
+   */
+  app.route(
+    "/api/admin/gateway/credential",
+    gatewayAdminCredentialRoutes(requireUser, gatewayAdminCredentialControls()),
+  );
+
+  /*
+   * The gateway readiness gate (Bifrost 01.7, #213): the one door every paid
+   * model capability passes. Installed here, in the dependency container,
+   * because this is where the deployment configuration lives — the
+   * environment's conversion rate (`config.gateway.creditConversionRate`, the
+   * rate 01.4's store serves until an administrator saves one) reaches the
+   * gate only through this scope. The five conditions resolve through the
+   * installed services (endpoint 01.1, credential 01.2) and the shared
+   * settings rows (probe 01.5, negotiation 01.6, rate 01.3/01.4); the gate
+   * itself never dials the network. A test app without enterprise controls
+   * installs it all the same and every condition answers fail-closed, which
+   * is the point: paid work needs an installed gate AND a ready gateway, and
+   * missing pieces refuse — no provider direct connection, no free usage.
+   */
+  installGatewayReadinessService(
+    createGatewayReadinessService({
+      readGatewayEndpoint: async () => {
+        const endpoint = gatewayEndpointControls();
+        return endpoint ? endpoint.readGatewayEndpoint() : undefined;
+      },
+      resolveGatewayAdminCredential: async () => {
+        const credential = gatewayAdminCredentialControls();
+        if (!credential) {
+          throw new GatewayAdminCredentialNotConfiguredError(
+            "The gateway admin credential is not configured.",
+          );
+        }
+        return credential.resolveGatewayAdminCredential();
+      },
+      readLastGatewayProbe: async () => {
+        const controls = enterpriseControls();
+        return controls
+          ? createEnterpriseGatewayProbeStore(
+              controls.deps.database,
+            ).readGatewayProbeResult()
+          : undefined;
+      },
+      readLastGatewayNegotiation: async () => {
+        const controls = enterpriseControls();
+        if (!controls) return undefined;
+        // The negotiation service's reader, not the raw row: a verdict
+        // answers only for the configuration it decided against, and the
+        // retirement rule lives there (01.6), not here.
+        return createGatewayCapabilityNegotiationService({
+          store: createEnterpriseGatewayNegotiationStore(
+            controls.deps.database,
+          ),
+          readGatewayEndpoint: async () => {
+            const endpoint = gatewayEndpointControls();
+            return endpoint ? endpoint.readGatewayEndpoint() : undefined;
+          },
+          resolveGatewayAdminCredential: async () => {
+            const credential = gatewayAdminCredentialControls();
+            if (!credential) {
+              throw new GatewayAdminCredentialNotConfiguredError(
+                "The gateway admin credential is not configured.",
+              );
+            }
+            return credential.resolveGatewayAdminCredential();
+          },
+        }).readLastGatewayNegotiation();
+      },
+      readConversionRate: async () => {
+        const controls = enterpriseControls();
+        if (!controls) return notConfiguredConversionRateState();
+        return createConversionRateStore({
+          database: controls.deps.database,
+          environmentRate: config.gateway?.creditConversionRate,
+        }).readConversionRate();
+      },
     }),
   );
 
@@ -2198,7 +2376,9 @@ export function createApp(
       createOpenMuseDeletionAdminRoutes({
         requireUser,
         restore: openMuseDeletionAdmin.restore,
-        ...(openMuseDeletionAdmin.purge ? { purge: openMuseDeletionAdmin.purge } : {}),
+        ...(openMuseDeletionAdmin.purge
+          ? { purge: openMuseDeletionAdmin.purge }
+          : {}),
         ...(openMuseDeletionAdmin.purgeRelational
           ? { purgeRelational: openMuseDeletionAdmin.purgeRelational }
           : {}),
