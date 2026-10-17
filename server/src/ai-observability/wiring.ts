@@ -125,6 +125,9 @@ export async function loadVerifiedOpikPort(
   /** The manifest to trust; defaults to the one beside this module. A test seam —
    * the missing-manifest branch is only reachable with a URL that does not exist. */
   manifestUrl?: URL,
+  /** The deployment's Opik credential (R3-41), as parsed from OPIK_API_KEY. Present it
+   * rides every request as the Authorization header; absent sends no header. */
+  apiKey?: string,
 ): Promise<OpikPort | null> {
   const log = getLogger("server");
   const source =
@@ -134,7 +137,12 @@ export async function loadVerifiedOpikPort(
     const manifest = JSON.parse(
       new TextDecoder().decode(bytes),
     ) as VerifiedOpikContract;
-    const port = createOpikHttpPort({ baseUrl, contract: manifest, timeoutMs });
+    const port = createOpikHttpPort({
+      baseUrl,
+      contract: manifest,
+      timeoutMs,
+      ...(apiKey === undefined ? {} : { apiKey }),
+    });
     const fingerprint = createHash("sha256").update(bytes).digest("hex");
     log.info(
       { type: "opik-contract-manifest-loaded", fingerprint },

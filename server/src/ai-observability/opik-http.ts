@@ -225,14 +225,23 @@ function statusFailure(operation: OpikOperation, status: number): Failure {
   return malformed(operation, `unexpected_status:${status}`);
 }
 
-/** JSON body reader that never echoes what it could not read. */
+/** JSON body reader that never echoes what it could not read. The body read and the parse
+ * fail separately (R3-43): a stream that breaks mid-body is the transport's fact and answers
+ * the retryable unavailable, while bytes that arrived whole and meant nothing are the
+ * permanent malformed — a connection that merely died must not fossilize into invalid_json. */
 async function readJsonObject(
   operation: OpikOperation,
   response: Response,
 ): Promise<OpikPortResult<Record<string, unknown>>> {
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    return unavailable(operation, "OPIK_UNREACHABLE");
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await response.text());
+    parsed = JSON.parse(text);
   } catch {
     return malformed(operation, "invalid_json");
   }
@@ -322,6 +331,14 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const base = deps.baseUrl.replace(/\/+$/, "");
   const contract: VerifiedOpikContract = deps.contract;
+
+  // R3-41: a configured credential rides every request — health, reads and writes
+  // alike — because a key-authenticating deployment 401s any request without it,
+  // and that 401 must never be the silent answer to a key the config already
+  // parsed and held. Absent (or blank) means no header and byte-identical
+  // behavior: the compose loopback authenticates nothing.
+  const authHeaders = (): Record<string, string> =>
+    deps.apiKey ? { authorization: deps.apiKey } : {};
 
   // Verified means: the manifest shape this adapter was written against, and a run in which
   // every check passed. Anything else authorizes nothing — not even the health check.
@@ -424,7 +441,14 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
     }, timeoutMs);
     try {
       const raced = await Promise.race([
-        transport(`${base}${path}`, { ...init, signal: controller.signal }),
+        transport(`${base}${path}`, {
+          ...init,
+          headers: {
+            ...(init.headers as Record<string, string> | undefined),
+            ...authHeaders(),
+          },
+          signal: controller.signal,
+        }),
         deadline,
       ]);
       if (raced === "deadline") return unavailable(operation, "OPIK_TIMEOUT");
@@ -433,16 +457,27 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         // default. The cast is the boundary where that assumption is asserted.
         return { outcome: "ok" as const, value: raced as T };
       }
-      const settled = await Promise.race([readBody(raced), deadline]);
+      let settled: OpikPortResult<T> | "deadline";
+      try {
+        settled = await Promise.race([readBody(raced), deadline]);
+      } catch (error) {
+        // R3-42: the reader's own failure is a reader failure — its TypeErrors
+        // included — and answers malformed reader_failed. Only the transport call
+        // above and the body stream itself (readJsonObject's text() read) ride the
+        // retry lane; a defect inside a readBody closure never wears that disguise.
+        if (error instanceof OpikPortError) {
+          throw error;
+        }
+        return malformed(operation, "reader_failed");
+      }
       if (settled === "deadline") return unavailable(operation, "OPIK_TIMEOUT");
       return settled;
     } catch (error) {
       // Classification is part of the answer (OCR m152): a transport failure is a
-      // retryable unavailable — but an adapter defect (a reader's TypeError, an
-      // OpikPortError escaping its own boundary) must not wear that disguise and
-      // ride the retry lane. Transport errors carry DOMException/fetch names; the
-      // port's own errors are rethrown; anything else lands as malformed — the
-      // response-shape trouble it actually is.
+      // retryable unavailable. Reader failures cannot reach this lane anymore
+      // (R3-42): the readBody call catches its own above, so what remains here is
+      // the transport call itself; the port's own errors are rethrown, and anything
+      // else still lands as malformed — the response-shape trouble it actually is.
       if (error instanceof OpikPortError) {
         throw error;
       }

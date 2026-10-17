@@ -706,14 +706,17 @@ test("the case output is projected before it joins the prompt, refused if it car
   expect(leaking.billing.reserves).toHaveLength(0);
 });
 
-test("a scorer that throws leaves the case's own outcome standing (OCR m223)", async () => {
+test("a scorer that throws leaves the case's own outcome standing, and the driver error text out of the record (OCR m223, R3-44)", async () => {
   const inner: EvaluationCaseRunner = async () => ({
     status: "completed",
     output: "the answer",
     usage: { inputTokens: 10, outputTokens: 20 },
   });
+  // The exact leak class usage-evidence.ts names: a driver error whose message
+  // carries connection details. It reaches this seam when the scorer's own
+  // composition throws; the persisted record must answer the static message.
   const exploding = (async () => {
-    throw new Error("judge seam exploded");
+    throw new Error("connect ECONNREFUSED 10.1.2.3:8080");
   }) as unknown as Parameters<typeof createJudgeScoringCaseRunner>[0]["judge"];
   const runner = createJudgeScoringCaseRunner({
     inner,
@@ -733,8 +736,12 @@ test("a scorer that throws leaves the case's own outcome standing (OCR m223)", a
   expect(outcome.judge).toMatchObject({
     status: "failed",
     code: "JUDGE_CALL_FAILED",
-    message: "judge seam exploded",
+    message: "the judge scorer threw",
   });
+  // The detail stays in the server log, never the record that persists and
+  // renders on the results page.
+  expect(JSON.stringify(outcome.judge)).not.toContain("ECONNREFUSED");
+  expect(JSON.stringify(outcome.judge)).not.toContain("10.1.2.3");
 });
 
 test("an entrance whose declared credential env is missing refuses its own calls, never borrows the deployment key (OCR m224)", async () => {
