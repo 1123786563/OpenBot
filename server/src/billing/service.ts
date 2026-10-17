@@ -4,6 +4,7 @@ import {
   type LagoClient,
   type LagoSubscriptionBody,
 } from "./lago";
+import { payerKey } from "./payer";
 import { readBodyCapped } from "./raw-body";
 import type { ReconcileReport } from "./types";
 import {
@@ -20,6 +21,8 @@ import {
   type BillingUsageDailyBucket,
   type BillingUsageEventPage,
   type BillingWebhookProjection,
+  type OwnedSubscriptionRow,
+  type SubscriptionRenewalGrantor,
   type VerifiedWebhook,
   type WebhookVerifier,
 } from "./types";
@@ -101,6 +104,12 @@ export function createBillingService(deps: {
    * database, not the deps — and handed in. Absent keeps the honest refusal.
    */
   reconciler?: { reconcile(): Promise<ReconcileReport> };
+  /**
+   * The renewal payout (10.3): pays a subscription period's allowance into the owner's
+   * account. Absent keeps renewal a no-op (a deployment that wires no plan catalog has no
+   * allowance to renew, and the pass never guesses one).
+   */
+  renewals?: SubscriptionRenewalGrantor;
   ttlMs?: number;
   failureTtlMs?: number;
   now?: () => number;
@@ -175,24 +184,33 @@ export function createBillingService(deps: {
   /**
    * What a delivery implies locally, refreshed from the authoritative object rather than from the
    * event payload: a delivery that arrives out of order must not walk a projection backwards.
+   *
+   * A `subscription.*` delivery also returns the provider list it just read (with the periods the
+   * wire spelled): the renewal pass (10.3) runs against those bodies once the projection apply
+   * has committed — a renewal is detected from the provider's own period, never from the
+   * delivery's bytes.
    */
-  async function readProjectionFor(
-    delivery: VerifiedWebhook,
-  ): Promise<Omit<BillingWebhookProjection, "event">> {
+  async function readProjectionFor(delivery: VerifiedWebhook): Promise<{
+    projection: Omit<BillingWebhookProjection, "event">;
+    subscriptionReads?: readonly LagoSubscriptionBody[];
+  }> {
     if (delivery.webhookType.startsWith("customer.")) {
       if (!delivery.externalCustomerId)
         throw new BillingError("invalid_response");
       // A 404 leaves the projection alone: the object is gone remotely, and the subscription
       // projections say what that means for entitlements. The delivery itself is done.
       const result = await client.getCustomer(delivery.externalCustomerId);
-      return result.status === 200 && result.body
-        ? {
-            customer: {
-              externalId: delivery.externalCustomerId,
-              name: result.body.name,
-            },
-          }
-        : {};
+      return {
+        projection:
+          result.status === 200 && result.body
+            ? {
+                customer: {
+                  externalId: delivery.externalCustomerId,
+                  name: result.body.name,
+                },
+              }
+            : {},
+      };
     }
     if (delivery.webhookType.startsWith("subscription.")) {
       if (!delivery.externalCustomerId)
@@ -202,27 +220,155 @@ export function createBillingService(deps: {
         delivery.externalCustomerId,
       );
       return {
-        // A 404 stages an insert-only floor; it never clears an existing customer's name.
-        customer: {
-          externalId: delivery.externalCustomerId,
-          ...(result.status === 200 && result.body
-            ? { name: result.body.name }
-            : {}),
+        projection: {
+          // A 404 stages an insert-only floor; it never clears an existing customer's name.
+          customer: {
+            externalId: delivery.externalCustomerId,
+            ...(result.status === 200 && result.body
+              ? { name: result.body.name }
+              : {}),
+          },
+          subscriptions: subscriptions.map((subscription) => ({
+            externalCustomerId: subscription.externalCustomerId,
+            externalSubscriptionId: subscription.externalSubscriptionId,
+            planCode: subscription.planCode,
+            status: subscription.status,
+          })),
+          // The scope the apply retires absent rows under: this delivery's customer, the one an
+          // empty list would otherwise leave unnamed.
+          subscriptionsPresentFor: delivery.externalCustomerId,
         },
-        subscriptions: subscriptions.map((subscription) => ({
-          externalCustomerId: subscription.externalCustomerId,
-          externalSubscriptionId: subscription.externalSubscriptionId,
-          planCode: subscription.planCode,
-          status: subscription.status,
-        })),
-        // The scope the apply retires absent rows under: this delivery's customer, the one an
-        // empty list would otherwise leave unnamed.
-        subscriptionsPresentFor: delivery.externalCustomerId,
+        subscriptionReads: subscriptions,
       };
     }
     // Every other type names an object this deployment does not project. Nothing to refresh is
     // not a failure: the inbox row below records it as processed.
-    return {};
+    return { projection: {} };
+  }
+
+  /**
+   * Cover one period of one owned subscription (10.3): the renewal allowance lands in the
+   * OWNER's account — derived from the row's own pair via `payerKey`, never from a delivery —
+   * and the marker advances only once the grant is recorded (or rightly absent). The ledger
+   * key `plan-renewal:<id>:<periodStart>` is the fence that makes a duplicate or racing
+   * delivery of the same period a no-op; the forward-only marker makes the fast path agree.
+   * Answers what happened, for the log; every failure leaves the period uncovered so the next
+   * delivery or sweep retries it.
+   */
+  async function coverPeriod(
+    row: OwnedSubscriptionRow,
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<"granted" | "covered" | "skipped"> {
+    const renewals = deps.renewals;
+    if (!renewals) return "skipped";
+    const log_ = deps.log ?? (() => {});
+    // The marker is the fast "already covered" answer; a row already at — or past — this
+    // period has had its payout (the ledger key would refuse a second one anyway).
+    if (
+      row.allowancePeriodStart &&
+      row.allowancePeriodStart.getTime() >= periodStart.getTime()
+    ) {
+      return "covered";
+    }
+    // The account is the subscription's own owner pair. An ownerless row pays nobody (Q23:
+    // no guessed attribution), and the quarantined kind is refused by the key derivation
+    // itself — both leave the period uncovered and visible in the log.
+    if (!row.ownerPayerKind || !row.ownerPayerId) {
+      log_(
+        `billing: renewal skipped for ${row.externalSubscriptionId} — the row carries no owner (Q23); the period stays uncovered`,
+      );
+      return "skipped";
+    }
+    let accountKey: string;
+    try {
+      accountKey = payerKey({ kind: row.ownerPayerKind, id: row.ownerPayerId });
+    } catch {
+      log_(
+        `billing: renewal skipped for ${row.externalSubscriptionId} — the owner pair resolves to no billable account`,
+      );
+      return "skipped";
+    }
+    const totalCents = renewals.creditsFor(row.planCode);
+    if (totalCents === null || totalCents <= 0) {
+      // A plan with no credit component has no allowance to renew: the period is handled —
+      // advance the marker so the detection does not re-run on every delivery.
+      await store.advanceSubscriptionAllowance({
+        externalSubscriptionId: row.externalSubscriptionId,
+        allowancePeriodStart: periodStart,
+        allowancePeriodEnd: periodEnd,
+      });
+      return "covered";
+    }
+    try {
+      await renewals.grantRenewal({
+        externalCustomerId: accountKey,
+        planCode: row.planCode,
+        externalSubscriptionId: row.externalSubscriptionId,
+        periodStart,
+        periodEnd,
+        totalCents,
+      });
+    } catch (error) {
+      log_(
+        `billing: renewal grant failed for ${row.externalSubscriptionId} period ${periodStart.toISOString()} — name=${error instanceof Error ? error.name : "unknown"}; the period stays uncovered and retries`,
+      );
+      return "skipped";
+    }
+    // The marker moves only after the grant is recorded: a crash between the two leaves the
+    // period uncovered, and the next delivery or sweep re-runs the idempotent grant.
+    await store.advanceSubscriptionAllowance({
+      externalSubscriptionId: row.externalSubscriptionId,
+      allowancePeriodStart: periodStart,
+      allowancePeriodEnd: periodEnd,
+    });
+    return "granted";
+  }
+
+  /**
+   * The renewal pass over one fresh provider list (the delivery path): every LIVE subscription
+   * in the list whose stored row carries an owner gets its uncovered period covered. Runs
+   * after the projection apply committed, best-effort: the delivery's own work stands, and a
+   * failed pass is the sweep's next tick's work, not a failed delivery.
+   */
+  async function applyRenewals(
+    subscriptions: readonly LagoSubscriptionBody[],
+  ): Promise<void> {
+    if (!deps.renewals || subscriptions.length === 0) return;
+    for (const subscription of subscriptions) {
+      if (
+        subscription.status !== "active" &&
+        subscription.status !== "incomplete"
+      ) {
+        continue;
+      }
+      if (!subscription.currentPeriodStart || !subscription.currentPeriodEnd)
+        continue;
+      const periodStart = new Date(subscription.currentPeriodStart);
+      const periodEnd = new Date(subscription.currentPeriodEnd);
+      if (
+        Number.isNaN(periodStart.getTime()) ||
+        Number.isNaN(periodEnd.getTime())
+      ) {
+        continue;
+      }
+      const rows = await store.readLiveOwnedSubscriptions(
+        subscription.externalCustomerId,
+      );
+      const row = rows.find(
+        (candidate) =>
+          candidate.externalSubscriptionId ===
+          subscription.externalSubscriptionId,
+      );
+      if (!row) continue;
+      try {
+        await coverPeriod(row, periodStart, periodEnd);
+      } catch (error) {
+        (deps.log ?? console.warn)(
+          `billing: renewal pass failed for ${row.externalSubscriptionId} — name=${error instanceof Error ? error.name : "unknown"}; the sweep retries`,
+        );
+      }
+    }
   }
 
   const reader = createBillingEntitlementReader({
@@ -405,9 +551,9 @@ export function createBillingService(deps: {
           return json(200, { status: "duplicate" });
         }
 
-        const projection = await readProjectionFor(delivery);
+        const read = await readProjectionFor(delivery);
         const status = await store.applyWebhookProjection({
-          ...projection,
+          ...read.projection,
           // Audit B6's visibility rule: the retirement evidence line comes from the write that
           // produced it — the apply captures the count at its own UPDATE and calls this only
           // once that transaction committed, so the line can neither claim a retirement another
@@ -443,6 +589,12 @@ export function createBillingService(deps: {
           (deps.log ?? console.warn)(
             `billing: webhook_body_replay event=${delivery.eventId} deliveries=${priorDeliveries}`,
           );
+        }
+        // The renewal pass (10.3) runs after the apply committed, for `subscription.*`
+        // deliveries only, best-effort: the delivery's own projection work stands, and a
+        // failed pass is the sweep's next tick's work — never a failed delivery.
+        if (read.subscriptionReads) {
+          await applyRenewals(read.subscriptionReads);
         }
         return json(200, { status });
       } catch (error) {
@@ -653,6 +805,46 @@ export function createBillingService(deps: {
         ...(lastSyncedAt ? { lastSyncedAt: lastSyncedAt.toISOString() } : {}),
         webhookMode: config.webhookMode,
       };
+    },
+
+    /**
+     * The renewal sweep (10.3): the webhook path pays a period when its notification arrives;
+     * this pass asks the provider directly about every live owned subscription, so a period
+     * whose notification never arrived still pays, and a grant that failed after a delivery
+     * still retries. The ledger key and the forward-only marker make every re-run a no-op.
+     */
+    async sweepRenewals() {
+      if (!deps.renewals) return;
+      const rows = await store.readLiveOwnedSubscriptions();
+      for (const row of rows) {
+        try {
+          // The provider's own period is the fact a renewal is detected from; a subscription
+          // the provider no longer answers (or no longer runs) is skipped, not guessed.
+          const remote = await client.getSubscription(row.externalSubscriptionId);
+          if (!remote.body) continue;
+          if (
+            remote.body.status !== "active" &&
+            remote.body.status !== "incomplete"
+          ) {
+            continue;
+          }
+          if (!remote.body.currentPeriodStart || !remote.body.currentPeriodEnd)
+            continue;
+          const periodStart = new Date(remote.body.currentPeriodStart);
+          const periodEnd = new Date(remote.body.currentPeriodEnd);
+          if (
+            Number.isNaN(periodStart.getTime()) ||
+            Number.isNaN(periodEnd.getTime())
+          ) {
+            continue;
+          }
+          await coverPeriod(row, periodStart, periodEnd);
+        } catch (error) {
+          (deps.log ?? console.warn)(
+            `billing: renewal sweep skipped ${row.externalSubscriptionId} — ${error instanceof BillingError ? error.code : `name=${error instanceof Error ? error.name : "unknown"}`}; the next pass retries`,
+          );
+        }
+      }
     },
 
     async reconcile(): Promise<ReconcileReport> {

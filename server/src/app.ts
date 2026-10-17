@@ -1212,9 +1212,11 @@ export function createApp(
    * The Bot-facing surface (Bifrost #235, 04.2): the single authenticated door a Bot's server
    * presents its service credential at. It answers "which Bot am I" and, since 04.3, carries the
    * binding-code issuance surface the registry composed — mounted on the same guard, so only an
-   * authenticated Bot service identity can reach issuance. Fail-closed in both directions — no
-   * registry, no door; no valid credential, one uniform refusal that says nothing about whether a
-   * botId exists.
+   * authenticated Bot service identity can reach issuance. Since 05.3 (#244) it also carries the
+   * short-lived virtual key claim surface the registry composed: a Bot presents an authorization
+   * (grantId) and receives that user × Bot authorization's own key — the plaintext riding only
+   * here, to the authenticated Bot service. Fail-closed in both directions — no registry, no
+   * door; no valid credential, one uniform refusal that says nothing about whether a botId exists.
    */
   app.route(
     "/api/bot-service",
@@ -1223,6 +1225,7 @@ export function createApp(
         ? {
             authenticate: botServices.authenticate,
             bindingCodes: botServices.bindingCodes,
+            keys: "keys" in botServices ? botServices.keys : undefined,
           }
         : undefined,
     ),

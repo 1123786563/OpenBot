@@ -10,6 +10,10 @@ import {
   type AccessGrantService,
 } from "./access-grants";
 import { bindingCodeRoutes, createBindingOfferIssuer } from "./binding-codes";
+import {
+  createDeploymentKeyIssuer,
+  createKeyIssuanceRoutes,
+} from "../gateway/key-issuance";
 import { createBotServiceAuthenticator } from "./auth";
 import type { BotServiceCredentialService } from "./service-credentials";
 import { createBotServiceCredentialService } from "./service-credentials";
@@ -42,6 +46,12 @@ export type BotServiceRegistry = BotServiceStore & {
    * reads it off the composed registry, the same seam `bindingCodes` rides.
    */
   modelAccess: AccessGrantService;
+  /**
+   * The short-lived key issuance surface (Bifrost 05.3, #244), composed against this registry's
+   * grant service, 05.1's provisioning seam and the installed gateway controls. The bot-facing
+   * router mounts it under the same service guard as `bindingCodes`.
+   */
+  keys: ReturnType<typeof createKeyIssuanceRoutes>;
 };
 
 export type BotServiceRegistryDependencies = {
@@ -58,6 +68,11 @@ export function createBotServiceRegistry(
   dependencies: BotServiceRegistryDependencies,
 ): BotServiceRegistry {
   const store = createBotServiceStore(database);
+  const modelAccess = createAccessGrantService({
+    database,
+    botServices: store,
+    auditStore: dependencies.auditStore,
+  });
   return {
     ...store,
     credentials: createBotServiceCredentialService(database, dependencies),
@@ -72,10 +87,13 @@ export function createBotServiceRegistry(
         auditStore: dependencies.auditStore,
       }),
     }),
-    modelAccess: createAccessGrantService({
-      database,
-      botServices: store,
-      auditStore: dependencies.auditStore,
+    modelAccess,
+    keys: createKeyIssuanceRoutes({
+      issue: createDeploymentKeyIssuer({
+        database,
+        modelAccess,
+        auditStore: dependencies.auditStore,
+      }).issueKeyForGrant,
     }),
   };
 }
