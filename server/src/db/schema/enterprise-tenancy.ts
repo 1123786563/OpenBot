@@ -314,3 +314,110 @@ export const enterpriseSecurityEvents = pgTable(
     }),
   ],
 ).enableRLS();
+
+// MT004（Issue #47）：企业团队成员关系（workspace membership），expand-only。
+// 唯一成员关系 = (tenant_id, workspace_id, principal_id)；复合外键同时证明
+// workspace 属于该公司（→ enterprise_workspaces）与 principal 是该公司成员
+// （→ enterprise_memberships）。status 沿用 active/suspended 先例，epoch 为
+// 正整数版本号（单调递增由应用写入路径保证，CHECK 兜底正整数）。
+// RLS 按同文件既有模式最小新增（全面 RLS 属 MT012）。
+export const enterpriseWorkspaceMemberships = pgTable(
+  "enterprise_workspace_memberships",
+  {
+    tenantId: text("tenant_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    status: text("status").notNull().default("active"),
+    epoch: integer("epoch").notNull().default(1),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.workspaceId, table.principalId],
+    }),
+    uniqueIndex("enterprise_workspace_membership_principal_tenant").on(
+      table.principalId,
+      table.tenantId,
+      table.workspaceId,
+    ),
+    check(
+      "enterprise_workspace_member_status",
+      sql`${table.status} in ('active','suspended')`,
+    ),
+    check("enterprise_workspace_member_epoch", sql`${table.epoch} > 0`),
+    foreignKey({
+      columns: [table.tenantId, table.workspaceId],
+      foreignColumns: [enterpriseWorkspaces.tenantId, enterpriseWorkspaces.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.tenantId, table.principalId],
+      foreignColumns: [
+        enterpriseMemberships.tenantId,
+        enterpriseMemberships.principalId,
+      ],
+    }).onDelete("cascade"),
+    pgPolicy("enterprise_workspace_membership_self_read", {
+      for: "select",
+      to: "ob_ent_directory",
+      using: sql`exists (select 1 from enterprise_principals p where p.id = enterprise_workspace_memberships.principal_id and p.user_id = nullif(current_setting('app.user_id', true), ''))`,
+    }),
+    pgPolicy("enterprise_workspace_membership_data_read", {
+      for: "select",
+      to: "ob_ent_data",
+      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.principal_id', true), '')`,
+    }),
+    pgPolicy("enterprise_workspace_membership_operator_read", {
+      for: "select",
+      to: "ob_ent_operator",
+      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
+    }),
+    pgPolicy("enterprise_workspace_membership_operator_insert", {
+      for: "insert",
+      to: "ob_ent_operator",
+      withCheck: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
+    }),
+    pgPolicy("enterprise_workspace_membership_operator_update", {
+      for: "update",
+      to: "ob_ent_operator",
+      using: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')`,
+      withCheck: sql`enterprise_workspace_memberships.tenant_id = nullif(current_setting('app.tenant_id', true), '') and enterprise_workspace_memberships.principal_id = nullif(current_setting('app.operator_principal_id', true), '')`,
+    }),
+  ],
+).enableRLS();
+
+// MT112（执行轮 Ticket）：历史部署「原有公司」锚点映射表，expand-only。
+// 一行 = 原有公司租户 ↔ 既有部署身份（deployment_packages.tenant_id，启动时
+// 由 synchronizeTenantPackage upsert 的持久化身份）↔ 计费 Customer 键
+// （deploymentExternalCustomerId 的派生规则：'openbot-deployment-' ||
+// deployment_tenant_id，见 src/billing/service.ts；派生 CHECK 让映射自证
+// 一致）。tenant 主键 + 两个方向唯一索引 = 映射在两个方向上都唯一；
+// 锚点行只能由 MT112 迁移写入（对受限角色只授予租户范围 SELECT，
+// 无 INSERT/UPDATE 授权），后续回填 Ticket（MT113/MT074）以本表为锚。
+export const enterpriseDeploymentAnchors = pgTable(
+  "enterprise_deployment_anchors",
+  {
+    tenantId: text("tenant_id")
+      .primaryKey()
+      .references(() => enterpriseTenants.id, { onDelete: "cascade" }),
+    deploymentTenantId: text("deployment_tenant_id").notNull(),
+    billingExternalCustomerId: text("billing_external_customer_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("enterprise_deployment_anchor_identity").on(
+      table.deploymentTenantId,
+    ),
+    uniqueIndex("enterprise_deployment_anchor_billing_customer").on(
+      table.billingExternalCustomerId,
+    ),
+    check(
+      "enterprise_deployment_anchor_billing_derivation",
+      sql`${table.billingExternalCustomerId} = 'openbot-deployment-' || ${table.deploymentTenantId}`,
+    ),
+    pgPolicy("enterprise_deployment_anchor_operator_read", {
+      for: "select",
+      to: "ob_ent_operator",
+      using: sql`enterprise_deployment_anchors.tenant_id = nullif(current_setting('app.tenant_id', true), '')`,
+    }),
+  ],
+).enableRLS();
