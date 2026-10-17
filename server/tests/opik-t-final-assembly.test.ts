@@ -637,6 +637,39 @@ describe("T-final M2: the contract manifest is a server asset with a boot voice"
     expect(missing).toBeNull();
   });
 
+  test("the wired port carries the configured credential on the wire; no key, no header (R3-41)", async () => {
+    // The config holds OPIK_API_KEY "for the port wiring" — this is that wiring:
+    // the credential must reach the adapter's deps and then the requests. With
+    // none configured (compose loopback) no Authorization header rides at all.
+    const recorded: Array<Record<string, unknown>> = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      recorded.push((init?.headers ?? {}) as Record<string, unknown>);
+      return Promise.resolve(new Response("", { status: 200 }));
+    }) as typeof fetch;
+    try {
+      const keyed = await loadVerifiedOpikPort(
+        "http://opik.test",
+        undefined,
+        undefined,
+        "deployment-key-1",
+      );
+      expect(keyed).not.toBeNull();
+      expect((await keyed!.healthCheck()).outcome).toBe("ok");
+      expect(recorded.length).toBe(1);
+      expect(recorded[0]!.authorization).toBe("deployment-key-1");
+
+      recorded.length = 0;
+      const keyless = await loadVerifiedOpikPort("http://opik.test");
+      expect(keyless).not.toBeNull();
+      expect((await keyless!.healthCheck()).outcome).toBe("ok");
+      expect(recorded.length).toBe(1);
+      expect(recorded[0]!.authorization).toBeUndefined();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   test("the loaded manifest's fingerprint is the file's own sha-256 (boot log evidence)", async () => {
     // The fingerprint the boot line carries must be computable from the asset
     // itself — the trust anchor is the file, and the log names WHICH file.

@@ -1,4 +1,5 @@
 import type { SafeText, SafeValue } from "../../../../shared/ai-observability";
+import { getLogger } from "../../../../shared/logger";
 import {
   CreditReservationConflictError,
   type CreditWriter,
@@ -644,10 +645,21 @@ export function createJudgeScoringCaseRunner(
         output: outcome.output,
       });
     } catch (error) {
-      record = failed(
-        "JUDGE_CALL_FAILED",
-        error instanceof Error ? error.message : "the judge scorer threw",
+      // R3-44: the record persists and renders on the results page, and a driver
+      // error's own text can carry connection details — the usage-evidence
+      // discipline ("no error message — a driver error can carry connection
+      // details") applies here too. The record carries the static message; the
+      // detail stays in the server log.
+      getLogger("server").warn(
+        {
+          type: "opik-judge-scorer-threw",
+          executionId: context.executionId,
+          caseIndex: context.caseIndex,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "opik-judge-scorer-threw — the judge record carries only the static message",
       );
+      record = failed("JUDGE_CALL_FAILED", "the judge scorer threw");
     }
     if (record === null) return outcome;
     return { ...outcome, judge: record };

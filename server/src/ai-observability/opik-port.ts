@@ -239,11 +239,18 @@ export type OpikPort = {
   ): Promise<OpikPortResult<{ deleted: boolean }>>;
 };
 
-/** Injection seams: the deployment target, the verified contract, and (for tests) transport
- * and deadline. There is no unverified default contract and no raw fetch escape hatch. */
+/** Injection seams: the deployment target, its credential, the verified contract, and (for
+ * tests) transport and deadline. There is no unverified default contract and no raw fetch escape
+ * hatch. */
 export type OpikHttpPortDeps = {
   baseUrl: string;
   contract: VerifiedOpikContract;
+  /**
+   * The deployment's Opik credential, as parsed from OPIK_API_KEY (R3-41). Present, it rides
+   * every request as the Authorization header value; absent, no header is attached and the
+   * wire behavior is unchanged (the compose loopback authenticates nothing).
+   */
+  apiKey?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
 };

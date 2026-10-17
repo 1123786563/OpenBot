@@ -652,6 +652,38 @@ describe("a hostile or dead upstream settles within the deadline", () => {
     });
   });
 
+  test("a TypeError raised inside the reader is reader_failed, never the transport disguise (R3-42)", async () => {
+    // The transport call itself resolved fine; the TypeError is thrown while a
+    // readBody closure works on what it was handed. The retry lane is the
+    // transport's, so a reader's TypeError — even one wearing the exact name
+    // the lane matches on — must settle as malformed reader_failed instead.
+    const hostile = () =>
+      Promise.resolve(
+        new Proxy(
+          {},
+          {
+            get(_target, property) {
+              // `then` must stay inert so the transport handoff itself succeeds
+              // and the defect genuinely fires inside the readBody closure.
+              if (property === "then") return undefined;
+              if (property === "status") {
+                throw new TypeError("reader defect surfaced mid-read");
+              }
+              throw new TypeError("unexpected response access");
+            },
+          },
+        ) as unknown as Response,
+      ) as Promise<Response>;
+    const { transport } = recorder(hostile);
+    const result = await port({ fetch: transport }).retrieveProject(trusted);
+    expect(result).toEqual({
+      outcome: "malformed",
+      operation: "retrieveProject",
+      code: "OPIK_MALFORMED_RESPONSE",
+      detail: "reader_failed",
+    });
+  });
+
   test("an injected 401 on the health endpoint is a typed failure, never healthy", async () => {
     const { transport } = recorder(() => new Response("", { status: 401 }));
     const result = await port({ fetch: transport }).healthCheck();
@@ -736,6 +768,56 @@ describe("malformed and partial responses are never converted to success", () =>
       detail: "invalid_json",
     });
     expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  test("a body stream that breaks mid-flight is unavailable, never malformed invalid_json (R3-43)", async () => {
+    // The upstream died between the verified 200 headers and the end of the
+    // body: response.text() rejects mid-read. That is a transport fact — the
+    // retry lane's whole point — and must not fossilize into the permanent
+    // invalid_json verdict reserved for bytes that arrived and meant nothing.
+    const broken = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"id": "abc"'));
+            queueMicrotask(() =>
+              controller.error(new Error("connection reset mid-body")),
+            );
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const { transport } = recorder(broken);
+    const result = await port({ fetch: transport }).retrieveProject(trusted);
+    expect(result).toEqual({
+      outcome: "unavailable",
+      operation: "retrieveProject",
+      code: "OPIK_UNREACHABLE",
+    });
+  });
+
+  test("an envelope read whose body breaks mid-flight is unavailable too (R3-43)", async () => {
+    const broken = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"page": 1, "size":'));
+            queueMicrotask(() =>
+              controller.error(new Error("connection reset mid-body")),
+            );
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const { transport } = recorder(broken);
+    const result = await port({ fetch: transport }).listTraces(trusted, {
+      projectId: "01a13db5-256b-73a4-b213-d7b33c4fd2d4",
+    });
+    expect(result).toEqual({
+      outcome: "unavailable",
+      operation: "listTraces",
+      code: "OPIK_UNREACHABLE",
+    });
   });
 
   test("a project answer without an id is not a project", async () => {
@@ -900,6 +982,52 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     const fine = await p.writeSpans(otherScope, { spans: [derivedSpan] });
     expect(fine).toEqual({ outcome: "ok", value: { accepted: true } });
     expect(calls.length).toBe(2);
+  });
+});
+
+describe("a configured credential rides every request; no key means no header (R3-41)", () => {
+  test("every exchange carries the configured Authorization credential", async () => {
+    // The parsed-and-held OPIK_API_KEY must reach the wire: a key-authenticating
+    // deployment 401s every request without it, and that 401 would otherwise be
+    // silent (OPIK_CLIENT_ERROR, still enabled). Health, reads and writes alike.
+    const { calls, transport } = recorder((call) =>
+      call === 2
+        ? json(200, JSON.stringify({ id: "abc", name: locator.project }))
+        : new Response("", { status: 200 }),
+    );
+    const p = port({ fetch: transport, apiKey: "opik-api-key-1" });
+    expect((await p.healthCheck()).outcome).toBe("ok");
+    expect((await p.retrieveProject(trusted)).outcome).toBe("ok");
+    expect(await p.writeSpans(trusted, { spans: [derivedSpan] })).toEqual({
+      outcome: "ok",
+      value: { accepted: true },
+    });
+    expect(calls.length).toBe(3);
+    for (const call of calls) {
+      expect(
+        (call.init.headers as Record<string, string> | undefined)
+          ?.authorization,
+      ).toBe("opik-api-key-1");
+    }
+  });
+
+  test("without a configured key no Authorization header is attached at all", async () => {
+    // Zero behavior change for the compose loopback: absent (or blank) key means
+    // the request goes out exactly as before, header-less.
+    const { calls, transport } = recorder(() =>
+      json(200, JSON.stringify({ id: "abc", name: locator.project })),
+    );
+    const keyedBlank = port({ fetch: transport, apiKey: "" });
+    expect((await keyedBlank.retrieveProject(trusted)).outcome).toBe("ok");
+    const keyless = port({ fetch: transport });
+    expect((await keyless.healthCheck()).outcome).toBe("ok");
+    expect(calls.length).toBe(2);
+    for (const call of calls) {
+      expect(
+        (call.init.headers as Record<string, string> | undefined)
+          ?.authorization,
+      ).toBeUndefined();
+    }
   });
 });
 

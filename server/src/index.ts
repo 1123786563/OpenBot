@@ -5169,7 +5169,15 @@ const opikBootConfig = opikConfigFromEnv(process.env);
 const aiObservabilityBindings = createRunBindingStore(database);
 const opikObservationPort =
   opikBootConfig.enabled && opikBootConfig.baseUrl !== null
-    ? await loadVerifiedOpikPort(opikBootConfig.baseUrl)
+    ? await loadVerifiedOpikPort(
+        opikBootConfig.baseUrl,
+        undefined,
+        undefined,
+        // R3-41: the parsed-and-held credential reaches the wire; a deployment
+        // pointing OPIK_BASE_URL at a key-authenticating Opik no longer 401s
+        // silently. Absent (compose loopback) sends no header at all.
+        opikBootConfig.apiKey ?? undefined,
+      )
     : null;
 // Review F-1: without a health service the enabled state is invisible over HTTP.
 const opikHealthService = createOpikHealthService({
