@@ -30,6 +30,11 @@ import {
   type TranscriptionConfig,
   transcriptionConfig,
 } from "./dictation/config";
+import {
+  type ConversionRate,
+  parseConversionRateInput,
+} from "./gateway/conversion-rate";
+import { parseGatewayBaseUrl, parseRequestTimeoutMs } from "./gateway/endpoint";
 import { type VoiceConfig, voiceConfig } from "./voice/config";
 import { type WebBotAuth, webBotAuthFromEnv } from "./web-bot-auth";
 
@@ -239,6 +244,8 @@ export type DeploymentConfig = {
   enterpriseDirectoryDatabaseUrl?: string;
   enterpriseDataDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
+  /** The model gateway endpoint named in the environment, when one is named (`GATEWAY_BASE_URL`). */
+  gateway?: GatewayEnvConfig;
   keyEncryptionKey: string;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
@@ -424,6 +431,14 @@ export type DeploymentConfig = {
    * environment and in the request headers the client sends — never in a log line or a response.
    */
   billing?: LagoBillingConfig;
+  /**
+   * The gateway's USD→credits conversion rate (1 USD = numerator/denominator credits, exact
+   * rational, never a float), read from BIFROST_CREDITS_PER_USD only to refuse an invalid value
+   * at the boot boundary. Absent means billing is not enabled through the gateway — there is no
+   * implicit default. The authoritative runtime value is the admin-saved versioned row read
+   * through gateway/conversion-rate-store.ts, validated by the same pure parser as this one.
+   */
+  bifrostConversionRate?: ConversionRate;
   /**
    * The direct-collection channels, beside the billing projection above. Same absent-means-
    * unmounted contract: a deployment that configured no channel mounts no payment surface at all.
@@ -1482,6 +1497,54 @@ function billingConfig(
     creditPolicy,
     ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   };
+}
+
+/** The gateway endpoint a deployment names in its environment, when it names one. */
+export type GatewayEnvConfig = { baseUrl: string; requestTimeoutMs: number };
+
+/**
+ * `GATEWAY_BASE_URL` / `GATEWAY_REQUEST_TIMEOUT_MS`: a deployment-level gateway default, refused at
+ * start-up by the same rule the administrator save path applies (gateway/endpoint.ts). The runtime
+ * source of truth for the endpoint an administrator edits is the database row
+ * (gateway/config-store.ts); this is the seam downstream tickets (01.5 probe, 01.7 readiness) read
+ * first, so a deployment can name its gateway before any administrator has signed in.
+ */
+function gatewayEnvConfig(environment: Environment): GatewayEnvConfig | undefined {
+  const baseUrl = optional(environment, "GATEWAY_BASE_URL");
+  const timeoutRaw = optional(environment, "GATEWAY_REQUEST_TIMEOUT_MS");
+  if (!baseUrl && !timeoutRaw) return undefined;
+  if (!baseUrl) {
+    throw new Error(
+      "GATEWAY_REQUEST_TIMEOUT_MS is set without GATEWAY_BASE_URL: name the gateway origin (for example https://bifrost.internal) or leave both unset.",
+    );
+  }
+  const parsed = parseGatewayBaseUrl(baseUrl);
+  if (!parsed.ok) throw new Error(`GATEWAY_BASE_URL: ${parsed.error}`);
+  let requestTimeoutMs = 10_000;
+  if (timeoutRaw !== undefined) {
+    const timeout = parseRequestTimeoutMs(Number(timeoutRaw));
+    if (!timeout.ok)
+      throw new Error(`GATEWAY_REQUEST_TIMEOUT_MS: ${timeout.error}`);
+    requestTimeoutMs = timeout.requestTimeoutMs;
+  }
+  return { baseUrl: parsed.baseUrl, requestTimeoutMs };
+}
+
+/**
+ * The gateway conversion rate at boot, or a refusal carrying the parser's specific reason —
+ * the same parser the admin write path uses (gateway/conversion-rate-store.ts), so process
+ * start and an administrator saving a value can never disagree about what a legal rate is.
+ * Absent stays absent: there is no implicit default, and an unconfigured rate means billing
+ * is not enabled, not that some rate silently applies.
+ */
+function gatewayConversionRate(environment: Environment): ConversionRate | undefined {
+  const raw = optional(environment, "BIFROST_CREDITS_PER_USD");
+  if (raw === undefined) return undefined;
+  const parsed = parseConversionRateInput(raw);
+  if (!parsed.ok) {
+    throw new Error(`BIFROST_CREDITS_PER_USD ${parsed.message}`);
+  }
+  return parsed.value;
 }
 
 function billingCreditPolicyConfig(
@@ -2756,6 +2819,7 @@ export function loadConfig(
   const workerSharedSecret = optional(environment, "WORKER_SHARED_SECRET");
   // Read once so the payments block can refuse a channel configured without its projection.
   const billing = billingConfig(environment);
+  const bifrostConversionRate = gatewayConversionRate(environment);
   const deploymentKey = keyEncryptionKey(environment);
   const webBotAuth = webBotAuthFromEnv(environment, {
     publicUrl,
@@ -2779,7 +2843,9 @@ export function loadConfig(
       "tenantStorageRuntimeDatabaseUrl",
       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
     ),
+    ...spreadOptional("gateway", gatewayEnvConfig(environment)),
     keyEncryptionKey: deploymentKey,
+    ...(bifrostConversionRate !== undefined ? { bifrostConversionRate } : {}),
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
     ...(githubApp ? { githubApp } : {}),
