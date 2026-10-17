@@ -10,7 +10,7 @@ import {
   mintRunAssertion,
   readRunAssertion,
 } from "../src/agents/callback-token";
-import { PersonalMemoryMiddleware } from "../src/memory/tools";
+import { memoryTools, PersonalMemoryMiddleware } from "../src/memory/tools";
 
 class SelectedAgent extends AbstractAgent {
   readonly requests: RunAgentInput[] = [];
@@ -129,4 +129,48 @@ test("memory database failures stop the AGUI run visibly", async () => {
       throw new Error("memory read failed");
     }),
   ).rejects.toThrow("memory read failed");
+});
+test("the remember tool stores only the person's explicit statement", async () => {
+  const created: unknown[] = [];
+  const tools = memoryTools({
+    store: {
+      create: async (_owner: string, input: unknown) => {
+        created.push(input);
+        return { id: "m1" };
+      },
+    } as never,
+    ingestion: {} as never,
+    ownerUserId: "u1",
+    agentId: "bot",
+  });
+  const remember = tools.find((tool) => tool.name === "remember_personal_fact");
+  if (!remember) throw new Error("Expected the remember tool.");
+  await remember.execute({ content: "I prefer morning meetings." });
+  // Nothing the person did not state: no extra facts, no second memory.
+  expect(created).toHaveLength(1);
+  expect((created[0] as { content: string }).content).toBe(
+    "I prefer morning meetings.",
+  );
+  await expect(remember.execute({ content: "" })).resolves.toContain("Refused");
+  expect(created).toHaveLength(1);
+});
+test("the recall tool answers only through the ingestion recall seam", async () => {
+  const asked: { owner: string; bot: string; search: string }[] = [];
+  const tools = memoryTools({
+    store: {} as never,
+    ingestion: {
+      recall: async (ownerUserId: string, agentId: string, search = "") => {
+        asked.push({ owner: ownerUserId, bot: agentId, search });
+        return [];
+      },
+    } as never,
+    ownerUserId: "u1",
+    agentId: "bot",
+  });
+  const tool = tools.find((entry) => entry.name === "recall_personal_memory");
+  if (!tool) throw new Error("Expected the recall tool.");
+  // The review gate lives behind this one seam; the description says what it really returns.
+  expect(tool.description).toContain("confirmed");
+  await tool.execute({ search: "tea" });
+  expect(asked).toEqual([{ owner: "u1", bot: "bot", search: "tea" }]);
 });
