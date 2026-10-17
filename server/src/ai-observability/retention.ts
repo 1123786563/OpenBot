@@ -599,7 +599,15 @@ export function createObservationRetentionWorker(
     }
   };
 
-  /** Park in `failed` with the code, conditional on not being terminal already. */
+  /**
+   * Park in `failed` with the code. Only a row that has not completed its upstream
+   * half may be parked: `upstream_done` records a finished fact — the upstream data
+   * is already gone — and a local-half failure (a pinned foreign key, a transient DB
+   * error) must never rewrite that fact into a plain "failed", or the retry would
+   * replay the upstream delete, an operation with no verified already-deleted
+   * semantics. An upstream-complete row stays `upstream_done` until the local half
+   * finishes it; the work ticket's release reason still carries the failure code.
+   */
   const markFailed = async (id: string, code: RetentionErrorCode) => {
     await db
       .update(aiObservationRetentionDeletions)
@@ -607,7 +615,10 @@ export function createObservationRetentionWorker(
       .where(
         and(
           eq(aiObservationRetentionDeletions.id, id),
-          ne(aiObservationRetentionDeletions.state, "deleted"),
+          inArray(aiObservationRetentionDeletions.state, [
+            "pending",
+            "failed",
+          ]),
         ),
       );
   };

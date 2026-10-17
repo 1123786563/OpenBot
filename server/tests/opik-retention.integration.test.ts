@@ -788,6 +788,100 @@ test("a dataset pinned by a live experiment is refused by the foreign key, not s
   ).toEqual([{ n: 1 }]);
 });
 
+test("an upstream-complete deletion is never downgraded back to failed by a local failure (OCR h7)", async () => {
+  const opikDatasetId = `opik-ds-${randomUUID()}`;
+  const { dataset, version } = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-h7-${randomUUID()}`,
+    cases: [oneCase(`run-${randomUUID()}`)],
+  });
+  await datasetStore.markSynced(scopeA, dataset.id, opikDatasetId);
+  await database
+    .update(aiObservationDatasets)
+    .set({ createdAt: sql`now() - interval '40 days'` })
+    .where(eq(aiObservationDatasets.id, dataset.id));
+  // A live experiment pins the local half: the version's FK refuses the dataset
+  // delete with 23503, exactly the RETENTION_TARGET_PINNED path.
+  await database.insert(aiObservationExperiments).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-h7-pin-${randomUUID()}`,
+    datasetVersionId: version.id,
+    datasetContentHash: version.contentHash,
+    config: {},
+    state: "draft",
+  });
+
+  // Force the record past discovery (the pin hides the dataset there), with the
+  // upstream facts frozen the way the dataset discovery would have written them.
+  const recordId = randomUUID();
+  await database.insert(aiObservationRetentionDeletions).values({
+    id: recordId,
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    kind: "dataset",
+    targetId: dataset.id,
+    upstreamKind: "dataset",
+    upstreamId: opikDatasetId,
+    retentionDays: 30,
+    state: "pending",
+  });
+  await database
+    .insert(workItems)
+    .values({ kind: "opik.retention", key: recordId })
+    .onConflictDoNothing();
+
+  const upstream = fakePort({});
+  await workerFor({ port: upstream.port }).sweep();
+
+  // The upstream half ran and succeeded; the local half hit the pin.
+  expect(upstream.calls.deleteDatasets).toEqual([opikDatasetId]);
+  const afterFirst = (await deletionsFor(scopeA)).find((r) => r.id === recordId);
+  // THE FIX under test: the completed upstream fact must not be erased — the record
+  // carries "upstream deleted, local pending", never a plain "failed" that would
+  // order the retry to delete upstream again (an operation with no verified
+  // already-deleted semantics).
+  expect(afterFirst?.state).toBe("upstream_done");
+  expect(afterFirst?.lastError).toBeNull();
+
+  // The retry pass (the re-offer the non-terminal record keeps earning) must NOT
+  // replay the upstream delete — it goes straight to the local half.
+  await database
+    .insert(workItems)
+    .values({ kind: "opik.retention", key: recordId })
+    .onConflictDoNothing();
+  await workerFor({ port: upstream.port }).sweep();
+  expect(upstream.calls.deleteDatasets).toEqual([opikDatasetId]);
+  expect(
+    (await deletionsFor(scopeA)).find((r) => r.id === recordId)?.state,
+  ).toBe("upstream_done");
+
+  // Pin lifted through the only sanctioned channel (0126's cleanup flag — the same
+  // channel the retention worker itself uses; a flagless DELETE is refused): the
+  // very same record finishes through the local half alone.
+  await database.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('ai_observation.experiment_cleanup', 'on', true)`,
+    );
+    await tx.execute(
+      sql`delete from ai_observation_experiments where dataset_version_id = ${version.id}`,
+    );
+  });
+  await database
+    .insert(workItems)
+    .values({ kind: "opik.retention", key: recordId })
+    .onConflictDoNothing();
+  await workerFor({ port: upstream.port }).sweep();
+  expect(upstream.calls.deleteDatasets).toHaveLength(1);
+  const final = (await deletionsFor(scopeA)).find((r) => r.id === recordId);
+  expect(final?.state).toBe("deleted");
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_datasets where id = ${dataset.id}`,
+  ).toEqual([{ n: 0 }]);
+});
+
 test("expired export artifacts are deleted for real, and a canary never reaches the audit or the records (AC2/AC4)", async () => {
   const canary = "sk-live-abcdefghijklmnopqrst";
   const old = await exportStore.enqueue(scopeA, 10);
