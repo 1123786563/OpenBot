@@ -1,0 +1,5 @@
+# MT012 before-state（= prereq-manifest pristine，领取时已复算全 29 项一致）
+# 本票触碰的两个既有文件的 pristine SHA-256（来自 prereq-manifest.txt）：
+c5bfb3d4e343bbcf03e205d47977013c1565bb2780708c8bbf912382c631d756  server/scripts/multitenancy/migrate-test.ts
+c7569901c8c032c5c8ddeda86d9427e437851162fb9cb22d1c4004b3bf482cdc  server/tests/multitenancy/migration-tool.test.ts
+# 新建文件无 before 态：server/tests/multitenancy/rls-core.test.ts

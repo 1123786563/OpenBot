@@ -1,0 +1,168 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/multitenancy/rls-core.test.ts:
+(pass) the MT012 task migration is registered and expand-only > MT012 is a registered task whose plan is deterministic [0.35ms]
+(pass) the MT012 task migration is registered and expand-only > dry-run previews honestly and apply converges (fresh or up-to-date) [0.10ms]
+(pass) the MT012 task migration is registered and expand-only > the plan only appends: RLS re-assertions plus one new function, nothing else [0.37ms]
+(pass) the MT012 task migration is registered and expand-only > existing policies and restricted-role table grants are byte-identical before and after apply [0.02ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: select count(*)::int as n from enterprise_tenants where tenant_id = $1
+params: mt002-resource-policy-ac9c8573-company-b
+  query: "select count(*)::int as n from enterprise_tenants where tenant_id = $1",
+ params: [ "mt002-resource-policy-ac9c8573-company-b" ],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:32:29)
+
+PostgresError: column "tenant_id" does not exist
+    errno: "42703",
+ severity: "ERROR",
+ position: "57",
+     file: "parse_relation.c",
+  routine: "errorMissingColumn",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company SELECT sees nothing on every core tenant table (operator role) [4.76ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: select count(*)::int as n from enterprise_tenants where tenant_id = $1
+params: mt002-resource-policy-ac9c8573-company-b
+  query: "select count(*)::int as n from enterprise_tenants where tenant_id = $1",
+ params: [ "mt002-resource-policy-ac9c8573-company-b" ],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:32:29)
+
+PostgresError: column "tenant_id" does not exist
+    errno: "42703",
+ severity: "ERROR",
+ position: "57",
+     file: "parse_relation.c",
+  routine: "errorMissingColumn",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company SELECT sees nothing under the data role either (including self-scoped tables) [3.58ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company UPDATE touches nothing and the row survives [9.58ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company DELETE removes nothing and the row survives; the data role cannot delete at all [10.32ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company foreign-key associations are rejected by the database (23503) [8.57ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > re-pointing ownership columns needs privileges the restricted roles do not hold [8.34ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > the data and directory roles cannot write tenant rows at all [11.01ms]
+(pass) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company denial does not leak existence (same shape as nonexistent) [3.14ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > explicit sharing allows the grantee on both sides [60.58ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > personal ownership (own resource via own grant) allows on both sides [45.92ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > team-public resources allow an active member without a grant under workspace-v1 (db side agrees) [57.99ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > team-public stays hidden from another team of the same company on both sides [39.63ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > a suspended member loses the team-public path on both sides and regains it after restoration [69.61ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > private marking never widens: non-owner denied on both sides, grantee still allowed [74.17ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > unmarked resources stay grant-only on both sides (no automatic widening) [29.28ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > cross-company resources are invisible on the db side and denied on the app side, same shape as nonexistent [29.07ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > a multi-company identity is allowed from their own company scope and denied from the other, on both sides [40.30ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > explicit-sharing facts are visible only to the grantee under the data role [5.63ms]
+(pass) issue #55 criterion 2: database policies agree with application rules for the same use case > workspace-membership facts are own-principal only under the data role [11.41ms]
+(pass) issue #55 criterion 3: business context is cleared after transactions and pooled reuse carries no scope > after commit, the same pooled backend has every context key cleared and sees no rows (all three roles) [50.35ms]
+(pass) issue #55 criterion 3: business context is cleared after transactions and pooled reuse carries no scope > after rollback with a live scope in place, the next transaction on the same connection is clean [4.96ms]
+(pass) issue #55 criterion 3: business context is cleared after transactions and pooled reuse carries no scope > the MT012 context-reset function scrubs session-level leftovers (the pooled-connection fallback) [16.15ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: select rolname, rolsuper, rolbypassrls from pg_roles where rolname = any(($1, $2, $3, $4, $5, $6, $7)::text[]) order by rolname
+params: ob_ent_directory,ob_ent_data,ob_ent_operator,ent_mt012_directory,ent_mt012_data,ent_mt012_operator,ob_ent_identity_operator
+  query: "select rolname, rolsuper, rolbypassrls from pg_roles where rolname = any(($1, $2, $3, $4, $5, $6, $7)::text[]) order by rolname",
+ params: [
+  "ob_ent_directory", "ob_ent_data", "ob_ent_operator", "ent_mt012_directory", "ent_mt012_data",
+  "ent_mt012_operator", "ob_ent_identity_operator"
+],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:32:29)
+
+PostgresError: cannot cast type record to text[]
+    errno: "42846",
+ severity: "ERROR",
+ position: "102",
+     file: "parse_expr.c",
+  routine: "transformTypeCast",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > every role the application is configured with is a restricted, non-bypassing capability [4.07ms]
+36 |   async queryWithCache(queryString, params, query) {
+37 |     if (this.cache === void 0 || is(this.cache, NoopCache) || this.queryMetadata === void 0) {
+38 |       try {
+39 |         return await query();
+40 |       } catch (e) {
+41 |         throw new DrizzleQueryError(queryString, params, e);
+                   ^
+error: Failed query: select c.relname, c.relrowsecurity, c.relforcerowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = any(($1, $2, $3, $4, $5, $6, $7, $8, $9)::text[]) order by c.relname
+params: enterprise_tenants,enterprise_principals,enterprise_memberships,enterprise_workspaces,enterprise_resources,enterprise_resource_grants,enterprise_security_events,enterprise_workspace_memberships,enterprise_deployment_anchors
+  query: "select c.relname, c.relrowsecurity, c.relforcerowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = any(($1, $2, $3, $4, $5, $6, $7, $8, $9)::text[]) order by c.relname",
+ params: [
+  "enterprise_tenants", "enterprise_principals", "enterprise_memberships", "enterprise_workspaces",
+  "enterprise_resources", "enterprise_resource_grants", "enterprise_security_events", "enterprise_workspace_memberships",
+  "enterprise_deployment_anchors"
+],
+
+      at queryWithCache (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/pg-core/session.js:41:15)
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/session.js:32:29)
+
+PostgresError: cannot cast type record to text[]
+    errno: "42846",
+ severity: "ERROR",
+ position: "204",
+     file: "parse_expr.c",
+  routine: "transformTypeCast",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+(fail) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > every core tenant table has RLS enabled and forced (owner cannot bypass either) [2.33ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > ob_ent_identity_operator exists, cannot log in, and holds zero privileges on every core tenant table [19.36ms]
+(pass) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > restricted roles can execute the context-reset function; it stays a business-role tool [4.47ms]
+1075 |   });
+1076 | 
+1077 |   itDb("the application assembly reaches enterprise data only through the verified restricted-role URLs", async () => {
+1078 |     const source = await Bun.file(
+1079 |       new URL("../../../src/index.ts", import.meta.url),
+1080 |     ).text();
+             ^
+ENOENT: no such file or directory, open '/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/src/index.ts'
+    path: "/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/src/index.ts",
+ syscall: "open",
+   errno: -2,
+    code: "ENOENT"
+
+      at async <anonymous> (/Users/wuyongjun/orca/workspaces/OpenBot/i7-mt012/server/tests/multitenancy/rls-core.test.ts:1080:7)
+(fail) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > the application assembly reaches enterprise data only through the verified restricted-role URLs [0.69ms]
+(pass) closing check: restricted roles were in play > every restricted query ran as a capability role, never a superuser [4.92ms]
+
+5 tests failed:
+(fail) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company SELECT sees nothing on every core tenant table (operator role) [4.76ms]
+(fail) issue #55 criterion 1: cross-company access is denied by the database under restricted roles > cross-company SELECT sees nothing under the data role either (including self-scoped tables) [3.58ms]
+(fail) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > every role the application is configured with is a restricted, non-bypassing capability [4.07ms]
+(fail) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > every core tenant table has RLS enabled and forced (owner cannot bypass either) [2.33ms]
+(fail) issue #55 criterion 4: no RLS-bypassing role serves normal data access; the platform machine-read role is registered separately and unusable for business interfaces > the application assembly reaches enterprise data only through the verified restricted-role URLs [0.69ms]
+
+ 27 pass
+ 5 fail
+ 248 expect() calls
+Ran 32 tests across 1 file. [1491.00ms]

@@ -1,0 +1,2 @@
+up-to-date: MT012 @ openbot_enterprise_mt012 (127.0.0.1:55472)
+  已应用 2 步，无需执行
