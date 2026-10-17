@@ -64,6 +64,7 @@ import {
   projectSafeName,
   projectSafeText,
 } from "./redaction";
+import { notPendingDeletion } from "./retention";
 import { assertObservationScope } from "./scope";
 
 /** The work-queue kind an execution's claim ticket rides on. */
@@ -425,12 +426,19 @@ export function createObservationExecutionStore(
     db
       .update(aiObservationExperimentExecutions)
       .set({ ...values, updatedAt: new Date(), settledAt: new Date() })
-      // Only a running execution settles. A cancelled row refuses this write, which
-      // is exactly the race revocation must win.
+      // Only an active execution settles — pending or running, the two states a
+      // claim's lifetime spans. The worker's pre-claim refusals (experiment gone,
+      // version gone) fire while the row is still pending, and their settle must
+      // land there, not silently no-op and wedge the row with a finished ticket
+      // (OCR R2-44); a cancelled row refuses this write, which is exactly the
+      // race revocation must win.
       .where(
         and(
           eq(aiObservationExperimentExecutions.id, id),
-          eq(aiObservationExperimentExecutions.state, "running"),
+          inArray(aiObservationExperimentExecutions.state, [
+            "pending",
+            "running",
+          ]),
         ),
       )
       .returning()
@@ -452,6 +460,11 @@ export function createObservationExecutionStore(
             and(
               eq(aiObservationExperiments.id, experimentId),
               eq(aiObservationExperiments.scopeKey, scope.key),
+              // The enqueue seam is a reader too (OCR m138/R2-44): an experiment
+              // under retention deletion is gone — start, ticket and billing all
+              // ride behind this read, so the answer is the same not-found the
+              // read face gives, never an execution the read face cannot see.
+              notPendingDeletion("experiment", aiObservationExperiments.id),
             ),
           )
           .for("update");
@@ -1109,7 +1122,15 @@ export function createObservationExecutionWorker(
     const experimentRows = await deps.database
       .select()
       .from(aiObservationExperiments)
-      .where(eq(aiObservationExperiments.id, execution.experimentId));
+      .where(
+        and(
+          eq(aiObservationExperiments.id, execution.experimentId),
+          // The re-check is a reader too (OCR m138/R2-44): a deletion that lands
+          // between enqueue and this pass blinds it exactly as it blinds the
+          // read face — fail-closed, before a single case runs or is billed.
+          notPendingDeletion("experiment", aiObservationExperiments.id),
+        ),
+      );
     const experiment = experimentRows[0];
     if (
       // biome-ignore lint/complexity/useOptionalChain: the || form is what narrows experiment for the reads below.
@@ -1135,7 +1156,15 @@ export function createObservationExecutionWorker(
     const versionRows = await deps.database
       .select()
       .from(aiObservationDatasetVersions)
-      .where(eq(aiObservationDatasetVersions.id, experiment.datasetVersionId));
+      .where(
+        and(
+          eq(aiObservationDatasetVersions.id, experiment.datasetVersionId),
+          // The version hides with its dataset: the deletion record targets the
+          // subject, the cascade will take the versions — reading frozen cases
+          // out of them is refused before anything runs (OCR R2-44).
+          notPendingDeletion("dataset", aiObservationDatasetVersions.datasetId),
+        ),
+      );
     const version = versionRows[0];
     if (!version || version.scopeKey !== scope.key) {
       const settled = await store.settleFailed(
