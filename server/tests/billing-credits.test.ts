@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
-import { deriveGrantStatus, type Credits } from "../src/billing/credits";
+import { type Credits, deriveGrantStatus } from "../src/billing/credits";
 import { createBillingCreditRoutes } from "../src/billing/routes";
 import type { PlanCatalogEntry } from "../src/billing/types";
 
@@ -57,9 +57,34 @@ describe("credit routes", () => {
 
   const credits: Credits = {
     catalog: new Map([["advanced", CATALOG]]),
+    // The summary route answers the personal balance read (ticket 02.6) with the ref the route
+    // resolved from the session; the fake records it, so the tests can pin the resolution.
+    personalBalance: async (payer) => {
+      resolvedPayers.push(payer);
+      return {
+        accountType: "personal",
+        available: 476.37,
+        consumed: 123.63,
+        expired: 0,
+        held: 0,
+        grants: [],
+        pendingSettlement: {
+          enabled: false,
+          available: 0,
+          consumed: 0,
+          expired: 0,
+        },
+      };
+    },
     summary: async () => ({
       plan: { total: 500, used: 100, remaining: 400, held: 0 },
-      rewards: { total: 100, used: 23.63, remaining: 76.37, held: 0, grantCount: 2 },
+      rewards: {
+        total: 100,
+        used: 23.63,
+        remaining: 76.37,
+        held: 0,
+        grantCount: 2,
+      },
     }),
     grants: async () => [
       {
@@ -101,7 +126,8 @@ describe("credit routes", () => {
       context,
       next,
     ) => {
-      if (!actor) return context.json({ error: "Authentication required." }, 401);
+      if (!actor)
+        return context.json({ error: "Authentication required." }, 401);
       context.set("actor", actor);
       await next();
     };
@@ -111,20 +137,36 @@ describe("credit routes", () => {
     );
   }
 
+  const resolvedPayers: { kind: string; id: string }[] = [];
+
   test("a signed-out caller is refused", async () => {
-    const response = await app(undefined).request("/api/billing/credits/summary");
+    const response = await app(undefined).request(
+      "/api/billing/credits/summary",
+    );
     expect(response.status).toBe(401);
   });
 
-  test("the summary splits plan and reward balances", async () => {
+  test("the summary is the personal balance read, for the session's own account", async () => {
     const response = await app(MEMBER).request("/api/billing/credits/summary");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      plan: { remaining: number };
-      rewards: { remaining: number; grantCount: number };
+      accountType: string;
+      available: number;
+      consumed: number;
+      pendingSettlement: { enabled: boolean; available: number };
     };
-    expect(body.plan.remaining).toBe(400);
-    expect(body.rewards.grantCount).toBe(2);
+    expect(body.accountType).toBe("personal");
+    expect(body.available).toBe(476.37);
+    expect(body.consumed).toBe(123.63);
+    expect(body.pendingSettlement).toEqual({
+      enabled: false,
+      available: 0,
+      consumed: 0,
+      expired: 0,
+    });
+    // The account came from the session, not from the request: the ref the service received is
+    // the signed-in member's own personal payer.
+    expect(resolvedPayers).toEqual([{ kind: "personal", id: MEMBER.id }]);
   });
 
   test("the grants list carries the soon-to-expire cue", async () => {

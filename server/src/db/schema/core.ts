@@ -59,6 +59,39 @@ export const credentialKind = pgEnum("credential_kind", [
    * that speaks for the deployment, and one row per person that speaks for them.
    */
   "mcp_user_token",
+  /*
+   * A registered Bot's service credential (Bifrost #235, 04.2): the secret a Bot's own server
+   * presents to prove which Bot it is. Its own kind for the same reason every other kind is: an
+   * administrator reading "what does this deployment hold" must be able to see the Bots without
+   * them surfacing as agents or connectors, and revoking one must never be confused with revoking
+   * anything else. `keyId` carries the botId; `credentials_active_key_idx` keeps at most one live
+   * credential per Bot, which is what makes issuance and rotation race-safe.
+   */
+  "bot_service",
+  /*
+   * The deployment's own credential for its Bifrost gateway's admin surface (Bifrost 01.2, #208).
+   *
+   * Its own kind because it is the one secret that speaks for the whole deployment at another
+   * system's control plane. It is write-only: the administrator writes and rotates it through the
+   * gateway credential routes and every read path answers a redacted status; only the server-internal
+   * resolver in `gateway/admin-credential.ts` ever decrypts it, and it never returns through an HTTP
+   * response. It must therefore never be writable through the generic `/api/admin/credentials`
+   * routes — their allowlist deliberately does not widen to match this enum.
+   */
+  "gateway_admin",
+  /*
+   * The billing protocol's service credential (Bifrost #252, 06.1): the secret the deployment's
+   * Bifrost admission extension presents to reach Reserve/Status/Settle/Release.
+   *
+   * Its own kind because the door it opens is a different one from every other kind here, and
+   * the ticket's own warning is why: a Bot service credential and this credential both prove a
+   * service identity, but only this one may move credits. Let the two share a kind and a Bot
+   * credential reads as a billing caller; keep them apart and the vault's answer to "which
+   * secrets speak for the billing protocol" is exactly one row, `keyId` fixed to `gateway`,
+   * with `credentials_active_key_idx` making rotation race-safe the same way it does for a
+   * Bot's.
+   */
+  "credit_service",
 ]);
 
 export const users = pgTable("users", {

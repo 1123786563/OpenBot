@@ -101,6 +101,7 @@ describe("probe h-fourth: what the real store answers after the endgame", () => 
       currency: "CNY",
       expiresAt: new Date(Date.now() + 15 * 60_000),
       createdBy: `${prefix}-h4`,
+      ownerPayerRef: { kind: "personal" as const, id: `${prefix}-h4` },
       checkoutPayload: null,
     });
 
