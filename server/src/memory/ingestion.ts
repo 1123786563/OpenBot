@@ -6,6 +6,7 @@ import { catalogueEntry } from "../plugins/catalogue";
 import { asksForArguments } from "../plugins/composio";
 import { type AccountAnswer, accountFor } from "../plugins/shared-accounts";
 import { PluginRefusedError, type PluginStore } from "../plugins/store";
+import { classifyMemorySensitivity } from "./sensitivity";
 import type { MemoryStore } from "./store";
 import {
   type ImportedMemory,
@@ -275,9 +276,27 @@ export function createMemoryIngestion(options: {
           "The connected app could not be read. Check its connection and source settings.",
         );
       const records = normalizeConnectorRecords(result.text);
-      await store.completeSync(ownerUserId, id, records);
+      const kept = records.filter(
+        // Read, not asked for: sensitive material never becomes a candidate, and the count the
+        // person sees says what was actually kept.
+        (record) => classifyMemorySensitivity(record.content) === "normal",
+      );
+      // Counts only, never content: a batch that lost records to the sensitivity gate leaves a
+      // trace here, so a silently shrinking `imported` is not the only signal the person or an
+      // operator gets.
+      const droppedSensitive = records.length - kept.length;
+      if (droppedSensitive > 0)
+        log.info(
+          {
+            type: "memory-sync-sensitive-dropped",
+            context: { sourceId: id, droppedSensitive },
+            timestamp: new Date().toISOString(),
+          },
+          "memory-sync-sensitive-dropped",
+        );
+      await store.completeSync(ownerUserId, id, kept);
       return {
-        imported: records.length,
+        imported: kept.length,
         source: await store.getSource(ownerUserId, id),
       };
     } catch (error) {

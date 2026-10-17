@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { getLogger } from "../../shared/logger";
 import { createAuditStore } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
@@ -306,6 +307,13 @@ describe("memory sources, on by default", () => {
         digest: "digest-issue-1",
       },
     ]);
+    // An import is a candidate until confirmed; confirm it so this test keeps proving isolation,
+    // not the review gate.
+    const imported = (await memory.list(owner)).find(
+      (row) => row.sourceId === id,
+    );
+    if (!imported) throw new Error("Expected imported memory.");
+    await memory.update(owner, imported.id, { reviewState: "confirmed" });
     const recalled = (person: string, agentId: string) =>
       ingestion
         .recall(person, agentId)
@@ -317,6 +325,51 @@ describe("memory sources, on by default", () => {
     expect(await recalled(other, bot)).not.toContain(
       "The login bug ships Friday",
     );
+  });
+
+  test("a direct completeSync call that bypasses ingestion still drops sensitive records and says so", async () => {
+    await reset();
+    const [id] = await defaults().adoptSources(owner, bot);
+    // The store gate is the INNER layer of the defense: normally ingestion filters first and
+    // its memory-sync-sensitive-dropped count is the only signal. completeSync is also a
+    // public method, so this direct call (no pre-filter) proves the gate still holds and —
+    // because an inner hit means the upstream defense was bypassed — is loud about it.
+    const errorSpy = spyOn(getLogger("server"), "error").mockImplementation(
+      () => {},
+    );
+    let innerDrop: unknown;
+    try {
+      await memory.completeSync(owner, id as string, [
+        {
+          externalId: "ISSUE-9",
+          content: "Staging admin password: hunter2",
+          provenance: "ISSUE-9",
+          digest: "digest-issue-9",
+        },
+        {
+          externalId: "ISSUE-10",
+          content: "The login bug ships Friday",
+          provenance: "ISSUE-10",
+          digest: "digest-issue-10",
+        },
+      ]);
+      innerDrop = errorSpy.mock.calls
+        .map(([payload]) => payload)
+        .find(
+          (payload) =>
+            (payload as { type?: string }).type ===
+            "memory-sync-sensitive-dropped-inner",
+        );
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect(innerDrop).toMatchObject({
+      context: { sourceId: id, droppedSensitiveInner: 1 },
+    });
+    // The dropped record left nothing behind: only the normal one is stored.
+    const contents = (await memory.list(owner)).map((row) => row.content);
+    expect(contents).toContain("The login bug ships Friday");
+    expect(contents).not.toContain("Staging admin password: hunter2");
   });
 
   // A Team Bot somebody else published reaches a person's own accounts only with their consent.

@@ -340,6 +340,9 @@ test("a Bot-formed memory reaches only its Bot, only while it holds the source a
     sourceApp: "Issue tracker",
     sourceRef: ref,
   });
+  // An unreviewed candidate is invisible even to its own Bot; confirm it so this test keeps
+  // proving Bot-scoping, not the review gate.
+  await memory.update(owner, formed.id, { reviewState: "confirmed" });
   const recalled = async (agentId: string) =>
     (await ingestion.recall(owner, agentId)).some(
       (row) => row.id === formed.id,
