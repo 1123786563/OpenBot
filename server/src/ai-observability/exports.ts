@@ -518,6 +518,12 @@ export async function foldExportPages<T>(
     throw new ExportRowLimitExceeded();
   }
   const rows = [...first.content];
+  // The first page itself is inside the cap contract too (OCR m139): an upstream
+  // that over-ships its first page (under-reported total, oversized content) fails
+  // the cap here rather than shipping an over-limit export as a success.
+  if (rows.length > cap) {
+    throw new ExportRowLimitExceeded();
+  }
   let page = 0;
   while (rows.length < first.total) {
     page += 1;

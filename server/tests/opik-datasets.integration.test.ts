@@ -70,6 +70,11 @@ afterEach(async () => {
   // Return the pooled connection to a known session state; see the case-review suite's
   // afterEach for why residue here once masked the guard's fail-open hole.
   await database.$client`RESET ai_observation.dataset_cleanup`;
+  // The m119/m125 tests plant deletion records in this scope; the retention
+  // suite's governance counts read every scope, so leave none behind.
+  await database
+    .delete(aiObservationRetentionDeletions)
+    .where(eq(aiObservationRetentionDeletions.scopeKey, scopeA.key));
 });
 
 afterAll(async () => {

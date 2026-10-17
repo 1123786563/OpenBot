@@ -847,7 +847,13 @@ test("an upstream-complete deletion is never downgraded back to failed by a loca
   expect(afterFirst?.lastError).toBeNull();
 
   // The retry pass (the re-offer the non-terminal record keeps earning) must NOT
-  // replay the upstream delete — it goes straight to the local half.
+  // replay the upstream delete — it goes straight to the local half. The queue
+  // released the ticket with the retry backoff (OCR m163), so the test rewinds
+  // runAt the way the wait itself would.
+  await database
+    .update(workItems)
+    .set({ runAt: sql`now()` })
+    .where(eq(workItems.key, recordId));
   await database
     .insert(workItems)
     .values({ kind: "opik.retention", key: recordId })
@@ -869,6 +875,14 @@ test("an upstream-complete deletion is never downgraded back to failed by a loca
       sql`delete from ai_observation_experiments where dataset_version_id = ${version.id}`,
     );
   });
+  await database
+    .update(workItems)
+    .set({ runAt: sql`now()` })
+    .where(eq(workItems.key, recordId));
+  await database
+    .insert(workItems)
+    .values({ kind: "opik.retention", key: recordId })
+    .onConflictDoNothing();
   await database
     .insert(workItems)
     .values({ kind: "opik.retention", key: recordId })
